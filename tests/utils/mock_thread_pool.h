@@ -41,8 +41,8 @@ public:
         std::atomic_int *successful_searches; // A reference to a shared counter that counts the
                                               // number of successful searches.
         size_t ef;
-        size_t iter;                         // For benchmarks, the number of iteration
-        VecSimQueryResult_List *all_results; // For benchmarks, an array to store the results in
+        size_t iter;                    // For benchmarks, the number of iteration
+        VecSimQueryReply **all_results; // For benchmarks, an array to store the results in
 
         /* Note that some members are not relevant for certain use-cases of the SearchJobMock,
            so we use default values that indicates that the member is in use only if an actual
@@ -60,7 +60,7 @@ public:
         // To be used currently in micro-benchmarks tests.
         SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCB,
                       VecSimIndex *index_, size_t k_, size_t ef_, size_t iter_,
-                      VecSimQueryResult_List *all_results_)
+                      VecSimQueryReply **all_results_)
             : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCB, index_), query(nullptr), k(k_), n(-1),
               dim(-1), successful_searches(nullptr), ef(ef_), iter(iter_),
               all_results(all_results_) {}

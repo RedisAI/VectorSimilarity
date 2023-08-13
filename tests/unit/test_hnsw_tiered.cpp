@@ -628,7 +628,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     // Check behavior upon timeout.  //
     // // // // // // // // // // // //
 
-    VecSimQueryResult_List res;
+    VecSimQueryReply *res;
     // Add a vector to the HNSW index so there will be a reason to query it.
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
 
@@ -636,8 +636,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
-    ASSERT_EQ(res.results, nullptr);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    ASSERT_TRUE(res->results.empty());
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
 
     // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
     // Brute-force index checks for timeout after each vector.
@@ -652,13 +653,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
         return 0;
     });
     res = VecSimIndex_TopKQuery(tiered_index, query_0, k, &qparams, BY_SCORE);
-    ASSERT_EQ(res.results, nullptr);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    ASSERT_TRUE(res->results.empty());
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_TopKQuery(flat_index, query_0, k, &qparams, BY_SCORE);
-    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
@@ -1588,7 +1590,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
             int num_deleted = tiered_index->deleteVector(i);
             EXPECT_GE(num_deleted, per_label);
             EXPECT_LE(num_deleted,
-                      MIN(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
+                      std::min(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
             EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), 0);
@@ -2147,9 +2149,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
             VecSimBatchIterator_New(tiered_index, query, &query_params);
 
         // Try to get results even though there are no vectors in the index.
-        VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
-        VecSimQueryResult_Free(res);
+        VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
+        VecSimQueryReply_Free(res);
         ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
 
         // Insert one label and query again. The internal id will be 0.
@@ -2159,8 +2161,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         }
         VecSimBatchIterator_Reset(batchIterator);
         res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 1) << decider_name;
-        VecSimQueryResult_Free(res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 1) << decider_name;
+        VecSimQueryReply_Free(res);
         ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
         VecSimBatchIterator_Free(batchIterator);
 
@@ -2176,8 +2178,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
 
         // Try to get 0 results.
         res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
-        VecSimQueryResult_Free(res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
+        VecSimQueryReply_Free(res);
 
         // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
         size_t n_res = 7;
@@ -2210,8 +2212,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         ASSERT_EQ(iteration_num, n_labels / n_res + 1) << decider_name;
         // Try to get more results even though there are no.
         res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
-        VecSimQueryResult_Free(res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
+        VecSimQueryReply_Free(res);
 
         VecSimBatchIterator_Free(batchIterator);
     }
@@ -2321,7 +2323,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     VecSimIndex *hnsw, *flat;
     TEST_DATA_T query[d];
     VecSimBatchIterator *iterator;
-    VecSimQueryResult_List batch;
+    VecSimQueryReply *batch;
 
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams hnsw_params = {
@@ -2359,24 +2361,24 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     // handle the duplicates with different scores.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 3);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 1);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 2), 2);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 2), L2(2));
-    VecSimQueryResult_Free(batch);
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 3);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 2), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 2), L2(2));
+    VecSimQueryReply_Free(batch);
 
     // we have 1 more label in the index. we expect the tiered batch iterator to return it only and
     // filter out the duplicates.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 1);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 3);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(5));
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 1);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(5));
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
-    VecSimQueryResult_Free(batch);
+    VecSimQueryReply_Free(batch);
     // TEST 1 clean up.
     VecSimBatchIterator_Free(iterator);
 
@@ -2407,12 +2409,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     // [2, 3] so there are no duplicates.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 2);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(0));
-    VecSimQueryResult_Free(batch);
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(0));
+    VecSimQueryReply_Free(batch);
 
     // first batch contained 1 result from each index, so there is one leftover from each iterator.
     // Asking for 3 results will return additional 2 results from each iterator and the tiered batch
@@ -2420,13 +2422,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     // were returned in the first batch and duplicates in the current batch).
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 1);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(1));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 3);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(1));
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
-    VecSimQueryResult_Free(batch);
+    VecSimQueryReply_Free(batch);
     // TEST 2 clean up.
     VecSimBatchIterator_Free(iterator);
 }
@@ -3251,7 +3253,7 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     // Check behavior upon timeout.  //
     // // // // // // // // // // // //
 
-    VecSimQueryResult_List res;
+    VecSimQueryReply *res;
     // Add a vector to the HNSW index so there will be a reason to query it.
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
 
@@ -3259,8 +3261,8 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, nullptr, BY_ID);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
 
     // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
     // Brute-force index checks for timeout after each vector.
@@ -3275,24 +3277,24 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
         return 0;
     });
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_SCORE);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_SCORE);
-    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Check again with BY_ID.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_ID);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_ID);
-    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });

@@ -115,15 +115,15 @@ inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2)
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_res_num,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
-                       VecSimQueryResult_Order order = BY_SCORE);
+                       VecSimQueryReply_Order order = BY_SCORE);
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
-                       VecSimQueryResult_Order order = BY_SCORE);
+                       VecSimQueryReply_Order order = BY_SCORE);
 
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(size_t, double, size_t)> ResCB,
-                                VecSimQueryResult_Order order = BY_SCORE,
+                                VecSimQueryReply_Order order = BY_SCORE,
                                 size_t expected_n_res = -1);
 
 void compareCommonInfo(CommonInfo info1, CommonInfo info2);
@@ -136,7 +136,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
-                       size_t expected_res_num, VecSimQueryResult_Order order = BY_ID,
+                       size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);
 
 size_t getLabelsLookupNodeSize();

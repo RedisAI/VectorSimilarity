@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/query_results.h"
+
 #include <cstdlib>
 #include <limits>
 
@@ -22,12 +25,13 @@ struct VecSimQueryResult {
     double score;
 };
 
-/**
- * @brief Sets result's id (to use from index TopKQuery method)
- */
-void VecSimQueryResult_SetId(VecSimQueryResult &result, size_t id);
+using VecSimQueryResultContainer = vecsim_stl::vector<VecSimQueryResult>;
 
-/**
- * @brief Sets result score (to use from index TopKQuery method)
- */
-void VecSimQueryResult_SetScore(VecSimQueryResult &result, double score);
+struct VecSimQueryReply {
+    VecSimQueryResultContainer results;
+    VecSimQueryReply_Code code;
+
+    VecSimQueryReply(std::shared_ptr<VecSimAllocator> allocator,
+                     VecSimQueryReply_Code code = VecSim_QueryReply_OK)
+        : results(allocator), code(code) {}
+};

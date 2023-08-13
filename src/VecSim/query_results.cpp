@@ -4,60 +4,40 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/query_result_struct.h"
-#include "VecSim/utils/arr_cpp.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/batch_iterator.h"
 #include <assert.h>
 
-struct VecSimQueryResult_Iterator {
-    VecSimQueryResult *results_arr;
-    size_t index;
-    size_t results_len;
+struct VecSimQueryReply_Iterator {
+    using iterator = decltype(VecSimQueryReply::results)::iterator;
+    const iterator begin, end;
+    iterator current;
 
-    explicit VecSimQueryResult_Iterator(VecSimQueryResult_List results_array)
-        : results_arr(results_array.results), index(0),
-          results_len(array_len(results_array.results)) {}
+    explicit VecSimQueryReply_Iterator(VecSimQueryReply *reply)
+        : begin(reply->results.begin()), end(reply->results.end()), current(begin) {}
 };
 
-extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List rl) { return array_len(rl.results); }
+extern "C" size_t VecSimQueryReply_Len(VecSimQueryReply *qr) { return qr->results.size(); }
 
-extern "C" VecSimQueryResult *VecSimQueryResult_GetArray(VecSimQueryResult_List rl) {
-    return rl.results;
+extern "C" VecSimQueryReply_Code VecSimQueryReply_GetCode(VecSimQueryReply *qr) { return qr->code; }
+
+extern "C" void VecSimQueryReply_Free(VecSimQueryReply *qr) { delete qr; }
+
+extern "C" VecSimQueryReply_Iterator *VecSimQueryReply_GetIterator(VecSimQueryReply *results) {
+    return new VecSimQueryReply_Iterator(results);
 }
 
-extern "C" size_t VecSimQueryResult_ArrayLen(VecSimQueryResult *rl) { return array_len(rl); }
-
-extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
-    if (rl.results) {
-        array_free(rl.results);
-        rl.results = nullptr;
-    }
+extern "C" bool VecSimQueryReply_IteratorHasNext(VecSimQueryReply_Iterator *iterator) {
+    return iterator->current != iterator->end;
 }
 
-extern "C" void VecSimQueryResult_FreeArray(VecSimQueryResult *rl) {
-    if (rl) {
-        array_free(rl);
-    }
-}
-
-extern "C" VecSimQueryResult_Iterator *
-VecSimQueryResult_List_GetIterator(VecSimQueryResult_List results) {
-    return new VecSimQueryResult_Iterator(results);
-}
-
-extern "C" bool VecSimQueryResult_IteratorHasNext(VecSimQueryResult_Iterator *iterator) {
-    return iterator->index != iterator->results_len;
-}
-
-extern "C" VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_Iterator *iterator) {
-    if (iterator->index == iterator->results_len) {
+extern "C" VecSimQueryResult *VecSimQueryReply_IteratorNext(VecSimQueryReply_Iterator *iterator) {
+    if (iterator->current == iterator->end) {
         return nullptr;
     }
-    VecSimQueryResult *item = iterator->results_arr + iterator->index;
-    iterator->index++;
 
-    return item;
+    return std::to_address(iterator->current++);
 }
 
 extern "C" int64_t VecSimQueryResult_GetId(const VecSimQueryResult *res) {
@@ -74,17 +54,17 @@ extern "C" double VecSimQueryResult_GetScore(const VecSimQueryResult *res) {
     return res->score;
 }
 
-extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator) {
+extern "C" void VecSimQueryReply_IteratorFree(VecSimQueryReply_Iterator *iterator) {
     delete iterator;
 }
 
-extern "C" void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator) {
-    iterator->index = 0;
+extern "C" void VecSimQueryReply_IteratorReset(VecSimQueryReply_Iterator *iterator) {
+    iterator->current = iterator->begin;
 }
 
 /********************** batch iterator API ***************************/
-VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                                VecSimQueryResult_Order order) {
+VecSimQueryReply *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
+                                           VecSimQueryReply_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     return iterator->getNextResults(n_results, order);

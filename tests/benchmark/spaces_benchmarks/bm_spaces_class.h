@@ -7,7 +7,6 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/space_aux.h"
 

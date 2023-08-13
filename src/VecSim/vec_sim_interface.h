@@ -108,8 +108,8 @@ public:
      * for example, if the distance metric is cosine, it will call topKQuery with the normalized
      * blob.
      */
-    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) const = 0;
+    virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
+                                               VecSimQueryParams *queryParams) const = 0;
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.
@@ -120,10 +120,10 @@ public:
      * @param queryParams run time params for the search, which are algorithm-specific.
      * @return An opaque object the represents a list of results. User can access the id and score
      * (which is the distance according to the index metric) of every result through
-     * VecSimQueryResult_Iterator.
+     * VecSimQueryReply_Iterator.
      */
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) const = 0;
+    virtual VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                        VecSimQueryParams *queryParams) const = 0;
 
     /**
      * @brief This Function prepares the blob before sending it to rangeQuery.
@@ -132,9 +132,9 @@ public:
      * for example, if the distance metric is cosine, it will call rangeQuery with the normalized
      * blob.
      */
-    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) const = 0;
+    virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
+                                                VecSimQueryParams *queryParams,
+                                                VecSimQueryReply_Order order) const = 0;
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -146,11 +146,11 @@ public:
      * @param order the criterion to sort the results list by it. Options are by score, or by id.
      * @return An opaque object the represents a list of results. User can access the id and score
      * (which is the distance according to the index metric) of every result through
-     * VecSimQueryResult_Iterator.
+     * VecSimQueryReply_Iterator.
      */
-    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams,
-                                              VecSimQueryResult_Order order) const = 0;
+    virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                         VecSimQueryParams *queryParams,
+                                         VecSimQueryReply_Order order) const = 0;
 
     /**
      * @brief Return index information.

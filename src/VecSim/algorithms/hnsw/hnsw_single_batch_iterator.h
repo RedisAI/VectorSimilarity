@@ -12,8 +12,9 @@ template <typename DataType, typename DistType>
 class HNSWSingle_BatchIterator : public HNSW_BatchIterator<DataType, DistType> {
 private:
     inline void fillFromExtras(candidatesLabelsMaxHeap<DistType> *top_candidates) override;
-    inline VecSimQueryResult_List prepareResults(candidatesLabelsMaxHeap<DistType> *top_candidates,
-                                                 size_t n_res) override;
+    inline void prepareResults(VecSimQueryReply *rep,
+                               candidatesLabelsMaxHeap<DistType> *top_candidates,
+                               size_t n_res) override;
 
     inline void updateHeaps(candidatesLabelsMaxHeap<DistType> *top_candidates, DistType dist,
                             idType id) override;
@@ -30,25 +31,21 @@ public:
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWSingle_BatchIterator<DataType, DistType>::prepareResults(
-    candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) {
-    VecSimQueryResult_List rl = {0};
+void HNSWSingle_BatchIterator<DataType, DistType>::prepareResults(
+    VecSimQueryReply *rep, candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) {
 
     // Put the "spare" results (if exist) in the extra candidates heap.
     while (top_candidates->size() > n_res) {
-        this->top_candidates_extras.emplace(top_candidates->top().first,
-                                            top_candidates->top().second); // (distance, label)
+        this->top_candidates_extras.emplace(top_candidates->top()); // (distance, label)
         top_candidates->pop();
     }
-    rl.results = array_new_len<VecSimQueryResult>(top_candidates->size(), top_candidates->size());
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
-    for (int i = (int)(top_candidates->size() - 1); i >= 0; i--) {
-        VecSimQueryResult_SetId(rl.results[i], top_candidates->top().second);
-        VecSimQueryResult_SetScore(rl.results[i], top_candidates->top().first);
+    rep->results.resize(top_candidates->size());
+    for (auto result = rep->results.rbegin(); result != rep->results.rend(); ++result) {
+        std::tie(result->score, result->id) = top_candidates->top();
         top_candidates->pop();
     }
-    return rl;
 }
 
 template <typename DataType, typename DistType>
