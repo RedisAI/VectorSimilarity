@@ -221,6 +221,16 @@ public:
     virtual void runGC() = 0;
 
     /**
+     * @brief Acquire the locks for shared ownership in tiered async index.
+     */
+    virtual void acquireLocks() = 0;
+
+    /**
+     * @brief Release the locks for shared ownership in tiered async index.
+     */
+    virtual void releaseLocks() = 0;
+
+    /**
      * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.
      *
      * @param callback timeoutCallbackFunction function. should get void* and return int.

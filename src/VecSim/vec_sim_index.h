@@ -237,4 +237,6 @@ protected:
     }
 
     void runGC() override {} // Do nothing, relevant for tiered index only.
+    void acquireLocks() override {} // Do nothing, relevant for tiered index only.
+    void releaseLocks() override {} // Do nothing, relevant for tiered index only.
 };

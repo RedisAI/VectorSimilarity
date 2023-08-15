@@ -199,6 +199,10 @@ void VecSimTieredIndex_GC(VecSimIndex *index);
 bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
                                    bool initial_check);
 
+void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index);
+
+void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index);
+
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.
  *
@@ -227,6 +231,7 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
  * @param mode VecSimWriteMode the mode in which we add/remove vectors (async or in-place).
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
+
 
 #ifdef __cplusplus
 }

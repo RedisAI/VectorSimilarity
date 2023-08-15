@@ -12,6 +12,7 @@
 #include "VecSim/vec_sim_index.h"
 #include <cassert>
 #include "memory.h"
+#include "vec_sim_tiered_index.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
     VecSimIndex::setTimeoutCallbackFunction(callback);
@@ -239,6 +240,14 @@ extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {
     if (index->basicInfo().isTiered) {
         index->runGC();
     }
+}
+
+extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) {
+    index->acquireLocks();
+}
+
+extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) {
+    index->releaseLocks();
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
