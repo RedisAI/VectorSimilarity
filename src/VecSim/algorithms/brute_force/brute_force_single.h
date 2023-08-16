@@ -46,7 +46,7 @@ public:
         auto id = labelToIdLookup.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
+        memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
         vectors_output.push_back(vec);
     }
 #endif
@@ -55,12 +55,8 @@ protected:
 
     inline void updateVector(idType id, const void *vector_data) {
 
-        // Get the vector block
-        DataBlock &vectorBlock = this->getVectorVectorBlock(id);
-        size_t index = BruteForceIndex<DataType, DistType>::getVectorRelativeIndex(id);
-
         // Update vector data in the block.
-        vectorBlock.updateElement(index, vector_data);
+        memcpy(this->getDataByInternalId(id), vector_data, this->dataSize);
     }
 
     inline void setVectorId(labelType label, idType id) override {
