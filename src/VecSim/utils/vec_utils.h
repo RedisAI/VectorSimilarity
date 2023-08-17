@@ -13,14 +13,6 @@
 #include <cassert>
 #include <cmath> //sqrt
 
-template <typename dist_t>
-struct CompareByFirst {
-    constexpr bool operator()(std::pair<dist_t, unsigned int> const &a,
-                              std::pair<dist_t, unsigned int> const &b) const noexcept {
-        return (a.first != b.first) ? a.first < b.first : a.second < b.second;
-    }
-};
-
 struct VecSimCommonStrings {
 public:
     static const char *ALGORITHM_STRING;
