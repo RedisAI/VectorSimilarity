@@ -1079,9 +1079,7 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
     // Get all in first iteration, expect to use select search.
     size_t n_res = n;
-    auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, n - 1 - index);
-    };
+    auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, n - 1 - index); };
     runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 

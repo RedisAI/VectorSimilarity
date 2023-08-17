@@ -100,10 +100,12 @@ protected:
         size_t old_capacity = indexCapacity(), new_capacity = old_capacity + this->blockSize;
         idToLabelMapping.resize(new_capacity);
         idToLabelMapping.shrink_to_fit();
-        posix_fallocate(vectorsFD, 0, this->dataSize * new_capacity); // TODO: use offset and a single block size
-        vectors = old_capacity ?
-                    mremap(vectors, this->dataSize * old_capacity, this->dataSize * new_capacity, MREMAP_MAYMOVE) :
-                    mmap(NULL, this->dataSize * new_capacity, PROT_READ | PROT_WRITE, MAP_PRIVATE, vectorsFD, 0);
+        posix_fallocate(vectorsFD, 0,
+                        this->dataSize * new_capacity); // TODO: use offset and a single block size
+        vectors = old_capacity ? mremap(vectors, this->dataSize * old_capacity,
+                                        this->dataSize * new_capacity, MREMAP_MAYMOVE)
+                               : mmap(NULL, this->dataSize * new_capacity, PROT_READ | PROT_WRITE,
+                                      MAP_PRIVATE, vectorsFD, 0);
         resizeLabelLookup(idToLabelMapping.size());
     }
 
@@ -122,7 +124,8 @@ protected:
             munmap(vectors, this->dataSize * old_capacity);
             vectors = NULL;
         } else {
-            vectors = mremap(vectors, this->dataSize * old_capacity, this->dataSize * new_capacity, 0);
+            vectors =
+                mremap(vectors, this->dataSize * old_capacity, this->dataSize * new_capacity, 0);
             assert(vectors != MAP_FAILED);
         }
         resizeLabelLookup(new_capacity);
@@ -159,14 +162,17 @@ template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
     : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
-      vectorsFD(open(".", O_EXCL | O_RDWR | __O_TMPFILE, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)), count(0) {
+      vectorsFD(open(".", O_EXCL | O_RDWR | __O_TMPFILE | __O_DIRECT,
+                     S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)),
+      count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
     size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
     this->idToLabelMapping.resize(initialCapacity);
     posix_fallocate(vectorsFD, 0, this->dataSize * initialCapacity);
-    vectors = initialCapacity ? mmap(NULL, this->dataSize * initialCapacity, PROT_READ | PROT_WRITE, MAP_PRIVATE,
-                   vectorsFD, 0) : NULL;
+    vectors = initialCapacity ? mmap(NULL, this->dataSize * initialCapacity, PROT_READ | PROT_WRITE,
+                                     MAP_PRIVATE, vectorsFD, 0)
+                              : NULL;
 }
 
 /******************** Implementation **************/

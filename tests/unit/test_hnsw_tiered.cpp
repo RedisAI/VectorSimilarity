@@ -143,7 +143,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t initial_size_estimation = VecSimIndex_EstimateInitialSize(&params);
 
 //     // labels_lookup hash table has additional memory, since STL implementation chooses "an
-//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000,
+//     1031
 //     // buckets are created)
 //     auto hnsw_index = this->CastToHNSW(index);
 //     if (isMulti == false) {
@@ -243,7 +244,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     // Account for the memory that was allocated in the labelToInsertJobs map (approx.)
 //     expected_mem +=
 //         sizeof(
-//             vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>>::value_type) +
+//             vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob
+//             *>>::value_type) +
 //         sizeof(void *) + sizeof(size_t);
 //     // Account for the inner buffer of the std::vector<HNSWInsertJob *> in the map.
 //     expected_mem += sizeof(void *) + sizeof(size_t);
@@ -287,11 +289,9 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //     // Create a dummy job callback that insert one vector to the underline HNSW index.
 //     auto dummy_job = [](AsyncJob *job) {
-//         auto *my_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(job->index);
-//         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//         size_t dim = 4;
-//         TEST_DATA_T vector[dim];
-//         GenerateVector<TEST_DATA_T>(vector, dim);
+//         auto *my_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T>
+//         *>(job->index); std::this_thread::sleep_for(std::chrono::milliseconds(1000)); size_t dim
+//         = 4; TEST_DATA_T vector[dim]; GenerateVector<TEST_DATA_T>(vector, dim);
 //         my_index->backendIndex->addVector(vector, my_index->backendIndex->indexSize());
 //     };
 
@@ -387,7 +387,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t dim = 4;
 //     size_t n = 5000;
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         false};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     auto mock_thread_pool = tieredIndexMock();
 
@@ -420,7 +421,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t dim = 4;
 //     size_t n = 5000;
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         true};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     size_t per_label = 5;
 //     auto mock_thread_pool = tieredIndexMock();
@@ -451,7 +453,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     for (size_t i = 0; i < n / per_label; i++) {
 //         for (size_t j = 0; j < per_label; j++) {
 //             // The distance from every vector that is stored under the label i should be zero
-//             EXPECT_EQ(tiered_index->backendIndex->getDistanceFrom(i, vectors + i * per_label * dim +
+//             EXPECT_EQ(tiered_index->backendIndex->getDistanceFrom(i, vectors + i * per_label *
+//             dim +
 //                                                                          j * dim),
 //                       0);
 //         }
@@ -717,7 +720,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
 //         GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
 //         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-//             allocator, parallel_knn_search, tiered_index, k, query, n, dim, &successful_searches);
+//             allocator, parallel_knn_search, tiered_index, k, query, n, dim,
+//             &successful_searches);
 //         tiered_index->submitSingleJob(search_job);
 //     }
 
@@ -793,7 +797,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
 //         GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 4 + (i % 1000) * M_PI);
 //         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-//             allocator, parallel_knn_search, tiered_index, k, query, n, dim, &successful_searches);
+//             allocator, parallel_knn_search, tiered_index, k, query, n, dim,
+//             &successful_searches);
 //         tiered_index->submitSingleJob(search_job);
 //     }
 
@@ -842,7 +847,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     GenerateVector<TEST_DATA_T>(query, dim, 0);
 
 //     // Search in the tiered index for more vectors than it has. Merging the results from the two
-//     // indexes should result in a list of unique vectors, even if the scores of the duplicates are
+//     // indexes should result in a list of unique vectors, even if the scores of the duplicates
+//     are
 //     // different.
 //     runTopKSearchTest(tiered_index, query, 5, 3, [](size_t _, double __, size_t ___) {});
 // }
@@ -878,8 +884,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 1);
 //     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
-//     // Add two vectors and delete one, expect that at backendIndex one repair job will be created.
-//     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
+//     // Add two vectors and delete one, expect that at backendIndex one repair job will be
+//     created. GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
 //     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 3, 3);
 //     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(3), 1);
 
@@ -904,7 +910,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t dim = 4;
 
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         true};
 //     VecSimParams hnsw_params = CreateParams(params);
 
 //     auto mock_thread_pool = tieredIndexMock();
@@ -930,7 +937,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     // Expect to see both ids stored under this label being deleted (1 and 2), and have both
 //     // ids need repair (as the connection between the two vectors is mutual). However, 1 has
 //     // also an outgoing edge to his other (deleted) neighbor (0), so there will be no new
-//     // repair job created for 1, since the previous repair job is expected to have both 0 and 2 in
+//     // repair job created for 1, since the previous repair job is expected to have both 0 and 2
+//     in
 //     // its associated swap jobs. Also, there is an edge 0->1 whose going to be repaired as well.
 //     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 2);
 //     ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
@@ -940,7 +948,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 2);
 //     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
 //     mock_thread_pool.jobQ.pop();
-//     // No new job for deleting 1->2 edge, just another associated swap job for the existing repair
+//     // No new job for deleting 1->2 edge, just another associated swap job for the existing
+//     repair
 //     // job of 1 (in addition to 0, we have 2).
 //     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 3);
 //     ASSERT_EQ(tiered_index->idToRepairJobs.at(1).size(), 1);
@@ -963,7 +972,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t dim = 4;
 
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         false};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     auto mock_thread_pool = tieredIndexMock();
 
@@ -999,7 +1009,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //     // The last job should be repairing the single neighbor in level 1.
 //     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 1);
-//     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, level_one.links[0]);
+//     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id,
+//     level_one.links[0]);
 // }
 
 // TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
@@ -1037,15 +1048,17 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //         // Execute synchronously all the repair jobs for the current deletion.
 //         while (!mock_thread_pool.jobQ.empty()) {
-//             idType repair_node_id = ((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id;
-//             auto repair_node_level = ((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level;
+//             idType repair_node_id = ((HNSWRepairJob
+//             *)(mock_thread_pool.jobQ.front().job))->node_id; auto repair_node_level =
+//             ((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level;
 
-//             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
-//             LevelData &node_level =
+//             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id,
+//             repair_node_level); LevelData &node_level =
 //                 tiered_index->getHNSWIndex()->getLevelData(repair_node_id, repair_node_level);
 //             // This makes sure that the deleted node is no longer in the neighbors set of the
 //             // repaired node.
-//             ASSERT_TRUE(std::find(node_level.links, node_level.links + node_level.numLinks, ep) ==
+//             ASSERT_TRUE(std::find(node_level.links, node_level.links + node_level.numLinks, ep)
+//             ==
 //                         node_level.links + node_level.numLinks);
 //             // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
 //             // still pending and avoid creating new jobs for nodes that already been repaired
@@ -1302,7 +1315,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
 //         GenerateVector<TEST_DATA_T>(query, dim, i);
 //         auto search_job = new (allocator)
-//             tieredIndexMock::SearchJobMock(allocator, parallel_adhoc_search, tiered_index, 1, query,
+//             tieredIndexMock::SearchJobMock(allocator, parallel_adhoc_search, tiered_index, 1,
+//             query,
 //                                            n_labels, dim, &successful_searches);
 //         tiered_index->submitSingleJob(search_job);
 //     }
@@ -1390,7 +1404,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     // Create TieredHNSW index instance with a mock queue.
 //     size_t dim = 4;
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         true};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     auto mock_thread_pool = tieredIndexMock();
 
@@ -1469,14 +1484,16 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     // Create TieredHNSW index instance with a mock queue.
 //     size_t dim = 4;
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         true};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     auto mock_thread_pool = tieredIndexMock();
 
 //     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
 //     auto allocator = tiered_index->getAllocator();
 
-//     // Insert vectors to flat buffer under two distinct labels, so that ids 0, 2 will be associated
+//     // Insert vectors to flat buffer under two distinct labels, so that ids 0, 2 will be
+//     associated
 //     // with the first label, and ids 1, 3, 4 will be associated with the second label.
 //     labelType vec_label_first = 0;
 //     labelType vec_label_second = 1;
@@ -1488,7 +1505,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //     // Remove the second label, expect to see that id 1 will hold id 2 eventually.
 //     ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
-//     auto updated_ids = tiered_index->frontendIndex->deleteVectorAndGetUpdatedIds(vec_label_second);
+//     auto updated_ids =
+//     tiered_index->frontendIndex->deleteVectorAndGetUpdatedIds(vec_label_second);
 //     ASSERT_EQ(updated_ids.size(), 1);
 //     ASSERT_EQ(updated_ids.at(1).first, 2);
 //     for (auto &it : updated_ids) {
@@ -1510,8 +1528,10 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     ASSERT_EQ(tiered_index->indexSize(), 0);
 //     tiered_index->labelToInsertJobs.clear();
 
-//     // Insert vectors to flat buffer under two distinct labels, so that ids 0, 3 will be associated
-//     // with the first label, and ids 1, 2, 4 will be associated with the second label. This should
+//     // Insert vectors to flat buffer under two distinct labels, so that ids 0, 3 will be
+//     associated
+//     // with the first label, and ids 1, 2, 4 will be associated with the second label. This
+//     should
 //     // test the case of multiple moves once we delete the second label:
 //     // {1->4} => {1->4, 2->3} => {1->3}
 //     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
@@ -1711,7 +1731,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //     allocator = tiered_index->getAllocator();
 
-//     // Call reserve for the unordered maps that are going to be used, since upon initialization it
+//     // Call reserve for the unordered maps that are going to be used, since upon initialization
+//     it
 //     // consumed 0 memory, but after insertion and deletion they will consume a minimal amount of
 //     // memory (that is equivalent to the memory consumption upon reserving 0 buckets).
 //     tiered_index->idToRepairJobs.reserve(0);
@@ -1866,7 +1887,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 // // A set of lambdas that determine whether a vector should be inserted to the
 // // HNSW index (returns true) or to the flat index (returns false).
-// inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)>, 11> lambdas = {{
+// inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)>, 11> lambdas =
+// {{
 //     {"100% HNSW,   0% FLAT ", [](size_t idx, size_t n) -> bool { return 1; }},
 //     {" 50% HNSW,  50% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 2; }},
 //     {"  0% HNSW, 100% FLAT ", [](size_t idx, size_t n) -> bool { return 0; }},
@@ -1926,8 +1948,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         TEST_DATA_T query[d];
 //         GenerateVector<TEST_DATA_T>(query, d, n);
 
-//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
-//         size_t iteration_num = 0;
+//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query,
+//         nullptr); size_t iteration_num = 0;
 
 //         // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
 //         // in every iteration. The results order should be sorted by their score (distance from
@@ -1995,10 +2017,11 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         TEST_DATA_T query[d];
 //         GenerateVector<TEST_DATA_T>(query, d, n);
 
-//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
-//         ASSERT_NO_FATAL_FAILURE(VecSimBatchIterator_Reset(batchIterator));
+//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query,
+//         nullptr); ASSERT_NO_FATAL_FAILURE(VecSimBatchIterator_Reset(batchIterator));
 
-//         // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet,
+//         // Get the 100 vectors whose ids are the maximal among those that hasn't been returned
+//         yet,
 //         // in every iteration. Run this flow for 3 times, and reset the iterator.
 //         size_t n_res = 100;
 //         size_t re_runs = 3;
@@ -2087,7 +2110,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         TEST_DATA_T query[d];
 //         GenerateVector<TEST_DATA_T>(query, d, n);
 
-//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query,
+//         nullptr);
 
 //         size_t iteration_num = 0;
 //         size_t n_res = 1, expected_n_res = 1;
@@ -2098,7 +2122,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //             auto verify_res = [&](size_t id, double score, size_t index) {
 //                 ASSERT_EQ(id, iteration_num) << decider_name;
 //             };
-//             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
+//             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE,
+//             expected_n_res);
 //         }
 
 //         ASSERT_EQ(iteration_num, n_labels) << decider_name;
@@ -2181,14 +2206,14 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
 //         VecSimQueryReply_Free(res);
 
-//         // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
-//         size_t n_res = 7;
-//         size_t iteration_num = 0;
+//         // n_res does not divide into ef or vice versa - expect leftovers between the graph
+//         scans. size_t n_res = 7; size_t iteration_num = 0;
 
 //         while (VecSimBatchIterator_HasNext(batchIterator)) {
 //             iteration_num++;
 //             std::vector<size_t> expected_ids;
-//             // We ask to get the results sorted by ID in a specific batch (in ascending order), but
+//             // We ask to get the results sorted by ID in a specific batch (in ascending order),
+//             but
 //             // in every iteration the ids should be lower than the previous one, according to the
 //             // distance from the query.
 //             for (size_t i = 1; i <= n_res; i++) {
@@ -2277,8 +2302,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         TEST_DATA_T query[d];
 //         GenerateVector<TEST_DATA_T>(query, d, n);
 
-//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
-//         size_t iteration_num = 0;
+//         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query,
+//         nullptr); size_t iteration_num = 0;
 
 //         // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
 //         // in every iteration. The results order should be sorted by their score (distance from
@@ -2288,8 +2313,10 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         size_t excessive_iterations = 0;
 //         while (VecSimBatchIterator_HasNext(batchIterator)) {
 //             if (iteration_num * n_res == n_labels) {
-//                 // in some cases, the batch iterator may report that it has more results to return,
-//                 // but it's actually not true and the next call to `VecSimBatchIterator_Next` will
+//                 // in some cases, the batch iterator may report that it has more results to
+//                 return,
+//                 // but it's actually not true and the next call to `VecSimBatchIterator_Next`
+//                 will
 //                 // return 0 results. This is safe because we don't guarantee how many results the
 //                 // batch iterator will return, and a similar scenario can happen when checking
 //                 // `VecSimBatchIterator_HasNext` on an empty index for the first time (before the
@@ -2357,7 +2384,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     GenerateVector<TEST_DATA_T>(query, d, 0);
 //     iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
 
-//     // batch size is 3 (the size of each index). Internally the tiered batch iterator will have to
+//     // batch size is 3 (the size of each index). Internally the tiered batch iterator will have
+//     to
 //     // handle the duplicates with different scores.
 //     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
 //     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
@@ -2370,7 +2398,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 2), L2(2));
 //     VecSimQueryReply_Free(batch);
 
-//     // we have 1 more label in the index. we expect the tiered batch iterator to return it only and
+//     // we have 1 more label in the index. we expect the tiered batch iterator to return it only
+//     and
 //     // filter out the duplicates.
 //     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
 //     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
@@ -2405,7 +2434,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //     iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
 
-//     // ask for 2 results. The internal batch iterators will return 2 results: hnsw - [0, 1], flat -
+//     // ask for 2 results. The internal batch iterators will return 2 results: hnsw - [0, 1], flat
+//     -
 //     // [2, 3] so there are no duplicates.
 //     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
 //     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
@@ -2416,8 +2446,10 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(0));
 //     VecSimQueryReply_Free(batch);
 
-//     // first batch contained 1 result from each index, so there is one leftover from each iterator.
-//     // Asking for 3 results will return additional 2 results from each iterator and the tiered batch
+//     // first batch contained 1 result from each index, so there is one leftover from each
+//     iterator.
+//     // Asking for 3 results will return additional 2 results from each iterator and the tiered
+//     batch
 //     // iterator will have to handle the duplicates that each iterator returned (both labels that
 //     // were returned in the first batch and duplicates in the current batch).
 //     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
@@ -2494,11 +2526,12 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         size_t cur_res_per_batch = i % (n_res_max - n_res_min) + n_res_min;
 //         size_t n_res = cur_res_per_batch * 10;
 //         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
-//         // make sure there are `n_res / 2` vectors in the index in each "side" of the query vector.
-//         GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - n_res)) + (n_res / 2));
+//         // make sure there are `n_res / 2` vectors in the index in each "side" of the query
+//         vector. GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - n_res)) + (n_res / 2));
 //         auto search_job = new (allocator)
 //             tieredIndexMock::SearchJobMock(allocator, parallel_10_batches, tiered_index,
-//                                            cur_res_per_batch, query, n, dim, &successful_searches);
+//                                            cur_res_per_batch, query, n, dim,
+//                                            &successful_searches);
 //         tiered_index->submitSingleJob(search_job);
 //     }
 
@@ -2530,7 +2563,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t dim = 4;
 //     size_t n = 1000;
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         false};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     auto mock_thread_pool = tieredIndexMock();
 
@@ -2573,7 +2607,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
 //     ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
 //     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-//     // Swap job should be executed for the overwritten vector since limit is 1, and we are calling
+//     // Swap job should be executed for the overwritten vector since limit is 1, and we are
+//     calling
 //     // swap job execution prior to insert jobs.
 //     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
 //     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
@@ -2592,7 +2627,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     size_t dim = 4;
 //     size_t n = 1000;
 //     HNSWParams params = {
-//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+//         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi =
+//         false};
 //     VecSimParams hnsw_params = CreateParams(params);
 //     for (size_t maxSwapJobs : {(int)n + 1, 1}) {
 //         auto mock_thread_pool = tieredIndexMock();
@@ -2631,7 +2667,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 //         mock_thread_pool.thread_pool_join();
 
-//         EXPECT_EQ(tiered_index->indexSize() - tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
+//         EXPECT_EQ(tiered_index->indexSize() -
+//         tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
 //                   n);
 //         EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
 //         EXPECT_EQ(tiered_index->indexLabelCount(), n);
@@ -2678,7 +2715,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //                                           frontendIndexInfo.commonInfo.memory);
 //     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 //     EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
-//     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
+//     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold,
+//     1);
 
 //     // Validate that Static info returns the right restricted info as well.
 //     VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
@@ -2802,7 +2840,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //             // Index size.
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
 //             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexSize);
-//         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
+//         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING))
+//         {
 //             // Index label count.
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
 //             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexLabelCount);
@@ -2817,18 +2856,22 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         } else if (!strcmp(infoField->fieldName,
 //                            VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING)) {
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-//             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
+//             ASSERT_EQ(infoField->fieldValue.uintegerValue,
+//             info.tieredInfo.management_layer_memory);
 //         } else if (!strcmp(infoField->fieldName,
 //                            VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
 //             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
 //         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-//             compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
+//             compareFlatIndexInfoToIterator(frontendIndexInfo,
+//             infoField->fieldValue.iteratorValue);
 //         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-//             compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
-//         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
+//             compareHNSWIndexInfoToIterator(backendIndexInfo,
+//             infoField->fieldValue.iteratorValue);
+//         } else if (!strcmp(infoField->fieldName,
+//         VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
 //             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
 //             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
 //         } else if (!strcmp(infoField->fieldName,
@@ -2996,7 +3039,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
 //     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
 
-//     // Overwrite the vector, expect removing it from the flat buffer and replace it with the new one
+//     // Overwrite the vector, expect removing it from the flat buffer and replace it with the new
+//     one
 //     // only in single-value mode
 //     if (!TypeParam::isMulti()) {
 //         TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
@@ -3011,7 +3055,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         mock_thread_pool.jobQ.pop();
 //     }
 
-//     // Insert another vector, this one should go directly to HNSW index since the buffer limit has
+//     // Insert another vector, this one should go directly to HNSW index since the buffer limit
+//     has
 //     // reached.
 //     vec_label = 2;
 //     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
@@ -3054,7 +3099,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     auto allocator = tiered_index->getAllocator();
 //     // Launch the BG threads loop that takes jobs from the queue and executes them.
 //     mock_thread_pool.init_threads();
-//     // Create and insert vectors one by one async. At some point, buffer limit gets full and vectors
+//     // Create and insert vectors one by one async. At some point, buffer limit gets full and
+//     vectors
 //     // are inserted directly to HNSW.
 //     size_t per_label = TypeParam::isMulti() ? 5 : 1;
 //     size_t n_labels = n / per_label;
@@ -3090,8 +3136,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     auto mid_delta = edge_delta / 2;
 //     // `range` for querying the "edges" of the index and get k results.
 //     double range = dim * edge_delta * edge_delta; // L2 distance.
-//     // `half_range` for querying a point in the "middle" of the index and get k results around it.
-//     double half_range = dim * mid_delta * mid_delta; // L2 distance.
+//     // `half_range` for querying a point in the "middle" of the index and get k results around
+//     it. double half_range = dim * mid_delta * mid_delta; // L2 distance.
 
 //     // Create TieredHNSW index instance with a mock queue.
 //     HNSWParams params = {
@@ -3138,9 +3184,11 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         size_t mod = query_1mid[0] - q_id * per_label;
 //         // In single value mode, `per_label` is always 1 and `mod` is always 0, so the following
 //         // branchings is simply `expected_score = abs(id - q_id)`.
-//         // In multi value mode, for ids higher than the query id, the score is the distance to the
+//         // In multi value mode, for ids higher than the query id, the score is the distance to
+//         the
 //         // first vector of `id` label, and for ids lower than the query id, the score is the
-//         // distance to the last vector of `id` label. `mod` is the distance to the first vector of
+//         // distance to the last vector of `id` label. `mod` is the distance to the first vector
+//         of
 //         // `q_id` label.
 //         double expected_score = 0;
 //         if (id > q_id) {
@@ -3157,9 +3205,11 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         size_t mod = query_2mid[0] - q_id * per_label;
 //         // In single value mode, `per_label` is always 1 and `mod` is always 0, so the following
 //         // branchings is simply `expected_score = abs(id - q_id)`.
-//         // In multi value mode, for ids higher than the query id, the score is the distance to the
+//         // In multi value mode, for ids higher than the query id, the score is the distance to
+//         the
 //         // first vector of `id` label, and for ids lower than the query id, the score is the
-//         // distance to the last vector of `id` label. `mod` is the distance to the first vector of
+//         // distance to the last vector of `id` label. `mod` is the distance to the first vector
+//         of
 //         // `q_id` label.
 //         double expected_score = 0;
 //         if (id > q_id) {
@@ -3217,11 +3267,12 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
 //     // Search for `range` so all the vectors will be from the flat index.
 //     runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
-//     // Search for `range` so some of the results will be from the main and some from the flat index.
-//     runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
-//     runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
-//     runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
-//     runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+//     // Search for `range` so some of the results will be from the main and some from the flat
+//     index. runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k,
+//     BY_SCORE); runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k,
+//     BY_SCORE); runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k,
+//     BY_ID); runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k,
+//     BY_ID);
 //     // Memory usage should not change.
 //     ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
@@ -3241,11 +3292,12 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //     runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
 //     // Search for `range` so all the vectors will be from the flat index.
 //     runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
-//     // Search for `range` so some of the results will be from the main and some from the flat index.
-//     runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
-//     runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
-//     runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
-//     runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+//     // Search for `range` so some of the results will be from the main and some from the flat
+//     index. runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k,
+//     BY_SCORE); runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k,
+//     BY_SCORE); runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k,
+//     BY_ID); runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k,
+//     BY_ID);
 //     // Memory usage should not change.
 //     ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
@@ -3353,7 +3405,8 @@ TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 //         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
 //         GenerateVector<TEST_DATA_T>(query, dim, ((n - i) % (n_labels - (2 * k))) + k);
 //         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-//             allocator, parallel_range_search, tiered_index, k, query, n, dim, &successful_searches);
+//             allocator, parallel_range_search, tiered_index, k, query, n, dim,
+//             &successful_searches);
 //         tiered_index->submitSingleJob(search_job);
 //     }
 
