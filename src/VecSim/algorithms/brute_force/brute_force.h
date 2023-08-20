@@ -37,7 +37,6 @@ protected:
 public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
-
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     inline void getDataByInternalId(idType id, DataType *data) const {
@@ -143,7 +142,8 @@ template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
     : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
-      indexFile("bf_vectors.dat", std::ios::in | std::ios::out | std::ios::binary), count(0) {
+      indexFile(tmpnam(NULL), std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc),
+      count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
     size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
@@ -203,7 +203,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     }
 
     // If the last vector block is emtpy.
-    if ((last_idx + 1) % this->blockSize == 0) {
+    if (last_idx % this->blockSize == 0) {
         shrinkByBlock();
     }
 }
@@ -237,12 +237,12 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     DataType PORTABLE_ALIGN cur_vec[this->dim];
     indexFile.seekg(0, std::ios::beg);
     for (idType id = 0; id < this->count; id++) {
-        indexFile.read(reinterpret_cast<char *>(cur_vec), this->dataSize);
-        DistType score = this->distFunc(cur_vec, queryBlob, this->dim);
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             delete TopCandidates;
             return new VecSimQueryReply(this->allocator, VecSim_QueryReply_TimedOut);
         }
+        indexFile.read(reinterpret_cast<char *>(cur_vec), this->dataSize);
+        DistType score = this->distFunc(cur_vec, queryBlob, this->dim);
 
         // If we have less than k or a better score, insert it.
         if (score < upperBound || TopCandidates->size() < k) {
@@ -281,14 +281,14 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     DataType PORTABLE_ALIGN cur_vec[this->dim];
     indexFile.seekg(0, std::ios::beg);
     for (idType cur_id = 0; cur_id < this->count; cur_id++) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
+            rep->code = VecSim_QueryReply_TimedOut;
+            break;
+        }
         indexFile.read(reinterpret_cast<char *>(cur_vec), this->dataSize);
         DistType score = this->distFunc(cur_vec, queryBlob, this->dim);
         if (score <= radius_) {
             res_container->emplace(getVectorLabel(cur_id), score);
-        }
-        if (VECSIM_TIMEOUT(timeoutCtx)) {
-            rep->code = VecSim_QueryReply_TimedOut;
-            break;
         }
     }
 
