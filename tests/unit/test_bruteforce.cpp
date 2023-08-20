@@ -79,18 +79,18 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(bf_index->idToLabelMapping.size(), DEFAULT_BLOCK_SIZE);
 
     // Check update.
-    TEST_DATA_T *vector_data = bf_index->getDataByInternalId(0);
+
+    TEST_DATA_T vector_data[dim], *cur_element = vector_data;
+    bf_index->getDataByInternalId(0, vector_data);
     for (size_t i = 0; i < dim; ++i) {
-        ASSERT_EQ(*vector_data, 2.0);
-        ++vector_data;
+        ASSERT_EQ(*cur_element, 2.0);
+        ++cur_element;
     }
 
     // Delete the last vector.
     VecSimIndex_DeleteVector(index, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // VectorBlocks vector is empty.
-    ASSERT_EQ(bf_index->vectorBlocks.size(), 0);
     // idTolabel size should also decrease to zero.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);
 
@@ -342,9 +342,6 @@ TYPED_TEST(BruteForceTest, brute_force_reindexing_same_vector) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // The vector block should be removed.
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), 0);
-
     // id2label size and capacity should turn to zero.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);
 
@@ -461,10 +458,11 @@ TYPED_TEST(BruteForceTest, test_delete_swap_block) {
     ASSERT_EQ(deleted_label_id_pair, bf_single_index->labelToIdLookup.end());
 
     // The vector in index1 should hold id5 data.
-    TEST_DATA_T *vector_data = bf_index->getDataByInternalId(1);
+    TEST_DATA_T vector_data[dim], *cur_element = vector_data;
+    bf_index->getDataByInternalId(1, vector_data);
     for (size_t i = 0; i < dim; ++i) {
-        ASSERT_EQ(*vector_data, 5);
-        ++vector_data;
+        ASSERT_EQ(*cur_element, 5);
+        ++cur_element;
     }
 
     TEST_DATA_T query[] = {0.0, 0.0};

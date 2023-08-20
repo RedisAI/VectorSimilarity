@@ -487,8 +487,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // Copy the vector blob from the flat buffer, so we can release the flat lock while we are
     // indexing the vector into HNSW index.
     DataType blob_copy[this->frontendIndex->getDim()];
-    memcpy(blob_copy, this->frontendIndex->getDataByInternalId(job->id),
-           this->frontendIndex->getDim() * sizeof(DataType));
+    this->frontendIndex->getDataByInternalId(job->id, blob_copy);
 
     this->insertVectorToHNSW<true>(hnsw_index, job->label, blob_copy);
 

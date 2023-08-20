@@ -44,7 +44,7 @@ public:
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
-            memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
+            this->getDataByInternalId(id, vec.data());
             vectors_output.push_back(vec);
         }
     }
@@ -201,8 +201,10 @@ double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(labelType labe
     }
 
     DistType dist = std::numeric_limits<DistType>::infinity();
+    DataType PORTABLE_ALIGN cur_vec[this->dim];
     for (auto id : IDs->second) {
-        DistType d = this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
+        this->getDataByInternalId(id, cur_vec);
+        DistType d = this->distFunc(cur_vec, vector_data, this->dim);
         dist = (dist < d) ? dist : d;
     }
 

@@ -24,30 +24,27 @@ private:
         this->scores.reserve(this->index_label_count);
         vecsim_stl::unordered_map<labelType, DistType> tmp_scores(this->index_label_count,
                                                                   this->allocator);
-        auto &blocks = this->index->getVectorBlocks();
-        VecSimQueryReply_Code rc;
-
-        idType curr_id = 0;
-        for (auto &block : blocks) {
+        auto distFunc = this->index->getDistFunc();
+        auto dim = this->index->getDim();
+        DataType PORTABLE_ALIGN cur_vec[this->index->getDim()];
+        for (idType curr_id = 0; curr_id < this->index->indexSize(); curr_id++) {
             // compute the scores for the vectors in every block and extend the scores array.
-            auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
-                                                                this->getTimeoutCtx(), &rc);
-            if (VecSim_OK != rc) {
-                return rc;
+            this->index->getDataByInternalId(curr_id, cur_vec);
+            DistType curr_dist = distFunc(this->getQueryBlob(), cur_vec, dim);
+            labelType curr_label = this->index->getVectorLabel(curr_id);
+            auto curr_pair = tmp_scores.find(curr_label);
+            // For each score, emplace or update the score of the label.
+            if (curr_pair == tmp_scores.end()) {
+                tmp_scores.emplace(curr_label, curr_dist);
+            } else if (curr_pair->second > curr_dist) {
+                curr_pair->second = curr_dist;
             }
-            for (size_t i = 0; i < block_scores.size(); i++) {
-                labelType curr_label = this->index->getVectorLabel(curr_id);
-                auto curr_pair = tmp_scores.find(curr_label);
-                // For each score, emplace or update the score of the label.
-                if (curr_pair == tmp_scores.end()) {
-                    tmp_scores.emplace(curr_label, block_scores[i]);
-                } else if (curr_pair->second > block_scores[i]) {
-                    curr_pair->second = block_scores[i];
-                }
-                ++curr_id;
+
+            if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
+                return VecSim_QueryReply_TimedOut;
             }
         }
-        assert(curr_id == this->index->indexSize());
+
         for (auto p : tmp_scores) {
             this->scores.emplace_back(p.second, p.first);
         }

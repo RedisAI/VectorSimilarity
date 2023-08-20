@@ -88,7 +88,6 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     ASSERT_EQ(info.commonInfo.indexSize, n);
     ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n - n % blockSize + blockSize);
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
     // remove invalid id
     ASSERT_EQ(bf_index->deleteVector(3459), 0);
@@ -98,7 +97,6 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     ASSERT_EQ(info.commonInfo.indexSize, n);
     ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n - n % blockSize + blockSize);
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
     // Add another vector (index capacity should remain the same).
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
@@ -468,11 +466,11 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     ASSERT_EQ(deleted_label_id_pair, bfm_index->labelToIdsLookup.end());
 
     // The vector in index1 should hold id5 data.
-    DataBlock &block = bfm_index->getVectorVectorBlock(1);
-    TEST_DATA_T *vector_data = (TEST_DATA_T *)block.getElement(1);
+    TEST_DATA_T vector_data[dim], *cur_element = vector_data;
+    bfm_index->getDataByInternalId(1, vector_data);
     for (size_t i = 0; i < dim; ++i) {
-        ASSERT_EQ(*vector_data, 5);
-        ++vector_data;
+        ASSERT_EQ(*cur_element, 5);
+        ++cur_element;
     }
 
     VecSimIndex_Free(index);
@@ -799,9 +797,13 @@ TYPED_TEST(BruteForceMultiTest, remove_vector_after_replacing_block) {
     ASSERT_EQ(bf_index->getVectorLabel(1), 2);
     ASSERT_EQ(bf_index->getVectorLabel(2), 2);
     // checking the blob swaps.
-    ASSERT_EQ(bf_index->getDataByInternalId(0)[0], 0);
-    ASSERT_EQ(bf_index->getDataByInternalId(1)[0], 5);
-    ASSERT_EQ(bf_index->getDataByInternalId(2)[0], 4);
+    TEST_DATA_T blob[dim];
+    bf_index->getDataByInternalId(0, blob);
+    ASSERT_EQ(blob[0], 0);
+    bf_index->getDataByInternalId(1, blob);
+    ASSERT_EQ(blob[0], 5);
+    bf_index->getDataByInternalId(2, blob);
+    ASSERT_EQ(blob[0], 4);
 
     VecSimIndex_DeleteVector(index, 1);
     VecSimIndex_DeleteVector(index, 2);

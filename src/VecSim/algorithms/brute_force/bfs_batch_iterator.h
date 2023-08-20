@@ -21,24 +21,21 @@ public:
 private:
     inline VecSimQueryReply_Code calculateScores() override {
         this->index_label_count = this->index->indexLabelCount();
+        idType size = this->index->indexSize();
         this->scores.reserve(this->index_label_count);
-        auto &blocks = this->index->getVectorBlocks();
-        VecSimQueryReply_Code rc;
+        auto distFunc = this->index->getDistFunc();
+        auto dim = this->index->getDim();
 
-        idType curr_id = 0;
-        for (auto &block : blocks) {
-            // compute the scores for the vectors in every block and extend the scores array.
-            auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
-                                                                this->getTimeoutCtx(), &rc);
-            if (VecSim_OK != rc) {
-                return rc;
-            }
-            for (size_t i = 0; i < block_scores.size(); i++) {
-                this->scores.emplace_back(block_scores[i], this->index->getVectorLabel(curr_id));
-                ++curr_id;
+        DataType PORTABLE_ALIGN cur_vec[dim];
+        for (idType curr_id = 0; curr_id < size; curr_id++) {
+            this->index->getDataByInternalId(curr_id, cur_vec);
+            DistType curr_dist = distFunc(this->getQueryBlob(), cur_vec, dim);
+            this->scores.emplace_back(curr_dist, this->index->getVectorLabel(curr_id));
+
+            if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
+                return VecSim_QueryReply_TimedOut;
             }
         }
-        assert(curr_id == this->index->indexSize());
         return VecSim_QueryReply_OK;
     }
 };
