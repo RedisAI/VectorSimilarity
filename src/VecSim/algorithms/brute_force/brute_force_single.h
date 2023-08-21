@@ -56,8 +56,9 @@ protected:
     inline void updateVector(idType id, const void *vector_data) {
 
         // Get the vector block
-        this->indexFile.seekp(id * this->dataSize, std::ios::beg);
-        this->indexFile.write(reinterpret_cast<const char *>(vector_data), this->dataSize);
+        auto indexFile = this->getWriteHandle();
+        indexFile.seekp(id * this->dataSize, std::ios::beg);
+        indexFile.write(reinterpret_cast<const char *>(vector_data), this->dataSize);
     }
 
     inline void setVectorId(labelType label, idType id) override {

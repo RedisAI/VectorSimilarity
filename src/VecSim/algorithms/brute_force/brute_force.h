@@ -31,15 +31,24 @@ template <typename DataType, typename DistType>
 class BruteForceIndex : public VecSimIndexAbstract<DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
-    mutable std::fstream indexFile;
+    char indexFileName[17] = "VecSim_BF_XXXXXX";
     idType count;
 
 public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
+    ~BruteForceIndex() { remove(indexFileName); }
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
+    inline std::ifstream getReadHandle() const {
+        return std::ifstream(indexFileName, std::ios::binary);
+    }
+    inline std::ofstream getWriteHandle() const {
+        // Include ios::in to avoid truncating the file.
+        return std::ofstream(indexFileName, std::ios::binary | std::ios::in);
+    }
     inline void getDataByInternalId(idType id, DataType *data) const {
+        auto indexFile = getReadHandle();
         indexFile.seekg(id * this->dataSize);
         indexFile.read(reinterpret_cast<char *>(data), this->dataSize);
     }
@@ -70,7 +79,6 @@ public:
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
-    virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
@@ -94,8 +102,9 @@ protected:
     inline void growByBlock() {
         idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
         idToLabelMapping.shrink_to_fit();
+        auto indexFile = getWriteHandle();
         indexFile.seekp(this->blockSize * this->dataSize, std::ios_base::end);
-        indexFile.write(nullptr, 0);
+        indexFile.write("", 1);
         resizeLabelLookup(idToLabelMapping.size());
     }
 
@@ -142,15 +151,16 @@ template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
     : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
-      indexFile(tmpnam(NULL), std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc),
       count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
     size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
     this->idToLabelMapping.resize(initialCapacity);
-    indexFile.seekp(initialCapacity * this->dataSize, std::ios_base::beg);
-    indexFile.write(nullptr, 0);
-    indexFile.seekg(0, std::ios_base::beg);
+    while (!mktemp(indexFileName))
+        ;
+    std::ofstream indexFile(indexFileName, std::ios::binary);
+    indexFile.seekp(initialCapacity * this->dataSize);
+    indexFile.write("", 1);
 }
 
 /******************** Implementation **************/
@@ -166,6 +176,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
     }
 
     // Write the vector data to the index file.
+    auto indexFile = getWriteHandle();
     indexFile.seekp(id * this->dataSize, std::ios::beg);
     indexFile.write(reinterpret_cast<const char *>(vector_data), this->dataSize);
 
@@ -198,6 +209,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         // Move the data of the last vector in the index in place of the deleted vector.
         DataType PORTABLE_ALIGN buffer[this->dim];
         getDataByInternalId(last_idx, buffer);
+        auto indexFile = getWriteHandle();
         indexFile.seekp(id_to_delete * this->dataSize, std::ios::beg);
         indexFile.write(reinterpret_cast<const char *>(buffer), this->dataSize);
     }
@@ -235,7 +247,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         getNewMaxPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     DataType PORTABLE_ALIGN cur_vec[this->dim];
-    indexFile.seekg(0, std::ios::beg);
+    auto indexFile = getReadHandle();
     for (idType id = 0; id < this->count; id++) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             delete TopCandidates;
@@ -279,7 +291,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 
     DistType radius_ = DistType(radius);
     DataType PORTABLE_ALIGN cur_vec[this->dim];
-    indexFile.seekg(0, std::ios::beg);
+    auto indexFile = getReadHandle();
     for (idType cur_id = 0; cur_id < this->count; cur_id++) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             rep->code = VecSim_QueryReply_TimedOut;
