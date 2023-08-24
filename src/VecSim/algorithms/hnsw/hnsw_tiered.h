@@ -814,14 +814,18 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
 // 3. label exists in both indexes - we may have some of the vectors with the same label in the flat
 //    buffer only and some in the Main index only (and maybe temporal duplications).
 //    So, we get the distance from both indexes and return the minimum.
+
+// IMPORTANT: this should be called when the *tiered index locks are locked for shared ownership*,
+// along with HNSW index data guard lock. That is since the internal getDistanceFrom calls access
+// the indexes' data, and it is not safe to run insert/delete operation in parallel. Also, we avoid
+// acquiring the locks internally, since this is usually called for every vector individually, and
+// the overhead of acquiring and releasing the locks is significant in that case.
 template <typename DataType, typename DistType>
 double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
                                                             const void *blob) const {
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
-    //    this->flatIndexGuard.lock_shared();
     auto flat_dist = this->frontendIndex->getDistanceFrom(label, blob);
-    //    this->flatIndexGuard.unlock_shared();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
     // to avoid checking the index type on every query.
@@ -832,9 +836,7 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
     }
 
     // Try to get the distance from the Main index.
-    //    this->mainIndexGuard.lock_shared();
-    auto hnsw_dist = getHNSWIndex()->safeGetDistanceFrom(label, blob);
-    //    this->mainIndexGuard.unlock_shared();
+    auto hnsw_dist = getHNSWIndex()->getDistanceFrom(label, blob);
 
     // Return the minimum distance that is not NaN.
     return std::fmin(flat_dist, hnsw_dist);

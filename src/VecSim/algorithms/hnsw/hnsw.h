@@ -353,7 +353,6 @@ public:
 
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
-    virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
 #ifdef BUILD_TESTS
     /**

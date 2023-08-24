@@ -42,7 +42,6 @@ private:
         return keys;
     };
 
-    template <bool Safe>
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:
@@ -92,10 +91,7 @@ public:
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing) const override;
     double getDistanceFrom(labelType label, const void *vector_data) const override {
-        return getDistanceFromInternal<false>(label, vector_data);
-    }
-    double safeGetDistanceFrom(labelType label, const void *vector_data) const override {
-        return getDistanceFromInternal<true>(label, vector_data);
+        return getDistanceFromInternal(label, vector_data);
     }
 };
 
@@ -124,26 +120,19 @@ constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
 }
 
 template <typename DataType, typename DistType>
-template <bool Safe>
 double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType label,
                                                                     const void *vector_data) const {
     DistType dist = INVALID_SCORE;
 
     // Check if the label exists in the index, return invalid score if not.
-    //    if (Safe)
-    //        this->indexDataGuard.lock_shared();
     auto it = this->labelLookup.find(label);
     if (it == this->labelLookup.end()) {
-        //        if (Safe)
-        //            this->indexDataGuard.unlock_shared();
         return dist;
     }
 
     // Get the vector of ids associated with the label.
     // Get a copy if `Safe` is true, otherwise get a reference.
-    decltype(auto) IDs = getCopyOrReference<Safe>(it->second);
-    //    if (Safe)
-    //        this->indexDataGuard.unlock_shared();
+    auto &IDs = it->second;
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
