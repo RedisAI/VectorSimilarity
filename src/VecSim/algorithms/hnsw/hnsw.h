@@ -91,6 +91,20 @@ struct LevelData {
 
     LevelData(std::shared_ptr<VecSimAllocator> allocator)
         : incomingEdges(new (allocator) vecsim_stl::vector<idType>(allocator)), numLinks(0) {}
+
+    // Sets the outgoing links of the current element.
+    // Assumes that the object has the capacity to hold all the links.
+    inline void setLinks(vecsim_stl::vector<idType> &links) {
+        numLinks = links.size();
+        memcpy(this->links, links.data(), numLinks * sizeof(idType));
+    }
+    template <typename DistType>
+    inline void setLinks(candidatesList<DistType> &links) {
+        numLinks = 0;
+        for (auto &link : links) {
+            this->links[numLinks++] = link.second;
+        }
+    }
 };
 
 struct ElementGraphData {
@@ -171,9 +185,6 @@ protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline size_t getRandomLevel(double reverse_size);
-    inline void removeExtraLinks(candidatesList<DistType> candidates, size_t Mcurmax,
-                                 LevelData &node_level, const vecsim_stl::vector<bool> &bitmap,
-                                 idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
     inline void
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
@@ -544,32 +555,6 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
 /**
  * helper functions
  */
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeExtraLinks(
-    candidatesList<DistType> candidates, size_t Mcurmax, LevelData &node_level,
-    const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
-    size_t *removed_links_num) {
-
-    // candidates will store the newly selected neighbours (for the relevant node).
-    vecsim_stl::vector<idType> not_selected_candidates(this->allocator);
-    getNeighborsByHeuristic2(candidates, Mcurmax, not_selected_candidates);
-
-    // update the node level data.
-    node_level.numLinks = 0;
-    for (auto &selected_neighbor : candidates) {
-        node_level.links[node_level.numLinks++] = selected_neighbor.second;
-    }
-
-    // save the neighbours that were chosen to be removed.
-    size_t removed_idx = 0;
-    for (auto &not_selected_neighbor : not_selected_candidates) {
-        if (neighbors_bitmap[not_selected_neighbor]) {
-            removed_links[removed_idx++] = not_selected_neighbor;
-        }
-    }
-    *removed_links_num = removed_idx;
-}
-
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
     vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
@@ -1036,56 +1021,61 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     LevelData &neighbor_level, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
     // put the deleted element's neighbours in the candidates.
-    candidatesList<DistType> candidates(this->allocator);
-    candidates.reserve(node_level.numLinks + neighbor_level.numLinks);
-    auto neighbours_data = getDataByInternalId(neighbour_id);
+    vecsim_stl::vector<idType> candidate_ids(this->allocator);
+    candidate_ids.reserve(node_level.numLinks + neighbor_level.numLinks);
     for (size_t j = 0; j < node_level.numLinks; j++) {
         // Don't put the neighbor itself in his own candidates
-        if (node_level.links[j] == neighbour_id) {
-            continue;
+        if (node_level.links[j] != neighbour_id) {
+            candidate_ids.push_back(node_level.links[j]);
         }
-        candidates.emplace_back(
-            this->distFunc(getDataByInternalId(node_level.links[j]), neighbours_data, this->dim),
-            node_level.links[j]);
     }
-
     // add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<bool> neighbour_orig_neighbours_set(curElementCount, false, this->allocator);
-
     for (size_t j = 0; j < neighbor_level.numLinks; j++) {
         neighbour_orig_neighbours_set[neighbor_level.links[j]] = true;
         // Don't add the removed element to the candidates, nor nodes that are already in the
         // candidates set.
-        if (neighbours_bitmap[neighbor_level.links[j]] ||
-            neighbor_level.links[j] == element_internal_id) {
-            continue;
+        if (neighbor_level.links[j] != element_internal_id &&
+            !neighbours_bitmap[neighbor_level.links[j]]) {
+            candidate_ids.push_back(neighbor_level.links[j]);
         }
-        candidates.emplace_back(this->distFunc(neighbours_data,
-                                               getDataByInternalId(neighbor_level.links[j]),
-                                               this->dim),
-                                neighbor_level.links[j]);
     }
 
     size_t Mcurmax = level ? M : M0;
-    size_t removed_links_num;
-    idType removed_links[neighbor_level.numLinks];
-    removeExtraLinks(candidates, Mcurmax, neighbor_level, neighbour_orig_neighbours_set,
-                     removed_links, &removed_links_num);
-
-    // remove neighbour id from the incoming list of nodes for his
-    // neighbours that were chosen to remove
-    for (size_t i = 0; i < removed_links_num; i++) {
-        idType node_id = removed_links[i];
-        LevelData &node_level = getLevelData(node_id, level);
-
-        // if the node id (the neighbour's neighbour to be removed)
-        // wasn't pointing to the neighbour (edge was one directional),
-        // we should remove it from the node's incoming edges.
-        // otherwise, edge turned from bidirectional to one directional,
-        // and it should be saved in the neighbor's incoming edges.
-        if (!removeIdFromList(*node_level.incomingEdges, neighbour_id)) {
-            neighbor_level.incomingEdges->push_back(node_id);
+    if (candidate_ids.size() > Mcurmax) {
+        // We need to filter the candidates by the heuristic.
+        candidatesList<DistType> candidates(this->allocator);
+        candidates.reserve(candidate_ids.size());
+        auto neighbours_data = getDataByInternalId(neighbour_id);
+        for (auto candidate_id : candidate_ids) {
+            candidates.emplace_back(
+                this->distFunc(getDataByInternalId(candidate_id), neighbours_data, this->dim),
+                candidate_id);
         }
+
+        candidate_ids.clear();
+        auto &not_chosen_candidates = candidate_ids; // rename and reuse the vector
+        getNeighborsByHeuristic2(candidates, Mcurmax, not_chosen_candidates);
+
+        neighbor_level.setLinks(candidates);
+
+        // remove neighbour id from the incoming list of nodes for his
+        // neighbours that were chosen to remove
+        for (auto node_id : not_chosen_candidates) {
+            if (neighbour_orig_neighbours_set[node_id]) {
+                // if the node id (the neighbour's neighbour to be removed)
+                // wasn't pointing to the neighbour (edge was one directional),
+                // we should remove it from the node's incoming edges.
+                // otherwise, edge turned from bidirectional to one directional,
+                // and it should be saved in the neighbor's incoming edges.
+                if (!removeIdFromList(*getLevelData(node_id, level).incomingEdges, neighbour_id)) {
+                    neighbor_level.incomingEdges->push_back(node_id);
+                }
+            }
+        }
+    } else {
+        // We don't need to filter the candidates - just update the edges.
+        neighbor_level.setLinks(candidate_ids);
     }
 
     // updates for the new edges created
@@ -1511,7 +1501,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
-    candidatesList<DistType> neighbors_candidates(this->allocator);
+    vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
     // selected by the heuristics - only the ones that were originally neighbors should be removed.
@@ -1524,7 +1514,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
-    const void *node_data = getDataByInternalId(node_id);
     auto *element = getGraphDataByInternalId(node_id);
     lockNodeLinks(element);
     LevelData &node_level_data = getLevelData(element, level);
@@ -1536,9 +1525,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             continue;
         }
         neighbors_candidates_set[node_level_data.links[j]] = true;
-        neighbors_candidates.emplace_back(
-            this->distFunc(node_data, getDataByInternalId(node_level_data.links[j]), this->dim),
-            node_level_data.links[j]);
+        neighbors_candidate_ids.push_back(node_level_data.links[j]);
     }
     unlockNodeLinks(element);
 
@@ -1573,28 +1560,43 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[neighbor_level_data.links[j]] = true;
-            neighbors_candidates.emplace_back(
-                this->distFunc(node_data, getDataByInternalId(neighbor_level_data.links[j]),
-                               this->dim),
-                neighbor_level_data.links[j]);
+            neighbors_candidate_ids.push_back(neighbor_level_data.links[j]);
         }
         unlockNodeLinks(neighbor);
     }
 
     size_t max_M_cur = level ? M : M0;
-    vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
-    getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
-
-    for (idType not_chosen_neighbor : not_chosen_neighbors) {
-        if (node_orig_neighbours_set[not_chosen_neighbor]) {
-            neighbors_to_remove.push_back(not_chosen_neighbor);
-            nodes_to_update.push_back(not_chosen_neighbor);
+    if (neighbors_candidate_ids.size() > max_M_cur) {
+        // We have more candidates than the maximum number of neighbors, so we need to select which
+        // ones to keep. We use the heuristic to select the neighbors, and then remove the ones that
+        // were not originally neighbors.
+        candidatesList<DistType> neighbors_candidates(this->allocator);
+        neighbors_candidates.reserve(neighbors_candidate_ids.size());
+        const void *node_data = getDataByInternalId(node_id);
+        for (idType candidate : neighbors_candidate_ids) {
+            neighbors_candidates.emplace_back(
+                this->distFunc(getDataByInternalId(candidate), node_data, this->dim), candidate);
         }
-    }
+        vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
+        getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
 
-    for (auto &neighbor : neighbors_candidates) {
-        chosen_neighbors.push_back(neighbor.second);
-        nodes_to_update.push_back(neighbor.second);
+        for (idType not_chosen_neighbor : not_chosen_neighbors) {
+            if (node_orig_neighbours_set[not_chosen_neighbor]) {
+                neighbors_to_remove.push_back(not_chosen_neighbor);
+                nodes_to_update.push_back(not_chosen_neighbor);
+            }
+        }
+
+        for (auto &neighbor : neighbors_candidates) {
+            chosen_neighbors.push_back(neighbor.second);
+            nodes_to_update.push_back(neighbor.second);
+        }
+    } else {
+        // We have less candidates than the maximum number of neighbors, so we choose them all, and
+        // extend the nodes to update with them.
+        chosen_neighbors.swap(neighbors_candidate_ids);
+        nodes_to_update.insert(nodes_to_update.end(), chosen_neighbors.begin(),
+                               chosen_neighbors.end());
     }
 
     // Perform the actual updates for the node and the impacted neighbors while holding the nodes'
