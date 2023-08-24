@@ -213,13 +213,13 @@ public:
     void acquireLocks() override {
         this->flatIndexGuard.lock_shared();
         this->mainIndexGuard.lock_shared();
-        this->getHNSWIndex()->lockIndexDataGuard();
+        this->getHNSWIndex()->lockSharedIndexDataGuard();
     }
 
     void releaseLocks() override {
         this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
-        this->getHNSWIndex()->unlockIndexDataGuard();
+        this->getHNSWIndex()->unlockSharedIndexDataGuard();
     }
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
@@ -819,9 +819,9 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
                                                             const void *blob) const {
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
-//    this->flatIndexGuard.lock_shared();
+    //    this->flatIndexGuard.lock_shared();
     auto flat_dist = this->frontendIndex->getDistanceFrom(label, blob);
-//    this->flatIndexGuard.unlock_shared();
+    //    this->flatIndexGuard.unlock_shared();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
     // to avoid checking the index type on every query.
@@ -832,9 +832,9 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
     }
 
     // Try to get the distance from the Main index.
-//    this->mainIndexGuard.lock_shared();
+    //    this->mainIndexGuard.lock_shared();
     auto hnsw_dist = getHNSWIndex()->safeGetDistanceFrom(label, blob);
-//    this->mainIndexGuard.unlock_shared();
+    //    this->mainIndexGuard.unlock_shared();
 
     // Return the minimum distance that is not NaN.
     return std::fmin(flat_dist, hnsw_dist);

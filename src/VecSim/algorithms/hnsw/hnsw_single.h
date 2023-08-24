@@ -110,18 +110,18 @@ template <bool Safe>
 double
 HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
                                                               const void *vector_data) const {
-//    if (Safe)
-//        this->indexDataGuard.lock_shared();
+    //    if (Safe)
+    //        this->indexDataGuard.lock_shared();
 
     auto it = labelLookup.find(label);
     if (it == labelLookup.end()) {
-//        if (Safe)
-//            this->indexDataGuard.unlock_shared();
+        //        if (Safe)
+        //            this->indexDataGuard.unlock_shared();
         return INVALID_SCORE;
     }
     idType id = it->second;
-//    if (Safe)
-//        this->indexDataGuard.unlock_shared();
+    //    if (Safe)
+    //        this->indexDataGuard.unlock_shared();
 
     return this->distFunc(vector_data, this->getDataByInternalId(id), this->dim);
 }

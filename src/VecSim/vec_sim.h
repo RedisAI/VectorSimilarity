@@ -232,7 +232,6 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
 
-
 #ifdef __cplusplus
 }
 #endif

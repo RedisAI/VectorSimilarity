@@ -1289,9 +1289,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         bool isMulti =
             reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
                 ->backendIndex->isMultiValue();
-
+        search_job->index->acquireLocks();
         ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
-
+        search_job->index->releaseLocks();
         (*search_job->successful_searches)++;
         delete job;
     };

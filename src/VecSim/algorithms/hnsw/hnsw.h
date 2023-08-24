@@ -300,6 +300,8 @@ public:
     inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
+    inline void lockSharedIndexDataGuard() const;
+    inline void unlockSharedIndexDataGuard() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline void lockNodeLinks(ElementGraphData *node_data) const;
@@ -507,6 +509,16 @@ void HNSWIndex<DataType, DistType>::lockIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
     indexDataGuard.unlock();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::lockSharedIndexDataGuard() const {
+    indexDataGuard.lock_shared();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
+    indexDataGuard.unlock_shared();
 }
 
 template <typename DataType, typename DistType>

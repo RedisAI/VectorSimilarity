@@ -242,13 +242,9 @@ extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {
     }
 }
 
-extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) {
-    index->acquireLocks();
-}
+extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) { index->acquireLocks(); }
 
-extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) {
-    index->releaseLocks();
-}
+extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) { index->releaseLocks(); }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
     VecSimAllocator::setMemoryFunctions(memoryfunctions);
