@@ -1428,28 +1428,28 @@ TYPED_TEST(HNSWTest, hnsw_get_distance) {
     // VecSimMetric_L2
     distances = {0, 0.3583844006061554, 0.1791922003030777, 23.739208221435547};
     for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
+        dist = VecSimIndex_GetDistanceFrom_Unsafe(index[VecSimMetric_L2], i + 1, query);
         ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_IP
     distances = {-18.73921012878418, -16.0794677734375, -17.409339904785156, 1};
     for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
+        dist = VecSimIndex_GetDistanceFrom_Unsafe(index[VecSimMetric_IP], i + 1, query);
         ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_Cosine
     distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
     for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, norm);
+        dist = VecSimIndex_GetDistanceFrom_Unsafe(index[VecSimMetric_Cosine], i + 1, norm);
         ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // Bad values
-    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, norm);
+    dist = VecSimIndex_GetDistanceFrom_Unsafe(index[VecSimMetric_Cosine], 0, norm);
     ASSERT_TRUE(std::isnan(dist));
-    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], 46, query);
+    dist = VecSimIndex_GetDistanceFrom_Unsafe(index[VecSimMetric_L2], 46, query);
     ASSERT_TRUE(std::isnan(dist));
 
     // Clean-up.
@@ -1552,7 +1552,7 @@ TYPED_TEST(HNSWTest, testCosine) {
 
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
-        TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
+        TEST_DATA_T expected_score = index->getDistanceFrom_Unsafe(id, query);
         ASSERT_DOUBLE_EQ(score, expected_score);
     };
 
@@ -1569,7 +1569,7 @@ TYPED_TEST(HNSWTest, testCosine) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
             ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
-            double expected_score = index->getDistanceFrom(id, query);
+            double expected_score = index->getDistanceFrom_Unsafe(id, query);
             ASSERT_DOUBLE_EQ(score, expected_score);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
@@ -1855,13 +1855,13 @@ TYPED_TEST(HNSWTest, rangeQueryCosine) {
     VecSim_Normalize(query, dim, params.type);
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, result_rank + 1);
-        double expected_score = index->getDistanceFrom(id, query);
+        double expected_score = index->getDistanceFrom_Unsafe(id, query);
         ASSERT_EQ(score, expected_score);
     };
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    double radius = index->getDistanceFrom(31, query);
+    double radius = index->getDistanceFrom_Unsafe(31, query);
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
 
     // Return results BY_ID should give the same results.

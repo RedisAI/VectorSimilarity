@@ -72,7 +72,7 @@ public:
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing = false) const override;
 
-    double getDistanceFrom(labelType label, const void *vector_data) const override {
+    double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
     }
 };

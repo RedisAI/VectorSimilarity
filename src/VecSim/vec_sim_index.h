@@ -236,7 +236,7 @@ protected:
         return this->newBatchIterator(processed_blob, queryParams);
     }
 
-    void runGC() override {}        // Do nothing, relevant for tiered index only.
-    void acquireLocks() override {} // Do nothing, relevant for tiered index only.
-    void releaseLocks() override {} // Do nothing, relevant for tiered index only.
+    void runGC() override {}              // Do nothing, relevant for tiered index only.
+    void acquireSharedLocks() override {} // Do nothing, relevant for tiered index only.
+    void releaseSharedLocks() override {} // Do nothing, relevant for tiered index only.
 };

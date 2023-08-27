@@ -109,7 +109,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // Execute the job from the queue and validate that the index was updated properly.
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, vector), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 }
@@ -229,7 +229,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(tiered_index->frontendIndex->getDistanceFrom(vec_label, vector), 0);
+    ASSERT_EQ(tiered_index->frontendIndex->getDistanceFrom_Unsafe(vec_label, vector), 0);
     // Validate that the job was created properly
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
@@ -377,7 +377,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->backendIndex->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->frontendIndex->indexCapacity(), 0);
-    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(vec_label, vector), 0);
+    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(vec_label, vector), 0);
     // After the execution, the job should be removed from the labelToInsertJobs mapping.
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
 }
@@ -411,7 +411,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T expected_vector[dim];
         GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
-        ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(i, expected_vector), 0);
+        ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(i, expected_vector), 0);
     }
 }
 
@@ -451,8 +451,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
             // The distance from every vector that is stored under the label i should be zero
-            EXPECT_EQ(tiered_index->backendIndex->getDistanceFrom(i, vectors + i * per_label * dim +
-                                                                         j * dim),
+            EXPECT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(
+                          i, vectors + i * per_label * dim + j * dim),
                       0);
         }
     }
@@ -1147,10 +1147,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
     // copy memory context before querying the index.
     size_t cur_memory_usage = allocator->getAllocationSize();
 
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3), 0);
-    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4)));
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4)));
 
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
 }
@@ -1236,20 +1236,20 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
     size_t cur_memory_usage = allocator->getAllocationSize();
 
     // Distance from any vector to its label should be 0.
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_3), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_3), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_3), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4_3), 0);
     // Distance from a non-existing label should be NaN.
-    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 5, vec5)));
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 5, vec5)));
 
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
 }
@@ -1290,7 +1290,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
             reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
                 ->backendIndex->isMultiValue();
         VecSimTieredIndex_AcquireSharedLocks(search_job->index);
-        ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
+        ASSERT_EQ(0, VecSimIndex_GetDistanceFrom_Unsafe(search_job->index, label, query));
         VecSimTieredIndex_ReleaseSharedLocks(search_job->index);
         (*search_job->successful_searches)++;
         delete job;
@@ -1382,7 +1382,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     // to the new vector (L2 distance).
     TEST_DATA_T deleted_vector[dim];
     GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
-    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(vec_label, deleted_vector),
+    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(vec_label, deleted_vector),
               dim * pow(new_vec_val, 2));
 }
 
@@ -2546,7 +2546,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Validate that jobs were created properly - first job should be invalid after overwrite,
     // the second should be a pending insert job.
@@ -2577,14 +2577,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     // swap job execution prior to insert jobs.
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Ingest the updated vector to HNSW.
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
@@ -2873,7 +2873,7 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
         ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
     }
 
     // Validate that the vector is removed in place.
@@ -3004,7 +3004,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
         // The first job in Q should be the invalid overwritten insert vector job.
         ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
         ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
@@ -3030,7 +3030,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
         ASSERT_EQ(tiered_index->indexLabelCount(), 3);
-        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
     }
 }
 

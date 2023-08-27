@@ -78,7 +78,7 @@ public:
      * @return The distance (according to the index's distance metric) between `blob` and the vector
      * with id `id`.
      */
-    virtual double getDistanceFrom(labelType id, const void *blob) const = 0;
+    virtual double getDistanceFrom_Unsafe(labelType id, const void *blob) const = 0;
 
     /**
      * @brief Return the number of vectors in the index (including ones that are marked as deleted).
@@ -223,12 +223,12 @@ public:
     /**
      * @brief Acquire the locks for shared ownership in tiered async index.
      */
-    virtual void acquireLocks() = 0;
+    virtual void acquireSharedLocks() = 0;
 
     /**
      * @brief Release the locks for shared ownership in tiered async index.
      */
-    virtual void releaseLocks() = 0;
+    virtual void releaseSharedLocks() = 0;
 
     /**
      * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.

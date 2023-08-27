@@ -142,8 +142,8 @@ void BM_BatchIterator<index_type_t>::BF_BatchesToAdhocBF(benchmark::State &st) {
         VecSimBatchIterator_Free(batchIterator);
         // Switch to ad-hoc BF
         for (size_t i = 0; i < N_VECTORS; i += step) {
-            VecSimIndex_GetDistanceFrom(INDICES[VecSimAlgo_BF], i,
-                                        QUERIES[iter % N_QUERIES].data());
+            VecSimIndex_GetDistanceFrom_Unsafe(INDICES[VecSimAlgo_BF], i,
+                                               QUERIES[iter % N_QUERIES].data());
         }
         iter++;
     }
@@ -203,8 +203,8 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
                               memory_delta);
         // Switch to ad-hoc BF
         for (size_t i = 0; i < N_VECTORS; i += step) {
-            VecSimIndex_GetDistanceFrom(INDICES[VecSimAlgo_HNSWLIB], i,
-                                        QUERIES[iter % N_QUERIES].data());
+            VecSimIndex_GetDistanceFrom_Unsafe(INDICES[VecSimAlgo_HNSWLIB], i,
+                                               QUERIES[iter % N_QUERIES].data());
         }
         iter++;
     }

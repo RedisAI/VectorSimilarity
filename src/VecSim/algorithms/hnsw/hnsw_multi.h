@@ -90,7 +90,7 @@ public:
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing) const override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override {
+    double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
     }
 };
@@ -107,17 +107,6 @@ size_t HNSWIndex_Multi<DataType, DistType>::indexLabelCount() const {
 /**
  * helper functions
  */
-
-// Depending on the value of the Safe template parameter, this function will either return a copy
-// of the argument or a reference to it.
-template <bool Safe, typename Arg>
-constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
-    if constexpr (Safe) {
-        return std::decay_t<Arg>(arg);
-    } else {
-        return (arg);
-    }
-}
 
 template <typename DataType, typename DistType>
 double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType label,

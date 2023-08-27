@@ -187,7 +187,7 @@ public:
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
-    double getDistanceFrom(labelType label, const void *blob) const override;
+    double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
     VecSimIndexInfo info() const override;
@@ -210,13 +210,13 @@ public:
                    "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
     }
-    void acquireLocks() override {
+    void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
         this->mainIndexGuard.lock_shared();
         this->getHNSWIndex()->lockSharedIndexDataGuard();
     }
 
-    void releaseLocks() override {
+    void releaseSharedLocks() override {
         this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
         this->getHNSWIndex()->unlockSharedIndexDataGuard();
@@ -821,11 +821,11 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
 // acquiring the locks internally, since this is usually called for every vector individually, and
 // the overhead of acquiring and releasing the locks is significant in that case.
 template <typename DataType, typename DistType>
-double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
-                                                            const void *blob) const {
+double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType label,
+                                                                   const void *blob) const {
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
-    auto flat_dist = this->frontendIndex->getDistanceFrom(label, blob);
+    auto flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
     // to avoid checking the index type on every query.
@@ -836,7 +836,7 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
     }
 
     // Try to get the distance from the Main index.
-    auto hnsw_dist = getHNSWIndex()->getDistanceFrom(label, blob);
+    auto hnsw_dist = getHNSWIndex()->getDistanceFrom_Unsafe(label, blob);
 
     // Return the minimum distance that is not NaN.
     return std::fmin(flat_dist, hnsw_dist);

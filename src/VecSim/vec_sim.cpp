@@ -12,7 +12,6 @@
 #include "VecSim/vec_sim_index.h"
 #include <cassert>
 #include "memory.h"
-#include "vec_sim_tiered_index.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
     VecSimIndex::setTimeoutCallbackFunction(callback);
@@ -119,8 +118,9 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
     return index->deleteVector(label);
 }
 
-extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t label, const void *blob) {
-    return index->getDistanceFrom(label, blob);
+extern "C" double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label,
+                                                     const void *blob) {
+    return index->getDistanceFrom_Unsafe(label, blob);
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
@@ -242,9 +242,13 @@ extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {
     }
 }
 
-extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) { index->acquireLocks(); }
+extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) {
+    index->acquireSharedLocks();
+}
 
-extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) { index->releaseLocks(); }
+extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) {
+    index->releaseSharedLocks();
+}
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
     VecSimAllocator::setMemoryFunctions(memoryfunctions);
