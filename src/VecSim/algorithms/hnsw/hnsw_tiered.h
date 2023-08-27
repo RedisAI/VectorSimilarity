@@ -632,9 +632,9 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     this->flatIndexGuard.lock_shared();
-    this->getHNSWIndex()->lockIndexDataGuard();
+    this->getHNSWIndex()->lockSharedIndexDataGuard();
     size_t res = this->backendIndex->indexSize() + this->frontendIndex->indexSize();
-    this->getHNSWIndex()->unlockIndexDataGuard();
+    this->getHNSWIndex()->unlockSharedIndexDataGuard();
     this->flatIndexGuard.unlock_shared();
     return res;
 }
