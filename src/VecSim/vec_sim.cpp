@@ -118,8 +118,9 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
     return index->deleteVector(label);
 }
 
-extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t label, const void *blob) {
-    return index->getDistanceFrom(label, blob);
+extern "C" double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label,
+                                                     const void *blob) {
+    return index->getDistanceFrom_Unsafe(label, blob);
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
@@ -239,6 +240,14 @@ extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {
     if (index->basicInfo().isTiered) {
         index->runGC();
     }
+}
+
+extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) {
+    index->acquireSharedLocks();
+}
+
+extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) {
+    index->releaseSharedLocks();
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

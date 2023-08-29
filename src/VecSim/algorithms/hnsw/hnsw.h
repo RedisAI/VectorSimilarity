@@ -311,6 +311,8 @@ public:
     inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
+    inline void lockSharedIndexDataGuard() const;
+    inline void unlockSharedIndexDataGuard() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline void lockNodeLinks(ElementGraphData *node_data) const;
@@ -351,7 +353,6 @@ public:
 
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
-    virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -518,6 +519,16 @@ void HNSWIndex<DataType, DistType>::lockIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
     indexDataGuard.unlock();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::lockSharedIndexDataGuard() const {
+    indexDataGuard.lock_shared();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
+    indexDataGuard.unlock_shared();
 }
 
 template <typename DataType, typename DistType>
