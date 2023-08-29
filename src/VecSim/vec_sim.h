@@ -74,6 +74,9 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
  * the vector fits the index - its type and dimension are the same as the index's, and if the
  * index's distance metric is cosine, the vector is already normalized.
+ * IMPORTANT: for tiered index, this should be called while *locks are locked for shared ownership*,
+ * as we avoid acquiring the locks internally. That is since this is usually called for every vector
+ * individually, and the overhead of acquiring and releasing the locks is significant in that case.
  * @param index the index from which the first vector is located, and that defines the distance
  * metric.
  * @param label the label of the vector in the index.
@@ -82,7 +85,7 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @return The distance (according to the index's distance metric) between `blob` and the vector
  * with label  label`.
  */
-double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t label, const void *blob);
+double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, const void *blob);
 
 /**
  * @brief normalize the vector blob in place.
@@ -198,6 +201,15 @@ void VecSimTieredIndex_GC(VecSimIndex *index);
  */
 bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
                                    bool initial_check);
+
+/**
+ * @brief Acquire/Release the required locks of the tiered index externally before executing an
+ * an unsafe *READ* operation (as the locks are acquired for shared ownership).
+ * @param index the tiered index to protect (no nothing for non-tiered indexes).
+ */
+void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index);
+
+void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index);
 
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.
