@@ -109,7 +109,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // Execute the job from the queue and validate that the index was updated properly.
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, vector), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 }
@@ -229,7 +229,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(tiered_index->frontendIndex->getDistanceFrom(vec_label, vector), 0);
+    ASSERT_EQ(tiered_index->frontendIndex->getDistanceFrom_Unsafe(vec_label, vector), 0);
     // Validate that the job was created properly
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
@@ -377,7 +377,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->backendIndex->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->frontendIndex->indexCapacity(), 0);
-    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(vec_label, vector), 0);
+    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(vec_label, vector), 0);
     // After the execution, the job should be removed from the labelToInsertJobs mapping.
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
 }
@@ -411,7 +411,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T expected_vector[dim];
         GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
-        ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(i, expected_vector), 0);
+        ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(i, expected_vector), 0);
     }
 }
 
@@ -451,8 +451,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
             // The distance from every vector that is stored under the label i should be zero
-            EXPECT_EQ(tiered_index->backendIndex->getDistanceFrom(i, vectors + i * per_label * dim +
-                                                                         j * dim),
+            EXPECT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(
+                          i, vectors + i * per_label * dim + j * dim),
                       0);
         }
     }
@@ -628,7 +628,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     // Check behavior upon timeout.  //
     // // // // // // // // // // // //
 
-    VecSimQueryResult_List res;
+    VecSimQueryReply *res;
     // Add a vector to the HNSW index so there will be a reason to query it.
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
 
@@ -636,8 +636,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
-    ASSERT_EQ(res.results, nullptr);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    ASSERT_TRUE(res->results.empty());
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
 
     // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
     // Brute-force index checks for timeout after each vector.
@@ -652,13 +653,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
         return 0;
     });
     res = VecSimIndex_TopKQuery(tiered_index, query_0, k, &qparams, BY_SCORE);
-    ASSERT_EQ(res.results, nullptr);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    ASSERT_TRUE(res->results.empty());
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_TopKQuery(flat_index, query_0, k, &qparams, BY_SCORE);
-    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
@@ -1145,10 +1147,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
     // copy memory context before querying the index.
     size_t cur_memory_usage = allocator->getAllocationSize();
 
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3), 0);
-    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4)));
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4)));
 
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
 }
@@ -1234,20 +1236,20 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
     size_t cur_memory_usage = allocator->getAllocationSize();
 
     // Distance from any vector to its label should be 0.
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_3), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_3), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_3), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_1), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_2), 0);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, vec1_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 2, vec2_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 3, vec3_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 4, vec4_3), 0);
     // Distance from a non-existing label should be NaN.
-    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 5, vec5)));
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 5, vec5)));
 
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
 }
@@ -1287,9 +1289,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         bool isMulti =
             reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
                 ->backendIndex->isMultiValue();
-
-        ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
-
+        VecSimTieredIndex_AcquireSharedLocks(search_job->index);
+        ASSERT_EQ(0, VecSimIndex_GetDistanceFrom_Unsafe(search_job->index, label, query));
+        VecSimTieredIndex_ReleaseSharedLocks(search_job->index);
         (*search_job->successful_searches)++;
         delete job;
     };
@@ -1380,7 +1382,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     // to the new vector (L2 distance).
     TEST_DATA_T deleted_vector[dim];
     GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
-    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(vec_label, deleted_vector),
+    ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom_Unsafe(vec_label, deleted_vector),
               dim * pow(new_vec_val, 2));
 }
 
@@ -1588,7 +1590,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
             int num_deleted = tiered_index->deleteVector(i);
             EXPECT_GE(num_deleted, per_label);
             EXPECT_LE(num_deleted,
-                      MIN(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
+                      std::min(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
             EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), 0);
@@ -2147,9 +2149,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
             VecSimBatchIterator_New(tiered_index, query, &query_params);
 
         // Try to get results even though there are no vectors in the index.
-        VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
-        VecSimQueryResult_Free(res);
+        VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
+        VecSimQueryReply_Free(res);
         ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
 
         // Insert one label and query again. The internal id will be 0.
@@ -2159,8 +2161,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         }
         VecSimBatchIterator_Reset(batchIterator);
         res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 1) << decider_name;
-        VecSimQueryResult_Free(res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 1) << decider_name;
+        VecSimQueryReply_Free(res);
         ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
         VecSimBatchIterator_Free(batchIterator);
 
@@ -2176,8 +2178,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
 
         // Try to get 0 results.
         res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
-        VecSimQueryResult_Free(res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
+        VecSimQueryReply_Free(res);
 
         // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
         size_t n_res = 7;
@@ -2210,8 +2212,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         ASSERT_EQ(iteration_num, n_labels / n_res + 1) << decider_name;
         // Try to get more results even though there are no.
         res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
-        VecSimQueryResult_Free(res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 0) << decider_name;
+        VecSimQueryReply_Free(res);
 
         VecSimBatchIterator_Free(batchIterator);
     }
@@ -2321,7 +2323,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     VecSimIndex *hnsw, *flat;
     TEST_DATA_T query[d];
     VecSimBatchIterator *iterator;
-    VecSimQueryResult_List batch;
+    VecSimQueryReply *batch;
 
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams hnsw_params = {
@@ -2359,24 +2361,24 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     // handle the duplicates with different scores.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 3);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 1);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 2), 2);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 2), L2(2));
-    VecSimQueryResult_Free(batch);
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 3);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 2), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 2), L2(2));
+    VecSimQueryReply_Free(batch);
 
     // we have 1 more label in the index. we expect the tiered batch iterator to return it only and
     // filter out the duplicates.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 1);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 3);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(5));
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 1);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(5));
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
-    VecSimQueryResult_Free(batch);
+    VecSimQueryReply_Free(batch);
     // TEST 1 clean up.
     VecSimBatchIterator_Free(iterator);
 
@@ -2407,12 +2409,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     // [2, 3] so there are no duplicates.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 2);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(0));
-    VecSimQueryResult_Free(batch);
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(0));
+    VecSimQueryReply_Free(batch);
 
     // first batch contained 1 result from each index, so there is one leftover from each iterator.
     // Asking for 3 results will return additional 2 results from each iterator and the tiered batch
@@ -2420,13 +2422,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     // were returned in the first batch and duplicates in the current batch).
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 1);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(1));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 3);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
+    ASSERT_EQ(VecSimQueryReply_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(1));
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
-    VecSimQueryResult_Free(batch);
+    VecSimQueryReply_Free(batch);
     // TEST 2 clean up.
     VecSimBatchIterator_Free(iterator);
 }
@@ -2544,7 +2546,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Validate that jobs were created properly - first job should be invalid after overwrite,
     // the second should be a pending insert job.
@@ -2575,14 +2577,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     // swap job execution prior to insert jobs.
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Ingest the updated vector to HNSW.
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
@@ -2871,7 +2873,7 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
         ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
     }
 
     // Validate that the vector is removed in place.
@@ -3002,7 +3004,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
         // The first job in Q should be the invalid overwritten insert vector job.
         ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
         ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
@@ -3028,7 +3030,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
         ASSERT_EQ(tiered_index->indexLabelCount(), 3);
-        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
     }
 }
 
@@ -3251,7 +3253,7 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     // Check behavior upon timeout.  //
     // // // // // // // // // // // //
 
-    VecSimQueryResult_List res;
+    VecSimQueryReply *res;
     // Add a vector to the HNSW index so there will be a reason to query it.
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
 
@@ -3259,8 +3261,8 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, nullptr, BY_ID);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
 
     // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
     // Brute-force index checks for timeout after each vector.
@@ -3275,24 +3277,24 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
         return 0;
     });
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_SCORE);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_SCORE);
-    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Check again with BY_ID.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_ID);
-    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_ID);
-    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });

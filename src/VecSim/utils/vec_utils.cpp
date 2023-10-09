@@ -5,16 +5,12 @@
  */
 
 #include "vec_utils.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include <cmath>
 #include <cerrno>
 #include <climits>
 #include <float.h>
-
-#ifndef __COMPAR_FN_T
-#define __COMPAR_FN_T
-typedef int (*__compar_fn_t)(const void *, const void *);
-#endif
+#include <algorithm>
 
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
@@ -65,29 +61,35 @@ const char *VecSimCommonStrings::LOG_VERBOSE_STRING = "verbose";
 const char *VecSimCommonStrings::LOG_NOTICE_STRING = "notice";
 const char *VecSimCommonStrings::LOG_WARNING_STRING = "warning";
 
-void sort_results_by_id(VecSimQueryResult_List rl) {
-    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResultById);
+void sort_results_by_id(VecSimQueryReply *rep) {
+    std::sort(rep->results.begin(), rep->results.end(),
+              [](const VecSimQueryResult &a, const VecSimQueryResult &b) { return a.id < b.id; });
 }
 
-void sort_results_by_score(VecSimQueryResult_List rl) {
-    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResultByScore);
+void sort_results_by_score(VecSimQueryReply *rep) {
+    std::sort(
+        rep->results.begin(), rep->results.end(),
+        [](const VecSimQueryResult &a, const VecSimQueryResult &b) { return a.score < b.score; });
 }
 
-void sort_results_by_score_then_id(VecSimQueryResult_List rl) {
-    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResultByScoreThenId);
+void sort_results_by_score_then_id(VecSimQueryReply *rep) {
+    std::sort(rep->results.begin(), rep->results.end(),
+              [](const VecSimQueryResult &a, const VecSimQueryResult &b) {
+                  if (a.score == b.score) {
+                      return a.id < b.id;
+                  }
+                  return a.score < b.score;
+              });
 }
 
-void sort_results(VecSimQueryResult_List rl, VecSimQueryResult_Order order) {
+void sort_results(VecSimQueryReply *rep, VecSimQueryReply_Order order) {
     switch (order) {
     case BY_ID:
-        return sort_results_by_id(rl);
+        return sort_results_by_id(rep);
     case BY_SCORE:
-        return sort_results_by_score(rl);
+        return sort_results_by_score(rep);
     case BY_SCORE_THEN_ID:
-        return sort_results_by_score_then_id(rl);
+        return sort_results_by_score_then_id(rep);
     }
 }
 

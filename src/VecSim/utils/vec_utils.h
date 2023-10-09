@@ -13,14 +13,6 @@
 #include <cassert>
 #include <cmath> //sqrt
 
-template <typename dist_t>
-struct CompareByFirst {
-    constexpr bool operator()(std::pair<dist_t, unsigned int> const &a,
-                              std::pair<dist_t, unsigned int> const &b) const noexcept {
-        return (a.first != b.first) ? a.first < b.first : a.second < b.second;
-    }
-};
-
 struct VecSimCommonStrings {
 public:
     static const char *ALGORITHM_STRING;
@@ -73,32 +65,13 @@ public:
     static const char *LOG_WARNING_STRING;
 };
 
-inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
-}
+void sort_results_by_id(VecSimQueryReply *results);
 
-inline int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1,
-                                       const VecSimQueryResult *res2) {
-    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
-           !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare doubles
-    return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
+void sort_results_by_score(VecSimQueryReply *results);
 
-inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
-                                             const VecSimQueryResult *res2) {
-    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2))
-               ? cmpVecSimQueryResultByScore(res1, res2)
-               : cmpVecSimQueryResultById(res1, res2);
-}
+void sort_results_by_score_then_id(VecSimQueryReply *results);
 
-void sort_results_by_id(VecSimQueryResult_List results);
-
-void sort_results_by_score(VecSimQueryResult_List results);
-
-void sort_results_by_score_then_id(VecSimQueryResult_List results);
-
-void sort_results(VecSimQueryResult_List results, VecSimQueryResult_Order order);
+void sort_results(VecSimQueryReply *results, VecSimQueryReply_Order order);
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 

@@ -19,13 +19,13 @@ public:
     ~BFM_BatchIterator() override = default;
 
 private:
-    inline VecSimQueryResult_Code calculateScores() override {
+    inline VecSimQueryReply_Code calculateScores() override {
         this->index_label_count = this->index->indexLabelCount();
         this->scores.reserve(this->index_label_count);
         vecsim_stl::unordered_map<labelType, DistType> tmp_scores(this->index_label_count,
                                                                   this->allocator);
         auto &blocks = this->index->getVectorBlocks();
-        VecSimQueryResult_Code rc;
+        VecSimQueryReply_Code rc;
 
         idType curr_id = 0;
         for (auto &block : blocks) {
@@ -51,6 +51,6 @@ private:
         for (auto p : tmp_scores) {
             this->scores.emplace_back(p.second, p.first);
         }
-        return VecSim_QueryResult_OK;
+        return VecSim_QueryReply_OK;
     }
 };

@@ -24,7 +24,7 @@ public:
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
+    double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
 
     inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
@@ -184,7 +184,8 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVectorById(labelType label
 }
 
 template <typename DataType, typename DistType>
-double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
+double
+BruteForceIndex_Single<DataType, DistType>::getDistanceFrom_Unsafe(labelType label,
                                                                    const void *vector_data) const {
 
     auto optionalId = this->labelToIdLookup.find(label);

@@ -6,9 +6,8 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/index_factories/index_factory.h"
 #include "VecSim/vec_sim_index.h"
 #include <cassert>
@@ -119,8 +118,9 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
     return index->deleteVector(label);
 }
 
-extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t label, const void *blob) {
-    return index->getDistanceFrom(label, blob);
+extern "C" double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label,
+                                                     const void *blob) {
+    return index->getDistanceFrom_Unsafe(label, blob);
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
@@ -189,12 +189,12 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     return res;
 }
 
-extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                        size_t k, VecSimQueryParams *queryParams,
-                                                        VecSimQueryResult_Order order) {
+extern "C" VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
+                                                   size_t k, VecSimQueryParams *queryParams,
+                                                   VecSimQueryReply_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
-    VecSimQueryResult_List results;
+    VecSimQueryReply *results;
     results = index->topKQueryWrapper(queryBlob, k, queryParams);
 
     if (order == BY_ID) {
@@ -203,10 +203,9 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     return results;
 }
 
-extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                                         double radius,
-                                                         VecSimQueryParams *queryParams,
-                                                         VecSimQueryResult_Order order) {
+extern "C" VecSimQueryReply *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+                                                    double radius, VecSimQueryParams *queryParams,
+                                                    VecSimQueryReply_Order order) {
     if (order != BY_ID && order != BY_SCORE) {
         throw std::runtime_error("Possible order values are only 'BY_ID' or 'BY_SCORE'");
     }
@@ -241,6 +240,14 @@ extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {
     if (index->basicInfo().isTiered) {
         index->runGC();
     }
+}
+
+extern "C" void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index) {
+    index->acquireSharedLocks();
+}
+
+extern "C" void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index) {
+    index->releaseSharedLocks();
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

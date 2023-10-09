@@ -24,7 +24,6 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     vec_sim_interface.cpp
     query_results.cpp
     info_iterator.cpp
-    query_result_struct.cpp
     utils/vec_utils.cpp
     utils/data_block.cpp
     memory/vecsim_malloc.cpp

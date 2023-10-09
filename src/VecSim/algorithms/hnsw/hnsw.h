@@ -8,13 +8,12 @@
 
 #include "visited_nodes_handler.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/data_block.h"
 #include "VecSim/utils/vecsim_results_container.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/tombstone_interface.h"
@@ -44,6 +43,8 @@ typedef uint8_t elementFlags;
 
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
+template <typename DistType>
+using candidatesList = vecsim_stl::vector<pair<DistType, idType>>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
@@ -90,6 +91,20 @@ struct LevelData {
 
     LevelData(std::shared_ptr<VecSimAllocator> allocator)
         : incomingEdges(new (allocator) vecsim_stl::vector<idType>(allocator)), numLinks(0) {}
+
+    // Sets the outgoing links of the current element.
+    // Assumes that the object has the capacity to hold all the links.
+    inline void setLinks(vecsim_stl::vector<idType> &links) {
+        numLinks = links.size();
+        memcpy(this->links, links.data(), numLinks * sizeof(idType));
+    }
+    template <typename DistType>
+    inline void setLinks(candidatesList<DistType> &links) {
+        numLinks = 0;
+        for (auto &link : links) {
+            this->links[numLinks++] = link.second;
+        }
+    }
 };
 
 struct ElementGraphData {
@@ -170,9 +185,6 @@ protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline size_t getRandomLevel(double reverse_size);
-    inline void removeExtraLinks(candidatesMaxHeap<DistType> candidates, size_t Mcurmax,
-                                 LevelData &node_level, const vecsim_stl::vector<bool> &bitmap,
-                                 idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
     inline void
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
@@ -191,13 +203,19 @@ protected:
     template <bool has_marked_deleted>
     candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
-                                  void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+                                  void *timeoutCtx, VecSimQueryReply_Code *rc) const;
     template <bool has_marked_deleted>
-    VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                          double epsilon, DistType radius,
-                                                          void *timeoutCtx,
-                                                          VecSimQueryResult_Code *rc) const;
-    void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
+    VecSimQueryResultContainer
+    searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point, double epsilon,
+                                       DistType radius, void *timeoutCtx,
+                                       VecSimQueryReply_Code *rc) const;
+    idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M) const;
+    void getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M,
+                                  vecsim_stl::vector<idType> &not_chosen_candidates) const;
+    template <bool record_removed>
+    void getNeighborsByHeuristic2_internal(
+        candidatesList<DistType> &top_candidates, size_t M,
+        vecsim_stl::vector<idType> *removed_candidates = nullptr) const;
     // Helper function for re-selecting node's neighbors which was selected as a neighbor for
     // a newly inserted node. Also, responsible for mutually connect the new node and the neighbor
     // (unidirectional or bidirectional connection).
@@ -216,7 +234,7 @@ protected:
 
     template <bool running_query>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
-                           void *timeoutCtx = nullptr, VecSimQueryResult_Code *rc = nullptr) const;
+                           void *timeoutCtx = nullptr, VecSimQueryReply_Code *rc = nullptr) const;
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       LevelData &node_level, LevelData &neighbor_level,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
@@ -293,6 +311,8 @@ public:
     inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
+    inline void lockSharedIndexDataGuard() const;
+    inline void unlockSharedIndexDataGuard() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline void lockNodeLinks(ElementGraphData *node_data) const;
@@ -308,12 +328,12 @@ public:
     inline LevelData &getLevelData(idType internal_id, size_t level) const;
     inline LevelData &getLevelData(ElementGraphData *element, size_t level) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                      VecSimQueryResult_Code *rc) const;
+                                      VecSimQueryReply_Code *rc) const;
 
-    VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
-                                     VecSimQueryParams *queryParams) const override;
-    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
-                                      VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *topKQuery(const void *query_data, size_t k,
+                                VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *rangeQuery(const void *query_data, double radius,
+                                 VecSimQueryParams *queryParams) const override;
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
@@ -333,7 +353,6 @@ public:
 
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
-    virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -503,6 +522,16 @@ void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
 }
 
 template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::lockSharedIndexDataGuard() const {
+    indexDataGuard.lock_shared();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
+    indexDataGuard.unlock_shared();
+}
+
+template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::lockNodeLinks(ElementGraphData *node_data) const {
     node_data->neighborsGuard.lock();
 }
@@ -525,37 +554,6 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
 /**
  * helper functions
  */
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeExtraLinks(
-    candidatesMaxHeap<DistType> candidates, size_t Mcurmax, LevelData &node_level,
-    const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
-    size_t *removed_links_num) {
-
-    auto orig_candidates = candidates;
-    // candidates will store the newly selected neighbours (for the relevant node).
-    getNeighborsByHeuristic2(candidates, Mcurmax);
-
-    // check the diff in the link list, save the neighbours
-    // that were chosen to be removed, and update the new neighbours
-    size_t removed_idx = 0;
-    size_t link_idx = 0;
-
-    while (orig_candidates.size() > 0) {
-        if (orig_candidates.top().second != candidates.top().second) {
-            if (neighbors_bitmap[orig_candidates.top().second]) {
-                removed_links[removed_idx++] = orig_candidates.top().second;
-            }
-            orig_candidates.pop();
-        } else {
-            node_level.links[link_idx++] = candidates.top().second;
-            candidates.pop();
-            orig_candidates.pop();
-        }
-    }
-    node_level.numLinks = link_idx;
-    *removed_links_num = removed_idx;
-}
-
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
     vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
@@ -765,30 +763,52 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 }
 
 template <typename DataType, typename DistType>
+idType
+HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates,
+                                                        const size_t M) const {
+    if (top_candidates.size() < M) {
+        return std::min_element(top_candidates.begin(), top_candidates.end(),
+                                [](const auto &a, const auto &b) { return a.first < b.first; })
+            ->second;
+    } else {
+        getNeighborsByHeuristic2_internal<false>(top_candidates, M, nullptr);
+        return top_candidates.front().second;
+    }
+}
+
+template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
-    candidatesMaxHeap<DistType> &top_candidates, const size_t M) {
+    candidatesList<DistType> &top_candidates, const size_t M,
+    vecsim_stl::vector<idType> &removed_candidates) const {
+    getNeighborsByHeuristic2_internal<true>(top_candidates, M, &removed_candidates);
+}
+
+template <typename DataType, typename DistType>
+template <bool record_removed>
+void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
+    candidatesList<DistType> &top_candidates, const size_t M,
+    vecsim_stl::vector<idType> *removed_candidates) const {
     if (top_candidates.size() < M) {
         return;
     }
 
-    candidatesMaxHeap<DistType> queue_closest(this->allocator);
-    vecsim_stl::vector<pair<DistType, idType>> return_list(this->allocator);
+    candidatesList<DistType> return_list(this->allocator);
     vecsim_stl::vector<const void *> cached_vectors(this->allocator);
     return_list.reserve(M);
     cached_vectors.reserve(M);
-    while (top_candidates.size() > 0) {
-        // the distance is saved negatively to have the queue ordered such that first is closer
-        // (higher).
-        queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
-        top_candidates.pop();
+    if constexpr (record_removed) {
+        removed_candidates->reserve(top_candidates.size());
     }
 
-    while (queue_closest.size() && return_list.size() < M) {
-        pair<DistType, idType> current_pair = queue_closest.top();
-        DistType candidate_to_query_dist = -current_pair.first;
-        queue_closest.pop();
+    // Sort the candidates by their distance (we don't mind the secondary order (the internal id))
+    std::sort(top_candidates.begin(), top_candidates.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
+
+    auto current_pair = top_candidates.begin();
+    for (; current_pair != top_candidates.end() && return_list.size() < M; ++current_pair) {
+        DistType candidate_to_query_dist = current_pair->first;
         bool good = true;
-        const void *curr_vector = getDataByInternalId(current_pair.second);
+        const void *curr_vector = getDataByInternalId(current_pair->second);
 
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
@@ -797,19 +817,26 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
             DistType candidate_to_selected_dist =
                 this->distFunc(cached_vectors[i], curr_vector, this->dim);
             if (candidate_to_selected_dist < candidate_to_query_dist) {
+                if constexpr (record_removed) {
+                    removed_candidates->push_back(current_pair->second);
+                }
                 good = false;
                 break;
             }
         }
         if (good) {
             cached_vectors.push_back(curr_vector);
-            return_list.push_back(current_pair);
+            return_list.push_back(*current_pair);
         }
     }
 
-    for (pair<DistType, idType> current_pair : return_list) {
-        top_candidates.emplace(-current_pair.first, current_pair.second);
+    if constexpr (record_removed) {
+        for (; current_pair != top_candidates.end(); ++current_pair) {
+            removed_candidates->push_back(current_pair->second);
+        }
     }
+
+    top_candidates.swap(return_list);
 }
 
 template <typename DataType, typename DistType>
@@ -819,48 +846,23 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
-    candidatesMaxHeap<DistType> candidates(this->allocator);
+    candidatesList<DistType> candidates(this->allocator);
+    candidates.reserve(neighbor_level.numLinks + 1);
     // Add the new node along with the pre-calculated distance to the current neighbor,
-    candidates.emplace(neighbor_data.first, new_node_id);
+    candidates.emplace_back(neighbor_data.first, new_node_id);
 
     idType selected_neighbor = neighbor_data.second;
     const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
     for (size_t j = 0; j < neighbor_level.numLinks; j++) {
-        candidates.emplace(this->distFunc(getDataByInternalId(neighbor_level.links[j]),
-                                          selected_neighbor_data, this->dim),
-                           neighbor_level.links[j]);
+        candidates.emplace_back(this->distFunc(getDataByInternalId(neighbor_level.links[j]),
+                                               selected_neighbor_data, this->dim),
+                                neighbor_level.links[j]);
     }
-
-    std::vector<idType> nodes_to_update;
-    auto orig_candidates = candidates;
 
     // Candidates will store the newly selected neighbours (for the neighbor).
     size_t max_M_cur = level ? M : M0;
-    getNeighborsByHeuristic2(candidates, max_M_cur);
-
-    // Go over the original candidates set, and save the ones chosen to be removed to update later
-    // on.
-    bool cur_node_chosen = false;
-    while (orig_candidates.size() > 0) {
-        idType orig_candidate = orig_candidates.top().second;
-        // If the current original candidate was not selected as neighbor by the heuristics, it
-        // should be updated and removed from the neighbor's neighbors.
-        if (candidates.empty() || orig_candidate != candidates.top().second) {
-            // Don't add the new_node_id to nodes_to_update, it will be inserted either way later.
-            if (orig_candidate != new_node_id) {
-                nodes_to_update.push_back(orig_candidate);
-            }
-            orig_candidates.pop();
-            // Otherwise, the original candidate was selected to remain a neighbor - no need to
-            // update.
-        } else {
-            candidates.pop();
-            orig_candidates.pop();
-            if (orig_candidate == new_node_id) {
-                cur_node_chosen = true;
-            }
-        }
-    }
+    vecsim_stl::vector<idType> nodes_to_update(this->allocator);
+    getNeighborsByHeuristic2(candidates, max_M_cur, nodes_to_update);
 
     // Acquire all relevant locks for making the updates for the selected neighbor - all its removed
     // neighbors, along with the neighbors itself and the cur node.
@@ -868,8 +870,17 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     unlockNodeLinks(new_node_id);
     unlockNodeLinks(selected_neighbor);
 
+    // Check if the new node was selected as a neighbor for the current neighbor.
+    // Make sure to add the cur node to the list of nodes to update if it was selected.
+    bool cur_node_chosen;
+    auto new_node_iter = std::find(nodes_to_update.begin(), nodes_to_update.end(), new_node_id);
+    if (new_node_iter != nodes_to_update.end()) {
+        cur_node_chosen = false;
+    } else {
+        cur_node_chosen = true;
+        nodes_to_update.push_back(new_node_id);
+    }
     nodes_to_update.push_back(selected_neighbor);
-    nodes_to_update.push_back(new_node_id);
 
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
@@ -935,27 +946,21 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     size_t max_M_cur = level ? M : M0;
 
     // Filter the top candidates to the selected neighbors by the algorithm heuristics.
-    getNeighborsByHeuristic2(top_candidates, M);
-    assert(top_candidates.size() <= M &&
+    // First, we need to copy the top candidates to a vector.
+    candidatesList<DistType> top_candidates_list(this->allocator);
+    top_candidates_list.insert(top_candidates_list.end(), top_candidates.begin(),
+                               top_candidates.end());
+    // Use the heuristic to filter the top candidates, and get the next closest entry point.
+    idType next_closest_entry_point = getNeighborsByHeuristic2(top_candidates_list, M);
+    assert(top_candidates_list.size() <= M &&
            "Should be not be more than M candidates returned by the heuristic");
 
-    // Hold (distance_from_new_node_id, neighbor_id) pair for every selected neighbor.
-    vecsim_stl::vector<std::pair<DistType, idType>> selected_neighbors(this->allocator);
-    selected_neighbors.reserve(M);
-    while (!top_candidates.empty()) {
-        selected_neighbors.push_back(top_candidates.top());
-        top_candidates.pop();
-    }
-
-    // The closest vector that has found to be returned (and start the scan from it in the next
-    // level).
-    idType next_closest_entry_point = selected_neighbors.back().second;
     auto *new_node_level = getGraphDataByInternalId(new_node_id);
     LevelData &new_node_level_data = getLevelData(new_node_level, level);
     assert(new_node_level_data.numLinks == 0 &&
            "The newly inserted element should have blank link list");
 
-    for (auto &neighbor_data : selected_neighbors) {
+    for (auto &neighbor_data : top_candidates_list) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
         auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
         if (new_node_id < selected_neighbor) {
@@ -1015,54 +1020,61 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     LevelData &neighbor_level, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
     // put the deleted element's neighbours in the candidates.
-    candidatesMaxHeap<DistType> candidates(this->allocator);
-    auto neighbours_data = getDataByInternalId(neighbour_id);
+    vecsim_stl::vector<idType> candidate_ids(this->allocator);
+    candidate_ids.reserve(node_level.numLinks + neighbor_level.numLinks);
     for (size_t j = 0; j < node_level.numLinks; j++) {
         // Don't put the neighbor itself in his own candidates
-        if (node_level.links[j] == neighbour_id) {
-            continue;
+        if (node_level.links[j] != neighbour_id) {
+            candidate_ids.push_back(node_level.links[j]);
         }
-        candidates.emplace(
-            this->distFunc(getDataByInternalId(node_level.links[j]), neighbours_data, this->dim),
-            node_level.links[j]);
     }
-
     // add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<bool> neighbour_orig_neighbours_set(curElementCount, false, this->allocator);
-
     for (size_t j = 0; j < neighbor_level.numLinks; j++) {
         neighbour_orig_neighbours_set[neighbor_level.links[j]] = true;
         // Don't add the removed element to the candidates, nor nodes that are already in the
         // candidates set.
-        if (neighbours_bitmap[neighbor_level.links[j]] ||
-            neighbor_level.links[j] == element_internal_id) {
-            continue;
+        if (neighbor_level.links[j] != element_internal_id &&
+            !neighbours_bitmap[neighbor_level.links[j]]) {
+            candidate_ids.push_back(neighbor_level.links[j]);
         }
-        candidates.emplace(this->distFunc(neighbours_data,
-                                          getDataByInternalId(neighbor_level.links[j]), this->dim),
-                           neighbor_level.links[j]);
     }
 
     size_t Mcurmax = level ? M : M0;
-    size_t removed_links_num;
-    idType removed_links[neighbor_level.numLinks];
-    removeExtraLinks(candidates, Mcurmax, neighbor_level, neighbour_orig_neighbours_set,
-                     removed_links, &removed_links_num);
-
-    // remove neighbour id from the incoming list of nodes for his
-    // neighbours that were chosen to remove
-    for (size_t i = 0; i < removed_links_num; i++) {
-        idType node_id = removed_links[i];
-        LevelData &node_level = getLevelData(node_id, level);
-
-        // if the node id (the neighbour's neighbour to be removed)
-        // wasn't pointing to the neighbour (edge was one directional),
-        // we should remove it from the node's incoming edges.
-        // otherwise, edge turned from bidirectional to one directional,
-        // and it should be saved in the neighbor's incoming edges.
-        if (!removeIdFromList(*node_level.incomingEdges, neighbour_id)) {
-            neighbor_level.incomingEdges->push_back(node_id);
+    if (candidate_ids.size() > Mcurmax) {
+        // We need to filter the candidates by the heuristic.
+        candidatesList<DistType> candidates(this->allocator);
+        candidates.reserve(candidate_ids.size());
+        auto neighbours_data = getDataByInternalId(neighbour_id);
+        for (auto candidate_id : candidate_ids) {
+            candidates.emplace_back(
+                this->distFunc(getDataByInternalId(candidate_id), neighbours_data, this->dim),
+                candidate_id);
         }
+
+        candidate_ids.clear();
+        auto &not_chosen_candidates = candidate_ids; // rename and reuse the vector
+        getNeighborsByHeuristic2(candidates, Mcurmax, not_chosen_candidates);
+
+        neighbor_level.setLinks(candidates);
+
+        // remove neighbour id from the incoming list of nodes for his
+        // neighbours that were chosen to remove
+        for (auto node_id : not_chosen_candidates) {
+            if (neighbour_orig_neighbours_set[node_id]) {
+                // if the node id (the neighbour's neighbour to be removed)
+                // wasn't pointing to the neighbour (edge was one directional),
+                // we should remove it from the node's incoming edges.
+                // otherwise, edge turned from bidirectional to one directional,
+                // and it should be saved in the neighbor's incoming edges.
+                if (!removeIdFromList(*getLevelData(node_id, level).incomingEdges, neighbour_id)) {
+                    neighbor_level.incomingEdges->push_back(node_id);
+                }
+            }
+        }
+    } else {
+        // We don't need to filter the candidates - just update the edges.
+        neighbor_level.setLinks(candidate_ids);
     }
 
     // updates for the new edges created
@@ -1259,7 +1271,7 @@ template <bool running_query>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
                                                       idType &bestCand, DistType &curDist,
                                                       void *timeoutCtx,
-                                                      VecSimQueryResult_Code *rc) const {
+                                                      VecSimQueryReply_Code *rc) const {
     bool changed;
     // Don't allow choosing a deleted node as an entry point upon searching for neighbors
     // candidates (that is, we're NOT running a query, but inserting a new vector).
@@ -1267,7 +1279,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
 
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             bestCand = INVALID_ID;
             return;
         }
@@ -1488,7 +1500,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
-    candidatesMaxHeap<DistType> neighbors_candidates(this->allocator);
+    vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
     // selected by the heuristics - only the ones that were originally neighbors should be removed.
@@ -1501,7 +1513,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
-    const void *node_data = getDataByInternalId(node_id);
     auto *element = getGraphDataByInternalId(node_id);
     lockNodeLinks(element);
     LevelData &node_level_data = getLevelData(element, level);
@@ -1513,9 +1524,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             continue;
         }
         neighbors_candidates_set[node_level_data.links[j]] = true;
-        neighbors_candidates.emplace(
-            this->distFunc(node_data, getDataByInternalId(node_level_data.links[j]), this->dim),
-            node_level_data.links[j]);
+        neighbors_candidate_ids.push_back(node_level_data.links[j]);
     }
     unlockNodeLinks(element);
 
@@ -1550,35 +1559,43 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[neighbor_level_data.links[j]] = true;
-            neighbors_candidates.emplace(
-                this->distFunc(node_data, getDataByInternalId(neighbor_level_data.links[j]),
-                               this->dim),
-                neighbor_level_data.links[j]);
+            neighbors_candidate_ids.push_back(neighbor_level_data.links[j]);
         }
         unlockNodeLinks(neighbor);
     }
 
-    // Copy the original candidates, and run the heuristics. Afterwards, neighbors_candidates will
-    // store the newly selected neighbours (for the node), while candidates which were originally
-    // neighbors and are not going to be selected, are going to be removed.
-    auto orig_candidates = neighbors_candidates;
     size_t max_M_cur = level ? M : M0;
-    getNeighborsByHeuristic2(neighbors_candidates, max_M_cur);
-
-    while (!orig_candidates.empty()) {
-        idType orig_candidate = orig_candidates.top().second;
-        if (neighbors_candidates.empty() || orig_candidate != neighbors_candidates.top().second) {
-            if (node_orig_neighbours_set[orig_candidate]) {
-                neighbors_to_remove.push_back(orig_candidate);
-                nodes_to_update.push_back(orig_candidate);
-            }
-            orig_candidates.pop();
-        } else {
-            chosen_neighbors.push_back(orig_candidate);
-            nodes_to_update.push_back(orig_candidate);
-            neighbors_candidates.pop();
-            orig_candidates.pop();
+    if (neighbors_candidate_ids.size() > max_M_cur) {
+        // We have more candidates than the maximum number of neighbors, so we need to select which
+        // ones to keep. We use the heuristic to select the neighbors, and then remove the ones that
+        // were not originally neighbors.
+        candidatesList<DistType> neighbors_candidates(this->allocator);
+        neighbors_candidates.reserve(neighbors_candidate_ids.size());
+        const void *node_data = getDataByInternalId(node_id);
+        for (idType candidate : neighbors_candidate_ids) {
+            neighbors_candidates.emplace_back(
+                this->distFunc(getDataByInternalId(candidate), node_data, this->dim), candidate);
         }
+        vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
+        getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
+
+        for (idType not_chosen_neighbor : not_chosen_neighbors) {
+            if (node_orig_neighbours_set[not_chosen_neighbor]) {
+                neighbors_to_remove.push_back(not_chosen_neighbor);
+                nodes_to_update.push_back(not_chosen_neighbor);
+            }
+        }
+
+        for (auto &neighbor : neighbors_candidates) {
+            chosen_neighbors.push_back(neighbor.second);
+            nodes_to_update.push_back(neighbor.second);
+        }
+    } else {
+        // We have less candidates than the maximum number of neighbors, so we choose them all, and
+        // extend the nodes to update with them.
+        chosen_neighbors.swap(neighbors_candidate_ids);
+        nodes_to_update.insert(nodes_to_update.end(), chosen_neighbors.begin(),
+                               chosen_neighbors.end());
     }
 
     // Perform the actual updates for the node and the impacted neighbors while holding the nodes'
@@ -1913,8 +1930,8 @@ auto HNSWIndex<DataType, DistType>::safeGetEntryPointState() const {
 
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                                          VecSimQueryResult_Code *rc) const {
-    *rc = VecSim_QueryResult_OK;
+                                                          VecSimQueryReply_Code *rc) const {
+    *rc = VecSim_QueryReply_OK;
 
     auto [curr_element, max_level] = safeGetEntryPointState();
     if (curr_element == INVALID_ID)
@@ -1932,7 +1949,7 @@ template <bool has_marked_deleted>
 candidatesLabelsMaxHeap<DistType> *
 HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                              size_t ef, size_t k, void *timeoutCtx,
-                                                             VecSimQueryResult_Code *rc) const {
+                                                             VecSimQueryReply_Code *rc) const {
 
     auto *visited_nodes_handler = getVisitedList();
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
@@ -1965,7 +1982,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             returnVisitedList(visited_nodes_handler);
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             return top_candidates;
         }
         candidate_set.pop();
@@ -1978,22 +1995,19 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     while (top_candidates->size() > k) {
         top_candidates->pop();
     }
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     return top_candidates;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
-HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
-                                         VecSimQueryParams *queryParams) const {
+VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
+                                                           VecSimQueryParams *queryParams) const {
 
-    VecSimQueryResult_List rl = {0};
+    auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = STANDARD_KNN;
 
     if (curElementCount == 0 || k == 0) {
-        rl.code = VecSim_QueryResult_OK;
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+        return rep;
     }
 
     void *timeoutCtx = nullptr;
@@ -2008,46 +2022,42 @@ HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
-    if (VecSim_OK != rl.code) {
-        return rl;
-    } else if (bottom_layer_ep == INVALID_ID) {
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
         // that another thread deleted all the elements or didn't finish inserting the first element
         // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+        return rep;
     }
 
     // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results;
     if (this->numMarkedDeleted) {
         results = searchBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rl.code);
+            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
     } else {
         results = searchBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rl.code);
+            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
     }
 
-    if (VecSim_OK == rl.code) {
-        rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
-        for (int i = (int)results->size() - 1; i >= 0; --i) {
-            VecSimQueryResult_SetId(rl.results[i], results->top().second);
-            VecSimQueryResult_SetScore(rl.results[i], results->top().first);
+    if (VecSim_OK == rep->code) {
+        rep->results.resize(results->size());
+        for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
+            std::tie(result->score, result->id) = results->top();
             results->pop();
         }
     }
     delete results;
-    return rl;
+    return rep;
 }
 
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
-VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
+VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
     idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
-    VecSimQueryResult_Code *rc) const {
+    VecSimQueryReply_Code *rc) const {
 
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
     auto *visited_nodes_handler = getVisitedList();
@@ -2085,7 +2095,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
             break;
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             break;
         }
         candidate_set.pop();
@@ -2109,17 +2119,14 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
-HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
-                                          VecSimQueryParams *queryParams) const {
+VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
+                                                            VecSimQueryParams *queryParams) const {
 
-    VecSimQueryResult_List rl = {0};
+    auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = RANGE_QUERY;
 
     if (curElementCount == 0) {
-        rl.code = VecSim_QueryResult_OK;
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+        return rep;
     }
     void *timeoutCtx = nullptr;
 
@@ -2131,24 +2138,23 @@ HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
     // Although we checked that the index is not empty (curElementCount == 0), it might be
     // that another thread deleted all the elements or didn't finish inserting the first element
     // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-    if (VecSim_OK != rl.code || bottom_layer_ep == INVALID_ID) {
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
+        return rep;
     }
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
     if (this->numMarkedDeleted)
-        rl.results = searchRangeBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rl.code);
+        rep->results = searchRangeBottomLayer_WithTimeout<true>(
+            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
     else
-        rl.results = searchRangeBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rl.code);
-    return rl;
+        rep->results = searchRangeBottomLayer_WithTimeout<false>(
+            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
+    return rep;
 }
 
 template <typename DataType, typename DistType>
@@ -2182,7 +2188,7 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 17;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,

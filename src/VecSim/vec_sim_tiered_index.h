@@ -70,12 +70,12 @@ public:
         VecSimIndex_Free(frontendIndex);
     }
 
-    VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                     VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                VecSimQueryParams *queryParams) const override;
 
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams,
-                                      VecSimQueryResult_Order order) const override;
+    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                 VecSimQueryParams *queryParams,
+                                 VecSimQueryReply_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
@@ -107,16 +107,16 @@ private:
         return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
-    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) const override {
+    virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
+                                               VecSimQueryParams *queryParams) const override {
         char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
         return this->topKQuery(processed_blob, k, queryParams);
     }
 
-    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) const override {
+    virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
+                                                VecSimQueryParams *queryParams,
+                                                VecSimQueryReply_Order order) const override {
         char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
@@ -133,7 +133,7 @@ private:
 };
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
@@ -155,8 +155,8 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         this->flatIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
-        if (flat_results.code != VecSim_QueryResult_OK) {
-            assert(flat_results.results == nullptr);
+        if (flat_results->code != VecSim_QueryReply_OK) {
+            assert(flat_results->results.empty());
             return flat_results;
         }
 
@@ -166,11 +166,11 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         this->mainIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
-        if (main_results.code != VecSim_QueryResult_OK) {
+        if (main_results->code != VecSim_QueryReply_OK) {
             // Free the flat results.
-            VecSimQueryResult_Free(flat_results);
+            VecSimQueryReply_Free(flat_results);
 
-            assert(main_results.results == nullptr);
+            assert(main_results->results.empty());
             return main_results;
         }
 
@@ -184,10 +184,10 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
-                                                  VecSimQueryResult_Order order) const {
+                                                  VecSimQueryReply_Order order) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -211,7 +211,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
 
         // If the query failed (currently only on timeout), return the error code and the partial
         // results.
-        if (flat_results.code != VecSim_QueryResult_OK) {
+        if (flat_results->code != VecSim_QueryReply_OK) {
             return flat_results;
         }
 
@@ -228,17 +228,17 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             sort_results_by_score_then_id(flat_results);
 
             // Keep the return code of the main index.
-            auto code = main_results.code;
+            auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryResult_List ret;
+            VecSimQueryReply *ret;
             if (this->backendIndex->isMultiValue()) {
                 ret = merge_result_lists<true>(main_results, flat_results, -1);
             } else {
                 ret = merge_result_lists<false>(main_results, flat_results, -1);
             }
             // Restore the return code and return.
-            ret.code = code;
+            ret->code = code;
             return ret;
 
         } else { // BY_ID
@@ -305,7 +305,7 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 14;
-    auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
 
     // Set tiered explicitly as algo name for root iterator.
     infoIterator->addInfoField(VecSim_InfoField{
