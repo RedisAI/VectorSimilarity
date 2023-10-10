@@ -1,3 +1,5 @@
+#pragma once
+
 #include <mutex>
 #include "VecSim/algorithms/ivf/ivf.cuh"
 #include "VecSim/vec_sim_tiered_index.h"

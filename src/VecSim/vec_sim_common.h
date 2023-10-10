@@ -147,18 +147,17 @@ typedef struct {
     size_t kmeans_nIters;              // Iterations for kmeans calculation
     double kmeans_trainsetFraction;    // Fraction of dataset used for kmeans training
     unsigned nProbes;                  // The number of clusters to search
-    size_t pqBits;                     // Bit length of vector element after PQ compression. If set
-                                       // to 0, IVF flat will be used instead of IVFPQ.
+    bool usePQ;                        // If false IVF-Flat is used. If true IVF-PQ is used.
     // ***************** IVF-Flat-only parameters ******************
-    // The following parameters will be ignored if pqBits is set to a
-    // non-zero value.
+    // The following parameters will be ignored if usePQ is set to true.
     bool adaptiveCenters; // If index should be updated for new vectors
 
-    // ******************* IVFPQ-only parameters *******************
-    // The following parameters will be ignored if pqBits is set to 0
-    size_t pqDim; // The dimensionality of an encoded vector after PQ
-                  // compression. If set to 0, a heuristic will be used to
-                  // select the dimensionality.
+    // ******************* IVF-PQ-only parameters *******************
+    // The following parameters will be ignored if usePQ is set to false.
+    size_t pqBits; // Bit length of vector element after PQ compression.
+    size_t pqDim;  // The dimensionality of an encoded vector after PQ
+                   // compression. If set to 0, a heuristic will be used to
+                   // select the dimensionality.
 
     IVFPQCodebookKind codebookKind;
     CudaType lutType;
@@ -166,17 +165,12 @@ typedef struct {
     double preferredShmemCarveout; // Fraction of GPU's unified memory / L1
                                    // cache to be used as shared memory
 
-} IVFParams;
-
-typedef struct {
-    IVFParams ivfParams;
-    TieredIndexParams tieredParams;
-} TieredIVFParams;
+} RaftIvfParams;
 
 typedef union {
     HNSWParams hnswParams;
     BFParams bfParams;
-    IVFParams ivfParams;
+    RaftIvfParams raftIvfParams;
     TieredIndexParams tieredParams;
 } AlgoParams;
 

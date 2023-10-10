@@ -1,3 +1,5 @@
+#pragma once
+
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -7,7 +9,7 @@
 #include <cuda_runtime.h>
 #include <library_types.h>
 #include "VecSim/vec_sim.h"
-// For VecSimMetric, IVFParams, labelType
+// For VecSimMetric, RaftIvfParams, labelType
 #include "VecSim/vec_sim_common.h"
 // For VecSimIndexAbstract
 #include "VecSim/vec_sim_index.h"
@@ -22,7 +24,6 @@
 #include <raft/neighbors/ivf_pq.cuh>
 #include <raft/neighbors/ivf_pq_types.hpp>
 
-#pragma once
 
 inline auto constexpr GetRaftDistanceType(VecSimMetric vsm) {
     auto result = raft::distance::DistanceType{};
@@ -88,43 +89,43 @@ private:
                                      raft::neighbors::ivf_pq::index<internal_idx_t>>;
 
 public:
-    IVFIndex(const IVFParams *ivfParams, const AbstractIndexInitParams &commonParams)
+    IVFIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &commonParams)
         : VecSimIndexAbstract<dist_type>{commonParams},
-          res_{raft::resource_manager::get_device_resources()}, build_params_{[ivfParams]() {
-              auto result = ivfParams->pqBits > 0 ? build_params_t{std::in_place_index<1>}
-                                                  : build_params_t{std::in_place_index<0>};
+          res_{raft::resource_manager::get_device_resources()}, build_params_{[raftIvfParams]() {
+              auto result = raftIvfParams->usePQ ? build_params_t{std::in_place_index<1>}
+                                                 : build_params_t{std::in_place_index<0>};
               std::visit(
-                  [ivfParams](auto &&inner) {
-                      inner.metric = GetRaftDistanceType(ivfParams->metric);
-                      inner.n_lists = ivfParams->nLists;
-                      inner.kmeans_n_iters = ivfParams->kmeans_nIters;
-                      inner.kmeans_trainset_fraction = ivfParams->kmeans_trainsetFraction;
+                  [raftIvfParams](auto &&inner) {
+                      inner.metric = GetRaftDistanceType(raftIvfParams->metric);
+                      inner.n_lists = raftIvfParams->nLists;
+                      inner.kmeans_n_iters = raftIvfParams->kmeans_nIters;
+                      inner.kmeans_trainset_fraction = raftIvfParams->kmeans_trainsetFraction;
                       inner.conservative_memory_allocation =
-                          ivfParams->conservativeMemoryAllocation;
+                          raftIvfParams->conservativeMemoryAllocation;
                       if constexpr (std::is_same_v<decltype(inner),
                                                    raft::neighbors::ivf_pq::index_params>) {
-                          inner.pq_bits = ivfParams->pqBits;
-                          inner.pq_dim = ivfParams->pqDim;
-                          inner.codebook_kind = GetRaftCodebookKind(ivfParams->codebookKind);
+                          inner.pq_bits = raftIvfParams->pqBits;
+                          inner.pq_dim = raftIvfParams->pqDim;
+                          inner.codebook_kind = GetRaftCodebookKind(raftIvfParams->codebookKind);
                       } else {
-                          inner.adaptive_centers = ivfParams->adaptiveCenters;
+                          inner.adaptive_centers = raftIvfParams->adaptiveCenters;
                       }
                   },
                   result);
               return result;
           }()},
-          search_params_{[ivfParams]() {
-              auto result = ivfParams->pqBits > 0 ? search_params_t{std::in_place_index<1>}
-                                                  : search_params_t{std::in_place_index<0>};
+          search_params_{[raftIvfParams]() {
+              auto result = raftIvfParams->usePQ ? search_params_t{std::in_place_index<1>}
+                                                 : search_params_t{std::in_place_index<0>};
               std::visit(
-                  [ivfParams](auto &&inner) {
-                      inner.n_probes = ivfParams->nProbes;
+                  [raftIvfParams](auto &&inner) {
+                      inner.n_probes = raftIvfParams->nProbes;
                       if constexpr (std::is_same_v<decltype(inner),
                                                    raft::neighbors::ivf_pq::search_params>) {
-                          inner.lut_dtype = GetCudaType(ivfParams->lutType);
+                          inner.lut_dtype = GetCudaType(raftIvfParams->lutType);
                           inner.internal_distance_dtype =
-                              GetCudaType(ivfParams->internalDistanceType);
-                          inner.preferred_shmem_carvout = ivfParams->preferredShmemCarveout;
+                              GetCudaType(raftIvfParams->internalDistanceType);
+                          inner.preferred_shmem_carvout = raftIvfParams->preferredShmemCarveout;
                       }
                   },
                   result);
