@@ -13,9 +13,10 @@
 #include "VecSim/vec_sim_common.h"
 // For VecSimIndexAbstract
 #include "VecSim/vec_sim_index.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h" // VecSimQueryResult VecSimQueryReply
 #include "VecSim/memory/vecsim_malloc.h"
 
+#include <raft/core/device_resources_manager.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/error.hpp>
 #include <raft/distance/distance_types.hpp>
@@ -23,7 +24,6 @@
 #include <raft/neighbors/ivf_flat_types.hpp>
 #include <raft/neighbors/ivf_pq.cuh>
 #include <raft/neighbors/ivf_pq_types.hpp>
-
 
 inline auto constexpr GetRaftDistanceType(VecSimMetric vsm) {
     auto result = raft::distance::DistanceType{};
@@ -74,7 +74,7 @@ inline auto constexpr GetCudaType(CudaType vss_type) {
 }
 
 template <typename DataType, typename DistType = DataType>
-struct IVFIndex : public VecSimIndexAbstract<DistType> {
+struct RaftIVFIndex : public VecSimIndexAbstract<DistType> {
     using data_type = DataType;
     using dist_type = DistType;
 
@@ -85,102 +85,108 @@ private:
     using search_params_t = std::variant<raft::neighbors::ivf_flat::search_params,
                                          raft::neighbors::ivf_pq::search_params>;
     using internal_idx_t = std::uint32_t;
-    using ann_index_t = std::variant<raft::neighbors::ivf_flat::index<data_type, internal_idx_t>,
-                                     raft::neighbors::ivf_pq::index<internal_idx_t>>;
+    using index_flat_t = raft::neighbors::ivf_flat::index<data_type, internal_idx_t>;
+    using index_pq_t = raft::neighbors::ivf_pq::index<internal_idx_t>;
+    using ann_index_t = std::variant<index_flat_t, index_pq_t>;
 
 public:
-    IVFIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &commonParams)
+    RaftIVFIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &commonParams)
         : VecSimIndexAbstract<dist_type>{commonParams},
-          res_{raft::resource_manager::get_device_resources()}, build_params_{[raftIvfParams]() {
-              auto result = raftIvfParams->usePQ ? build_params_t{std::in_place_index<1>}
-                                                 : build_params_t{std::in_place_index<0>};
-              std::visit(
-                  [raftIvfParams](auto &&inner) {
-                      inner.metric = GetRaftDistanceType(raftIvfParams->metric);
-                      inner.n_lists = raftIvfParams->nLists;
-                      inner.kmeans_n_iters = raftIvfParams->kmeans_nIters;
-                      inner.kmeans_trainset_fraction = raftIvfParams->kmeans_trainsetFraction;
-                      inner.conservative_memory_allocation =
-                          raftIvfParams->conservativeMemoryAllocation;
-                      if constexpr (std::is_same_v<decltype(inner),
-                                                   raft::neighbors::ivf_pq::index_params>) {
-                          inner.pq_bits = raftIvfParams->pqBits;
-                          inner.pq_dim = raftIvfParams->pqDim;
-                          inner.codebook_kind = GetRaftCodebookKind(raftIvfParams->codebookKind);
-                      } else {
-                          inner.adaptive_centers = raftIvfParams->adaptiveCenters;
-                      }
-                  },
-                  result);
-              return result;
-          }()},
-          search_params_{[raftIvfParams]() {
-              auto result = raftIvfParams->usePQ ? search_params_t{std::in_place_index<1>}
-                                                 : search_params_t{std::in_place_index<0>};
-              std::visit(
-                  [raftIvfParams](auto &&inner) {
-                      inner.n_probes = raftIvfParams->nProbes;
-                      if constexpr (std::is_same_v<decltype(inner),
-                                                   raft::neighbors::ivf_pq::search_params>) {
-                          inner.lut_dtype = GetCudaType(raftIvfParams->lutType);
-                          inner.internal_distance_dtype =
-                              GetCudaType(raftIvfParams->internalDistanceType);
-                          inner.preferred_shmem_carvout = raftIvfParams->preferredShmemCarveout;
-                      }
-                  },
-                  result);
-              return result;
-          }()},
-          index_{std::nullopt} {}
-    auto addVector(const void *vector_data, labelType label,
-                   bool overwrite_allowed = true) override {
-        return addVectorBatch(vector_data, &label, 1, overwrite_allowed);
+          res_{raft::device_resources_manager::get_device_resources()},
+          build_params_{raftIvfParams->usePQ ? build_params_t{std::in_place_index<1>}
+                                             : build_params_t{std::in_place_index<0>}},
+          search_params_{raftIvfParams->usePQ ? search_params_t{std::in_place_index<1>}
+                                              : search_params_t{std::in_place_index<0>}},
+          index_{std::nullopt} {
+        std::visit(
+            [raftIvfParams](auto &&inner) {
+                inner.metric = GetRaftDistanceType(raftIvfParams->metric);
+                inner.n_lists = raftIvfParams->nLists;
+                inner.kmeans_n_iters = raftIvfParams->kmeans_nIters;
+                inner.kmeans_trainset_fraction = raftIvfParams->kmeans_trainsetFraction;
+                inner.conservative_memory_allocation = raftIvfParams->conservativeMemoryAllocation;
+                if constexpr (std::is_same_v<decltype(inner),
+                                             raft::neighbors::ivf_flat::index_params>) {
+                    inner.adaptive_centers = raftIvfParams->adaptiveCenters;
+                } else if constexpr (std::is_same_v<decltype(inner),
+                                                    raft::neighbors::ivf_pq::index_params>) {
+                    inner.pq_bits = raftIvfParams->pqBits;
+                    inner.pq_dim = raftIvfParams->pqDim;
+                    inner.codebook_kind = GetRaftCodebookKind(raftIvfParams->codebookKind);
+                }
+            },
+            build_params_);
+        std::visit(
+            [raftIvfParams](auto &&inner) {
+                inner.n_probes = raftIvfParams->nProbes;
+                if constexpr (std::is_same_v<decltype(inner),
+                                             raft::neighbors::ivf_pq::search_params>) {
+                    inner.lut_dtype = GetCudaType(raftIvfParams->lutType);
+                    inner.internal_distance_dtype =
+                        GetCudaType(raftIvfParams->internalDistanceType);
+                    inner.preferred_shmem_carvout = raftIvfParams->preferredShmemCarveout;
+                }
+            },
+            search_params_);
     }
-    auto addVectorBatchAsync(const void *vector_data, labelType *label, size_t batch_size,
-                             bool overwrite_allowed = true) {
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override {
+        return addVectorBatch(vector_data, &label, 1, auxiliaryCtx);
+    }
+    int addVectorBatchAsync(const void *vector_data, labelType *label, size_t batch_size,
+                            void *auxiliaryCtx = nullptr) {
+        // Convert labels to internal data type
+        auto label_original = std::vector<labelType>(label, label + batch_size);
+        auto label_converted =
+            std::vector<internal_idx_t>(label_original.begin(), label_original.end());
         // Allocate memory on device to hold vectors to be added
         auto vector_data_gpu =
             raft::make_device_matrix<data_type, internal_idx_t>(res_, batch_size, this->dim);
         // Allocate memory on device to hold vector labels
-        auto label_gpu = raft::make_device_vector<labelType>(res_, batch_size);
+        auto label_gpu = raft::make_device_vector<internal_idx_t, internal_idx_t>(res_, batch_size);
 
         // Copy vector data to previously allocated device buffer
         raft::copy(vector_data_gpu.data_handle(), static_cast<DataType const *>(vector_data),
                    this->dim * batch_size, res_.get_stream());
         // Copy label data to previously allocated device buffer
-        raft::copy(label_gpu.data_handle(), label, batch_size, res_.get_stream());
+        raft::copy(label_gpu.data_handle(), label_converted.data(), batch_size, res_.get_stream());
 
         if (std::holds_alternative<raft::neighbors::ivf_flat::index_params>(build_params_)) {
             if (!index_) {
                 index_ = raft::neighbors::ivf_flat::build(
                     res_, std::get<raft::neighbors::ivf_flat::index_params>(build_params_),
-                    vector_data_gpu.view());
+                    raft::make_const_mdspan(vector_data_gpu.view()));
             }
-            raft::neighbors::ivf_flat::extend(res_, vector_data_gpu.view(), label_gpu, *index_);
+            raft::neighbors::ivf_flat::extend(
+                res_, raft::make_const_mdspan(vector_data_gpu.view()),
+                std::make_optional(raft::make_const_mdspan(label_gpu.view())),
+                std::get<index_flat_t>(*index_));
         } else {
             if (!index_) {
                 index_ = raft::neighbors::ivf_pq::build(
                     res_, std::get<raft::neighbors::ivf_pq::index_params>(build_params_),
-                    vector_data_gpu.view());
+                    raft::make_const_mdspan(vector_data_gpu.view()));
             }
-            raft::neighbors::ivf_pq::extend(res_, vector_data_gpu.view(), label_gpu, *index_);
+            raft::neighbors::ivf_pq::extend(
+                res_, raft::make_const_mdspan(vector_data_gpu.view()),
+                std::make_optional(raft::make_const_mdspan(label_gpu.view())),
+                std::get<index_pq_t>(*index_));
         }
 
         return batch_size;
     }
-    auto addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
-                        bool overwrite_allowed = true) {
-        auto result = addVectorBatchAsync(vector_data, label, batch_size, overwrite_allowed);
+    int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
+                       void *auxiliaryCtx = nullptr) {
+        auto result = addVectorBatchAsync(vector_data, label, batch_size, auxiliaryCtx);
         // Ensure that above operation has executed on device before
         // returning from this function on host
         res_.sync_stream();
         return result;
     }
-    auto deleteVector(labelType label) override {
+    int deleteVector(labelType label) override {
         assert(!"deleteVector not implemented");
         return 0;
     }
-    double getDistanceFrom(labelType label, const void *vector_data) const override {
+    double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
         return INVALID_SCORE;
     }
@@ -188,66 +194,67 @@ public:
         assert(!"indexCapacity not implemented");
         return 0;
     }
-    void increaseCapacity() override { assert(!"increaseCapacity not implemented"); }
-    inline auto indexLabelCount() const override {
+    // void increaseCapacity() override { assert(!"increaseCapacity not implemented"); }
+    inline size_t indexLabelCount() const override {
         return this->indexSize(); // TODO: Return unique counts
     }
-    auto topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override {
-        auto result_list = VecSimQueryResult_List{0};
+    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                VecSimQueryParams *queryParams) const override {
+        auto result_list = new VecSimQueryReply(this->allocator);
         auto nVectors = this->indexSize();
-        if (nVectors == 0) {
-            result_list.results = array_new<VecSimQueryResult>(0);
-        } else {
-            // Ensure we are not trying to retrieve more vectors than exist in the
-            // index
-            k = std::min(k, nVectors);
-            // Allocate memory on device for search vector
-            auto vector_data_gpu = raft::make_device_matrix<data_type>(res_, 1, this->dim);
-            // Allocate memory on device for neighbor results
-            auto neighbors_gpu = raft::make_device_vector<labelType>(res_, k);
-            // Allocate memory on device for distance results
-            auto distances_gpu = raft::make_device_vector<dist_type>(res_, k);
-            // Copy query vector to device
-            raft::copy(vector_data_gpu.data_handle(), static_cast<data_type>(queryBlob), this->dim,
-                       res_.get_stream());
-
-            // Perform correct search based on index type
-            if (std::holds_alternative<raft::neighbors::ivf_flat::index>(index_)) {
-                raft::neighbors::ivf_flat::search<data_type, internal_idx_t>(
-                    res_, std::get<raft::neighbors::ivf_flat::search_params>(search_params_),
-                    std::get<raft::neighbors::ivf_flat::index>(*index_), vector_data_gpu.view(),
-                    neighbors_gpu.view(), distances_gpu.view())
-            } else {
-                raft::neighbors::ivf_pq::search<data_type, internal_idx_t>(
-                    res_, std::get<raft::neighbors::ivf_flat::search_params>(search_params_),
-                    std::get<raft::neighbors::ivf_flat::index>(*index_), vector_data_gpu.view(),
-                    neighbors_gpu.view(), distances_gpu.view())
-            }
-
-            // Allocate host buffers to hold returned results
-            auto neighbors =
-                std::unique_ptr(array_new_len<labelType>(k, k), &array_free<labelType>);
-            auto distances =
-                std::unique_ptr(array_new_len<dist_type>(k, k), &array_free<dist_type>);
-            // Copy data back from device to host
-            raft::copy(neighbors.get(), neighbors_gpu.data_handle(), this->dim, res_.get_stream());
-            raft::copy(distances.get(), distances_gpu.data_handle(), this->dim, res_.get_stream());
-
-            result_list.results = array_new_len<VecSimQueryResult>(k, k);
-
-            // Ensure search is complete and data have been copied back before
-            // building query result objects on host
-            res_.sync_stream();
-            for (size_t i = 0; i < k; ++i) {
-                VecSimQueryResult_SetId(result_list.results[i], neighbors[i]);
-                VecSimQueryResult_SetScore(result_list.results[i], distances[i]);
-            }
+        if (nVectors == 0 || k == 0 || !index_.has_value()) {
+            return result_list;
         }
+        // Ensure we are not trying to retrieve more vectors than exist in the
+        // index
+        k = std::min(k, nVectors);
+        // Allocate memory on device for search vector
+        auto vector_data_gpu =
+            raft::make_device_matrix<data_type, internal_idx_t>(res_, 1, this->dim);
+        // Allocate memory on device for neighbor and distance results
+        auto neighbors_gpu = raft::make_device_matrix<internal_idx_t, internal_idx_t>(res_, 1, k);
+        auto distances_gpu = raft::make_device_matrix<dist_type, internal_idx_t>(res_, 1, k);
+        // Copy query vector to device
+        raft::copy(vector_data_gpu.data_handle(), static_cast<const data_type*>(queryBlob), this->dim,
+                   res_.get_stream());
+
+        // Perform correct search based on index type
+        if (std::holds_alternative<index_flat_t>(*index_)) {
+            raft::neighbors::ivf_flat::search<data_type, internal_idx_t>(
+                res_, std::get<raft::neighbors::ivf_flat::search_params>(search_params_),
+                std::get<index_flat_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
+                neighbors_gpu.view(), distances_gpu.view());
+            // TODO ADD STREAM MANAGER
+        } else {
+            raft::neighbors::ivf_pq::search<data_type, internal_idx_t>(
+                res_, std::get<raft::neighbors::ivf_pq::search_params>(search_params_),
+                std::get<index_pq_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
+                neighbors_gpu.view(), distances_gpu.view());
+            // TODO ADD STREAM MANAGER
+        }
+
+        // Allocate host buffers to hold returned results
+        auto neighbors = vecsim_stl::vector<internal_idx_t>(k, this->allocator);
+        auto distances = vecsim_stl::vector<dist_type>(k, this->allocator);
+        // Copy data back from device to host
+        raft::copy(neighbors.data(), neighbors_gpu.data_handle(), this->dim, res_.get_stream());
+        raft::copy(distances.data(), distances_gpu.data_handle(), this->dim, res_.get_stream());
+
+        // Ensure search is complete and data have been copied back before
+        // building query result objects on host
+        res_.sync_stream();
+
+        result_list->results.resize(k);
+        for (auto i = 0; i < k; ++i) {
+            result_list->results[i].id = labelType{neighbors[i]};
+            result_list->results[i].score = distances[i];
+        }
+
         return result_list;
     }
 
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams) override {
+    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                 VecSimQueryParams *queryParams) const override {
         assert(!"RangeQuery not implemented");
     }
     VecSimInfoIterator *infoIterator() const override { assert(!"infoIterator not implemented"); }
@@ -255,7 +262,7 @@ public:
                                                   VecSimQueryParams *queryParams) const override {
         assert(!"newBatchIterator not implemented");
     }
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         assert(!"preferAdHocSearch not implemented");
     }
 
@@ -265,12 +272,30 @@ public:
         return std::visit([](auto &&params) { return params.n_list; }, build_params_);
     }
 
-    auto indexSize() {
+    size_t indexSize() const override {
         auto result = size_t{};
         if (index_) {
             result = std::visit([](auto &&index) { return index.size(); }, *index_);
         }
         return result;
+    }
+    VecSimIndexBasicInfo basicInfo() const override {
+        VecSimIndexBasicInfo info = this->getBasicInfo();
+        info.algo = VecSimAlgo_RaftIVF;
+        info.isTiered = false;
+        return info;
+    }
+    VecSimIndexInfo info() const override {
+        VecSimIndexInfo info;
+        info.commonInfo = this->getCommonInfo();
+        info.raftIvfInfo.nLists = nLists();
+        if (std::holds_alternative<raft::neighbors::ivf_pq::index_params>(build_params_)) {
+            const auto build_params_pq =
+                std::get<raft::neighbors::ivf_pq::index_params>(build_params_);
+            info.raftIvfInfo.pqBits = build_params_pq.pq_bits;
+            info.raftIvfInfo.pqDim = build_params_pq.pq_dim;
+        }
+        return info;
     }
 
 private:

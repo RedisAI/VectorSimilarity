@@ -8,6 +8,7 @@
 #include "hnsw_factory.h"
 #include "brute_force_factory.h"
 #include "tiered_factory.h"
+#include "raft_ivf_factory.h"
 #include "VecSim/vec_sim_index.h"
 
 namespace VecSimFactory {
@@ -23,6 +24,10 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 
         case VecSimAlgo_BF: {
             index = BruteForceFactory::NewIndex(params);
+            break;
+        }
+        case VecSimAlgo_RaftIVF: {
+            index = RaftIvfFactory::NewIndex(&params->algoParams.raftIvfParams);
             break;
         }
         case VecSimAlgo_TIERED: {
@@ -42,6 +47,8 @@ size_t EstimateInitialSize(const VecSimParams *params) {
         return HNSWFactory::EstimateInitialSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->algoParams.bfParams);
+    case VecSimAlgo_RaftIVF:
+        return RaftIvfFactory::EstimateInitialSize(&params->algoParams.raftIvfParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateInitialSize(&params->algoParams.tieredParams);
     }
@@ -54,6 +61,8 @@ size_t EstimateElementSize(const VecSimParams *params) {
         return HNSWFactory::EstimateElementSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->algoParams.bfParams);
+    case VecSimAlgo_RaftIVF:
+        return RaftIvfFactory::EstimateElementSize(&params->algoParams.raftIvfParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateElementSize(&params->algoParams.tieredParams);
     }

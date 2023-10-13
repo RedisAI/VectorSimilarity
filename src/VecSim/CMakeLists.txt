@@ -19,6 +19,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
     index_factories/index_factory.cpp
+    $<$<BOOL:${USE_CUDA}>:index_factories/raft_ivf_factory.cu>
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp
     vec_sim_interface.cpp

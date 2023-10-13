@@ -38,7 +38,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RaftIVF, VecSimAlgo_TIERED } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -275,7 +275,7 @@ typedef struct {
     size_t nLists; // Number of inverted lists.
     size_t pqDim;  // Dimensionality of encoded vector after PQ
     size_t pqBits; // Bits per encoded vector element after PQ
-} ivfInfoStruct;
+} raftIvfInfoStruct;
 
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
@@ -309,6 +309,7 @@ typedef struct {
     union {
         bfInfoStruct bfInfo;
         hnswInfoStruct hnswInfo;
+        raftIvfInfoStruct raftInfo;
         tieredInfoStruct tieredInfo;
     };
 } VecSimIndexInfo;

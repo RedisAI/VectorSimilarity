@@ -8,11 +8,11 @@
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
 #include "VecSim/vec_sim_index.h"
 
-namespace RaftIVFFactory {
+namespace RaftIvfFactory {
 
 VecSimIndex *NewIndex(const VecSimParams *params);
 VecSimIndex *NewIndex(const RaftIvfParams *params);
 size_t EstimateInitialSize(const RaftIvfParams *params);
 size_t EstimateElementSize(const RaftIvfParams *params);
 
-}; // namespace RaftIVFFactory
+}; // namespace RaftIvfFactory
