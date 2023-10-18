@@ -89,6 +89,13 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         } else if (type == VecSimType_FLOAT64) {
             return TieredHNSWFactory::NewIndex<double>(params);
         }
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFTIVF) {
+        VecSimType type = params->primaryIndexParams->algoParams.raftIvfParams.type;
+        if (type == VecSimType_FLOAT32) {
+            return TieredRaftIvfFactory::NewIndex<float>(params);
+        } else if (type == VecSimType_FLOAT64) {
+            return TieredRaftIvfFactory::NewIndex<double>(params);
+        }
     }
     return nullptr; // Invalid algorithm or type.
 }
@@ -99,6 +106,8 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
     BFParams bf_params{};
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFTIVF) {
+        est += TieredRaftIvfFactory::EstimateInitialSize(params, bf_params);
     }
 
     est += BruteForceFactory::EstimateInitialSize(&bf_params);
@@ -109,6 +118,8 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFTIVF) {
+        est = RaftIvfFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.raftIvfParams);
     }
     return est;
 }
