@@ -1,5 +1,6 @@
 #include "VecSim/index_factories/brute_force_factory.h"
 #include "VecSim/algorithms/raft_ivf/ivf.cuh"
+#include <raft/neighbors/ivf_pq.cuh>
 
 namespace RaftIvfFactory {
 
@@ -42,7 +43,6 @@ VecSimIndex *NewIndex(const RaftIvfParams *raftIvfParams) {
 }
 
 size_t EstimateInitialSize(const RaftIvfParams *raftIvfParams) {
-
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     // Constant part (not effected by parameters).
@@ -65,7 +65,18 @@ size_t EstimateInitialSize(const RaftIvfParams *raftIvfParams) {
 }
 
 size_t EstimateElementSize(const RaftIvfParams *raftIvfParams) {
-    // Vectors are stored on the GPU.
-    return 0;
+    // Those elements are stored only on GPU.
+    size_t est = 0;
+    if (!raftIvfParams->usePQ) {
+        // Size of vec + size of label.
+        est += raftIvfParams->dim * VecSimType_sizeof(raftIvfParams->type) + sizeof(labelType);
+    } else {
+        size_t pq_dim = raftIvfParams->pqDim;
+        if (pq_dim == 0)
+            pq_dim = raft::neighbors::ivf_pq::calculate_pq_dim(raftIvfParams->dim);
+        // Size of vec after compression + size of label
+        est += raftIvfParams->pqBits * pq_dim + sizeof(labelType);
+    }
+    return est;
 }
 }; // namespace RaftIvfFactory

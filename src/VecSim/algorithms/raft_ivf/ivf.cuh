@@ -84,7 +84,7 @@ private:
                                         raft::neighbors::ivf_pq::index_params>;
     using search_params_t = std::variant<raft::neighbors::ivf_flat::search_params,
                                          raft::neighbors::ivf_pq::search_params>;
-    using internal_idx_t = std::uint32_t;
+    using internal_idx_t = std::int64_t;
     using index_flat_t = raft::neighbors::ivf_flat::index<data_type, internal_idx_t>;
     using index_pq_t = raft::neighbors::ivf_pq::index<internal_idx_t>;
     using ann_index_t = std::variant<index_flat_t, index_pq_t>;
@@ -253,7 +253,7 @@ public:
         return result_list;
     }
 
-    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+    virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams) const override {
         assert(!"RangeQuery not implemented");
     }

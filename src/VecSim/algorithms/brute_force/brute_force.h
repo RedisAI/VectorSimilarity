@@ -35,11 +35,7 @@ protected:
 public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
-    void clear() {
-        idToLabelMapping.clear();
-        vectorBlocks.clear();
-        count = idType{};
-    }
+    virtual void clear() = 0;
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     vecsim_stl::vector<DistType> computeBlockScores(const DataBlock &block, const void *queryBlob,

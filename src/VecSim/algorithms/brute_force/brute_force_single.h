@@ -21,6 +21,12 @@ public:
                            const AbstractIndexInitParams &abstractInitParams);
     ~BruteForceIndex_Single();
 
+    void clear() override {
+        this->labelToIdLookup.clear();
+        this->idToLabelMapping.clear();
+        this->vectorBlocks.clear();
+        this->count = idType{};
+    }
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
