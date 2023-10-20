@@ -30,6 +30,8 @@ include(cmake/san.cmake)
 project(VectorSimilarity)
 
 if (USE_CUDA)
+	# List of architectures to generate device code
+	set(CMAKE_CUDA_ARCHITECTURES 80;75;70;61)
     # Enable CUDA compilation for this project
     enable_language(CUDA)
  	# Add definition for conditional compilation of CUDA components

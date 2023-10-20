@@ -72,8 +72,8 @@ size_t EstimateElementSize(const RaftIvfParams *raftIvfParams) {
         est += raftIvfParams->dim * VecSimType_sizeof(raftIvfParams->type) + sizeof(labelType);
     } else {
         size_t pq_dim = raftIvfParams->pqDim;
-        if (pq_dim == 0)
-            pq_dim = raft::neighbors::ivf_pq::calculate_pq_dim(raftIvfParams->dim);
+        if (pq_dim == 0) // Estimation.
+            pq_dim = raftIvfParams->dim >= 128 ? raftIvfParams->dim / 2 : raftIvfParams->dim;
         // Size of vec after compression + size of label
         est += raftIvfParams->pqBits * pq_dim + sizeof(labelType);
     }

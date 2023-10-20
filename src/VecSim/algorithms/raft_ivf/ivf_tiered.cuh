@@ -31,7 +31,7 @@ struct TieredRaftIVFIndex : public VecSimTieredIndex<DataType, DistType> {
         return 0;
     }
 
-    size_t indexSize() {
+    size_t indexSize() const override {
         auto frontend_lock = std::scoped_lock(this->flatIndexGuard);
         auto backend_lock = std::scoped_lock(this->mainIndexGuard);
         return (getBackendIndex().indexSize() + this->frontendIndex.indexSize());
@@ -44,8 +44,6 @@ struct TieredRaftIVFIndex : public VecSimTieredIndex<DataType, DistType> {
     size_t indexCapacity() const override {
         return (getBackendIndex().indexCapacity() + this->flatBufferLimit);
     }
-
-    void increaseCapacity() override { getBackendIndex().increaseCapacity(); }
 
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override {
         auto frontend_lock = std::unique_lock(this->flatIndexGuard);
