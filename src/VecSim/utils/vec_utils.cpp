@@ -22,6 +22,7 @@ const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
 const char *VecSimCommonStrings::FLOAT64_STRING = "FLOAT64";
 const char *VecSimCommonStrings::INT32_STRING = "INT32";
 const char *VecSimCommonStrings::INT64_STRING = "INT64";
+const char *VecSimCommonStrings::BF16_STRING = "BF16";
 
 const char *VecSimCommonStrings::METRIC_STRING = "METRIC";
 const char *VecSimCommonStrings::COSINE_STRING = "COSINE";
@@ -140,6 +141,8 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::INT32_STRING;
     case VecSimType_INT64:
         return VecSimCommonStrings::INT64_STRING;
+    case VecSimType_FP32_TO_BF16:
+        return VecSimCommonStrings::BF16_STRING;
     }
     return NULL;
 }

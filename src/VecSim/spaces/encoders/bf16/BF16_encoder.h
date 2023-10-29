@@ -17,17 +17,17 @@ using bf16_to_fp32_encoder_t = void (*)(const void *, const void *, size_t);
 class BF16Encoder : public EncoderInterface<float, bf16, float>, VecsimBaseObject {
 protected:
     size_t dim;
-    dist_func_t<float> distance_calaculation_function;
-    fp32_to_bf16_encoder_t encode_function;
-    bf16_to_fp32_encoder_t decode_function;
+    dist_func_t<float> distance_calaculation_func;
+    fp32_to_bf16_encoder_t encode_func;
+    bf16_to_fp32_encoder_t decode_func;
 
     fp32_to_bf16_encoder_t setEncodingFunction();
     bf16_to_fp32_encoder_t setDecodingFunction();
 
     float dist_func(void *encoded, void *not_encoded, size_t dim) {
-        float decoded[dim] = {0};
-        this->decode_function(encoded, decoded, dim);
-        return this->distance_calaculation_function(decoded, not_encoded, dim);
+        float decoded[dim];
+        this->decode_func(encoded, decoded, dim);
+        return this->distance_calaculation_func(decoded, not_encoded, dim);
     }
 
 public:
@@ -42,15 +42,14 @@ public:
     }
     virtual void decode(const void *src, void *dest, size_t dim) override {}
     virtual void setDistFunc(VecSimMetric metric, size_t dim,
-                             dist_func_t<float> *index_dist_func) override {
-        spaces::SetDistFunc(metric, dim, index_dist_func);
+                             dist_func_t<float> *index_dist_func, unsigned char *alignment) override {
+        SetDistFunc(metric, dim, index_dist_func, alignment);
     }
     virtual bool shouldEncode() override { return true; }
 
-}
+};
 
-fp32_to_bf16_encoder_t
-Get_FP32_to_BF16_Encoder(size_t dim, const Arch_Optimization arch_opt, bool big_endian);
+fp32_to_bf16_encoder_t Get_FP32_to_BF16_Encoder(size_t dim, const Arch_Optimization arch_opt, bool big_endian);
 
 bf16_to_fp32_encoder_t Get_BF16_to_FP32_Encoder(size_t dim, const Arch_Optimization arch_opt,
                                                 bool big_endian);

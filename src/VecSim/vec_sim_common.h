@@ -7,13 +7,13 @@
 #pragma once
 
 #ifdef __cplusplus
+#include <cstdint>
 extern "C" {
 #endif
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
 #include <stdbool.h>
-#include <cstdint>
 
 // Common definitions
 #define INVALID_ID    UINT_MAX

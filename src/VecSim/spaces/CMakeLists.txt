@@ -51,7 +51,7 @@ add_library(VectorSimilaritySpaces
 	L2_space.cpp
 	IP_space.cpp
 	spaces.cpp
-	BF16_encoder.cpp
+	encoders/bf16/BF16_encoder_impl.cpp
 )
 
 target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization)

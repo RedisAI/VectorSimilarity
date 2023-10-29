@@ -55,7 +55,7 @@ protected:
     dist_func_t<DistType>
         distFunc; // Index's distance function. Chosen by the type, metric and dimension.
 
-    encode_func_t encode_func; // Index's encode function. Chosen by the type, metric and dimension.
+    //encode_func_t encode_func; // Index's encode function. Chosen by the type, metric and dimension.
     unsigned char alignment;   // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
@@ -89,9 +89,20 @@ public:
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
+        switch (vecType) {
+        case VecSimType_FLOAT32:
+        case VecSimType_FLOAT64:
+            spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
+            break;
+        case VecSimType_FP32_TO_BF16:
+            spaces::SetBF16DistFunc(metric, dim, &distFunc, &alignment);
+            break;
+        default:
+            break;
+        }
+
         normalize_func =
-            vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
+            vecType == VecSimType_FLOAT64 ? normalizeVectorDouble : normalizeVectorFloat;
     }
 
     /**

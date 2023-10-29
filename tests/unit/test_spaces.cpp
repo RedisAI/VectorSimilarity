@@ -13,7 +13,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/BF16_encoder.h"
+#include "VecSim/spaces/encoders/bf16/BF16_encoder.h"
 #include "VecSim/vec_sim_common.h"
 
 class SpacesTest : public ::testing::Test {

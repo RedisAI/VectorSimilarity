@@ -8,7 +8,8 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/BF16_encoder.h"
+#include "VecSim/spaces/encoders/bf16/BF16_encoder_impl.h"
+#include "VecSim/spaces/IP/IP.h"
 namespace spaces {
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
@@ -41,16 +42,56 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
     }
 }
 
+float BFP16_Convert_and_DistInnerProduct_bigEndian(const void *pVect1, const void *pVect2, size_t dimension) {
+    //convert vec1 to bf16
+    bf16 pVect1_bf16[dimension];
+    FP32_to_BF16_BigEndian(pVect1, pVect1_bf16, dimension);
+    bf16 pVect2_bf16[dimension];
+    FP32_to_BF16_BigEndian(pVect2, pVect2_bf16, dimension);
+    return BFP16_InnerProduct(pVect1_bf16, pVect2_bf16, dimension);
+}
+
+float BFP16_Convert_and_DistInnerProduct_littleEndian(const void *pVect1, const void *pVect2, size_t dimension) {
+    //convert vec1 to bf16
+    bf16 pVect1_bf16[dimension];
+    FP32_to_BF16_LittleEndian(pVect1, pVect1_bf16, dimension);
+    bf16 pVect2_bf16[dimension];
+    FP32_to_BF16_LittleEndian(pVect2, pVect2_bf16, dimension);
+    return BFP16_InnerProduct(pVect1_bf16, pVect2_bf16, dimension);
+}
+
+
 int little_endian() {
     int x = 1;
     return *(char *)&x;
 }
 int big_endian() { return !little_endian(); }
 
-fp32_to_bf16_encoder_t GetFP32ToBFloat16Encoder(size_t dim) {
+// fp32_to_bf16_encoder_t GetFP32ToBFloat16Encoder(size_t dim) {
 
-    static const Arch_Optimization arch_opt = getArchitectureOptimization();
-    return Get_FP32_to_BF16_Encoder(dim, arch_opt, big_endian());
+//     static const Arch_Optimization arch_opt = getArchitectureOptimization();
+//     return Get_FP32_to_BF16_Encoder(dim, arch_opt, big_endian());
+// }
+
+void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
+                 unsigned char *alignment) {
+
+    if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
+        if (little_endian()) {
+            *out_func = BFP16_Convert_and_DistInnerProduct_littleEndian;
+
+        } else {
+            *out_func = BFP16_Convert_and_DistInnerProduct_bigEndian;
+        }
+
+
+    } else if (metric == VecSimMetric_L2) {
+        /* not supported yet */
+        *out_func = NULL;
+    }
 }
-
+void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
+                 unsigned char *alignment) {
+    *out_func = NULL;
+}
 } // namespace spaces
