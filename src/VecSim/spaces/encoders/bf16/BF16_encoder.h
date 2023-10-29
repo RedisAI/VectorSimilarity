@@ -8,6 +8,8 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/encoders/encoder.h"
+#include "VecSim/spaces/space_aux.h"
+
 
 namespace spaces {
 

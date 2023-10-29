@@ -4,6 +4,7 @@ add_library(VectorSimilaritySpaces_no_optimization
 	L2/L2.cpp
 	IP/IP.cpp
 	encoders/bf16/BF16_encoder_impl.cpp
+	encoders/bf16/BF16_encoder.cpp
 )
 
 include(CheckCXXCompilerFlag)
