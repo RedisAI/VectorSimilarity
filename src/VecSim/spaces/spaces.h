@@ -23,10 +23,10 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dis
                  unsigned char *alignment);
 
 void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
-                 unsigned char *alignment);
+                     unsigned char *alignment);
 void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
-                 unsigned char *alignment);
+                     unsigned char *alignment);
 
-//fp32_to_bf16_encoder_t GetFP32ToBFloat16Encoder(size_t dim);
+// fp32_to_bf16_encoder_t GetFP32ToBFloat16Encoder(size_t dim);
 
 } // namespace spaces

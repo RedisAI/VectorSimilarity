@@ -42,8 +42,9 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
     }
 }
 
-float BFP16_Convert_and_DistInnerProduct_bigEndian(const void *pVect1, const void *pVect2, size_t dimension) {
-    //convert vec1 to bf16
+float BFP16_Convert_and_DistInnerProduct_bigEndian(const void *pVect1, const void *pVect2,
+                                                   size_t dimension) {
+    // convert vec1 to bf16
     bf16 pVect1_bf16[dimension];
     FP32_to_BF16_BigEndian(pVect1, pVect1_bf16, dimension);
     bf16 pVect2_bf16[dimension];
@@ -51,15 +52,15 @@ float BFP16_Convert_and_DistInnerProduct_bigEndian(const void *pVect1, const voi
     return BFP16_InnerProduct(pVect1_bf16, pVect2_bf16, dimension);
 }
 
-float BFP16_Convert_and_DistInnerProduct_littleEndian(const void *pVect1, const void *pVect2, size_t dimension) {
-    //convert vec1 to bf16
+float BFP16_Convert_and_DistInnerProduct_littleEndian(const void *pVect1, const void *pVect2,
+                                                      size_t dimension) {
+    // convert vec1 to bf16
     bf16 pVect1_bf16[dimension];
     FP32_to_BF16_LittleEndian(pVect1, pVect1_bf16, dimension);
     bf16 pVect2_bf16[dimension];
     FP32_to_BF16_LittleEndian(pVect2, pVect2_bf16, dimension);
     return BFP16_InnerProduct(pVect1_bf16, pVect2_bf16, dimension);
 }
-
 
 int little_endian() {
     int x = 1;
@@ -74,7 +75,7 @@ int big_endian() { return !little_endian(); }
 // }
 
 void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
-                 unsigned char *alignment) {
+                     unsigned char *alignment) {
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
         if (little_endian()) {
@@ -84,14 +85,13 @@ void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_fu
             *out_func = BFP16_Convert_and_DistInnerProduct_bigEndian;
         }
 
-
     } else if (metric == VecSimMetric_L2) {
         /* not supported yet */
         *out_func = NULL;
     }
 }
 void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
-                 unsigned char *alignment) {
+                     unsigned char *alignment) {
     *out_func = NULL;
 }
 } // namespace spaces

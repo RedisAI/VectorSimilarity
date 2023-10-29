@@ -90,7 +90,7 @@ struct LevelData {
     idType links[];
 
     LevelData(std::shared_ptr<VecSimAllocator> allocator)
-        : incomingEdges(new(allocator) vecsim_stl::vector<idType>(allocator)), numLinks(0) {}
+        : incomingEdges(new (allocator) vecsim_stl::vector<idType>(allocator)), numLinks(0) {}
 
     // Sets the outgoing links of the current element.
     // Assumes that the object has the capacity to hold all the links.
