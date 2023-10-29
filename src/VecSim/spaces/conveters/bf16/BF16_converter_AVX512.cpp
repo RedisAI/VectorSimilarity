@@ -8,7 +8,6 @@
 #include <immintrin.h>
 #include <memory.h>
 
-
 void FP32_to_BF16_AVX512_SIMD16(const void *pVect1v, void *pVect2v, size_t qty) {
     float *pVect1 = (float *)pVect1v;
     bf16 *pVect2 = (bf16 *)pVect2v;
@@ -17,9 +16,9 @@ void FP32_to_BF16_AVX512_SIMD16(const void *pVect1v, void *pVect2v, size_t qty) 
 
     while (pVect1 < pEnd1) {
         __m512 v1 = _mm512_loadu_ps(pVect1);
-        __m256bh v2 = _mm512_cvtneps_pbh (v1);
-        memcpy(pVect2, &v2, 16*sizeof(bf16));
-        
+        __m256bh v2 = _mm512_cvtneps_pbh(v1);
+        memcpy(pVect2, &v2, 16 * sizeof(bf16));
+
         pVect1++;
         pVect2++;
     }

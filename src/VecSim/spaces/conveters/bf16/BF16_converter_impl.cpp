@@ -21,4 +21,3 @@ void FP32_to_BF16(const void *pVect1v, void *pVect2v, size_t qty) {
         pVect2++;
     }
 }
-

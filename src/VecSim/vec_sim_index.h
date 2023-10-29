@@ -53,12 +53,12 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     dist_func_t<DistType>
-        distFunc;  // Index's distance function. Chosen by the type, metric and dimension.
+        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
 
     encode_func_t encode_func; // Index's encode function. Chosen by the type, metric and dimension.
-    unsigned char alignment; // Alignment hint to allocate vectors with.
-    mutable VecSearchMode lastMode;   // The last search mode in RediSearch (used for debug/testing).
-    bool isMulti;                     // Determines if the index should multi-index or not.
+    unsigned char alignment;   // Alignment hint to allocate vectors with.
+    mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
+    bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
 
     /**
@@ -94,12 +94,11 @@ public:
             vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }
 
-/**
- * @brief Destroy the Vec Sim Index object
- *
- */
-virtual ~VecSimIndexAbstract() {
-}
+    /**
+     * @brief Destroy the Vec Sim Index object
+     *
+     */
+    virtual ~VecSimIndexAbstract() {}
 
     inline dist_func_t<DistType> getDistFunc() const { return distFunc; }
     inline size_t getDim() const { return dim; }

@@ -5,6 +5,4 @@
  */
 #include "VecSim/spaces/BF16_converter.h"
 
-bf16_converter_t BF16_GetConveter(size_t dim, const Arch_Optimization arch_opt) {
-
-}
+bf16_converter_t BF16_GetConveter(size_t dim, const Arch_Optimization arch_opt) {}
