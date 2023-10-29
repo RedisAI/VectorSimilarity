@@ -9,11 +9,12 @@ size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
+tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+    "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
 const char *BM_VecSimGeneral::test_queries_file =
-    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+    "tests/benchmark/data/dbpedia-cosine-dim768-test_vectors.raw";
 
 #define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Single
 

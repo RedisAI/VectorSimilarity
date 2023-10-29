@@ -23,23 +23,25 @@ template <typename DataType, typename DistType>
 class BF_BatchIterator : public VecSimBatchIterator {
 protected:
     const BruteForceIndex<DataType, DistType> *index;
+    size_t index_label_count; // number of labels in the index when calculating the scores,
+                              // which is the only time we access the index.
     vecsim_stl::vector<pair<DistType, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.
 
-    VecSimQueryResult_List searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
-    VecSimQueryResult_List selectBasedSearch(size_t n_res);
-    VecSimQueryResult_List heapBasedSearch(size_t n_res);
+    VecSimQueryReply *searchByHeuristics(size_t n_res, VecSimQueryReply_Order order);
+    VecSimQueryReply *selectBasedSearch(size_t n_res);
+    VecSimQueryReply *heapBasedSearch(size_t n_res);
     void swapScores(const vecsim_stl::unordered_map<labelType, size_t> &TopCandidatesIndices,
                     size_t res_num);
 
-    virtual inline VecSimQueryResult_Code calculateScores() = 0;
+    virtual inline VecSimQueryReply_Code calculateScores() = 0;
 
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
 
-    VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
+    VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override;
 
     bool isDepleted() override;
 
@@ -53,18 +55,20 @@ public:
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryReply *
 BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
-                                                         VecSimQueryResult_Order order) {
-    if ((this->index->indexLabelCount() - this->getResultsCount()) / 1000 > n_res) {
+                                                         VecSimQueryReply_Order order) {
+    if ((this->index_label_count - this->getResultsCount()) / 1000 > n_res) {
         // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
     }
-    VecSimQueryResult_List rl = this->selectBasedSearch(n_res);
+    VecSimQueryReply *rep = this->selectBasedSearch(n_res);
     if (order == BY_SCORE) {
-        sort_results_by_score(rl);
+        sort_results_by_score(rep);
+    } else if (order == BY_SCORE_THEN_ID) {
+        sort_results_by_score_then_id(rep);
     }
-    return rl;
+    return rep;
 }
 
 template <typename DataType, typename DistType>
@@ -99,8 +103,8 @@ void BF_BatchIterator<DataType, DistType>::swapScores(
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n_res) {
-    VecSimQueryResult_List rl = {0};
+VecSimQueryReply *BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n_res) {
+    auto rep = new VecSimQueryReply(this->allocator);
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::max_priority_queue<DistType, labelType> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
@@ -124,19 +128,18 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(siz
     }
 
     // Save the top results to return.
-    rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
-    for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(rl.results[i], TopCandidates.top().first);
+    rep->results.resize(TopCandidates.size());
+    for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
+        std::tie(result->score, result->id) = TopCandidates.top();
         TopCandidates.pop();
     }
-    swapScores(TopCandidatesIndices, array_len(rl.results));
-    return rl;
+    swapScores(TopCandidatesIndices, rep->results.size());
+    return rep;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::selectBasedSearch(size_t n_res) {
-    VecSimQueryResult_List rl = {0};
+VecSimQueryReply *BF_BatchIterator<DataType, DistType>::selectBasedSearch(size_t n_res) {
+    auto rep = new VecSimQueryReply(this->allocator);
     size_t remaining_vectors_count = this->scores.size() - this->scores_valid_start_pos;
     // Get an iterator to the effective first element in the scores array, which is the first
     // element that hasn't been returned in previous iterations.
@@ -151,15 +154,13 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::selectBasedSearch(s
     // will be placed before it, and all the rest will be placed after.
     std::nth_element(valid_begin_it, n_th_element_pos, this->scores.end());
 
-    rl.results = array_new<VecSimQueryResult>(n_res);
+    rep->results.reserve(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores_valid_start_pos + n_res; i++) {
-        rl.results = array_append(rl.results, VecSimQueryResult{});
-        VecSimQueryResult_SetId(rl.results[array_len(rl.results) - 1], this->scores[i].second);
-        VecSimQueryResult_SetScore(rl.results[array_len(rl.results) - 1], this->scores[i].first);
+        rep->results.push_back(VecSimQueryResult{this->scores[i].second, this->scores[i].first});
     }
     // Update the valid results start position after returning the results.
-    this->scores_valid_start_pos += array_len(rl.results);
-    return rl;
+    this->scores_valid_start_pos += rep->results.size();
+    return rep;
 }
 
 template <typename DataType, typename DistType>
@@ -167,39 +168,39 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
     void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
-      index(bf_index), scores(allocator), scores_valid_start_pos(0) {}
+      index(bf_index), index_label_count(index->indexLabelCount()), scores(allocator),
+      scores_valid_start_pos(0) {}
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
-BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryResult_Order order) {
-    assert((order == BY_ID || order == BY_SCORE) &&
-           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
+VecSimQueryReply *
+BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryReply_Order order) {
     // Only in the first iteration we need to compute all the scores
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
 
+        // The only time we access the index. This function also updates the iterator's label count.
         auto rc = calculateScores();
 
         if (VecSim_OK != rc) {
-            return {NULL, rc};
+            return new VecSimQueryReply(this->allocator, rc);
         }
     }
     if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
-        return {NULL, VecSim_QueryResult_TimedOut};
+        return new VecSimQueryReply(this->allocator, VecSim_QueryReply_TimedOut);
     }
-    VecSimQueryResult_List rl = searchByHeuristics(n_res, order);
+    VecSimQueryReply *rep = searchByHeuristics(n_res, order);
 
-    this->updateResultsCount(array_len(rl.results));
+    this->updateResultsCount(VecSimQueryReply_Len(rep));
     if (order == BY_ID) {
-        sort_results_by_id(rl);
+        sort_results_by_id(rep);
     }
-    return rl;
+    return rep;
 }
 
 template <typename DataType, typename DistType>
 bool BF_BatchIterator<DataType, DistType>::isDepleted() {
-    assert(this->getResultsCount() <= this->index->indexLabelCount());
-    bool depleted = this->getResultsCount() == this->index->indexLabelCount();
+    assert(this->getResultsCount() <= this->index_label_count);
+    bool depleted = this->getResultsCount() == this->index_label_count;
     return depleted;
 }
 

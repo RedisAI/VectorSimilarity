@@ -37,30 +37,38 @@ make benchmark BENCHMARK_FILTER=fp32*
 # Available sets
 There are currently 3 sets of benchmarks available: `BM_VecSimBasics`, `BM_BatchIterator`, and `BM_VecSimUpdatedIndex`. Each is templated according to the index data type. We run 10 iterations of each test case, unless otherwise specified.
 ## BM_VecSimBasics
-For each combination of data type (fp32/fp64) and index type (single/multi) the following test cases are included:
-1. Mesure index total `memory` (runtime and iterations number are irrelevant for this use case, just the memory metric) 
+For each combination of data type (fp32/fp64), index type (single/multi), and indexing algorithm (flat, HNSW and tiered-HNSW) the following test cases are included:
+1. Measure index total `memory` (runtime and iterations number are irrelevant for this use case, just the memory metric) 
 2. `AddLabel` - runs for `DEFAULT_BLOCK_SIZE (= 1024)` iterations, in each we add one new label to the index from the `queries` list. Note that for a single value index each label contains one vector, meaning that the number of new labels equals the number of new vectors.  
 **results:** average time per label, average memory addition per vector, vectors per label.  
 *At the end of the benchmark, we delete the added labels*
 3. `DeleteLabel` - runs for `DEFAULT_BLOCK_SIZE (= 1024)` iterations, in each we delete one label from the index. Note that for a single value index each label contains one vector, meaning that the number of deleted labels equals the number of deleted vectors.  
 **results:** average time per label, average memory addition per vector (a negative value means that the memory has decreased).  
 *At the end of the benchmark, we restore the deleted vectors under the same labels*
+
+For tiered-HNSW index, we also run these additional tests:
+
+4. `AddLabel_Async` - which is the same as `AddLabel` test, but here we also take into account the time that it takes to the background threads to ingest vectors into HNSW asynchronously (while in `AddLabel` test for the tiered index we only measure the time until vectors are stored in the flat buffer).
+5. `DeleteLabel_Async` - which is the same as `DeleteLabel` test, but here we also take into account the time that it takes to the background threads to repair the HNSW graph due to the deletion (while in `DeleteLabel` test for the tiered index we only measure the time until vectors are marked as deleted). Note that the garbage collector of the tiered index is triggered when at least `swapJobsThreshold` vectors are ready to be evicted (this happens when all of their affected neighbors in the graph are repaired). We run this test for `swapJobsThreshold` in `{1, 100, 1024(DEFAULT)}`, and we collect two additional metrics: `num_zombies`, which is the number of vectors that are left to be evicted *after* the test has finished, and `cleanup_time`, which is the number of milliseconds that it took to clean these zombies.
+
+In both tests, we should only consider the `real_time` metric (rather than the `cpu_time`), since `cpu_time` only accounts for the time that the main thread is running. 
 #### **TopK benchmarks**
 Search for the `k` nearest neighbors of the query.   
-4. Run `Top_K` query over the flat index (using brute-force search), for each `k=10`, `k=100` and `k=500`  
+6. Run `Top_K` query over the flat index (using brute-force search), for each `k=10`, `k=100` and `k=500`  
 **results:** average time per iteration  
-5. Run `Top_K` query over the HNSW index, for each pair of `{ef_runtime, k}` from the following:  
+7. Run `Top_K` query over the HNSW index, for each pair of `{ef_runtime, k}` from the following:  
     `{ef_runtime=10, k=10}`   
     `{ef_runtime=200, k=10}`   
     `{ef_runtime=100, k=100}`   
     `{ef_runtime=200, k=100}`   
     `{ef_runtime=500, k=500}`   
-**results:** average time per iteration, recall  
+**results:** average time per iteration, recall
+8. Run `Top_K` query over the tiered-HNSW index (in parallel by several threads), for each pair of `{ef_runtime, k}` as in the previous test (assuming all vector are indexed into the HNSW graph). We run for `50` iterations to get a better sense of the parallelism that can be achieved. Here as well, we should only consider the `real_time` measurement rather than the `cpu_time`.
 #### **Range query benchmarks**
 In range query, we search for all the vectors in the index whose distance to the query vector is lower than the range.  
-6. Run `Range` query over the flat index (using brute-force search), for each `radius=0.2`, `radius=0.35` and `radius=0.5`  
+9. Run `Range` query over the flat index (using brute-force search), for each `radius=0.2`, `radius=0.35` and `radius=0.5`  
 **results:** average time per iteration, average results number per iteration  
-7. Run `Range` query over the HNSW index, for each pair of `{radius, epsilon}` from the following:  
+10. Run `Range` query over the HNSW index, for each pair of `{radius, epsilon}` from the following:  
     `{radius=0.2, epsilon=0.001}`   
     `{radius=0.2, epsilon=0.01}`    
     `{radius=0.2, epsilon=0.1}`     

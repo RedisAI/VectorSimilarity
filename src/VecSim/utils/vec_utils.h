@@ -10,21 +10,15 @@
 #include "VecSim/vec_sim_common.h"
 #include <VecSim/query_results.h>
 #include <utility>
+#include <cassert>
 #include <cmath> //sqrt
-
-template <typename dist_t>
-struct CompareByFirst {
-    constexpr bool operator()(std::pair<dist_t, unsigned int> const &a,
-                              std::pair<dist_t, unsigned int> const &b) const noexcept {
-        return (a.first != b.first) ? a.first < b.first : a.second < b.second;
-    }
-};
 
 struct VecSimCommonStrings {
 public:
     static const char *ALGORITHM_STRING;
     static const char *FLAT_STRING;
     static const char *HNSW_STRING;
+    static const char *TIERED_STRING;
 
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;
@@ -49,16 +43,35 @@ public:
     static const char *HNSW_EPSILON_STRING;
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
+    static const char *HNSW_NUM_MARKED_DELETED;
+    // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
     static const char *HYBRID_POLICY_STRING;
     static const char *BATCH_SIZE_STRING;
+
+    static const char *TIERED_MANAGEMENT_MEMORY_STRING;
+    static const char *TIERED_BACKGROUND_INDEXING_STRING;
+    static const char *TIERED_BUFFER_LIMIT_STRING;
+    static const char *FRONTEND_INDEX_STRING;
+    static const char *BACKEND_INDEX_STRING;
+    static const char *TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING;
+
+    // Log levels
+    static const char *LOG_DEBUG_STRING;
+    static const char *LOG_VERBOSE_STRING;
+    static const char *LOG_NOTICE_STRING;
+    static const char *LOG_WARNING_STRING;
 };
 
-void sort_results_by_id(VecSimQueryResult_List results);
+void sort_results_by_id(VecSimQueryReply *results);
 
-void sort_results_by_score(VecSimQueryResult_List results);
+void sort_results_by_score(VecSimQueryReply *results);
+
+void sort_results_by_score_then_id(VecSimQueryReply *results);
+
+void sort_results(VecSimQueryReply *results, VecSimQueryReply_Order order);
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 
@@ -81,11 +94,20 @@ void normalizeVector(DataType *input_vector, size_t dim) {
     double sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
-        sum += input_vector[i] * input_vector[i];
+        sum += (double)input_vector[i] * (double)input_vector[i];
     }
     DataType norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
         input_vector[i] = input_vector[i] / norm;
     }
+}
+
+typedef void (*normalizeVector_f)(void *input_vector, size_t dim);
+
+static inline void normalizeVectorFloat(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<float *>(input_vector), dim);
+}
+static inline void normalizeVectorDouble(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<double *>(input_vector), dim);
 }

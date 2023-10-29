@@ -12,9 +12,9 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "test_utils.h"
 #include "VecSim/utils/serializer.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 
-const size_t vecsimAllocationOverhead = sizeof(size_t);
+const size_t vecsimAllocationOverhead = VecSimAllocator::getAllocationOverheadSize();
 
 const size_t hashTableNodeSize = getLabelsLookupNodeSize();
 
@@ -88,9 +88,6 @@ class IndexAllocatorTest : public ::testing::Test {};
 TYPED_TEST_SUITE(IndexAllocatorTest, DataTypeSet);
 
 TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
-    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     // Create only the minimal struct.
     size_t dim = 128;
     BFParams params = {.type = TypeParam::get_index_type(),
@@ -98,25 +95,27 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
                        .metric = VecSimMetric_IP,
                        .initialCapacity = 0,
                        .blockSize = 1};
-
+    auto *bfIndex = dynamic_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
+        BruteForceFactory::NewIndex(&params));
+    bfIndex->alignment = 0; // Disable alignment for testing purposes.
+    auto allocator = bfIndex->getAllocator();
     TEST_DATA_T vec[128] = {};
-    BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *bfIndex =
-        new (allocator) BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
+    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     expectedAllocationSize +=
         sizeof(BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
-    int addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 1);
+    int before = allocator->getAllocationSize();
+    VecSimIndex_AddVector(bfIndex, vec, 1);
+    int addCommandAllocationDelta = allocator->getAllocationSize() - before;
     int64_t expectedAllocationDelta = 0;
     expectedAllocationDelta +=
         sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta +=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
-    expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
     expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
@@ -125,20 +124,20 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     // Prepare for next assertion test
-    expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
-    addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
+    before = allocator->getAllocationSize();
+    VecSimIndex_AddVector(bfIndex, vec, 2);
+    addCommandAllocationDelta = allocator->getAllocationSize() - before;
+    expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta += sizeof(labelType); // resize idToLabelMapping
     expectedAllocationDelta +=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
-    expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
@@ -146,18 +145,17 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     // Prepare for next assertion test
-    expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
-    int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
-    expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+    before = allocator->getAllocationSize();
+    VecSimIndex_DeleteVector(bfIndex, 2);
+    int deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta -=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // Free the vector in the vector block
-    expectedAllocationDelta -= sizeof(VectorBlock *);         // remove from vectorBlocks vector
     expectedAllocationDelta -= sizeof(labelType);             // resize idToLabelMapping
     expectedAllocationDelta -=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
@@ -166,21 +164,23 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     // collection allocate additional structures for their internal implementation.
     ASSERT_EQ(allocator->getAllocationSize(),
               expectedAllocationSize + deleteCommandAllocationDelta);
-    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
+    ASSERT_GE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+    ASSERT_GE(expectedAllocationDelta, deleteCommandAllocationDelta);
 
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     // Prepare for next assertion test
-    expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
-    deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
+    before = allocator->getAllocationSize();
+    VecSimIndex_DeleteVector(bfIndex, 1);
+    deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
+        sizeof(DataBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
     expectedAllocationDelta -=
         sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
     expectedAllocationDelta -= (sizeof(TEST_DATA_T) * dim +
@@ -195,14 +195,11 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     VecSimIndex_Free(bfIndex);
 }
 
 TYPED_TEST(IndexAllocatorTest, test_hnsw) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
-    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     size_t d = 128;
 
     // Build with default args
@@ -212,45 +209,59 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
                          .initialCapacity = 0};
 
     TEST_DATA_T vec[128] = {};
-    HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *hnswIndex =
-        new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
+    auto *hnswIndex =
+        dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
+    auto allocator = hnswIndex->getAllocator();
+    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
+
     expectedAllocationSize +=
         sizeof(HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
-    expectedAllocationSize = info.hnswInfo.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
+    expectedAllocationSize = info.commonInfo.memory;
 
-    int addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 1);
+    int before = allocator->getAllocationSize();
+    VecSimIndex_AddVector(hnswIndex, vec, 1);
+    int addCommandAllocationDelta = allocator->getAllocationSize() - before;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
-    expectedAllocationSize = info.hnswInfo.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
+    expectedAllocationSize = info.commonInfo.memory;
 
-    addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 2);
+    before = allocator->getAllocationSize();
+    VecSimIndex_AddVector(hnswIndex, vec, 2);
+    addCommandAllocationDelta = allocator->getAllocationSize() - before;
+
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
-    expectedAllocationSize = info.hnswInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
 
-    int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 2);
+    before = allocator->getAllocationSize();
+    VecSimIndex_DeleteVector(hnswIndex, 2);
+    int deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
+
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
-    expectedAllocationSize = info.hnswInfo.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
+    expectedAllocationSize = info.commonInfo.memory;
 
-    deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 1);
+    before = allocator->getAllocationSize();
+    VecSimIndex_DeleteVector(hnswIndex, 1);
+    deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
+
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     VecSimIndex_Free(hnswIndex);
 }
 
 TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
     size_t d = 2;
 
     // Build index, use small M to simplify the scenario.
@@ -260,15 +271,18 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
                          .initialCapacity = 10,
                          .M = 2};
     auto *hnswIndex =
-        new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
+        dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
+    auto allocator = hnswIndex->getAllocator();
 
     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
     GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0, 0.0);
 
     // Add another vector and validate it's exact memory allocation delta.
     TEST_DATA_T vec1[] = {1.0, 0.0};
-    int allocation_delta = VecSimIndex_AddVector(hnswIndex, vec1, 1);
-    size_t vec_max_level = hnswIndex->element_levels_[1];
+    int before = allocator->getAllocationSize();
+    VecSimIndex_AddVector(hnswIndex, vec1, 1);
+    int allocation_delta = allocator->getAllocationSize() - before;
+    size_t vec_max_level = hnswIndex->getGraphDataByInternalId(1)->toplevel;
 
     // Expect the creation of an empty incoming edges set in every level (+ the allocator header
     // overhead), and a single node in the labels' lookup hash table.
@@ -279,7 +293,7 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     // Account for allocating link lists for levels higher than 0, if exists.
     if (vec_max_level > 0) {
         expected_allocation_delta +=
-            hnswIndex->size_links_per_element_ * vec_max_level + vecsimAllocationOverhead;
+            hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
     }
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
@@ -301,9 +315,11 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     // Next, insertion of vec5 should make 0->1 unidirectional, thus adding 0 to 1's incoming edges
     // set.
     TEST_DATA_T vec5[] = {0.5f, 0.0f};
-    size_t buckets_num_before = hnswIndex->label_lookup_.bucket_count();
-    allocation_delta = VecSimIndex_AddVector(hnswIndex, vec5, 5);
-    vec_max_level = hnswIndex->element_levels_[5];
+    size_t buckets_num_before = hnswIndex->labelLookup.bucket_count();
+    before = allocator->getAllocationSize();
+    VecSimIndex_AddVector(hnswIndex, vec5, 5);
+    allocation_delta = allocator->getAllocationSize() - before;
+    vec_max_level = hnswIndex->getGraphDataByInternalId(5)->toplevel;
 
     /* Compute the expected allocation delta:
      * 1. empty incoming edges set in every level (+ allocator's header).
@@ -316,24 +332,24 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     expected_allocation_delta =
         (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
         hashTableNodeSize;
-    size_t buckets_diff = hnswIndex->label_lookup_.bucket_count() - buckets_num_before;
+    size_t buckets_diff = hnswIndex->labelLookup.bucket_count() - buckets_num_before;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
     if (vec_max_level > 0) {
         expected_allocation_delta +=
-            hnswIndex->size_links_per_element_ * vec_max_level + vecsimAllocationOverhead;
+            hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
     }
 
     // Expect that the first element is pushed to the incoming edges vector of element 1 in level 0.
     // Then, we account for the capacity of the buffer that is allocated for the vector data.
-    expected_allocation_delta += hnswIndex->getIncomingEdgesPtr(1, 0)->capacity() * sizeof(idType) +
-                                 vecsimAllocationOverhead;
+    expected_allocation_delta +=
+        hnswIndex->getLevelData(1, 0).incomingEdges->capacity() * sizeof(idType) +
+        vecsimAllocationOverhead;
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
     VecSimIndex_Free(hnswIndex);
 }
 
 TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t d = 128;
 
     VecSimType type = TypeParam::get_index_type();
@@ -341,8 +357,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Build HNSW index with default args and initial capacity of zero.
     HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
     auto *hnswIndex =
-        new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
-
+        dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
+    auto allocator = hnswIndex->getAllocator();
     ASSERT_EQ(hnswIndex->indexCapacity(), 0);
     size_t initial_memory_size = allocator->getAllocationSize();
     // labels_lookup and element_levels containers are not allocated at all in some platforms,
@@ -354,12 +370,15 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
                                        2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
-    size_t block_size = hnswIndex->info().hnswInfo.blockSize;
-    size_t accumulated_mem_delta = 0;
+    size_t block_size = hnswIndex->info().commonInfo.basicInfo.blockSize;
 
+    size_t accumulated_mem_delta = allocator->getAllocationSize();
     for (size_t i = 0; i < block_size; i++) {
-        accumulated_mem_delta += GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, i, i);
     }
+    // Get the memory delta after adding the block.
+    accumulated_mem_delta = allocator->getAllocationSize() - accumulated_mem_delta;
+
     // Validate that a single block exists.
     ASSERT_EQ(hnswIndex->indexSize(), block_size);
     ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
@@ -369,30 +388,38 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Add another vector, expect resizing of the index to contain two blocks.
-    size_t prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
-    size_t mem_delta = GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
+    size_t prev_bucket_count = hnswIndex->labelLookup.bucket_count();
+    size_t mem_delta = allocator->getAllocationSize();
+    GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
+    mem_delta = allocator->getAllocationSize() - mem_delta;
 
     ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
     ASSERT_EQ(hnswIndex->indexCapacity(), 2 * block_size);
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Compute the expected memory allocation due to the last vector insertion.
-    size_t vec_max_level = hnswIndex->element_levels_[block_size];
+    size_t vec_max_level = hnswIndex->getGraphDataByInternalId(block_size)->toplevel;
     size_t expected_mem_delta =
         (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
         hashTableNodeSize;
     if (vec_max_level > 0) {
-        expected_mem_delta +=
-            hnswIndex->size_links_per_element_ * vec_max_level + 1 + vecsimAllocationOverhead;
+        expected_mem_delta += hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
     }
     // Also account for all the memory allocation caused by the resizing that this vector triggered
     // except for the bucket count of the labels_lookup hash table that is calculated separately.
-    size_t size_total_data_per_element = hnswIndex->size_data_per_element_;
+    size_t size_total_data_per_element = hnswIndex->elementGraphDataSize + hnswIndex->dataSize;
     expected_mem_delta +=
-        (sizeof(tag_t) + sizeof(void *) + sizeof(size_t) + size_total_data_per_element) *
+        (sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) + size_total_data_per_element) *
         block_size;
     expected_mem_delta +=
-        (hnswIndex->label_lookup_.bucket_count() - prev_bucket_count) * sizeof(size_t);
+        (hnswIndex->labelLookup.bucket_count() - prev_bucket_count) * sizeof(size_t);
+    // New blocks allocated - 1 aligned block for vectors and 1 unaligned block for graph data.
+    expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->alignment;
+    expected_mem_delta +=
+        (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
+    expected_mem_delta +=
+        (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
+        sizeof(DataBlock);
 
     ASSERT_EQ(expected_mem_delta, mem_delta);
 
@@ -402,7 +429,13 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(hnswIndex->indexSize(), block_size);
     ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
-    ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
+    size_t expected_allocation_size = initial_memory_size + accumulated_mem_delta;
+    expected_allocation_size +=
+        (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
+    expected_allocation_size +=
+        (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
+        sizeof(DataBlock);
+    ASSERT_EQ(allocator->getAllocationSize(), expected_allocation_size);
 
     // Remove the rest of the vectors, and validate that the memory returns to its initial state.
     for (size_t i = 0; i < block_size; i++) {
@@ -413,13 +446,18 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(hnswIndex->indexCapacity(), 0);
     // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
-    size_t hash_table_memory = hnswIndex->label_lookup_.bucket_count() * sizeof(size_t);
+    size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
+    // Data block vectors do not shrink on resize so extra memory is expected.
+    size_t block_vectors_memory = sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() +
+                                                       hnswIndex->vectorBlocks.capacity()) +
+                                  2 * vecsimAllocationOverhead;
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to
     // zero, while in others the entire capacity reduced to zero (including the header).
     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-                                                  hash_table_memory + 2 * vecsimAllocationOverhead);
+                                                  block_vectors_memory + hash_table_memory +
+                                                  2 * vecsimAllocationOverhead);
     ASSERT_GE(allocator->getAllocationSize(),
-              HNSWFactory::EstimateInitialSize(&params) + hash_table_memory);
+              HNSWFactory::EstimateInitialSize(&params) + block_vectors_memory + hash_table_memory);
     VecSimIndex_Free(hnswIndex);
 }

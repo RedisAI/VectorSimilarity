@@ -19,8 +19,9 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	if(${benchmark} MATCHES "spaces*")
 		continue()
 	endif()
-
-	add_executable(bm_${benchmark} run_files/bm_${benchmark}.cpp bm_vecsim_general.cpp)
+	# NOTE: mock_thread_pool.cpp should appear *before* the benchmark files, so we can ensure that the thread pool
+	# globals are initialized before we use them in the benchmark classes (as globals initialization is done by order).
+	add_executable(bm_${benchmark} ../utils/mock_thread_pool.cpp bm_vecsim_general.cpp run_files/bm_${benchmark}.cpp)
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
@@ -57,18 +58,12 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Check that the compiler supports instructions flag.
 	# This will add the relevant flag both the the space selector and the optimization.
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
-	CHECK_CXX_COMPILER_FLAG(-mavx512dq CXX_AVX512DQ)
 	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
 	if(CXX_AVX512F)
 		add_compile_options(-mavx512f)
 		message("Building with AVX512")
-	endif()
-
-	if(CXX_AVX512DQ)
-		add_compile_options(-mavx512dq)
-		message("Building with AVX512 DQ (Doubleword and Quadword) extension")
 	endif()
 
 	if(CXX_AVX)

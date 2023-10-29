@@ -9,6 +9,7 @@
 #include <functional>
 #include <cmath>
 #include <exception>
+#include <thread>
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
@@ -25,8 +26,30 @@ struct IndexType {
 #define TEST_DATA_T typename TypeParam::data_t
 #define TEST_DIST_T typename TypeParam::dist_t
 
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+using DataTypeSet = ::testing::Types<IndexType<VecSimType_FLOAT32, float>
+#ifdef FP64_TESTS
+                                     ,
+                                     IndexType<VecSimType_FLOAT64, double>
+#endif
+                                     >;
+
+// Define index type for tests that can be automatically generated for single and multi.
+template <VecSimType type, bool IsMulti, typename DataType, typename DistType = DataType>
+struct IndexTypeExtended {
+    static VecSimType get_index_type() { return type; }
+    static bool isMulti() { return IsMulti; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
+};
+
+using DataTypeSetExtended = ::testing::Types<IndexTypeExtended<VecSimType_FLOAT32, false, float>,
+                                             IndexTypeExtended<VecSimType_FLOAT32, true, float>
+#ifdef FP64_TESTS
+                                             ,
+                                             IndexTypeExtended<VecSimType_FLOAT64, false, double>,
+                                             IndexTypeExtended<VecSimType_FLOAT64, true, double>
+#endif
+                                             >;
 
 template <typename data_t>
 static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
@@ -43,12 +66,19 @@ int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value
 }
 
 inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
     return params;
 }
 
 inline VecSimParams CreateParams(const BFParams &bf_params) {
-    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    VecSimParams params{.algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bf_params}}};
+    return params;
+}
+
+inline VecSimParams CreateParams(const TieredIndexParams &tiered_params) {
+    VecSimParams params{.algo = VecSimAlgo_TIERED,
+                        .algoParams = {.tieredParams = TieredIndexParams{tiered_params}}};
     return params;
 }
 
@@ -82,15 +112,23 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
 inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2); }
+void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_res_num,
+                       std::function<void(size_t, double, size_t)> ResCB,
+                       VecSimQueryParams *params = nullptr,
+                       VecSimQueryReply_Order order = BY_SCORE);
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
-                       VecSimQueryResult_Order order = BY_SCORE);
+                       VecSimQueryReply_Order order = BY_SCORE);
 
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(size_t, double, size_t)> ResCB,
-                                VecSimQueryResult_Order order = BY_SCORE,
+                                VecSimQueryReply_Order order = BY_SCORE,
                                 size_t expected_n_res = -1);
+
+void compareCommonInfo(CommonInfo info1, CommonInfo info2);
+void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
+void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
 
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
@@ -98,7 +136,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
-                       size_t expected_res_num, VecSimQueryResult_Order order = BY_ID,
+                       size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);
 
 size_t getLabelsLookupNodeSize();
@@ -127,9 +165,3 @@ inline double GetInfVal(VecSimType type) {
         FAIL() << "exception '" << MESSAGE << "' not thrown with expected type '"                  \
                << #EXCEPTION_TYPE << "'!";                                                         \
     }
-
-namespace tiered_index_mock {
-using JobQueue = std::queue<void *>;
-int submit_callback(void *job_queue, void **jobs, size_t len);
-int update_mem_callback(void *mem_ctx, size_t mem);
-} // namespace tiered_index_mock

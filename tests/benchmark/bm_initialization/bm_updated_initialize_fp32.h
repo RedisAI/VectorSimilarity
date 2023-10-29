@@ -15,12 +15,12 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, 
 (benchmark::State &st) { Memory_FLAT(st, updated_index_offset); }
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
-// Memory HSNW before
+// Memory HNSW before
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, HNSW), fp32_index_t)
 (benchmark::State &st) { Memory_HNSW(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, HNSW))->Iterations(1);
 
-// Updated memory HSNW
+// Updated memory HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, HNSW), fp32_index_t)
 (benchmark::State &st) { Memory_HNSW(st, updated_index_offset); }
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, HNSW))->Iterations(1);

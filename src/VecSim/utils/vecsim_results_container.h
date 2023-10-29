@@ -6,9 +6,8 @@
 
 #pragma once
 
-#include "VecSim/utils/arr_cpp.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vecsim_stl.h"
-#include "VecSim/query_result_struct.h"
 
 namespace vecsim_stl {
 
@@ -25,8 +24,8 @@ public:
     // Returns the size of the container
     virtual inline size_t size() const = 0;
 
-    // Returns an array (arr_cpp.h) containing all current data, and passes its ownership
-    virtual inline VecSimQueryResult *get_results() = 0;
+    // Returns a vector containing all current data, and passes its ownership
+    virtual inline VecSimQueryResultContainer get_results() = 0;
 };
 
 struct unique_results_container : public abstract_results_container {
@@ -50,44 +49,33 @@ public:
 
     inline size_t size() const override { return idToScore.size(); }
 
-    inline VecSimQueryResult *get_results() override {
-        auto *data = array_new_len<VecSimQueryResult>(idToScore.size(), idToScore.size());
-        size_t index = 0;
+    inline VecSimQueryResultContainer get_results() override {
+        VecSimQueryResultContainer results(this->allocator);
+        results.reserve(idToScore.size());
         for (auto res : idToScore) {
-            VecSimQueryResult_SetId(data[index], res.first);
-            VecSimQueryResult_SetScore(data[index], res.second);
-            index++;
+            results.push_back(VecSimQueryResult{res.first, res.second});
         }
-        return data;
+        return results;
     }
 };
 
 struct default_results_container : public abstract_results_container {
 private:
-    VecSimQueryResult *_data;
-    bool owns_data;
+    VecSimQueryResultContainer _data;
 
 public:
     explicit default_results_container(const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_results_container(alloc), _data(array_new<VecSimQueryResult>(0)),
-          owns_data(true) {}
+        : abstract_results_container(alloc), _data(alloc) {}
     explicit default_results_container(size_t cap, const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_results_container(alloc), _data(array_new<VecSimQueryResult>(cap)),
-          owns_data(true) {}
-
-    ~default_results_container() {
-        if (owns_data)
-            array_free(_data);
+        : abstract_results_container(alloc), _data(alloc) {
+        _data.reserve(cap);
     }
+    ~default_results_container() = default;
 
     inline void emplace(size_t id, double score) override {
-        auto res = VecSimQueryResult{id, score};
-        _data = array_append(_data, res);
+        _data.push_back(VecSimQueryResult{id, score});
     }
-    inline size_t size() const override { return array_len(_data); }
-    inline VecSimQueryResult *get_results() override {
-        owns_data = false;
-        return _data;
-    }
+    inline size_t size() const override { return _data.size(); }
+    inline VecSimQueryResultContainer get_results() override { return std::move(_data); }
 };
 } // namespace vecsim_stl

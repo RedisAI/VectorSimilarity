@@ -9,11 +9,12 @@ size_t BM_VecSimGeneral::dim = 512;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
+tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/fp64_fashion_images_multi_value-M64-efc512.hnsw_v2";
+    "tests/benchmark/data/fashion_images_multi_value-cosine-dim512-M64-efc512-fp64.hnsw_v3";
 const char *BM_VecSimGeneral::test_queries_file =
-    "tests/benchmark/data/fashion_images_multi_test_vecs_fp64.raw";
+    "tests/benchmark/data/fashion_images_multi_value-cosine-dim512-fp64-test_vectors.raw";
 
 #define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Multi
 

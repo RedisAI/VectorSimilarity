@@ -19,11 +19,11 @@ public:
     ~BFS_BatchIterator() override = default;
 
 private:
-    inline VecSimQueryResult_Code calculateScores() override {
-
-        this->scores.reserve(this->index->indexLabelCount());
-        vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
-        VecSimQueryResult_Code rc;
+    inline VecSimQueryReply_Code calculateScores() override {
+        this->index_label_count = this->index->indexLabelCount();
+        this->scores.reserve(this->index_label_count);
+        auto &blocks = this->index->getVectorBlocks();
+        VecSimQueryReply_Code rc;
 
         idType curr_id = 0;
         for (auto &block : blocks) {
@@ -39,6 +39,6 @@ private:
             }
         }
         assert(curr_id == this->index->indexSize());
-        return VecSim_QueryResult_OK;
+        return VecSim_QueryReply_OK;
     }
 };

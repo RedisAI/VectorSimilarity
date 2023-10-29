@@ -27,18 +27,7 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 // Adds 'amount' vectors to the index. could be 0.
 void _add_vectors(VecSimIndex *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
-    size_t dim;
-    switch (indexInfo.algo) {
-    case VecSimAlgo_BF:
-        dim = indexInfo.bfInfo.dim;
-        break;
-    case VecSimAlgo_HNSWLIB:
-        dim = indexInfo.hnswInfo.dim;
-        break;
-
-    default:
-        break;
-    }
+    size_t dim = indexInfo.commonInfo.basicInfo.dim;
     double vec[dim];
     for (int i = 0; i < dim; i++)
         vec[i] = i;
@@ -53,31 +42,34 @@ void _delete_vectors(VecSimIndex *index, long long amount) {
         VecSimIndex_DeleteVector(index, i);
 }
 
-// Creates a generic index, supports Broute Force and HNSW.
+// Creates a generic index, supports Brute Force and HNSW.
 VecSimIndex *_create_index(VecSimAlgo algo) {
 
     VecSimParams param = {0};
     param.algo = algo;
     switch (algo) {
     case VecSimAlgo_BF:
-        param.bfParams.blockSize = 1;
-        param.bfParams.initialCapacity = 1;
-        param.bfParams.type = VecSimType_FLOAT64;
-        param.bfParams.dim = DIMENSION;
-        param.bfParams.metric = VecSimMetric_L2;
-        param.bfParams.multi = false;
+        param.algoParams.bfParams.blockSize = 1;
+        param.algoParams.bfParams.initialCapacity = 1;
+        param.algoParams.bfParams.type = VecSimType_FLOAT64;
+        param.algoParams.bfParams.dim = DIMENSION;
+        param.algoParams.bfParams.metric = VecSimMetric_L2;
+        param.algoParams.bfParams.multi = false;
         break;
 
     case VecSimAlgo_HNSWLIB:
-        param.hnswParams.M = 30;
-        param.hnswParams.initialCapacity = 1;
-        param.hnswParams.efConstruction = 0;
-        param.hnswParams.efRuntime = 0;
-        param.hnswParams.type = VecSimType_FLOAT64;
-        param.hnswParams.dim = DIMENSION;
-        param.hnswParams.metric = VecSimMetric_L2;
-        param.hnswParams.multi = false;
+        param.algoParams.hnswParams.M = 30;
+        param.algoParams.hnswParams.initialCapacity = 1;
+        param.algoParams.hnswParams.efConstruction = 0;
+        param.algoParams.hnswParams.efRuntime = 0;
+        param.algoParams.hnswParams.type = VecSimType_FLOAT64;
+        param.algoParams.hnswParams.dim = DIMENSION;
+        param.algoParams.hnswParams.metric = VecSimMetric_L2;
+        param.algoParams.hnswParams.multi = false;
         break;
+    // TODO: add memory test for tiered index
+    case VecSimAlgo_TIERED:
+        return NULL;
     }
 
     return VecSimIndex_New(&param);
@@ -120,18 +112,8 @@ int _VecSim_memory_create_check_impl(RedisModuleCtx *ctx, VecSimAlgo algo, long 
 
     // Actual test: verify that memory usage known to the server is at least the memory amount used
     // by the index.
-    int64_t memory;
-    switch (indexInfo.algo) {
-    case VecSimAlgo_BF:
-        memory = indexInfo.bfInfo.memory;
-        break;
-    case VecSimAlgo_HNSWLIB:
-        memory = indexInfo.hnswInfo.memory;
-        break;
+    uint64_t memory = indexInfo.commonInfo.memory;
 
-    default:
-        break;
-    }
     if (memory <= endMemory - startMemory)
         RedisModule_ReplyWithSimpleString(ctx, "OK");
     else

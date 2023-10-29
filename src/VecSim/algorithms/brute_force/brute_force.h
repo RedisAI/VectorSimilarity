@@ -6,14 +6,14 @@
 
 #pragma once
 
-#include "vector_block.h"
+#include "VecSim/utils/data_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vecsim_results_container.h"
-#include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/index_factories/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vec_utils.h"
 
 #include <cstring>
@@ -29,34 +29,61 @@ template <typename DataType, typename DistType>
 class BruteForceIndex : public VecSimIndexAbstract<DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
-    vecsim_stl::vector<VectorBlock *> vectorBlocks;
+    vecsim_stl::vector<DataBlock> vectorBlocks;
     idType count;
 
 public:
-    BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    void increaseCapacity() override;
-    vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
+    vecsim_stl::vector<DistType> computeBlockScores(const DataBlock &block, const void *queryBlob,
                                                     void *timeoutCtx,
-                                                    VecSimQueryResult_Code *rc) const;
+                                                    VecSimQueryReply_Code *rc) const;
     inline DataType *getDataByInternalId(idType id) const {
-        return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
+        return (DataType *)vectorBlocks.at(id / this->blockSize).getElement(id % this->blockSize);
     }
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                        VecSimQueryParams *queryParams) const override;
+    virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                         VecSimQueryParams *queryParams) const override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
-    inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
-    virtual ~BruteForceIndex();
+    inline const vecsim_stl::vector<DataBlock> &getVectorBlocks() const { return vectorBlocks; }
+    inline const labelType getLabelByInternalId(idType internal_id) const {
+        return idToLabelMapping.at(internal_id);
+    }
+    // Remove a specific vector that is stored under a label from the index by its internal id.
+    virtual int deleteVectorById(labelType label, idType id) = 0;
+    // Remove a vector and return a map between internal ids and the original internal ids of the
+    // vector that they hold as a result of the overall removals and swaps, along with its label.
+    virtual std::unordered_map<idType, std::pair<idType, labelType>>
+    deleteVectorAndGetUpdatedIds(labelType label) = 0;
+    // Check if a certain label exists in the index.
+    virtual inline bool isLabelExists(labelType label) = 0;
+    // Return a set of all labels that are stored in the index (helper for computing label count
+    // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
+    virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
+
+    virtual ~BruteForceIndex() = default;
+#ifdef BUILD_TESTS
+    /**
+     * @brief Used for testing - store vector(s) data associated with a given label. This function
+     * copies the vector(s)' data buffer(s) and place it in the output vector
+     *
+     * @param label
+     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
+     * the label.
+     */
+    virtual void getDataByLabel(labelType label,
+                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
+#endif
 
 protected:
     // Private internal function that implements generic single vector insertion.
@@ -65,7 +92,30 @@ protected:
     // Private internal function that implements generic single vector deletion.
     virtual void removeVector(idType id);
 
-    inline VectorBlock *getVectorVectorBlock(idType id) const {
+    inline void growByBlock() {
+        assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
+        vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
+                                  this->alignment);
+        idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
+        idToLabelMapping.shrink_to_fit();
+        resizeLabelLookup(idToLabelMapping.size());
+    }
+
+    inline void shrinkByBlock() {
+        assert(indexCapacity() > 0); // should not be called when index is empty
+
+        // remove last block (should be empty)
+        assert(vectorBlocks.size() > 0 && vectorBlocks.back().getLength() == 0);
+        vectorBlocks.pop_back();
+
+        // remove a block size of labels.
+        assert(idToLabelMapping.size() >= this->blockSize);
+        idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
+        idToLabelMapping.shrink_to_fit();
+        resizeLabelLookup(idToLabelMapping.size());
+    }
+
+    inline DataBlock &getVectorVectorBlock(idType id) {
         return vectorBlocks.at(id / this->blockSize);
     }
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
@@ -74,7 +124,7 @@ protected:
     }
     // inline priority queue getter that need to be implemented by derived class
     virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewMaxPriorityQueue() = 0;
+    getNewMaxPriorityQueue() const = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
@@ -83,6 +133,7 @@ protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
+    virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
 
     virtual inline VecSimBatchIterator *
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
@@ -96,46 +147,40 @@ protected:
 
 /******************** Ctor / Dtor **************/
 template <typename DataType, typename DistType>
-BruteForceIndex<DataType, DistType>::BruteForceIndex(const BFParams *params,
-                                                     std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
-                                    params->blockSize, params->multi),
-      idToLabelMapping(allocator), vectorBlocks(allocator), count(0) {
+BruteForceIndex<DataType, DistType>::BruteForceIndex(
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
+    : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
+      vectorBlocks(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
-    this->idToLabelMapping.resize(params->initialCapacity);
-}
-
-template <typename DataType, typename DistType>
-BruteForceIndex<DataType, DistType>::~BruteForceIndex() {
-    for (auto &vectorBlock : this->vectorBlocks) {
-        delete vectorBlock;
-    }
+    // Round up the initial capacity to the nearest multiple of the block size.
+    size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
+    this->idToLabelMapping.resize(initialCapacity);
+    this->vectorBlocks.reserve(initialCapacity / this->blockSize);
 }
 
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
-    assert(indexCapacity() > indexSize());
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // Get the last vectors block to store the vector in (we assume that it's not full yet).
-    VectorBlock *vectorBlock = this->vectorBlocks.back();
-    assert(vectorBlock == getVectorVectorBlock(id));
+    // Resize the index if needed.
+    if (indexSize() > indexCapacity()) {
+        growByBlock();
+    } else if (id % this->blockSize == 0) {
+        // If we we didn't reach the initial capacity but the last block is full, add a new block
+        // only.
+        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
+                                        this->alignment);
+    }
+
+    // Get the last vectors block to store the vector in.
+    DataBlock &vectorBlock = this->vectorBlocks.back();
+    assert(&vectorBlock == &getVectorVectorBlock(id));
 
     // add vector data to vectorBlock
-    vectorBlock->addVector(vector_data);
-
-    // if idToLabelMapping is full,
-    // resize and align idToLabelMapping by blockSize
-    size_t idToLabelMapping_size = this->idToLabelMapping.size();
-
-    if (id >= idToLabelMapping_size) {
-        size_t last_block_vectors_count = id % this->blockSize;
-        this->idToLabelMapping.resize(
-            idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
-    }
+    vectorBlock.addElement(vector_data);
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);
@@ -152,14 +197,15 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     labelType last_idx_label = getVectorLabel(last_idx);
 
     // Get last vector data.
-    VectorBlock *last_vector_block = vectorBlocks.back();
-    assert(last_vector_block == getVectorVectorBlock(last_idx));
+    DataBlock &last_vector_block = vectorBlocks.back();
+    assert(&last_vector_block == &getVectorVectorBlock(last_idx));
 
-    void *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    void *last_vector_data = last_vector_block.removeAndFetchLastElement();
 
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
+        assert(id_to_delete < last_idx);
         // Update idToLabelMapping.
         // Put the label of the last_id in the deleted_id.
         setVectorLabel(id_to_delete, last_idx_label);
@@ -169,26 +215,16 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         replaceIdOfLabel(last_idx_label, id_to_delete, last_idx);
 
         // Get the vectorBlock and the relative index of the deleted id.
-        VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
+        DataBlock &deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
         size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
 
         // Put data of last vector inplace of the deleted vector.
-        deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
+        deleted_vectorBlock.updateElement(id_to_delete_rel_idx, last_vector_data);
     }
 
     // If the last vector block is emtpy.
-    if (last_vector_block->getLength() == 0) {
-        delete last_vector_block;
-        this->vectorBlocks.pop_back();
-
-        // Resize and align the idToLabelMapping.
-        size_t idToLabel_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the idToLabelMapping
-        // align to be a multiplication of blocksize  and resize by one block.
-        if (this->count + this->blockSize <= idToLabel_size) {
-            size_t vector_to_align_count = idToLabel_size % this->blockSize;
-            this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
-        }
+    if (last_vector_block.getLength() == 0) {
+        shrinkByBlock();
     }
 }
 
@@ -199,54 +235,39 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
-    return this->blockSize * this->vectorBlocks.size();
-}
-
-template <typename DataType, typename DistType>
-void BruteForceIndex<DataType, DistType>::increaseCapacity() {
-    size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
-    auto *new_vector_block =
-        new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
-    this->vectorBlocks.push_back(new_vector_block);
+    return this->idToLabelMapping.size();
 }
 
 // Compute the score for every vector in the block by using the given distance function.
 template <typename DataType, typename DistType>
-vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockScores(
-    VectorBlock *block, const void *queryBlob, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
-    size_t len = block->getLength();
+vecsim_stl::vector<DistType>
+BruteForceIndex<DataType, DistType>::computeBlockScores(const DataBlock &block,
+                                                        const void *queryBlob, void *timeoutCtx,
+                                                        VecSimQueryReply_Code *rc) const {
+    size_t len = block.getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block->getVector(i), queryBlob, this->dim);
+        scores[i] = this->distFunc(block.getElement(i), queryBlob, this->dim);
     }
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     return scores;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                               VecSimQueryParams *queryParams) {
+                                               VecSimQueryParams *queryParams) const {
 
-    VecSimQueryResult_List rl = {0};
+    auto rep = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
-    this->last_mode = STANDARD_KNN;
+    this->lastMode = STANDARD_KNN;
 
     if (0 == k) {
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
-    }
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-
-        queryBlob = normalized_blob;
+        return rep;
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
@@ -254,11 +275,11 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         getNewMaxPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
-    for (auto vectorBlock : this->vectorBlocks) {
-        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
-        if (VecSim_OK != rl.code) {
+    for (auto &vectorBlock : this->vectorBlocks) {
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rep->code);
+        if (VecSim_OK != rep->code) {
             delete TopCandidates;
-            return rl;
+            return rep;
         }
         for (size_t i = 0; i < scores.size(); i++) {
             // If we have less than k or a better score, insert it.
@@ -275,31 +296,22 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
     assert(curr_id == this->count);
 
-    rl.results = array_new_len<VecSimQueryResult>(TopCandidates->size(), TopCandidates->size());
-    for (int i = (int)TopCandidates->size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], TopCandidates->top().second);
-        VecSimQueryResult_SetScore(rl.results[i], TopCandidates->top().first);
+    rep->results.resize(TopCandidates->size());
+    for (auto result = rep->results.rbegin(); result != rep->results.rend(); ++result) {
+        std::tie(result->score, result->id) = TopCandidates->top();
         TopCandidates->pop();
     }
     delete TopCandidates;
-    rl.code = VecSim_QueryResult_OK;
-    return rl;
+    return rep;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
-                                                VecSimQueryParams *queryParams) {
-    auto rl = (VecSimQueryResult_List){0};
+                                                VecSimQueryParams *queryParams) const {
+    auto rep = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
-    this->last_mode = RANGE_QUERY;
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        queryBlob = normalized_blob;
-    }
+    this->lastMode = RANGE_QUERY;
 
     // Compute scores in every block and save results that are within the range.
     auto res_container =
@@ -307,10 +319,9 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 
     DistType radius_ = DistType(radius);
     idType curr_id = 0;
-    rl.code = VecSim_QueryResult_OK;
-    for (auto vectorBlock : this->vectorBlocks) {
-        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
-        if (VecSim_OK != rl.code) {
+    for (auto &vectorBlock : this->vectorBlocks) {
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rep->code);
+        if (VecSim_OK != rep->code) {
             break;
         }
         for (size_t i = 0; i < scores.size(); i++) {
@@ -320,26 +331,29 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
             ++curr_id;
         }
     }
-    // assert only if the loop finished iterating all the ids (we didn't get rl.code != VecSim_OK).
-    assert((rl.code != VecSim_OK || curr_id == this->count));
-    rl.results = res_container->get_results();
-    return rl;
+    // assert only if the loop finished iterating all the ids (we didn't get rep->code !=
+    // VecSim_OK).
+    assert((rep->code != VecSim_OK || curr_id == this->count));
+    rep->results = res_container->get_results();
+    return rep;
 }
 
 template <typename DataType, typename DistType>
 VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
 
     VecSimIndexInfo info;
+    info.commonInfo = this->getCommonInfo();
+    info.commonInfo.basicInfo.algo = VecSimAlgo_BF;
+
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexBasicInfo BruteForceIndex<DataType, DistType>::basicInfo() const {
+
+    VecSimIndexBasicInfo info = this->getBasicInfo();
     info.algo = VecSimAlgo_BF;
-    info.bfInfo.dim = this->dim;
-    info.bfInfo.type = this->vecType;
-    info.bfInfo.metric = this->metric;
-    info.bfInfo.indexSize = this->count;
-    info.bfInfo.indexLabelCount = this->indexLabelCount();
-    info.bfInfo.blockSize = this->blockSize;
-    info.bfInfo.memory = this->getAllocationSize();
-    info.bfInfo.isMulti = this->isMulti;
-    info.bfInfo.last_mode = this->last_mode;
+    info.isTiered = false;
     return info;
 }
 
@@ -347,51 +361,19 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 8;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    size_t numberOfInfoFields = 10;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
 
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::TYPE_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.bfInfo.type)}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.dim}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::METRIC_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.bfInfo.metric)}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexSize}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexLabelCount}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.blockSize}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.memory}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .fieldValue = {FieldValue{
-                             .stringValue = VecSimSearchMode_ToString(info.bfInfo.last_mode)}}});
-
+                             .stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
+    this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.basicInfo.blockSize}}});
     return infoIterator;
 }
 
@@ -401,22 +383,19 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }
 
 template <typename DataType, typename DistType>
 bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
-                                                            bool initial_check) {
+                                                            bool initial_check) const {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();
-    if (subsetSize > index_size) {
-        throw std::runtime_error("internal error: subset size cannot be larger than index size");
-    }
+    // Referring to too large subset size as if it was the maximum possible size.
+    subsetSize = std::min(subsetSize, index_size);
+
     size_t d = this->dim;
     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;
@@ -476,7 +455,7 @@ bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, s
         }
     }
     // Set the mode - if this isn't the initial check, we switched mode form batches to ad-hoc.
-    this->last_mode =
+    this->lastMode =
         res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
 }
