@@ -42,26 +42,6 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
     }
 }
 
-float BFP16_Convert_and_DistInnerProduct_bigEndian(const void *pVect1, const void *pVect2,
-                                                   size_t dimension) {
-    // convert vec1 to bf16
-    bf16 pVect1_bf16[dimension];
-    FP32_to_BF16_BigEndian(pVect1, pVect1_bf16, dimension);
-    bf16 pVect2_bf16[dimension];
-    FP32_to_BF16_BigEndian(pVect2, pVect2_bf16, dimension);
-    return BFP16_InnerProduct(pVect1_bf16, pVect2_bf16, dimension);
-}
-
-float BFP16_Convert_and_DistInnerProduct_littleEndian(const void *pVect1, const void *pVect2,
-                                                      size_t dimension) {
-    // convert vec1 to bf16
-    bf16 pVect1_bf16[dimension];
-    FP32_to_BF16_LittleEndian(pVect1, pVect1_bf16, dimension);
-    bf16 pVect2_bf16[dimension];
-    FP32_to_BF16_LittleEndian(pVect2, pVect2_bf16, dimension);
-    return BFP16_InnerProduct(pVect1_bf16, pVect2_bf16, dimension);
-}
-
 int little_endian() {
     int x = 1;
     return *(char *)&x;
@@ -77,11 +57,11 @@ int big_endian() { return !little_endian(); }
 void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
                      unsigned char *alignment) {
 
-    // static const Arch_Optimization arch_opt = getArchitectureOptimization();
+    static const Arch_Optimization arch_opt = getArchitectureOptimization();
+
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
         if (little_endian()) {
-            // *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment, true);
-            *out_func = BFP16_Convert_and_DistInnerProduct_littleEndian;
+            *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment, true);
 
         } else {
             *out_func = BFP16_InnerProduct;

@@ -8,15 +8,15 @@
 #include <cstring>
 
 float BFP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension) {
-    u_int16_t *vec1 = (u_int16_t *)pVect1;
-    u_int16_t *vec2 = (u_int16_t *)pVect2;
+    float *vec1 = (float *)pVect1;
+    float *vec2 = (float *)pVect2;
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
         float a = 0;
         float b = 0;
-        memcpy((char *)&a + 2, vec1 + i, sizeof(u_int16_t));
-        memcpy((char *)&b + 2, vec2 + i, sizeof(u_int16_t));
+        memcpy((char *)&a + 2, (char *)(vec1 + i) + 2, sizeof(u_int16_t));
+        memcpy((char *)&b + 2, (char *)(vec2 + i) + 2, sizeof(u_int16_t));
         res += a * b;
     }
     return 1.0f - res;

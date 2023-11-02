@@ -10,8 +10,6 @@
 
 float BFP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
 
-float BFP16_InnerProduct_impl(const void *pVect1, const void *pVect2, size_t dimension);
-
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
 
 double FP64_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
