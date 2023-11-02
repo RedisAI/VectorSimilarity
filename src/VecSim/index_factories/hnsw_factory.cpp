@@ -40,7 +40,7 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params)
 VecSimIndex *NewIndex(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
-    if (hnswParams->type == VecSimType_FLOAT32) {
+    if (hnswParams->type == VecSimType_FLOAT32 || hnswParams->type == VecSimType_FP32_TO_BF16) {
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams);
     } else if (hnswParams->type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams);

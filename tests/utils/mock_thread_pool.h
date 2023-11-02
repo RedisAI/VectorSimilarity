@@ -91,7 +91,7 @@ public:
     bool run_thread;
     IndexExtCtx *ctx;
 
-    tieredIndexMock();
+    tieredIndexMock(bool should_init = true);
     ~tieredIndexMock();
 
     void reset_ctx(IndexExtCtx *new_ctx = nullptr);

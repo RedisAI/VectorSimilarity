@@ -77,12 +77,14 @@ int big_endian() { return !little_endian(); }
 void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
                      unsigned char *alignment) {
 
+    // static const Arch_Optimization arch_opt = getArchitectureOptimization();
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
         if (little_endian()) {
+            // *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment, true);
             *out_func = BFP16_Convert_and_DistInnerProduct_littleEndian;
 
         } else {
-            *out_func = BFP16_Convert_and_DistInnerProduct_bigEndian;
+            *out_func = BFP16_InnerProduct;
         }
 
     } else if (metric == VecSimMetric_L2) {

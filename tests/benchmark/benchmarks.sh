@@ -11,6 +11,7 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     echo updated_index_single_fp32
     echo spaces_fp32
     echo spaces_fp64
+    echo basics_single_bf16
 elif [ "$BM_TYPE" = "benchmarks-default" ]; then
     echo basics_single_fp32
     echo basics_multi_fp32
@@ -44,4 +45,8 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
 elif [ "$BM_TYPE" = "bm-spaces" ] ; then
     echo spaces_fp32
     echo spaces_fp64
+
+# bf16 benchmarks
+elif [ "$BM_TYPE" = "bm-bf16" ] ; then
+    echo basics_single_bf16
 fi

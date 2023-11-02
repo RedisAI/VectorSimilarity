@@ -16,7 +16,7 @@
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
-                                       unsigned char *alignment) {
+                                       unsigned char *alignment, bool is_bf16) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
@@ -33,21 +33,34 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     switch (arch_opt) {
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX512);
+        if (is_bf16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, BF16_InnerProductSIMD16_AVX512);
+        } else {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX512);
+        }
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
+        if (is_bf16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, BF16_InnerProductSIMD16_AVX);
+        } else {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
+        }
+
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(float); // handles 8 floats
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_SSE);
+        if (is_bf16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, BF16_InnerProductSIMD16_SSE);
+        } else {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_SSE);
+        }
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(float); // handles 4 floats
         break;

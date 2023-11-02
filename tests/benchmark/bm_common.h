@@ -25,6 +25,7 @@ public:
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
+    static void TopK_BF_bf16(benchmark::State &st, unsigned short index_offset);
 
     // Does nothing but returning the index memory.
     static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
@@ -94,6 +95,32 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
                               QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         iter++;
     }
+}
+
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_BF_bf16(benchmark::State &st,
+                                                 unsigned short index_offset) {
+    size_t k = st.range(0);
+    std::atomic_int correct = 0;
+    size_t iter = 0;
+    for (auto _ : st) {
+        auto bf16_results =
+            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+                                  QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+        st.PauseTiming();
+
+        // Measure recall:
+        auto bf_results = VecSimIndex_TopKQuery(
+            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+
+        BM_VecSimGeneral::MeasureRecall(bf16_results, bf_results, correct);
+
+        VecSimQueryReply_Free(bf_results);
+        VecSimQueryReply_Free(bf16_results);
+        st.ResumeTiming();
+        iter++;
+    }
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
 
 template <typename index_type_t>
