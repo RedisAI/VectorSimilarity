@@ -19,13 +19,11 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params)
 }
 
 VecSimIndex *NewIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &abstractInitParams) {
+    assert(raftIvfParams->type == VecSimType_FLOAT32 && "Invalid IVF data type algorithm");
     if (raftIvfParams->type == VecSimType_FLOAT32) {
         return new (abstractInitParams.allocator)
-            RaftIVFIndex<float, float>(raftIvfParams, abstractInitParams);
-    } else if (raftIvfParams->type == VecSimType_FLOAT64) {
-        return new (abstractInitParams.allocator)
-            RaftIVFIndex<double, double>(raftIvfParams, abstractInitParams);
-    }
+            RaftIvfIndex<float, float>(raftIvfParams, abstractInitParams);
+    }   
 
     // If we got here something is wrong.
     return NULL;
@@ -47,7 +45,7 @@ size_t EstimateInitialSize(const RaftIvfParams *raftIvfParams) {
 
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
-    est += sizeof(RaftIVFIndex<float, float>);                                // Object size
+    est += sizeof(RaftIvfIndex<float, float>);                                // Object size
     if (!raftIvfParams->usePQ) {
         // Size of each cluster data
         est += raftIvfParams->nLists * sizeof(raft::neighbors::ivf_flat::list_data<float, std::int64_t>);

@@ -40,13 +40,13 @@ inline auto constexpr GetRaftDistanceType(VecSimMetric vsm) {
     return result;
 }
 
-inline auto constexpr GetRaftCodebookKind(IVFPQCodebookKind vss_codebook) {
+inline auto constexpr GetRaftCodebookKind(RaftIVFPQCodebookKind vss_codebook) {
     auto result = raft::neighbors::ivf_pq::codebook_gen{};
     switch (vss_codebook) {
-    case IVFPQCodebookKind_PerCluster:
+    case RaftIVFPQCodebookKind_PerCluster:
         result = raft::neighbors::ivf_pq::codebook_gen::PER_CLUSTER;
         break;
-    case IVFPQCodebookKind_PerSubspace:
+    case RaftIVFPQCodebookKind_PerSubspace:
         result = raft::neighbors::ivf_pq::codebook_gen::PER_SUBSPACE;
         break;
     default:
@@ -74,7 +74,7 @@ inline auto constexpr GetCudaType(CudaType vss_type) {
 }
 
 template <typename DataType, typename DistType = DataType>
-struct RaftIVFIndex : public VecSimIndexAbstract<DistType> {
+struct RaftIvfIndex : public VecSimIndexAbstract<DistType> {
     using data_type = DataType;
     using dist_type = DistType;
 
@@ -90,7 +90,7 @@ private:
     using ann_index_t = std::variant<index_flat_t, index_pq_t>;
 
 public:
-    RaftIVFIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &commonParams)
+    RaftIvfIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &commonParams)
         : VecSimIndexAbstract<dist_type>{commonParams},
           res_{raft::device_resources_manager::get_device_resources()},
           build_params_{raftIvfParams->usePQ ? build_params_t{std::in_place_index<1>}
@@ -103,6 +103,7 @@ public:
                 inner.metric = GetRaftDistanceType(raftIvfParams->metric);
                 inner.n_lists = raftIvfParams->nLists;
                 inner.kmeans_n_iters = raftIvfParams->kmeans_nIters;
+                inner.add_data_on_build = false;
                 inner.kmeans_trainset_fraction = raftIvfParams->kmeans_trainsetFraction;
                 inner.conservative_memory_allocation = raftIvfParams->conservativeMemoryAllocation;
                 if constexpr (std::is_same_v<decltype(inner),
@@ -159,7 +160,7 @@ public:
             raft::neighbors::ivf_flat::extend(
                 res_, raft::make_const_mdspan(vector_data_gpu.view()),
                 std::make_optional(raft::make_const_mdspan(label_gpu.view())),
-                std::get<index_flat_t>(*index_));
+                &std::get<index_flat_t>(*index_));
         } else {
             if (!index_) {
                 index_ = raft::neighbors::ivf_pq::build(
@@ -169,7 +170,7 @@ public:
             raft::neighbors::ivf_pq::extend(
                 res_, raft::make_const_mdspan(vector_data_gpu.view()),
                 std::make_optional(raft::make_const_mdspan(label_gpu.view())),
-                std::get<index_pq_t>(*index_));
+                &std::get<index_pq_t>(*index_));
         }
 
         return batch_size;
@@ -237,8 +238,8 @@ public:
         auto neighbors = vecsim_stl::vector<internal_idx_t>(k, this->allocator);
         auto distances = vecsim_stl::vector<dist_type>(k, this->allocator);
         // Copy data back from device to host
-        raft::copy(neighbors.data(), neighbors_gpu.data_handle(), this->dim, res_.get_stream());
-        raft::copy(distances.data(), distances_gpu.data_handle(), this->dim, res_.get_stream());
+        raft::copy(neighbors.data(), neighbors_gpu.data_handle(), k, res_.get_stream());
+        raft::copy(distances.data(), distances_gpu.data_handle(), k, res_.get_stream());
 
         // Ensure search is complete and data have been copied back before
         // building query result objects on host
@@ -268,8 +269,8 @@ public:
 
     auto &get_resources() const { return res_; }
 
-    auto nLists() {
-        return std::visit([](auto &&params) { return params.n_list; }, build_params_);
+    auto nLists() const {
+        return std::visit([](auto &&params) { return params.n_lists; }, build_params_);
     }
 
     size_t indexSize() const override {
@@ -281,7 +282,7 @@ public:
     }
     VecSimIndexBasicInfo basicInfo() const override {
         VecSimIndexBasicInfo info = this->getBasicInfo();
-        info.algo = VecSimAlgo_RaftIVF;
+        info.algo = VecSimAlgo_RAFTIVF;
         info.isTiered = false;
         return info;
     }

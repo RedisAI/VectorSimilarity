@@ -38,13 +38,13 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RaftIVF, VecSimAlgo_TIERED } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RAFTIVF, VecSimAlgo_TIERED } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
 // Codebook kind for IVFPQ indexes
-typedef enum { IVFPQCodebookKind_PerCluster, IVFPQCodebookKind_PerSubspace } IVFPQCodebookKind;
+typedef enum { RaftIVFPQCodebookKind_PerCluster, RaftIVFPQCodebookKind_PerSubspace } RaftIVFPQCodebookKind;
 
 // CUDA types supported by GPU-accelerated indexes
 typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } CudaType;
@@ -159,7 +159,7 @@ typedef struct {
                    // compression. If set to 0, a heuristic will be used to
                    // select the dimensionality.
 
-    IVFPQCodebookKind codebookKind;
+    RaftIVFPQCodebookKind codebookKind;
     CudaType lutType;
     CudaType internalDistanceType;
     double preferredShmemCarveout; // Fraction of GPU's unified memory / L1
@@ -309,7 +309,7 @@ typedef struct {
     union {
         bfInfoStruct bfInfo;
         hnswInfoStruct hnswInfo;
-        raftIvfInfoStruct raftInfo;
+        raftIvfInfoStruct raftIvfInfo;
         tieredInfoStruct tieredInfo;
     };
 } VecSimIndexInfo;

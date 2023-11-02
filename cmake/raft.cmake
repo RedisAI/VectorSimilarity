@@ -1,6 +1,6 @@
 if(USE_CUDA)
 	# Set which version of RAPIDS to use
-	set(RAPIDS_VERSION 23.10)
+	set(RAPIDS_VERSION 23.12)
 	# Set which version of RAFT to use (defined separately for testing
 	# minimal dependency changes if necessary)
 	set(RAFT_VERSION "${RAPIDS_VERSION}")
