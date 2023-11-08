@@ -94,7 +94,8 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         } else if (type == VecSimType_FLOAT64) {
             return TieredHNSWFactory::NewIndex<double>(params);
         }
-    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFTIVF) {
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
+               params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
         VecSimType type = params->primaryIndexParams->algoParams.raftIvfParams.type;
         if (type == VecSimType_FLOAT32) {
             return TieredRaftIvfFactory::NewIndex(params);
@@ -111,7 +112,8 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
     BFParams bf_params{};
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);
-    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFTIVF) {
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT || 
+               params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
         est += TieredRaftIvfFactory::EstimateInitialSize(params);
     }
 
@@ -123,7 +125,8 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
-    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFTIVF) {
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
+               params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
         est = RaftIvfFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.raftIvfParams);
     }
     return est;

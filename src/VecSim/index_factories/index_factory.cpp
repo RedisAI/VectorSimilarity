@@ -26,7 +26,8 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             index = BruteForceFactory::NewIndex(params);
             break;
         }
-        case VecSimAlgo_RAFTIVF: {
+        case VecSimAlgo_RAFT_IVFFLAT:
+        case VecSimAlgo_RAFT_IVFPQ: {
             index = RaftIvfFactory::NewIndex(&params->algoParams.raftIvfParams);
             break;
         }
@@ -47,7 +48,8 @@ size_t EstimateInitialSize(const VecSimParams *params) {
         return HNSWFactory::EstimateInitialSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->algoParams.bfParams);
-    case VecSimAlgo_RAFTIVF:
+    case VecSimAlgo_RAFT_IVFFLAT:
+    case VecSimAlgo_RAFT_IVFPQ:
         return RaftIvfFactory::EstimateInitialSize(&params->algoParams.raftIvfParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateInitialSize(&params->algoParams.tieredParams);
@@ -61,7 +63,8 @@ size_t EstimateElementSize(const VecSimParams *params) {
         return HNSWFactory::EstimateElementSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->algoParams.bfParams);
-    case VecSimAlgo_RAFTIVF:
+    case VecSimAlgo_RAFT_IVFFLAT:
+    case VecSimAlgo_RAFT_IVFPQ:
         return RaftIvfFactory::EstimateElementSize(&params->algoParams.raftIvfParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateElementSize(&params->algoParams.tieredParams);

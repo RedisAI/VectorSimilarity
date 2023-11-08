@@ -1,27 +1,25 @@
 #pragma once
 
 #include <mutex>
-#include "VecSim/algorithms/raft_ivf/ivf.cuh"
+#include "VecSim/algorithms/raft_ivf/ivf.h"
 #include "VecSim/vec_sim_tiered_index.h"
 
 struct RAFTTransferJob : public AsyncJob {
-    RAFTTransferJob(std::shared_ptr<VecSimAllocator> allocator,
-                    JobCallback insertCb, VecSimIndex *index_)
-        : AsyncJob{allocator, RAFT_TRANSFER_JOB, insertCb, index_}
-    {
-    }
+    RAFTTransferJob(std::shared_ptr<VecSimAllocator> allocator, JobCallback insertCb,
+                    VecSimIndex *index_)
+        : AsyncJob{allocator, RAFT_TRANSFER_JOB, insertCb, index_} {}
 };
 
 template <typename DataType, typename DistType>
 struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
-    TieredRaftIvfIndex(RaftIvfIndex<DataType, DistType>* raftIvfIndex,
+    TieredRaftIvfIndex(RaftIvfIndex<DataType, DistType> *raftIvfIndex,
                        BruteForceIndex<DataType, DistType> *bf_index,
                        const TieredIndexParams &tieredParams,
                        std::shared_ptr<VecSimAllocator> allocator)
-        : VecSimTieredIndex<DataType, DistType>(raftIvfIndex, bf_index, tieredParams, allocator)
-    {
-        assert(raftIvfIndex->nLists() < this->flatBufferLimit &&
-               "The flat buffer limit must be greater than the number of lists in the backend index");
+        : VecSimTieredIndex<DataType, DistType>(raftIvfIndex, bf_index, tieredParams, allocator) {
+        assert(
+            raftIvfIndex->nLists() < this->flatBufferLimit &&
+            "The flat buffer limit must be greater than the number of lists in the backend index");
     }
     ~TieredRaftIvfIndex() {
         // Delete all the pending jobs
@@ -49,8 +47,8 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         this->flatIndexGuard.unlock();
 
         // Submit a transfer job
-        AsyncJob *new_insert_job = new (this->allocator)
-            RAFTTransferJob(this->allocator, executeTransferJobWrapper, this);
+        AsyncJob *new_insert_job =
+            new (this->allocator) RAFTTransferJob(this->allocator, executeTransferJobWrapper, this);
         this->submitSingleJob(new_insert_job);
         return ret;
     }
@@ -76,6 +74,7 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
 
     size_t indexLabelCount() const override {
         // TODO(wphicks) Count unique labels between both indexes
+        return 0;
     }
 
     size_t indexCapacity() const override {
@@ -91,16 +90,24 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
     static void executeTransferJobWrapper(AsyncJob *job) {
         if (job->isValid) {
             auto *transfer_job = reinterpret_cast<RAFTTransferJob *>(job);
-            auto *job_index = reinterpret_cast<TieredRaftIvfIndex<DataType, DistType> *>(transfer_job->index);
+            auto *job_index =
+                reinterpret_cast<TieredRaftIvfIndex<DataType, DistType> *>(transfer_job->index);
             job_index->executeTransferJob();
         }
         delete job;
     }
 
-    VecSimIndexBasicInfo basicInfo() const override{}
+    VecSimIndexBasicInfo basicInfo() const override {
+        VecSimIndexBasicInfo info = this->backendIndex->getBasicInfo();
+        info.isTiered = true;
+        return info;
+    }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-        VecSimQueryParams *queryParams) const override {}
+                                          VecSimQueryParams *queryParams) const override {
+        assert(!"newBatchIterator not implemented");
+        return nullptr;
+    }
 
     inline void setLastSearchMode(VecSearchMode mode) override {}
 
@@ -116,8 +123,13 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         this->mainIndexGuard.unlock_shared();
     }
 
-private:
+    inline void setNProbes(uint32_t n_probes) {
+        this->mainIndexGuard.lock();
+        this->getBackendIndex().setNProbes(n_probes);
+        this->mainIndexGuard.unlock();
+    }
 
+private:
     inline auto &getBackendIndex() const {
         return *dynamic_cast<RaftIvfIndex<DataType, DistType> *>(this->backendIndex);
     }
@@ -135,20 +147,19 @@ private:
         this->mainIndexGuard.lock_shared();
         auto main_nVectors = this->backendIndex->indexSize();
         this->mainIndexGuard.unlock_shared();
-        if (main_nVectors == 0) {
-            if (nVectors < getBackendIndex().nLists()) {
-                frontend_lock.unlock();
-                return;
-            }
+        if (main_nVectors == 0 && nVectors < getBackendIndex().nLists()) {
+            frontend_lock.unlock();
+            return;
         }
         auto dim = this->backendIndex->getDim();
         const auto &vectorBlocks = this->frontendIndex->getVectorBlocks();
-        auto* vectorData = (DataType *)this->allocator->allocate(nVectors * dim * sizeof (DataType));
+        auto *vectorData = (DataType *)this->allocator->allocate(nVectors * dim * sizeof(DataType));
 
-        // Transfer vectors to a contiguous buffer
+        // Transfer vectors to a contiguous host buffer
         auto *curr_ptr = vectorData;
-        for (auto block_id = 0; block_id < vectorBlocks.size(); ++block_id) {
-            const auto *in_begin = reinterpret_cast<const DataType *>(vectorBlocks[block_id].getElement(0));
+        for (std::uint32_t block_id = 0; block_id < vectorBlocks.size(); ++block_id) {
+            const auto *in_begin =
+                reinterpret_cast<const DataType *>(vectorBlocks[block_id].getElement(0));
             auto length = vectorBlocks[block_id].getLength();
             std::copy(in_begin, in_begin + (length * dim), curr_ptr);
             curr_ptr += length * dim;
@@ -162,4 +173,9 @@ private:
         frontend_lock.unlock();
         this->allocator->free_allocation(vectorData);
     }
+
+#ifdef BUILD_TESTS
+    INDEX_TEST_FRIEND_CLASS(BM_VecSimBasics)
+    INDEX_TEST_FRIEND_CLASS(BM_VecSimCommon)
+#endif
 };

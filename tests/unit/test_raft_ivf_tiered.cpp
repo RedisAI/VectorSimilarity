@@ -31,7 +31,7 @@ VecSimParams createDefaultPQParams(size_t dim, size_t nLists = 3, size_t nProbes
                               .lutType = CUDAType_R_32F,
                               .internalDistanceType = CUDAType_R_32F,
                               .preferredShmemCarveout = 1.0};
-    VecSimParams params{.algo = VecSimAlgo_RAFTIVF, .algoParams = {.raftIvfParams = ivfparams}};
+    VecSimParams params{.algo = VecSimAlgo_RAFT_IVFPQ, .algoParams = {.raftIvfParams = ivfparams}};
     return params;
 }
 
@@ -43,7 +43,7 @@ VecSimParams createDefaultFlatParams(size_t dim, size_t nLists = 3, size_t nProb
                                 .kmeans_trainsetFraction = 0.5,
                                 .nProbes = nProbes,
                                 .usePQ = false};
-    VecSimParams params{.algo = VecSimAlgo_RAFTIVF, .algoParams = {.raftIvfParams = ivfparams}};
+    VecSimParams params{.algo = VecSimAlgo_RAFT_IVFFLAT, .algoParams = {.raftIvfParams = ivfparams}};
     return params;
 }
 
@@ -127,6 +127,5 @@ TYPED_TEST(RaftIvfTieredTest, RaftIVFTiered_PQ_add_sanity_test) {
     auto k = 4;
     runTopKSearchTest(index, zero_vec.data(), k, ver_res_0);
     runTopKSearchTest(index, c_vec.data(), k, ver_res_c);
-    VecSimIndex_Free(index);
 }
 

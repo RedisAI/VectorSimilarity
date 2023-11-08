@@ -15,7 +15,8 @@
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
 const char *VecSimCommonStrings::HNSW_STRING = "HNSW";
-const char *VecSimCommonStrings::RAFTIVF_STRING = "RAFT_IVF";
+const char *VecSimCommonStrings::RAFTIVFFLAT_STRING = "RAFT_IVF_FLAT";
+const char *VecSimCommonStrings::RAFTIVFPQ_STRING = "RAFT_IVF_PQ";
 const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
@@ -126,8 +127,10 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::FLAT_STRING;
     case VecSimAlgo_HNSWLIB:
         return VecSimCommonStrings::HNSW_STRING;
-    case VecSimAlgo_RAFTIVF:
-        return VecSimCommonStrings::RAFTIVF_STRING;
+    case VecSimAlgo_RAFT_IVFFLAT:
+        return VecSimCommonStrings::RAFTIVFFLAT_STRING;
+    case VecSimAlgo_RAFT_IVFPQ:
+        return VecSimCommonStrings::RAFTIVFPQ_STRING;
     case VecSimAlgo_TIERED:
         return VecSimCommonStrings::TIERED_STRING;
     }

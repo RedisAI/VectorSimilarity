@@ -38,7 +38,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RAFTIVF, VecSimAlgo_TIERED } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RAFT_IVFFLAT, VecSimAlgo_RAFT_IVFPQ, VecSimAlgo_TIERED } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -286,6 +286,7 @@ typedef struct {
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
+        raftIvfInfoStruct raftIvfInfo;
     } backendInfo; // The backend index info.
     union {
         HnswTieredInfo hnswTieredInfo;

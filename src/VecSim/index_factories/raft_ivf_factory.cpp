@@ -1,6 +1,5 @@
 #include "VecSim/index_factories/brute_force_factory.h"
-#include "VecSim/algorithms/raft_ivf/ivf.cuh"
-#include <raft/neighbors/ivf_pq.cuh>
+#include "VecSim/algorithms/raft_ivf/ivf.h"
 
 namespace RaftIvfFactory {
 
