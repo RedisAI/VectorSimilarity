@@ -61,7 +61,7 @@ void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_fu
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
         if (little_endian()) {
-            *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment, true);
+            *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment, VecSimType_FP32_TO_BF16);
 
         } else {
             *out_func = BFP16_InnerProduct;

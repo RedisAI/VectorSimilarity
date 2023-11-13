@@ -48,7 +48,7 @@ private:
             input.read((char *)blob, DIM * sizeof(data_t));
 
             VecSimIndex_AddVector(INDICES[VecSimAlgo_BF], blob, i);
-            //  VecSimIndex_AddVector(INDICES[VecSimAlgo_HNSWLIB], blob, i);
+            VecSimIndex_AddVector(INDICES[VecSimAlgo_HNSWLIB], blob, i);
             VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + bf16_index_offset], blob, i);
         }
 

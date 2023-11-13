@@ -30,7 +30,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBF16dIndex, BM_FUNC_NAME(TopK, FLAT_BF16), 
 (benchmark::State &st) { TopK_BF_bf16(st, bf16_index_offset); }
 REGISTER_TopK_BF(BM_VecSimBF16dIndex, BM_FUNC_NAME(TopK, FLAT_BF16));
 
-// // TopK HNSW
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBF16dIndex, BM_FUNC_NAME(TopK, HNSW), bf16_index_t)
-// (benchmark::State &st) { TopK_HNSW(st); }
-// REGISTER_TopK_HNSW(BM_VecSimBF16dIndex, BM_FUNC_NAME(TopK, HNSW));
+// TopK HNSW
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBF16dIndex, BM_FUNC_NAME(TopK, HNSW), bf16_index_t)
+(benchmark::State &st) { TopK_HNSW(st); }
+REGISTER_TopK_HNSW(BM_VecSimBF16dIndex, BM_FUNC_NAME(TopK, HNSW));
