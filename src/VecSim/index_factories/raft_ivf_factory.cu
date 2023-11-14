@@ -1,5 +1,5 @@
 #include "VecSim/index_factories/brute_force_factory.h"
-#include "VecSim/algorithms/raft_ivf/ivf.h"
+#include "VecSim/algorithms/raft_ivf/ivf.cuh"
 
 namespace RaftIvfFactory {
 

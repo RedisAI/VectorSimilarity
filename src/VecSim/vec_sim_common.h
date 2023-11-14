@@ -38,7 +38,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RAFT_IVFFLAT, VecSimAlgo_RAFT_IVFPQ, VecSimAlgo_TIERED } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_RAFT_IVFFLAT, VecSimAlgo_RAFT_IVFPQ } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;

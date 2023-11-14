@@ -1,6 +1,6 @@
 #include "VecSim/index_factories/brute_force_factory.h"
 #include "VecSim/algorithms/raft_ivf/ivf_tiered.h"
-#include "VecSim/algorithms/raft_ivf/ivf.h"
+#include "VecSim/algorithms/raft_ivf/ivf_interface.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/index_factories/raft_ivf_factory.h"
 
@@ -14,7 +14,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params)
     using DataType = float;
     using DistType = float;
     // initialize raft index
-    auto *raft_index = reinterpret_cast<RaftIvfIndex<DataType, DistType> *>(
+    auto *raft_index = reinterpret_cast<RaftIvfInterface<DataType, DistType> *>(
         RaftIvfFactory::NewIndex(params->primaryIndexParams));
     // initialize brute force index
     BFParams bf_params = {

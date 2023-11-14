@@ -2,6 +2,7 @@
 
 #include "bm_vecsim_general.h"
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/index_factories/raft_ivf_tiered_factory.h"
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -111,12 +112,30 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     mock_thread_pool.init_threads();
 
+    // Create RAFFT IVF Flat tiered index.
+    auto &mock_thread_pool_ivf_flat = BM_VecSimGeneral::mock_thread_pool_raft;
+
+    VecSimParams params_flat = createDefaultRaftIvfFlatParams(dim, 900, 100);
+    tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool_raft.jobQ,
+                     .jobQueueCtx = mock_thread_pool_ivf_flat.ctx,
+                     .submitCb = tieredIndexMock::submit_callback,
+                     .flatBufferLimit = params_flat.algoParams.raftIvfParams.nLists * 5000,
+                     .primaryIndexParams = &params_flat};
+
+    auto *tiered_raft_ivf_flat_index =
+        TieredRaftIvfFactory::NewIndex(&tiered_params);
+    mock_thread_pool_ivf_flat.ctx->index_strong_ref.reset(tiered_raft_ivf_flat_index);
+    mock_thread_pool_ivf_flat.init_threads();
+
+    indices.push_back(tiered_raft_ivf_flat_index);
+
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         const char *blob = GetHNSWDataByInternalId(i);
         // Fot multi value indices, the internal id is not necessarily equal the label.
         size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
+        VecSimIndex_AddVector(indices[VecSimAlgo_RAFT_IVFFLAT], blob, label);
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.

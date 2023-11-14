@@ -14,6 +14,7 @@
 // For VecSimIndexAbstract
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/query_result_definitions.h" // VecSimQueryResult VecSimQueryReply
+#include "VecSim/algorithms/raft_ivf/ivf_interface.h"  // RaftIvfInterface
 #include "VecSim/memory/vecsim_malloc.h"
 
 #include <raft/core/device_resources_manager.hpp>
@@ -72,7 +73,7 @@ inline auto constexpr GetCudaType(CudaType vss_type) {
 }
 
 template <typename DataType, typename DistType = DataType>
-struct RaftIvfIndex : public VecSimIndexAbstract<DistType> {
+struct RaftIvfIndex : public RaftIvfInterface<DataType, DistType> {
     using data_type = DataType;
     using dist_type = DistType;
 
@@ -82,15 +83,14 @@ private:
                                         raft::neighbors::ivf_pq::index_params>;
     using search_params_t = std::variant<raft::neighbors::ivf_flat::search_params,
                                          raft::neighbors::ivf_pq::search_params>;
-    using internal_idx_t = std::int64_t;
-    using index_flat_t = raft::neighbors::ivf_flat::index<data_type, internal_idx_t>;
-    using index_pq_t = raft::neighbors::ivf_pq::index<internal_idx_t>;
+    //using internal_idx_t = std::int64_t;
+    using index_flat_t = raft::neighbors::ivf_flat::index<data_type, labelType>;
+    using index_pq_t = raft::neighbors::ivf_pq::index<labelType>;
     using ann_index_t = std::variant<index_flat_t, index_pq_t>;
 
 public:
     RaftIvfIndex(const RaftIvfParams *raftIvfParams, const AbstractIndexInitParams &commonParams)
-        : VecSimIndexAbstract<dist_type>{commonParams},
-          res_{raft::device_resources_manager::get_device_resources()},
+        : RaftIvfInterface<dist_type>{commonParams},
           build_params_{raftIvfParams->usePQ ? build_params_t{std::in_place_index<1>}
                                              : build_params_t{std::in_place_index<0>}},
           search_params_{raftIvfParams->usePQ ? search_params_t{std::in_place_index<1>}
@@ -127,19 +127,61 @@ public:
                 }
             },
             search_params_);
+
+        raft::device_resources_manager::set_streams_per_device(16); // TODO: use env variable
+        raft::device_resources_manager::set_stream_pools_per_device(16);
+        // Create a 5 GB memory pool. Passing std::nullopt will allow
+        // the pool to grow to the available memory of the device.
+        raft::device_resources_manager::set_mem_pool(size_t{5000} << 20, std::nullopt);
     }
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override {
         return addVectorBatch(vector_data, &label, 1, auxiliaryCtx);
     }
-    int addVectorBatchAsync(const void *vector_data, labelType *label, size_t batch_size,
-                            void *auxiliaryCtx = nullptr);
-    int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
-                       void *auxiliaryCtx = nullptr) {
-        auto result = addVectorBatchAsync(vector_data, label, batch_size, auxiliaryCtx);
+    virtual int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
+                            void *auxiliaryCtx = nullptr) override {
+        auto& res = raft::device_resources_manager::get_device_resources();
+        // Convert labels to internal data type
+        /*auto label_original = std::vector<labelType>(label, label + batch_size);
+        auto label_converted =
+            std::vector<internal_idx_t>(label_original.begin(), label_original.end());*/
+        // Allocate memory on device to hold vectors to be added
+        auto vector_data_gpu =
+            raft::make_device_matrix<data_type, labelType>(res, batch_size, this->dim);
+        // Allocate memory on device to hold vector labels
+        auto label_gpu = raft::make_device_vector<labelType, labelType>(res, batch_size);
+
+        // Copy vector data to previously allocated device buffer
+        raft::copy(vector_data_gpu.data_handle(), static_cast<float const *>(vector_data),
+                this->dim * batch_size, res.get_stream());
+        // Copy label data to previously allocated device buffer
+        raft::copy(label_gpu.data_handle(), label, batch_size, res.get_stream());
+
+        if (std::holds_alternative<raft::neighbors::ivf_flat::index_params>(build_params_)) {
+            if (!index_) {
+                index_ = raft::neighbors::ivf_flat::build(
+                    res, std::get<raft::neighbors::ivf_flat::index_params>(build_params_),
+                    raft::make_const_mdspan(vector_data_gpu.view()));
+            }
+            raft::neighbors::ivf_flat::extend(
+                res, raft::make_const_mdspan(vector_data_gpu.view()),
+                std::make_optional(raft::make_const_mdspan(label_gpu.view())),
+                &std::get<index_flat_t>(*index_));
+        } else {
+            if (!index_) {
+                index_ = raft::neighbors::ivf_pq::build(
+                    res, std::get<raft::neighbors::ivf_pq::index_params>(build_params_),
+                    raft::make_const_mdspan(vector_data_gpu.view()));
+            }
+            raft::neighbors::ivf_pq::extend(
+                res, raft::make_const_mdspan(vector_data_gpu.view()),
+                std::make_optional(raft::make_const_mdspan(label_gpu.view())),
+                &std::get<index_pq_t>(*index_));
+        }
+
         // Ensure that above operation has executed on device before
         // returning from this function on host
-        res_.sync_stream();
-        return result;
+        res.sync_stream();
+        return batch_size;
     }
     int deleteVector(labelType label) override {
         assert(!"deleteVector not implemented");
@@ -158,7 +200,57 @@ public:
         return this->indexSize(); // TODO: Return unique counts
     }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
-                                VecSimQueryParams *queryParams) const override;
+                                VecSimQueryParams *queryParams) const override {
+        auto& res = raft::device_resources_manager::get_device_resources();
+        auto result_list = new VecSimQueryReply(this->allocator);
+        auto nVectors = this->indexSize();
+        if (nVectors == 0 || k == 0 || !index_.has_value()) {
+            return result_list;
+        }
+        // Ensure we are not trying to retrieve more vectors than exist in the
+        // index
+        k = std::min(k, nVectors);
+        // Allocate memory on device for search vector
+        auto vector_data_gpu = raft::make_device_matrix<data_type, labelType>(res, 1, this->dim);
+        // Allocate memory on device for neighbor and distance results
+        auto neighbors_gpu = raft::make_device_matrix<labelType, labelType>(res, 1, k);
+        auto distances_gpu = raft::make_device_matrix<dist_type, labelType>(res, 1, k);
+        // Copy query vector to device
+        raft::copy(vector_data_gpu.data_handle(), static_cast<const data_type *>(queryBlob), this->dim,
+                res.get_stream());
+
+        // Perform correct search based on index type
+        if (std::holds_alternative<index_flat_t>(*index_)) {
+            raft::neighbors::ivf_flat::search<data_type, labelType>(
+                res, std::get<raft::neighbors::ivf_flat::search_params>(search_params_),
+                std::get<index_flat_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
+                neighbors_gpu.view(), distances_gpu.view());
+        } else {
+            raft::neighbors::ivf_pq::search<data_type, labelType>(
+                res, std::get<raft::neighbors::ivf_pq::search_params>(search_params_),
+                std::get<index_pq_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
+                neighbors_gpu.view(), distances_gpu.view());
+        }
+
+        // Allocate host buffers to hold returned results
+        auto neighbors = vecsim_stl::vector<labelType>(k, this->allocator);
+        auto distances = vecsim_stl::vector<dist_type>(k, this->allocator);
+        // Copy data back from device to host
+        raft::copy(neighbors.data(), neighbors_gpu.data_handle(), k, res.get_stream());
+        raft::copy(distances.data(), distances_gpu.data_handle(), k, res.get_stream());
+
+        // Ensure search is complete and data have been copied back before
+        // building query result objects on host
+        res.sync_stream();
+
+        result_list->results.resize(k);
+        for (auto i = 0; i < k; ++i) {
+            result_list->results[i].id = labelType{neighbors[i]};
+            result_list->results[i].score = distances[i];
+        }
+
+        return result_list;
+    }
 
     virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                          VecSimQueryParams *queryParams) const override {
@@ -179,9 +271,7 @@ public:
         return false;
     }
 
-    auto &get_resources() const { return res_; }
-
-    auto nLists() const {
+    virtual uint32_t nLists() const override {
         return std::visit([](auto &&params) { return params.n_lists; }, build_params_);
     }
 
@@ -215,14 +305,11 @@ public:
         return info;
     }
 
-    inline void setNProbes(uint32_t n_probes) {
+    virtual inline void setNProbes(uint32_t n_probes) override {
         std::visit([n_probes](auto &&params) { params.n_probes = n_probes; }, search_params_);
     }
 
 private:
-    // An object used to manage common device resources that may be
-    // expensive to build but frequently accessed
-    raft::device_resources res_;
     // Store build params to allow for index build on first batch
     // insertion
     build_params_t build_params_;
@@ -232,4 +319,6 @@ private:
     // Use a std::optional to allow building of the index on first batch
     // insertion
     std::optional<ann_index_t> index_;
+    // Bitset used for deleteVectors and search filtering.
+    //raft::core::bitset<internal_idx_t> deleted_indices_;
 };

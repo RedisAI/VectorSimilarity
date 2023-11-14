@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_common.h"
+#include "VecSim/algorithms/raft_ivf/ivf_tiered.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "test_utils.h"
 #include <climits>
@@ -15,9 +16,27 @@ class RaftIvfTieredTest : public ::testing::Test {
 public:
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
+
+    TieredRaftIvfIndex<data_t, dist_t>* createTieredIndex(VecSimParams *params,
+                                     tieredIndexMock &mock_thread_pool,
+                                     size_t flat_buffer_limit = 0) {
+        TieredIndexParams params_tiered = {
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = flat_buffer_limit,
+            .primaryIndexParams = params,
+        };
+        auto *tiered_index = TieredFactory::NewIndex(&params_tiered);
+        // Set the created tiered index in the index external context (it will take ownership over
+        // the index, and we'll need to release the ctx at the end of the test.
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+        return reinterpret_cast<TieredRaftIvfIndex<data_t, dist_t> *>(tiered_index);
+    }
 };
 
-VecSimParams createDefaultPQParams(size_t dim, size_t nLists = 3, size_t nProbes = 3) {
+VecSimParams createDefaultPQParams(size_t dim, uint32_t nLists = 3, uint32_t nProbes = 3) {
     RaftIvfParams ivfparams = {.dim = dim,
                               .metric = VecSimMetric_L2,
                               .nLists = nLists,
@@ -35,7 +54,7 @@ VecSimParams createDefaultPQParams(size_t dim, size_t nLists = 3, size_t nProbes
     return params;
 }
 
-VecSimParams createDefaultFlatParams(size_t dim, size_t nLists = 3, size_t nProbes = 3) {
+VecSimParams createDefaultFlatParams(size_t dim, uint32_t nLists = 3, uint32_t nProbes = 3) {
     RaftIvfParams ivfparams = {.dim = dim,
                                 .metric = VecSimMetric_L2,
                                 .nLists = nLists,
@@ -47,36 +66,18 @@ VecSimParams createDefaultFlatParams(size_t dim, size_t nLists = 3, size_t nProb
     return params;
 }
 
-VecSimIndex* createTieredIndex(VecSimParams *params,
-                                     tieredIndexMock &mock_thread_pool,
-                                     size_t flat_buffer_limit = 0) {
-    TieredIndexParams params_tiered = {
-        .jobQueue = &mock_thread_pool.jobQ,
-        .jobQueueCtx = mock_thread_pool.ctx,
-        .submitCb = tieredIndexMock::submit_callback,
-        .flatBufferLimit = flat_buffer_limit,
-        .primaryIndexParams = params,
-    };
-    auto *tiered_index = TieredFactory::NewIndex(&params_tiered);
-    // Set the created tiered index in the index external context (it will take ownership over
-    // the index, and we'll need to release the ctx at the end of the test.
-    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-
-    return tiered_index;
-}
-
 using DataTypeSetFloat = ::testing::Types<IndexType<VecSimType_FLOAT32, float>>;
 
 TYPED_TEST_SUITE(RaftIvfTieredTest, DataTypeSetFloat);
 
-TYPED_TEST(RaftIvfTieredTest, RaftIVFTiered_PQ_add_sanity_test) {
+TYPED_TEST(RaftIvfTieredTest, end_to_end) {
     size_t dim = 4;
     size_t flat_buffer_limit = 3;
     size_t nLists = 2;
 
     VecSimParams params = createDefaultFlatParams(dim, nLists, nLists);
     auto mock_thread_pool = tieredIndexMock();
-    auto *index = createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+    auto *index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
     mock_thread_pool.init_threads();
     
     VecSimQueryParams queryParams = {.batchSize = 1};
@@ -89,13 +90,7 @@ TYPED_TEST(RaftIvfTieredTest, RaftIVFTiered_PQ_add_sanity_test) {
     std::vector<TEST_DATA_T> c_vec(dim, (TEST_DATA_T)4);
     std::vector<TEST_DATA_T> d_vec(dim, (TEST_DATA_T)5);
     std::vector<TEST_DATA_T> zero_vec(dim, (TEST_DATA_T)0);
-    /*for (size_t i = 0; i < dim; i++) {
-        a[i] = (TEST_DATA_T)1;
-        b[i] = (TEST_DATA_T)2;
-        c[i] = (TEST_DATA_T)4;
-        d[i] = (TEST_DATA_T)5;
-        zero[i] = (TEST_DATA_T)0;
-    }*/
+
     auto inserted_vectors = std::vector<std::vector<TEST_DATA_T>>{a_vec, b_vec, c_vec, d_vec};
 
     // Search for vectors when the index is empty.
