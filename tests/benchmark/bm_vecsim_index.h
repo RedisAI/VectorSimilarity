@@ -115,12 +115,13 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Create RAFFT IVF Flat tiered index.
     auto &mock_thread_pool_ivf_flat = BM_VecSimGeneral::mock_thread_pool_raft;
 
-    VecSimParams params_flat = createDefaultRaftIvfFlatParams(dim, 900, 100);
+    VecSimParams params_flat = createDefaultRaftIvfFlatParams(dim, 1000, 100);
     tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool_raft.jobQ,
                      .jobQueueCtx = mock_thread_pool_ivf_flat.ctx,
                      .submitCb = tieredIndexMock::submit_callback,
                      .flatBufferLimit = params_flat.algoParams.raftIvfParams.nLists * 5000,
-                     .primaryIndexParams = &params_flat};
+                     .primaryIndexParams = &params_flat,
+                     .specificParams = {.tieredRaftIvfParams = {.minVectorsInit = 100}}};
 
     auto *tiered_raft_ivf_flat_index =
         TieredRaftIvfFactory::NewIndex(&tiered_params);

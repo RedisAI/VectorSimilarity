@@ -40,7 +40,10 @@ if (USE_CUDA)
 	include(cmake/raft.cmake)
     # Required flags for compiling RAFT
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 -std=c++17")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -std=c++17")
+	set(CMAKE_CUDA_FLAGS_RELEASE "-O3")
+	set(CMAKE_CUDA_FLAGS_DEBUG "-g")
+	
 endif()
 
 # Only do these if this is the main project, and not if it is included through add_subdirectory

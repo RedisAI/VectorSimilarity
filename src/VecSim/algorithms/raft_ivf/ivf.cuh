@@ -83,9 +83,9 @@ private:
                                         raft::neighbors::ivf_pq::index_params>;
     using search_params_t = std::variant<raft::neighbors::ivf_flat::search_params,
                                          raft::neighbors::ivf_pq::search_params>;
-    //using internal_idx_t = std::int64_t;
-    using index_flat_t = raft::neighbors::ivf_flat::index<data_type, labelType>;
-    using index_pq_t = raft::neighbors::ivf_pq::index<labelType>;
+    using internal_idx_t = std::uint64_t;
+    using index_flat_t = raft::neighbors::ivf_flat::index<data_type, internal_idx_t>;
+    using index_pq_t = raft::neighbors::ivf_pq::index<internal_idx_t>;
     using ann_index_t = std::variant<index_flat_t, index_pq_t>;
 
 public:
@@ -128,27 +128,18 @@ public:
             },
             search_params_);
 
-        raft::device_resources_manager::set_streams_per_device(16); // TODO: use env variable
-        raft::device_resources_manager::set_stream_pools_per_device(16);
-        // Create a 5 GB memory pool. Passing std::nullopt will allow
-        // the pool to grow to the available memory of the device.
-        raft::device_resources_manager::set_mem_pool(size_t{5000} << 20, std::nullopt);
     }
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override {
         return addVectorBatch(vector_data, &label, 1, auxiliaryCtx);
     }
-    virtual int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
+    int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
                             void *auxiliaryCtx = nullptr) override {
-        auto& res = raft::device_resources_manager::get_device_resources();
-        // Convert labels to internal data type
-        /*auto label_original = std::vector<labelType>(label, label + batch_size);
-        auto label_converted =
-            std::vector<internal_idx_t>(label_original.begin(), label_original.end());*/
+        const auto& res = raft::device_resources_manager::get_device_resources();
         // Allocate memory on device to hold vectors to be added
         auto vector_data_gpu =
-            raft::make_device_matrix<data_type, labelType>(res, batch_size, this->dim);
+            raft::make_device_matrix<data_type, internal_idx_t>(res, batch_size, this->dim);
         // Allocate memory on device to hold vector labels
-        auto label_gpu = raft::make_device_vector<labelType, labelType>(res, batch_size);
+        auto label_gpu = raft::make_device_vector<internal_idx_t, internal_idx_t>(res, batch_size);
 
         // Copy vector data to previously allocated device buffer
         raft::copy(vector_data_gpu.data_handle(), static_cast<float const *>(vector_data),
@@ -201,7 +192,7 @@ public:
     }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        auto& res = raft::device_resources_manager::get_device_resources();
+        const auto& res = raft::device_resources_manager::get_device_resources();
         auto result_list = new VecSimQueryReply(this->allocator);
         auto nVectors = this->indexSize();
         if (nVectors == 0 || k == 0 || !index_.has_value()) {
@@ -211,29 +202,29 @@ public:
         // index
         k = std::min(k, nVectors);
         // Allocate memory on device for search vector
-        auto vector_data_gpu = raft::make_device_matrix<data_type, labelType>(res, 1, this->dim);
+        auto vector_data_gpu = raft::make_device_matrix<data_type, internal_idx_t>(res, 1, this->dim);
         // Allocate memory on device for neighbor and distance results
-        auto neighbors_gpu = raft::make_device_matrix<labelType, labelType>(res, 1, k);
-        auto distances_gpu = raft::make_device_matrix<dist_type, labelType>(res, 1, k);
+        auto neighbors_gpu = raft::make_device_matrix<internal_idx_t, internal_idx_t>(res, 1, k);
+        auto distances_gpu = raft::make_device_matrix<dist_type, internal_idx_t>(res, 1, k);
         // Copy query vector to device
         raft::copy(vector_data_gpu.data_handle(), static_cast<const data_type *>(queryBlob), this->dim,
                 res.get_stream());
 
         // Perform correct search based on index type
         if (std::holds_alternative<index_flat_t>(*index_)) {
-            raft::neighbors::ivf_flat::search<data_type, labelType>(
+            raft::neighbors::ivf_flat::search<data_type, internal_idx_t>(
                 res, std::get<raft::neighbors::ivf_flat::search_params>(search_params_),
                 std::get<index_flat_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
                 neighbors_gpu.view(), distances_gpu.view());
         } else {
-            raft::neighbors::ivf_pq::search<data_type, labelType>(
+            raft::neighbors::ivf_pq::search<data_type, internal_idx_t>(
                 res, std::get<raft::neighbors::ivf_pq::search_params>(search_params_),
                 std::get<index_pq_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
                 neighbors_gpu.view(), distances_gpu.view());
         }
 
         // Allocate host buffers to hold returned results
-        auto neighbors = vecsim_stl::vector<labelType>(k, this->allocator);
+        auto neighbors = vecsim_stl::vector<internal_idx_t>(k, this->allocator);
         auto distances = vecsim_stl::vector<dist_type>(k, this->allocator);
         // Copy data back from device to host
         raft::copy(neighbors.data(), neighbors_gpu.data_handle(), k, res.get_stream());
@@ -297,10 +288,13 @@ public:
         info.commonInfo = this->getCommonInfo();
         info.raftIvfInfo.nLists = nLists();
         if (std::holds_alternative<raft::neighbors::ivf_pq::index_params>(build_params_)) {
+            info.commonInfo.basicInfo.algo = VecSimAlgo_RAFT_IVFPQ;
             const auto build_params_pq =
                 std::get<raft::neighbors::ivf_pq::index_params>(build_params_);
             info.raftIvfInfo.pqBits = build_params_pq.pq_bits;
             info.raftIvfInfo.pqDim = build_params_pq.pq_dim;
+        } else {
+            info.commonInfo.basicInfo.algo = VecSimAlgo_RAFT_IVFFLAT;
         }
         return info;
     }
@@ -320,5 +314,5 @@ private:
     // insertion
     std::optional<ann_index_t> index_;
     // Bitset used for deleteVectors and search filtering.
-    //raft::core::bitset<internal_idx_t> deleted_indices_;
+    std::optional<raft::core::bitset<internal_idx_t>> deleted_indices_;
 };

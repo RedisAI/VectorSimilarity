@@ -93,7 +93,7 @@ protected:
                                 .metric = VecSimMetric_L2, // TODO Cosine
                                 .nLists = nLists,
                                 .kmeans_nIters = 20,
-                                .kmeans_trainsetFraction = 0.9,
+                                .kmeans_trainsetFraction = 0.5,
                                 .nProbes = nProbes,
                                 .usePQ = false,
                                 .adaptiveCenters = adaptiveCenters};

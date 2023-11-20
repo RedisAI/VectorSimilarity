@@ -20,6 +20,11 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered), fp32_
 (benchmark::State &st) { Memory_Tiered(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered))->Iterations(1);
 
+// Memory TieredRaftIVFFlat
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, TieredRaftIVFFlat), fp32_index_t)
+(benchmark::State &st) { Memory_TieredRaftIVFFlat(st); }
+BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, TieredRaftIVFFlat))->Iterations(1);
+
 // AddLabel
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }

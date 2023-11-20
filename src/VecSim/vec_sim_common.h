@@ -124,6 +124,11 @@ typedef struct {
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 
+// A struct that contains Raft IVF tiered index specific params.
+typedef struct {
+    size_t minVectorsInit; // Min. number of vectors per list in Tiered index to init IVF index
+} TieredRAFTIVFParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;         // External queue that holds the jobs.
@@ -134,6 +139,7 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
+        TieredRAFTIVFParams tieredRaftIvfParams;
     } specificParams;
 } TieredIndexParams;
 

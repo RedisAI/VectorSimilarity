@@ -21,6 +21,7 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         assert(
             raftIvfIndex->nLists() < this->flatBufferLimit &&
             "The flat buffer limit must be greater than the number of lists in the backend index");
+        this->minVectorsInit = std::max((size_t)1, tieredParams.specificParams.tieredRaftIvfParams.minVectorsInit);
     }
     ~TieredRaftIvfIndex() {
         // Delete all the pending jobs
@@ -74,8 +75,7 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
     }
 
     size_t indexLabelCount() const override {
-        // TODO(wphicks) Count unique labels between both indexes
-        return 0;
+        return indexSize();
     }
 
     size_t indexCapacity() const override {
@@ -131,6 +131,8 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
     }
 
 private:
+    size_t minVectorsInit = 1;
+
     inline auto* getBackendIndex() const {
         return dynamic_cast<RaftIvfInterface<DataType, DistType> *>(this->backendIndex);
     }
@@ -142,10 +144,14 @@ private:
             return;
         }
 
-        // Don't transfer less than nLists vectors
+        // Don't transfer less than nLists vectors, unless the backend index is not
+        // empty (for kmeans initialization purposes) and force is true
         if (!force) {
             auto main_nVectors = this->backendIndex->indexSize();
             size_t min_nVectors = getBackendIndex()->nLists();
+            if (main_nVectors == 0)
+                min_nVectors *= this->minVectorsInit;
+
             if (nVectors < min_nVectors) {
                 return;
             }
@@ -170,11 +176,11 @@ private:
             const auto *in_begin =
                 reinterpret_cast<const DataType *>(vectorBlocks[block_id].getElement(0));
             auto length = vectorBlocks[block_id].getLength();
-            std::copy(in_begin, in_begin + (length * dim), curr_ptr);
+            std::copy_n(in_begin, length * dim, curr_ptr);
             curr_ptr += length * dim;
         }
 
-        std::copy(labelData, labelData + nVectors, this->frontendIndex->getLabels().data());
+        std::copy_n(this->frontendIndex->getLabels().data(), nVectors, labelData);
         this->frontendIndex->clear();
 
         // Lock the main index before unlocking the front index so that both indexes are not empty at the same time

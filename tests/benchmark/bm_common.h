@@ -42,6 +42,7 @@ public:
     static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_Tiered(benchmark::State &st, unsigned short index_offset = 0);
+    static void Memory_TieredRaftIVFFlat(benchmark::State &st, unsigned short index_offset = 0);
 };
 
 template <typename index_type_t>
@@ -93,6 +94,16 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
     }
     st.counters["memory"] =
         (double)VecSimIndex_Info(INDICES[VecSimAlgo_TIERED + index_offset]).commonInfo.memory;
+}
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::Memory_TieredRaftIVFFlat(benchmark::State &st,
+                                                             unsigned short index_offset) {
+
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] =
+        (double)VecSimIndex_Info(INDICES[VecSimAlgo_RAFT_IVFFLAT + index_offset]).commonInfo.memory;
 }
 
 // TopK search BM
