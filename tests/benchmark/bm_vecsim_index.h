@@ -138,6 +138,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
         VecSimIndex_AddVector(indices[VecSimAlgo_RAFT_IVFFLAT], blob, label);
     }
+    mock_thread_pool_ivf_flat.thread_pool_wait(100);
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);

@@ -124,3 +124,120 @@ TYPED_TEST(RaftIvfTieredTest, end_to_end) {
     runTopKSearchTest(index, c_vec.data(), k, ver_res_c);
 }
 
+TYPED_TEST(RaftIvfTieredTest, transferJob) {
+    // Create RAFT Tiered index instance with a mock queue.
+
+    size_t dim = 4;
+    size_t flat_buffer_limit = 3;
+    size_t nLists = 1;
+
+    VecSimParams params = createDefaultFlatParams(dim, nLists, nLists);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+    auto allocator = tiered_index->getAllocator();
+    
+    VecSimQueryParams queryParams = {.batchSize = 1};
+
+
+    // Create a vector and add it to the tiered index.
+    labelType vec_label = 1;
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
+    VecSimIndex_AddVector(tiered_index, vector, vec_label);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->getDistanceFrom_Unsafe(vec_label, vector), 0);
+
+    // Execute the insert job manually (in a synchronous manner).
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    auto *insertion_job = reinterpret_cast<RAFTTransferJob *>(mock_thread_pool.jobQ.front().job);
+    ASSERT_EQ(insertion_job->jobType, RAFT_TRANSFER_JOB);
+
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    // RAFT IVF index should have allocated a single block, while flat index should remove the
+    // block.
+    ASSERT_EQ(tiered_index->frontendIndex->indexCapacity(), 0);
+    // After the execution, the job should be removed from the job queue.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+}
+
+TYPED_TEST(RaftIvfTieredTest, transferJobAsync) {
+    size_t dim = 32;
+    size_t n = 500;
+    size_t nLists = 120;
+    size_t flat_buffer_limit = 160;
+
+    size_t k = 1;
+
+    // Create RaftIvfTiered index instance with a mock queue.
+    VecSimParams params = createDefaultFlatParams(dim, nLists, 20);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+    // Insert vectors
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    mock_thread_pool.thread_pool_join();
+    // Verify that the vectors were inserted to RaftIvf as expected, that the jobqueue is empty,
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    // Verify that the vectors were inserted to RaftIvf as expected
+    for (size_t i = 0; i < size_t{n / 10}; i++) {
+        TEST_DATA_T expected_vector[dim];
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
+        VecSimQueryReply *res = VecSimIndex_TopKQuery(tiered_index->backendIndex, expected_vector, k, nullptr, BY_SCORE);
+        ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+        ASSERT_EQ(VecSimQueryReply_Len(res), k)
+        ASSERT_EQ(res->results[0].id, i);
+        ASSERT_EQ(res->results[0].score, 0);
+        VecSimQueryReply_Free(res);
+    }
+}
+
+TYPED_TEST(RaftIvfTieredTest, transferJob_inplace) {
+    size_t dim = 32;
+    size_t n = 200;
+    size_t nLists = 120;
+    size_t flat_buffer_limit = 160;
+
+    size_t k = 1;
+
+    // Create RaftIvfTiered index instance with a mock queue.
+    VecSimParams params = createDefaultFlatParams(dim, nLists, 20);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+
+    // In the absence of BG threads to takes jobs from the queue, the tiered index should
+    // transfer in place when flat_buffer is over the limit.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), flat_buffer_limit);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), n - flat_buffer_limit);
+
+    // Run another batch of insertion. The tiered index should transfer inplace again.
+    for (size_t i = n; i < n * 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), 2 * n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), flat_buffer_limit * 2);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 2 * (n - flat_buffer_limit));
+
+    // Run a thread loop iteration. The thread should transfer the rest of the vectors to the backend index.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->indexSize(), 2 * n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+}
+

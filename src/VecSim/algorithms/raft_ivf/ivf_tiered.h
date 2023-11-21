@@ -56,13 +56,27 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
     }
 
     int deleteVector(labelType label) override {
-        this->flatIndexGuard.lock();
-        auto result = this->frontendIndex->deleteVector(label);
+        int num_deleted_vectors = 0;
+        this->flatIndexGuard.lock_shared();
+        if (this->frontendIndex->isLabelExists(label)) {
+            this->flatIndexGuard.unlock_shared();
+            this->flatIndexGuard.lock();
+            // Check again if the label exists, as it may have been removed while we released the lock.
+            if (this->frontendIndex->isLabelExists(label)) {
+                // Remove every id that corresponds the label from the flat buffer.
+                auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
+                num_deleted_vectors += updated_ids.size();
+            }
+            this->flatIndexGuard.unlock();
+        } else {
+            this->flatIndexGuard.unlock_shared();
+        }
+
+        // delete in place. TODO: Add async job for this
         this->mainIndexGuard.lock();
-        this->flatIndexGuard.unlock();
-        result += this->backendIndex->deleteVector(label);
+        num_deleted_vectors += this->backendIndex->deleteVector(label);
         this->mainIndexGuard.unlock();
-        return result;
+        return num_deleted_vectors;
     }
 
     size_t indexSize() const override {
@@ -75,7 +89,16 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
     }
 
     size_t indexLabelCount() const override {
-        return indexSize();
+        this->flatIndexGuard.lock_shared();
+        this->mainIndexGuard.lock_shared();
+        auto flat_labels = this->frontendIndex->getLabelsSet();
+        auto raft_ivf_labels = this->getBackendIndex()->getLabelsSet();
+        this->flatIndexGuard.unlock_shared();
+        this->mainIndexGuard.unlock_shared();
+        std::vector<labelType> output;
+        std::set_union(flat_labels.begin(), flat_labels.end(), raft_ivf_labels.begin(), raft_ivf_labels.end(),
+                       std::back_inserter(output));
+        return output.size();
     }
 
     size_t indexCapacity() const override {
@@ -144,13 +167,13 @@ private:
             return;
         }
 
-        // Don't transfer less than nLists vectors, unless the backend index is not
-        // empty (for kmeans initialization purposes) and force is true
+        // Don't transfer less than nLists * minVectorsInit vectors if the backend index is empty
+        // (for kmeans initialization purposes)
         if (!force) {
             auto main_nVectors = this->backendIndex->indexSize();
-            size_t min_nVectors = getBackendIndex()->nLists();
+            size_t min_nVectors = 1;
             if (main_nVectors == 0)
-                min_nVectors *= this->minVectorsInit;
+                min_nVectors = this->minVectorsInit * getBackendIndex()->nLists();
 
             if (nVectors < min_nVectors) {
                 return;
@@ -197,5 +220,11 @@ private:
 #ifdef BUILD_TESTS
     INDEX_TEST_FRIEND_CLASS(BM_VecSimBasics)
     INDEX_TEST_FRIEND_CLASS(BM_VecSimCommon)
+    INDEX_TEST_FRIEND_CLASS(BM_VecSimIndex);
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest)
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_transferJob_Test)
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_transferJobAsync_Test)
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_transferJob_inplace_Test)
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_deleteVector_backend_Test)
 #endif
 };

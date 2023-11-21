@@ -17,6 +17,7 @@
 #include "VecSim/algorithms/raft_ivf/ivf_interface.h"  // RaftIvfInterface
 #include "VecSim/memory/vecsim_malloc.h"
 
+#include <raft/core/bitset.cuh>
 #include <raft/core/device_resources_manager.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/error.hpp>
@@ -72,6 +73,16 @@ inline auto constexpr GetCudaType(CudaType vss_type) {
     return result;
 }
 
+void init_raft_resources() {
+    auto static init_flag = std::once_flag{};
+    std::call_once(init_flag, []() {
+        raft::device_resources_manager::set_streams_per_device(8); // TODO: use env variable
+        raft::device_resources_manager::set_stream_pools_per_device(8);
+        // Create a memory pool with half of the available GPU memory.
+        raft::device_resources_manager::set_mem_pool();
+    });
+}
+
 template <typename DataType, typename DistType = DataType>
 struct RaftIvfIndex : public RaftIvfInterface<DataType, DistType> {
     using data_type = DataType;
@@ -95,7 +106,10 @@ public:
                                              : build_params_t{std::in_place_index<0>}},
           search_params_{raftIvfParams->usePQ ? search_params_t{std::in_place_index<1>}
                                               : search_params_t{std::in_place_index<0>}},
-          index_{std::nullopt} {
+          index_{std::nullopt},
+          deleted_indices_{std::nullopt},
+          idToLabelLookup_{this->allocator},
+          labelToIdLookup_{this->allocator} {
         std::visit(
             [raftIvfParams](auto &&inner) {
                 inner.metric = GetRaftDistanceType(raftIvfParams->metric);
@@ -128,6 +142,7 @@ public:
             },
             search_params_);
 
+        init_raft_resources();
     }
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override {
         return addVectorBatch(vector_data, &label, 1, auxiliaryCtx);
@@ -138,45 +153,72 @@ public:
         // Allocate memory on device to hold vectors to be added
         auto vector_data_gpu =
             raft::make_device_matrix<data_type, internal_idx_t>(res, batch_size, this->dim);
-        // Allocate memory on device to hold vector labels
-        auto label_gpu = raft::make_device_vector<internal_idx_t, internal_idx_t>(res, batch_size);
 
         // Copy vector data to previously allocated device buffer
         raft::copy(vector_data_gpu.data_handle(), static_cast<float const *>(vector_data),
                 this->dim * batch_size, res.get_stream());
-        // Copy label data to previously allocated device buffer
-        raft::copy(label_gpu.data_handle(), label, batch_size, res.get_stream());
+        std::optional<raft::device_vector_view<const internal_idx_t, internal_idx_t>> label_opt = std::nullopt;
 
         if (std::holds_alternative<raft::neighbors::ivf_flat::index_params>(build_params_)) {
             if (!index_) {
                 index_ = raft::neighbors::ivf_flat::build(
                     res, std::get<raft::neighbors::ivf_flat::index_params>(build_params_),
                     raft::make_const_mdspan(vector_data_gpu.view()));
+                deleted_indices_ = {raft::core::bitset<uint32_t, internal_idx_t>(res, 0)};
             }
             raft::neighbors::ivf_flat::extend(
                 res, raft::make_const_mdspan(vector_data_gpu.view()),
-                std::make_optional(raft::make_const_mdspan(label_gpu.view())),
+                label_opt,
                 &std::get<index_flat_t>(*index_));
         } else {
             if (!index_) {
                 index_ = raft::neighbors::ivf_pq::build(
                     res, std::get<raft::neighbors::ivf_pq::index_params>(build_params_),
                     raft::make_const_mdspan(vector_data_gpu.view()));
+                deleted_indices_ = {raft::core::bitset<uint32_t, internal_idx_t>(res, 0)};
             }
             raft::neighbors::ivf_pq::extend(
                 res, raft::make_const_mdspan(vector_data_gpu.view()),
-                std::make_optional(raft::make_const_mdspan(label_gpu.view())),
+                label_opt,
                 &std::get<index_pq_t>(*index_));
         }
 
+        internal_idx_t last_id = this->indexSize();
+        internal_idx_t first_id = last_id - batch_size;
+
+        // Add labels to internal idToLabelLookup_ mapping
+        this->idToLabelLookup_.insert(this->idToLabelLookup_.end(), label, label + batch_size);
+        for (auto i = 0; i < batch_size; ++i) {
+            this->labelToIdLookup_[label[i]] = first_id + i;
+        }
+
+        // Update the size of the deleted indices bitset
+        deleted_indices_->resize(res, deleted_indices_->size() + batch_size);
+        
         // Ensure that above operation has executed on device before
         // returning from this function on host
         res.sync_stream();
         return batch_size;
     }
     int deleteVector(labelType label) override {
-        assert(!"deleteVector not implemented");
-        return 0;
+        auto search = labelToIdLookup_.find(label);
+        if (search == labelToIdLookup_.end()) {
+            return 0;
+        }
+        const auto& res = raft::device_resources_manager::get_device_resources();
+        // Create GPU vector to hold ids to mark as deleted
+        internal_idx_t id = search->second;
+        auto id_gpu = raft::make_device_vector<internal_idx_t, internal_idx_t>(res, 1);
+        raft::copy(id_gpu.data_handle(), &id, 1, res.get_stream());
+        // Mark the id as deleted
+        deleted_indices_->set(res, raft::make_const_mdspan(id_gpu.view()), false);
+
+        // Remove label from internal labelToIdLookup_ mapping
+        labelToIdLookup_.erase(search);
+        // Ensure that above operation has executed on device before
+        // returning from this function on host
+        res.sync_stream();
+        return 1;
     }
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
@@ -186,9 +228,16 @@ public:
         assert(!"indexCapacity not implemented");
         return 0;
     }
+    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        vecsim_stl::set<labelType> result(this->allocator);
+        for (auto const &pair : labelToIdLookup_) {
+            result.insert(pair.first);
+        }
+        return result;
+    }
     // void increaseCapacity() override { assert(!"increaseCapacity not implemented"); }
     inline size_t indexLabelCount() const override {
-        return this->indexSize(); // TODO: Return unique counts
+        return this->labelToIdLookup_.size();
     }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
@@ -236,7 +285,7 @@ public:
 
         result_list->results.resize(k);
         for (auto i = 0; i < k; ++i) {
-            result_list->results[i].id = labelType{neighbors[i]};
+            result_list->results[i].id = idToLabelLookup_[neighbors[i]];
             result_list->results[i].score = distances[i];
         }
 
@@ -314,5 +363,8 @@ private:
     // insertion
     std::optional<ann_index_t> index_;
     // Bitset used for deleteVectors and search filtering.
-    std::optional<raft::core::bitset<internal_idx_t>> deleted_indices_;
+    std::optional<raft::core::bitset<std::uint32_t, internal_idx_t>> deleted_indices_;
+
+    vecsim_stl::vector<labelType> idToLabelLookup_;
+    vecsim_stl::unordered_map<labelType, internal_idx_t> labelToIdLookup_;
 };

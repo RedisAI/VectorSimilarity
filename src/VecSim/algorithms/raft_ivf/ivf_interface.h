@@ -17,4 +17,5 @@ struct RaftIvfInterface : public VecSimIndexAbstract<DistType>
 
     virtual int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
                                void *auxiliaryCtx = nullptr) = 0;
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 };

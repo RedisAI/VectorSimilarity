@@ -72,7 +72,7 @@ protected:
 
     static VecSimParams createDefaultRaftIvfPQParams(size_t dim, uint32_t nLists = 1024, uint32_t nProbes = 20) {
         RaftIvfParams ivfparams = {.dim = dim,
-                                .metric = VecSimMetric_L2, // TODO Cosine
+                                .metric = VecSimMetric_L2,
                                 .nLists = nLists,
                                 .kmeans_nIters = 20,
                                 .kmeans_trainsetFraction = 0.5,
