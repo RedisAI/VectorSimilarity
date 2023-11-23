@@ -196,7 +196,7 @@ TYPED_TEST(RaftIvfTieredTest, transferJobAsync) {
         GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
         VecSimQueryReply *res = VecSimIndex_TopKQuery(tiered_index->backendIndex, expected_vector, k, nullptr, BY_SCORE);
         ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
-        ASSERT_EQ(VecSimQueryReply_Len(res), k)
+        ASSERT_EQ(VecSimQueryReply_Len(res), k);
         ASSERT_EQ(res->results[0].id, i);
         ASSERT_EQ(res->results[0].score, 0);
         VecSimQueryReply_Free(res);
@@ -238,6 +238,56 @@ TYPED_TEST(RaftIvfTieredTest, transferJob_inplace) {
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 2 * n);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+}
+
+TYPED_TEST(RaftIvfTieredTest, deleteVector_backend) {
+    size_t dim = 32;
+    size_t n = 500;
+    size_t nLists = 120;
+    size_t nDelete = 10;
+    size_t flat_buffer_limit = 1000;
+
+    size_t k = 1;
+
+    // Create RaftIvfTiered index instance with a mock queue.
+    VecSimParams params = createDefaultFlatParams(dim, nLists, 20);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+
+    labelType vec_label = 0;
+    // Delete from an empty index.
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, vec_label), 0);
+
+    // Insert vectors
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    // Use just one thread to transfer all the vectors
+    mock_thread_pool.thread_iteration();
+    
+    // Check that the backend index has the first 12 vectors
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    for (size_t i = 0; i < nDelete + 2; i++) {
+        TEST_DATA_T expected_vector[dim];
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
+        VecSimQueryReply *res = VecSimIndex_TopKQuery(tiered_index->backendIndex, expected_vector, k, nullptr, BY_SCORE);
+        ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+        ASSERT_EQ(VecSimQueryReply_Len(res), k);
+        ASSERT_EQ(res->results[0].id, i);
+        ASSERT_EQ(res->results[0].score, 0);
+        VecSimQueryReply_Free(res);
+    }
+
+    // Delete 10 first vectors
+    for (size_t i = 0; i < nDelete; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), n - nDelete);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n - nDelete);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
 }
 

@@ -33,17 +33,19 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
             // If the backend index is empty, build it with all the vectors
             // Otherwise, just add the vector to the backend index
-            if (this->backendIndex->indexSize() == 0) {
-                executeTransferJob(true);
-            } else {
-                this->mainIndexGuard.lock();
-                ret = this->backendIndex->addVector(blob, label);
-                this->mainIndexGuard.unlock();
-                return ret;
-            }
+            executeTransferJob(true);
+        }
+        
+        // If the backend index is already built and that the write mode is in place
+        // add the vector to the backend index
+        if (this->backendIndex->indexSize() > 0 && this->getWriteMode() == VecSim_WriteInPlace) {
+            this->mainIndexGuard.lock();
+            ret = this->backendIndex->addVector(blob, label);
+            this->mainIndexGuard.unlock();
+            return ret;
         }
 
-        // Add the vector to the flat index
+        // Otherwise, add the vector to the flat index
         this->flatIndexGuard.lock();
         ret = this->frontendIndex->addVector(blob, label);
         this->flatIndexGuard.unlock();
