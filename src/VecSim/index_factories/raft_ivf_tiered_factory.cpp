@@ -6,10 +6,9 @@
 
 namespace TieredRaftIvfFactory {
 
-VecSimIndex *NewIndex(const TieredIndexParams *params)
-{
+VecSimIndex *NewIndex(const TieredIndexParams *params) {
     assert(params->primaryIndexParams->algoParams.raftIvfParams.type == VecSimType_FLOAT32 &&
-            "Invalid IVF data type algorithm");
+           "Invalid IVF data type algorithm");
 
     using DataType = float;
     using DistType = float;

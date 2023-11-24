@@ -98,7 +98,6 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
 #ifdef USE_CUDA
         VecSimType type = params->primaryIndexParams->algoParams.raftIvfParams.type;
-        assert(type == VecSimType_FLOAT32);  // TODO: support float64
         return TieredRaftIvfFactory::NewIndex(params);
 #else
         throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
@@ -113,7 +112,7 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
     BFParams bf_params{};
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);
-    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT || 
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
 #ifdef USE_CUDA
         est += TieredRaftIvfFactory::EstimateInitialSize(params);
@@ -133,7 +132,8 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
 #ifdef USE_CUDA
-        est = RaftIvfFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.raftIvfParams);
+        est = RaftIvfFactory::EstimateElementSize(
+            &params->primaryIndexParams->algoParams.raftIvfParams);
 #else
         throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
 #endif

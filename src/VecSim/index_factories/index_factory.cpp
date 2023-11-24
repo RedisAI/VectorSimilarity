@@ -33,7 +33,8 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 #ifdef USE_CUDA
             index = RaftIvfFactory::NewIndex(&params->algoParams.raftIvfParams);
 #else
-            throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+            throw std::runtime_error(
+                "RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
 #endif
             break;
         }

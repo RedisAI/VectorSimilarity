@@ -127,8 +127,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                      .primaryIndexParams = &params_flat,
                      .specificParams = {.tieredRaftIvfParams = {.minVectorsInit = 100}}};
 
-    auto *tiered_raft_ivf_flat_index =
-        TieredRaftIvfFactory::NewIndex(&tiered_params);
+    auto *tiered_raft_ivf_flat_index = reinterpret_cast<TieredRaftIvfIndex<float, float> *>(
+        TieredRaftIvfFactory::NewIndex(&tiered_params));
     mock_thread_pool_ivf_flat.ctx->index_strong_ref.reset(tiered_raft_ivf_flat_index);
     mock_thread_pool_ivf_flat.init_threads();
 

@@ -108,11 +108,8 @@ public:
                                              : build_params_t{std::in_place_index<0>}},
           search_params_{raftIvfParams->usePQ ? search_params_t{std::in_place_index<1>}
                                               : search_params_t{std::in_place_index<0>}},
-          index_{std::nullopt},
-          deleted_indices_{std::nullopt},
-          numDeleted_{0},
-          idToLabelLookup_{this->allocator},
-          labelToIdLookup_{this->allocator} {
+          index_{std::nullopt}, deleted_indices_{std::nullopt}, numDeleted_{0},
+          idToLabelLookup_{this->allocator}, labelToIdLookup_{this->allocator} {
         std::visit(
             [raftIvfParams](auto &&inner) {
                 inner.metric = GetRaftDistanceType(raftIvfParams->metric);
@@ -151,15 +148,15 @@ public:
         return addVectorBatch(vector_data, &label, 1, auxiliaryCtx);
     }
     int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
-                            void *auxiliaryCtx = nullptr) override {
-        const auto& res = raft::device_resources_manager::get_device_resources();
+                       void *auxiliaryCtx = nullptr) override {
+        const auto &res = raft::device_resources_manager::get_device_resources();
         // Allocate memory on device to hold vectors to be added
         auto vector_data_gpu =
             raft::make_device_matrix<data_type, internal_idx_t>(res, batch_size, this->dim);
 
         // Copy vector data to previously allocated device buffer
         raft::copy(vector_data_gpu.data_handle(), static_cast<float const *>(vector_data),
-                this->dim * batch_size, res.get_stream());
+                   this->dim * batch_size, res.get_stream());
 
         // Create GPU vector to hold ids
         internal_idx_t first_id = this->indexSize();
@@ -175,10 +172,9 @@ public:
                     raft::make_const_mdspan(vector_data_gpu.view()));
                 deleted_indices_ = {raft::core::bitset<uint32_t, internal_idx_t>(res, 0)};
             }
-            raft::neighbors::ivf_flat::extend(
-                res, raft::make_const_mdspan(vector_data_gpu.view()),
-                {raft::make_const_mdspan(ids.view())},
-                &std::get<index_flat_t>(*index_));
+            raft::neighbors::ivf_flat::extend(res, raft::make_const_mdspan(vector_data_gpu.view()),
+                                              {raft::make_const_mdspan(ids.view())},
+                                              &std::get<index_flat_t>(*index_));
         } else {
             if (!index_) {
                 index_ = raft::neighbors::ivf_pq::build(
@@ -186,12 +182,10 @@ public:
                     raft::make_const_mdspan(vector_data_gpu.view()));
                 deleted_indices_ = {raft::core::bitset<uint32_t, internal_idx_t>(res, 0)};
             }
-            raft::neighbors::ivf_pq::extend(
-                res, raft::make_const_mdspan(vector_data_gpu.view()),
-                {raft::make_const_mdspan(ids.view())},
-                &std::get<index_pq_t>(*index_));
+            raft::neighbors::ivf_pq::extend(res, raft::make_const_mdspan(vector_data_gpu.view()),
+                                            {raft::make_const_mdspan(ids.view())},
+                                            &std::get<index_pq_t>(*index_));
         }
-
 
         // Add labels to internal idToLabelLookup_ mapping
         this->idToLabelLookup_.insert(this->idToLabelLookup_.end(), label, label + batch_size);
@@ -201,7 +195,7 @@ public:
 
         // Update the size of the deleted indices bitset
         deleted_indices_->resize(res, deleted_indices_->size() + batch_size);
-        
+
         // Ensure that above operation has executed on device before
         // returning from this function on host
         res.sync_stream();
@@ -213,7 +207,7 @@ public:
         if (search == labelToIdLookup_.end()) {
             return 0;
         }
-        const auto& res = raft::device_resources_manager::get_device_resources();
+        const auto &res = raft::device_resources_manager::get_device_resources();
         // Create GPU vector to hold ids to mark as deleted
         internal_idx_t id = search->second;
         auto id_gpu = raft::make_device_vector<internal_idx_t, internal_idx_t>(res, 1);
@@ -245,12 +239,10 @@ public:
         return result;
     }
     // void increaseCapacity() override { assert(!"increaseCapacity not implemented"); }
-    inline size_t indexLabelCount() const override {
-        return this->labelToIdLookup_.size();
-    }
+    inline size_t indexLabelCount() const override { return this->labelToIdLookup_.size(); }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        const auto& res = raft::device_resources_manager::get_device_resources();
+        const auto &res = raft::device_resources_manager::get_device_resources();
         auto result_list = new VecSimQueryReply(this->allocator);
         auto nVectors = this->indexSize();
         if (nVectors == 0 || k == 0 || !index_.has_value()) {
@@ -260,23 +252,26 @@ public:
         // index
         k = std::min(k, nVectors);
         // Allocate memory on device for search vector
-        auto vector_data_gpu = raft::make_device_matrix<data_type, internal_idx_t>(res, 1, this->dim);
+        auto vector_data_gpu =
+            raft::make_device_matrix<data_type, internal_idx_t>(res, 1, this->dim);
         // Allocate memory on device for neighbor and distance results
         auto neighbors_gpu = raft::make_device_matrix<internal_idx_t, internal_idx_t>(res, 1, k);
         auto distances_gpu = raft::make_device_matrix<dist_type, internal_idx_t>(res, 1, k);
         // Copy query vector to device
-        raft::copy(vector_data_gpu.data_handle(), static_cast<const data_type *>(queryBlob), this->dim,
-                res.get_stream());
+        raft::copy(vector_data_gpu.data_handle(), static_cast<const data_type *>(queryBlob),
+                   this->dim, res.get_stream());
         auto bitset_filter = raft::neighbors::filtering::bitset_filter(deleted_indices_->view());
 
         // Perform correct search based on index type
         if (std::holds_alternative<index_flat_t>(*index_)) {
-            raft::neighbors::ivf_flat::search_with_filtering<data_type, internal_idx_t, decltype(bitset_filter)>(
+            raft::neighbors::ivf_flat::search_with_filtering<data_type, internal_idx_t,
+                                                             decltype(bitset_filter)>(
                 res, std::get<raft::neighbors::ivf_flat::search_params>(search_params_),
                 std::get<index_flat_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
                 neighbors_gpu.view(), distances_gpu.view(), bitset_filter);
         } else {
-            raft::neighbors::ivf_pq::search_with_filtering<data_type, internal_idx_t, decltype(bitset_filter)>(
+            raft::neighbors::ivf_pq::search_with_filtering<data_type, internal_idx_t,
+                                                           decltype(bitset_filter)>(
                 res, std::get<raft::neighbors::ivf_pq::search_params>(search_params_),
                 std::get<index_pq_t>(*index_), raft::make_const_mdspan(vector_data_gpu.view()),
                 neighbors_gpu.view(), distances_gpu.view(), bitset_filter);

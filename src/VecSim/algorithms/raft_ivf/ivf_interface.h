@@ -9,9 +9,9 @@
 // Non-CUDA Interface of the RaftIVF index to avoid importing CUDA code
 // in the tiered index.
 template <typename DataType, typename DistType = DataType>
-struct RaftIvfInterface : public VecSimIndexAbstract<DistType>
-{
-    RaftIvfInterface(const AbstractIndexInitParams &params) : VecSimIndexAbstract<DistType>(params) {}
+struct RaftIvfInterface : public VecSimIndexAbstract<DistType> {
+    RaftIvfInterface(const AbstractIndexInitParams &params)
+        : VecSimIndexAbstract<DistType>(params) {}
     virtual uint32_t nLists() const = 0;
     virtual inline void setNProbes(uint32_t n_probes) = 0;
 

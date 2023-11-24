@@ -21,7 +21,8 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         assert(
             raftIvfIndex->nLists() < this->flatBufferLimit &&
             "The flat buffer limit must be greater than the number of lists in the backend index");
-        this->minVectorsInit = std::max((size_t)1, tieredParams.specificParams.tieredRaftIvfParams.minVectorsInit);
+        this->minVectorsInit =
+            std::max((size_t)1, tieredParams.specificParams.tieredRaftIvfParams.minVectorsInit);
     }
     ~TieredRaftIvfIndex() {
         // Delete all the pending jobs
@@ -35,7 +36,7 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
             // Otherwise, just add the vector to the backend index
             executeTransferJob(true);
         }
-        
+
         // If the backend index is already built and that the write mode is in place
         // add the vector to the backend index
         if (this->backendIndex->indexSize() > 0 && this->getWriteMode() == VecSim_WriteInPlace) {
@@ -63,7 +64,8 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         if (this->frontendIndex->isLabelExists(label)) {
             this->flatIndexGuard.unlock_shared();
             this->flatIndexGuard.lock();
-            // Check again if the label exists, as it may have been removed while we released the lock.
+            // Check again if the label exists, as it may have been removed while we released the
+            // lock.
             if (this->frontendIndex->isLabelExists(label)) {
                 // Remove every id that corresponds the label from the flat buffer.
                 auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
@@ -98,8 +100,8 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
         std::vector<labelType> output;
-        std::set_union(flat_labels.begin(), flat_labels.end(), raft_ivf_labels.begin(), raft_ivf_labels.end(),
-                       std::back_inserter(output));
+        std::set_union(flat_labels.begin(), flat_labels.end(), raft_ivf_labels.begin(),
+                       raft_ivf_labels.end(), std::back_inserter(output));
         return output.size();
     }
 
@@ -158,7 +160,7 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
     size_t minVectorsInit = 1;
 
-    inline auto* getBackendIndex() const {
+    inline auto *getBackendIndex() const {
         return dynamic_cast<RaftIvfInterface<DataType, DistType> *>(this->backendIndex);
     }
 
@@ -181,7 +183,7 @@ private:
                 return;
             }
         }
-            
+
         // Check that there are still vectors to transfer after exclusive lock
         this->flatIndexGuard.lock();
         nVectors = this->frontendIndex->indexSize();
@@ -208,7 +210,8 @@ private:
         std::copy_n(this->frontendIndex->getLabels().data(), nVectors, labelData);
         this->frontendIndex->clear();
 
-        // Lock the main index before unlocking the front index so that both indexes are not empty at the same time
+        // Lock the main index before unlocking the front index so that both indexes are not empty
+        // at the same time
         this->mainIndexGuard.lock();
         this->flatIndexGuard.unlock();
 

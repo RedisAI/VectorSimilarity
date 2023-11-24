@@ -70,34 +70,39 @@ protected:
         return params;
     }
 
-    static VecSimParams createDefaultRaftIvfPQParams(size_t dim, uint32_t nLists = 1024, uint32_t nProbes = 20) {
+    static VecSimParams createDefaultRaftIvfPQParams(size_t dim, uint32_t nLists = 1024,
+                                                     uint32_t nProbes = 20) {
         RaftIvfParams ivfparams = {.dim = dim,
-                                .metric = VecSimMetric_L2,
-                                .nLists = nLists,
-                                .kmeans_nIters = 20,
-                                .kmeans_trainsetFraction = 0.5,
-                                .nProbes = nProbes,
-                                .usePQ = true,
-                                .pqBits = 8,
-                                .pqDim = 0,
-                                .codebookKind = RaftIVFPQCodebookKind_PerSubspace,
-                                .lutType = CUDAType_R_32F,
-                                .internalDistanceType = CUDAType_R_32F,
-                                .preferredShmemCarveout = 1.0};
-        VecSimParams params{.algo = VecSimAlgo_RAFT_IVFPQ, .algoParams = {.raftIvfParams = ivfparams}};
+                                   .metric = VecSimMetric_L2,
+                                   .nLists = nLists,
+                                   .kmeans_nIters = 20,
+                                   .kmeans_trainsetFraction = 0.8,
+                                   .nProbes = nProbes,
+                                   .usePQ = true,
+                                   .pqBits = 8,
+                                   .pqDim = 0,
+                                   .codebookKind = RaftIVFPQCodebookKind_PerSubspace,
+                                   .lutType = CUDAType_R_32F,
+                                   .internalDistanceType = CUDAType_R_32F,
+                                   .preferredShmemCarveout = 1.0};
+        VecSimParams params{.algo = VecSimAlgo_RAFT_IVFPQ,
+                            .algoParams = {.raftIvfParams = ivfparams}};
         return params;
     }
 
-    static VecSimParams createDefaultRaftIvfFlatParams(size_t dim, uint32_t nLists = 1024, uint32_t nProbes = 20, bool adaptiveCenters = true) {
+    static VecSimParams createDefaultRaftIvfFlatParams(size_t dim, uint32_t nLists = 1024,
+                                                       uint32_t nProbes = 20,
+                                                       bool adaptiveCenters = true) {
         RaftIvfParams ivfparams = {.dim = dim,
-                                .metric = VecSimMetric_L2, // TODO Cosine
-                                .nLists = nLists,
-                                .kmeans_nIters = 20,
-                                .kmeans_trainsetFraction = 0.5,
-                                .nProbes = nProbes,
-                                .usePQ = false,
-                                .adaptiveCenters = adaptiveCenters};
-        VecSimParams params{.algo = VecSimAlgo_RAFT_IVFFLAT, .algoParams = {.raftIvfParams = ivfparams}};
+                                   .metric = VecSimMetric_L2,
+                                   .nLists = nLists,
+                                   .kmeans_nIters = 20,
+                                   .kmeans_trainsetFraction = 0.5,
+                                   .nProbes = nProbes,
+                                   .usePQ = false,
+                                   .adaptiveCenters = adaptiveCenters};
+        VecSimParams params{.algo = VecSimAlgo_RAFT_IVFFLAT,
+                            .algoParams = {.raftIvfParams = ivfparams}};
         return params;
     }
 

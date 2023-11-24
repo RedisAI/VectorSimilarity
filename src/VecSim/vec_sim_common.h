@@ -38,13 +38,22 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_RAFT_IVFFLAT, VecSimAlgo_RAFT_IVFPQ } VecSimAlgo;
+typedef enum {
+    VecSimAlgo_BF,
+    VecSimAlgo_HNSWLIB,
+    VecSimAlgo_TIERED,
+    VecSimAlgo_RAFT_IVFFLAT,
+    VecSimAlgo_RAFT_IVFPQ
+} VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
 // Codebook kind for IVFPQ indexes
-typedef enum { RaftIVFPQCodebookKind_PerCluster, RaftIVFPQCodebookKind_PerSubspace } RaftIVFPQCodebookKind;
+typedef enum {
+    RaftIVFPQCodebookKind_PerCluster,
+    RaftIVFPQCodebookKind_PerSubspace
+} RaftIVFPQCodebookKind;
 
 // CUDA types supported by GPU-accelerated indexes
 typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } CudaType;

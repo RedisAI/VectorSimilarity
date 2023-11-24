@@ -5,7 +5,6 @@
 #include "VecSim/algorithms/raft_ivf/ivf_tiered.h"
 #endif
 
-
 size_t BM_VecSimGeneral::block_size = 1024;
 
 // Class for common bm for basic index and updated index.
@@ -33,8 +32,8 @@ public:
     // Run TopK using Raft IVF Flat tiered and flat index and calculate the recall of the Raft IVF
     // Flat algorithm with respect to the results returned by the flat index.
     static void TopK_TieredRaftIVFFlat(benchmark::State &st, unsigned short index_offset = 0);
-    // Run TopK using both Raft IVF PQ Tiered and flat index and calculate the recall of the Raft IVF
-    // PQ algorithm with respect to the results returned by the flat index.
+    // Run TopK using both Raft IVF PQ Tiered and flat index and calculate the recall of the Raft
+    // IVF PQ algorithm with respect to the results returned by the flat index.
     static void TopK_TieredRaftIVFPQ(benchmark::State &st, unsigned short index_offset = 0);
 #endif
 
@@ -182,7 +181,8 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 
 #ifdef USE_CUDA
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st, unsigned short index_offset) {
+void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
+                                                           unsigned short index_offset) {
     size_t k = st.range(0);
     size_t n_probes = st.range(1);
     std::atomic_int correct = 0;
@@ -195,11 +195,11 @@ void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
 
     auto parallel_knn_search = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
-        VecSimQueryParams query_params { .batchSize = 1 };
+        VecSimQueryParams query_params{.batchSize = 1};
         size_t cur_iter = search_job->iter;
-        auto results =
-            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_RAFT_IVFFLAT], QUERIES[cur_iter % N_QUERIES].data(),
-                                  search_job->k, &query_params, BY_SCORE);
+        auto results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_RAFT_IVFFLAT],
+                                             QUERIES[cur_iter % N_QUERIES].data(), search_job->k,
+                                             &query_params, BY_SCORE);
         search_job->all_results[cur_iter] = results;
         delete job;
     };
