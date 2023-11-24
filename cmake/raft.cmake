@@ -4,8 +4,8 @@ if(USE_CUDA)
 	# Set which version of RAFT to use (defined separately for testing
 	# minimal dependency changes if necessary)
 	set(RAFT_VERSION "${RAPIDS_VERSION}")
-    set(RAFT_FORK "rapidsai")
-    set(RAFT_PINNED_TAG "branch-${RAPIDS_VERSION}")
+	set(RAFT_FORK "rapidsai")
+	set(RAFT_PINNED_TAG "branch-${RAPIDS_VERSION}")
 
 	# Download CMake file for bootstrapping RAPIDS-CMake, a utility that
 	# simplifies handling of complex RAPIDS dependencies
@@ -13,7 +13,7 @@ if(USE_CUDA)
 		file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-${RAPIDS_VERSION}/RAPIDS.cmake
 			${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
 	endif()
-    include(${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
+	include(${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
 
 	# General tool for orchestrating RAPIDS dependencies
 	include(rapids-cmake)
@@ -43,13 +43,13 @@ if(USE_CUDA)
 		cmake_parse_arguments(PKG "${options}" "${oneValueArgs}"
 			"${multiValueArgs}" ${ARGN} )
 	
-	    set(RAFT_COMPONENTS "")
-	    if(PKG_COMPILE_LIBRARY)
+		set(RAFT_COMPONENTS "")
+		if(PKG_COMPILE_LIBRARY)
 			string(APPEND RAFT_COMPONENTS " compiled")
-	    endif()
-	    # Invoke CPM find_package()
+		endif()
+		# Invoke CPM find_package()
 		#     (From rapids-cpm)
-	    rapids_cpm_find(raft ${PKG_VERSION}
+		rapids_cpm_find(raft ${PKG_VERSION}
 			GLOBAL_TARGETS      raft::raft
 			BUILD_EXPORT_SET    VectorSimilarity-exports
 			INSTALL_EXPORT_SET  VectorSimilarity-exports

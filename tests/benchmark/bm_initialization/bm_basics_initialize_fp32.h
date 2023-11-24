@@ -49,11 +49,14 @@ REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW));
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered), fp32_index_t)
 (benchmark::State &st) { TopK_Tiered(st); }
 REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered));
+
+#ifdef USE_CUDA
 // TopK Tiered RAFT IVF Flat
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, TieredRaftIVF), fp32_index_t)
 (benchmark::State &st) { TopK_TieredRaftIVFFlat(st); }
 REGISTER_TopK_TieredRaftIVF(BM_VecSimCommon, BM_FUNC_NAME(TopK, TieredRaftIVF));
 
+#endif
 
 // Range BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), fp32_index_t)

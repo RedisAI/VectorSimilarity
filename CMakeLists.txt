@@ -32,15 +32,15 @@ project(VectorSimilarity)
 if (USE_CUDA)
 	# List of architectures to generate device code
 	set(CMAKE_CUDA_ARCHITECTURES "native")
-    # Enable CUDA compilation for this project
-    enable_language(CUDA)
- 	# Add definition for conditional compilation of CUDA components
+	# Enable CUDA compilation for this project
+	enable_language(CUDA)
+	# Add definition for conditional compilation of CUDA components
 	add_definitions(-DUSE_CUDA)
-    # Perform all RAFT-specific CMake setup
+	# Perform all RAFT-specific CMake setup
 	include(cmake/raft.cmake)
-    # Required flags for compiling RAFT
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -std=c++17")
+	# Required flags for compiling RAFT
+	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
+	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -std=c++17")
 	set(CMAKE_CUDA_FLAGS_RELEASE "-O3")
 	set(CMAKE_CUDA_FLAGS_DEBUG "-g")
 	

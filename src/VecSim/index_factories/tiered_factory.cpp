@@ -96,12 +96,13 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         }
     } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
+#ifdef USE_CUDA
         VecSimType type = params->primaryIndexParams->algoParams.raftIvfParams.type;
-        if (type == VecSimType_FLOAT32) {
-            return TieredRaftIvfFactory::NewIndex(params);
-        }/* else if (type == VecSimType_FLOAT64) {
-            return TieredRaftIvfFactory::NewIndex<double>(params);
-        }*/
+        assert(type == VecSimType_FLOAT32);  // TODO: support float64
+        return TieredRaftIvfFactory::NewIndex(params);
+#else
+        throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+#endif
     }
     return nullptr; // Invalid algorithm or type.
 }
@@ -114,7 +115,11 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
         est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);
     } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT || 
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
+#ifdef USE_CUDA
         est += TieredRaftIvfFactory::EstimateInitialSize(params);
+#else
+        throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+#endif
     }
 
     est += BruteForceFactory::EstimateInitialSize(&bf_params);
@@ -127,7 +132,11 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
     } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
+#ifdef USE_CUDA
         est = RaftIvfFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.raftIvfParams);
+#else
+        throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+#endif
     }
     return est;
 }
