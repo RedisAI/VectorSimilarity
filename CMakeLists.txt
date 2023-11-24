@@ -1,4 +1,4 @@
-option(USE_CUDA "Build Cuda code" On)
+option(USE_CUDA "Build Cuda code" OFF)
 if(USE_CUDA)
   cmake_minimum_required(VERSION 3.26.4 FATAL_ERROR)
 else()

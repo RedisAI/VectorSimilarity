@@ -97,7 +97,6 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
     } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
                params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
 #ifdef USE_CUDA
-        VecSimType type = params->primaryIndexParams->algoParams.raftIvfParams.type;
         return TieredRaftIvfFactory::NewIndex(params);
 #else
         throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
