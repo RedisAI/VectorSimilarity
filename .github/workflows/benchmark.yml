@@ -1,7 +1,11 @@
 name: benchmark
 
-# TODO: add pull_request-labeled with "benchmark" label when specifying a label is supported
-on: workflow_call
+on:
+  workflow_call:
+    inputs:
+      setup:
+        type: string
+        required: true
 
 jobs:
   start-runner:
@@ -12,7 +16,7 @@ jobs:
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -51,28 +55,28 @@ jobs:
              pip3 install --upgrade pip PyYAML setuptools redisbench-admin
              pip3 install -r requirements.txt
 
-      - name: stress test
-        run: |
-          sudo apt install stress-ng -qqy
-          uptime
-          stress-ng -c 1 --timeout 60s --metrics-brief
-          uptime
-          stress-ng --stream 1 -t 60 --metrics-brief
-          uptime
-          stress-ng --ipsec-mb=1 -t 60 --metrics-brief
-          uptime
+      # - name: stress test
+      #   run: |
+      #     sudo apt install stress-ng -qqy
+      #     uptime
+      #     stress-ng -c 1 --timeout 60s --metrics-brief
+      #     uptime
+      #     stress-ng --stream 1 -t 60 --metrics-brief
+      #     uptime
+      #     stress-ng --ipsec-mb=1 -t 60 --metrics-brief
+      #     uptime
 
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
-        run: ./tests/benchmark/bm_files.sh ${{ github.event.label.name }}
+        run: ./tests/benchmark/bm_files.sh ${{ inputs.setup }}
       - name: Benchmark
         timeout-minutes: 120
-        run: make benchmark BM_FILTER=${{ github.event.label.name }}
+        run: make benchmark BM_FILTER=${{ inputs.setup }}
 
       - name: Collect results
         run: |
-          ./tests/benchmark/benchmarks.sh ${{ github.event.label.name }} | xargs -I {} redisbench-admin export     \
+          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -I {} redisbench-admin export     \
           --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
           --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
           --redistimeseries_user      default                                       \
@@ -93,7 +97,7 @@ jobs:
     if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

@@ -10,6 +10,7 @@ else
     VERSION=${VERSION#"VERSION_ID="}
     OS_NAME=$(grep '^NAME' /etc/os-release | sed 's/"//g')
     OS_NAME=${OS_NAME#"NAME="}
+    [[ OS_NAME == 'Rocky Linux' ]] && VERSION=${VERSION%.*} # Remove minor version
     OS=${OS_NAME,,}_${VERSION}
     OS=${OS// /'_'}
 fi
