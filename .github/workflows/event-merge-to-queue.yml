@@ -1,0 +1,67 @@
+name: Pull Request CI
+
+on:
+  merge_group:
+    types: [checks_requested]
+
+jobs:
+  check-if-docs-only:
+    uses: ./.github/workflows/task-check-docs.yml
+
+  jammy:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/jammy.yml
+  focal:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/focal.yml
+  bionic:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/bionic.yml
+  xenial:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/xenial.yml
+  rocky8:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/rocky8.yml
+  macos:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/macos.yml
+  arm:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/arm.yml
+
+  coverage:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/coverage.yml
+    secrets: inherit
+
+  codeql-analysis:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/codeql-analysis.yml
+    secrets: inherit
+
+  pr-validation:
+    needs:
+      - jammy
+      - focal
+      - bionic
+      - xenial
+      - rocky8
+      - macos
+      - arm
+      - coverage
+      - codeql-analysis
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    steps:
+      - if: contains(needs.*.result, 'failure')
+        run: exit 1
