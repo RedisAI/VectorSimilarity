@@ -11,7 +11,13 @@
 #
 name: "CodeQL"
 
-on: workflow_call
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - '[0-9]+.[0-9]+'
+      - 'feature*'
 
 jobs:
   analyze:
