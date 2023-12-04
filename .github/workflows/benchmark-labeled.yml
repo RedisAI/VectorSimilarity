@@ -15,22 +15,17 @@ jobs:
       setup: ${{ steps.get-setup.outputs.setup }}
       has-setup: ${{ steps.get-setup.outputs.has-setup }}
     steps:
-      - name: Checkout
-        env:
-          CTX: ${{ toJson(github) }}
-        run: echo $CTX
       - name: Check Labels
         id: get-setup
         shell: python
         run: |
           import os
-
           if '${{ github.event.action }}' == 'labeled':
             # Get labels from event
             labels = ['${{ github.event.label.name }}']
           else:
             # Get labels from PR
-            labels = ${{ fromJson(github.event.pull_request.labels.*.name) }}
+            labels = ${{ github.event.pull_request.labels.*.name }}
 
           if 'benchmarks-all' in labels:
             # Only run benchmarks-all
