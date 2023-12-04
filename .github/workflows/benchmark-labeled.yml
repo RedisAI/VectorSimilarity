@@ -1,4 +1,4 @@
-name: benchmark (labeled)
+name: benchmark
 
 on:
   pull_request:
@@ -18,8 +18,11 @@ jobs:
       - name: Check Labels
         id: get-setup
         shell: python
+        env:
+          CTX: ${{ toJson(github) }}
         run: |
           import os
+
           if '${{ github.event.action }}' == 'labeled':
             # Get labels from event
             labels = ['${{ github.event.label.name }}']
