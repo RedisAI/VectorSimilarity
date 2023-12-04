@@ -15,11 +15,13 @@ jobs:
       setup: ${{ steps.get-setup.outputs.setup }}
       has-setup: ${{ steps.get-setup.outputs.has-setup }}
     steps:
+      - name: Checkout
+        env:
+          CTX: ${{ toJson(github) }}
+        run: echo $CTX
       - name: Check Labels
         id: get-setup
         shell: python
-        env:
-          CTX: ${{ toJson(github) }}
         run: |
           import os
 
