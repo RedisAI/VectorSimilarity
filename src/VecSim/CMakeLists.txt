@@ -44,8 +44,8 @@ PUBLIC
 	$<$<BOOL:${VECSIM_BUILD_TESTS}>:VectorSimilaritySerializer>
 PRIVATE
 	$<$<BOOL:${USE_CUDA}>:raft::raft>
-    CUDA::cusolver
-    CUDA::cublas
-    CUDA::curand
-    CUDA::cusparse
+    $<$<BOOL:${USE_CUDA}>:CUDA::cusolver>
+    $<$<BOOL:${USE_CUDA}>:CUDA::cublas>
+    $<$<BOOL:${USE_CUDA}>:CUDA::curand>
+    $<$<BOOL:${USE_CUDA}>:CUDA::cusparse>
 )
