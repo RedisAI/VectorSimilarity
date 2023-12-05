@@ -210,7 +210,7 @@ void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
                                            tiered_index, k, 0, iter++, all_results);
         tiered_index->submitSingleJob(search_job);
         if (iter == total_iters) {
-            BM_VecSimGeneral::mock_thread_pool_raft.thread_pool_wait();
+            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
         }
     }
 

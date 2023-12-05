@@ -117,11 +117,10 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
 #ifdef USE_CUDA
     // Create RAFFT IVF Flat tiered index.
-    auto &mock_thread_pool_ivf_flat = BM_VecSimGeneral::mock_thread_pool_raft;
-
-    VecSimParams params_flat = createDefaultRaftIvfFlatParams(dim, 1000, 100);
-    tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool_raft.jobQ,
-                     .jobQueueCtx = mock_thread_pool_ivf_flat.ctx,
+    // Use one unique thread pool for the tiered index by changing the thread pool context.
+    VecSimParams params_flat = createDefaultRaftIvfFlatParams(dim, 10000, 100, false);
+    tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                     .jobQueueCtx = mock_thread_pool.ctx,
                      .submitCb = tieredIndexMock::submit_callback,
                      .flatBufferLimit = params_flat.algoParams.raftIvfParams.nLists * 5000,
                      .primaryIndexParams = &params_flat,
@@ -129,8 +128,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     auto *tiered_raft_ivf_flat_index = reinterpret_cast<TieredRaftIvfIndex<float, float> *>(
         TieredRaftIvfFactory::NewIndex(&tiered_params));
-    mock_thread_pool_ivf_flat.ctx->index_strong_ref.reset(tiered_raft_ivf_flat_index);
-    mock_thread_pool_ivf_flat.init_threads();
 
     indices.push_back(tiered_raft_ivf_flat_index);
 #endif
@@ -145,7 +142,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         VecSimIndex_AddVector(indices[VecSimAlgo_RAFT_IVFFLAT], blob, label);
 #endif
     }
-    mock_thread_pool_ivf_flat.thread_pool_wait(100);
+    mock_thread_pool.thread_pool_wait(100);
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);

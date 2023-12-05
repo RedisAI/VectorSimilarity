@@ -26,7 +26,9 @@ public:
     void clear() override {
         this->labelToIdsLookup.clear();
         this->idToLabelMapping.clear();
+        this->idToLabelMapping.shrink_to_fit();
         this->vectorBlocks.clear();
+        this->vectorBlocks.shrink_to_fit();
         this->count = idType{};
     }
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
