@@ -41,12 +41,16 @@ template <>
 std::vector<std::vector<float>> BM_VecSimIndex<fp32_index_t>::queries{};
 template <>
 std::vector<std::vector<float>> BM_VecSimIndex<bf16_index_t>::queries{};
+template <>
+std::vector<std::vector<float>> BM_VecSimIndex<fp16_index_t>::queries{};
 
 template <>
 std::vector<std::vector<double>> BM_VecSimIndex<fp64_index_t>::queries{};
 
 template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<bf16_index_t>::indices{};
+template <>
+std::vector<VecSimIndex *> BM_VecSimIndex<fp16_index_t>::indices{};
 
 template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
@@ -79,8 +83,8 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
 
     VecSimType type = index_type_t::get_index_type();
-    bool is_bf16 = type == VecSimType_FP32_TO_BF16;
-    VecSimType bf_type = is_bf16 ? VecSimType_FLOAT32 : type;
+    bool is_special = type == VecSimType_FP32_TO_BF16 || type == VecSimType_FP32_TO_FP16;
+    VecSimType bf_type = is_special ? VecSimType_FLOAT32 : type;
     // dim, block_size, M, EF_C, n_veectors, is_multi, n_queries, hnsw_index_file and
     // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
     // index type benchmarks.
@@ -93,7 +97,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     indices.push_back(CreateNewIndex(bf_params));
     auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
-    if (!is_bf16) {
+    if (!is_special) {
         // Initialize and load HNSW index for DBPedia data set.
         indices.push_back(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
 
@@ -126,7 +130,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
             VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, i);
         }
-    } else if (is_bf16) {
+    } else if (is_special) {
         HNSWParams hnsw_params = {.type = type,
                                   .dim = dim,
                                   .metric = VecSimMetric_Cosine,

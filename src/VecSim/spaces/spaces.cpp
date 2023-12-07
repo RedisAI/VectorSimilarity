@@ -76,4 +76,22 @@ void SetBF16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_f
                      unsigned char *alignment) {
     *out_func = NULL;
 }
+
+void SetFP16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
+                     unsigned char *alignment) {
+
+    static const Arch_Optimization arch_opt = getArchitectureOptimization();
+
+    if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
+        *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment, VecSimType_FP32_TO_FP16);
+
+    } else if (metric == VecSimMetric_L2) {
+        /* not supported yet */
+        *out_func = NULL;
+    }
+}
+void SetFP16DistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
+                     unsigned char *alignment) {
+    *out_func = NULL;
+}
 } // namespace spaces

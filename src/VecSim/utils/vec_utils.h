@@ -26,6 +26,7 @@ public:
     static const char *INT32_STRING;
     static const char *INT64_STRING;
     static const char *BF16_STRING;
+    static const char *FP16_STRING;
 
     static const char *METRIC_STRING;
     static const char *COSINE_STRING;

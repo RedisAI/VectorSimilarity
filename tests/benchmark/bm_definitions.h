@@ -14,6 +14,7 @@ struct IndexType {
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
 using bf16_index_t = IndexType<VecSimType_FP32_TO_BF16, float, float>;
+using fp16_index_t = IndexType<VecSimType_FP32_TO_FP16, float, float>;
 
 #define INDICES   BM_VecSimIndex<index_type_t>::indices
 #define QUERIES   BM_VecSimIndex<index_type_t>::queries

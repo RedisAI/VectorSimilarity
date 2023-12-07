@@ -98,9 +98,13 @@ public:
         case VecSimType_FP32_TO_BF16:
             spaces::SetBF16DistFunc(metric, dim, &distFunc, &alignment);
             break;
+        case VecSimType_FP32_TO_FP16:
+            spaces::SetFP16DistFunc(metric, dim, &distFunc, &alignment);
+            break;
         default:
             break;
         }
+        assert(distFunc);
 
         normalize_func =
             vecType == VecSimType_FLOAT64 ? normalizeVectorDouble : normalizeVectorFloat;
