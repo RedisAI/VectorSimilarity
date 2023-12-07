@@ -24,7 +24,9 @@
 #include <raft/distance/distance_types.hpp>
 #include <raft/linalg/init.cuh>
 #include <raft/neighbors/ivf_flat_types.hpp>
+#include <raft/neighbors/ivf_flat.cuh>
 #include <raft/neighbors/ivf_pq_types.hpp>
+#include <raft/neighbors/ivf_pq.cuh>
 #include <raft/neighbors/sample_filter.cuh>
 
 inline auto constexpr GetRaftDistanceType(VecSimMetric vsm) {
