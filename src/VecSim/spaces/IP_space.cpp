@@ -22,7 +22,8 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    assert(type == VecSimType_FP32_TO_BF16 || type == VecSimType_FLOAT32 || type == VecSimType_FP32_TO_FP16);
+    assert(type == VecSimType_FP32_TO_BF16 || type == VecSimType_FLOAT32 ||
+           type == VecSimType_FP32_TO_FP16);
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
     if (type == VecSimType_FP32_TO_BF16) {
         ret_dist_func = BFP16_InnerProduct;

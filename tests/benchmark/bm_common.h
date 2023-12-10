@@ -99,7 +99,7 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_BF_special(benchmark::State &st,
-                                                 unsigned short index_offset) {
+                                                    unsigned short index_offset) {
     size_t k = st.range(0);
     std::atomic_int correct = 0;
     size_t iter = 0;

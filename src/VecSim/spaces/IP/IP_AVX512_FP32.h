@@ -45,7 +45,7 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
 #include <cstring>
 /* ***************BF16 FUNCTIONS***************  */
 template <unsigned char residual> // 0..15
-void cast_fp32_to_bf16_imp(float *& vec, float *vec_out, __mmask32 mask) {
+void cast_fp32_to_bf16_imp(float *&vec, float *vec_out, __mmask32 mask) {
     unsigned char promote = residual ? residual : 16;
 
     __m512i padded_vec = _mm512_maskz_loadu_epi16(mask, vec);
@@ -72,7 +72,7 @@ float BF16_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
     __mmask32 mask = 0xAAAAAAAA;
 
     if (residual) {
-        __mmask32 res_mask = mask & ((1L << (residual*2)) - 1);
+        __mmask32 res_mask = mask & ((1L << (residual * 2)) - 1);
 
         // load only residual number of float
         cast_fp32_to_bf16_imp<residual>(pVect1, res_vec1p, res_mask);
@@ -100,8 +100,8 @@ void cast_fp32_to_fp16_imp(__m512 vec, float *vec_out, unsigned char promote) {
     __m512 v_back_to_fp32 = _mm512_cvtph_ps(v_fp16);
     // copy to the vectors
     float __attribute__((aligned(64))) mem_addr[16];
-    //mem_addr needs to be aligned and since we (may) promoted vec_out by residual,
-    // it went out of alignment.
+    // mem_addr needs to be aligned and since we (may) promoted vec_out by residual,
+    //  it went out of alignment.
     _mm512_store_ps(mem_addr, v_back_to_fp32);
 
     memcpy(vec_out, mem_addr, sizeof(mem_addr));
@@ -124,7 +124,6 @@ void cast_fp32_to_fp16(float *&pVect1, float *&pVect2, float *vec1_out, float *v
     }
     pVect1 += promote;
     pVect2 += promote;
-
 
     cast_fp32_to_fp16_imp(v1, vec1_out, promote);
     cast_fp32_to_fp16_imp(v2, vec2_out, promote);

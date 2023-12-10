@@ -54,7 +54,9 @@ private:
         }
         auto end_time = std::chrono::high_resolution_clock::now();
         auto time = end_time - start_time;
-        std::cout << "running loadRawVectors took " << time/std::chrono::milliseconds(1) << "ms to run.\n" << std::endl;
+        std::cout << "running loadRawVectors took " << time / std::chrono::milliseconds(1)
+                  << "ms to run.\n"
+                  << std::endl;
 
         //    assert(input.eof());
         //   input.read((char *)raw_vectors_output, DIM * N_VECTORS * sizeof(data_t));
@@ -72,8 +74,7 @@ size_t BM_VecSimSpecialIndex<index_type_t>::first_special_ref_count = 0;
 
 template <typename index_type_t>
 void BM_VecSimSpecialIndex<index_type_t>::Initialize() {
-    if( !Initialize) {
-
+    if (!Initialize) {
     }
     loadRawVectors(BM_VecSimGeneral::AttachRootPath(raw_vectors_file), NULL);
 }
