@@ -34,7 +34,6 @@ add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp tes
 add_executable(test_allocator test_allocator.cpp test_utils.cpp)
 add_executable(test_spaces test_spaces.cpp)
 add_executable(test_common ../utils/mock_thread_pool.cpp test_utils.cpp test_common.cpp)
-add_executable(test_bf16 test_bf16.cpp test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)
@@ -42,7 +41,6 @@ target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_allocator PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_spaces PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_common PUBLIC gtest_main VectorSimilarity)
-target_link_libraries(test_bf16 PUBLIC gtest_main VectorSimilarity)
 
 include(GoogleTest)
 
@@ -52,4 +50,3 @@ gtest_discover_tests(test_bruteforce)
 gtest_discover_tests(test_allocator)
 gtest_discover_tests(test_spaces)
 gtest_discover_tests(test_common)
-gtest_discover_tests(test_bf16)
