@@ -27,8 +27,6 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
     if (type == VecSimType_FP32_TO_BF16) {
         ret_dist_func = BFP16_InnerProduct;
-    } else {
-        ret_dist_func = NULL;
     }
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     if (dim < 16) {
