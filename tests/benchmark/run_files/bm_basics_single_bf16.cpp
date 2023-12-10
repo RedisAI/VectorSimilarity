@@ -1,4 +1,4 @@
-#include "benchmark/bm_bf16_index.h"
+#include "benchmark/bm_special_index.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "utils/mock_thread_pool.h"
@@ -20,7 +20,7 @@ const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-test_vectors.raw";
 const char *BM_VecSimGeneral::hnsw_index_file = NULL;
 template <>
-const char *BM_VecSimBF16dIndex<bf16_index_t>::raw_vectors_file =
+const char *BM_VecSimSpecialIndex<bf16_index_t>::raw_vectors_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-vectors.raw";
 
 #define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Single_bf16

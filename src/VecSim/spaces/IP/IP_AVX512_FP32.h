@@ -43,26 +43,61 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
 }
 
 #include <cstring>
+/* ***************BF16 FUNCTIONS***************  */
+template <unsigned char residual> // 0..15
+void cast_fp32_to_bf16_imp(float *& vec, float *vec_out, __mmask32 mask) {
+    unsigned char promote = residual ? residual : 16;
+
+    __m512i padded_vec = _mm512_maskz_loadu_epi16(mask, vec);
+    // Convert back to float32
+    __m512 final_data = _mm512_castsi512_ps(padded_vec);
+    _mm512_storeu_ps(vec_out, final_data);
+    vec += promote;
+}
 
 template <unsigned char residual> // 0..15
 float BF16_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // Convert to bf16 and back to float
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
+
+    const float *pEnd1 = pVect1 + dimension;
+
     float vec1[dimension] = {0};
     float vec2[dimension] = {0};
-    for (size_t i = 0; i < dimension; i++) {
-        memcpy((char *)(vec1 + i) + 2, (char *)(pVect1 + i) + 2, sizeof(u_int16_t));
-        memcpy((char *)(vec2 + i) + 2, (char *)(pVect2 + i) + 2, sizeof(u_int16_t));
+
+    float *res_vec1p = vec1;
+    float *res_vec2p = vec2;
+
+    __mmask32 mask = 0xAAAAAAAA;
+
+    if (residual) {
+        __mmask32 res_mask = mask & ((1L << (residual*2)) - 1);
+
+        // load only residual number of float
+        cast_fp32_to_bf16_imp<residual>(pVect1, res_vec1p, res_mask);
+        cast_fp32_to_bf16_imp<residual>(pVect2, res_vec2p, res_mask);
+        res_vec1p += residual;
+        res_vec2p += residual;
     }
+
+    do {
+        cast_fp32_to_bf16_imp<0>(pVect1, res_vec1p, mask);
+        cast_fp32_to_bf16_imp<0>(pVect2, res_vec2p, mask);
+        res_vec1p += 16;
+        res_vec2p += 16;
+    } while (pVect1 < pEnd1);
 
     return FP32_InnerProductSIMD16_AVX512<residual>(vec1, vec2, dimension);
 }
 
+/* ***************FP16 FUNCTIONS***************  */
+
 void cast_fp32_to_fp16_imp(__m512 vec, float *vec_out, unsigned char promote) {
-    // convert to bf16
-    __m256i v_bf16 = _mm512_cvtps_ph(vec, _MM_FROUND_TO_NEAREST_INT);
+    // convert to fp16
+    __m256i v_fp16 = _mm512_cvtps_ph(vec, _MM_FROUND_TO_NEAREST_INT);
     // convert back to fp32
-    __m512 v_back_to_fp32 = _mm512_cvtph_ps(v_bf16);
+    __m512 v_back_to_fp32 = _mm512_cvtph_ps(v_fp16);
     // copy to the vectors
     float __attribute__((aligned(64))) mem_addr[16];
     //mem_addr needs to be aligned and since we (may) promoted vec_out by residual,
