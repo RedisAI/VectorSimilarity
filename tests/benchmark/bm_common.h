@@ -29,19 +29,16 @@ public:
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
 #ifdef USE_CUDA
-    // Run TopK using Raft IVF Flat tiered and flat index and calculate the recall of the Raft IVF
-    // Flat algorithm with respect to the results returned by the flat index.
-    static void TopK_TieredRaftIVFFlat(benchmark::State &st, unsigned short index_offset = 0);
-    // Run TopK using both Raft IVF PQ Tiered and flat index and calculate the recall of the Raft
-    // IVF PQ algorithm with respect to the results returned by the flat index.
-    static void TopK_TieredRaftIVFPQ(benchmark::State &st, unsigned short index_offset = 0);
+    // Run TopK using Raft IVF tiered and flat index and calculate the recall of the Raft IVF
+    // algorithm with respect to the results returned by the flat index.
+    static void TopK_TieredRaftIVF(benchmark::State &st, unsigned short index_offset = 0);
 #endif
 
     // Does nothing but returning the index memory.
     static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_Tiered(benchmark::State &st, unsigned short index_offset = 0);
-    static void Memory_TieredRaftIVFFlat(benchmark::State &st, unsigned short index_offset = 0);
+    static void Memory_TieredRaftIVF(benchmark::State &st, unsigned short index_offset = 0);
 };
 
 template <typename index_type_t>
@@ -95,7 +92,7 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
         (double)VecSimIndex_Info(INDICES[VecSimAlgo_TIERED + index_offset]).commonInfo.memory;
 }
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_TieredRaftIVFFlat(benchmark::State &st,
+void BM_VecSimCommon<index_type_t>::Memory_TieredRaftIVF(benchmark::State &st,
                                                              unsigned short index_offset) {
 
     for (auto _ : st) {
@@ -181,19 +178,20 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 
 #ifdef USE_CUDA
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
-                                                           unsigned short index_offset) {
+void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVF(benchmark::State &st,
+                                                       unsigned short index_offset) {
     size_t k = st.range(0);
     size_t n_probes = st.range(1);
     std::atomic_int correct = 0;
     std::atomic_int iter = 0;
     auto *tiered_index =
-        reinterpret_cast<TieredRaftIvfIndex<data_t, data_t> *>(INDICES[VecSimAlgo_RAFT_IVFFLAT]);
+        reinterpret_cast<TieredRaftIvfIndex<data_t, data_t> *>(INDICES[VecSimAlgo_RAFT_IVFFLAT + index_offset]);
     size_t total_iters = 50;
     tiered_index->setNProbes(n_probes);
     VecSimQueryReply *all_results[total_iters];
 
-    auto parallel_knn_search = [](AsyncJob *job) {
+    // Declare 2 lambda to avoid changing AsyncJob type for the JobMock.
+    auto parallel_knn_search_flat = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
         VecSimQueryParams query_params{.batchSize = 1};
         size_t cur_iter = search_job->iter;
@@ -204,11 +202,31 @@ void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
         delete job;
     };
 
+    auto parallel_knn_search_pq = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+        VecSimQueryParams query_params{.batchSize = 1};
+        size_t cur_iter = search_job->iter;
+        auto results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_RAFT_IVFPQ],
+                                             QUERIES[cur_iter % N_QUERIES].data(), search_job->k,
+                                             &query_params, BY_SCORE);
+        search_job->all_results[cur_iter] = results;
+        delete job;
+    };
+
     for (auto _ : st) {
-        auto search_job = new (tiered_index->getAllocator())
-            tieredIndexMock::SearchJobMock(tiered_index->getAllocator(), parallel_knn_search,
-                                           tiered_index, k, 0, iter++, all_results);
-        tiered_index->submitSingleJob(search_job);
+        if (index_offset == 0) // Flat
+        {
+            auto search_job = new (tiered_index->getAllocator())
+                tieredIndexMock::SearchJobMock(tiered_index->getAllocator(), parallel_knn_search_flat,
+                                               tiered_index, k, 0, iter++, all_results);
+            tiered_index->submitSingleJob(search_job);
+        } else // PQ
+        {
+            auto search_job = new (tiered_index->getAllocator())
+                tieredIndexMock::SearchJobMock(tiered_index->getAllocator(), parallel_knn_search_pq,
+                                               tiered_index, k, 0, iter++, all_results);
+            tiered_index->submitSingleJob(search_job);
+        }
         if (iter == total_iters) {
             BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
         }
@@ -217,7 +235,7 @@ void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
     // Measure recall
     for (iter = 0; iter < total_iters; iter++) {
         auto bf_results =
-            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF],
                                   QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
 
@@ -264,18 +282,18 @@ void BM_VecSimCommon<index_type_t>::TopK_TieredRaftIVFFlat(benchmark::State &st,
         ->Unit(benchmark::kMillisecond)
 
 #ifdef USE_CUDA
-#define REGISTER_TopK_TieredRaftIVF(BM_CLASS, BM_FUNC)                                             \
+#define REGISTER_TopK_TieredRaftIVF(BM_CLASS, BM_FUNC)                                    \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
-        ->Args({10, 20})                                                                           \
-        ->Args({10, 50})                                                                           \
-        ->Args({10, 150})                                                                          \
-        ->Args({100, 20})                                                                          \
-        ->Args({100, 50})                                                                          \
-        ->Args({100, 150})                                                                         \
-        ->Args({200, 20})                                                                          \
-        ->Args({200, 50})                                                                          \
-        ->Args({200, 150})                                                                         \
-        ->ArgNames({"k", "n_probes"})                                                              \
+        ->Args({10, 200})                                                                          \
+        ->Args({10, 500})                                                                          \
+        ->Args({10, 1500})                                                                         \
+        ->Args({100, 200})                                                                         \
+        ->Args({100, 500})                                                                         \
+        ->Args({100, 1500})                                                                        \
+        ->Args({200, 200})                                                                         \
+        ->Args({200, 500})                                                                         \
+        ->Args({200, 1500})                                                                        \
+        ->ArgNames({"k", "n_probes"})                                                 \
         ->Iterations(50)                                                                           \
         ->Unit(benchmark::kMillisecond)
 #endif

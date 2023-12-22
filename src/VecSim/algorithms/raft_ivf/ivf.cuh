@@ -286,11 +286,11 @@ public:
         raft::copy(neighbors.data(), neighbors_gpu.data_handle(), k, res.get_stream());
         raft::copy(distances.data(), distances_gpu.data_handle(), k, res.get_stream());
 
+        result_list->results.resize(k);
         // Ensure search is complete and data have been copied back before
         // building query result objects on host
         res.sync_stream();
 
-        result_list->results.resize(k);
         for (auto i = 0; i < k; ++i) {
             result_list->results[i].id = idToLabelLookup_[neighbors[i]];
             result_list->results[i].score = distances[i];

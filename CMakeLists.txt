@@ -43,7 +43,10 @@ if (USE_CUDA)
 	set(CMAKE_CUDA_FLAGS_RELEASE "-O3")
 	set(CMAKE_CUDA_FLAGS_DEBUG "-g")
 	set(CMAKE_CUDA_STANDARD 17)
-	
+	if(${CUDAToolkit_VERSION_MAJOR} GREATER 10)
+		# cuda11 support --threads for compile some large .cu more efficient
+		add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:--threads=4>)
+	endif()
 endif()
 
 # Only do these if this is the main project, and not if it is included through add_subdirectory

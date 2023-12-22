@@ -122,14 +122,31 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
                      .jobQueueCtx = mock_thread_pool.ctx,
                      .submitCb = tieredIndexMock::submit_callback,
-                     .flatBufferLimit = params_flat.algoParams.raftIvfParams.nLists * 5000,
+                     .flatBufferLimit = n_vectors,
                      .primaryIndexParams = &params_flat,
-                     .specificParams = {.tieredRaftIvfParams = {.minVectorsInit = 100}}};
+                     .specificParams = {.tieredRaftIvfParams = {.minVectorsInit = 
+                        size_t(1000000 / params_pq.algoParams.raftIvfParams.nLists)}}};
 
     auto *tiered_raft_ivf_flat_index = reinterpret_cast<TieredRaftIvfIndex<float, float> *>(
         TieredRaftIvfFactory::NewIndex(&tiered_params));
 
     indices.push_back(tiered_raft_ivf_flat_index);
+
+    // Create RAFT IVF PQ tiered index.
+    // Use one unique thread pool for the tiered index by changing the thread pool context.
+    VecSimParams params_pq = createDefaultRaftIvfPQParams(dim, 5000, 100);
+    tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                     .jobQueueCtx = mock_thread_pool.ctx,
+                     .submitCb = tieredIndexMock::submit_callback,
+                     .flatBufferLimit = n_vectors,
+                     .primaryIndexParams = &params_pq,
+                     .specificParams = {.tieredRaftIvfParams = {
+                        .minVectorsInit = size_t(1000000 / params_pq.algoParams.raftIvfParams.nLists)}}};
+
+    auto *tiered_raft_ivf_pq_index = reinterpret_cast<TieredRaftIvfIndex<float, float> *>(
+        TieredRaftIvfFactory::NewIndex(&tiered_params));
+
+    indices.push_back(tiered_raft_ivf_pq_index);
 #endif
 
     // Add the same vectors to Flat index.
@@ -140,6 +157,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
 #ifdef USE_CUDA
         VecSimIndex_AddVector(indices[VecSimAlgo_RAFT_IVFFLAT], blob, label);
+        VecSimIndex_AddVector(indices[VecSimAlgo_RAFT_IVFPQ], blob, label);
 #endif
     }
     mock_thread_pool.thread_pool_wait(100);

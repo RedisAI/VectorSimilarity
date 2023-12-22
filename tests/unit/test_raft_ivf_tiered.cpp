@@ -233,9 +233,9 @@ TYPED_TEST(RaftIvfTieredTest, transferJob_inplace) {
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), flat_buffer_limit * 2);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 2 * (n - flat_buffer_limit));
 
-    // Run a thread loop iteration. The thread should transfer the rest of the vectors to the
+    // Run the thread pool. The thread should transfer the rest of the vectors to the
     // backend index.
-    mock_thread_pool.thread_iteration();
+    mock_thread_pool.thread_pool_wait(100);
     ASSERT_EQ(tiered_index->indexSize(), 2 * n);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
@@ -251,7 +251,7 @@ TYPED_TEST(RaftIvfTieredTest, deleteVector_backend) {
     size_t k = 1;
 
     // Create RaftIvfTiered index instance with a mock queue.
-    VecSimParams params = createDefaultFlatParams(dim, nLists, 20);
+    VecSimParams params = createDefaultFlatParams(dim, nLists, nLists);
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
 
@@ -264,7 +264,7 @@ TYPED_TEST(RaftIvfTieredTest, deleteVector_backend) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
     // Use just one thread to transfer all the vectors
-    mock_thread_pool.thread_iteration();
+    mock_thread_pool.thread_pool_wait(100);
 
     // Check that the backend index has the first 12 vectors
     ASSERT_EQ(tiered_index->indexSize(), n);

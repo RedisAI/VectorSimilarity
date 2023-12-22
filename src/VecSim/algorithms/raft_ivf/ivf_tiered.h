@@ -34,7 +34,8 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
             // If the backend index is empty, build it with all the vectors
             // Otherwise, just add the vector to the backend index
-            executeTransferJob(true);
+            auto temp_job = RAFTTransferJob(this->allocator, executeTransferJobWrapper, this, true);
+            executeTransferJob(&temp_job);
         }
 
         // If the backend index is already built and that the write mode is in place
@@ -49,12 +50,15 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         // Otherwise, add the vector to the flat index
         this->flatIndexGuard.lock();
         ret = this->frontendIndex->addVector(blob, label);
-        this->flatIndexGuard.unlock();
 
         // Submit a transfer job
         AsyncJob *new_insert_job =
             new (this->allocator) RAFTTransferJob(this->allocator, executeTransferJobWrapper, this);
         this->submitSingleJob(new_insert_job);
+
+        // Update the pointer to the latest transfer job
+        this->pendingTransferJob = reinterpret_cast<RAFTTransferJob *>(new_insert_job);
+        this->flatIndexGuard.unlock();
         return ret;
     }
 
@@ -120,7 +124,7 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
             auto *transfer_job = reinterpret_cast<RAFTTransferJob *>(job);
             auto *job_index =
                 reinterpret_cast<TieredRaftIvfIndex<DataType, DistType> *>(transfer_job->index);
-            job_index->executeTransferJob(transfer_job->force_);
+            job_index->executeTransferJob(transfer_job);
         }
         delete job;
     }
@@ -160,11 +164,14 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
     size_t minVectorsInit = 1;
 
+    // This ptr is designating the latest transfer job. It is protected by flat buffer lock
+    volatile RAFTTransferJob* pendingTransferJob = nullptr;
+
     inline auto *getBackendIndex() const {
         return dynamic_cast<RaftIvfInterface<DataType, DistType> *>(this->backendIndex);
     }
 
-    void executeTransferJob(bool force = false) {
+    void executeTransferJob(RAFTTransferJob *job) {
         size_t nVectors = this->frontendIndex->indexSize();
         // No vectors to transfer
         if (nVectors == 0) {
@@ -173,7 +180,7 @@ private:
 
         // Don't transfer less than nLists * minVectorsInit vectors if the backend index is empty
         // (for kmeans initialization purposes)
-        if (!force) {
+        if (!job->force_) {
             auto main_nVectors = this->backendIndex->indexSize();
             size_t min_nVectors = 1;
             if (main_nVectors == 0)
@@ -184,8 +191,14 @@ private:
             }
         }
 
-        // Check that there are still vectors to transfer after exclusive lock
         this->flatIndexGuard.lock();
+        // Check that the job has not been cancelled while waiting for the lock
+        // and that the job is the latest one if there is no force flag
+        if (!job->isValid || (this->pendingTransferJob != job && !job->force_)) {
+            this->flatIndexGuard.unlock();
+            return;
+        }
+        // Check that there are still vectors to transfer after exclusive lock
         nVectors = this->frontendIndex->indexSize();
         if (nVectors == 0) {
             this->flatIndexGuard.unlock();

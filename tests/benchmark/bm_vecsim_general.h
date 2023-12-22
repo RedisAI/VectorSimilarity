@@ -76,7 +76,7 @@ protected:
                                    .metric = VecSimMetric_L2,
                                    .nLists = nLists,
                                    .kmeans_nIters = 20,
-                                   .kmeans_trainsetFraction = 0.8,
+                                   .kmeans_trainsetFraction = 0.5,
                                    .nProbes = nProbes,
                                    .usePQ = true,
                                    .pqBits = 8,
