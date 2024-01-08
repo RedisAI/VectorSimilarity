@@ -51,6 +51,7 @@ jobs:
 
   pr-validation:
     needs:
+      - check-if-docs-only
       - jammy
       - focal
       - bionic
