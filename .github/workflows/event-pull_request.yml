@@ -46,7 +46,11 @@ jobs:
     secrets: inherit
 
   pr-validation:
-    needs: [basic-tests, coverage]
+    needs:
+      - check-if-docs-only
+      - basic-tests
+      - coverage
+      # - codeql-analysis
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
