@@ -36,6 +36,7 @@ inline auto constexpr GetRaftDistanceType(VecSimMetric vsm) {
         result = raft::distance::DistanceType::L2Expanded;
         break;
     case VecSimMetric_IP:
+    case VecSimMetric_Cosine:
         result = raft::distance::DistanceType::InnerProduct;
         break;
     default:
@@ -93,7 +94,7 @@ struct RaftIvfIndex : public RaftIvfInterface<DataType, DistType> {
     using dist_type = DistType;
 
 private:
-    // Allow either IVF-flat or IVFPQ parameters
+    // Allow either IVF-Flat or IVF-PQ parameters
     using build_params_t = std::variant<raft::neighbors::ivf_flat::index_params,
                                         raft::neighbors::ivf_pq::index_params>;
     using search_params_t = std::variant<raft::neighbors::ivf_flat::search_params,
@@ -144,7 +145,7 @@ public:
             },
             search_params_);
 
-        init_raft_resources();
+        cosine_postprocess_ = raftIvfParams->metric == VecSimMetric_Cosine || raftIvfParams->metric == VecSimMetric_IP;
     }
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override {
         return addVectorBatch(vector_data, &label, 1, auxiliaryCtx);
@@ -293,7 +294,11 @@ public:
 
         for (auto i = 0; i < k; ++i) {
             result_list->results[i].id = idToLabelLookup_[neighbors[i]];
-            result_list->results[i].score = distances[i];
+            if (cosine_postprocess_) {
+                result_list->results[i].score = 1.0f - distances[i];
+            } else {
+                result_list->results[i].score = distances[i];
+            }
         }
 
         return result_list;
@@ -375,4 +380,6 @@ private:
 
     vecsim_stl::vector<labelType> idToLabelLookup_;
     vecsim_stl::unordered_map<labelType, internal_idx_t> labelToIdLookup_;
+
+    bool cosine_postprocess_ = false;
 };

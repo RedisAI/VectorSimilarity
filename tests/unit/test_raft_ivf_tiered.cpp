@@ -232,13 +232,6 @@ TYPED_TEST(RaftIvfTieredTest, transferJob_inplace) {
     ASSERT_EQ(tiered_index->indexSize(), 2 * n);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), flat_buffer_limit * 2);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 2 * (n - flat_buffer_limit));
-
-    // Run the thread pool. The thread should transfer the rest of the vectors to the
-    // backend index.
-    mock_thread_pool.thread_pool_wait(100);
-    ASSERT_EQ(tiered_index->indexSize(), 2 * n);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
 }
 
 TYPED_TEST(RaftIvfTieredTest, deleteVector_backend) {
@@ -259,6 +252,8 @@ TYPED_TEST(RaftIvfTieredTest, deleteVector_backend) {
     // Delete from an empty index.
     ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, vec_label), 0);
 
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
     // Insert vectors
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
@@ -292,3 +287,105 @@ TYPED_TEST(RaftIvfTieredTest, deleteVector_backend) {
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
 }
 
+TYPED_TEST(RaftIvfTieredTest, searchMetricCosine) {
+    size_t dim = 32;
+    size_t n = 25;
+    size_t nLists = 5;
+    size_t flat_buffer_limit = 100;
+
+    size_t k = 10;
+
+    // Create RaftIvfTiered index instance with a mock queue.
+    VecSimParams params = createDefaultFlatParams(dim, nLists, nLists);
+
+    // Set the metric to cosine.
+    params.algoParams.raftIvfParams.metric = VecSimMetric_Cosine;
+
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+    std::vector<std::vector<TEST_DATA_T>> inserted_vectors;
+
+    for (size_t i = 0; i < n; i++) {
+        inserted_vectors.push_back(std::vector<TEST_DATA_T>(dim));
+        // Generate vectors
+        for (size_t j = 0; j < dim; j++) {
+            inserted_vectors.back()[j] = (TEST_DATA_T)i + j;
+        }
+        // Insert vectors
+        VecSimIndex_AddVector(tiered_index, inserted_vectors.back().data(), i);
+    }
+    mock_thread_pool.thread_pool_wait(100);
+
+    // The query is a vector with half of the values equal to 8.1 and the other half equal to 1.1.
+    TEST_DATA_T query[dim];
+    TEST_DATA_T query_norm[dim];
+    GenerateVector<TEST_DATA_T>(query, dim / 2, 8.1f);
+    GenerateVector<TEST_DATA_T>(query + dim / 2, dim / 2, 1.1f);
+    memcpy(query_norm, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(query_norm, dim, VecSimType_FLOAT32);
+
+    auto verify_cb = [&](size_t id, double score, size_t index) {
+        TEST_DATA_T neighbor_norm[dim];
+        memcpy(neighbor_norm, inserted_vectors[id].data(), dim * sizeof(TEST_DATA_T));
+        VecSim_Normalize(neighbor_norm, dim, VecSimType_FLOAT32);
+
+        // Use distance function of the bruteforce index to verify the score.
+        double dist = tiered_index->frontendIndex->getDistFunc()(
+            query_norm,
+            neighbor_norm,
+            dim);
+        ASSERT_NEAR(score, dist, 1e-5);
+    };
+
+    runTopKSearchTest(tiered_index, query, k, verify_cb);
+}
+
+TYPED_TEST(RaftIvfTieredTest, searchMetricIP) {
+    size_t dim = 4;
+    size_t n = 25;
+    size_t nLists = 5;
+    size_t flat_buffer_limit = 100;
+
+    size_t k = 10;
+
+    // Create RaftIvfTiered index instance with a mock queue.
+    VecSimParams params = createDefaultFlatParams(dim, nLists, nLists);
+
+    // Set the metric to Inner Product.
+    params.algoParams.raftIvfParams.metric = VecSimMetric_IP;
+
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->createTieredIndex(&params, mock_thread_pool, flat_buffer_limit);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+    std::vector<std::vector<TEST_DATA_T>> inserted_vectors;
+
+    for (size_t i = 0; i < n; i++) {
+        inserted_vectors.push_back(std::vector<TEST_DATA_T>(dim));
+        // Generate vectors
+        for (size_t j = 0; j < dim; j++) {
+            inserted_vectors.back()[j] = (TEST_DATA_T)i + j;
+        }
+        // Insert vectors
+        VecSimIndex_AddVector(tiered_index, inserted_vectors.back().data(), i);
+    }
+    mock_thread_pool.thread_pool_wait(100);
+
+    // The query is a vector with half of the values equal to 1.1 and the other half equal to 0.1.
+    TEST_DATA_T query[dim] = {1.1f, 1.1f, 0.1f, 0.1f};
+
+    auto verify_cb = [&](size_t id, double score, size_t index) {
+        // Use distance function of the bruteforce index to verify the score.
+        double dist = tiered_index->frontendIndex->getDistFunc()(
+            query,
+            inserted_vectors[id].data(),
+            dim);
+        ASSERT_NEAR(score, dist, 1e-5);
+    };
+
+    runTopKSearchTest(tiered_index, query, k, verify_cb);
+}

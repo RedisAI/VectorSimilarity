@@ -50,15 +50,13 @@ struct TieredRaftIvfIndex : public VecSimTieredIndex<DataType, DistType> {
         // Otherwise, add the vector to the flat index
         this->flatIndexGuard.lock();
         ret = this->frontendIndex->addVector(blob, label);
+        this->flatIndexGuard.unlock();
 
         // Submit a transfer job
         AsyncJob *new_insert_job =
             new (this->allocator) RAFTTransferJob(this->allocator, executeTransferJobWrapper, this);
         this->submitSingleJob(new_insert_job);
 
-        // Update the pointer to the latest transfer job
-        this->pendingTransferJob = reinterpret_cast<RAFTTransferJob *>(new_insert_job);
-        this->flatIndexGuard.unlock();
         return ret;
     }
 
@@ -165,7 +163,6 @@ private:
     size_t minVectorsInit = 1;
 
     // This ptr is designating the latest transfer job. It is protected by flat buffer lock
-    volatile RAFTTransferJob* pendingTransferJob = nullptr;
 
     inline auto *getBackendIndex() const {
         return dynamic_cast<RaftIvfInterface<DataType, DistType> *>(this->backendIndex);
@@ -193,8 +190,7 @@ private:
 
         this->flatIndexGuard.lock();
         // Check that the job has not been cancelled while waiting for the lock
-        // and that the job is the latest one if there is no force flag
-        if (!job->isValid || (this->pendingTransferJob != job && !job->force_)) {
+        if (!job->isValid) {
             this->flatIndexGuard.unlock();
             return;
         }
@@ -244,5 +240,7 @@ private:
     INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_transferJobAsync_Test)
     INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_transferJob_inplace_Test)
     INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_deleteVector_backend_Test)
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_searchMetricCosine_Test)
+    INDEX_TEST_FRIEND_CLASS(RaftIvfTieredTest_searchMetricIP_Test)
 #endif
 };

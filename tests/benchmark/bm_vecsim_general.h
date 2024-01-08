@@ -73,7 +73,7 @@ protected:
     static VecSimParams createDefaultRaftIvfPQParams(size_t dim, uint32_t nLists = 1024,
                                                      uint32_t nProbes = 20) {
         RaftIvfParams ivfparams = {.dim = dim,
-                                   .metric = VecSimMetric_L2,
+                                   .metric = VecSimMetric_Cosine,
                                    .nLists = nLists,
                                    .kmeans_nIters = 20,
                                    .kmeans_trainsetFraction = 0.5,
@@ -94,7 +94,7 @@ protected:
                                                        uint32_t nProbes = 20,
                                                        bool adaptiveCenters = true) {
         RaftIvfParams ivfparams = {.dim = dim,
-                                   .metric = VecSimMetric_L2,
+                                   .metric = VecSimMetric_Cosine,
                                    .nLists = nLists,
                                    .kmeans_nIters = 20,
                                    .kmeans_trainsetFraction = 0.5,

@@ -125,7 +125,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                      .flatBufferLimit = n_vectors,
                      .primaryIndexParams = &params_flat,
                      .specificParams = {.tieredRaftIvfParams = {.minVectorsInit = 
-                        size_t(1000000 / params_pq.algoParams.raftIvfParams.nLists)}}};
+                        size_t(n_vectors / params_flat.algoParams.raftIvfParams.nLists)}}};
 
     auto *tiered_raft_ivf_flat_index = reinterpret_cast<TieredRaftIvfIndex<float, float> *>(
         TieredRaftIvfFactory::NewIndex(&tiered_params));
@@ -140,8 +140,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                      .submitCb = tieredIndexMock::submit_callback,
                      .flatBufferLimit = n_vectors,
                      .primaryIndexParams = &params_pq,
-                     .specificParams = {.tieredRaftIvfParams = {
-                        .minVectorsInit = size_t(1000000 / params_pq.algoParams.raftIvfParams.nLists)}}};
+                     .specificParams = {.tieredRaftIvfParams = {.minVectorsInit = 
+                        size_t(n_vectors / params_pq.algoParams.raftIvfParams.nLists)}}};
 
     auto *tiered_raft_ivf_pq_index = reinterpret_cast<TieredRaftIvfIndex<float, float> *>(
         TieredRaftIvfFactory::NewIndex(&tiered_params));
