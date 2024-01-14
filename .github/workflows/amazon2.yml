@@ -3,7 +3,7 @@ name: amazon linux 2 flow
 on: [workflow_call, workflow_dispatch]
 
 jobs:
-  focal:
+  amazonlinux2:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: amazonlinux:2

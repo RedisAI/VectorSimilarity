@@ -3,7 +3,7 @@ name: debian bullseye flow
 on: [workflow_call, workflow_dispatch]
 
 jobs:
-  focal:
+  bullseye:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye

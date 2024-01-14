@@ -3,7 +3,7 @@ name: mariner 2 flow
 on: [workflow_call, workflow_dispatch]
 
 jobs:
-  focal:
+  mariner2:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: mcr.microsoft.com/cbl-mariner/base/core:2.0
