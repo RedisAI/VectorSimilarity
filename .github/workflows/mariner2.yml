@@ -1,6 +1,6 @@
 name: mariner 2 flow
 
-on: [workflow_call, workflow_dispatch]
+on: [workflow_dispatch]
 
 jobs:
   mariner2:
