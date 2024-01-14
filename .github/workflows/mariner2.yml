@@ -1,9 +1,10 @@
 name: mariner 2 flow
 
-on: [workflow_dispatch]
+on: [workflow_dispatch, workflow_call]
 
 jobs:
   mariner2:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: mcr.microsoft.com/cbl-mariner/base/core:2.0
+      pre-checkout-script: tdnf install -y --noplugins --skipsignature tar gzip

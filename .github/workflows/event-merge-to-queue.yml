@@ -49,15 +49,11 @@ jobs:
   amazonlinux2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: amazonlinux:2
+    uses: ./.github/workflows/amazonlinux2.yml
   mariner2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: mcr.microsoft.com/cbl-mariner/base/core:2.0
+    uses: ./.github/workflows/mariner2.yml
   rocky8:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -78,6 +74,7 @@ jobs:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/arm.yml
+    secrets: inherit
 
   coverage:
     needs: [check-if-docs-only]

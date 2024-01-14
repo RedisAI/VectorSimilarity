@@ -10,6 +10,9 @@ on:
       container:
         description: 'Container to run tests on'
         type: string
+      pre-checkout-script:
+        description: 'Script to run before checkout'
+        type: string
       run-valgrind:
         description: 'Run valgrind tests'
         type: boolean
@@ -21,6 +24,9 @@ jobs:
     runs-on: ${{ inputs.env }}
     container: ${{ inputs.container || null }}
     steps:
+      - name: pre-checkout script
+        if: ${{ inputs.pre-checkout-script }}
+        run: ${{ inputs.pre-checkout-script }}
       - name: checkout
         uses: actions/checkout@v3
       - name: install dependencies
