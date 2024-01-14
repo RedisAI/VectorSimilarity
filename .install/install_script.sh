@@ -19,7 +19,7 @@ echo $OS
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 cd $SCRIPT_DIR
-source ${OS}.sh
+source ${OS}.sh $1
 
 # input="install.txt"
 # apt-get update
