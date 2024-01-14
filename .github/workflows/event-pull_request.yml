@@ -3,10 +3,6 @@ name: Pull Request CI
 on:
   pull_request:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   check-if-docs-only:
     uses: ./.github/workflows/task-check-docs.yml
