@@ -87,7 +87,6 @@ jobs:
       - macos
       - arm
       - coverage
-      - codeql-analysis
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
