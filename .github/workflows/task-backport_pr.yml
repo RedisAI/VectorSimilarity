@@ -36,6 +36,7 @@ jobs:
           pull_title: '[${target_branch}] ${pull_title}'
           merge_commits: 'skip'
           copy_requested_reviewers: 'true'
+          copy_labels_pattern: '.*' # copy all labels. Excluding the backport labels automatically
       - name: Trigger workflows on backport pull requests
         env:
           GH_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }} # PAT so it can trigger workflows on the new pull request
