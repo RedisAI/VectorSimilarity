@@ -49,7 +49,7 @@ jobs:
   amazonlinux2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/amazonlinux2.yml
+    uses: ./.github/workflows/amazon2.yml
   mariner2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
