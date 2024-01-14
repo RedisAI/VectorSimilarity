@@ -24,10 +24,30 @@ jobs:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/xenial.yml
+  bullseye:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/debian11.yml
+  centos7:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/centos7.yml
+  amazonlinux2:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/amazon2.yml
+  mariner2:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/mariner2.yml
   rocky8:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/rocky8.yml
+  rocky9:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/rocky9.yml
   macos:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -56,7 +76,12 @@ jobs:
       - focal
       - bionic
       - xenial
+      - bullseye
+      - centos7
+      - amazonlinux2
+      - mariner2
       - rocky8
+      - rocky9
       - macos
       - arm
       - coverage
