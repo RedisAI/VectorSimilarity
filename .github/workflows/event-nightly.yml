@@ -1,0 +1,12 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+
+jobs:
+  benchmark:
+    uses: ./.github/workflows/benchmark.yml
+    secrets: inherit
+    with:
+      setup: '' # default behavior
