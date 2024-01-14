@@ -24,7 +24,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
       - name: install dependencies
-        run: ${{ !inputs.container && 'sudo' || '' }} .install/install_script.sh
+        run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
       - name: unit tests
         run: make unit_test
       - name: valgrind
