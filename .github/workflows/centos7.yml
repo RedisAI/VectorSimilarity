@@ -3,7 +3,7 @@ name: centOS 7 flow
 on: [workflow_call, workflow_dispatch]
 
 jobs:
-  focal:
+  centos7:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: centos:7
