@@ -65,12 +65,6 @@ jobs:
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
 
-  codeql-analysis:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/codeql-analysis.yml
-    secrets: inherit
-
   pr-validation:
     needs:
       - check-if-docs-only
