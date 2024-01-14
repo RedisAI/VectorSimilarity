@@ -1,4 +1,4 @@
-name: Pull Request CI
+name: Merge a Pull-Request CI
 
 on:
   push:
