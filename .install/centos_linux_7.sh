@@ -6,6 +6,7 @@ ARCH=$([[ $(uname -m) == x86_64 ]] && echo x86_64 || echo noarch)
 $MODE yum install -y https://packages.endpointdev.com/rhel/7/os/${ARCH}/endpoint-repo.${ARCH}.rpm
 $MODE yum groupinstall -y "Development Tools"
 $MODE yum install -y wget git valgrind centos-release-scl
+$MODE yum remove -y gcc g++ # remove gcc 4
 $MODE yum install -y devtoolset-10-gcc devtoolset-10-gcc-c++
 $MODE scl enable devtoolset-10 bash
 source install_cmake.sh $MODE
