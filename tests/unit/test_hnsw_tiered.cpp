@@ -3071,8 +3071,11 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
                       TypeParam::isMulti() ? 1 : 1 - overwrite);
             EXPECT_LE(tiered_index->frontendIndex->indexSize(), flat_buffer_limit);
         }
+        // In first run, wait until all vectors are moved from flat index to HNSW backend index.
+        while (tiered_index->backendIndex->indexSize() < n) {
+            /*do nothing*/
+        }
     }
-
     mock_thread_pool.thread_pool_join();
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
