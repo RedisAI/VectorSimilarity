@@ -1,8 +1,6 @@
 name: Merge a Pull-Request Flow
 
 on:
-  push:
-
   merge_group:
     types: [checks_requested]
 
