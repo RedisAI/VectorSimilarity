@@ -1,7 +1,8 @@
 #!/bin/bash
 version=3.25.1
-processor=$(uname -p)
+processor=$(uname -m)
 OS_TYPE=$(uname -s)
+MODE=$1 # whether to install using sudo or not
 
 if [[ $OS_TYPE = 'Darwin' ]]
 then
@@ -16,6 +17,6 @@ else
 
     wget https://github.com/Kitware/CMake/releases/download/v${version}/${filename}
     chmod u+x ./${filename}
-    ./${filename} --skip-license --prefix=/usr/local --exclude-subdir
+    $MODE ./${filename} --skip-license --prefix=/usr/local --exclude-subdir
     cmake --version
 fi

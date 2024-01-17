@@ -1,9 +1,9 @@
-name: xenial flow
+name: debian bullseye flow
 
 on: [workflow_dispatch]
 
 jobs:
-  xenial:
+  bullseye:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: ubuntu:xenial
+      container: debian:bullseye
