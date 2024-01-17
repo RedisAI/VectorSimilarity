@@ -1,0 +1,44 @@
+name: Test an OS
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: 'Environment to run tests on'
+        type: string
+        default: 'ubuntu-latest'
+      container:
+        description: 'Container to run tests on'
+        type: string
+      pre-checkout-script:
+        description: 'Script to run before checkout'
+        type: string
+      run-valgrind:
+        description: 'Run valgrind tests'
+        type: boolean
+        default: true
+
+jobs:
+  test:
+    name: Test ${{ inputs.container || inputs.env }}
+    runs-on: ${{ inputs.env }}
+    container: ${{ inputs.container || null }}
+    steps:
+      - name: pre-checkout script
+        if: ${{ inputs.pre-checkout-script }}
+        run: ${{ inputs.pre-checkout-script }}
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: install dependencies
+        run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
+      - name: unit tests
+        run: make unit_test
+      - name: valgrind
+        if: ${{ inputs.run-valgrind }}
+        run: make valgrind
+      - name: Archive valgrind tests reports
+        if: ${{ inputs.run-valgrind }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/

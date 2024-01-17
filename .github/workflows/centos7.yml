@@ -1,9 +1,9 @@
-name: xenial flow
+name: centOS 7 flow
 
 on: [workflow_dispatch]
 
 jobs:
-  xenial:
+  centos7:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: ubuntu:xenial
+      container: centos:7
