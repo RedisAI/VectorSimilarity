@@ -258,3 +258,11 @@ extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetS
                                               bool initial_check) {
     return index->preferAdHocSearch(subsetSize, k, initial_check);
 }
+
+extern "C" int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
+                                                          int ***neighborsData, size_t *topLevel) {
+    if (index->basicInfo().algo != VecSimAlgo_HNSWLIB) {
+        return VecSimDebugCommandCode_BadIndex;
+    }
+    return index->getHNSWElementNeighbors(label, neighborsData, topLevel);
+}

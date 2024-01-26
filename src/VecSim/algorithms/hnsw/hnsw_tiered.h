@@ -221,6 +221,12 @@ public:
         this->mainIndexGuard.unlock_shared();
         this->getHNSWIndex()->unlockSharedIndexDataGuard();
     }
+
+    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData,
+                                                   size_t *topLevel) override {
+        return this->backendIndex->getHNSWElementNeighbors(label, neighborsData, topLevel);
+    }
+
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
 #endif

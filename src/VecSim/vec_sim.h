@@ -240,6 +240,18 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
 
+/**
+ * @brief: Dump HNSW index in the following format:
+ * an array with <max_level> entries, where for each entry l in the array:
+ *  l is a linked list whose size is the number of elements in level l, where for every entry e:
+ *   e is an array of len M+2 where first entry is the id of e, the next M entries
+ *   contain an id of a neighbor of e in the graph in level l (-1 means vacant place), and the
+ *   last entry is 1 if the node is marked as deleted.
+ */
+// TODO: Implement the full version. This is a version for a single element in the index
+int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
+                                               int ***neighborsData, size_t *topLevel);
+
 #ifdef __cplusplus
 }
 #endif

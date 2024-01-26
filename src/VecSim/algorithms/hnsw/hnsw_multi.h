@@ -30,6 +30,9 @@ private:
         }
         labelLookup.at(label).push_back(id);
     }
+    inline idType getElementId(size_t label) {
+        return labelLookup.at(label)[0]; /* todo - support for all */
+    }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
     // Return all the labels in the index - this should be used for computing the number of distinct

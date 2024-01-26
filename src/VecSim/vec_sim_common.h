@@ -73,6 +73,12 @@ typedef enum {
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime
 } VecSimResolveCode;
 
+typedef enum {
+    VecSimDebugCommandCode_OK = VecSim_OK, // for returning VecSim_OK as an enum value
+    VecSimDebugCommandCode_BadIndex,
+    VecSimDebugCommandCode_LabelNotExists
+} VecSimDebugCommandCode;
+
 typedef struct AsyncJob AsyncJob; // forward declaration.
 
 // Write async/sync mode
@@ -200,14 +206,14 @@ typedef struct {
  * Index info that is static and immutable (cannot be changed over time)
  */
 typedef struct {
-    VecSimAlgo algo;     // Algorithm being used.
+    VecSimAlgo algo;     // Algorithm being used (if index is tiered, this is the backend index).
     size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
     VecSimMetric metric; // Index distance metric
     VecSimType type;     // Datatype the index holds.
     bool isMulti;        // Determines if the index should multi-index or not.
     size_t dim;          // Vector size (dimension).
 
-    bool isTiered; // The algorithm for the tiered index (if algo is tiered).
+    bool isTiered; // Is the index is tiered or not.
 } VecSimIndexBasicInfo;
 
 typedef struct {
