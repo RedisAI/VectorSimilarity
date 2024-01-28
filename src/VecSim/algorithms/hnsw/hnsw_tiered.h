@@ -224,7 +224,10 @@ public:
 
     VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData,
                                                    size_t *topLevel) override {
-        return this->backendIndex->getHNSWElementNeighbors(label, neighborsData, topLevel);
+        this->mainIndexGuard.lock_shared();
+        auto res = this->backendIndex->getHNSWElementNeighbors(label, neighborsData, topLevel);
+        this->mainIndexGuard.unlock_shared();
+        return res;
     }
 
 #ifdef BUILD_TESTS

@@ -376,7 +376,8 @@ protected:
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
-    virtual inline idType getElementId(size_t label) = 0;
+    // For debugging - unsafe (assume index data guard is held in MT mode).
+    virtual inline vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 };
 
 /**
@@ -2386,14 +2387,17 @@ template <typename DataType, typename DistType>
 VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label,
                                                                               int ***neighborsData,
                                                                               size_t *topLevel) {
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     if (this->safeCheckIfLabelExistsInIndex(label) == false) {
-        *neighborsData = nullptr;
-        *topLevel = HNSW_INVALID_LEVEL;
         return VecSimDebugCommandCode_LabelNotExists;
     }
     // Assume single value index. TODO: support for multi as well.
-    idType id = this->getElementId(label);
+    if (this->info().commonInfo.basicInfo.isMulti) {
+        return VecSimDebugCommandCode_MultiNotSupported;
+    }
+    idType id = this->getElementIds(label)[0];
     auto graph_data = this->getGraphDataByInternalId(id);
+    lockNodeLinks(graph_data);
     *topLevel = graph_data->toplevel;
     *neighborsData = new int *[*topLevel + 1];
     for (size_t level = 0; level <= *topLevel; level++) {
@@ -2401,9 +2405,10 @@ VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(si
         auto &level_data = this->getLevelData(graph_data, level);
         (*neighborsData)[level][0] = level_data.numLinks;
         for (size_t i = 0; i < level_data.numLinks; i++) {
-            (*neighborsData)[level][i + 1] = (int)level_data.links[i];
+            (*neighborsData)[level][i + 1] = (int)idToMetaData.at(level_data.links[i]).label;
         }
     }
+    unlockNodeLinks(graph_data);
     return VecSimDebugCommandCode_OK;
 }
 

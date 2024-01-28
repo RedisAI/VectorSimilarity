@@ -76,7 +76,8 @@ typedef enum {
 typedef enum {
     VecSimDebugCommandCode_OK = VecSim_OK, // for returning VecSim_OK as an enum value
     VecSimDebugCommandCode_BadIndex,
-    VecSimDebugCommandCode_LabelNotExists
+    VecSimDebugCommandCode_LabelNotExists,
+    VecSimDebugCommandCode_MultiNotSupported
 } VecSimDebugCommandCode;
 
 typedef struct AsyncJob AsyncJob; // forward declaration.

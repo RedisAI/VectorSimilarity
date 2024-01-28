@@ -30,8 +30,12 @@ private:
         }
         labelLookup.at(label).push_back(id);
     }
-    inline idType getElementId(size_t label) {
-        return labelLookup.at(label)[0]; /* todo - support for all */
+    inline vecsim_stl::vector<idType> getElementIds(size_t label) {
+        auto it = labelLookup.find(label);
+        if (it == labelLookup.end()) {
+            return vecsim_stl::vector<idType>{this->allocator}; // return an empty collection
+        }
+        return it->second;
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
@@ -90,7 +94,7 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
-    inline std::vector<idType> markDelete(labelType label) override;
+    inline vecsim_stl::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing) const override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
@@ -208,20 +212,15 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
  * @param label
  */
 template <typename DataType, typename DistType>
-std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
-    std::vector<idType> idsToDelete;
+vecsim_stl::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
     std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
-    auto search = labelLookup.find(label);
-    if (search == labelLookup.end()) {
-        return idsToDelete;
-    }
 
-    for (idType id : search->second) {
+    auto ids = this->getElementIds(label);
+    for (idType id : ids) {
         this->markDeletedInternal(id);
-        idsToDelete.push_back(id);
     }
-    labelLookup.erase(search);
-    return idsToDelete;
+    labelLookup.erase(label);
+    return ids;
 }
 
 template <typename DataType, typename DistType>
