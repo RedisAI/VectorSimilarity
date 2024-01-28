@@ -2388,14 +2388,15 @@ VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(si
                                                                               int ***neighborsData,
                                                                               size_t *topLevel) {
     std::shared_lock<std::shared_mutex> lock(indexDataGuard);
-    if (this->safeCheckIfLabelExistsInIndex(label) == false) {
-        return VecSimDebugCommandCode_LabelNotExists;
-    }
     // Assume single value index. TODO: support for multi as well.
     if (this->info().commonInfo.basicInfo.isMulti) {
         return VecSimDebugCommandCode_MultiNotSupported;
     }
-    idType id = this->getElementIds(label)[0];
+    auto ids = this->getElementIds(label);
+    if (ids.empty()) {
+        return VecSimDebugCommandCode_LabelNotExists;
+    }
+    idType id = ids[0];
     auto graph_data = this->getGraphDataByInternalId(id);
     lockNodeLinks(graph_data);
     *topLevel = graph_data->toplevel;
