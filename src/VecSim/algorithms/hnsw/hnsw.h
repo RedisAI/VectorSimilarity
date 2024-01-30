@@ -2402,8 +2402,9 @@ VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(si
     *topLevel = graph_data->toplevel;
     *neighborsData = new int *[*topLevel + 1];
     for (size_t level = 0; level <= *topLevel; level++) {
-        (*neighborsData)[level] = new int[(level > 0 ? this->getM() : 2 * this->getM()) + 1];
         auto &level_data = this->getLevelData(graph_data, level);
+        assert(level_data.numLinks <= (level > 0 ? this->getM() : 2 * this->getM()));
+        (*neighborsData)[level] = new int[level_data.numLinks + 1];
         (*neighborsData)[level][0] = level_data.numLinks;
         for (size_t i = 0; i < level_data.numLinks; i++) {
             (*neighborsData)[level][i + 1] = (int)idToMetaData.at(level_data.links[i]).label;

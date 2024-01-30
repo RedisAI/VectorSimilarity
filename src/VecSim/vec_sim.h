@@ -242,11 +242,10 @@ void VecSim_SetWriteMode(VecSimWriteMode mode);
 
 /**
  * @brief: Dump the neighbors of an element in HNSW index in the following format:
- * an array with <topLevel> entries, where for each entry in the array is an array.
- * Every internal array in a position <i> corresponds to the neighbors of the element in the graph
- * in level <i>.
- * The first array (level 0 neighbours) contains 2M+1 entries, while the rest contain M+1 entries.
- * The first entry contains the number of neighbors in the current level <n_l>, while the next
+ * an array with <topLevel> entries, where each entry is an array itself.
+ * Every internal array in a position <l> corresponds to the neighbors of the element in the graph
+ * in level <l>. It contains <n_l+1> entries, where <n_l> is the number of neighbors in level l.
+ * The first entry in each internal array contains the number <n_l>, while the next
  * <n_l> entries are the the *labels* of the elements neighbors in this level.
  * Note: currently only HNSW indexes of type single are supported (multi not yet) - tiered included.
  * For cleanup, VecSimDebug_ReleaseElementNeighborsInHNSWGraph need to be called with the values
@@ -261,7 +260,7 @@ void VecSim_SetWriteMode(VecSimWriteMode mode);
  */
 // TODO: Implement the full version that supports MULTI as well. This will require adding an
 //  additional dim to the array and perhaps differentiating between internal ids of labels in the
-//  output format.
+//  output format. Also, we may want in the future to dump the incoming edges as well.
 int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
                                                int ***neighborsData, size_t *topLevel);
 
