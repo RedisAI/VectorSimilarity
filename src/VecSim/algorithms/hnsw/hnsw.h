@@ -353,8 +353,7 @@ public:
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
-    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData,
-                                                   size_t *topLevel) override;
+    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
 
 #ifdef BUILD_TESTS
     /**
@@ -2384,9 +2383,8 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
 /********************************************** Debug commands ******************************/
 
 template <typename DataType, typename DistType>
-VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label,
-                                                                              int ***neighborsData,
-                                                                              size_t *topLevel) {
+VecSimDebugCommandCode
+HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neighborsData) {
     std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     // Assume single value index. TODO: support for multi as well.
     if (this->info().commonInfo.basicInfo.isMulti) {
@@ -2399,9 +2397,8 @@ VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(si
     idType id = ids[0];
     auto graph_data = this->getGraphDataByInternalId(id);
     lockNodeLinks(graph_data);
-    *topLevel = graph_data->toplevel;
-    *neighborsData = new int *[*topLevel + 1];
-    for (size_t level = 0; level <= *topLevel; level++) {
+    *neighborsData = new int *[graph_data->toplevel + 2];
+    for (size_t level = 0; level <= graph_data->toplevel; level++) {
         auto &level_data = this->getLevelData(graph_data, level);
         assert(level_data.numLinks <= (level > 0 ? this->getM() : 2 * this->getM()));
         (*neighborsData)[level] = new int[level_data.numLinks + 1];
@@ -2410,6 +2407,7 @@ VecSimDebugCommandCode HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(si
             (*neighborsData)[level][i + 1] = (int)idToMetaData.at(level_data.links[i]).label;
         }
     }
+    (*neighborsData)[graph_data->toplevel + 1] = nullptr;
     unlockNodeLinks(graph_data);
     return VecSimDebugCommandCode_OK;
 }

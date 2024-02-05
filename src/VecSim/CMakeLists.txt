@@ -21,6 +21,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/index_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp
+    vec_sim_debug.cpp
     vec_sim_interface.cpp
     query_results.cpp
     info_iterator.cpp

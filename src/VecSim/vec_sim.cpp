@@ -258,26 +258,3 @@ extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetS
                                               bool initial_check) {
     return index->preferAdHocSearch(subsetSize, k, initial_check);
 }
-
-extern "C" int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
-                                                          int ***neighborsData, size_t *topLevel) {
-
-    // Set as if we return an error, and upon success we will set the pointers appropriately.
-    *neighborsData = nullptr;
-    *topLevel = HNSW_INVALID_LEVEL;
-    if (index->basicInfo().algo != VecSimAlgo_HNSWLIB) {
-        return VecSimDebugCommandCode_BadIndex;
-    }
-    return index->getHNSWElementNeighbors(label, neighborsData, topLevel);
-}
-
-extern "C" void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData,
-                                                               size_t topLevel) {
-    if (topLevel == HNSW_INVALID_LEVEL || neighborsData == nullptr) {
-        return;
-    }
-    for (size_t i = 0; i <= topLevel; i++) {
-        delete[] neighborsData[i];
-    }
-    delete[] neighborsData;
-}

@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_debug.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "test_utils.h"
@@ -2172,11 +2173,9 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
     for (size_t id = 0; id < n; id++) {
         LevelData &cur = hnsw_index->getLevelData(id, 0);
         int **neighbors_output;
-        size_t top_level = -1;
-        VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output, &top_level);
+        VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output);
         auto graph_data = hnsw_index->getGraphDataByInternalId(id);
-        ASSERT_EQ(top_level, graph_data->toplevel);
-        for (size_t l = 0; l <= top_level; l++) {
+        for (size_t l = 0; l <= graph_data->toplevel; l++) {
             auto &level_data = hnsw_index->getLevelData(graph_data, l);
             auto &neighbours = neighbors_output[l];
             ASSERT_EQ(neighbours[0], level_data.numLinks);
@@ -2184,7 +2183,7 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
                 ASSERT_EQ(neighbours[j], level_data.links[j - 1]);
             }
         }
-        VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output, top_level);
+        VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
     }
     VecSimIndex_Free(index);
 }

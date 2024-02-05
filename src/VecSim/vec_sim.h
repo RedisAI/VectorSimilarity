@@ -240,37 +240,6 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
 
-/**
- * @brief: Dump the neighbors of an element in HNSW index in the following format:
- * an array with <topLevel> entries, where each entry is an array itself.
- * Every internal array in a position <l> corresponds to the neighbors of the element in the graph
- * in level <l>. It contains <n_l+1> entries, where <n_l> is the number of neighbors in level l.
- * The first entry in each internal array contains the number <n_l>, while the next
- * <n_l> entries are the the *labels* of the elements neighbors in this level.
- * Note: currently only HNSW indexes of type single are supported (multi not yet) - tiered included.
- * For cleanup, VecSimDebug_ReleaseElementNeighborsInHNSWGraph need to be called with the values
- * pointed by neighborsData and topLevel as returned from this call respectively.
- * @param index - the index in which the element resides.
- * @param label - the label to dump its neighbors in every level in which it exits.
- * @param neighborsData - a pointer to a 2-dim array of integer which is a placeholder for the
- * output of the neighbors' labels that will be allocated and stored in the format described above.
- * @param topLevel - a pointer (placeholder) to the top level in HNSW graph in which the element
- * exists.
- *
- */
-// TODO: Implement the full version that supports MULTI as well. This will require adding an
-//  additional dim to the array and perhaps differentiating between internal ids of labels in the
-//  output format. Also, we may want in the future to dump the incoming edges as well.
-int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
-                                               int ***neighborsData, size_t *topLevel);
-
-/**
- * @brief: Release the neighbors data allocated by VecSimDebug_GetElementNeighborsInHNSWGraph.
- * @param neighborsData - the 2-dim array returned in the placeholder to be de-allocated.
- * @param topLevel - the top level of the element in HNSW graph as returned in the placeholder.
- */
-void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData, size_t topLevel);
-
 #ifdef __cplusplus
 }
 #endif

@@ -255,8 +255,4 @@ public:
     inline static void setWriteMode(VecSimWriteMode mode) {
         VecSimIndexInterface::asyncWriteMode = mode;
     }
-
-    /************************************ Debug commands *************************************/
-    virtual VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData,
-                                                           size_t *topLevel) = 0;
 };
