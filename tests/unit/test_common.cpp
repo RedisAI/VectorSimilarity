@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_debug.h"
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
@@ -157,6 +158,49 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSimParamResolverErr_BadValue);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(CommonIndexTest, DumpHNSWNeighborsDebugEdgeCases) {
+    size_t dim = 4;
+    size_t top_level;
+    int **neighbors_data;
+
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
+
+    auto res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
+    ASSERT_EQ(res, VecSimDebugCommandCode_BadIndex);
+    ASSERT_EQ(neighbors_data, nullptr);
+    VecSimIndex_Free(index);
+
+    HNSWParams hnsw_params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    index = test_utils::CreateNewIndex(hnsw_params, TypeParam::get_index_type(), true);
+
+    res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
+    ASSERT_EQ(res, VecSimDebugCommandCode_MultiNotSupported);
+    ASSERT_EQ(neighbors_data, nullptr);
+    VecSimIndex_Free(index);
+
+    hnsw_params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    index = test_utils::CreateNewIndex(hnsw_params, TypeParam::get_index_type());
+
+    res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
+    ASSERT_EQ(res, VecSimDebugCommandCode_LabelNotExists);
+    ASSERT_EQ(neighbors_data, nullptr);
+
+    // Add one vector, then try to get its neighbors (an array with a single array of zero).
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+    res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
+    ASSERT_EQ(res, VecSimDebugCommandCode_OK);
+    ASSERT_EQ(neighbors_data[0][0], 0);
+    VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_data);
+
+    // Try to get non-existing label again.
+    res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 1, &neighbors_data);
+    ASSERT_EQ(res, VecSimDebugCommandCode_LabelNotExists);
+    ASSERT_EQ(neighbors_data, nullptr);
 
     VecSimIndex_Free(index);
 }

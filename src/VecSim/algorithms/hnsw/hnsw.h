@@ -172,7 +172,6 @@ protected:
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
-
     mutable std::shared_mutex indexDataGuard;
 
 #ifdef BUILD_TESTS
@@ -354,6 +353,8 @@ public:
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
+    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
+
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
@@ -374,6 +375,8 @@ protected:
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
+    // For debugging - unsafe (assume index data guard is held in MT mode).
+    virtual inline vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 };
 
 /**
@@ -2375,6 +2378,38 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     this->lastMode =
         res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
+}
+
+/********************************************** Debug commands ******************************/
+
+template <typename DataType, typename DistType>
+VecSimDebugCommandCode
+HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neighborsData) {
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+    // Assume single value index. TODO: support for multi as well.
+    if (this->info().commonInfo.basicInfo.isMulti) {
+        return VecSimDebugCommandCode_MultiNotSupported;
+    }
+    auto ids = this->getElementIds(label);
+    if (ids.empty()) {
+        return VecSimDebugCommandCode_LabelNotExists;
+    }
+    idType id = ids[0];
+    auto graph_data = this->getGraphDataByInternalId(id);
+    lockNodeLinks(graph_data);
+    *neighborsData = new int *[graph_data->toplevel + 2];
+    for (size_t level = 0; level <= graph_data->toplevel; level++) {
+        auto &level_data = this->getLevelData(graph_data, level);
+        assert(level_data.numLinks <= (level > 0 ? this->getM() : 2 * this->getM()));
+        (*neighborsData)[level] = new int[level_data.numLinks + 1];
+        (*neighborsData)[level][0] = level_data.numLinks;
+        for (size_t i = 0; i < level_data.numLinks; i++) {
+            (*neighborsData)[level][i + 1] = (int)idToMetaData.at(level_data.links[i]).label;
+        }
+    }
+    (*neighborsData)[graph_data->toplevel + 1] = nullptr;
+    unlockNodeLinks(graph_data);
+    return VecSimDebugCommandCode_OK;
 }
 
 #ifdef BUILD_TESTS

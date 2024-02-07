@@ -2,6 +2,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
+#include "VecSim/vec_sim_debug.h"
 #include <string>
 #include <array>
 
@@ -3464,5 +3465,47 @@ TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
         size_t cur_size = tiered_index->indexSize();
         VecSimTieredIndex_GC(tiered_index);
         ASSERT_EQ(tiered_index->indexSize(), cur_size - DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, getElementNeighbors) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 0;
+    size_t M = 20;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .M = M};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Add vectors directly to HNSW index until we have at least 2 vectors at level 1.
+    size_t vectors_in_higher_levels = 0;
+    while (vectors_in_higher_levels < 2) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
+        if (hnsw_index->getGraphDataByInternalId(n)->toplevel > 0) {
+            vectors_in_higher_levels++;
+        }
+        n++;
+    }
+    // Go over all vectors and validate that the getElementNeighbors debug command returns the
+    // neighbors properly.
+    for (size_t id = 0; id < n; id++) {
+        LevelData &cur = hnsw_index->getLevelData(id, 0);
+        int **neighbors_output;
+        VecSimDebug_GetElementNeighborsInHNSWGraph(tiered_index, id, &neighbors_output);
+        auto graph_data = hnsw_index->getGraphDataByInternalId(id);
+        for (size_t l = 0; l <= graph_data->toplevel; l++) {
+            auto &level_data = hnsw_index->getLevelData(graph_data, l);
+            auto &neighbours = neighbors_output[l];
+            ASSERT_EQ(neighbours[0], level_data.numLinks);
+            for (size_t j = 1; j <= neighbours[0]; j++) {
+                ASSERT_EQ(neighbours[j], level_data.links[j - 1]);
+            }
+        }
+        VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
     }
 }

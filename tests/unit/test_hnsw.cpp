@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_debug.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "test_utils.h"
@@ -1981,7 +1982,8 @@ TYPED_TEST(HNSWTest, markDelete) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
     // Try marking and a non-existing label
-    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0), std::vector<idType>());
+    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0),
+              vecsim_stl::vector<idType>(index->getAllocator()));
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -2006,7 +2008,8 @@ TYPED_TEST(HNSWTest, markDelete) {
     // Mark as deleted half of the vectors, including the entrypoint.
     for (labelType label = 0; label < n; label++)
         if (label % 2 == ep_reminder)
-            ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), std::vector<idType>(1, label));
+            ASSERT_EQ(this->CastToHNSW(index)->markDelete(label),
+                      vecsim_stl::vector<idType>(1, label, index->getAllocator()));
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -2144,5 +2147,43 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     // For completeness, we also check index integrity.
     ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
 
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, getElementNeighbors) {
+    size_t dim = 4;
+    size_t n = 0;
+    size_t M = 20;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    // Add vectors until we have at least 2 vectors at level 1.
+    size_t vectors_in_higher_levels = 0;
+    while (vectors_in_higher_levels < 2) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
+        if (hnsw_index->getGraphDataByInternalId(n)->toplevel > 0) {
+            vectors_in_higher_levels++;
+        }
+        n++;
+    }
+    // Go over all vectors and validate that the getElementNeighbors debug command returns the
+    // neighbors properly.
+    for (size_t id = 0; id < n; id++) {
+        LevelData &cur = hnsw_index->getLevelData(id, 0);
+        int **neighbors_output;
+        VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output);
+        auto graph_data = hnsw_index->getGraphDataByInternalId(id);
+        for (size_t l = 0; l <= graph_data->toplevel; l++) {
+            auto &level_data = hnsw_index->getLevelData(graph_data, l);
+            auto &neighbours = neighbors_output[l];
+            ASSERT_EQ(neighbours[0], level_data.numLinks);
+            for (size_t j = 1; j <= neighbours[0]; j++) {
+                ASSERT_EQ(neighbours[j], level_data.links[j - 1]);
+            }
+        }
+        VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+    }
     VecSimIndex_Free(index);
 }

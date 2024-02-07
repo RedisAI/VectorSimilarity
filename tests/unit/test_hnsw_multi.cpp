@@ -1708,7 +1708,8 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
     // Try marking a non-existing label
-    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0), std::vector<idType>());
+    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0),
+              vecsim_stl::vector<idType>(index->getAllocator()));
 
     for (size_t i = 0; i < n_labels; i++) {
         for (size_t j = 0; j < per_label; j++)
@@ -1741,7 +1742,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     // Mark as deleted half of the vectors including the entrypoint.
     for (labelType label = 0; label < n_labels; label++) {
         if (label % 2 == ep_reminder) {
-            std::vector<idType> expected_deleted_ids;
+            vecsim_stl::vector<idType> expected_deleted_ids(index->getAllocator());
             for (size_t j = 0; j < per_label; j++)
                 expected_deleted_ids.push_back(label * per_label + j);
             ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), expected_deleted_ids);

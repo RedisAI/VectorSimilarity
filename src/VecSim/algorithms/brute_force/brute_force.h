@@ -169,7 +169,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
     if (indexSize() > indexCapacity()) {
         growByBlock();
     } else if (id % this->blockSize == 0) {
-        // If we we didn't reach the initial capacity but the last block is full, add a new block
+        // If we didn't reach the initial capacity but the last block is full, add a new block
         // only.
         this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
                                         this->alignment);

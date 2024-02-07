@@ -24,7 +24,7 @@ private:
     inline void setVectorId(labelType label, idType id) override { labelLookup[label] = id; }
     inline void resizeLabelLookup(size_t new_max_elements) override;
     inline vecsim_stl::set<labelType> getLabelsSet() const override;
-
+    inline vecsim_stl::vector<idType> getElementIds(size_t label) override;
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:
@@ -68,7 +68,7 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
-    inline std::vector<idType> markDelete(labelType label) override;
+    inline vecsim_stl::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing = false) const override;
 
@@ -179,17 +179,15 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
  * @param label
  */
 template <typename DataType, typename DistType>
-std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
-    std::vector<idType> idsToDelete;
+vecsim_stl::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
     std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
-    auto search = labelLookup.find(label);
-    if (search == labelLookup.end()) {
-        return idsToDelete;
+    auto internal_ids = this->getElementIds(label);
+    if (!internal_ids.empty()) {
+        assert(internal_ids.size() == 1); // expect to have only one id in index of type "single"
+        this->markDeletedInternal(internal_ids[0]);
+        labelLookup.erase(label);
     }
-    this->markDeletedInternal(search->second);
-    idsToDelete.push_back(search->second);
-    labelLookup.erase(search);
-    return idsToDelete;
+    return internal_ids;
 }
 
 template <typename DataType, typename DistType>
@@ -204,4 +202,16 @@ inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
         return !this->isInProcess(it->second);
     }
     return exists;
+}
+
+template <typename DataType, typename DistType>
+inline vecsim_stl::vector<idType>
+HNSWIndex_Single<DataType, DistType>::getElementIds(size_t label) {
+    vecsim_stl::vector<idType> ids(this->allocator);
+    auto it = labelLookup.find(label);
+    if (it == labelLookup.end()) {
+        return ids;
+    }
+    ids.push_back(it->second);
+    return ids;
 }

@@ -22,5 +22,5 @@ public:
      * @param label vector to mark as deleted
      * @return a vector of internal ids that has been marked as deleted (to be disposed later on).
      */
-    virtual inline std::vector<idType> markDelete(labelType label) = 0;
+    virtual inline vecsim_stl::vector<idType> markDelete(labelType label) = 0;
 };
