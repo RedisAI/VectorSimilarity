@@ -63,7 +63,7 @@ public:
     virtual int deleteVectorById(labelType label, idType id) = 0;
     // Remove a vector and return a map between internal ids and the original internal ids of the
     // vector that they hold as a result of the overall removals and swaps, along with its label.
-    virtual std::unordered_map<idType, std::pair<idType, labelType>>
+    virtual boost::unordered_map<idType, std::pair<idType, labelType>>
     deleteVectorAndGetUpdatedIds(labelType label) = 0;
     // Check if a certain label exists in the index.
     virtual inline bool isLabelExists(labelType label) = 0;

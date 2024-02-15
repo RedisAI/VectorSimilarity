@@ -34,7 +34,7 @@ public:
         return std::unique_ptr<vecsim_stl::abstract_results_container>(
             new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
     }
-    std::unordered_map<idType, std::pair<idType, labelType>>
+    boost::unordered_map<idType, std::pair<idType, labelType>>
     deleteVectorAndGetUpdatedIds(labelType label) override;
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
@@ -122,7 +122,7 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVector(labelType label) {
 }
 
 template <typename DataType, typename DistType>
-std::unordered_map<idType, std::pair<idType, labelType>>
+boost::unordered_map<idType, std::pair<idType, labelType>>
 BruteForceIndex_Multi<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelType label) {
     // Hold a mapping from ids that are removed and changed to the original ids that were swapped
     // into it. For example, if we have ids 0, 1, 2, 3, 4 and are about to remove ids 1, 3, 4, we
@@ -130,7 +130,7 @@ BruteForceIndex_Multi<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelTyp
     // Explanation: first we delete 1 and swap it with 4. Then, we remove 3 and have no swap since 3
     // is the last id. Lastly, we delete the original 4 which is now in id 1, and swap it with 2.
     // Eventually, in id 1 we should have the original vector whose id was 2.
-    std::unordered_map<idType, std::pair<idType, labelType>> updated_ids;
+    boost::unordered_map<idType, std::pair<idType, labelType>> updated_ids;
 
     // Find the id to delete.
     auto deleted_label_ids_pair = this->labelToIdsLookup.find(label);

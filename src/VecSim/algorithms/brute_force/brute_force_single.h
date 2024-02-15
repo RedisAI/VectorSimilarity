@@ -33,7 +33,7 @@ public:
     }
 
     inline size_t indexLabelCount() const override { return this->count; }
-    std::unordered_map<idType, std::pair<idType, labelType>>
+    boost::unordered_map<idType, std::pair<idType, labelType>>
     deleteVectorAndGetUpdatedIds(labelType label) override;
 
     // We call this when we KNOW that the label exists in the index.
@@ -154,10 +154,10 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 }
 
 template <typename DataType, typename DistType>
-std::unordered_map<idType, std::pair<idType, labelType>>
+boost::unordered_map<idType, std::pair<idType, labelType>>
 BruteForceIndex_Single<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelType label) {
 
-    std::unordered_map<idType, std::pair<idType, labelType>> updated_ids;
+    boost::unordered_map<idType, std::pair<idType, labelType>> updated_ids;
     // Find the id to delete.
     auto deleted_label_id_pair = this->labelToIdLookup.find(label);
     if (deleted_label_id_pair == this->labelToIdLookup.end()) {

@@ -9,15 +9,16 @@
 #include "VecSim/memory/vecsim_base.h"
 #include <vector>
 #include <set>
-#include <unordered_set>
-#include <unordered_map>
+#include <boost/unordered_set.hpp>
+#include <boost/unordered_map.hpp>
+#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace vecsim_stl {
 
 template <typename K, typename V>
-using unordered_map = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>,
-                                         VecsimSTLAllocator<std::pair<const K, V>>>;
+using unordered_map = boost::unordered_map<K, V, std::hash<K>, std::equal_to<K>,
+                                           VecsimSTLAllocator<std::pair<const K, V>>>;
 
 template <typename T>
 class vector : public VecsimBaseObject, public std::vector<T, VecsimSTLAllocator<T>> {
@@ -53,7 +54,7 @@ struct max_priority_queue : public abstract_priority_queue<Priority, Value>, pub
 public:
     max_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
         : abstract_priority_queue<Priority, Value>(alloc), std_queue(alloc) {}
-    ~max_priority_queue() {}
+    ~max_priority_queue() = default;
 
     inline void emplace(Priority p, Value v) override { std_queue::emplace(p, v); }
     inline bool empty() const override { return std_queue::empty(); }
@@ -82,15 +83,15 @@ public:
 template <typename T>
 class unordered_set
     : public VecsimBaseObject,
-      public std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>> {
+      public boost::unordered_set<T, boost::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>> {
 public:
     explicit unordered_set(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc),
-          std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(alloc) {}
+          boost::unordered_set<T, boost::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(alloc) {}
     explicit unordered_set(size_t n_bucket, const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc),
-          std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
-                                                                                       alloc) {}
+          boost::unordered_set<T, boost::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
+                                                                                         alloc) {}
 };
 
 } // namespace vecsim_stl

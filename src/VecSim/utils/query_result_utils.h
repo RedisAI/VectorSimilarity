@@ -8,7 +8,6 @@
 
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
-#include <unordered_set>
 
 // Compare two results by score, and if the scores are equal, by id.
 inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
@@ -22,7 +21,7 @@ inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::i
 template <bool withSet>
 inline constexpr void maybe_append(VecSimQueryResultContainer &results,
                                    VecSimQueryResultContainer::iterator &cur_res,
-                                   std::unordered_set<size_t> &ids, size_t &limit) {
+                                   boost::unordered_set<size_t> &ids, size_t &limit) {
     // In a single line, checks (only if a check is needed) if we already inserted the current id to
     // the merged results, add it to the set if not, and returns its conclusion.
     if (!withSet || ids.insert(cur_res->id).second) {
@@ -45,7 +44,7 @@ std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
     results.reserve(std::min(limit, first.size() + second.size()));
     // Will hold the ids of the results we've already added to the merged results.
     // Will be used only if withSet is true.
-    std::unordered_set<size_t> ids;
+    boost::unordered_set<size_t> ids;
     auto cur_first = first.begin();
     auto cur_second = second.begin();
 
