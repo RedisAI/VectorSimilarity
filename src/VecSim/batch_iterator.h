@@ -47,5 +47,5 @@ public:
     // Reset the iterator to the initial state, before any results has been returned.
     virtual void reset() = 0;
 
-    virtual ~VecSimBatchIterator() { allocator->free_allocation(this->query_vector); };
+    virtual ~VecSimBatchIterator() noexcept { allocator->free_allocation(this->query_vector); };
 };

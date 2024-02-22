@@ -76,7 +76,7 @@ public:
         }
     }
 #endif
-    ~HNSWIndex_Multi() {}
+    ~HNSWIndex_Multi() = default;
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)

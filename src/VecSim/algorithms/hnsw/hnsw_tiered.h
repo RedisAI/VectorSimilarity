@@ -5,7 +5,6 @@
 #include "hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 
-#include <unordered_map>
 /**
  * Definition of a job that inserts a new vector from flat into HNSW Index.
  */
@@ -660,6 +659,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     auto flat_labels = this->frontendIndex->getLabelsSet();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
     std::vector<labelType> output;
+    output.reserve(flat_labels.size() + hnsw_labels.size());
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
                    std::back_inserter(output));
     this->flatIndexGuard.unlock();

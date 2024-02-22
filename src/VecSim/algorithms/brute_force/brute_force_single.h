@@ -19,7 +19,7 @@ protected:
 public:
     BruteForceIndex_Single(const BFParams *params,
                            const AbstractIndexInitParams &abstractInitParams);
-    ~BruteForceIndex_Single();
+    ~BruteForceIndex_Single() = default;
 
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
@@ -113,9 +113,6 @@ BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
     : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
       labelToIdLookup(this->allocator) {}
-
-template <typename DataType, typename DistType>
-BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,

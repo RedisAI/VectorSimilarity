@@ -96,7 +96,7 @@ public:
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndexAbstract() {}
+    virtual ~VecSimIndexAbstract() = default;
 
     inline dist_func_t<DistType> getDistFunc() const { return distFunc; }
     inline size_t getDim() const { return dim; }

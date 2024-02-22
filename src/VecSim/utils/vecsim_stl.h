@@ -35,7 +35,7 @@ struct abstract_priority_queue : public VecsimBaseObject {
 public:
     abstract_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc) {}
-    ~abstract_priority_queue() {}
+    ~abstract_priority_queue() = default;
 
     virtual inline void emplace(Priority p, Value v) = 0;
     virtual inline bool empty() const = 0;
@@ -53,7 +53,7 @@ struct max_priority_queue : public abstract_priority_queue<Priority, Value>, pub
 public:
     max_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
         : abstract_priority_queue<Priority, Value>(alloc), std_queue(alloc) {}
-    ~max_priority_queue() {}
+    ~max_priority_queue() = default;
 
     inline void emplace(Priority p, Value v) override { std_queue::emplace(p, v); }
     inline bool empty() const override { return std_queue::empty(); }

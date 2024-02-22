@@ -8,7 +8,6 @@
 
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
-#include <unordered_set>
 
 // Compare two results by score, and if the scores are equal, by id.
 inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
