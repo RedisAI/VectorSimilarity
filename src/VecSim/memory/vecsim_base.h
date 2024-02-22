@@ -32,5 +32,5 @@ public:
         return this->allocator->getAllocationSize();
     }
 
-    virtual ~VecsimBaseObject() {}
+    virtual ~VecsimBaseObject() = default;
 };

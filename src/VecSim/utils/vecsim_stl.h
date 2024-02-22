@@ -36,7 +36,7 @@ struct abstract_priority_queue : public VecsimBaseObject {
 public:
     abstract_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc) {}
-    ~abstract_priority_queue() {}
+    ~abstract_priority_queue() = default;
 
     virtual inline void emplace(Priority p, Value v) = 0;
     virtual inline bool empty() const = 0;
@@ -91,7 +91,7 @@ public:
     explicit unordered_set(size_t n_bucket, const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc),
           boost::unordered_set<T, boost::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
-                                                                                         alloc) {}
+                                                                                           alloc) {}
 };
 
 } // namespace vecsim_stl

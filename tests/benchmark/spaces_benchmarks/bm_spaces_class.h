@@ -19,7 +19,7 @@ protected:
 
 public:
     BM_VecSimSpaces();
-    ~BM_VecSimSpaces() {}
+    ~BM_VecSimSpaces() = default;
 
     void SetUp(const ::benchmark::State &state);
     void TearDown(const ::benchmark::State &state);

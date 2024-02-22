@@ -25,7 +25,7 @@ public:
                              std::shared_ptr<VecSimAllocator> allocator)
         : HNSW_BatchIterator<DataType, DistType>(query_vector, index, queryParams, allocator) {}
 
-    ~HNSWSingle_BatchIterator() override {}
+    ~HNSWSingle_BatchIterator() override = default;
 };
 
 /******************** Implementation **************/

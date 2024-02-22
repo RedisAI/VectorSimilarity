@@ -50,7 +50,7 @@ public:
         vectors_output.push_back(vec);
     }
 #endif
-    ~HNSWIndex_Single() {}
+    ~HNSWIndex_Single() = default;
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)

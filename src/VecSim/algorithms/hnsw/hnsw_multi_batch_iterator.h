@@ -27,7 +27,7 @@ public:
         : HNSW_BatchIterator<DataType, DistType>(query_vector, index, queryParams, allocator),
           returned(this->index->indexSize(), this->allocator) {}
 
-    ~HNSWMulti_BatchIterator() override {}
+    ~HNSWMulti_BatchIterator() override = default;
 
     void reset() override;
 };

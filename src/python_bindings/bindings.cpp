@@ -86,7 +86,7 @@ public:
         return wrap_results(&results, actual_n_res);
     }
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
-    virtual ~PyBatchIterator() {}
+    virtual ~PyBatchIterator() = default;
 };
 
 // @input or @query arguments are a py::object object. (numpy arrays are acceptable)

@@ -76,7 +76,7 @@ public:
         }
     }
 #endif
-    ~HNSWIndex_Multi() {}
+    ~HNSWIndex_Multi() = default;
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)
@@ -184,7 +184,7 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
         this->removeVectorInPlace(id);
         ret++;
     }
-    labelLookup.erase(ids);
+    labelLookup.erase(label);
     return ret;
 }
 

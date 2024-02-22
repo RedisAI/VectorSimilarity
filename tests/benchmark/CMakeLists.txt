@@ -25,6 +25,9 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
+add_executable(bm_heaps bm_heaps.cpp)
+target_link_libraries(bm_heaps VectorSimilarity benchmark::benchmark)
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Spaces benchmarks								                                          #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

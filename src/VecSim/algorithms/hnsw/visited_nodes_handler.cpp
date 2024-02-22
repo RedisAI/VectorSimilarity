@@ -36,7 +36,7 @@ tag_t VisitedNodesHandler::getFreshTag() {
     return cur_tag;
 }
 
-VisitedNodesHandler::~VisitedNodesHandler() { allocator->free_allocation(elements_tags); }
+VisitedNodesHandler::~VisitedNodesHandler() noexcept { allocator->free_allocation(elements_tags); }
 
 /**
  * VisitedNodesHandlerPool methods to enable parallel graph scans.

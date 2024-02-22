@@ -10,6 +10,7 @@
 #include "vecsim_stl.h"
 #include <unordered_map>
 #include <map>
+#include <boost/heap/fibonacci_heap.hpp>
 
 namespace vecsim_stl {
 
@@ -35,7 +36,7 @@ private:
 
 public:
     updatable_max_heap(const std::shared_ptr<VecSimAllocator> &alloc);
-    ~updatable_max_heap();
+    ~updatable_max_heap() = default;
 
     inline void emplace(Priority p, Value v) override;
     inline bool empty() const override;
@@ -52,9 +53,6 @@ updatable_max_heap<Priority, Value>::updatable_max_heap(
     const std::shared_ptr<VecSimAllocator> &alloc)
     : abstract_priority_queue<Priority, Value>(alloc), priorityToValue(alloc),
       valueToPriority(alloc) {}
-
-template <typename Priority, typename Value>
-updatable_max_heap<Priority, Value>::~updatable_max_heap() {}
 
 template <typename Priority, typename Value>
 size_t updatable_max_heap<Priority, Value>::size() const {
@@ -116,6 +114,141 @@ void updatable_max_heap<Priority, Value>::emplace(Priority p, Value v) {
         priorityToValue.erase(pos);    // Erase by iterator deletes only the specific pair.
         existing_v->second = p;        // Update the priority.
         priorityToValue.emplace(p, v); // Re-insert the updated value to the `priorityToValue` map.
+    }
+}
+
+template <typename Priority, typename Value>
+class alt_updatable_max_heap : public abstract_priority_queue<Priority, Value> {
+private:
+    // Maps a priority that exists in the heap to its value.
+    using PVMultimap = std::multimap<Priority, Value, std::greater<Priority>,
+                                     VecsimSTLAllocator<std::pair<const Priority, Value>>>;
+    PVMultimap priorityToValue;
+
+    // Maps a value in the heap to its current priority (which is the minimal priority found in the
+    // search at the point).
+    std::unordered_map<Value, typename PVMultimap::iterator, std::hash<Value>, std::equal_to<Value>,
+                       VecsimSTLAllocator<std::pair<const Value, typename PVMultimap::iterator>>>
+        valueToPriority;
+
+public:
+    alt_updatable_max_heap(const std::shared_ptr<VecSimAllocator> &alloc);
+    ~alt_updatable_max_heap() = default;
+
+    inline void emplace(Priority p, Value v) override;
+    inline bool empty() const override;
+    inline void pop() override;
+    inline const std::pair<Priority, Value> top() const override;
+    inline size_t size() const override;
+
+private:
+    inline auto top_ptr() const;
+};
+
+template <typename Priority, typename Value>
+alt_updatable_max_heap<Priority, Value>::alt_updatable_max_heap(
+    const std::shared_ptr<VecSimAllocator> &alloc)
+    : abstract_priority_queue<Priority, Value>(alloc), priorityToValue(alloc),
+      valueToPriority(alloc) {}
+
+template <typename Priority, typename Value>
+size_t alt_updatable_max_heap<Priority, Value>::size() const {
+    return valueToPriority.size();
+}
+
+template <typename Priority, typename Value>
+bool alt_updatable_max_heap<Priority, Value>::empty() const {
+    return valueToPriority.empty();
+}
+
+template <typename Priority, typename Value>
+auto alt_updatable_max_heap<Priority, Value>::top_ptr() const {
+    // The `.begin()` of "priorityToValue" is the max priority element.
+    auto x = priorityToValue.begin();
+    // x has the max priority, but there might be multiple values with the same priority. We need to
+    // find the value with the highest value as well.
+    auto [begin, end] = priorityToValue.equal_range(x->first);
+    auto y = std::max_element(begin, end,
+                              [](const auto &a, const auto &b) { return a.second < b.second; });
+    return y;
+}
+
+template <typename Priority, typename Value>
+const std::pair<Priority, Value> alt_updatable_max_heap<Priority, Value>::top() const {
+    auto x = top_ptr();
+    return *x;
+}
+
+template <typename Priority, typename Value>
+void alt_updatable_max_heap<Priority, Value>::pop() {
+    auto to_remove = top_ptr();
+    valueToPriority.erase(to_remove->second);
+    priorityToValue.erase(to_remove);
+}
+
+template <typename Priority, typename Value>
+void alt_updatable_max_heap<Priority, Value>::emplace(Priority p, Value v) {
+    // This function either inserting a new value or updating the priority of the value, if the new
+    // priority is higher.
+    auto existing_v = valueToPriority.find(v);
+    if (existing_v == valueToPriority.end()) {
+        // Case 1: value is not in the heap. Insert it.
+        auto new_itr = priorityToValue.emplace(p, v);
+        valueToPriority.emplace(v, new_itr);
+    } else if (existing_v->second->first > p) {
+        priorityToValue.erase(existing_v->second);    // Erase by iterator deletes only the specific pair.
+        auto new_itr = priorityToValue.emplace(p, v); // Re-insert the updated value to the `priorityToValue` map.
+        existing_v->second = new_itr;                 // Update the priority.
+    }
+}
+
+template <typename Priority, typename Value>
+class updatable_max_fibonacci_heap : public abstract_priority_queue<Priority, Value> {
+private:
+    using fibHeap_t = boost::heap::fibonacci_heap<std::pair<Priority, Value>>;
+    // Maps a priority that exists in the heap to its value.
+    fibHeap_t fibHeap;
+
+    // Maps a value in the heap to its current priority (which is the minimal priority found in the
+    // search at the point).
+    vecsim_stl::unordered_map<Value, typename fibHeap_t::handle_type> valueToHandle;
+
+public:
+    updatable_max_fibonacci_heap(const std::shared_ptr<VecSimAllocator> &alloc);
+    ~updatable_max_fibonacci_heap() = default;
+
+    inline void emplace(Priority p, Value v) override;
+    inline bool empty() const override { return fibHeap.empty(); }
+    inline void pop() override;
+    inline const std::pair<Priority, Value> top() const override;
+    inline size_t size() const override { return valueToHandle.size(); }
+};
+
+template <typename Priority, typename Value>
+updatable_max_fibonacci_heap<Priority, Value>::updatable_max_fibonacci_heap(
+    const std::shared_ptr<VecSimAllocator> &alloc)
+    : abstract_priority_queue<Priority, Value>(alloc), fibHeap(), valueToHandle(alloc) {}
+
+template <typename Priority, typename Value>
+const std::pair<Priority, Value> updatable_max_fibonacci_heap<Priority, Value>::top() const {
+    return fibHeap.top();
+}
+
+template <typename Priority, typename Value>
+void updatable_max_fibonacci_heap<Priority, Value>::pop() {
+    valueToHandle.erase(fibHeap.top().second);
+    fibHeap.pop();
+}
+
+template <typename Priority, typename Value>
+void updatable_max_fibonacci_heap<Priority, Value>::emplace(Priority p, Value v) {
+    auto existing_v = valueToHandle.find(v);
+    if (existing_v == valueToHandle.end()) {
+        auto handle = fibHeap.emplace(p, v);
+        valueToHandle.emplace(v, handle);
+    } else if ((*existing_v->second).first > p) {
+        *existing_v->second = std::make_pair(p, v);
+        fibHeap.update(existing_v->second);
     }
 }
 
