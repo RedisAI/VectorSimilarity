@@ -44,7 +44,7 @@ public:
     // Get the tag in which node_id is marked currently.
     inline tag_t getNodeTag(unsigned int node_id) { return elements_tags[node_id]; }
 
-    ~VisitedNodesHandler() override;
+    ~VisitedNodesHandler() noexcept override;
 };
 
 /**
