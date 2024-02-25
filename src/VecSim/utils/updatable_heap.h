@@ -23,19 +23,18 @@ template <typename Priority, typename Value>
 class updatable_max_heap : public abstract_priority_queue<Priority, Value> {
 private:
     // Maps a priority that exists in the heap to its value.
-    std::multimap<Priority, Value, std::greater<Priority>,
-                  VecsimSTLAllocator<std::pair<const Priority, Value>>>
-        priorityToValue;
+    using PVmultimap = std::multimap<Priority, Value, std::greater<Priority>,
+                                     VecsimSTLAllocator<std::pair<const Priority, Value>>>;
+    PVmultimap priorityToValue;
 
-    // Maps a value in the heap to its current priority (which is the minimal priority found in the
-    // search at the point).
-    std::unordered_map<Value, Priority, std::hash<Value>, std::equal_to<Value>,
-                       VecsimSTLAllocator<std::pair<const Value, Priority>>>
-        valueToPriority;
+    // Maps a value in the heap to its node in the `priorityToValue` multimap.
+    std::unordered_map<Value, typename PVmultimap::iterator, std::hash<Value>, std::equal_to<Value>,
+                       VecsimSTLAllocator<std::pair<const Value, typename PVmultimap::iterator>>>
+        valueToNode;
 
 public:
     updatable_max_heap(const std::shared_ptr<VecSimAllocator> &alloc);
-    ~updatable_max_heap();
+    ~updatable_max_heap() = default;
 
     inline void emplace(Priority p, Value v) override;
     inline bool empty() const override;
@@ -50,20 +49,16 @@ private:
 template <typename Priority, typename Value>
 updatable_max_heap<Priority, Value>::updatable_max_heap(
     const std::shared_ptr<VecSimAllocator> &alloc)
-    : abstract_priority_queue<Priority, Value>(alloc), priorityToValue(alloc),
-      valueToPriority(alloc) {}
-
-template <typename Priority, typename Value>
-updatable_max_heap<Priority, Value>::~updatable_max_heap() {}
+    : abstract_priority_queue<Priority, Value>(alloc), priorityToValue(alloc), valueToNode(alloc) {}
 
 template <typename Priority, typename Value>
 size_t updatable_max_heap<Priority, Value>::size() const {
-    return valueToPriority.size();
+    return valueToNode.size();
 }
 
 template <typename Priority, typename Value>
 bool updatable_max_heap<Priority, Value>::empty() const {
-    return valueToPriority.empty();
+    return valueToNode.empty();
 }
 
 template <typename Priority, typename Value>
@@ -87,35 +82,29 @@ const std::pair<Priority, Value> updatable_max_heap<Priority, Value>::top() cons
 template <typename Priority, typename Value>
 void updatable_max_heap<Priority, Value>::pop() {
     auto to_remove = top_ptr();
-    valueToPriority.erase(to_remove->second);
-    priorityToValue.erase(to_remove);
+    valueToNode.erase(to_remove->second); // Erase by the value of the top pair.
+    priorityToValue.erase(to_remove);     // Erase by iterator deletes only the specific pair.
 }
 
 template <typename Priority, typename Value>
 void updatable_max_heap<Priority, Value>::emplace(Priority p, Value v) {
     // This function either inserting a new value or updating the priority of the value, if the new
     // priority is higher.
-    auto existing_v = valueToPriority.find(v);
-    if (existing_v == valueToPriority.end()) {
+    auto existing_v = valueToNode.find(v);
+    if (existing_v == valueToNode.end()) {
         // Case 1: value is not in the heap. Insert it.
-        valueToPriority.emplace(v, p);
-        priorityToValue.emplace(p, v);
-    } else if (existing_v->second > p) {
+        auto node = priorityToValue.emplace(p, v);
+        valueToNode.emplace(v, node);
+    } else if (existing_v->second->first > p) {
         // Case 2: value is in the heap, and its new priority is higher. Update its priority.
 
-        // Because multiple values can get the same priority, we have to find the right node in the
-        // `priorityToValue` multimap, otherwise we will delete all entries with this priority.
-        // Step 1: find the first entry with the given priority.
-        auto pos = priorityToValue.lower_bound(existing_v->second);
-        // Step 2: scan mapping to find the right (p, v) pair. We should find it because
-        // "existing_v" was found in `valueToPriority`.
-        while (pos->second != v) {
-            ++pos;
-            assert(pos->first == existing_v->second); // We shouldn't get beyond the exact priority.
-        }
-        priorityToValue.erase(pos);    // Erase by iterator deletes only the specific pair.
-        existing_v->second = p;        // Update the priority.
-        priorityToValue.emplace(p, v); // Re-insert the updated value to the `priorityToValue` map.
+        // Erase the old priority from the `priorityToValue` map.
+        // Erase by iterator deletes only the specific pair.
+        priorityToValue.erase(existing_v->second);
+        // Re-insert the updated value to the `priorityToValue` map.
+        auto new_node = priorityToValue.emplace(p, v);
+        // Update the node of the value.
+        existing_v->second = new_node;
     }
 }
 

@@ -31,7 +31,7 @@ public:
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndexInterface() {}
+    virtual ~VecSimIndexInterface() = default;
 
     /**
      * @brief This Function prepares the blob before sending it to addVector.

@@ -21,7 +21,7 @@ public:
         : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
           labelToIdsLookup(this->allocator) {}
 
-    ~BruteForceIndex_Multi() {}
+    ~BruteForceIndex_Multi() = default;
 
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType labelType) override;
