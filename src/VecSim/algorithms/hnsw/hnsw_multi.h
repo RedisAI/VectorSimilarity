@@ -141,11 +141,11 @@ void HNSWIndex_Multi<DataType, DistType>::resizeLabelLookup(size_t new_max_eleme
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
     // check that the label actually exists in the graph, and update the number of elements.
-    auto ids = label_lookup_.find(label);
-    if (ids == label_lookup_.end()) {
+    auto ids_it = label_lookup_.find(label);
+    if (ids_it == label_lookup_.end()) {
         return false;
     }
-    for (idType id : ids->second) {
+    for (auto &ids = ids_it->second; idType id : ids) {
         this->removeVector(id);
     }
     label_lookup_.erase(label);
