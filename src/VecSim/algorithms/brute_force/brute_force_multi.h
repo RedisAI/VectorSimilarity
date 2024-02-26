@@ -111,7 +111,7 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVector(labelType label) {
     }
 
     // Deletes all vectors under the given label.
-    for (auto &ids =  deleted_label_ids_pair->second; idType id_to_delete : ids) {
+    for (auto &ids = deleted_label_ids_pair->second; idType id_to_delete : ids) {
         this->removeVector(id_to_delete);
         ret++;
     }
