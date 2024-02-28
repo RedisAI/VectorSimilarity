@@ -176,15 +176,15 @@ template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
     int ret = 0;
     // check that the label actually exists in the graph, and update the number of elements.
-    auto ids = labelLookup.find(label);
-    if (ids == labelLookup.end()) {
+    auto ids_it = labelLookup.find(label);
+    if (ids_it == labelLookup.end()) {
         return ret;
     }
-    for (idType id : ids->second) {
+    for (auto &ids = ids_it->second; idType id : ids) {
         this->removeVectorInPlace(id);
         ret++;
     }
-    labelLookup.erase(ids);
+    labelLookup.erase(label);
     return ret;
 }
 
