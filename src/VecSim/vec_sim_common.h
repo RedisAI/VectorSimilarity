@@ -38,10 +38,25 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo;
+typedef enum {
+    VecSimAlgo_BF,
+    VecSimAlgo_HNSWLIB,
+    VecSimAlgo_TIERED,
+    VecSimAlgo_RAFT_IVFFLAT,
+    VecSimAlgo_RAFT_IVFPQ
+} VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
+
+// Codebook kind for IVFPQ indexes
+typedef enum {
+    RaftIVFPQCodebookKind_PerCluster,
+    RaftIVFPQCodebookKind_PerSubspace
+} RaftIVFPQCodebookKind;
+
+// CUDA types supported by GPU-accelerated indexes
+typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } CudaType;
 
 typedef size_t labelType;
 typedef unsigned int idType;
@@ -125,6 +140,11 @@ typedef struct {
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 
+// A struct that contains Raft IVF tiered index specific params.
+typedef struct {
+    size_t minVectorsInit; // Min. number of vectors per list in Tiered index to init IVF index
+} TieredRAFTIVFParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;         // External queue that holds the jobs.
@@ -135,12 +155,44 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
+        TieredRAFTIVFParams tieredRaftIvfParams;
     } specificParams;
 } TieredIndexParams;
+
+typedef struct {
+    VecSimType type;                   // Datatype to index.
+    size_t dim;                        // Vector's dimension.
+    VecSimMetric metric;               // Distance metric to use in the index.
+    bool multi;                        // Determines if the index should multi-index or not.
+    size_t nLists;                     // Number of inverted lists
+    bool conservativeMemoryAllocation; // Use as little GPU memory as possible
+    size_t kmeans_nIters;              // Iterations for kmeans calculation
+    double kmeans_trainsetFraction;    // Fraction of dataset used for kmeans training
+    unsigned nProbes;                  // The number of clusters to search
+    bool usePQ;                        // If false IVF-Flat is used. If true IVF-PQ is used.
+    // ***************** IVF-Flat-only parameters ******************
+    // The following parameters will be ignored if usePQ is set to true.
+    bool adaptiveCenters; // If index should be updated for new vectors
+
+    // ******************* IVF-PQ-only parameters *******************
+    // The following parameters will be ignored if usePQ is set to false.
+    size_t pqBits; // Bit length of vector element after PQ compression.
+    size_t pqDim;  // The dimensionality of an encoded vector after PQ
+                   // compression. If set to 0, a heuristic will be used to
+                   // select the dimensionality.
+
+    RaftIVFPQCodebookKind codebookKind;
+    CudaType lutType;
+    CudaType internalDistanceType;
+    double preferredShmemCarveout; // Fraction of GPU's unified memory / L1
+                                   // cache to be used as shared memory
+
+} RaftIvfParams;
 
 typedef union {
     HNSWParams hnswParams;
     BFParams bfParams;
+    RaftIvfParams raftIvfParams;
     TieredIndexParams tieredParams;
 } AlgoParams;
 
@@ -158,6 +210,7 @@ typedef enum {
     HNSW_REPAIR_NODE_CONNECTIONS_JOB,
     HNSW_SEARCH_JOB,
     HNSW_SWAP_JOB,
+    RAFT_TRANSFER_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 
@@ -240,6 +293,12 @@ typedef struct {
     char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
+typedef struct {
+    size_t nLists; // Number of inverted lists.
+    size_t pqDim;  // Dimensionality of encoded vector after PQ
+    size_t pqBits; // Bits per encoded vector element after PQ
+} raftIvfInfoStruct;
+
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
 } HnswTieredInfo;
@@ -249,6 +308,7 @@ typedef struct {
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
+        raftIvfInfoStruct raftIvfInfo;
     } backendInfo; // The backend index info.
     union {
         HnswTieredInfo hnswTieredInfo;
@@ -272,6 +332,7 @@ typedef struct {
     union {
         bfInfoStruct bfInfo;
         hnswInfoStruct hnswInfo;
+        raftIvfInfoStruct raftIvfInfo;
         tieredInfoStruct tieredInfo;
     };
 } VecSimIndexInfo;

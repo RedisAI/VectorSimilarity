@@ -19,6 +19,8 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
     index_factories/index_factory.cpp
+    $<$<BOOL:${USE_CUDA}>:index_factories/raft_ivf_factory.cu>
+    $<$<BOOL:${USE_CUDA}>:index_factories/raft_ivf_tiered_factory.cpp>
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp
     vec_sim_debug.cpp
@@ -32,9 +34,19 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     ${HEADER_LIST}
 )
 
-target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if(VECSIM_BUILD_TESTS)
     add_library(VectorSimilaritySerializer utils/serializer.cpp)
-    target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()
+
+target_link_libraries(VectorSimilarity
+PUBLIC
+	VectorSimilaritySpaces
+	$<$<BOOL:${VECSIM_BUILD_TESTS}>:VectorSimilaritySerializer>
+PRIVATE
+	$<$<BOOL:${USE_CUDA}>:raft::raft>
+    $<$<BOOL:${USE_CUDA}>:CUDA::cusolver>
+    $<$<BOOL:${USE_CUDA}>:CUDA::cublas>
+    $<$<BOOL:${USE_CUDA}>:CUDA::curand>
+    $<$<BOOL:${USE_CUDA}>:CUDA::cusparse>
+)

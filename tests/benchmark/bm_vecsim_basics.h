@@ -123,7 +123,10 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
     // Remove directly inplace from the underline HNSW index.
     for (size_t label_ = initial_label_count; label_ < new_label_count; label_++) {
-        VecSimIndex_DeleteVector(INDICES[VecSimAlgo_HNSWLIB], label_);
+        if (st.range(0) == VecSimAlgo_TIERED)
+            VecSimIndex_DeleteVector(INDICES[VecSimAlgo_HNSWLIB], label_);
+        else
+            VecSimIndex_DeleteVector(INDICES[st.range(0)], label_);
     }
 
     assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);

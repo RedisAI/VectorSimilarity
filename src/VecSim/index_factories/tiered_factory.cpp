@@ -8,6 +8,11 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/brute_force_factory.h"
 
+#ifdef USE_CUDA
+#include "VecSim/index_factories/raft_ivf_tiered_factory.h"
+#include "VecSim/index_factories/raft_ivf_factory.h"
+#endif
+
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 
 namespace TieredFactory {
@@ -89,6 +94,13 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         } else if (type == VecSimType_FLOAT64) {
             return TieredHNSWFactory::NewIndex<double>(params);
         }
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
+               params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
+#ifdef USE_CUDA
+        return TieredRaftIvfFactory::NewIndex(params);
+#else
+        throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+#endif
     }
     return nullptr; // Invalid algorithm or type.
 }
@@ -99,6 +111,13 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
     BFParams bf_params{};
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
+               params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
+#ifdef USE_CUDA
+        est += TieredRaftIvfFactory::EstimateInitialSize(params);
+#else
+        throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+#endif
     }
 
     est += BruteForceFactory::EstimateInitialSize(&bf_params);
@@ -109,6 +128,14 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
+    } else if (params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFFLAT ||
+               params->primaryIndexParams->algo == VecSimAlgo_RAFT_IVFPQ) {
+#ifdef USE_CUDA
+        est = RaftIvfFactory::EstimateElementSize(
+            &params->primaryIndexParams->algoParams.raftIvfParams);
+#else
+        throw std::runtime_error("RAFT_IVFFLAT and RAFT_IVFPQ are not supported in CPU version");
+#endif
     }
     return est;
 }
