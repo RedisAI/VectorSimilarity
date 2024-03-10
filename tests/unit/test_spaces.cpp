@@ -13,6 +13,8 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/encoders/bf16/BF16_encoder.h"
+#include "VecSim/vec_sim_common.h"
 
 class SpacesTest : public ::testing::Test {
 
@@ -234,6 +236,38 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
 
+TEST_F(SpacesTest, test_bf16_convertors) {
+
+    using namespace spaces;
+    fp32_to_bf16_encoder_t fp32_to_bf16_converter =
+        Get_FP32_to_BF16_Encoder(1, ARCH_OPT_NONE, false);
+    bf16_to_fp32_encoder_t bf16_to_fp32_converter =
+        Get_BF16_to_FP32_Encoder(1, ARCH_OPT_NONE, false);
+    size_t dim = 128;
+    float v[dim] = {0};
+    bf16 v_bf[dim] = {0};
+    float v2[dim] = {0};
+
+    uint16_t blobs[dim] = {0};
+    for (size_t i = 0; i < dim; i++) {
+        // Generate random 16 bits
+        blobs[i] = rand() % (UINT16_MAX);
+        // Copy 16 bits to the 2nd and 3rd byte of the float
+        memcpy(((char *)&v[i]) + 2, &blobs[i], sizeof(uint16_t));
+    }
+
+    // Convert to bf16
+    fp32_to_bf16_converter(v, v_bf, dim);
+
+    // Validate that the converted values are the same as the original
+    ASSERT_TRUE(memcmp(blobs, v_bf, sizeof(bf16) * dim) == 0);
+
+    // Convert back to fp32
+    bf16_to_fp32_converter(v_bf, v2, dim);
+
+    // Validate that the converted values are the same as the original
+    ASSERT_TRUE(memcmp(v, v2, sizeof(float) * dim) == 0);
+}
 #endif // CPU_FEATURES_ARCH_X86_64
 
 #endif // M1/X86_64

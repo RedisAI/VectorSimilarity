@@ -5,9 +5,11 @@
  * We use a simple std::queue to simulate the job queue.
  */
 
-tieredIndexMock::tieredIndexMock() : run_thread(true) {
-    thread_pool_size = std::min(8U, std::thread::hardware_concurrency());
-    ctx = new IndexExtCtx(this);
+tieredIndexMock::tieredIndexMock(bool should_init) : run_thread(should_init) {
+    if (run_thread) {
+        thread_pool_size = std::min(8U, std::thread::hardware_concurrency());
+        ctx = new IndexExtCtx(this);
+    }
 }
 
 tieredIndexMock::~tieredIndexMock() {

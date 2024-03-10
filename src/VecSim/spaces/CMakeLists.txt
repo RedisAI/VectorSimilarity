@@ -3,6 +3,8 @@ project(VectorSimilaritySpaces_no_optimization)
 add_library(VectorSimilaritySpaces_no_optimization
 	L2/L2.cpp
 	IP/IP.cpp
+	encoders/bf16/BF16_encoder_impl.cpp
+	encoders/bf16/BF16_encoder.cpp
 )
 
 include(CheckCXXCompilerFlag)
@@ -23,11 +25,17 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Check that the compiler supports instructions flag.
 	# This will add the relevant flag both the the space selector and the optimization.
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
+	CHECK_CXX_COMPILER_FLAG(-mavx512bw CXX_AVX512BW)
 	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
 	if(CXX_AVX512F)
 		add_compile_options(-mavx512f)
+		message("Building with AVX512")
+	endif()
+
+	if(CXX_AVX512BW)
+		add_compile_options(-mavx512bw)
 		message("Building with AVX512")
 	endif()
 
@@ -50,6 +58,7 @@ add_library(VectorSimilaritySpaces
 	L2_space.cpp
 	IP_space.cpp
 	spaces.cpp
+	encoders/bf16/BF16_encoder_impl.cpp
 )
 
 target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization)

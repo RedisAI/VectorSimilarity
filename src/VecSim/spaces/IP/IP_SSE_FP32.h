@@ -5,7 +5,7 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
-
+#include <cstring>
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m128 &sum_prod) {
     __m128 v1 = _mm_loadu_ps(pVect1);
     pVect1 += 4;
@@ -70,4 +70,17 @@ float FP32_InnerProductSIMD16_SSE(const void *pVect1v, const void *pVect2v, size
     float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
 
     return 1.0f - sum;
+}
+template <unsigned char residual> // 0..15
+float BF16_InnerProductSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    float vec1[dimension] = {0};
+    float vec2[dimension] = {0};
+    for (size_t i = 0; i < dimension; i++) {
+        memcpy((char *)(vec1 + i) + 2, (char *)(pVect1 + i) + 2, sizeof(u_int16_t));
+        memcpy((char *)(vec2 + i) + 2, (char *)(pVect2 + i) + 2, sizeof(u_int16_t));
+    }
+
+    return FP32_InnerProductSIMD16_SSE<residual>(vec1, vec2, dimension);
 }

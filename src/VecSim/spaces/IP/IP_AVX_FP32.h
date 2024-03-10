@@ -54,3 +54,18 @@ float FP32_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size
 
     return 1.0f - sum;
 }
+#include <cstring>
+
+template <unsigned char residual> // 0..15
+float BF16_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    float vec1[dimension] = {0};
+    float vec2[dimension] = {0};
+    for (size_t i = 0; i < dimension; i++) {
+        memcpy((char *)(vec1 + i) + 2, (char *)(pVect1 + i) + 2, sizeof(u_int16_t));
+        memcpy((char *)(vec2 + i) + 2, (char *)(pVect2 + i) + 2, sizeof(u_int16_t));
+    }
+
+    return FP32_InnerProductSIMD16_AVX<residual>(vec1, vec2, dimension);
+}

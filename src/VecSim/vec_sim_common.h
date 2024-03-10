@@ -7,6 +7,7 @@
 #pragma once
 
 #ifdef __cplusplus
+#include <cstdint>
 extern "C" {
 #endif
 #include <stddef.h>
@@ -34,7 +35,9 @@ typedef enum {
     VecSimType_FLOAT32,
     VecSimType_FLOAT64,
     VecSimType_INT32,
-    VecSimType_INT64
+    VecSimType_INT64,
+    VecSimType_FP32_TO_BF16,
+    VecSimType_FP32_TO_FP16,
 } VecSimType;
 
 // Algorithm type/library.
@@ -46,6 +49,8 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMet
 typedef size_t labelType;
 typedef unsigned int idType;
 
+// i think i can remove this
+typedef uint16_t bf16;
 /**
  * @brief Query Runtime raw parameters.
  * Use VecSimIndex_ResolveParams to generate VecSimQueryParams from array of VecSimRawParams.

@@ -3,6 +3,7 @@
  *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
  *the Server Side Public License v1 (SSPLv1).
  */
+#include <cassert>
 
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
@@ -16,13 +17,17 @@
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
-                                       unsigned char *alignment) {
+                                       unsigned char *alignment, VecSimType type) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-
+    assert(type == VecSimType_FP32_TO_BF16 || type == VecSimType_FLOAT32 ||
+           type == VecSimType_FP32_TO_FP16);
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
+    if (type == VecSimType_FP32_TO_BF16) {
+        ret_dist_func = BFP16_InnerProduct;
+    }
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     if (dim < 16) {
         return ret_dist_func;
@@ -33,21 +38,36 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     switch (arch_opt) {
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX512);
+        if (type == VecSimType_FP32_TO_BF16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, BF16_InnerProductSIMD16_AVX512);
+        } else if (type == VecSimType_FLOAT32) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX512);
+        } else if (type == VecSimType_FP32_TO_FP16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP16_InnerProductSIMD16_AVX512);
+        }
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
+        if (type == VecSimType_FP32_TO_BF16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, BF16_InnerProductSIMD16_AVX);
+        } else if (type == VecSimType_FLOAT32) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
+        }
+
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(float); // handles 8 floats
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_SSE);
+        if (type == VecSimType_FP32_TO_BF16) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, BF16_InnerProductSIMD16_SSE);
+        } else if (type == VecSimType_FLOAT32) {
+            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_SSE);
+        }
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(float); // handles 4 floats
         break;
