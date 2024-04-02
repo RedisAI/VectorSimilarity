@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <algorithm>
 #include "VecSim/algorithms/raft_ivf/ivf_interface.h"
 #include "VecSim/vec_sim_tiered_index.h"
 
