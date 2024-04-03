@@ -12,7 +12,6 @@
 #include "VecSim/spaces/IP/IP_AVX512_FP32.h"
 #include "VecSim/spaces/IP/IP_AVX512_FP64.h"
 
-
 namespace spaces {
 
 #include "implementation_chooser.h"
@@ -43,4 +42,4 @@ dist_func_t<double> Choose_FP64_L2_implementation_AVX512(size_t dim) {
 
 #include "implementation_chooser_cleanup.h"
 
-}
+} // namespace spaces
