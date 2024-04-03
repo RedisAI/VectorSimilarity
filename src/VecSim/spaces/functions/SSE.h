@@ -6,14 +6,14 @@
 
 #pragma once
 
-#include "spaces.h"
+#include "VecSim/spaces/spaces.h"
 
 namespace spaces {
 
-dist_func_t<float> Choose_IP_implementation_SSE(size_t dim);
-dist_func_t<double> Choose_IP_implementation_SSE(size_t dim);
+dist_func_t<float> Choose_FP32_IP_implementation_SSE(size_t dim);
+dist_func_t<double> Choose_FP64_IP_implementation_SSE(size_t dim);
 
-dist_func_t<float> Choose_L2_implementation_SSE(size_t dim);
-dist_func_t<double> Choose_L2_implementation_SSE(size_t dim);
+dist_func_t<float> Choose_FP32_L2_implementation_SSE(size_t dim);
+dist_func_t<double> Choose_FP64_L2_implementation_SSE(size_t dim);
 
 } // namespace spaces
