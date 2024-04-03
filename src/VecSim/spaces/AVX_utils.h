@@ -7,7 +7,7 @@
 #pragma once
 #include "space_includes.h"
 
-template <__mmask8 mask> // (2^n)-1, where n is in 1..7 (1, 4, ..., 127)
+template <__mmask8 mask> // (2^n)-1, where n is in 1..7 (1, 3, ..., 127)
 static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
     // Load 8 floats (assuming this is safe to do)
     __m256 data = _mm256_loadu_ps(p);
@@ -17,7 +17,7 @@ static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
     return masked_data;
 }
 
-template <__mmask8 mask> // (2^n)-1, where n is in 1..3 (1, 4, 7)
+template <__mmask8 mask> // (2^n)-1, where n is in 1..3 (1, 3, 7)
 static inline __m256d my_mm256_maskz_loadu_pd(const double *p) {
     // Load 4 doubles (assuming this is safe to do)
     __m256d data = _mm256_loadu_pd(p);
