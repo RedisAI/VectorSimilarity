@@ -29,10 +29,10 @@ float FP32_InnerProductSIMD16_SSE(const void *pVect1v, const void *pVect2v, size
         __m128 v1, v2;
         if (residual % 4 == 3) {
             // Load 3 floats and set the last one to 0
-            v1 = _mm_load_ps(pVect1); // load 4 floats
-            v2 = _mm_load_ps(pVect2);
-            v1 = _mm_blend_ps(_mm_setzero_ps(), v1, 7); // set the last one to 0
-            v2 = _mm_blend_ps(_mm_setzero_ps(), v2, 7);
+            v1 = _mm_load_ss(pVect1); // load 1 float, set the rest to 0
+            v2 = _mm_load_ss(pVect2);
+            v1 = _mm_loadh_pi(v1, (__m64 *)(pVect1 + 1));
+            v2 = _mm_loadh_pi(v2, (__m64 *)(pVect2 + 1));
         } else if (residual % 4 == 2) {
             // Load 2 floats and set the last two to 0
             v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
