@@ -30,7 +30,6 @@ endforeach()
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 include(CheckCXXCompilerFlag)
-set(OPT_FLAGS "")
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# build SSE/AVX* code only on x64 processors.
@@ -41,23 +40,20 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
 	if(CXX_AVX512F)
-		list(APPEND OPT_FLAGS -mavx512f)
+		add_compile_definitions(OPT_AVX512F)
 	endif()
 
 	if(CXX_AVX)
-		list(APPEND OPT_FLAGS -mavx)
+		add_compile_definitions(OPT_AVX)
 	endif()
 
 	if(CXX_SSE)
-		list(APPEND OPT_FLAGS -msse)
+		add_compile_definitions(OPT_SSE)
 	endif()
 endif()
 
 set(DATA_TYPE fp32 fp64)
 foreach(data_type IN LISTS DATA_TYPE)
-	add_library(bm_spaces_class_${data_type} spaces_benchmarks/bm_spaces_class_${data_type}.cpp)
-	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
-	set_source_files_properties(spaces_benchmarks/bm_spaces_${data_type}.cpp PROPERTIES COMPILE_FLAGS ${OPT_FLAGS})
 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
-	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark bm_spaces_class_${data_type})
+	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark)
 endforeach()
