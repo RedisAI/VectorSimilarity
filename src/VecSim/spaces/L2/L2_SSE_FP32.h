@@ -30,10 +30,10 @@ float FP32_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
         __m128 v1, v2, diff;
         if (residual % 4 == 3) {
             // Load 3 floats and set the last one to 0
-            v1 = _mm_load_ps(pVect1); // load 4 floats
-            v2 = _mm_load_ps(pVect2);
+            v1 = _mm_loadr_ps(pVect1); // load 4 floats
+            v2 = _mm_loadr_ps(pVect2);
             // sets the last float of v1 to the last of v2, so the diff is 0.
-            v1 = _mm_blend_ps(v2, v1, 7);
+            v1 = _mm_move_ss(v1, v2);
         } else if (residual % 4 == 2) {
             // Load 2 floats and set the last two to 0
             v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
