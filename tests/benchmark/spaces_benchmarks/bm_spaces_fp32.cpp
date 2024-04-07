@@ -10,7 +10,7 @@
 #define BENCHMARK_DISTANCE_F_FP32(arch, settings, func)                                            \
     BENCHMARK_DISTANCE_F(FP32, arch, settings, func)
 // AVX512 functions
-#ifdef __AVX512F__
+#ifdef OPT_AVX512F
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 
@@ -27,7 +27,7 @@ INITIALIZE_RESIDUAL_BM(FP32, AVX512_F, IP, 4_Residuals, FP32_InnerProductSIMD4Ex
 #endif // AVX512F
 
 // AVX functions
-#ifdef __AVX__
+#ifdef OPT_AVX
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 
@@ -43,7 +43,7 @@ INITIALIZE_RESIDUAL_BM(FP32, AVX, IP, 4_Residuals, FP32_InnerProductSIMD4ExtResi
 #endif // AVX
 
 // SSE functions
-#ifdef __SSE__
+#ifdef OPT_SSE
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
 
