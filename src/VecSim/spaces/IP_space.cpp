@@ -23,7 +23,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     switch (arch_opt) {
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
-#ifdef __AVX512F__
+#ifdef OPT_AVX512F
     {
         static dist_func_t<float> dist_funcs[] = {
             FP32_InnerProduct, FP32_InnerProductSIMD16Ext_AVX512, FP32_InnerProductSIMD4Ext_AVX512,
@@ -33,7 +33,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     } break;
 #endif
     case ARCH_OPT_AVX:
-#ifdef __AVX__
+#ifdef OPT_AVX
     {
         static dist_func_t<float> dist_funcs[] = {
             FP32_InnerProduct, FP32_InnerProductSIMD16Ext_AVX, FP32_InnerProductSIMD4Ext_AVX,
@@ -44,7 +44,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 
 #endif
     case ARCH_OPT_SSE:
-#ifdef __SSE__
+#ifdef OPT_SSE
     {
         static dist_func_t<float> dist_funcs[] = {
             FP32_InnerProduct, FP32_InnerProductSIMD16Ext_SSE, FP32_InnerProductSIMD4Ext_SSE,
@@ -70,7 +70,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 
     switch (arch_opt) {
     case ARCH_OPT_AVX512_DQ:
-#ifdef __AVX512DQ__
+#ifdef OPT_AVX512DQ
     {
         static dist_func_t<double> dist_funcs[] = {
             FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX512, FP64_InnerProductSIMD2Ext_AVX512,
@@ -80,7 +80,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     } break;
 #endif
     case ARCH_OPT_AVX512_F:
-#ifdef __AVX512F__
+#ifdef OPT_AVX512F
     {
         // If AVX512 foundation flag is supported, but AVX512DQ isn't supported, we cannot extract
         // 2X64-bit elements from the 512bit register, which is required when dim%8 != 0, so we can
@@ -96,7 +96,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     } break;
 #endif
     case ARCH_OPT_AVX:
-#ifdef __AVX__
+#ifdef OPT_AVX
     {
         static dist_func_t<double> dist_funcs[] = {
             FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX, FP64_InnerProductSIMD2Ext_AVX,
@@ -107,7 +107,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 
 #endif
     case ARCH_OPT_SSE:
-#ifdef __SSE__
+#ifdef OPT_SSE
     {
         static dist_func_t<double> dist_funcs[] = {
             FP64_InnerProduct, FP64_InnerProductSIMD8Ext_SSE, FP64_InnerProductSIMD2Ext_SSE,
