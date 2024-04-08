@@ -54,6 +54,7 @@ jobs:
         uses: rojopolis/spellcheck-github-actions@v0
         with:
           config_path: .github/spellcheck-settings.yml
+          source_files: "**/*.md !docs/benchmarks*"
           task_name: Markdown
 
   pr-validation:
