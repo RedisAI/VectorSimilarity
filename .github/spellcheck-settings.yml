@@ -25,3 +25,4 @@ matrix:
   sources:
   - '*.md'
   - 'docs/*.md'
+  - '!docs/benchmarks*.md'
