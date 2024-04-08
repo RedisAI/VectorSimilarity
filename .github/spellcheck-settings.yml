@@ -22,8 +22,6 @@ matrix:
       - pre
       - blockquote
       - img
-  glob_flags: N|G|B
   sources:
   - "*.md"
-  - "!docs/benchmarks_developer.md"
-  - "docs/*.md"
+  - "docs/*.md|!docs/benchmarks_developer.md"
