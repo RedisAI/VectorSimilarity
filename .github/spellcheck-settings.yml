@@ -23,6 +23,6 @@ matrix:
       - blockquote
       - img
   sources:
-  - '*.md'
-  - 'docs/*.md'
-  - '!docs/benchmarks*.md'
+  - *.md
+  - docs/*.md
+  - !docs/benchmarks*.md
