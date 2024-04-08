@@ -15,7 +15,7 @@
 #define EXACT_PARAMS_MODULU2DIM EXACT_PARAMS_MODULU4DIM
 
 // AVX512 functions
-#ifdef __AVX512F__
+#ifdef OPT_AVX512F
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 
@@ -32,7 +32,7 @@ INITIALIZE_RESIDUAL_BM(FP64, AVX512_F, IP, 2_Residuals,
 
 #endif // AVX512F
 
-#ifdef __AVX512DQ__
+#ifdef OPT_AVX512DQ
 #include "VecSim/spaces/L2/L2_AVX512DQ.h"
 #include "VecSim/spaces/IP/IP_AVX512DQ.h"
 
@@ -44,7 +44,7 @@ INITIALIZE_RESIDUAL_BM(FP64, AVX512_DQ, IP, 2_Residuals, FP64_InnerProductSIMD2E
 #endif // AVX512DQ
 
 // AVX functions
-#ifdef __AVX__
+#ifdef OPT_AVX
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 
@@ -60,7 +60,7 @@ INITIALIZE_RESIDUAL_BM(FP64, AVX, IP, 2_Residuals, FP64_InnerProductSIMD2ExtResi
 #endif // AVX
 
 // SSE functions
-#ifdef __SSE__
+#ifdef OPT_SSE
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
 

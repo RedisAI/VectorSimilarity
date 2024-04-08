@@ -28,29 +28,8 @@ endforeach()
 # Spaces benchmarks								                                          #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-# First we compile the spaces benchmarks class so it won't include any compiler flags
-# that are not supported by the hardware.
 set(DATA_TYPE fp32 fp64)
-
-foreach(data_type IN LISTS DATA_TYPE)
-	add_library(bm_spaces_class_${data_type} spaces_benchmarks/bm_spaces_class_${data_type}.cpp)
-	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
-endforeach(data_type IN LISTS DATA_TYPE)
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# Passed this line we have optimization enabled by the compiler.                        #
-# Adding files to complie after this line will have an effect on the resulted binaries. #
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 include(CheckCXXCompilerFlag)
-
-# TODO: Remove this once cpu_features get support for M1
-if(NOT APPLE)
-	include(${root}/cmake/cpu_features.cmake)
-elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
-	include(${root}/cmake/cpu_features.cmake)
-else()
-	add_definitions(-DM1)
-endif()
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# build SSE/AVX* code only on x64 processors.
@@ -62,27 +41,23 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
 	if(CXX_AVX512F)
-		add_compile_options(-mavx512f)
-		message("Building with AVX512")
+		add_compile_definitions(OPT_AVX512F)
 	endif()
 
 	if(CXX_AVX512DQ)
-		add_compile_options(-mavx512dq)
-		message("Building with AVX512 DQ (Doubleword and Quadword) extension")
+		add_compile_definitions(OPT_AVX512DQ)
 	endif()
 
 	if(CXX_AVX)
-		add_compile_options(-mavx)
-		message("Building with AVX")
+		add_compile_definitions(OPT_AVX)
 	endif()
 
 	if(CXX_SSE)
-		add_compile_options(-msse)
-		message("Building with SSE")
+		add_compile_definitions(OPT_SSE)
 	endif()
 endif()
 
 foreach(data_type IN LISTS DATA_TYPE)
 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
-	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark bm_spaces_class_${data_type})
+	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark)
 endforeach()
