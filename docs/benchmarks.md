@@ -38,7 +38,7 @@ make benchmark BENCHMARK_FILTER=fp32*
 There are currently 3 sets of benchmarks available: `BM_VecSimBasics`, `BM_BatchIterator`, and `BM_VecSimUpdatedIndex`. Each is templated according to the index data type. We run 10 iterations of each test case, unless otherwise specified.
 ## BM_VecSimBasics
 For each combination of data type (fp32/fp64) and index type (single/multi) the following test cases are included:
-1. Mesure index total `memory` (runtime and iterations number are irrelevant for this use case, just the memory metric)
+1. Measure index total `memory` (runtime and iterations number are irrelevant for this use case, just the memory metric)
 2. `AddLabel` - runs for `DEFAULT_BLOCK_SIZE (= 1024)` iterations, in each we add one new label to the index from the `queries` list. Note that for a single value index each label contains one vector, meaning that the number of new labels equals the number of new vectors.
 **results:** average time per label, average memory addition per vector, vectors per label.
 *At the end of the benchmark, we delete the added labels*
