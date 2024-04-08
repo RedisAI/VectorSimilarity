@@ -30,5 +30,5 @@ vulnerability, and only if we have a good reason to believe information about
 it is not yet public.
 
 This process involves providing an early notification about the vulnerability,
-its impact and mitigations to a short list of vendors under a time-limited
+its impact and mitigation to a short list of vendors under a time-limited
 embargo on public disclosure.

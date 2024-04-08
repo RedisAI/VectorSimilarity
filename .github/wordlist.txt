@@ -49,3 +49,7 @@ valgrind
 vecsim
 virtualenv
 whl
+backport
+io
+redis
+hoc
