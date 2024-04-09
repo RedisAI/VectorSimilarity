@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "cpu_features_macros.h"
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
@@ -84,10 +85,6 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 
-#if defined(M1)
-
-#elif defined(__x86_64)
-#include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
 
 using namespace spaces;
@@ -235,5 +232,3 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
 
 #endif // CPU_FEATURES_ARCH_X86_64
-
-#endif // M1/X86_64
