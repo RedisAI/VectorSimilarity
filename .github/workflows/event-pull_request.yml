@@ -46,12 +46,23 @@ jobs:
     uses: ./.github/workflows/codeql-analysis.yml
     secrets: inherit
 
+  spellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Spellcheck
+        uses: rojopolis/spellcheck-github-actions@v0
+        with:
+          config_path: .github/spellcheck-settings.yml
+          task_name: Markdown
+
   pr-validation:
     needs:
       - check-if-docs-only
       - basic-tests
       - coverage
       - codeql-analysis
+      - spellcheck
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:

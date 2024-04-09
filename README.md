@@ -44,7 +44,7 @@ For building you will need:
 2. gcc >= 10
 3. cmake version >= 3.10
 
-To build the main library, unit tests and python byndings in one command run
+To build the main library, unit tests and python bindings in one command run
 ```
 make
 ```
