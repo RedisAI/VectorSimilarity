@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "cpu_features_macros.h"
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
