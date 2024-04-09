@@ -13,5 +13,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
                                        unsigned char *alignment = nullptr);
 dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
                                         unsigned char *alignment = nullptr);
+dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment = nullptr);
 
 } // namespace spaces

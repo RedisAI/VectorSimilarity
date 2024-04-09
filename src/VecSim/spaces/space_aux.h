@@ -9,8 +9,11 @@
 enum Arch_Optimization {
     ARCH_OPT_NONE,
     ARCH_OPT_SSE,
+    ARCH_OPT_SSE3,
     ARCH_OPT_AVX,
+    ARCH_OPT_AVX2,
     ARCH_OPT_AVX512_F,
+    ARCH_OPT_AVX512_BW_VBMI2,
 };
 
 Arch_Optimization getArchitectureOptimization();
