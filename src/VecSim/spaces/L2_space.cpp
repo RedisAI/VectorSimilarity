@@ -10,13 +10,15 @@
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
+
+#include "cpu_features_macros.h"
+
 namespace spaces {
 
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
 
@@ -64,8 +66,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<double> ret_dist_func = FP64_L2Sqr;
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
 
