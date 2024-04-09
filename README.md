@@ -25,7 +25,7 @@ For building you will need:
 2. gcc >= 10
 3. cmake version >= 3.10
 
-To build the main library, unit tests and python byndings in one command run
+To build the main library, unit tests and python bindings in one command run
 ```
 make
 ```
@@ -73,5 +73,5 @@ tox -e flowenv
 
 # Benchmark
 
-To benchmark the capabilities of this library, follow the instructions in the [benchmarks user guide](docs/benchmarks.md).  
-If you'd like to create your own benchmarks, you can find more information in the [developer guide](docs/benchmarks_developer.md). 
+To benchmark the capabilities of this library, follow the instructions in the [benchmarks user guide](docs/benchmarks.md).
+If you'd like to create your own benchmarks, you can find more information in the [developer guide](docs/benchmarks_developer.md).

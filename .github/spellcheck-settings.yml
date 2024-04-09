@@ -23,5 +23,5 @@ matrix:
       - blockquote
       - img
   sources:
-  - '*.md'
-  - 'docs/*.md'
+  - "*.md"
+  - "docs/*.md|!docs/benchmarks_developer.md"
