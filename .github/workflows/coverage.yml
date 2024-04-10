@@ -39,10 +39,12 @@ jobs:
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: /bin/Linux-x86_64-debug/cov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+          disable_safe_directory: true
+          disable_search: true
 
   stop-runner:
     name: Stop self-hosted EC2 runner
