@@ -35,8 +35,7 @@ jobs:
         run: make flow_test
 
   coverage:
-    # needs: [basic-tests, check-if-docs-only]
-    needs: [check-if-docs-only]
+    needs: [basic-tests, check-if-docs-only]
     if: ${{ !github.event.pull_request.draft && needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
