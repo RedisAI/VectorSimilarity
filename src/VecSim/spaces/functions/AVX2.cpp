@@ -6,6 +6,7 @@
 
 #include "AVX2.h"
 
+#include "VecSim/spaces/IP/IP_AVX2_BF16.h"
 #include "VecSim/spaces/L2/L2_AVX2_BF16.h"
 
 namespace spaces {

@@ -139,7 +139,7 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_F:
     case ARCH_OPT_AVX2:
 #ifdef OPT_AVX2
-        ret_dist_func = Choose_BF16_L2_implementation_AVX(dim);
+        ret_dist_func = Choose_BF16_L2_implementation_AVX2(dim);
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(bfloat16); // align to 256 bits.
         break;
