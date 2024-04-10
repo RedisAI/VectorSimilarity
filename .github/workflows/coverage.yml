@@ -39,9 +39,9 @@ jobs:
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v3
         with:
-          files: /bin/Linux-x86_64-debug/cov.info
+          file: /bin/Linux-x86_64-debug/cov.info
           token: ${{ secrets.CODECOV_TOKEN }}
 
   stop-runner:
