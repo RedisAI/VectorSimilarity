@@ -11,6 +11,9 @@
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/SSE3.h"
 #endif
 
 namespace spaces {
@@ -133,6 +136,7 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 32 * sizeof(bfloat16); // align to 512 bits.
         break;
 #endif
+    case ARCH_OPT_AVX512_F:
     case ARCH_OPT_AVX2:
 #ifdef OPT_AVX2
         ret_dist_func = Choose_BF16_L2_implementation_AVX(dim);
@@ -140,6 +144,7 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 16 * sizeof(bfloat16); // align to 256 bits.
         break;
 #endif
+    case ARCH_OPT_AVX:
     case ARCH_OPT_SSE3:
 #ifdef OPT_SSE3
         ret_dist_func = Choose_BF16_L2_implementation_SSE3(dim);
@@ -147,6 +152,7 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 8 * sizeof(bfloat16); // align to 128 bits.
         break;
 #endif
+    case ARCH_OPT_SSE:
     case ARCH_OPT_NONE:
         break;
     } // switch

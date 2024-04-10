@@ -35,7 +35,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# This will add the relevant flag both to the space selector and the optimization.
 	if(CXX_AVX512BW AND CXX_AVX512VBMI2)
 		message("Building with AVX512BW and AVX512VBMI2")
-		set_source_files_properties(functions/AVX512BW_VBMI2.cpp PROPERTIES COMPILE_FLAGS -mavx512bw -mavx512vbmi2)
+		set_source_files_properties(functions/AVX512BW_VBMI2.cpp PROPERTIES COMPILE_FLAGS "-mavx512bw  -mavx512vbmi2")
 		list(APPEND OPTIMIZATIONS functions/AVX512BW_VBMI2.cpp)
 		add_compile_definitions(OPT_AVX512_BW_VBMI2)
 	endif()

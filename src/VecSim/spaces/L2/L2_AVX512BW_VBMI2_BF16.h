@@ -40,8 +40,8 @@ static inline void L2SqrStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512 &sum) 
     sum = _mm512_add_ps(sum, _mm512_mul_ps(diff, diff));
 
     // covert 4:7, 12:15, .. 24:27 to float32
-    __m512i v1_high = _mm512_unpackhi_epi16(zeros, bfloat16_chunk1);
-    __m512i v2_high = _mm512_unpackhi_epi16(zeros, bfloat16_chunk2);
+    __m512i v1_high = _mm512_unpackhi_epi16(zeros, v1);
+    __m512i v2_high = _mm512_unpackhi_epi16(zeros, v2);
     diff = _mm512_sub_ps((__m512)v1_high, (__m512)v2_high);
     sum = _mm512_add_ps(sum, _mm512_mul_ps(diff, diff));
 }
