@@ -7,9 +7,10 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/utils/types_decl.h"
 
-static inline void InnerProductHalfStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512 &sum, __mmask32 mask) {
-    __m512i v1 = _mm512_maskz_expandloadu_epi16(mask, pVect1);// AVX512_VBMI2
-    __m512i v2 = _mm512_maskz_expandloadu_epi16(mask, pVect2);// AVX512_VBMI2
+static inline void InnerProductHalfStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512 &sum,
+                                        __mmask32 mask) {
+    __m512i v1 = _mm512_maskz_expandloadu_epi16(mask, pVect1); // AVX512_VBMI2
+    __m512i v2 = _mm512_maskz_expandloadu_epi16(mask, pVect2); // AVX512_VBMI2
     sum = _mm512_add_ps(sum, _mm512_mul_ps((__m512)v1, (__m512)v2));
 }
 
@@ -40,11 +41,11 @@ static inline void InnerProductStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512
     __m512i v1_high = _mm512_unpackhi_epi16(zeros, v1);
     __m512i v2_high = _mm512_unpackhi_epi16(zeros, v2);
     sum = _mm512_add_ps(sum, _mm512_mul_ps((__m512)v1_high, (__m512)v2_high));
-
 }
 
 template <unsigned char residual> // 0..31
-float BF16_InnerProductSIMD32_AVX512BW_VBMI2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float BF16_InnerProductSIMD32_AVX512BW_VBMI2(const void *pVect1v, const void *pVect2v,
+                                             size_t dimension) {
     // cast to bfloat16 *
     bfloat16 *pVect1 = (bfloat16 *)pVect1v;
     bfloat16 *pVect2 = (bfloat16 *)pVect2v;
@@ -77,5 +78,4 @@ float BF16_InnerProductSIMD32_AVX512BW_VBMI2(const void *pVect1v, const void *pV
     } while (pVect1 < pEnd1);
 
     return 1.0f - _mm512_reduce_add_ps(sum);
-
 }
