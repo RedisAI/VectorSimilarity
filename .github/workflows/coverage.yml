@@ -41,7 +41,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          file: /bin/Linux-x86_64-debug/cov.info
+          file: ./bin/Linux-x86_64-debug/cov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_safe_directory: true
           disable_search: true
