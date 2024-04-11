@@ -36,6 +36,7 @@ float FP32_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size
     }
 
     // If the reminder is >=8, have another step of 8 floats
+    // todo: why is that needed?
     if (residual >= 8) {
         InnerProductStep(pVect1, pVect2, sum256);
     }

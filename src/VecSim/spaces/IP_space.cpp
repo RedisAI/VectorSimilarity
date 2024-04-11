@@ -103,4 +103,49 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     return ret_dist_func;
 }
 
+dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = FP16_InnerProduct;
+    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+#if defined(M1)
+#elif defined(__x86_64__)
+
+    switch (arch_opt) {
+    case ARCH_OPT_AVX512_F:
+#ifdef OPT_AVX512F
+        ret_dist_func = Choose_FP16_IP_implementation_AVX512(dim);
+        // todo: what does that mean?
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(float); // handles 16 floats
+        break;
+#endif
+    case ARCH_OPT_AVX:
+#ifdef OPT_AVX
+        ret_dist_func = Choose_FP16_IP_implementation_AVX(dim);
+        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 8 * sizeof(float); // handles 8 floats
+        break;
+#endif
+    case ARCH_OPT_SSE:
+#ifdef OPT_SSE
+        ret_dist_func = Choose_FP32_IP_implementation_SSE(dim);
+        if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 4 * sizeof(float); // handles 4 floats
+        break;
+#endif
+    case ARCH_OPT_NONE:
+        break;
+    } // switch
+
+#endif // __x86_64__
+    return ret_dist_func;
+}
 } // namespace spaces

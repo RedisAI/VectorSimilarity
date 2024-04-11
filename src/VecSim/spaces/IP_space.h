@@ -11,6 +11,8 @@
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
                                        unsigned char *alignment = nullptr);
+dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment = nullptr);
 dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
                                         unsigned char *alignment = nullptr);
 

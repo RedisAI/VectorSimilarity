@@ -10,22 +10,25 @@
 #include "VecSim/spaces/L2_space.h"
 namespace spaces {
 
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
+void SetDistFunc(VecSimMetric metric, size_t dim, VecSimType type, dist_func_t<float> *out_func,
                  unsigned char *alignment) {
 
     static const Arch_Optimization arch_opt = getArchitectureOptimization();
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
-        *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment);
-
+        if (type == VecSimType_FLOAT16) {
+            *out_func = IP_FP16_GetDistFunc(dim, arch_opt, alignment);
+        } else {
+            *out_func = IP_FP32_GetDistFunc(dim, arch_opt, alignment);
+        }
     } else if (metric == VecSimMetric_L2) {
 
         *out_func = L2_FP32_GetDistFunc(dim, arch_opt, alignment);
     }
 }
 
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
+void SetDistFunc(VecSimMetric metric, size_t dim, VecSimType type, dist_func_t<double> *out_func,
                  unsigned char *alignment) {
 
     static const Arch_Optimization arch_opt = getArchitectureOptimization();
