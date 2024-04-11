@@ -70,7 +70,7 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
 
         __m256 low_diff = _mm256_sub_ps((__m256)v1_low, (__m256)v2_low);
         if (residual % 16 <= 4) {
-            const unsigned char elem_to_calc = residual % 16;
+             unsigned char constexpr elem_to_calc = residual % 16;
             __mmask8 constexpr mask = (1 << elem_to_calc) - 1;
             low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask);
         } else {
@@ -84,13 +84,13 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
                 low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask);
 
                 // keep residual % 16 - 4 first elements of high_diff
-                const unsigned char elem_to_calc = residual % 16 - 4;
+                unsigned char constexpr elem_to_calc = residual % 16 - 4;
                 mask = (1 << elem_to_calc) - 1;
                 high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask);
             }
             if (8 < residual % 16 && residual % 16 < 12) {
                 // keep residual % 16 - 4 first elements of low_diff
-                const unsigned char elem_to_calc = residual % 16 - 4;
+                unsigned char constexpr elem_to_calc = residual % 16 - 4;
                 __mmask8 mask = (1 << elem_to_calc) - 1;
                 low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask);
 
@@ -100,7 +100,7 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
             }
             if (residual % 16 >= 12) {
                 // keep residual % 16 - 8 first elements of high
-                const unsigned char elem_to_calc = residual % 16 - 8;
+                unsigned char constexpr elem_to_calc = residual % 16 - 8;
                 __mmask8 mask = (1 << elem_to_calc) - 1;
                 high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask);
             }
