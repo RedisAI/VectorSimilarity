@@ -13,7 +13,7 @@ static inline void L2SqrLowHalfStep(__m128i v1, __m128i v2, __m128i zeros, __m12
     __m128i bf16_low2 = _mm_unpacklo_epi16(zeros, v2);
 
     // compute dist
-    __m128 diff = _mm_sub_ps((__m128)bf16_low1, (__m128)bf16_low2);
+    __m128 diff = _mm_sub_ps(_mm_castsi128_ps(bf16_low1), _mm_castsi128_ps(bf16_low2));
     sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
 }
 
@@ -23,7 +23,7 @@ static inline void L2SqrHighHalfStep(__m128i v1, __m128i v2, __m128i zeros, __m1
     __m128i bf16_high2 = _mm_unpackhi_epi16(zeros, v2);
 
     // compute dist
-    __m128 diff = _mm_sub_ps((__m128)bf16_high1, (__m128)bf16_high2);
+    __m128 diff = _mm_sub_ps(_mm_castsi128_ps(bf16_high1), _mm_castsi128_ps(bf16_high2));
     sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
 }
 
@@ -62,8 +62,9 @@ float BF16_L2SqrSIMD32_SSE3(const void *pVect1v, const void *pVect2v, size_t dim
         bfloat16 zero = 0;
         // | bf16_0 | bf16_1 | bf16_2 | bf16_3 |
         if (residual % 8 >= 4) {
-            L2SqrLowHalfStep(_mm_lddqu_si128((__m128i *)pVect1), _mm_lddqu_si128((__m128i *)pVect2),
-                             _mm_setzero_si128(), sum);
+            v1 = _mm_lddqu_si128((__m128i *)pVect1);
+            v2 = _mm_lddqu_si128((__m128i *)pVect2);
+            L2SqrLowHalfStep(v1, v2, _mm_setzero_si128(), sum);
             pVect1 += 4;
             pVect2 += 4;
         }
@@ -89,7 +90,7 @@ float BF16_L2SqrSIMD32_SSE3(const void *pVect1v, const void *pVect2v, size_t dim
             skip = 1;
         }
         if (skip) {
-            __m128 diff = _mm_sub_ps((__m128)v1, (__m128)v2);
+            __m128 diff = _mm_sub_ps(_mm_castsi128_ps(v1), _mm_castsi128_ps(v2));
             sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
             pVect1 += skip;
             pVect2 += skip;

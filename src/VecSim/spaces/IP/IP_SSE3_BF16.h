@@ -14,7 +14,8 @@ static inline void InnerProductLowHalfStep(__m128i v1, __m128i v2, __m128i zeros
     __m128i bf16_low2 = _mm_unpacklo_epi16(zeros, v2);
 
     // compute dist
-    sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps((__m128)bf16_low1, (__m128)bf16_low2));
+    sum_prod =
+        _mm_add_ps(sum_prod, _mm_mul_ps(_mm_castsi128_ps(bf16_low1), _mm_castsi128_ps(bf16_low2)));
 }
 
 static inline void InnerProductHighHalfStep(__m128i v1, __m128i v2, __m128i zeros,
@@ -24,7 +25,8 @@ static inline void InnerProductHighHalfStep(__m128i v1, __m128i v2, __m128i zero
     __m128i bf16_high2 = _mm_unpackhi_epi16(zeros, v2);
 
     // compute dist
-    sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps((__m128)bf16_high1, (__m128)bf16_high2));
+    sum_prod = _mm_add_ps(sum_prod,
+                          _mm_mul_ps(_mm_castsi128_ps(bf16_high1), _mm_castsi128_ps(bf16_high2)));
 }
 
 static inline void InnerProductStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m128 &sum_prod) {
@@ -62,9 +64,9 @@ float BF16_InnerProductSIMD32_SSE3(const void *pVect1v, const void *pVect2v, siz
         bfloat16 zero = 0;
         // | bf16_0 | bf16_1 | bf16_2 | bf16_3 |
         if (residual % 8 >= 4) {
-            InnerProductLowHalfStep(_mm_lddqu_si128((__m128i *)pVect1),
-                                    _mm_lddqu_si128((__m128i *)pVect2), _mm_setzero_si128(),
-                                    sum_prod);
+            v1 = _mm_lddqu_si128((__m128i *)pVect1);
+            v2 = _mm_lddqu_si128((__m128i *)pVect2);
+            InnerProductLowHalfStep(v1, v2, _mm_setzero_si128(), sum_prod);
             pVect1 += 4;
             pVect2 += 4;
         }
@@ -90,7 +92,7 @@ float BF16_InnerProductSIMD32_SSE3(const void *pVect1v, const void *pVect2v, siz
             skip = 1;
         }
         if (skip) {
-            sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps((__m128)v1, (__m128)v2));
+            sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(_mm_castsi128_ps(v1), _mm_castsi128_ps(v2)));
             pVect1 += skip;
             pVect2 += skip;
         }

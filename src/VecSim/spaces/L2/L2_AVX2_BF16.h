@@ -71,7 +71,7 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
         __m256 low_diff = _mm256_sub_ps((__m256)v1_low, (__m256)v2_low);
         if (residual % 16 <= 4) {
             unsigned char constexpr elem_to_calc = residual % 16;
-            __mmask8 constexpr mask = (1 << elem_to_calc) - 1;
+            const __mmask8 mask = (1 << elem_to_calc) - 1;
             low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask);
         } else {
             __m256i v1_high = _mm256_unpackhi_epi16(zeros, v1);
@@ -80,29 +80,29 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
 
             if (4 < residual % 16 && residual % 16 <= 8) {
                 // keep only 4 first elemnts of low pack
-                __mmask8 mask = (1 << 4) - 1;
-                low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask);
+                const __mmask8 mask2 = (1 << 4) - 1;
+                low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask2);
 
                 // keep residual % 16 - 4 first elements of high_diff
                 unsigned char constexpr elem_to_calc = residual % 16 - 4;
-                mask = (1 << elem_to_calc) - 1;
-                high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask);
+                const __mmask8 mask3 = (1 << elem_to_calc) - 1;
+                high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask3);
             }
             if (8 < residual % 16 && residual % 16 < 12) {
                 // keep residual % 16 - 4 first elements of low_diff
                 unsigned char constexpr elem_to_calc = residual % 16 - 4;
-                __mmask8 mask = (1 << elem_to_calc) - 1;
-                low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask);
+                const __mmask8 mask2 = (1 << elem_to_calc) - 1;
+                low_diff = _mm256_blend_ps(_mm256_setzero_ps(), low_diff, mask2);
 
                 // keep ony 4 first elements of high_diff
-                mask = (1 << 4) - 1;
-                high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask);
+                const __mmask8 mask3 = (1 << 4) - 1;
+                high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask3);
             }
             if (residual % 16 >= 12) {
                 // keep residual % 16 - 8 first elements of high
                 unsigned char constexpr elem_to_calc = residual % 16 - 8;
-                __mmask8 mask = (1 << elem_to_calc) - 1;
-                high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask);
+                const __mmask8 mask2 = (1 << elem_to_calc) - 1;
+                high_diff = _mm256_blend_ps(_mm256_setzero_ps(), high_diff, mask2);
             }
             sum = _mm256_add_ps(sum, _mm256_mul_ps(high_diff, high_diff));
         }

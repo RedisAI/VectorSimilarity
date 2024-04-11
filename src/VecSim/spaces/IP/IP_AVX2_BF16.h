@@ -14,7 +14,8 @@ static inline void InnerProductLowHalfStep(__m256i v1, __m256i v2, __m256i zeros
     __m256i bf16_low2 = _mm256_unpacklo_epi16(zeros, v2);
 
     // compute dist
-    sum_prod = _mm256_add_ps(sum_prod, _mm256_mul_ps((__m256)bf16_low1, (__m256)bf16_low2));
+    sum_prod = _mm256_add_ps(
+        sum_prod, _mm256_mul_ps(_mm256_castsi256_ps(bf16_low1), _mm256_castsi256_ps(bf16_low2)));
 }
 
 static inline void InnerProductHighHalfStep(__m256i v1, __m256i v2, __m256i zeros,
@@ -24,7 +25,8 @@ static inline void InnerProductHighHalfStep(__m256i v1, __m256i v2, __m256i zero
     __m256i bf16_high2 = _mm256_unpackhi_epi16(zeros, v2);
 
     // compute dist
-    sum_prod = _mm256_add_ps(sum_prod, _mm256_mul_ps((__m256)bf16_high1, (__m256)bf16_high2));
+    sum_prod = _mm256_add_ps(
+        sum_prod, _mm256_mul_ps(_mm256_castsi256_ps(bf16_high1), _mm256_castsi256_ps(bf16_high2)));
 }
 
 static inline void InnerProductStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m256 &sum_prod) {
@@ -68,39 +70,40 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
         __m256i v1_low = _mm256_unpacklo_epi16(zeros, v1);
         __m256i v2_low = _mm256_unpacklo_epi16(zeros, v2);
 
-        __m256 low_mul = _mm256_mul_ps((__m256)v1_low, (__m256)v2_low);
+        __m256 low_mul = _mm256_mul_ps(_mm256_castsi256_ps(v1_low), _mm256_castsi256_ps(v2_low));
         if (residual % 16 <= 4) {
             const unsigned char elem_to_calc = residual % 16;
-            __mmask8 constexpr mask = (1 << elem_to_calc) - 1;
+            const __mmask8 mask = (1 << elem_to_calc) - 1;
             low_mul = _mm256_blend_ps(_mm256_setzero_ps(), low_mul, mask);
         } else {
             __m256i v1_high = _mm256_unpackhi_epi16(zeros, v1);
             __m256i v2_high = _mm256_unpackhi_epi16(zeros, v2);
-            __m256 high_mul = _mm256_mul_ps((__m256)v1_high, (__m256)v2_high);
+            __m256 high_mul =
+                _mm256_mul_ps(_mm256_castsi256_ps(v1_high), _mm256_castsi256_ps(v2_high));
             if (4 < residual % 16 && residual % 16 <= 8) {
                 // keep only 4 first elemnts of low pack
-                __mmask8 mask = (1 << 4) - 1;
+                const __mmask8 mask = (1 << 4) - 1;
                 low_mul = _mm256_blend_ps(_mm256_setzero_ps(), low_mul, mask);
 
                 // keep residual % 16 - 4 first elements of high_mul
                 const unsigned char elem_to_calc = residual % 16 - 4;
-                mask = (1 << elem_to_calc) - 1;
-                high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask);
+                const __mmask8 mask2 = (1 << elem_to_calc) - 1;
+                high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask2);
             }
             if (8 < residual % 16 && residual % 16 < 12) {
                 // keep residual % 16 - 4 first elements of low_mul
                 const unsigned char elem_to_calc = residual % 16 - 4;
-                __mmask8 mask = (1 << elem_to_calc) - 1;
+                const __mmask8 mask = (1 << elem_to_calc) - 1;
                 low_mul = _mm256_blend_ps(_mm256_setzero_ps(), low_mul, mask);
 
                 // keep ony 4 first elements of high_mul
-                mask = (1 << 4) - 1;
-                high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask);
+                const __mmask8 mask2 = (1 << 4) - 1;
+                high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask2);
             }
             if (residual % 16 >= 12) {
                 // keep residual % 16 - 8 first elements of high
                 const unsigned char elem_to_calc = residual % 16 - 8;
-                __mmask8 mask = (1 << elem_to_calc) - 1;
+                const __mmask8 mask = (1 << elem_to_calc) - 1;
                 high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask);
             }
             sum_prod = _mm256_add_ps(sum_prod, high_mul);

@@ -35,12 +35,14 @@ static inline void InnerProductStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512
     // covert 0:3, 8:11, .. 28:31 to float32
     __m512i v1_low = _mm512_unpacklo_epi16(zeros, v1); // AVX512BW
     __m512i v2_low = _mm512_unpacklo_epi16(zeros, v2);
-    sum = _mm512_add_ps(sum, _mm512_mul_ps((__m512)v1_low, (__m512)v2_low));
+    sum =
+        _mm512_add_ps(sum, _mm512_mul_ps(_mm512_castsi512_ps(v1_low), _mm512_castsi512_ps(v2_low)));
 
     // covert 4:7, 12:15, .. 24:27 to float32
     __m512i v1_high = _mm512_unpackhi_epi16(zeros, v1);
     __m512i v2_high = _mm512_unpackhi_epi16(zeros, v2);
-    sum = _mm512_add_ps(sum, _mm512_mul_ps((__m512)v1_high, (__m512)v2_high));
+    sum = _mm512_add_ps(sum,
+                        _mm512_mul_ps(_mm512_castsi512_ps(v1_high), _mm512_castsi512_ps(v2_high)));
 }
 
 template <unsigned char residual> // 0..31
