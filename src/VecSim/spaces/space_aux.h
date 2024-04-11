@@ -6,6 +6,8 @@
 
 #pragma once
 
+namespace spaces {
+
 enum Arch_Optimization {
     ARCH_OPT_NONE,
     ARCH_OPT_SSE,
@@ -17,3 +19,10 @@ enum Arch_Optimization {
 };
 
 Arch_Optimization getArchitectureOptimization();
+
+static int inline is_little_endian() {
+    unsigned int x = 1;
+    return *(char *)&x;
+}
+
+} // namespace spaces

@@ -51,7 +51,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with AVX2")
 		set_source_files_properties(functions/AVX2.cpp PROPERTIES COMPILE_FLAGS -mavx2)
 		list(APPEND OPTIMIZATIONS functions/AVX2.cpp)
-		add_compile_definitions(OPT_AVX)
+		add_compile_definitions(OPT_AVX2)
 	endif()
 
 	if(CXX_AVX)

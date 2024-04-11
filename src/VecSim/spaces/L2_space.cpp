@@ -121,7 +121,10 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = BF16_L2Sqr;
+    dist_func_t<float> ret_dist_func = BF16_L2Sqr_LittleEndian;
+    if (!is_little_endian()) {
+        ret_dist_func = BF16_L2Sqr_BigEndian;
+    }
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;

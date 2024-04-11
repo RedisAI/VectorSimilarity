@@ -15,7 +15,7 @@ protected:
     std::mt19937 rng;
     size_t dim;
     DATA_TYPE *v1, *v2;
-    Arch_Optimization opt;
+    spaces::Arch_Optimization opt;
 
 public:
     BM_VecSimSpaces();
@@ -27,7 +27,7 @@ public:
 
 BM_VecSimSpaces::BM_VecSimSpaces() {
     rng.seed(47);
-    opt = getArchitectureOptimization();
+    opt = spaces::getArchitectureOptimization();
 }
 
 void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {

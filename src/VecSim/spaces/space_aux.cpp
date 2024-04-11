@@ -5,6 +5,9 @@
  */
 
 #include "space_aux.h"
+
+namespace spaces {
+
 #if defined(M1)
 
 #elif defined(__x86_64__)
@@ -37,3 +40,5 @@ Arch_Optimization getArchitectureOptimization() {
 
     return ARCH_OPT_NONE;
 }
+
+} // namespace spaces

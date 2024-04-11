@@ -21,11 +21,11 @@
 #define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                   \
     BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)               \
     (benchmark::State & st) {                                                                      \
-        if (opt < ARCH_OPT_##arch) {                                                               \
+        if (opt < spaces::ARCH_OPT_##arch) {                                                       \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
             return;                                                                                \
         }                                                                                          \
-        auto func = spaces::metric##_##type_prefix##_GetDistFunc(dim, ARCH_OPT_##arch);            \
+        auto func = spaces::metric##_##type_prefix##_GetDistFunc(dim, spaces::ARCH_OPT_##arch);    \
         for (auto _ : st) {                                                                        \
             func(v1, v2, dim);                                                                     \
         }                                                                                          \
