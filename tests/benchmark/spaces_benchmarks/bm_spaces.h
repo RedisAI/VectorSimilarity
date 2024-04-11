@@ -41,14 +41,12 @@
 // elem_per_128_bits:   dim_opt / 4.  FP32 = 4, FP64 = 2, BF16 = 8...
 // Dimensions to test 128 bit chunks.
 // Run each function at least one full 512 bits iteration + 1/2/3 iterations of 128 bit chunks.
-#define EXACT_128BIT_PARAMS(elem_per_128_bits)                                            \
-    DenseRange(128 + elem_per_128_bits, 128 + 3 * elem_per_128_bits,               \
-               elem_per_128_bits)
+#define EXACT_128BIT_PARAMS(elem_per_128_bits)                                                     \
+    DenseRange(128 + elem_per_128_bits, 128 + 3 * elem_per_128_bits, elem_per_128_bits)
 
-// Run each function at least one full 512 bits iteration + (1 * elements : elem_per_128_bits * elements)
-// FP32 = residual = 1,2,3, FP64 = residual = 1, BF16 = residual = 1,2,3,4,5,6,7...
-#define RESIDUAL_PARAMS(elem_per_128_bits)                                                \
-    DenseRange(128 + 1, 128 + elem_per_128_bits - 1, 1)
+// Run each function at least one full 512 bits iteration + (1 * elements : elem_per_128_bits *
+// elements) FP32 = residual = 1,2,3, FP64 = residual = 1, BF16 = residual = 1,2,3,4,5,6,7...
+#define RESIDUAL_PARAMS(elem_per_128_bits) DenseRange(128 + 1, 128 + elem_per_128_bits - 1, 1)
 
 #define INITIALIZE_BM(type_prefix, arch, metric, bm_name)                                          \
     BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name)                                       \
@@ -80,8 +78,8 @@
     BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                            \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)                                                             \
-        ->Arg(dim_opt)                                                                     \
-        ->Arg(dim_opt + dim_opt / 4)                                                           \
+        ->Arg(dim_opt)                                                                             \
+        ->Arg(dim_opt + dim_opt / 4)                                                               \
         ->Arg(dim_opt - 1)
 
 #define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, metric, dim_opt)                              \
