@@ -5,6 +5,7 @@
  */
 
 #pragma once
+#include "cpu_features_macros.h"
 
 enum Arch_Optimization {
     ARCH_OPT_NONE,

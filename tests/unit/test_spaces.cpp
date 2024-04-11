@@ -92,10 +92,6 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 
-#if defined(M1)
-
-#elif defined(__x86_64)
-#include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
 
 using spaces::dist_func_t;
@@ -243,5 +239,3 @@ INSTANTIATE_TEST_SUITE_P(
                     std::make_pair(7, spaces_test::IP_dist_funcs_2ExtResiduals)));
 
 #endif // CPU_FEATURES_ARCH_X86_64
-
-#endif // M1/X86_64

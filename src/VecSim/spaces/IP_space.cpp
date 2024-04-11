@@ -15,8 +15,7 @@ namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
 
@@ -55,7 +54,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #endif
     case ARCH_OPT_NONE:
         break;
-    } // switch
+    }  // switch
 #endif // __x86_64__
     return ret_dist_func;
 }
@@ -63,8 +62,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
 
@@ -118,7 +116,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 #endif
     case ARCH_OPT_NONE:
         break;
-    } // switch
+    }  // switch
 #endif // __x86_64__ */
     return ret_dist_func;
 }
