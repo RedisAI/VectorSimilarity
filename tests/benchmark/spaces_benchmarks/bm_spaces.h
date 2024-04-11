@@ -18,8 +18,8 @@
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
-#define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                   \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)               \
+#define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name)                                   \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##bm_name)               \
     (benchmark::State & st) {                                                                      \
         if (opt < spaces::ARCH_OPT_##arch) {                                                       \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -31,33 +31,39 @@
         }                                                                                          \
     }
 
-// Dimensions for functions that satisfy optimizations on dim % 16 == 0 (fp32) or dim % 8 == 0
-// (fp64)
-#define EXACT_512BIT_PARAMS Arg(16)->Arg(128)->Arg(400)
+// dim_opt:   number of elements in 512 bits.
+//            i.e. 512/sizeof(type): FP32 = 16, FP64 = 8, BF16 = 32 ...
+//            The is the number of elements calculated in each distance function loop,
+//            regardless of the arch optimization type.
+// Run each function for {1, 4, 16} iterations.
+#define EXACT_512BIT_PARAMS(dim_opt) RangeMultiplier(4)->Range(dim_opt, 400)
 
-// Dimensions for functions that satisfy optimizations on dim % 4 == 0 (fp32) or dim % 2 == 0 (fp64)
-#define EXACT_128BIT_PARAMS Arg(28)->Arg(140)->Arg(412)
+// elem_per_128_bits:   dim_opt / 4.  FP32 = 4, FP64 = 2, BF16 = 8...
+// Dimensions to test 128 bit chunks.
+// Run each function at least one full 512 bits iteration + 1/2/3 iterations of 128 bit chunks.
+#define EXACT_128BIT_PARAMS(elem_per_128_bits)                                            \
+    DenseRange(128 + elem_per_128_bits, 128 + 3 * elem_per_128_bits,               \
+               elem_per_128_bits)
 
-// For residual functions, taking dimensions that are 16 multiplications +-1, to show which of
-// 16_residual (for fp64 - 8_residual) and 4_residual (for fp64 - 2_residual) is better in which
-// case.
-#define RESIDUAL_PARAMS                                                                            \
-    Arg(16 - 1)->Arg(16 + 1)->Arg(128 - 1)->Arg(128 + 1)->Arg(400 - 1)->Arg(400 + 1)
+// Run each function at least one full 512 bits iteration + (1 * elements : elem_per_128_bits * elements)
+// FP32 = residual = 1,2,3, FP64 = residual = 1, BF16 = residual = 1,2,3,4,5,6,7...
+#define RESIDUAL_PARAMS(elem_per_128_bits)                                                \
+    DenseRange(128 + 1, 128 + elem_per_128_bits - 1, 1)
 
-#define INITIALIZE_BM(type_prefix, arch, metric, dim_opt)                                          \
-    BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                       \
-    BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)             \
+#define INITIALIZE_BM(type_prefix, arch, metric, bm_name)                                          \
+    BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name)                                       \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##bm_name)             \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
-#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt)                             \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt)->EXACT_128BIT_PARAMS
-
 #define INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, metric, dim_opt)                             \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt)->EXACT_512BIT_PARAMS
+    INITIALIZE_BM(type_prefix, arch, metric, 512_bit_chunks)->EXACT_512BIT_PARAMS(dim_opt)
+
+#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt)                             \
+    INITIALIZE_BM(type_prefix, arch, metric, 128_bit_chunks)->EXACT_128BIT_PARAMS(dim_opt / 4)
 
 #define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt)                                 \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt)->RESIDUAL_PARAMS
+    INITIALIZE_BM(type_prefix, arch, metric, residual)->RESIDUAL_PARAMS(dim_opt / 4)
 
 // Naive algorithms
 
@@ -69,8 +75,20 @@
         }                                                                                          \
     }
 
-#define INITIALIZE_NAIVE_BM(type_prefix, metric)                                                   \
+#define INITIALIZE_NAIVE_BM(type_prefix, metric, dim_opt)                                          \
     BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                    \
     BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                            \
         ->ArgName("Dimension")                                                                     \
-        ->Unit(benchmark::kNanosecond)
+        ->Unit(benchmark::kNanosecond)                                                             \
+        ->Arg(dim_opt)                                                                     \
+        ->Arg(dim_opt + dim_opt / 4)                                                           \
+        ->Arg(dim_opt - 1)
+
+#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, metric, dim_opt)                              \
+    INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, L2, dim_opt);                                    \
+    INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, L2, dim_opt);                                    \
+    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt);                                        \
+                                                                                                   \
+    INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, IP, dim_opt);                                    \
+    INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, IP, dim_opt);                                    \
+    INITIALIZE_RESIDUAL_BM(type_prefix, arch, IP, dim_opt);
