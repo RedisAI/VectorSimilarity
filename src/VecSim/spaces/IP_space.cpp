@@ -6,11 +6,9 @@
 
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
-#if defined(__x86_64__)
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
-#endif
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
@@ -25,8 +23,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     if (dim < 16) {
         return ret_dist_func;
     }
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     switch (arch_opt) {
     case ARCH_OPT_AVX512_F:
@@ -70,8 +67,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     if (dim < 8) {
         return ret_dist_func;
     }
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     switch (arch_opt) {
     case ARCH_OPT_AVX512_F:
