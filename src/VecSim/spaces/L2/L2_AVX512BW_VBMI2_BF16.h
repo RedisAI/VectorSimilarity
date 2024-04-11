@@ -60,16 +60,19 @@ float BF16_L2SqrSIMD32_AVX512BW_VBMI2(const void *pVect1v, const void *pVect2v, 
 
     // handle first residual % 32 elements
     if (residual) {
-        __mmask32 mask = 0xAAAAAAAA;
+        const __mmask32 mask = 0xAAAAAAAA;
+
         // calc first 16
         if (residual >= 16) {
             L2SqrHalfStep(pVect1, pVect2, sum, mask);
             pVect1 += 16;
             pVect2 += 16;
         }
-        // calc first elements or next elements after the first 16.
-        mask &= (1 << ((residual % 16) * 2)) - 1;
-        L2SqrHalfStep(pVect1, pVect2, sum, mask);
+        // each elements is represented by a pair of 01 bits
+        // create a mask for the elements we want to process:
+        // mask2 = {01 * (residual % 16)}0000...
+        const __mmask32 mask2 = mask & ((1 << ((residual % 16) * 2)) - 1);
+        L2SqrHalfStep(pVect1, pVect2, sum, mask2);
         pVect1 += residual % 16;
         pVect2 += residual % 16;
     }
