@@ -31,9 +31,9 @@ Arch_Optimization getArchitectureOptimization() {
         return ARCH_OPT_AVX2;
     } else if (features.avx) {
         return ARCH_OPT_AVX;
-    } else if (features.sse3 || features.sse4_1 || features.sse4_2 || features.sse4a) {
+    } else if (features.sse3) {
         return ARCH_OPT_SSE3;
-    } else if (features.sse || features.sse2) {
+    } else if (features.sse) {
         return ARCH_OPT_SSE;
     }
 #endif // CPU_FEATURES_ARCH_X86_64

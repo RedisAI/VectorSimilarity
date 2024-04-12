@@ -25,6 +25,11 @@ INITIALIZE_BENCHMARKS_SET(FP32, SSE, L2, 16);
 
 #endif // SSE
 
+// Naive algorithms
+
 INITIALIZE_NAIVE_BM(FP32, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(FP32, L2Sqr, 16);
+
+// Naive
+
 BENCHMARK_MAIN();
