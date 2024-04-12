@@ -11,6 +11,7 @@
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/types_decl.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 
@@ -245,6 +246,113 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
+
+class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+static inline bfloat16 float_to_bf16(float ff) {
+    uint32_t f32 = std::bit_cast<std::uint32_t>(ff);
+    uint32_t lsb = (f32 >> 16) & 1;
+    uint32_t round = lsb + 0x7FFF;
+    f32 += round;
+    return f32 >> 16;
+}
+
+static inline float bf16_to_float(const bfloat16 value) {
+    float result = 0;
+    unsigned short *q = reinterpret_cast<unsigned short *>(&result);
+    q[1] = value;
+    return result;
+}
+
+static float sanity_calc_IP(const bfloat16 *v1, const bfloat16 *v2, size_t dim) {
+    float sanity_dist = 0;
+    for (size_t i = 0; i < dim; i++) {
+        float mul = bf16_to_float(v1[i]) * bf16_to_float(v2[i]);
+        sanity_dist += mul;
+    }
+    return 1.0f - sanity_dist;
+}
+
+TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = GetParam();
+    bfloat16 v[dim];
+    bfloat16 v2[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = float_to_bf16((float)i);
+        v2[i] = float_to_bf16(((float)i + 1.5));
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = BF16_InnerProduct_LittleEndian(v, v2, dim);
+
+    switch (optimization) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VBMI2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_AVX2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_SSE3);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(BF16_InnerProduct_LittleEndian, arch_opt_func);
+        break;
+    default:
+        FAIL();
+    }
+}
+
+static float sanity_calc_L2(const bfloat16 *v1, const bfloat16 *v2, size_t dim) {
+    float sanity_dist = 0;
+    for (size_t i = 0; i < dim; i++) {
+        float diff = bf16_to_float(v1[i]) - bf16_to_float(v2[i]);
+        sanity_dist += diff * diff;
+    }
+    return sanity_dist;
+}
+
+TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = GetParam();
+    bfloat16 v[dim];
+    bfloat16 v2[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = float_to_bf16((float)i);
+        v2[i] = float_to_bf16(((float)i + 1.5));
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = BF16_L2Sqr_LittleEndian(v, v2, dim);
+
+    switch (optimization) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VBMI2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_AVX2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_SSE3);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(BF16_L2Sqr_LittleEndian, arch_opt_func);
+        break;
+    default:
+        FAIL();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(1UL, 32 * 2UL));
 
 #endif // CPU_FEATURES_ARCH_X86_64
 
