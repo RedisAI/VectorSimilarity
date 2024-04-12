@@ -5,7 +5,7 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 
 static inline void InnerProductHalfStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512 &sum,
                                         __mmask32 mask) {

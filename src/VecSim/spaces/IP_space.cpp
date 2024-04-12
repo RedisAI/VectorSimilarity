@@ -6,7 +6,7 @@
 
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 #if defined(__x86_64__)
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"

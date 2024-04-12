@@ -11,7 +11,7 @@
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 
@@ -248,21 +248,6 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
 
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
-
-static inline bfloat16 float_to_bf16(float ff) {
-    uint32_t f32 = std::bit_cast<std::uint32_t>(ff);
-    uint32_t lsb = (f32 >> 16) & 1;
-    uint32_t round = lsb + 0x7FFF;
-    f32 += round;
-    return f32 >> 16;
-}
-
-static inline float bf16_to_float(const bfloat16 value) {
-    float result = 0;
-    unsigned short *q = reinterpret_cast<unsigned short *>(&result);
-    q[1] = value;
-    return result;
-}
 
 static float sanity_calc_IP(const bfloat16 *v1, const bfloat16 *v2, size_t dim) {
     float sanity_dist = 0;

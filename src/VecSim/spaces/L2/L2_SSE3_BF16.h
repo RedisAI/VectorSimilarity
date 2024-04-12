@@ -5,7 +5,7 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 
 static inline void L2SqrLowHalfStep(__m128i v1, __m128i v2, __m128i zeros, __m128 &sum) {
     // convert next 0..3 bf16 to 4 floats

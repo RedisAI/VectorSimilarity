@@ -35,9 +35,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
       - name: install dependencies
-        run: |
-          sudo .install/install_script.sh
-          sudo apt update -qq && sudo apt install -yqq build-essential
+        run: sudo .install/install_script.sh
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov

@@ -5,7 +5,7 @@
  */
 
 #include "L2.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 #include <cstring>
 
 float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {

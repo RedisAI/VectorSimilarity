@@ -5,7 +5,7 @@
  */
 
 #include "IP.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 #include <cstring>
 
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension) {

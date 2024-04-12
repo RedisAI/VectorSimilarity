@@ -5,7 +5,7 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/utils/types_decl.h"
+#include "VecSim/types/bfloat16.h"
 
 static inline void InnerProductLowHalfStep(__m256i v1, __m256i v2, __m256i zeros,
                                            __m256 &sum_prod) {

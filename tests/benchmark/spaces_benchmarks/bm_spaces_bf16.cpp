@@ -4,8 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/utils/types_decl.h"
-
+#include "VecSim/types/bfloat16.h"
 #define DATA_TYPE bfloat16
 #include "bm_spaces.h"
 
