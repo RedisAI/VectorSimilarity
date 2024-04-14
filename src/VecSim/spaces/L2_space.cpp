@@ -37,6 +37,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 16 * sizeof(float); // handles 16 floats
         break;
 #endif
+    case ARCH_OPT_F16C:
     case ARCH_OPT_AVX:
 #ifdef OPT_AVX
         ret_dist_func = Choose_FP32_L2_implementation_AVX(dim);
@@ -82,6 +83,7 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
             *alignment = 8 * sizeof(double); // handles 8 doubles
         break;
 #endif
+    case ARCH_OPT_F16C:
     case ARCH_OPT_AVX:
 #ifdef OPT_AVX
         ret_dist_func = Choose_FP64_L2_implementation_AVX(dim);

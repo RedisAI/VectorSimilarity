@@ -20,6 +20,7 @@ const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
 const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
 const char *VecSimCommonStrings::FLOAT64_STRING = "FLOAT64";
+const char *VecSimCommonStrings::FLOAT16_STRING = "FLOAT16";
 const char *VecSimCommonStrings::INT32_STRING = "INT32";
 const char *VecSimCommonStrings::INT64_STRING = "INT64";
 
@@ -140,6 +141,8 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::INT32_STRING;
     case VecSimType_INT64:
         return VecSimCommonStrings::INT64_STRING;
+    case VecSimType_FLOAT16:
+        return VecSimCommonStrings::FLOAT16_STRING;
     }
     return NULL;
 }
@@ -184,6 +187,8 @@ size_t VecSimType_sizeof(VecSimType type) {
         return sizeof(int32_t);
     case VecSimType_INT64:
         return sizeof(int64_t);
+    case VecSimType_FLOAT16:
+        return sizeof(uint16_t);
     }
     return 0;
 }

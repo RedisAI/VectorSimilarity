@@ -2,11 +2,11 @@
 *Copyright Redis Ltd. 2021 - present
 *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
 *the Server Side Public License v1 (SSPLv1).
-*/
+ */
 
-#include "F16C.h"
+#include "AVX512BW_VL.h"
 
-#include "VecSim/spaces/IP/IP_F16C_FP16.h"
+#include "VecSim/spaces/IP/IP_AVX512BW_VL_FP16.h"
 
 namespace spaces {
 
@@ -14,7 +14,7 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP16_IP_implementation_F16C(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD16_F16C);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD16_AVX512BW_VL);
     return ret_dist_func;
 }
 

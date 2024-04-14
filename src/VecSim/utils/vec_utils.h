@@ -23,6 +23,7 @@ public:
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;
     static const char *FLOAT64_STRING;
+    static const char *FLOAT16_STRING;
     static const char *INT32_STRING;
     static const char *INT64_STRING;
 

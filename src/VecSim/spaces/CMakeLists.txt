@@ -22,23 +22,41 @@ set(OPTIMIZATIONS "")
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Check that the compiler supports instructions flag.
+	CHECK_CXX_COMPILER_FLAG(-mavx512bw CXX_AVX512BW)
+	CHECK_CXX_COMPILER_FLAG(-mavx512vl CXX_AVX512VL)
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
 	CHECK_CXX_COMPILER_FLAG(-mf16c CXX_F16C)
+	CHECK_CXX_COMPILER_FLAG(-mfma CXX_FMA)
 	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
 	# build SSE/AVX* code only on x64 processors.
 	# This will add the relevant flag both to the space selector and the optimization.
+	if(CXX_AVX512BW AND CXX_AVX512VL)
+		message("Building with AVX512BW and AVX512VL")
+		set_source_files_properties(functions/AVX512BW_VL.cpp PROPERTIES
+				COMPILE_FLAGS "-mavx512f -mf16c -mfma -mavx512bw -mavx512vl")
+		list(APPEND OPTIMIZATIONS functions/AVX512BW_VL.cpp)
+		add_compile_definitions(OPT_AVX512_BW_VL)
+	endif()
+
 	if(CXX_AVX512F)
 		message("Building with AVX512")
-		set_source_files_properties(functions/AVX512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)
+		set_source_files_properties(functions/AVX512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mf16c -mfma")
 		list(APPEND OPTIMIZATIONS functions/AVX512.cpp)
 		add_compile_definitions(OPT_AVX512F)
 	endif()
 
+	if(CXX_F16C AND CXX_FMA AND CXX_AVX)
+		message("Building with CXX_F16C")
+		set_source_files_properties(functions/F16C.cpp PROPERTIES COMPILE_FLAGS "-mf16c -mfma -mavx")
+		list(APPEND OPTIMIZATIONS functions/F16C.cpp)
+		add_compile_definitions(OPT_F16C)
+	endif()
+
 	if(CXX_AVX)
 		message("Building with AVX")
-		set_source_files_properties(functions/AVX.cpp PROPERTIES COMPILE_FLAGS -mavx)
+		set_source_files_properties(functions/AVX.cpp PROPERTIES COMPILE_FLAGS "-mavx")
 		list(APPEND OPTIMIZATIONS functions/AVX.cpp)
 		add_compile_definitions(OPT_AVX)
 	endif()

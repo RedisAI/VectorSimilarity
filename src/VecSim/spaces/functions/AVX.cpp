@@ -11,7 +11,6 @@
 
 #include "VecSim/spaces/IP/IP_AVX_FP32.h"
 #include "VecSim/spaces/IP/IP_AVX_FP64.h"
-#include "VecSim/spaces/IP/IP_AVX_FP16.h"
 
 namespace spaces {
 
@@ -26,12 +25,6 @@ dist_func_t<float> Choose_FP32_IP_implementation_AVX(size_t dim) {
 dist_func_t<double> Choose_FP64_IP_implementation_AVX(size_t dim) {
     dist_func_t<double> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_AVX);
-    return ret_dist_func;
-}
-
-dist_func_t<float> Choose_FP16_IP_implementation_AVX(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD16_AVX);
     return ret_dist_func;
 }
 
