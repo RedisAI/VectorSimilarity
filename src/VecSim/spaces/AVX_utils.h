@@ -31,5 +31,5 @@ static inline float _mm256_reduce_add_ps(__m256 x) {
     float PORTABLE_ALIGN32 TmpRes[8];
     _mm256_store_ps(TmpRes, x);
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
-                TmpRes[7];
+           TmpRes[7];
 }

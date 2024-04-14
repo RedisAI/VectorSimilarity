@@ -41,5 +41,3 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
 
     return 1.0f - _mm512_reduce_add_ps(sum512);
 }
-
-

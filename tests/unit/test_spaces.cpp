@@ -13,6 +13,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/types/float16.h"
 
 class SpacesTest : public ::testing::Test {
 
@@ -88,6 +89,7 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 
 #elif defined(__x86_64)
 #include "cpu_features_macros.h"
+#include "VecSim/types/float16.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
 
 using namespace spaces;
@@ -233,6 +235,45 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
+
+class FP16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = GetParam();
+    float16 v1[dim], v2[dim];
+    float v1_fp32[dim], v2_fp32[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v1_fp32[i] = (float)i;
+        v1[i] = FP32_to_FP16(v1_fp32[i]);
+        v2_fp32[i] = (float)i + 1.5f;
+        v2[i] = FP32_to_FP16(v2_fp32[i]);
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = FP16_InnerProduct(v1, v2, dim);
+    ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+
+    switch (optimization) {
+    case ARCH_OPT_AVX512_BW_VL:
+        arch_opt_func = IP_FP16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VL);
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_F16C:
+        arch_opt_func = IP_FP16_GetDistFunc(dim, ARCH_OPT_F16C);
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        arch_opt_func = IP_FP16_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP16_InnerProduct, arch_opt_func);
+        break;
+    default:
+        FAIL();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest, testing::Range(1UL, 32 * 2UL));
 
 #endif // CPU_FEATURES_ARCH_X86_64
 

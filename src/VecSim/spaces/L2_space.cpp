@@ -30,6 +30,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #elif defined(__x86_64__)
 
     switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VL:
     case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP32_L2_implementation_AVX512(dim);
@@ -76,6 +77,7 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 #elif defined(__x86_64__)
 
     switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VL:
     case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP64_L2_implementation_AVX512(dim);

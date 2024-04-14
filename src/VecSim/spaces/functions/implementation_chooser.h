@@ -23,12 +23,15 @@
 
 // Macro for 4 cases. Used to collapse the switch statement. For a given N, expands to 4 X macros
 // of 4N, 4N+1, 4N+2, 4N+3.
-#define C4(X, func, N) X(4 * (N), func) X(4 * (N) + 1, func) X(4 * (N) + 2, func) X(4 * (N) + 3, func)
+#define C4(X, func, N)                                                                             \
+    X(4 * (N), func) X(4 * (N) + 1, func) X(4 * (N) + 2, func) X(4 * (N) + 3, func)
 
 // Macros for 8, 16 and 32 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15 and 0-31 cases respectively.
-#define CASES32(X, func) C4(X, func, 0) C4(X, func, 1) C4(X, func, 2) C4(X, func, 3) C4(X, func, 4) \
-    C4(X, func, 5) C4(X, func, 6) C4(X, func, 7)
+#define CASES32(X, func)                                                                           \
+    C4(X, func, 0)                                                                                 \
+    C4(X, func, 1) C4(X, func, 2) C4(X, func, 3) C4(X, func, 4) C4(X, func, 5) C4(X, func, 6)      \
+        C4(X, func, 7)
 #define CASES16(X, func) C4(X, func, 0) C4(X, func, 1) C4(X, func, 2) C4(X, func, 3)
 #define CASES8(X, func)  C4(X, func, 0) C4(X, func, 1)
 
@@ -42,6 +45,6 @@
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \
-        switch ((dim) % (chunk)) { CASES##chunk(X, func) }                                             \
+        switch ((dim) % (chunk)) { CASES##chunk(X, func) }                                         \
         out = __ret_dist_func;                                                                     \
     } while (0)
