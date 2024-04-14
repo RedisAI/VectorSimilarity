@@ -11,5 +11,6 @@
 namespace spaces {
 
 dist_func_t<float> Choose_FP16_IP_implementation_F16C(size_t dim);
+dist_func_t<float> Choose_FP16_L2_implementation_F16C(size_t dim);
 
 } // namespace spaces

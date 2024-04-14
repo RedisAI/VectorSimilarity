@@ -31,8 +31,8 @@ double FP64_InnerProduct(const void *pVect1, const void *pVect2, size_t dimensio
 }
 
 float FP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension) {
-    auto *vec1 = (uint16_t *)pVect1;
-    auto *vec2 = (uint16_t *)pVect2;
+    auto *vec1 = (float16 *)pVect1;
+    auto *vec2 = (float16 *)pVect2;
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {

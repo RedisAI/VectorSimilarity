@@ -6,9 +6,11 @@
 
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
+#include "VecSim/spaces/functions/AVX512BW_VL.h"
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/F16C.h"
 
 namespace spaces {
 
@@ -101,6 +103,46 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     } // switch
 
 #endif // __x86_64__ */
+    return ret_dist_func;
+}
+
+dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = FP16_L2Sqr;
+    // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+#ifdef CPU_FEATURES_ARCH_X86_64
+
+    switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VL:
+#ifdef OPT_AVX512_BW_VL
+        ret_dist_func = Choose_FP16_L2_implementation_AVX512BW_VL(dim);
+        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 32 * sizeof(uint16_t); // handles 16 floats
+        break;
+#endif
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_F16C:
+#ifdef OPT_F16C
+        ret_dist_func = Choose_FP16_L2_implementation_F16C(dim);
+        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(uint16_t); // handles 8 floats
+        break;
+#endif
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        break;
+    } // switch
+
+#endif // CPU_FEATURES_ARCH_X86_64
     return ret_dist_func;
 }
 

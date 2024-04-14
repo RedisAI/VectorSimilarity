@@ -30,8 +30,8 @@
 // Expands into 0-7, 0-15 and 0-31 cases respectively.
 #define CASES32(X, func)                                                                           \
     C4(X, func, 0)                                                                                 \
-    C4(X, func, 1) C4(X, func, 2) C4(X, func, 3) C4(X, func, 4) C4(X, func, 5) C4(X, func, 6)      \
-        C4(X, func, 7)
+    C4(X, func, 1)                                                                                 \
+    C4(X, func, 2) C4(X, func, 3) C4(X, func, 4) C4(X, func, 5) C4(X, func, 6) C4(X, func, 7)
 #define CASES16(X, func) C4(X, func, 0) C4(X, func, 1) C4(X, func, 2) C4(X, func, 3)
 #define CASES8(X, func)  C4(X, func, 0) C4(X, func, 1)
 
