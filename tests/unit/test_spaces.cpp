@@ -85,10 +85,6 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 
-#if defined(M1)
-
-#elif defined(__x86_64)
-#include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
 
 using namespace spaces;
@@ -340,5 +336,3 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
 INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(1UL, 32 * 2UL));
 
 #endif // CPU_FEATURES_ARCH_X86_64
-
-#endif // M1/X86_64

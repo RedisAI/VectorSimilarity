@@ -5,6 +5,7 @@
  */
 
 #pragma once
+#include "cpu_features_macros.h"
 
 namespace spaces {
 

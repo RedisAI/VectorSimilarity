@@ -8,12 +8,6 @@
 
 namespace spaces {
 
-#if defined(M1)
-
-#elif defined(__x86_64__)
-#include "cpu_features_macros.h"
-#endif
-
 #ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"
 #endif // CPU_FEATURES_ARCH_X86_64
@@ -21,7 +15,6 @@ namespace spaces {
 Arch_Optimization getArchitectureOptimization() {
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-#include "cpuinfo_x86.h"
     cpu_features::X86Features features = cpu_features::GetX86Info().features;
     if (features.avx512bw && features.avx512vbmi2) {
         return ARCH_OPT_AVX512_BW_VBMI2;
