@@ -6,15 +6,9 @@ add_library(VectorSimilaritySpaces_no_optimization
 )
 
 include(CheckCXXCompilerFlag)
+include(${root}/cmake/cpu_features.cmake)
 
 project(VectorSimilarity_Spaces)
-
-# TODO: Remove this once cpu_features get support for M1
-if((NOT APPLE) OR (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
-	include(${root}/cmake/cpu_features.cmake)
-else()
-	add_definitions(-DM1)
-endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 
@@ -78,8 +72,4 @@ add_library(VectorSimilaritySpaces
 	${OPTIMIZATIONS}
 )
 
-target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization)
-
-if((NOT APPLE) OR (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
-	target_link_libraries(VectorSimilaritySpaces cpu_features)
-endif()
+target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features)

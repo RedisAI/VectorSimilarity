@@ -33,15 +33,18 @@ jobs:
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: install dependencies
         run: sudo .install/install_script.sh
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
-          files: /bin/Linux-x86_64-debug/cov.info
+          file: ./bin/Linux-x86_64-debug/cov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_safe_directory: true
+          disable_search: true
 
   stop-runner:
     name: Stop self-hosted EC2 runner
