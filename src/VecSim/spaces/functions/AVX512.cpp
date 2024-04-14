@@ -11,7 +11,6 @@
 
 #include "VecSim/spaces/IP/IP_AVX512_FP32.h"
 #include "VecSim/spaces/IP/IP_AVX512_FP64.h"
-#include "VecSim/spaces/IP/IP_AVX512BW_VL_FP16.h"
 
 namespace spaces {
 

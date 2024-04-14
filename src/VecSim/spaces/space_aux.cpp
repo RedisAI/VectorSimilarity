@@ -18,7 +18,7 @@ Arch_Optimization getArchitectureOptimization() {
         return ARCH_OPT_AVX512_BW_VL;
     } else if (features.avx512f) {
         return ARCH_OPT_AVX512_F;
-    } else if (features.avx && features.f16c && features.fma3 && features.fma4) {
+    } else if (features.avx && features.f16c && features.fma3) {
         return ARCH_OPT_F16C;
     } else if (features.avx || features.avx2) {
         return ARCH_OPT_AVX;
