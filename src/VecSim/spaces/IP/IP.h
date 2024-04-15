@@ -11,3 +11,6 @@
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
 
 double FP64_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
+
+float BF16_InnerProduct_LittleEndian(const void *pVect1v, const void *pVect2v, size_t dimension);
+float BF16_InnerProduct_BigEndian(const void *pVect1v, const void *pVect2v, size_t dimension);
