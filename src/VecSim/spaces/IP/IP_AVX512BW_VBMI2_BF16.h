@@ -7,6 +7,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/bfloat16.h"
 
+using bfloat16 = vecsim_types::bfloat16;
+
 static inline void InnerProductHalfStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512 &sum,
                                         __mmask32 mask) {
     __m512i v1 = _mm512_maskz_expandloadu_epi16(mask, pVect1); // AVX512_VBMI2

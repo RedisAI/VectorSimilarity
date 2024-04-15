@@ -14,6 +14,8 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 
+using bfloat16 = vecsim_types::bfloat16;
+
 namespace spaces {
 
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,

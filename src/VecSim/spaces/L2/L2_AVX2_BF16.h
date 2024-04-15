@@ -7,6 +7,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/bfloat16.h"
 
+using bfloat16 = vecsim_types::bfloat16;
+
 static inline void L2SqrLowHalfStep(__m256i v1, __m256i v2, __m256i zeros, __m256 &sum) {
     // Convert next  0:3, 8:11 bf16 to 8 floats
     __m256i bf16_low1 = _mm256_unpacklo_epi16(zeros, v1); // AVX2

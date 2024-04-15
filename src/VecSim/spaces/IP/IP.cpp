@@ -8,6 +8,8 @@
 #include "VecSim/types/bfloat16.h"
 #include <cstring>
 
+using bfloat16 = vecsim_types::bfloat16;
+
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension) {
     float *vec1 = (float *)pVect1;
     float *vec2 = (float *)pVect2;

@@ -15,6 +15,8 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 
+using bfloat16 = vecsim_types::bfloat16;
+
 class SpacesTest : public ::testing::Test {
 
 protected:
@@ -251,8 +253,8 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
     bfloat16 v[dim];
     bfloat16 v2[dim];
     for (size_t i = 0; i < dim; i++) {
-        v[i] = float_to_bf16((float)i);
-        v2[i] = float_to_bf16(((float)i + 1.5));
+        v[i] = vecsim_types::float_to_bf16((float)i);
+        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5));
     }
 
     dist_func_t<float> arch_opt_func;
@@ -286,8 +288,8 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
     bfloat16 v[dim];
     bfloat16 v2[dim];
     for (size_t i = 0; i < dim; i++) {
-        v[i] = float_to_bf16((float)i);
-        v2[i] = float_to_bf16(((float)i + 1.5));
+        v[i] = vecsim_types::float_to_bf16((float)i);
+        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5));
     }
 
     dist_func_t<float> arch_opt_func;

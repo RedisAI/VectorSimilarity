@@ -7,6 +7,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/bfloat16.h"
 
+using bfloat16 = vecsim_types::bfloat16;
+
 static inline void InnerProductLowHalfStep(__m256i v1, __m256i v2, __m256i zeros,
                                            __m256 &sum_prod) {
     // Convert next  0:3, 8:11 bf16 to 8 floats

@@ -8,6 +8,8 @@
 #include "VecSim/types/bfloat16.h"
 #include <cstring>
 
+using bfloat16 = vecsim_types::bfloat16;
+
 float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *vec1 = (float *)pVect1v;
     float *vec2 = (float *)pVect2v;

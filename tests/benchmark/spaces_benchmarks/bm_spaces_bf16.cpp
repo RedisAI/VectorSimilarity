@@ -5,7 +5,7 @@
  */
 
 #include "VecSim/types/bfloat16.h"
-#define DATA_TYPE bfloat16
+#define DATA_TYPE vecsim_types::bfloat16
 #include "bm_spaces.h"
 
 // AVX512 functions
