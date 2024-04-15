@@ -61,7 +61,7 @@ float BF16_InnerProductSIMD32_SSE3(const void *pVect1v, const void *pVect2v, siz
     constexpr unsigned char skip = residual % 4;
     if constexpr (residual % 8) {
         __m128i v1, v2;
-        bfloat16 zero = 0;
+        constexpr bfloat16 zero = 0;
         // | bf16_0 | bf16_1 | bf16_2 | bf16_3 |
         if constexpr (residual % 8 >= 4) {
             v1 = _mm_lddqu_si128((__m128i *)pVect1);
