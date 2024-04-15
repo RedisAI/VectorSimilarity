@@ -58,7 +58,7 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
     __m256 sum_prod = _mm256_setzero_ps();
 
     // handle first residual % 16 elements
-    if (residual % 16) {
+    if constexpr (residual % 16) {
         // load all 16 elements to a 256 bit register
         __m256i v1 = _mm256_lddqu_si256((__m256i *)pVect1); // avx
         pVect1 += residual % 16;
@@ -71,39 +71,37 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
         __m256i v2_low = _mm256_unpacklo_epi16(zeros, v2);
 
         __m256 low_mul = _mm256_mul_ps(_mm256_castsi256_ps(v1_low), _mm256_castsi256_ps(v2_low));
-        if (residual % 16 <= 4) {
-            const unsigned char elem_to_calc = residual % 16;
-            const __mmask8 mask = (1 << elem_to_calc) - 1;
+        if constexpr (residual % 16 <= 4) {
+            constexpr unsigned char elem_to_calc = residual % 16;
+            constexpr __mmask8 mask = (1 << elem_to_calc) - 1;
             low_mul = _mm256_blend_ps(_mm256_setzero_ps(), low_mul, mask);
         } else {
             __m256i v1_high = _mm256_unpackhi_epi16(zeros, v1);
             __m256i v2_high = _mm256_unpackhi_epi16(zeros, v2);
             __m256 high_mul =
                 _mm256_mul_ps(_mm256_castsi256_ps(v1_high), _mm256_castsi256_ps(v2_high));
-            if (4 < residual % 16 && residual % 16 <= 8) {
+            if constexpr (4 < residual % 16 && residual % 16 <= 8) {
                 // keep only 4 first elemnts of low pack
-                const __mmask8 mask = (1 << 4) - 1;
+                constexpr __mmask8 mask = (1 << 4) - 1;
                 low_mul = _mm256_blend_ps(_mm256_setzero_ps(), low_mul, mask);
 
                 // keep residual % 16 - 4 first elements of high_mul
-                const unsigned char elem_to_calc = residual % 16 - 4;
-                const __mmask8 mask2 = (1 << elem_to_calc) - 1;
+                constexpr unsigned char elem_to_calc = residual % 16 - 4;
+                constexpr __mmask8 mask2 = (1 << elem_to_calc) - 1;
                 high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask2);
-            }
-            if (8 < residual % 16 && residual % 16 < 12) {
+            } else if constexpr (8 < residual % 16 && residual % 16 < 12) {
                 // keep residual % 16 - 4 first elements of low_mul
-                const unsigned char elem_to_calc = residual % 16 - 4;
-                const __mmask8 mask = (1 << elem_to_calc) - 1;
+                constexpr unsigned char elem_to_calc = residual % 16 - 4;
+                constexpr __mmask8 mask = (1 << elem_to_calc) - 1;
                 low_mul = _mm256_blend_ps(_mm256_setzero_ps(), low_mul, mask);
 
                 // keep ony 4 first elements of high_mul
-                const __mmask8 mask2 = (1 << 4) - 1;
+                constexpr __mmask8 mask2 = (1 << 4) - 1;
                 high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask2);
-            }
-            if (residual % 16 >= 12) {
+            } else if constexpr (residual % 16 >= 12) {
                 // keep residual % 16 - 8 first elements of high
-                const unsigned char elem_to_calc = residual % 16 - 8;
-                const __mmask8 mask = (1 << elem_to_calc) - 1;
+                constexpr unsigned char elem_to_calc = (residual % 16) - 8;
+                constexpr __mmask8 mask = (1 << elem_to_calc) - 1;
                 high_mul = _mm256_blend_ps(_mm256_setzero_ps(), high_mul, mask);
             }
             sum_prod = _mm256_add_ps(sum_prod, high_mul);
@@ -122,7 +120,7 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
         InnerProductStep(pVect1, pVect2, sum_prod);
     } while (pVect1 < pEnd1);
 
-    // TmpRes must be 16 bytes aligned
+    // TmpRes must be 32 bytes aligned
     float PORTABLE_ALIGN32 TmpRes[8];
     _mm256_store_ps(TmpRes, sum_prod);
     float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +

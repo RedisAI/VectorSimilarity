@@ -58,12 +58,12 @@ float BF16_InnerProductSIMD32_SSE3(const void *pVect1v, const void *pVect2v, siz
     __m128 sum_prod = _mm_setzero_ps();
 
     // handle first residual % 8 elements (smaller than step chunk size)
-    unsigned char skip = 0;
-    if (residual % 8) {
+    constexpr unsigned char skip = residual % 4;
+    if constexpr (residual % 8) {
         __m128i v1, v2;
         bfloat16 zero = 0;
         // | bf16_0 | bf16_1 | bf16_2 | bf16_3 |
-        if (residual % 8 >= 4) {
+        if constexpr (residual % 8 >= 4) {
             v1 = _mm_lddqu_si128((__m128i *)pVect1);
             v2 = _mm_lddqu_si128((__m128i *)pVect2);
             InnerProductLowHalfStep(v1, v2, _mm_setzero_si128(), sum_prod);
@@ -71,27 +71,24 @@ float BF16_InnerProductSIMD32_SSE3(const void *pVect1v, const void *pVect2v, siz
             pVect2 += 4;
         }
         // bf16_0 | bf16_1 | bf16_2 || bf16_4 | bf16_5 | bf16_6
-        if (residual % 8 == 3 || residual % 8 == 7) {
+        if constexpr (residual % 8 == 3 || residual % 8 == 7) {
             v1 = _mm_setr_epi16(zero, pVect1[0], zero, pVect1[1], zero, pVect1[2], zero,
                                 zero); // SSE2
             v2 = _mm_setr_epi16(zero, pVect2[0], zero, pVect2[1], zero, pVect2[2], zero, zero);
-            skip = 3;
         }
         // bf16_0 | bf16_1 || bf16_4 | bf16_5
-        if (residual % 8 == 2 || residual % 8 == 6) {
+        else if constexpr (residual % 8 == 2 || residual % 8 == 6) {
             // load 2 bf16 element set the rest to 0
             v1 = _mm_setr_epi16(zero, pVect1[0], zero, pVect1[1], zero, zero, zero, zero); // SSE2
             v2 = _mm_setr_epi16(zero, pVect2[0], zero, pVect2[1], zero, zero, zero, zero);
-            skip = 2;
         }
         // bf16_0 || bf16_4
-        if (residual % 8 == 1 || residual % 8 == 5) {
+        else if constexpr (residual % 8 == 1 || residual % 8 == 5) {
             // load only first element
             v1 = _mm_setr_epi16(zero, pVect1[0], zero, zero, zero, zero, zero, zero); // SSE2
             v2 = _mm_setr_epi16(zero, pVect2[0], zero, zero, zero, zero, zero, zero);
-            skip = 1;
         }
-        if (skip) {
+        if constexpr (skip) {
             sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(_mm_castsi128_ps(v1), _mm_castsi128_ps(v2)));
             pVect1 += skip;
             pVect2 += skip;
@@ -99,11 +96,11 @@ float BF16_InnerProductSIMD32_SSE3(const void *pVect1v, const void *pVect2v, siz
     }
 
     // handle (residual - (residual % 8)) in chunks of 8 bfloat16
-    if (residual >= 24)
+    if constexpr (residual >= 24)
         InnerProductStep(pVect1, pVect2, sum_prod);
-    if (residual >= 16)
+    if constexpr (residual >= 16)
         InnerProductStep(pVect1, pVect2, sum_prod);
-    if (residual >= 8)
+    if constexpr (residual >= 8)
         InnerProductStep(pVect1, pVect2, sum_prod);
 
     // handle 512 bits (32 bfloat16) in chuncks of max SIMD = 128 bits = 8 bfloat16

@@ -11,7 +11,7 @@ static inline void InnerProductHalfStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __
                                         __mmask32 mask) {
     __m512i v1 = _mm512_maskz_expandloadu_epi16(mask, pVect1); // AVX512_VBMI2
     __m512i v2 = _mm512_maskz_expandloadu_epi16(mask, pVect2); // AVX512_VBMI2
-    sum = _mm512_add_ps(sum, _mm512_mul_ps((__m512)v1, (__m512)v2));
+    sum = _mm512_fmadd_ps(_mm512_castsi512_ps(v1), _mm512_castsi512_ps(v2), sum);
 }
 
 // static inline void InnerProductStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512 &sum) {
@@ -35,14 +35,12 @@ static inline void InnerProductStep(bfloat16 *&pVect1, bfloat16 *&pVect2, __m512
     // covert 0:3, 8:11, .. 28:31 to float32
     __m512i v1_low = _mm512_unpacklo_epi16(zeros, v1); // AVX512BW
     __m512i v2_low = _mm512_unpacklo_epi16(zeros, v2);
-    sum =
-        _mm512_add_ps(sum, _mm512_mul_ps(_mm512_castsi512_ps(v1_low), _mm512_castsi512_ps(v2_low)));
+    sum = _mm512_fmadd_ps(_mm512_castsi512_ps(v1_low), _mm512_castsi512_ps(v2_low), sum);
 
     // covert 4:7, 12:15, .. 24:27 to float32
     __m512i v1_high = _mm512_unpackhi_epi16(zeros, v1);
     __m512i v2_high = _mm512_unpackhi_epi16(zeros, v2);
-    sum = _mm512_add_ps(sum,
-                        _mm512_mul_ps(_mm512_castsi512_ps(v1_high), _mm512_castsi512_ps(v2_high)));
+    sum = _mm512_fmadd_ps(_mm512_castsi512_ps(v1_high), _mm512_castsi512_ps(v2_high), sum);
 }
 
 template <unsigned char residual> // 0..31
@@ -59,21 +57,23 @@ float BF16_InnerProductSIMD32_AVX512BW_VBMI2(const void *pVect1v, const void *pV
     __m512 sum = _mm512_setzero_ps();
 
     // handle first residual % 32 elements
-    if (residual) {
-        const __mmask32 mask = 0xAAAAAAAA; // 01010101...
+    if constexpr (residual) {
+        constexpr __mmask32 mask = 0xAAAAAAAA; // 01010101...
         // calc first 16
-        if (residual >= 16) {
+        if constexpr (residual >= 16) {
             InnerProductHalfStep(pVect1, pVect2, sum, mask);
             pVect1 += 16;
             pVect2 += 16;
         }
-        // each elements is represented by a pair of 01 bits
-        // create a mask for the elements we want to process:
-        // mask2 = {01 * (residual % 16)}0000...
-        const __mmask32 mask2 = mask & ((1 << ((residual % 16) * 2)) - 1);
-        InnerProductHalfStep(pVect1, pVect2, sum, mask2);
-        pVect1 += residual % 16;
-        pVect2 += residual % 16;
+        if constexpr (residual != 16) {
+            // each element is represented by a pair of 01 bits
+            // create a mask for the elements we want to process:
+            // mask2 = {01 * (residual % 16)}0000...
+            constexpr __mmask32 mask2 = mask & ((1 << ((residual % 16) * 2)) - 1);
+            InnerProductHalfStep(pVect1, pVect2, sum, mask2);
+            pVect1 += residual % 16;
+            pVect2 += residual % 16;
+        }
     }
 
     // handle 512 bits (32 bfloat16) in chunks of max SIMD = 512 bits = 32 bfloat16

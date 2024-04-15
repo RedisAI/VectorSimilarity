@@ -245,15 +245,6 @@ INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Rang
 
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
-static float sanity_calc_IP(const bfloat16 *v1, const bfloat16 *v2, size_t dim) {
-    float sanity_dist = 0;
-    for (size_t i = 0; i < dim; i++) {
-        float mul = bf16_to_float(v1[i]) * bf16_to_float(v2[i]);
-        sanity_dist += mul;
-    }
-    return 1.0f - sanity_dist;
-}
-
 TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = GetParam();
@@ -287,15 +278,6 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
     default:
         FAIL();
     }
-}
-
-static float sanity_calc_L2(const bfloat16 *v1, const bfloat16 *v2, size_t dim) {
-    float sanity_dist = 0;
-    for (size_t i = 0; i < dim; i++) {
-        float diff = bf16_to_float(v1[i]) - bf16_to_float(v2[i]);
-        sanity_dist += diff * diff;
-    }
-    return sanity_dist;
 }
 
 TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {

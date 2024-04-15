@@ -19,10 +19,3 @@ static inline bfloat16 float_to_bf16(const float ff) {
     f32 += round;
     return f32 >> 16;
 }
-
-static inline float bf16_to_float(const bfloat16 value) {
-    float result = 0;
-    bfloat16 *q = reinterpret_cast<bfloat16 *>(&result);
-    q[1] = value;
-    return result;
-}
