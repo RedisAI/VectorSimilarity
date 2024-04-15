@@ -6,11 +6,17 @@
 
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
+#include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX512BW_VL.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/SSE3.h"
+
+using bfloat16 = vecsim_types::bfloat16;
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
@@ -28,6 +34,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #ifdef CPU_FEATURES_ARCH_X86_64
 
     switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_BW_VL:
     case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
@@ -37,6 +44,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         break;
 #endif
     case ARCH_OPT_F16C:
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_AVX:
 #ifdef OPT_AVX
         ret_dist_func = Choose_FP32_IP_implementation_AVX(dim);
@@ -44,6 +52,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 8 * sizeof(float); // handles 8 floats
         break;
 #endif
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
 #ifdef OPT_SSE
         ret_dist_func = Choose_FP32_IP_implementation_SSE(dim);
@@ -74,6 +83,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 #ifdef CPU_FEATURES_ARCH_X86_64
 
     switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_BW_VL:
     case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
@@ -83,6 +93,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         break;
 #endif
     case ARCH_OPT_F16C:
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_AVX:
 #ifdef OPT_AVX
         ret_dist_func = Choose_FP64_IP_implementation_AVX(dim);
@@ -90,6 +101,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
             *alignment = 4 * sizeof(double); // handles 4 doubles
         break;
 #endif
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
 #ifdef OPT_SSE
         ret_dist_func = Choose_FP64_IP_implementation_SSE(dim);
@@ -105,6 +117,57 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     return ret_dist_func;
 }
 
+dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment) {
+    unsigned char dummy_alignment;
+    if (!alignment) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = BF16_InnerProduct_LittleEndian;
+    if (!is_little_endian()) {
+        return BF16_InnerProduct_BigEndian;
+    }
+    // Optimizations assume at least 32 bfloats. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+#ifdef CPU_FEATURES_ARCH_X86_64
+
+    switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
+    case ARCH_OPT_AVX512_BW_VL:
+#ifdef OPT_AVX512_BW_VBMI2
+        ret_dist_func = Choose_BF16_IP_implementation_AVX512BW_VBMI2(dim);
+        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 32 * sizeof(bfloat16); // align to 512 bits.
+        break;
+#endif
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
+#ifdef OPT_AVX2
+        ret_dist_func = Choose_BF16_IP_implementation_AVX2(dim);
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(bfloat16); // align to 256 bits.
+        break;
+#endif
+    case ARCH_OPT_F16C:
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
+#ifdef OPT_SSE3
+        ret_dist_func = Choose_BF16_IP_implementation_SSE3(dim);
+        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 8 * sizeof(bfloat16); // align to 128 bits.
+        break;
+#endif
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        break;
+    } // switch
+
+#endif // __x86_64__
+    return ret_dist_func;
+}
 dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
                                        unsigned char *alignment) {
     unsigned char dummy_alignment;
@@ -117,10 +180,10 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_
     if (dim < 32) {
         return ret_dist_func;
     }
-#if defined(M1)
-#elif defined(__x86_64__)
+#ifdef CPU_FEATURES_ARCH_X86_64
 
     switch (arch_opt) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_BW_VL:
 #ifdef OPT_AVX512_BW_VL
         ret_dist_func = Choose_FP16_IP_implementation_AVX512BW_VL(dim);
@@ -129,6 +192,7 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_
         break;
 #endif
     case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_F16C:
 #ifdef OPT_F16C
         ret_dist_func = Choose_FP16_IP_implementation_F16C(dim);
@@ -137,6 +201,7 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const Arch_Optimization arch_
         break;
 #endif
     case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
     case ARCH_OPT_NONE:
         break;

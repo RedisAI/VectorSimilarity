@@ -9,7 +9,9 @@
 #include "VecSim/spaces/AVX_utils.h"
 #include "VecSim/types/float16.h"
 
-static void L2SqrStep(uint16_t *&pVect1, uint16_t *&pVect2, __m512 &sum) {
+using float16 = vecsim_types::float16;
+
+static void L2SqrStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
     // Convert 16 half-floats into floats and store them in 512 bits register.
     auto v1 = _mm512_cvtph_ps(_mm256_loadu_epi16(pVect1));
     auto v2 = _mm512_cvtph_ps(_mm256_loadu_epi16(pVect2));
@@ -26,7 +28,7 @@ float FP16_L2SqrSIMD16_AVX512BW_VL(const void *pVect1v, const void *pVect2v, siz
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 
-    const uint16_t *pEnd1 = pVect1 + dimension;
+    const float16 *pEnd1 = pVect1 + dimension;
 
     auto sum = _mm512_setzero_ps();
 

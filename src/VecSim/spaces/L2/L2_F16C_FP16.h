@@ -9,6 +9,8 @@
 #include "VecSim/spaces/AVX_utils.h"
 #include "VecSim/types/float16.h"
 
+using float16 = vecsim_types::float16;
+
 static void L2SqrStep(uint16_t *&pVect1, uint16_t *&pVect2, __m256 &sum) {
     // Convert 8 half-floats into floats and store them in 256 bits register.
     auto v1 = _mm256_cvtph_ps(_mm_loadu_si128((__m128i_u const *)(pVect1)));

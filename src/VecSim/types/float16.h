@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
+namespace vecsim_types {
 
 using float16 = uint16_t;
 
@@ -97,3 +98,5 @@ static inline float16 FP32_to_FP16(float input) {
 
     return (o | (sign >> 16));
 }
+
+} // namespace vecsim_types

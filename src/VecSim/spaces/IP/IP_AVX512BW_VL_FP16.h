@@ -7,8 +7,11 @@
 #include <cstdint>
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/AVX_utils.h"
+#include "VecSim/types/float16.h"
 
-static void InnerProductStep(uint16_t *&pVect1, uint16_t *&pVect2, __m512 &sum) {
+using float16 = vecsim_types::float16;
+
+static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
     // Convert 16 half-floats into floats and store them in 512 bits register.
     auto v1 = _mm512_cvtph_ps(_mm256_loadu_epi16(pVect1));
     auto v2 = _mm512_cvtph_ps(_mm256_loadu_epi16(pVect2));

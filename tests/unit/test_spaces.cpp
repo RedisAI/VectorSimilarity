@@ -11,9 +11,13 @@
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/float16.h"
+
+using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 class SpacesTest : public ::testing::Test {
 
@@ -115,13 +119,16 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_BW_VL:
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_F:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_F);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_F16C:
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_AVX:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_AVX);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
@@ -148,13 +155,16 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
     float baseline = FP32_InnerProduct(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_BW_VL:
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_F:
         arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_F);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_F16C:
     case ARCH_OPT_AVX:
         arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
         arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
@@ -185,13 +195,16 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_BW_VL:
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_F:
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_F);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_F16C:
     case ARCH_OPT_AVX:
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_AVX);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
@@ -218,13 +231,16 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
     double baseline = FP64_InnerProduct(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_BW_VL:
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_F:
         arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_F);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_F16C:
     case ARCH_OPT_AVX:
         arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
         arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
@@ -239,6 +255,84 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
 
+class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = GetParam();
+    bfloat16 v[dim];
+    bfloat16 v2[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = vecsim_types::float_to_bf16((float)i);
+        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5f));
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = BF16_InnerProduct_LittleEndian(v, v2, dim);
+
+    switch (optimization) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
+    case ARCH_OPT_AVX512_BW_VL:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VBMI2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
+    case ARCH_OPT_F16C:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_AVX2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_SSE3);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        arch_opt_func = IP_BF16_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(BF16_InnerProduct_LittleEndian, arch_opt_func);
+        break;
+    default:
+        FAIL();
+    }
+}
+
+TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = GetParam();
+    bfloat16 v[dim];
+    bfloat16 v2[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = vecsim_types::float_to_bf16((float)i);
+        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5f));
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = BF16_L2Sqr_LittleEndian(v, v2, dim);
+
+    switch (optimization) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
+    case ARCH_OPT_AVX512_BW_VL:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VBMI2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
+    case ARCH_OPT_F16C:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_AVX2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_SSE3);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_SSE:
+    case ARCH_OPT_NONE:
+        arch_opt_func = L2_BF16_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(BF16_L2Sqr_LittleEndian, arch_opt_func);
+        break;
+    default:
+        FAIL();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(1UL, 32 * 2UL));
+
 class FP16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
@@ -248,9 +342,9 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     float v1_fp32[dim], v2_fp32[dim];
     for (size_t i = 0; i < dim; i++) {
         v1_fp32[i] = (float)i;
-        v1[i] = FP32_to_FP16(v1_fp32[i]);
+        v1[i] = vecsim_types::FP32_to_FP16(v1_fp32[i]);
         v2_fp32[i] = (float)i + 1.5f;
-        v2[i] = FP32_to_FP16(v2_fp32[i]);
+        v2[i] = vecsim_types::FP32_to_FP16(v2_fp32[i]);
     }
 
     dist_func_t<float> arch_opt_func;
@@ -258,14 +352,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
 
     switch (optimization) {
+    case spaces::ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_BW_VL:
         arch_opt_func = IP_FP16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VL);
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_AVX512_F:
+    case spaces::ARCH_OPT_AVX2:
     case ARCH_OPT_F16C:
         arch_opt_func = IP_FP16_GetDistFunc(dim, ARCH_OPT_F16C);
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
     case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
     case ARCH_OPT_NONE:
         arch_opt_func = IP_FP16_GetDistFunc(dim, ARCH_OPT_NONE);
@@ -283,9 +380,9 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     float v1_fp32[dim], v2_fp32[dim];
     for (size_t i = 0; i < dim; i++) {
         v1_fp32[i] = (float)i;
-        v1[i] = FP32_to_FP16(v1_fp32[i]);
+        v1[i] = vecsim_types::FP32_to_FP16(v1_fp32[i]);
         v2_fp32[i] = (float)i + 1.5f;
-        v2[i] = FP32_to_FP16(v2_fp32[i]);
+        v2[i] = vecsim_types::FP32_to_FP16(v2_fp32[i]);
     }
 
     dist_func_t<float> arch_opt_func;
@@ -293,14 +390,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
 
     switch (optimization) {
+    case ARCH_OPT_AVX512_BW_VBMI2:
     case ARCH_OPT_AVX512_BW_VL:
         arch_opt_func = L2_FP16_GetDistFunc(dim, ARCH_OPT_AVX512_BW_VL);
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX2:
     case ARCH_OPT_F16C:
         arch_opt_func = L2_FP16_GetDistFunc(dim, ARCH_OPT_F16C);
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
     case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE3:
     case ARCH_OPT_SSE:
     case ARCH_OPT_NONE:
         arch_opt_func = L2_FP16_GetDistFunc(dim, ARCH_OPT_NONE);
