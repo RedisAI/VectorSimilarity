@@ -83,7 +83,7 @@
         ->Arg(dim_opt + dim_opt / 4)                                                               \
         ->Arg(dim_opt - 1)
 
-#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, metric, dim_opt)                              \
+#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt)                                      \
     INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, L2, dim_opt);                                    \
     INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, L2, dim_opt);                                    \
     INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt);                                        \

@@ -118,7 +118,7 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
 
     dist_func_t<float> ret_dist_func = BF16_InnerProduct_LittleEndian;
     if (!is_little_endian()) {
-        ret_dist_func = BF16_InnerProduct_BigEndian;
+        return BF16_InnerProduct_BigEndian;
     }
     // Optimizations assume at least 32 bfloats. If we have less, we use the naive implementation.
     if (dim < 32) {
