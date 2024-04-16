@@ -6,6 +6,7 @@
 
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/spaces/AVX_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 
@@ -117,11 +118,5 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
         InnerProductStep(pVect1, pVect2, sum_prod);
     } while (pVect1 < pEnd1);
 
-    // TmpRes must be 32 bytes aligned
-    float PORTABLE_ALIGN32 TmpRes[8];
-    _mm256_store_ps(TmpRes, sum_prod);
-    float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
-                TmpRes[7];
-
-    return 1.0f - sum;
+    return 1.0f - _mm256_reduce_add_ps(sum_prod);
 }

@@ -87,7 +87,7 @@ public:
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, vecType, &distFunc, &alignment);
+        spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
         normalize_func =
             vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }

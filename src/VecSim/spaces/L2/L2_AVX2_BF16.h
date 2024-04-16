@@ -116,9 +116,5 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
         L2SqrStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    // TmpRes must be 32 bytes aligned
-    float PORTABLE_ALIGN32 TmpRes[8];
-    _mm256_store_ps(TmpRes, sum);
-    return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
-           TmpRes[7];
+    return _mm256_reduce_add_ps(sum);
 }
