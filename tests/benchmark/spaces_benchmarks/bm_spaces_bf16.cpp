@@ -9,7 +9,7 @@
 #include "bm_spaces.h"
 
 // AVX512 functions
-#ifdef AVX512_BW_VBMI2
+#ifdef OPT_AVX512_BW_VBMI2
 
 INITIALIZE_BENCHMARKS_SET(BF16, AVX512_BW_VBMI2, 32);
 #endif // AVX512F
