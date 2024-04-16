@@ -43,7 +43,7 @@ struct AbstractIndexInitParams {
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
-template <typename DistType>
+template <typename DataType, typename DistType = DataType>
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
@@ -84,10 +84,11 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
+          distFunc(spaces::SetDistFunc<DataType, DistType>(metric, dim, &alignment)), alignment(0),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
+        ;
         normalize_func =
             vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }

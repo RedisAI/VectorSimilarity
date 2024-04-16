@@ -5,7 +5,6 @@
  */
 
 #pragma once
-#include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/space_aux.h"
 
 namespace spaces {
