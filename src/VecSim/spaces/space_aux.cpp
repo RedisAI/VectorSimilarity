@@ -16,10 +16,10 @@ Arch_Optimization getArchitectureOptimization() {
 
 #ifdef CPU_FEATURES_ARCH_X86_64
     cpu_features::X86Features features = cpu_features::GetX86Info().features;
-    if (features.avx512bw && features.avx512vbmi2) {
-        return ARCH_OPT_AVX512_BW_VBMI2;
-    } else if (features.avx512bw && features.avx512vl) {
+    if (features.avx512bw && features.avx512vl) {
         return ARCH_OPT_AVX512_BW_VL;
+    } else if (features.avx512bw && features.avx512vbmi2) {
+        return ARCH_OPT_AVX512_BW_VBMI2;
     } else if (features.avx512f) {
         return ARCH_OPT_AVX512_F;
     } else if (features.avx && features.f16c && features.fma3) {
