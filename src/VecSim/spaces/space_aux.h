@@ -6,7 +6,6 @@
 
 #pragma once
 #include "cpu_features_macros.h"
-#include <cstddef>
 
 namespace spaces {
 
@@ -26,8 +25,5 @@ static int inline is_little_endian() {
     unsigned int x = 1;
     return *(char *)&x;
 }
-
-template <typename RET_TYPE>
-using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
 } // namespace spaces

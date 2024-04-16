@@ -6,7 +6,6 @@
 
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/space_aux.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
