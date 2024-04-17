@@ -8,10 +8,10 @@
 
 #include <stdlib.h>
 #include "VecSim/vec_sim_common.h"
+#include "VecSim/types/bfloat16.h"
 #include <VecSim/query_results.h>
 #include <utility>
 #include <cassert>
-#include <cmath> //sqrt
 
 struct VecSimCommonStrings {
 public:
@@ -23,6 +23,7 @@ public:
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;
     static const char *FLOAT64_STRING;
+    static const char *BFLOAT16_STRING;
     static const char *INT32_STRING;
     static const char *INT64_STRING;
 
@@ -86,28 +87,3 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 
 size_t VecSimType_sizeof(VecSimType vecsimType);
-
-template <typename DataType>
-void normalizeVector(DataType *input_vector, size_t dim) {
-
-    // Cast to double to avoid float overflow.
-    double sum = 0;
-
-    for (size_t i = 0; i < dim; i++) {
-        sum += (double)input_vector[i] * (double)input_vector[i];
-    }
-    DataType norm = sqrt(sum);
-
-    for (size_t i = 0; i < dim; i++) {
-        input_vector[i] = input_vector[i] / norm;
-    }
-}
-
-typedef void (*normalizeVector_f)(void *input_vector, size_t dim);
-
-static inline void normalizeVectorFloat(void *input_vector, size_t dim) {
-    normalizeVector(static_cast<float *>(input_vector), dim);
-}
-static inline void normalizeVectorDouble(void *input_vector, size_t dim) {
-    normalizeVector(static_cast<double *>(input_vector), dim);
-}

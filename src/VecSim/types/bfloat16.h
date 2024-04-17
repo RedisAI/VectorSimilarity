@@ -8,6 +8,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
+
 namespace vecsim_types {
 
 using bfloat16 = unsigned short;
@@ -19,6 +21,18 @@ static inline bfloat16 float_to_bf16(const float ff) {
     uint32_t round = lsb + 0x7FFF;
     f32 += round;
     return f32 >> 16;
+}
+
+static inline float bfloat16_to_float32(bfloat16 val) {
+    float result = 0;
+    memcpy((bfloat16 *)&result + 1, &val, sizeof(bfloat16));
+    return result;
+}
+
+static inline float bfloat16_to_float32_bigEndian(bfloat16 val) {
+    float result = 0;
+    memcpy((bfloat16 *)&result, &val, sizeof(bfloat16));
+    return result;
 }
 
 } // namespace vecsim_types

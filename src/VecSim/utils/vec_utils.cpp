@@ -6,11 +6,14 @@
 
 #include "vec_utils.h"
 #include "VecSim/query_result_definitions.h"
+#include "VecSim/types/bfloat16.h"
 #include <cmath>
 #include <cerrno>
 #include <climits>
 #include <float.h>
 #include <algorithm>
+
+using bfloat16 = vecsim_types::bfloat16;
 
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
@@ -20,6 +23,7 @@ const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
 const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
 const char *VecSimCommonStrings::FLOAT64_STRING = "FLOAT64";
+const char *VecSimCommonStrings::BFLOAT16_STRING = "BFLOAT16";
 const char *VecSimCommonStrings::INT32_STRING = "INT32";
 const char *VecSimCommonStrings::INT64_STRING = "INT64";
 
@@ -136,6 +140,8 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::FLOAT32_STRING;
     case VecSimType_FLOAT64:
         return VecSimCommonStrings::FLOAT64_STRING;
+    case VecSimType_BFLOAT16:
+        return VecSimCommonStrings::BFLOAT16_STRING;
     case VecSimType_INT32:
         return VecSimCommonStrings::INT32_STRING;
     case VecSimType_INT64:
@@ -180,6 +186,8 @@ size_t VecSimType_sizeof(VecSimType type) {
         return sizeof(float);
     case VecSimType_FLOAT64:
         return sizeof(double);
+    case VecSimType_BFLOAT16:
+        return sizeof(bfloat16);
     case VecSimType_INT32:
         return sizeof(int32_t);
     case VecSimType_INT64:

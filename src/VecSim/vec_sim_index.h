@@ -43,7 +43,7 @@ struct AbstractIndexInitParams {
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
-template <typename DataType, typename DistType = DataType>
+template <typename DataType, typename DistType>
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
@@ -74,7 +74,8 @@ protected:
         return info;
     }
 
-    normalizeVector_f normalize_func; // A pointer to a normalization function of specific type.
+    spaces::normalizeVector_f<DataType>
+        normalize_func; // A pointer to a normalization function of specific type.
 
 public:
     /**
@@ -85,12 +86,10 @@ public:
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          distFunc(spaces::SetDistFunc<DataType, DistType>(metric, dim, &alignment)), alignment(0),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
+          distFunc(spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment)), alignment(0),
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
+          normalize_func(spaces::GetNormalizeFunc<DataType>()) {
         assert(VecSimType_sizeof(vecType));
-        ;
-        normalize_func =
-            vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }
 
     /**

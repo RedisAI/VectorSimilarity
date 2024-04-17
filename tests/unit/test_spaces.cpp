@@ -64,8 +64,8 @@ TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
         b[i] = float(i + 1.5);
     }
 
-    normalizeVector(a, dim);
-    normalizeVector(b, dim);
+    spaces::GetNormalizeFunc<float>()(a, dim);
+    spaces::GetNormalizeFunc<float>()(b, dim);
 
     float dist = FP32_InnerProduct((const void *)a, (const void *)b, dim);
     ASSERT_FLOAT_EQ(dist, 0.0f);
@@ -80,8 +80,8 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
         b[i] = double(i + 1.5);
     }
 
-    normalizeVector(a, dim);
-    normalizeVector(b, dim);
+    spaces::GetNormalizeFunc<double>()(a, dim);
+    spaces::GetNormalizeFunc<double>()(b, dim);
 
     double dist = FP64_InnerProduct((const void *)a, (const void *)b, dim);
     ASSERT_NEAR(dist, 0.0, 0.00000001);

@@ -16,6 +16,7 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "mock_thread_pool.h"
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/spaces/spaces.h"
 
 #include <cstdlib>
 #include <limits>
@@ -320,7 +321,7 @@ TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
     v[dim - 1] = exp(44);
 
     // Normalize the vector
-    normalizeVector(v, dim);
+    spaces::GetNormalizeFunc<TypeParam>()(v, dim);
 
     // Check that the normelized vector norm is 1
     TypeParam norm = 0;

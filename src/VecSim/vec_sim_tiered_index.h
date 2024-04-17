@@ -31,7 +31,7 @@ struct AsyncJob : public VecsimBaseObject {
 template <typename DataType, typename DistType>
 class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
-    VecSimIndexAbstract<DistType> *backendIndex;
+    VecSimIndexAbstract<DataType, DistType> *backendIndex;
     BruteForceIndex<DataType, DistType> *frontendIndex;
 
     void *jobQueue;
@@ -57,7 +57,7 @@ protected:
     }
 
 public:
-    VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,
+    VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
                       TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
@@ -96,7 +96,9 @@ public:
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
 #ifdef BUILD_TESTS
-    inline VecSimIndexAbstract<DistType> *getFlatBufferIndex() { return this->frontendIndex; }
+    inline VecSimIndexAbstract<DataType, DistType> *getFlatBufferIndex() {
+        return this->frontendIndex;
+    }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 #endif
 

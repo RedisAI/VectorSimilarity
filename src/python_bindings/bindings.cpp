@@ -368,7 +368,7 @@ class PyTieredIndex : public PyVecSimIndex {
 protected:
     tieredIndexMock mock_thread_pool;
 
-    VecSimIndexAbstract<float> *getFlatBuffer() {
+    VecSimIndexAbstract<float, float> *getFlatBuffer() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
             ->getFlatBufferIndex();
     }

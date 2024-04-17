@@ -17,6 +17,11 @@ using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 // determined according to the chosen implementation and available optimizations.
 
 template <typename DataType, typename DistType>
-dist_func_t<DistType> SetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
+dist_func_t<DistType> GetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
 
+template <typename DataType>
+using normalizeVector_f = void (*)(void *input_vector, size_t dim);
+
+template <typename DataType>
+normalizeVector_f<DataType> GetNormalizeFunc();
 } // namespace spaces

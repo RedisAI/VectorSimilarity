@@ -7,6 +7,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/normalize/normalize_naive.h"
 #include "VecSim/spaces/spaces.h"
 
 #include <stdexcept>
@@ -16,7 +17,7 @@ namespace spaces {
 // determined according to the chosen implementation and available optimizations.
 
 template <>
-dist_func_t<float> SetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metric, size_t dim,
+dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metric, size_t dim,
                                                               unsigned char *alignment) {
 
     static const Arch_Optimization arch_opt = getArchitectureOptimization();
@@ -33,7 +34,7 @@ dist_func_t<float> SetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metri
 }
 
 template <>
-dist_func_t<float> SetDistFunc<float, float>(VecSimMetric metric, size_t dim,
+dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
                                              unsigned char *alignment) {
 
     static const Arch_Optimization arch_opt = getArchitectureOptimization();
@@ -50,7 +51,7 @@ dist_func_t<float> SetDistFunc<float, float>(VecSimMetric metric, size_t dim,
 }
 
 template <>
-dist_func_t<double> SetDistFunc<double, double>(VecSimMetric metric, size_t dim,
+dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
                                                 unsigned char *alignment) {
 
     static const Arch_Optimization arch_opt = getArchitectureOptimization();
@@ -66,4 +67,22 @@ dist_func_t<double> SetDistFunc<double, double>(VecSimMetric metric, size_t dim,
     }
 }
 
+template <>
+normalizeVector_f<float> GetNormalizeFunc<float>(void) {
+    return normalizeVector_imp<float>;
+}
+
+template <>
+normalizeVector_f<double> GetNormalizeFunc<double>(void) {
+    return normalizeVector_imp<double>;
+}
+
+template <>
+normalizeVector_f<vecsim_types::bfloat16> GetNormalizeFunc<vecsim_types::bfloat16>(void) {
+    if (is_little_endian()) {
+        return bfloat16_normalizeVector<true>;
+    } else {
+        return bfloat16_normalizeVector<false>;
+    }
+}
 } // namespace spaces
