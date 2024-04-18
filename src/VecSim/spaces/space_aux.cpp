@@ -8,30 +8,14 @@
 
 namespace spaces {
 
-#ifdef CPU_FEATURES_ARCH_X86_64
-#include "cpuinfo_x86.h"
-#endif // CPU_FEATURES_ARCH_X86_64
-
 Arch_Optimization getArchitectureOptimization() {
 
 #ifdef CPU_FEATURES_ARCH_X86_64
     cpu_features::X86Features features = cpu_features::GetX86Info().features;
-    if (features.avx512bw && features.avx512vbmi2) {
-        return ARCH_OPT_AVX512_BW_VBMI2;
-    } else if (features.avx512f) {
-        return ARCH_OPT_AVX512_F;
-    } else if (features.avx2) {
-        return ARCH_OPT_AVX2;
-    } else if (features.avx) {
-        return ARCH_OPT_AVX;
-    } else if (features.sse3) {
-        return ARCH_OPT_SSE3;
-    } else if (features.sse) {
-        return ARCH_OPT_SSE;
-    }
+    return Arch_Optimization{.features = features};
 #endif // CPU_FEATURES_ARCH_X86_64
 
-    return ARCH_OPT_NONE;
+    return Arch_Optimization{.no_opt = 0};
 }
 
 } // namespace spaces

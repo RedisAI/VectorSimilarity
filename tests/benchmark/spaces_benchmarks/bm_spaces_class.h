@@ -15,7 +15,6 @@ protected:
     std::mt19937 rng;
     size_t dim;
     DATA_TYPE *v1, *v2;
-    spaces::Arch_Optimization opt;
 
 public:
     BM_VecSimSpaces();
@@ -23,12 +22,13 @@ public:
 
     void SetUp(const ::benchmark::State &state);
     void TearDown(const ::benchmark::State &state);
+
+    // Specific architecture optimization flags that are supported on this machine,
+    // to be initialized in every executable that is running this benchmarks.
+    static spaces::Arch_Optimization opt;
 };
 
-BM_VecSimSpaces::BM_VecSimSpaces() {
-    rng.seed(47);
-    opt = spaces::getArchitectureOptimization();
-}
+BM_VecSimSpaces::BM_VecSimSpaces() { rng.seed(47); }
 
 void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {
     dim = state.range(0);

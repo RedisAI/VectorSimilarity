@@ -7,16 +7,17 @@
 #pragma once
 #include "cpu_features_macros.h"
 
+#ifdef CPU_FEATURES_ARCH_X86_64
+#include "cpuinfo_x86.h"
+#endif // CPU_FEATURES_ARCH_X86_64
+
 namespace spaces {
 
-enum Arch_Optimization {
-    ARCH_OPT_NONE,
-    ARCH_OPT_SSE,
-    ARCH_OPT_SSE3,
-    ARCH_OPT_AVX,
-    ARCH_OPT_AVX2,
-    ARCH_OPT_AVX512_F,
-    ARCH_OPT_AVX512_BW_VBMI2,
+union Arch_Optimization {
+#ifdef CPU_FEATURES_ARCH_X86_64
+    cpu_features::X86Features features;
+#endif
+    char no_opt; // dummy field
 };
 
 Arch_Optimization getArchitectureOptimization();
