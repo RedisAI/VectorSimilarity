@@ -25,7 +25,7 @@ private:
     static size_t allocation_header_size;
     static VecSimMemoryFunctions memFunctions;
 
-    VecSimAllocator() : allocated(std::atomic_uint64_t(sizeof(VecSimAllocator))) {}
+    VecSimAllocator() : allocated((sizeof(VecSimAllocator))) {}
 
 public:
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();

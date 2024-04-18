@@ -35,6 +35,7 @@ protected:
 public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
+    virtual void clear() = 0;
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     vecsim_stl::vector<DistType> computeBlockScores(const DataBlock &block, const void *queryBlob,
@@ -54,6 +55,7 @@ public:
                                                   VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
+    inline vecsim_stl::vector<labelType> getLabels() const { return idToLabelMapping; }
 
     inline const vecsim_stl::vector<DataBlock> &getVectorBlocks() const { return vectorBlocks; }
     inline const labelType getLabelByInternalId(idType internal_id) const {
