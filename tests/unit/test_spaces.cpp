@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
+#include "VecSim/spaces/functions/SSE.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 
@@ -97,14 +98,27 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 using namespace spaces;
 
 TEST_F(SpacesTest, smallDimChooser) {
-    size_t dim = 5;
-
-    // Verify that small dimensions gets the no optimization function
+    // Verify that small dimensions gets the no optimization function.
     auto arch = getArchitectureOptimization();
-    ASSERT_EQ(L2_FP32_GetDistFunc(dim, arch), FP32_L2Sqr);
-    ASSERT_EQ(L2_FP64_GetDistFunc(dim, arch), FP64_L2Sqr);
-    ASSERT_EQ(IP_FP32_GetDistFunc(dim, arch), FP32_InnerProduct);
-    ASSERT_EQ(IP_FP64_GetDistFunc(dim, arch), FP64_InnerProduct);
+
+    for (size_t dim = 1; dim < 8; dim++) {
+        ASSERT_EQ(L2_FP32_GetDistFunc(dim, arch), FP32_L2Sqr);
+        ASSERT_EQ(L2_FP64_GetDistFunc(dim, arch), FP64_L2Sqr);
+        ASSERT_EQ(L2_BF16_GetDistFunc(dim, arch), BF16_L2Sqr_LittleEndian);
+        ASSERT_EQ(IP_FP32_GetDistFunc(dim, arch), FP32_InnerProduct);
+        ASSERT_EQ(IP_FP64_GetDistFunc(dim, arch), FP64_InnerProduct);
+        ASSERT_EQ(IP_BF16_GetDistFunc(dim, arch), BF16_InnerProduct_LittleEndian);
+    }
+    for (size_t dim = 8; dim < 16; dim++) {
+        ASSERT_EQ(L2_FP32_GetDistFunc(dim, arch), FP32_L2Sqr);
+        ASSERT_EQ(L2_BF16_GetDistFunc(dim, arch), BF16_L2Sqr_LittleEndian);
+        ASSERT_EQ(IP_FP32_GetDistFunc(dim, arch), FP32_InnerProduct);
+        ASSERT_EQ(IP_BF16_GetDistFunc(dim, arch), BF16_InnerProduct_LittleEndian);
+    }
+    for (size_t dim = 16; dim < 32; dim++) {
+        ASSERT_EQ(L2_BF16_GetDistFunc(dim, arch), BF16_L2Sqr_LittleEndian);
+        ASSERT_EQ(IP_BF16_GetDistFunc(dim, arch), BF16_InnerProduct_LittleEndian);
+    }
 }
 
 class FP32SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
@@ -173,7 +187,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 #endif
 }
 
-INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest, testing::Range(1UL, 16 * 2UL));
+INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest, testing::Range(16UL, 16 * 2UL));
 
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -241,7 +255,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 #endif
 }
 
-INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
+INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(8UL, 8 * 2UL));
 
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -310,6 +324,6 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
 #endif
 }
 
-INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(1UL, 32 * 2UL));
+INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(32UL, 32 * 2UL));
 
 #endif // CPU_FEATURES_ARCH_X86_64
