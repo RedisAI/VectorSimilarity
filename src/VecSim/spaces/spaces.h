@@ -20,7 +20,7 @@ template <typename DataType, typename DistType>
 dist_func_t<DistType> GetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
 
 template <typename DataType>
-using normalizeVector_f = void (*)(void *input_vector, size_t dim);
+using normalizeVector_f = void (*)(void *input_vector, const size_t dim);
 
 template <typename DataType>
 normalizeVector_f<DataType> GetNormalizeFunc();

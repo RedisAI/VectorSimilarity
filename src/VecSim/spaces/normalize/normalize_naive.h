@@ -14,7 +14,7 @@ using bfloat16 = vecsim_types::bfloat16;
 namespace spaces {
 
 template <typename DataType>
-static inline void normalizeVector_imp(void *vec, size_t dim) {
+static inline void normalizeVector_imp(void *vec, const size_t dim) {
     DataType *input_vector = (DataType *)vec;
     // Cast to double to avoid float overflow.
     double sum = 0;
@@ -30,19 +30,23 @@ static inline void normalizeVector_imp(void *vec, size_t dim) {
 }
 
 template <bool is_little>
-static inline void bfloat16_normalizeVector(void *vec, size_t dim) {
+static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
     bfloat16 *input_vector = (bfloat16 *)vec;
+
+    float f32_tmp[dim];
 
     float sum = 0;
 
     if constexpr (is_little) {
         for (size_t i = 0; i < dim; i++) {
             float val = vecsim_types::bfloat16_to_float32(input_vector[i]);
+            f32_tmp[i] = val;
             sum += val * val;
         }
     } else {
         for (size_t i = 0; i < dim; i++) {
             float val = vecsim_types::bfloat16_to_float32_bigEndian(input_vector[i]);
+            f32_tmp[i] = val;
             sum += val * val;
         }
     }
@@ -50,7 +54,7 @@ static inline void bfloat16_normalizeVector(void *vec, size_t dim) {
     float norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
-        input_vector[i] = input_vector[i] / norm;
+        input_vector[i] = vecsim_types::float_to_bf16(f32_tmp[i] / norm);
     }
 }
 

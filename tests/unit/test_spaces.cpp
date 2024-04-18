@@ -55,6 +55,23 @@ TEST_F(SpacesTest, double_l2_no_optimization_func_test) {
     ASSERT_EQ(dist, 0.0);
 }
 
+TEST_F(SpacesTest, bf16_l2_no_optimization_func_test) {
+    size_t dim = 4;
+
+    bfloat16 a[dim], b[dim];
+    float sanity_a[dim], sanity_b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        // multiplication of 0.25 have no rounding error when converted to bfloat16
+        sanity_a[i] = 0.5f + i * 0.25f;
+        a[i] = vecsim_types::float_to_bf16(sanity_a[i]);
+        sanity_b[i] = (float)i * 0.25f;
+        b[i] = vecsim_types::float_to_bf16(sanity_b[i]);
+    }
+
+    float dist = BF16_L2Sqr_LittleEndian((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, FP32_L2Sqr((const void *)sanity_a, (const void *)sanity_b, dim));
+}
+
 TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
     size_t dim = 5;
 
@@ -85,6 +102,44 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 
     double dist = FP64_InnerProduct((const void *)a, (const void *)b, dim);
     ASSERT_NEAR(dist, 0.0, 0.00000001);
+}
+
+TEST_F(SpacesTest, bf16_normalize_test) {
+    size_t dim = 4;
+
+    bfloat16 a[dim];
+    float sanity_a[dim];
+    for (size_t i = 0; i < dim; i++) {
+        // unit vector
+        sanity_a[i] = float(4);
+        a[i] = vecsim_types::float_to_bf16(sanity_a[i]);
+    }
+
+    spaces::GetNormalizeFunc<bfloat16>()(a, dim);
+    spaces::GetNormalizeFunc<float>()(sanity_a, dim);
+    for (size_t i = 0; i < dim; i++) {
+        ASSERT_EQ(vecsim_types::bfloat16_to_float32(a[i]), sanity_a[i])
+            << " bf16 normalization failed for i = " << i;
+        ASSERT_EQ(vecsim_types::bfloat16_to_float32(a[i]), 1)
+            << " bf16 normalization failed for i = " << i;
+    }
+}
+
+TEST_F(SpacesTest, bf16_ip_no_optimization_func_test2) {
+    size_t dim = 4;
+
+    bfloat16 a[dim], b[dim];
+    float sanity_a[dim], sanity_b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        // multiplication of 0.25 have no rounding error when converted to bfloat16
+        sanity_a[i] = 0.5f + i * 0.25f;
+        a[i] = vecsim_types::float_to_bf16(sanity_a[i]);
+        sanity_b[i] = (float)i * 0.25f;
+        b[i] = vecsim_types::float_to_bf16(sanity_b[i]);
+    }
+
+    float dist = BF16_InnerProduct_LittleEndian((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, FP32_InnerProduct((const void *)sanity_a, (const void *)sanity_b, dim));
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
