@@ -120,7 +120,7 @@ TEST_F(SpacesTest, bf16_normalize_test) {
     for (size_t i = 0; i < dim; i++) {
         ASSERT_EQ(vecsim_types::bfloat16_to_float32(a[i]), sanity_a[i])
             << " bf16 normalization failed for i = " << i;
-        ASSERT_EQ(vecsim_types::bfloat16_to_float32(a[i]), 1)
+        ASSERT_EQ(vecsim_types::bfloat16_to_float32(a[i]), 0.5)
             << " bf16 normalization failed for i = " << i;
     }
 }
