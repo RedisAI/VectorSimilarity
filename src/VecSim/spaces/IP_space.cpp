@@ -35,26 +35,23 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const void *arch_opt, unsigne
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
     if (features.avx512f) {
 #ifdef OPT_AVX512F
-        ret_dist_func = Choose_FP32_IP_implementation_AVX512(dim);
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
-        return ret_dist_func;
+        return Choose_FP32_IP_implementation_AVX512(dim);
 #endif
     }
     if (features.avx) {
 #ifdef OPT_AVX
-        ret_dist_func = Choose_FP32_IP_implementation_AVX(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(float); // handles 8 floats
-        return ret_dist_func;
+        return Choose_FP32_IP_implementation_AVX(dim);
 #endif
     }
     if (features.sse) {
 #ifdef OPT_SSE
-        ret_dist_func = Choose_FP32_IP_implementation_SSE(dim);
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(float); // handles 4 floats
-        return ret_dist_func;
+        return Choose_FP32_IP_implementation_SSE(dim);
 #endif
     }
 #endif // __x86_64__
@@ -79,26 +76,23 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const void *arch_opt,
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
     if (features.avx512f) {
 #ifdef OPT_AVX512F
-        ret_dist_func = Choose_FP64_IP_implementation_AVX512(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(double); // handles 8 doubles
-        return ret_dist_func;
+        return Choose_FP64_IP_implementation_AVX512(dim);
 #endif
     }
     if (features.avx) {
 #ifdef OPT_AVX
-        ret_dist_func = Choose_FP64_IP_implementation_AVX(dim);
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(double); // handles 4 doubles
-        return ret_dist_func;
+        return Choose_FP64_IP_implementation_AVX(dim);
 #endif
     }
     if (features.sse) {
 #ifdef OPT_SSE
-        ret_dist_func = Choose_FP64_IP_implementation_SSE(dim);
         if (dim % 2 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 2 * sizeof(double); // handles 2 doubles
-        return ret_dist_func;
+        return Choose_FP64_IP_implementation_SSE(dim);
 #endif
     }
 #endif // __x86_64__ */
@@ -125,26 +119,23 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, const void *arch_opt, unsigne
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
     if (features.avx512bw && features.avx512vbmi2) {
 #ifdef OPT_AVX512_BW_VBMI2
-        ret_dist_func = Choose_BF16_IP_implementation_AVX512BW_VBMI2(dim);
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(bfloat16); // align to 512 bits.
-        return ret_dist_func;
+        return Choose_BF16_IP_implementation_AVX512BW_VBMI2(dim);
 #endif
     }
     if (features.avx2) {
 #ifdef OPT_AVX2
-        ret_dist_func = Choose_BF16_IP_implementation_AVX2(dim);
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(bfloat16); // align to 256 bits.
-        return ret_dist_func;
+        return Choose_BF16_IP_implementation_AVX2(dim);
 #endif
     }
     if (features.sse3) {
 #ifdef OPT_SSE3
-        ret_dist_func = Choose_BF16_IP_implementation_SSE3(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(bfloat16); // align to 128 bits.
-        return ret_dist_func;
+        return Choose_BF16_IP_implementation_SSE3(dim);
 #endif
     }
 #endif // __x86_64__

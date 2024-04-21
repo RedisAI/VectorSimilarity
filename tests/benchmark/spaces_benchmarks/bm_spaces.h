@@ -23,10 +23,10 @@
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
-#define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name, opt_supported)                    \
+#define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name, arch_supported)                   \
     BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##bm_name)               \
     (benchmark::State & st) {                                                                      \
-        if (!opt_supported) {                                                                      \
+        if (!arch_supported) {                                                                     \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
             return;                                                                                \
         }                                                                                          \
@@ -53,22 +53,22 @@
 // elements) FP32 = residual = 1,2,3, FP64 = residual = 1, BF16 = residual = 1,2,3,4,5,6,7...
 #define RESIDUAL_PARAMS(elem_per_128_bits) DenseRange(128 + 1, 128 + elem_per_128_bits - 1, 1)
 
-#define INITIALIZE_BM(type_prefix, arch, metric, bm_name, opt_supported)                           \
-    BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name, opt_supported)                        \
+#define INITIALIZE_BM(type_prefix, arch, metric, bm_name, arch_supported)                          \
+    BENCHMARK_DISTANCE_F(type_prefix, arch, metric, bm_name, arch_supported)                       \
     BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##bm_name)             \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
-#define INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, metric, dim_opt, opt_supported)              \
-    INITIALIZE_BM(type_prefix, arch, metric, 512_bit_chunks, opt_supported)                        \
+#define INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, metric, dim_opt, arch_supported)             \
+    INITIALIZE_BM(type_prefix, arch, metric, 512_bit_chunks, arch_supported)                       \
         ->EXACT_512BIT_PARAMS(dim_opt)
 
-#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt, opt_supported)              \
-    INITIALIZE_BM(type_prefix, arch, metric, 128_bit_chunks, opt_supported)                        \
+#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt, arch_supported)             \
+    INITIALIZE_BM(type_prefix, arch, metric, 128_bit_chunks, arch_supported)                       \
         ->EXACT_128BIT_PARAMS(dim_opt / 4)
 
-#define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt, opt_supported)                  \
-    INITIALIZE_BM(type_prefix, arch, metric, residual, opt_supported)->RESIDUAL_PARAMS(dim_opt / 4)
+#define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt, arch_supported)                 \
+    INITIALIZE_BM(type_prefix, arch, metric, residual, arch_supported)->RESIDUAL_PARAMS(dim_opt / 4)
 
 // Naive algorithms
 
@@ -90,11 +90,11 @@
         ->Arg(dim_opt + dim_opt / 4)                                                               \
         ->Arg(dim_opt - 1)
 
-#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt, opt_supported)                       \
-    INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, L2, dim_opt, opt_supported);                     \
-    INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, L2, dim_opt, opt_supported);                     \
-    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt, opt_supported);                         \
+#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt, arch_supported)                      \
+    INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, L2, dim_opt, arch_supported);                    \
+    INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, L2, dim_opt, arch_supported);                    \
+    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt, arch_supported);                        \
                                                                                                    \
-    INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, IP, dim_opt, opt_supported);                     \
-    INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, IP, dim_opt, opt_supported);                     \
-    INITIALIZE_RESIDUAL_BM(type_prefix, arch, IP, dim_opt, opt_supported);
+    INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, IP, dim_opt, arch_supported);                    \
+    INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, IP, dim_opt, arch_supported);                    \
+    INITIALIZE_RESIDUAL_BM(type_prefix, arch, IP, dim_opt, arch_supported);
