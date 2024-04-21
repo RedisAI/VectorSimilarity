@@ -72,7 +72,7 @@ endif()
 
 # Here we are compiling the space selectors with the relevant optimization flag.
 add_library(VectorSimilaritySpaces
-		L2_space.cpp
+	L2_space.cpp
 	IP_space.cpp
 	spaces.cpp
 	${OPTIMIZATIONS}
