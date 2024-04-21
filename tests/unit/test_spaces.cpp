@@ -135,24 +135,22 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_L2Sqr(v, v2, dim);
-#ifdef OPT_AVX512F
     if (optimization.features.avx512f) {
-        arch_opt_func = Choose_FP32_L2_implementation_AVX512(dim);
+        arch_opt_func = L2_FP32_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        // Unet avx512f flag, so we'll choose the next optimization (AVX).
+        optimization.features.avx512f = 0;
     }
-#endif
-#ifdef OPT_AVX
     if (optimization.features.avx) {
-        arch_opt_func = Choose_FP32_L2_implementation_AVX(dim);
+        arch_opt_func = L2_FP32_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        // Unet avx flag as well, so we'll choose the next optimization (SSE).
+        optimization.features.avx = 0;
     }
-#endif
-#ifdef OPT_SSE
     if (optimization.features.sse) {
-        arch_opt_func = Choose_FP32_L2_implementation_SSE(dim);
+        arch_opt_func = L2_FP32_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
-#endif
 }
 
 TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
@@ -167,24 +165,20 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_InnerProduct(v, v2, dim);
-#ifdef OPT_AVX512F
     if (optimization.features.avx512f) {
-        arch_opt_func = Choose_FP32_IP_implementation_AVX512(dim);
+        arch_opt_func = IP_FP32_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.features.avx512f = 0;
     }
-#endif
-#ifdef OPT_AVX
     if (optimization.features.avx) {
-        arch_opt_func = Choose_FP32_IP_implementation_AVX(dim);
+        arch_opt_func = IP_FP32_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        optimization.features.avx = 0;
     }
-#endif
-#ifdef OPT_SSE
     if (optimization.features.sse) {
-        arch_opt_func = Choose_FP32_IP_implementation_SSE(dim);
+        arch_opt_func = IP_FP32_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
-#endif
 }
 
 INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest, testing::Range(16UL, 16 * 2UL));
@@ -203,24 +197,20 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
 
     dist_func_t<double> arch_opt_func;
     double baseline = FP64_L2Sqr(v, v2, dim);
-#ifdef OPT_AVX512F
     if (optimization.features.avx512f) {
-        arch_opt_func = Choose_FP64_L2_implementation_AVX512(dim);
+        arch_opt_func = L2_FP64_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.features.avx512f = 0;
     }
-#endif
-#ifdef OPT_AVX
     if (optimization.features.avx) {
-        arch_opt_func = Choose_FP64_L2_implementation_AVX(dim);
+        arch_opt_func = L2_FP64_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        optimization.features.avx = 0;
     }
-#endif
-#ifdef OPT_SSE
     if (optimization.features.sse) {
-        arch_opt_func = Choose_FP64_L2_implementation_SSE(dim);
+        arch_opt_func = L2_FP64_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
-#endif
 }
 
 TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
@@ -235,24 +225,20 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 
     dist_func_t<double> arch_opt_func;
     double baseline = FP64_InnerProduct(v, v2, dim);
-#ifdef OPT_AVX512F
     if (optimization.features.avx512f) {
-        arch_opt_func = Choose_FP64_IP_implementation_AVX512(dim);
+        arch_opt_func = IP_FP64_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.features.avx512f = 0;
     }
-#endif
-#ifdef OPT_AVX
     if (optimization.features.avx) {
-        arch_opt_func = Choose_FP64_IP_implementation_AVX(dim);
+        arch_opt_func = IP_FP64_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        optimization.features.avx = 0;
     }
-#endif
-#ifdef OPT_SSE
     if (optimization.features.sse) {
-        arch_opt_func = Choose_FP64_IP_implementation_SSE(dim);
+        arch_opt_func = IP_FP64_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
-#endif
 }
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(8UL, 8 * 2UL));
@@ -271,24 +257,20 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = BF16_InnerProduct_LittleEndian(v, v2, dim);
-#ifdef OPT_AVX512_BW_VBMI2
     if (optimization.features.avx512bw && optimization.features.avx512vbmi2) {
-        arch_opt_func = Choose_BF16_IP_implementation_AVX512BW_VBMI2(dim);
+        arch_opt_func = IP_BF16_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.features.avx512bw = optimization.features.avx512vbmi2 = 0;
     }
-#endif
-#ifdef OPT_AVX2
     if (optimization.features.avx2) {
-        arch_opt_func = Choose_BF16_IP_implementation_AVX2(dim);
+        arch_opt_func = IP_BF16_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        optimization.features.avx2 = 0;
     }
-#endif
-#ifdef OPT_SSE3
     if (optimization.features.sse3) {
-        arch_opt_func = Choose_BF16_IP_implementation_SSE3(dim);
+        arch_opt_func = IP_BF16_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
-#endif
 }
 
 TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
@@ -304,24 +286,20 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = BF16_L2Sqr_LittleEndian(v, v2, dim);
 
-#ifdef OPT_AVX512_BW_VBMI2
     if (optimization.features.avx512bw && optimization.features.avx512vbmi2) {
-        arch_opt_func = Choose_BF16_L2_implementation_AVX512BW_VBMI2(dim);
+        arch_opt_func = L2_BF16_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.features.avx512bw = optimization.features.avx512vbmi2 = 0;
     }
-#endif
-#ifdef OPT_AVX2
     if (optimization.features.avx2) {
-        arch_opt_func = Choose_BF16_L2_implementation_AVX2(dim);
+        arch_opt_func = L2_BF16_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        optimization.features.avx2 = 0;
     }
-#endif
-#ifdef OPT_SSE3
     if (optimization.features.sse3) {
         arch_opt_func = Choose_BF16_L2_implementation_SSE3(dim);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
-#endif
 }
 
 INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(32UL, 32 * 2UL));
