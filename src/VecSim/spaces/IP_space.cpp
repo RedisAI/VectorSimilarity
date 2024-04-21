@@ -4,9 +4,16 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
+#include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/spaces/functions/AVX512.h"
+#include "VecSim/spaces/functions/AVX.h"
+#include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/SSE3.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 
