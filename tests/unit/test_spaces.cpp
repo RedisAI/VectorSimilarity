@@ -297,7 +297,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
         optimization.features.avx2 = 0;
     }
     if (optimization.features.sse3) {
-        arch_opt_func = Choose_BF16_L2_implementation_SSE3(dim);
+        arch_opt_func = L2_BF16_GetDistFunc(dim, optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
     }
 }
