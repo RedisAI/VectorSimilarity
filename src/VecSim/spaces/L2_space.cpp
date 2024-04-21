@@ -7,19 +7,12 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/types/bfloat16.h"
-#include "VecSim/spaces/functions/AVX512.h"
-#include "VecSim/spaces/functions/AVX.h"
-#include "VecSim/spaces/functions/SSE.h"
-#include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
-#include "VecSim/spaces/functions/AVX2.h"
-#include "VecSim/spaces/functions/SSE3.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 
 namespace spaces {
 
-dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
-                                       unsigned char *alignment) {
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
     unsigned char dummy_alignment;
     if (!alignment) {
         alignment = &dummy_alignment;
@@ -31,7 +24,9 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = arch_opt.features;
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
     if (features.avx512f) {
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP32_L2_implementation_AVX512(dim);
@@ -60,7 +55,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     return ret_dist_func;
 }
 
-dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const void *arch_opt,
                                         unsigned char *alignment) {
     unsigned char dummy_alignment;
     if (!alignment) {
@@ -73,7 +68,9 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = arch_opt.features;
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
     if (features.avx512f) {
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP64_L2_implementation_AVX512(dim);
@@ -102,8 +99,7 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     return ret_dist_func;
 }
 
-dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
-                                       unsigned char *alignment) {
+dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
     unsigned char dummy_alignment;
     if (!alignment) {
         alignment = &dummy_alignment;
@@ -118,7 +114,9 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = arch_opt.features;
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
     if (features.avx512bw && features.avx512vbmi2) {
 #ifdef OPT_AVX512_BW_VBMI2
         ret_dist_func = Choose_BF16_L2_implementation_AVX512BW_VBMI2(dim);

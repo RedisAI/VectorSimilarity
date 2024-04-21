@@ -8,7 +8,6 @@
 #include <random>
 #include <unistd.h>
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP/IP.h"

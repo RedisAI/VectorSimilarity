@@ -6,25 +6,28 @@
 #define DATA_TYPE float
 #include "bm_spaces.h"
 
-spaces::Arch_Optimization BM_VecSimSpaces::opt = spaces::getArchitectureOptimization();
+#ifdef CPU_FEATURES_ARCH_X86_64
+cpu_features::X86Features BM_VecSimSpaces::opt = cpu_features::GetX86Info().features;
 
 // AVX512 functions
 #ifdef OPT_AVX512F
-bool avx512_supported = BM_VecSimSpaces::opt.features.avx512f;
+bool avx512_supported = BM_VecSimSpaces::opt.avx512f;
 INITIALIZE_BENCHMARKS_SET(FP32, AVX512, 16, avx512_supported);
 #endif // AVX512F
 
 // AVX functions
 #ifdef OPT_AVX
-bool avx_supported = BM_VecSimSpaces::opt.features.avx;
+bool avx_supported = BM_VecSimSpaces::opt.avx;
 INITIALIZE_BENCHMARKS_SET(FP32, AVX, 16, avx_supported);
 #endif // AVX
 
 // SSE functions
 #ifdef OPT_SSE
-bool sse_supported = BM_VecSimSpaces::opt.features.sse;
+bool sse_supported = BM_VecSimSpaces::opt.sse;
 INITIALIZE_BENCHMARKS_SET(FP32, SSE, 16, sse_supported);
 #endif // SSE
+
+#endif // x86_64
 
 // Naive algorithms
 

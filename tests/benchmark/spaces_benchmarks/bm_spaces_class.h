@@ -7,8 +7,12 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
-#include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/space_aux.h"
+
+#pragma once
+#include "cpu_features_macros.h"
+#ifdef CPU_FEATURES_ARCH_X86_64
+#include "cpuinfo_x86.h"
+#endif
 
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
@@ -25,7 +29,9 @@ public:
 
     // Specific architecture optimization flags that are supported on this machine,
     // to be initialized in every executable that is running this benchmarks.
-    static spaces::Arch_Optimization opt;
+#ifdef CPU_FEATURES_ARCH_X86_64
+    static cpu_features::X86Features opt;
+#endif
 };
 
 BM_VecSimSpaces::BM_VecSimSpaces() { rng.seed(47); }
