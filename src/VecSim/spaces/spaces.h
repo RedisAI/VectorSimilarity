@@ -20,4 +20,9 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func,
                  unsigned char *alignment);
 
+static int inline is_little_endian() {
+    unsigned int x = 1;
+    return *(char *)&x;
+}
+
 } // namespace spaces

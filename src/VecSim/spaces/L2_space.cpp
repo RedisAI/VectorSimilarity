@@ -4,6 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
+#include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/types/bfloat16.h"
@@ -18,8 +19,7 @@ using bfloat16 = vecsim_types::bfloat16;
 
 namespace spaces {
 
-dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
-                                       unsigned char *alignment) {
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
     unsigned char dummy_alignment;
     if (!alignment) {
         alignment = &dummy_alignment;
@@ -31,41 +31,35 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-
-    switch (arch_opt) {
-    case ARCH_OPT_AVX512_BW_VBMI2:
-    case ARCH_OPT_AVX512_F:
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    if (features.avx512f) {
 #ifdef OPT_AVX512F
-        ret_dist_func = Choose_FP32_L2_implementation_AVX512(dim);
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
-        break;
+        return Choose_FP32_L2_implementation_AVX512(dim);
 #endif
-    case ARCH_OPT_AVX2:
-    case ARCH_OPT_AVX:
+    }
+    if (features.avx) {
 #ifdef OPT_AVX
-        ret_dist_func = Choose_FP32_L2_implementation_AVX(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(float); // handles 8 floats
-        break;
+        return Choose_FP32_L2_implementation_AVX(dim);
 #endif
-    case ARCH_OPT_SSE3:
-    case ARCH_OPT_SSE:
+    }
+    if (features.sse) {
 #ifdef OPT_SSE
-        ret_dist_func = Choose_FP32_L2_implementation_SSE(dim);
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(float); // handles 4 floats
-        break;
+        return Choose_FP32_L2_implementation_SSE(dim);
 #endif
-    case ARCH_OPT_NONE:
-        break;
-    } // switch
-
+    }
 #endif // __x86_64__
     return ret_dist_func;
 }
 
-dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const void *arch_opt,
                                         unsigned char *alignment) {
     unsigned char dummy_alignment;
     if (!alignment) {
@@ -78,42 +72,35 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-
-    switch (arch_opt) {
-    case ARCH_OPT_AVX512_BW_VBMI2:
-    case ARCH_OPT_AVX512_F:
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    if (features.avx512f) {
 #ifdef OPT_AVX512F
-        ret_dist_func = Choose_FP64_L2_implementation_AVX512(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(double); // handles 8 doubles
-        break;
+        return Choose_FP64_L2_implementation_AVX512(dim);
 #endif
-    case ARCH_OPT_AVX2:
-    case ARCH_OPT_AVX:
+    }
+    if (features.avx) {
 #ifdef OPT_AVX
-        ret_dist_func = Choose_FP64_L2_implementation_AVX(dim);
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(double); // handles 4 doubles
-        break;
+        return Choose_FP64_L2_implementation_AVX(dim);
 #endif
-    case ARCH_OPT_SSE3:
-    case ARCH_OPT_SSE:
+    }
+    if (features.sse) {
 #ifdef OPT_SSE
-        ret_dist_func = Choose_FP64_L2_implementation_SSE(dim);
         if (dim % 2 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 2 * sizeof(double); // handles 2 doubles
-        break;
+        return Choose_FP64_L2_implementation_SSE(dim);
 #endif
-    case ARCH_OPT_NONE:
-        break;
-    } // switch
-
+    }
 #endif // __x86_64__ */
     return ret_dist_func;
 }
 
-dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
-                                       unsigned char *alignment) {
+dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
     unsigned char dummy_alignment;
     if (!alignment) {
         alignment = &dummy_alignment;
@@ -128,36 +115,30 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, const Arch_Optimization arch_
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-
-    switch (arch_opt) {
-    case ARCH_OPT_AVX512_BW_VBMI2:
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    if (features.avx512bw && features.avx512vbmi2) {
 #ifdef OPT_AVX512_BW_VBMI2
-        ret_dist_func = Choose_BF16_L2_implementation_AVX512BW_VBMI2(dim);
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(bfloat16); // align to 512 bits.
-        break;
+        return Choose_BF16_L2_implementation_AVX512BW_VBMI2(dim);
 #endif
-    case ARCH_OPT_AVX512_F:
-    case ARCH_OPT_AVX2:
+    }
+    if (features.avx2) {
 #ifdef OPT_AVX2
-        ret_dist_func = Choose_BF16_L2_implementation_AVX2(dim);
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(bfloat16); // align to 256 bits.
-        break;
+        return Choose_BF16_L2_implementation_AVX2(dim);
 #endif
-    case ARCH_OPT_AVX:
-    case ARCH_OPT_SSE3:
+    }
+    if (features.sse3) {
 #ifdef OPT_SSE3
-        ret_dist_func = Choose_BF16_L2_implementation_SSE3(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(bfloat16); // align to 128 bits.
-        break;
+        return Choose_BF16_L2_implementation_SSE3(dim);
 #endif
-    case ARCH_OPT_SSE:
-    case ARCH_OPT_NONE:
-        break;
-    } // switch
-
+    }
 #endif // __x86_64__
     return ret_dist_func;
 }
