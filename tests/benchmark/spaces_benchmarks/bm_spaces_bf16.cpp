@@ -9,23 +9,23 @@
 #include "bm_spaces.h"
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-cpu_features::X86Features BM_VecSimSpaces::opt = cpu_features::GetX86Info().features;
+cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
 // AVX512 functions
 #ifdef OPT_AVX512_BW_VBMI2
-bool avx512_bw_vbmi2_supported = BM_VecSimSpaces::opt.avx512bw && BM_VecSimSpaces::opt.avx512vbmi2;
+bool avx512_bw_vbmi2_supported = opt.avx512bw && opt.avx512vbmi2;
 INITIALIZE_BENCHMARKS_SET(BF16, AVX512BW_VBMI2, 32, avx512_bw_vbmi2_supported);
 #endif // AVX512F
 
 // AVX functions
 #ifdef OPT_AVX2
-bool avx2_supported = BM_VecSimSpaces::opt.avx2;
+bool avx2_supported = opt.avx2;
 INITIALIZE_BENCHMARKS_SET(BF16, AVX2, 32, avx2_supported);
 #endif // AVX
 
 // SSE functions
 #ifdef OPT_SSE3
-bool sse3_supported = BM_VecSimSpaces::opt.sse3;
+bool sse3_supported = opt.sse3;
 INITIALIZE_BENCHMARKS_SET(BF16, SSE3, 32, sse3_supported);
 #endif // SSE
 

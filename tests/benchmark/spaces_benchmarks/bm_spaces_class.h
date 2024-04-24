@@ -9,10 +9,6 @@
 #include <unistd.h>
 
 #pragma once
-#include "cpu_features_macros.h"
-#ifdef CPU_FEATURES_ARCH_X86_64
-#include "cpuinfo_x86.h"
-#endif
 
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
@@ -26,12 +22,6 @@ public:
 
     void SetUp(const ::benchmark::State &state);
     void TearDown(const ::benchmark::State &state);
-
-    // Specific architecture optimization flags that are supported on this machine,
-    // to be initialized in every executable that is running this benchmarks.
-#ifdef CPU_FEATURES_ARCH_X86_64
-    static cpu_features::X86Features opt;
-#endif
 };
 
 BM_VecSimSpaces::BM_VecSimSpaces() { rng.seed(47); }

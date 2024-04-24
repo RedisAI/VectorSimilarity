@@ -140,7 +140,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX512(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
-        // Unet avx512f flag, so we'll choose the next optimization (AVX).
+        // Unset avx512f flag, so we'll choose the next optimization (AVX).
         optimization.avx512f = 0;
     }
     if (optimization.avx) {
