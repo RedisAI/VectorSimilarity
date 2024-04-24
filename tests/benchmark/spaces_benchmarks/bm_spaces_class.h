@@ -7,15 +7,14 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
-#include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/space_aux.h"
+
+#pragma once
 
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
     DATA_TYPE *v1, *v2;
-    spaces::Arch_Optimization opt;
 
 public:
     BM_VecSimSpaces();
@@ -25,10 +24,7 @@ public:
     void TearDown(const ::benchmark::State &state);
 };
 
-BM_VecSimSpaces::BM_VecSimSpaces() {
-    rng.seed(47);
-    opt = spaces::getArchitectureOptimization();
-}
+BM_VecSimSpaces::BM_VecSimSpaces() { rng.seed(47); }
 
 void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {
     dim = state.range(0);

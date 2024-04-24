@@ -8,6 +8,11 @@
 
 #include "VecSim/utils/alignment.h"
 
+#include "cpu_features_macros.h"
+#ifdef CPU_FEATURES_ARCH_X86_64
+#include "cpuinfo_x86.h"
+#endif // CPU_FEATURES_ARCH_X86_64
+
 #if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
 #if defined(__GNUC__)
 #include <x86intrin.h>
