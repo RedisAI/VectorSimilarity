@@ -24,4 +24,10 @@ using normalizeVector_f = void (*)(void *input_vector, const size_t dim);
 
 template <typename DataType>
 normalizeVector_f<DataType> GetNormalizeFunc();
+
+static int inline is_little_endian() {
+    unsigned int x = 1;
+    return *(char *)&x;
+}
+
 } // namespace spaces

@@ -5,10 +5,11 @@
  */
 
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/normalize/normalize_naive.h"
-#include "VecSim/spaces/spaces.h"
 
 #include <stdexcept>
 namespace spaces {
@@ -19,15 +20,12 @@ namespace spaces {
 template <>
 dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metric, size_t dim,
                                                               unsigned char *alignment) {
-
-    static const Arch_Optimization arch_opt = getArchitectureOptimization();
-
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_BF16_GetDistFunc(dim, arch_opt, alignment);
+        return IP_BF16_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
-        return L2_BF16_GetDistFunc(dim, arch_opt, alignment);
+        return L2_BF16_GetDistFunc(dim, nullptr, alignment);
     default:
         throw std::invalid_argument("Invalid metric");
     }
@@ -36,15 +34,12 @@ dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metri
 template <>
 dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
                                              unsigned char *alignment) {
-
-    static const Arch_Optimization arch_opt = getArchitectureOptimization();
-
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_FP32_GetDistFunc(dim, arch_opt, alignment);
+        return IP_FP32_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
-        return L2_FP32_GetDistFunc(dim, arch_opt, alignment);
+        return L2_FP32_GetDistFunc(dim, nullptr, alignment);
     default:
         throw std::invalid_argument("Invalid metric");
     }
@@ -53,15 +48,12 @@ dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
 template <>
 dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
                                                 unsigned char *alignment) {
-
-    static const Arch_Optimization arch_opt = getArchitectureOptimization();
-
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_FP64_GetDistFunc(dim, arch_opt, alignment);
+        return IP_FP64_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
-        return L2_FP64_GetDistFunc(dim, arch_opt, alignment);
+        return L2_FP64_GetDistFunc(dim, nullptr, alignment);
     default:
         throw std::invalid_argument("Invalid metric");
     }
