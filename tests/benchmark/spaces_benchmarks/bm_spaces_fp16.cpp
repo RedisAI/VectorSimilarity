@@ -8,17 +8,22 @@
 #define DATA_TYPE vecsim_types::float16
 #include "bm_spaces.h"
 
+#ifdef CPU_FEATURES_ARCH_X86_64
+cpu_features::X86Features opt = cpu_features::GetX86Info().features;
+
 // AVX512_BW_VL functions
 #ifdef OPT_AVX512_BW_VL
-
-INITIALIZE_BENCHMARKS_SET(FP16, AVX512_BW_VL, 32);
+bool avx512_bw_vl_supported = opt.avx512bw && opt.avx512vl;
+INITIALIZE_BENCHMARKS_SET(FP16, AVX512BW_VL, 32, avx512_bw_vl_supported);
 #endif // OPT_AVX512_BW_VL
 
 // AVX functions
 #ifdef OPT_F16C
-
-INITIALIZE_BENCHMARKS_SET(FP16, F16C, 32);
+bool avx512_bw_f16c_supported = opt.f16c && opt.fma3 && opt.avx;
+INITIALIZE_BENCHMARKS_SET(FP16, F16C, 32, avx512_bw_f16c_supported);
 #endif // OPT_F16C
+
+#endif // x86_64
 
 INITIALIZE_NAIVE_BM(FP16, InnerProduct, 32);
 INITIALIZE_NAIVE_BM(FP16, L2Sqr, 32);
