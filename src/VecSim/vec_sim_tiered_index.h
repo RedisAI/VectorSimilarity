@@ -100,6 +100,11 @@ public:
         return this->frontendIndex;
     }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
+
+    virtual void fitMemory() {
+        this->backendIndex->fitMemory();
+        this->frontendIndex->fitMemory();
+    }
 #endif
 
 private:

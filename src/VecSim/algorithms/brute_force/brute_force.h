@@ -83,6 +83,10 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+    virtual void fitMemory() {
+        idToLabelMapping.shrink_to_fit();
+        resizeLabelLookup(idToLabelMapping.size());
+    }
 #endif
 
 protected:

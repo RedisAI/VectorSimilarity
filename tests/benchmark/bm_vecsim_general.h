@@ -23,7 +23,7 @@
 #include "utils/mock_thread_pool.h"
 
 // This class includes every static data member that is:
-// 1. Common for fp32 and fp64 data sets.
+// 1. Common for all data type data sets.
 // or
 // 2. In use for all benchmark types, if this type
 // is defined in a separate compilation unit.

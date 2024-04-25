@@ -191,6 +191,9 @@ VecSimIndex *NewIndex(const std::string &location) {
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version);
     } else if (params.type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version);
+    } else if (params.type == VecSimType_BFLOAT16) {
+        return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
+                                                             version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {
