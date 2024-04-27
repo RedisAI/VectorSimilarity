@@ -22,7 +22,7 @@ public:
 
 protected:
     static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-        return static_cast<HNSWIndex<data_t, dist_t> *>(index);
+        return dynamic_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
     static inline const char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);

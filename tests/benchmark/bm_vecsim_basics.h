@@ -51,7 +51,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
 
-    static_cast<VecSimIndexAbstract<data_t, dist_t> *>(index)->fitMemory();
+    index->fitMemory();
     size_t memory_delta = index->getAllocationSize();
     // Add a new label from the test set in every iteration.
     for (auto _ : st) {
@@ -95,7 +95,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
 
-    static_cast<VecSimIndexAbstract<data_t, dist_t> *>(index)->fitMemory();
+    index->fitMemory();
     size_t memory_before = index->getAllocationSize();
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
@@ -162,7 +162,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
     BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
     // Remove the rest of the vectors that hadn't been swapped yet for tiered index.
     if (VecSimIndex_BasicInfo(index).algo == VecSimAlgo_TIERED) {
-        reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index)->executeReadySwapJobs();
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(index)->executeReadySwapJobs();
     }
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
 
@@ -185,7 +185,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
     auto *tiered_index =
-        reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
 
     tiered_index->fitMemory();
     double memory_before = tiered_index->getAllocationSize();
@@ -325,7 +325,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 #define DEFINE_DELETE_LABEL(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)     \
     BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
         DeleteLabel<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                             \
-            reinterpret_cast<INDEX_NAME<DATA_TYPE, DIST_TYPE> *>(                                  \
+            dynamic_cast<INDEX_NAME<DATA_TYPE, DIST_TYPE> *>(                                      \
                 BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
             st);                                                                                   \
     }
