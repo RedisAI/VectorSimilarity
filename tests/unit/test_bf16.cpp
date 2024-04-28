@@ -52,10 +52,17 @@ protected:
         return dynamic_cast<BruteForceIndex<data_t, dist_t> *>(index);
     }
 
-    int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id) {
+    void FloatVecToBfloat16Vec(float *org_vec, bfloat16 *bf_vec, size_t dim) {
+        for (size_t i = 0; i < dim; i++) {
+            bf_vec[i] = vecsim_types::float_to_bf16(org_vec[i]);
+        }
+    }
+
+    int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, float initial_value = 0.5f,
+                             float step = 1.0f) {
         bfloat16 v[dim];
         for (size_t i = 0; i < dim; i++) {
-            v[i] = vecsim_types::float_to_bf16((float)i + 0.5f);
+            v[i] = vecsim_types::float_to_bf16(initial_value + step * i);
         }
         return VecSimIndex_AddVector(index, v, id);
     }
@@ -67,6 +74,8 @@ TYPED_TEST_SUITE(BF16Test, DataTypeBF16);
 
 TYPED_TEST(BF16Test, create_hnsw_index) {
     size_t dim = 40;
+    float initial_value = 0.5f;
+    float step = 1.0f;
 
     HNSWParams params = {.dim = dim, .initialCapacity = 200, .M = 16, .efConstruction = 200};
 
@@ -74,19 +83,22 @@ TYPED_TEST(BF16Test, create_hnsw_index) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    this->GenerateAndAddVector(index, dim, 0);
+    this->GenerateAndAddVector(index, dim, 0, initial_value, step);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     const void *v = this->CastToHNSW_Single(index)->getDataByInternalId(0);
 
     for (size_t i = 0; i < dim; i++) {
-        ASSERT_EQ(vecsim_types::bfloat16_to_float32(((bfloat16 *)v)[i]), (float)i + 0.5f);
+        ASSERT_EQ(vecsim_types::bfloat16_to_float32(((bfloat16 *)v)[i]),
+                  initial_value + step * float(i));
     }
     VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BF16Test, create_bf_index) {
     size_t dim = 40;
+    float initial_value = 0.5f;
+    float step = 1.0f;
 
     BFParams params = {.dim = dim, .initialCapacity = 200};
 
@@ -94,13 +106,14 @@ TYPED_TEST(BF16Test, create_bf_index) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    this->GenerateAndAddVector(index, dim, 0);
+    this->GenerateAndAddVector(index, dim, 0, initial_value, step);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     const void *v = this->CastToBruteForce(index)->getDataByInternalId(0);
 
     for (size_t i = 0; i < dim; i++) {
-        ASSERT_EQ(vecsim_types::bfloat16_to_float32(((bfloat16 *)v)[i]), (float)i + 0.5f);
+        ASSERT_EQ(vecsim_types::bfloat16_to_float32(((bfloat16 *)v)[i]),
+                  initial_value + step * float(i));
     }
 
     VecSimIndex_Free(index);
@@ -220,6 +233,129 @@ TYPED_TEST(BF16Test, testSizeEstimation_No_InitialCapacityBF) {
     size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BF16Test, vector_search_by_id_test_brute_force) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    BFParams params = {.dim = dim, .initialCapacity = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i, 0); // {i, i, i, i}
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    bfloat16 bf_query[dim];
+    this->FloatVecToBfloat16Vec(query, bf_query, dim);
+    // Vectors values are equal to the id, so the 11 closest vectors are 45, 46...50
+    // (closest), 51...55
+    static size_t expected_res_order[] = {45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, expected_res_order[index]);    // results are sorted by ID
+        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
+    };
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BF16Test, vector_search_by_score_test_brute_force) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    BFParams params = {.dim = dim, .initialCapacity = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i, 0); // {i, i, i, i}
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    bfloat16 bf_query[dim];
+    this->FloatVecToBfloat16Vec(query, bf_query, dim);
+    // Vectors values are equal to the id, so the 11 closest vectors are
+    // 45, 46...50 (closest), 51...55
+    static size_t expected_res_order[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, expected_res_order[index]);
+        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
+    };
+
+    runTopKSearchTest(index, bf_query, k, verify_res);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BF16Test, vector_search_by_id_test_hnsw) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = 200,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i, 0); // {i, i, i, i}
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    bfloat16 bf_query[dim];
+    this->FloatVecToBfloat16Vec(query, bf_query, dim);
+    // Vectors values are equal to the id, so the 11 closest vectors are
+    // 45, 46...50 (closest), 51...55
+    static size_t expected_res_order[] = {45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, expected_res_order[index]);    // results are sorted by ID
+        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
+    };
+    runTopKSearchTest(index, bf_query, k, verify_res, nullptr, BY_ID);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BF16Test, vector_search_by_score_test_hnsw) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = 200,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i, 0); // {i, i, i, i}
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    bfloat16 bf_query[dim];
+    this->FloatVecToBfloat16Vec(query, bf_query, dim);
+    // Vectors values are equal to the id, so the 11 closest vectors are
+    // 45, 46...50 (closest), 51...55
+    static size_t expected_res_order[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, expected_res_order[index]);
+        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
+    };
+
+    runTopKSearchTest(index, bf_query, k, verify_res);
     VecSimIndex_Free(index);
 }
 
