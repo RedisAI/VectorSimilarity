@@ -6,6 +6,7 @@ import math
 import multiprocessing
 import os
 import time
+import VecSim
 from common import *
 import hnswlib
 
@@ -494,6 +495,7 @@ class TestBfloat16():
         new_hnsw_index = HNSWIndex(file_name)
         os.remove(file_name)
         assert new_hnsw_index.index_size() == self.num_elements
+        assert new_hnsw_index.index_type() == VecSimType_BFLOAT16
 
         # Check recall
         correct_after = 0

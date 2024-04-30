@@ -16,18 +16,17 @@ protected:
     //     index = test_utils::CreateNewIndex(params, VecSimType_BFLOAT16, is_multi);
     //     dim = params.dim;
     // }
-
     virtual void SetUp(HNSWParams &params, bool is_multi = false) {
-        index = test_utils::CreateNewIndex(params, VecSimType_BFLOAT16, is_multi);
-        dim = params.dim;
+        FAIL() << "BF16Test::SetUp(HNSWParams) this method should be overriden";
     }
 
-    void SetUp(BFParams &params, bool is_multi = false) {
-        index = test_utils::CreateNewIndex(params, VecSimType_BFLOAT16, is_multi);
-        dim = params.dim;
+    virtual void SetUp(BFParams &params, bool is_multi = false) {
+        FAIL() << "BF16Test::SetUp(BFParams) this method should be overriden";
     }
 
     virtual void TearDown() { VecSimIndex_Free(index); }
+
+    virtual const void *GetDataByInternalId(idType id) = 0;
 
     template <typename algo_t>
     algo_t *CastIndex() {
@@ -37,12 +36,6 @@ protected:
     template <typename algo_t>
     algo_t *CastIndex(VecSimIndex *vecsim_index) {
         return dynamic_cast<algo_t *>(vecsim_index);
-    }
-
-    void FloatVecToBfloat16Vec(float *org_vec, bfloat16 *bf_vec, size_t dim) {
-        for (size_t i = 0; i < dim; i++) {
-            bf_vec[i] = vecsim_types::float_to_bf16(org_vec[i]);
-        }
     }
 
     void GenerateVector(bfloat16 *out_vec, float initial_value = 0.5f, float step = 1.0f) {
@@ -57,17 +50,43 @@ protected:
         return VecSimIndex_AddVector(index, v, id);
     }
 
-    template <typename algo_t, typename params_t>
+    template <typename params_t>
     void create_index_test(params_t index_params);
     template <typename params_t>
     void search_by_id_test(params_t index_params);
     template <typename params_t>
     void search_by_score_test(params_t index_params);
     template <typename params_t>
+    void search_empty_index_test(params_t index_params);
+    template <typename params_t>
     void test_info_iterator(VecSimMetric metric);
 
     VecSimIndex *index;
     size_t dim;
+};
+
+class BF16HNSWTest : public BF16Test {
+protected:
+    virtual void SetUp(HNSWParams &params, bool is_multi = false) {
+        index = test_utils::CreateNewIndex(params, VecSimType_BFLOAT16, is_multi);
+        dim = params.dim;
+    }
+
+    virtual const void *GetDataByInternalId(idType id) {
+        return CastIndex<HNSWIndex_Single<bfloat16, float>>()->getDataByInternalId(id);
+    }
+};
+
+class BF16BruteForceTest : public BF16Test {
+protected:
+    virtual void SetUp(BFParams &params, bool is_multi = false) {
+        index = test_utils::CreateNewIndex(params, VecSimType_BFLOAT16, is_multi);
+        dim = params.dim;
+    }
+
+    virtual const void *GetDataByInternalId(idType id) {
+        return CastIndex<BruteForceIndex_Single<bfloat16, float>>()->getDataByInternalId(id);
+    }
 };
 
 class BF16TieredTest : public BF16Test {
@@ -95,6 +114,11 @@ protected:
 
     virtual void TearDown() override {}
 
+    virtual const void *GetDataByInternalId(idType id) {
+        return CastIndex<BruteForceIndex<bfloat16, float>>(GetBruteForce())
+            ->getDataByInternalId(id);
+    }
+
     HNSWIndex<bfloat16, float> *GetHNSW() {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<bfloat16, float> *>(index);
         return tiered_index->getHNSWIndex();
@@ -110,7 +134,7 @@ protected:
 };
 /* ---------------------------- Create index tests ---------------------------- */
 
-template <typename algo_t, typename params_t>
+template <typename params_t>
 void BF16Test::create_index_test(params_t index_params) {
     SetUp(index_params);
     float initial_value = 0.5f;
@@ -118,10 +142,14 @@ void BF16Test::create_index_test(params_t index_params) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    this->GenerateAndAddVector(0, initial_value, step);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    bfloat16 vector[dim];
+    this->GenerateVector(vector, initial_value, step);
+    VecSimIndex_AddVector(index, vector, 0);
 
-    const void *v = this->CastIndex<algo_t>()->getDataByInternalId(0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(index->getDistanceFrom_Unsafe(0, vector), 0);
+
+    const void *v = this->GetDataByInternalId(0);
 
     for (size_t i = 0; i < dim; i++) {
         ASSERT_EQ(vecsim_types::bfloat16_to_float32(((bfloat16 *)v)[i]),
@@ -129,18 +157,25 @@ void BF16Test::create_index_test(params_t index_params) {
     }
 }
 
-TEST_F(BF16Test, createIndexHNSW) {
+TEST_F(BF16HNSWTest, createIndex) {
     HNSWParams params = {.dim = 40, .initialCapacity = 200, .M = 16, .efConstruction = 200};
-    create_index_test<HNSWIndex_Single<bfloat16, float>>(params);
+    create_index_test(params);
     ASSERT_EQ(index->basicInfo().type, VecSimType_BFLOAT16);
     ASSERT_EQ(index->basicInfo().algo, VecSimAlgo_HNSWLIB);
 }
 
-TEST_F(BF16Test, createIndexBruteForce) {
+TEST_F(BF16BruteForceTest, createIndex) {
     BFParams params = {.dim = 40, .initialCapacity = 200};
-    create_index_test<BruteForceIndex_Single<bfloat16, float>>(params);
+    create_index_test(params);
     ASSERT_EQ(index->basicInfo().type, VecSimType_BFLOAT16);
     ASSERT_EQ(index->basicInfo().algo, VecSimAlgo_BF);
+}
+
+TEST_F(BF16TieredTest, createIndex) {
+    HNSWParams params = {.dim = 40, .initialCapacity = 200, .M = 16, .efConstruction = 200};
+    create_index_test(params);
+    ASSERT_EQ(index->basicInfo().type, VecSimType_BFLOAT16);
+    ASSERT_EQ(index->basicInfo().isTiered, true);
 }
 
 TEST_F(BF16TieredTest, createIndexTiered) {
@@ -172,7 +207,7 @@ TEST_F(BF16TieredTest, createIndexTiered) {
 
 /* ---------------------------- Size Estimation tests ---------------------------- */
 
-TEST_F(BF16Test, testSizeEstimationHNSW) {
+TEST_F(BF16HNSWTest, testSizeEstimation) {
     size_t n = 200;
     size_t bs = 256;
     size_t M = 64;
@@ -218,7 +253,7 @@ TEST_F(BF16Test, testSizeEstimationHNSW) {
     ASSERT_LE(estimation, actual * 1.01);
 }
 
-TEST_F(BF16Test, testSizeEstimation_No_InitialCapacityHNSW) {
+TEST_F(BF16HNSWTest, testSizeEstimation_No_InitialCapacity) {
     size_t dim = 128;
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
@@ -240,7 +275,7 @@ TEST_F(BF16Test, testSizeEstimation_No_InitialCapacityHNSW) {
     ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
 }
 
-TEST_F(BF16Test, testSizeEstimationBF) {
+TEST_F(BF16BruteForceTest, testSizeEstimation) {
     size_t dim = 128;
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
@@ -264,7 +299,7 @@ TEST_F(BF16Test, testSizeEstimationBF) {
     ASSERT_LE(estimation * 0.99, actual);
 }
 
-TEST_F(BF16Test, testSizeEstimation_No_InitialCapacityBF) {
+TEST_F(BF16BruteForceTest, testSizeEstimation_No_InitialCapacity) {
     size_t dim = 128;
     size_t n = 100;
     size_t bs = DEFAULT_BLOCK_SIZE;
@@ -350,9 +385,9 @@ void BF16Test::search_by_id_test(params_t index_params) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    float query[] = {50, 50, 50, 50};
-    bfloat16 bf_query[dim];
-    this->FloatVecToBfloat16Vec(query, bf_query, dim);
+    bfloat16 query[dim];
+    GenerateVector(query, 50, 0);
+
     // Vectors values are equal to the id, so the 11 closest vectors are 45, 46...50
     // (closest), 51...55
     static size_t expected_res_order[] = {45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55};
@@ -360,14 +395,16 @@ void BF16Test::search_by_id_test(params_t index_params) {
         ASSERT_EQ(id, expected_res_order[index]);    // results are sorted by ID
         ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
     };
+
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 }
 
-TEST_F(BF16Test, searchByIDHNSW) {
+TEST_F(BF16HNSWTest, searchByID) {
     HNSWParams params = {.dim = 4, .initialCapacity = 200, .M = 16, .efConstruction = 200};
     search_by_id_test(params);
 }
 
-TEST_F(BF16Test, searchByIDBruteForce) {
+TEST_F(BF16BruteForceTest, searchByID) {
     BFParams params = {.dim = 4, .initialCapacity = 200};
     search_by_id_test(params);
 }
@@ -389,9 +426,8 @@ void BF16Test::search_by_score_test(params_t index_params) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    float query[] = {50, 50, 50, 50};
-    bfloat16 bf_query[dim];
-    this->FloatVecToBfloat16Vec(query, bf_query, dim);
+    bfloat16 query[dim];
+    GenerateVector(query, 50, 0);
     // Vectors values are equal to the id, so the 11 closest vectors are
     // 45, 46...50 (closest), 51...55
     static size_t expected_res_order[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
@@ -400,16 +436,16 @@ void BF16Test::search_by_score_test(params_t index_params) {
         ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
     };
 
-    runTopKSearchTest(index, bf_query, k, verify_res);
+    runTopKSearchTest(index, query, k, verify_res);
 }
 
-TEST_F(BF16Test, searchByScoreBruteForce) {
-    BFParams params = {.dim = 4, .initialCapacity = 200};
+TEST_F(BF16HNSWTest, searchByScore) {
+    HNSWParams params = {.dim = 4, .initialCapacity = 200, .M = 16, .efConstruction = 200};
     search_by_score_test(params);
 }
 
-TEST_F(BF16Test, searchByScoreHNSW) {
-    HNSWParams params = {.dim = 4, .initialCapacity = 200, .M = 16, .efConstruction = 200};
+TEST_F(BF16BruteForceTest, searchByScore) {
+    BFParams params = {.dim = 4, .initialCapacity = 200};
     search_by_score_test(params);
 }
 
@@ -418,18 +454,80 @@ TEST_F(BF16TieredTest, searchByScore) {
     search_by_score_test(params);
 }
 
-float calc_dist_l2(const bfloat16 *vec1, const bfloat16 *vec2, size_t dim) {
-    float dist = 0;
-    for (size_t i = 0; i < dim; i++) {
-        float diff =
-            vecsim_types::bfloat16_to_float32(vec1[i]) - vecsim_types::bfloat16_to_float32(vec2[i]);
-        dist += diff * diff;
+template <typename params_t>
+void BF16Test::search_empty_index_test(params_t params) {
+    size_t n = 100;
+    size_t k = 11;
+
+    SetUp(params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    bfloat16 query[dim];
+    GenerateVector(query, 50, 0);
+
+    // We do not expect any results.
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
+
+    // Add some vectors and remove them all from index, so it will be empty again.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector(i);
     }
-    return dist;
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Again - we do not expect any results.
+    res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 }
 
+TEST_F(BF16HNSWTest, SearchEmptyIndex) {
+    HNSWParams params = {.dim = 4, .initialCapacity = 0};
+    search_empty_index_test(params);
+}
+
+TEST_F(BF16BruteForceTest, SearchEmptyIndex) {
+    BFParams params = {.dim = 4, .initialCapacity = 0};
+    search_empty_index_test(params);
+}
+
+TEST_F(BF16TieredTest, SearchEmptyIndex) {
+    HNSWParams params = {.dim = 4, .initialCapacity = 0};
+    search_empty_index_test(params);
+}
+
+// float calc_dist_l2(const bfloat16 *vec1, const bfloat16 *vec2, size_t dim) {
+//     float dist = 0;
+//     for (size_t i = 0; i < dim; i++) {
+//         float diff =
+//             vecsim_types::bfloat16_to_float32(vec1[i]) -
+//             vecsim_types::bfloat16_to_float32(vec2[i]);
+//         dist += diff * diff;
+//     }
+//     return dist;
+// }
+
 /* ---------------------------- Info tests ---------------------------- */
-TEST_F(BF16Test, InfoHNSW) {
+TEST_F(BF16HNSWTest, Info) {
     size_t n = 100;
     size_t d = 128;
 
@@ -460,7 +558,7 @@ TEST_F(BF16Test, InfoHNSW) {
     ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 }
 
-TEST_F(BF16Test, InfoHNSWBruteForce) {
+TEST_F(BF16BruteForceTest, Info) {
     size_t n = 100;
     size_t d = 128;
 
@@ -507,14 +605,15 @@ void BF16Test::test_info_iterator(VecSimMetric metric) {
     VecSimInfoIterator_Free(infoIter);
 }
 
-TEST_F(BF16Test, InfoIteratorBruteForceCosine) {
+TEST_F(BF16BruteForceTest, InfoIteratorCosine) {
     test_info_iterator<BFParams>(VecSimMetric_Cosine);
 }
-TEST_F(BF16Test, InfoIteratorBruteForceIP) { test_info_iterator<BFParams>(VecSimMetric_IP); }
-TEST_F(BF16Test, InfoIteratorBruteForceL2) { test_info_iterator<BFParams>(VecSimMetric_L2); }
-TEST_F(BF16Test, InfoIteratorHNSWCosine) { test_info_iterator<HNSWParams>(VecSimMetric_Cosine); }
-TEST_F(BF16Test, InfoIteratorHNSWIP) { test_info_iterator<HNSWParams>(VecSimMetric_IP); }
-TEST_F(BF16Test, InfoIteratorHNSWL2) { test_info_iterator<HNSWParams>(VecSimMetric_L2); }
+TEST_F(BF16BruteForceTest, InfoIteratorIP) { test_info_iterator<BFParams>(VecSimMetric_IP); }
+TEST_F(BF16BruteForceTest, InfoIteratorL2) { test_info_iterator<BFParams>(VecSimMetric_L2); }
+TEST_F(BF16HNSWTest, InfoIteratorCosine) { test_info_iterator<HNSWParams>(VecSimMetric_Cosine); }
+TEST_F(BF16HNSWTest, InfoIteratorIP) { test_info_iterator<HNSWParams>(VecSimMetric_IP); }
+TEST_F(BF16HNSWTest, InfoIteratorL2) { test_info_iterator<HNSWParams>(VecSimMetric_L2); }
+
 // TEST_F(BF16Test, brute_force_vector_search_test_l2) {
 //     size_t dim = 3;
 //     size_t n = 1;
