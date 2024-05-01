@@ -40,10 +40,8 @@ float BF16_L2Sqr_LittleEndian(const void *pVect1v, const void *pVect2v, size_t d
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        float a = 0;
-        float b = 0;
-        memcpy((bfloat16 *)&a + 1, pVect1 + i, sizeof(bfloat16));
-        memcpy((bfloat16 *)&b + 1, pVect2 + i, sizeof(bfloat16));
+        float a = vecsim_types::bfloat16_to_float32(pVect1[i]);
+        float b = vecsim_types::bfloat16_to_float32(pVect2[i]);
         float diff = a - b;
         res += diff * diff;
     }
@@ -56,10 +54,8 @@ float BF16_L2Sqr_BigEndian(const void *pVect1v, const void *pVect2v, size_t dime
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        float a = 0;
-        float b = 0;
-        memcpy(&a, pVect1 + i, sizeof(bfloat16));
-        memcpy(&b, pVect2 + i, sizeof(bfloat16));
+        float a = vecsim_types::bfloat16_to_float32_bigEndian(pVect1[i]);
+        float b = vecsim_types::bfloat16_to_float32_bigEndian(pVect2[i]);
         float diff = a - b;
         res += diff * diff;
     }
