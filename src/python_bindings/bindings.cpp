@@ -99,11 +99,11 @@ private:
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
         std::vector<std::vector<DataType>> vectors;
         if (index->basicInfo().algo == VecSimAlgo_BF) {
-            static_cast<BruteForceIndex<DataType, DistType> *>(this->index.get())
+            dynamic_cast<BruteForceIndex<DataType, DistType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         } else {
             // index is HNSW
-            static_cast<HNSWIndex<DataType, DistType> *>(this->index.get())
+            dynamic_cast<HNSWIndex<DataType, DistType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         }
         size_t n_vectors = vectors.size();
@@ -281,13 +281,13 @@ public:
     void saveIndex(const std::string &location) {
         auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
         if (type == VecSimType_FLOAT32) {
-            auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index.get());
+            auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
             hnsw->saveIndex(location);
         } else if (type == VecSimType_FLOAT64) {
-            auto *hnsw = reinterpret_cast<HNSWIndex<double, double> *>(index.get());
+            auto *hnsw = dynamic_cast<HNSWIndex<double, double> *>(index.get());
             hnsw->saveIndex(location);
         } else if (type == VecSimType_BFLOAT16) {
-            auto *hnsw = static_cast<HNSWIndex<bfloat16, float> *>(index.get());
+            auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
             hnsw->saveIndex(location);
         } else {
             throw std::runtime_error("Invalid index data type");
@@ -386,15 +386,15 @@ public:
     bool checkIntegrity() {
         auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
         if (type == VecSimType_FLOAT32) {
-            return reinterpret_cast<HNSWIndex<float, float> *>(this->index.get())
+            return dynamic_cast<HNSWIndex<float, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
         } else if (type == VecSimType_FLOAT64) {
-            return reinterpret_cast<HNSWIndex<double, double> *>(this->index.get())
+            return dynamic_cast<HNSWIndex<double, double> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
         } else if (type == VecSimType_BFLOAT16) {
-            return reinterpret_cast<HNSWIndex<bfloat16, float> *>(this->index.get())
+            return dynamic_cast<HNSWIndex<bfloat16, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
         } else {
