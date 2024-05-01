@@ -42,6 +42,10 @@ protected:
         return dynamic_cast<algo_t *>(vecsim_index);
     }
 
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
+        return CastIndex<HNSWIndex<bfloat16, float>>();
+    }
+
     void GenerateVector(bfloat16 *out_vec, float initial_value = 0.25f, float step = 0.0f) {
         for (size_t i = 0; i < dim; i++) {
             out_vec[i] = vecsim_types::float_to_bf16(initial_value + step * i);
@@ -52,6 +56,13 @@ protected:
         bfloat16 v[dim];
         GenerateVector(v, initial_value, step);
         return VecSimIndex_AddVector(index, v, id);
+    }
+
+    int GenerateAndAddVector(VecSimIndex *target_index, size_t id, float initial_value = 0.25f,
+                             float step = 0.0f) {
+        bfloat16 v[dim];
+        GenerateVector(v, initial_value, step);
+        return VecSimIndex_AddVector(target_index, v, id);
     }
 
     template <typename params_t>
@@ -74,6 +85,8 @@ protected:
     void test_info_iterator(VecSimMetric metric);
     template <typename params_t>
     void test_get_distance(params_t params, VecSimMetric metric);
+    template <typename params_t>
+    void get_element_neighbors(params_t params);
 
     VecSimIndex *index;
     size_t dim;
@@ -92,10 +105,12 @@ protected:
         return CastIndex<HNSWIndex_Single<bfloat16, float>>()->getDataByInternalId(id);
     }
 
-    HNSWIndex<bfloat16, float> *CastToHNSW() { return CastIndex<HNSWIndex<bfloat16, float>>(); }
-
     HNSWIndex<bfloat16, float> *CastToHNSW(VecSimIndex *new_index) {
         return CastIndex<HNSWIndex<bfloat16, float>>(new_index);
+    }
+
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
+        return CastIndex<HNSWIndex<bfloat16, float>>(index);
     }
 
     void test_serialization(bool is_multi);
@@ -113,6 +128,11 @@ protected:
 
     virtual const void *GetDataByInternalId(idType id) {
         return CastIndex<BruteForceIndex_Single<bfloat16, float>>()->getDataByInternalId(id);
+    }
+
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
+        ADD_FAILURE() << "BF16BruteForceTest::CastToHNSW() this method should not be called";
+        return nullptr;
     }
 
     void test_info(bool is_multi);
@@ -151,16 +171,16 @@ protected:
     virtual void TearDown() override {}
 
     virtual const void *GetDataByInternalId(idType id) {
-        return CastIndex<BruteForceIndex<bfloat16, float>>(GetBruteForce())
+        return CastIndex<BruteForceIndex<bfloat16, float>>(CastToBruteForce())
             ->getDataByInternalId(id);
     }
 
-    HNSWIndex<bfloat16, float> *GetHNSW() {
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<bfloat16, float> *>(index);
         return tiered_index->getHNSWIndex();
     }
 
-    VecSimIndexAbstract<bfloat16, float> *GetBruteForce() {
+    VecSimIndexAbstract<bfloat16, float> *CastToBruteForce() {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<bfloat16, float> *>(index);
         return tiered_index->getFlatBufferIndex();
     }
@@ -344,7 +364,7 @@ TEST_F(BF16TieredTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    auto hnsw_index = GetHNSW();
+    auto hnsw_index = CastToHNSW();
     auto hnsw = CastIndex<HNSWIndex_Single<bfloat16, float>>(hnsw_index);
     initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
 
@@ -806,8 +826,8 @@ void BF16TieredTest::test_info(bool is_multi) {
 
     VecSimIndexInfo info = BF16Test::test_info(hnsw_params);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
-    VecSimIndexInfo frontendIndexInfo = GetBruteForce()->info();
-    VecSimIndexInfo backendIndexInfo = GetHNSW()->info();
+    VecSimIndexInfo frontendIndexInfo = CastToBruteForce()->info();
+    VecSimIndexInfo backendIndexInfo = CastToHNSW()->info();
 
     compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
     compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
@@ -916,8 +936,8 @@ void BF16TieredTest::test_info_iterator(VecSimMetric metric) {
     SetUp(params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
-    VecSimIndexInfo frontendIndexInfo = GetBruteForce()->info();
-    VecSimIndexInfo backendIndexInfo = GetHNSW()->info();
+    VecSimIndexInfo frontendIndexInfo = CastToBruteForce()->info();
+    VecSimIndexInfo backendIndexInfo = CastToHNSW()->info();
     VecSimInfoIterator_Free(infoIter);
 }
 
@@ -1029,24 +1049,24 @@ TEST_F(BF16HNSWTest, SerializationCurrentVersion) { test_serialization(false); }
 
 TEST_F(BF16HNSWTest, SerializationCurrentVersionMulti) { test_serialization(true); }
 
-TEST_F(BF16HNSWTest, getElementNeighbors) {
-    size_t dim = 4;
+template <typename params_t>
+void BF16Test::get_element_neighbors(params_t params) {
     size_t n = 0;
-    size_t M = 20;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M};
     SetUp(params);
-    auto *hnsw_index = this->CastToHNSW();
+    auto *hnsw_index = CastToHNSW();
 
     // Add vectors until we have at least 2 vectors at level 1.
     size_t vectors_in_higher_levels = 0;
     while (vectors_in_higher_levels < 2) {
-        GenerateAndAddVector(n, n);
+        GenerateAndAddVector(hnsw_index, n, n);
         if (hnsw_index->getGraphDataByInternalId(n)->toplevel > 0) {
             vectors_in_higher_levels++;
         }
         n++;
     }
+    ASSERT_GE(n, 1) << "n: " << n;
+
     // Go over all vectors and validate that the getElementNeighbors debug command returns the
     // neighbors properly.
     for (size_t id = 0; id < n; id++) {
@@ -1066,39 +1086,16 @@ TEST_F(BF16HNSWTest, getElementNeighbors) {
     }
 }
 
-// TEST_F(BF16Test, hnsw_vector_search_test) {
-//     size_t dim = 3;
-//     size_t n = 1;
-//     size_t k = 1;
+TEST_F(BF16HNSWTest, getElementNeighbors) {
+    size_t dim = 4;
+    size_t M = 20;
+    HNSWParams params = {.dim = 4, .M = 20};
+    get_element_neighbors(params);
+}
 
-//     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 55};
-
-//     VecSimIndex *index = this->CreateNewIndex(params);
-
-//     bfloat16 v[dim];
-//     for (size_t i = 0; i < dim; i++) {
-//         v[i] = vecsim_types::float_to_bf16(0.5 + i * 0.25f);
-//         std::cout << vecsim_types::bfloat16_to_float32(v[i]) << std::endl;
-//     }
-//     VecSimIndex_AddVector(index, v, 0);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-//     bfloat16 query[dim];
-//     for (size_t i = 0; i < dim; i++) {
-//         query[i] = vecsim_types::float_to_bf16(i * 0.25f);
-//         std::cout << vecsim_types::bfloat16_to_float32(query[i]) << std::endl;
-//     }
-//     VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_ID);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), k);
-//     VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
-//     int res_ind = 0;
-//     while (VecSimQueryReply_IteratorHasNext(iterator)) {
-//         VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
-//         int id = (int)VecSimQueryResult_GetId(item);
-//         double score = VecSimQueryResult_GetScore(item);
-//         ASSERT_EQ(id, 0);
-//         ASSERT_EQ(score, 0.02);
-//     }
-//     VecSimQueryReply_IteratorFree(iterator);
-//     VecSimIndex_Free(index);
-// }
+TEST_F(BF16TieredTest, getElementNeighbors) {
+    size_t dim = 4;
+    size_t M = 20;
+    HNSWParams params = {.dim = 4, .M = 20};
+    get_element_neighbors(params);
+}
