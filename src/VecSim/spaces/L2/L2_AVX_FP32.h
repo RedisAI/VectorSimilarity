@@ -49,8 +49,5 @@ float FP32_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dime
         L2SqrStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    float PORTABLE_ALIGN32 TmpRes[8];
-    _mm256_store_ps(TmpRes, sum);
-    return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
-           TmpRes[7];
+    return my_mm256_reduce_add_ps(sum);
 }
