@@ -24,7 +24,7 @@ static void L2SqrStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
 }
 
 template <unsigned short residual> // 0..31
-float FP16_L2SqrSIMD16_AVX512BW_VL(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_L2SqrSIMD32_AVX512BW_VL(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 

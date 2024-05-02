@@ -15,13 +15,13 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP16_IP_implementation_F16C(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD16_F16C);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD32_F16C);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_FP16_L2_implementation_F16C(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_L2SqrSIMD16_F16C);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_L2SqrSIMD32_F16C);
     return ret_dist_func;
 }
 

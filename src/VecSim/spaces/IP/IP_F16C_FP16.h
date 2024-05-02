@@ -23,7 +23,7 @@ static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m256 &sum) {
 }
 
 template <unsigned short residual> // 0..31
-float FP16_InnerProductSIMD16_F16C(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_InnerProductSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 
@@ -67,5 +67,5 @@ float FP16_InnerProductSIMD16_F16C(const void *pVect1v, const void *pVect2v, siz
         InnerProductStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    return 1.0f - _mm256_reduce_add_ps(sum);
+    return 1.0f - my_mm256_reduce_add_ps(sum);
 }

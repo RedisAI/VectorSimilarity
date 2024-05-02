@@ -47,5 +47,5 @@ float FP32_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size
         InnerProductStep(pVect1, pVect2, sum256);
     } while (pVect1 < pEnd1);
 
-    return 1.0f - _mm256_reduce_add_ps(sum256);
+    return 1.0f - my_mm256_reduce_add_ps(sum256);
 }

@@ -116,5 +116,5 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
         L2SqrStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    return _mm256_reduce_add_ps(sum);
+    return my_mm256_reduce_add_ps(sum);
 }

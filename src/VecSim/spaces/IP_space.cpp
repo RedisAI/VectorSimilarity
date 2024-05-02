@@ -164,14 +164,14 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const void *arch_opt, unsigne
     if (features.avx512bw && features.avx512vl) {
 #ifdef OPT_AVX512_BW_VL
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(float16); // handles 16 floats
+            *alignment = 32 * sizeof(float16); // handles 32 floats
         return Choose_FP16_IP_implementation_AVX512BW_VL(dim);
 #endif
     }
     if (features.f16c && features.fma3 && features.avx) {
 #ifdef OPT_F16C
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float16); // handles 8 floats
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(float16); // handles 16 floats
         return Choose_FP16_IP_implementation_F16C(dim);
 #endif
     }

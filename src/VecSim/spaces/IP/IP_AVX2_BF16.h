@@ -118,5 +118,5 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
         InnerProductStep(pVect1, pVect2, sum_prod);
     } while (pVect1 < pEnd1);
 
-    return 1.0f - _mm256_reduce_add_ps(sum_prod);
+    return 1.0f - my_mm256_reduce_add_ps(sum_prod);
 }

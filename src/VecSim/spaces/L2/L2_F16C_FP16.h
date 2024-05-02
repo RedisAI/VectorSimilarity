@@ -24,7 +24,7 @@ static void L2SqrStep(uint16_t *&pVect1, uint16_t *&pVect2, __m256 &sum) {
 }
 
 template <unsigned short residual> // 0..31
-float FP16_L2SqrSIMD16_F16C(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_L2SqrSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 
@@ -69,5 +69,5 @@ float FP16_L2SqrSIMD16_F16C(const void *pVect1v, const void *pVect2v, size_t dim
         L2SqrStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    return _mm256_reduce_add_ps(sum);
+    return my_mm256_reduce_add_ps(sum);
 }
