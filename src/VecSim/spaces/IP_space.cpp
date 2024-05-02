@@ -8,7 +8,10 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/AVX512.h"
+#include "VecSim/spaces/functions/AVX512BW_VL.h"
+#include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
@@ -16,6 +19,7 @@
 #include "VecSim/spaces/functions/SSE3.h"
 
 using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
@@ -136,6 +140,39 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, const void *arch_opt, unsigne
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(bfloat16); // align to 128 bits.
         return Choose_BF16_IP_implementation_SSE3(dim);
+#endif
+    }
+#endif // __x86_64__
+    return ret_dist_func;
+}
+
+dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = FP16_InnerProduct;
+    // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+#ifdef CPU_FEATURES_ARCH_X86_64
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    if (features.avx512bw && features.avx512vl) {
+#ifdef OPT_AVX512_BW_VL
+        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 32 * sizeof(float16); // handles 32 floats
+        return Choose_FP16_IP_implementation_AVX512BW_VL(dim);
+#endif
+    }
+    if (features.f16c && features.fma3 && features.avx) {
+#ifdef OPT_F16C
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(float16); // handles 16 floats
+        return Choose_FP16_IP_implementation_F16C(dim);
 #endif
     }
 #endif // __x86_64__

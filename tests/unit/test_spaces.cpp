@@ -14,14 +14,18 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
+#include "VecSim/spaces/functions/AVX512BW_VL.h"
+#include "VecSim/spaces/functions/F16C.h"
 
 using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 class SpacesTest : public ::testing::Test {
 
@@ -101,19 +105,25 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
         ASSERT_EQ(L2_FP64_GetDistFunc(dim), FP64_L2Sqr);
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
+        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
         ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
         ASSERT_EQ(IP_FP64_GetDistFunc(dim), FP64_InnerProduct);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
+        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
     }
     for (size_t dim = 8; dim < 16; dim++) {
         ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
+        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
         ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
+        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
     }
     for (size_t dim = 16; dim < 32; dim++) {
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
+        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
+        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
     }
 }
 
@@ -295,7 +305,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
     bfloat16 v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = vecsim_types::float_to_bf16((float)i);
-        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5));
+        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5f));
     }
 
     dist_func_t<float> arch_opt_func;
@@ -334,7 +344,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
     bfloat16 v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = vecsim_types::float_to_bf16((float)i);
-        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5));
+        v2[i] = vecsim_types::float_to_bf16(((float)i + 1.5f));
     }
 
     dist_func_t<float> arch_opt_func;
@@ -368,5 +378,80 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest, testing::Range(32UL, 32 * 2UL));
+
+class FP16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
+    auto optimization = cpu_features::GetX86Info().features;
+    size_t dim = GetParam();
+    float16 v1[dim], v2[dim];
+    float v1_fp32[dim], v2_fp32[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v1_fp32[i] = (float)i;
+        v1[i] = vecsim_types::FP32_to_FP16(v1_fp32[i]);
+        v2_fp32[i] = (float)i + 1.5f;
+        v2[i] = vecsim_types::FP32_to_FP16(v2_fp32[i]);
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = FP16_InnerProduct(v1, v2, dim);
+    ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+
+    if (optimization.avx512bw && optimization.avx512vl) {
+        arch_opt_func = IP_FP16_GetDistFunc(dim, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512BW_VL(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.avx512bw = optimization.avx512vl = 0;
+    }
+    if (optimization.f16c && optimization.fma3 && optimization.avx) {
+        arch_opt_func = IP_FP16_GetDistFunc(dim, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_F16C(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
+        optimization.f16c = optimization.fma3 = optimization.avx = 0;
+    }
+    arch_opt_func = IP_FP16_GetDistFunc(dim, &optimization);
+    ASSERT_EQ(arch_opt_func, FP16_InnerProduct)
+        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
+}
+
+TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
+    auto optimization = cpu_features::GetX86Info().features;
+    size_t dim = GetParam();
+    float16 v1[dim], v2[dim];
+    float v1_fp32[dim], v2_fp32[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v1_fp32[i] = (float)i;
+        v1[i] = vecsim_types::FP32_to_FP16(v1_fp32[i]);
+        v2_fp32[i] = (float)i + 1.5f;
+        v2[i] = vecsim_types::FP32_to_FP16(v2_fp32[i]);
+    }
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = FP16_L2Sqr(v1, v2, dim);
+    ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+
+    if (optimization.avx512bw && optimization.avx512vl) {
+        arch_opt_func = L2_FP16_GetDistFunc(dim, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512BW_VL(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        optimization.avx512bw = optimization.avx512vl = 0;
+    }
+    if (optimization.f16c && optimization.fma3 && optimization.avx) {
+        arch_opt_func = L2_FP16_GetDistFunc(dim, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_F16C(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
+        optimization.f16c = optimization.fma3 = optimization.avx = 0;
+    }
+    arch_opt_func = L2_FP16_GetDistFunc(dim, &optimization);
+    ASSERT_EQ(arch_opt_func, FP16_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
+}
+
+INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest, testing::Range(32UL, 32 * 2UL));
 
 #endif // CPU_FEATURES_ARCH_X86_64
