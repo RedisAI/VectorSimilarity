@@ -9,13 +9,14 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
-#include <bit>
+
 namespace vecsim_types {
 
 using bfloat16 = unsigned short;
 
 static inline bfloat16 float_to_bf16(const float ff) {
-    uint32_t f32 = std::bit_cast<uint32_t>(ff);
+    uint32_t *p_f32 = (uint32_t *)&ff;
+    uint32_t f32 = *p_f32;
     uint32_t lsb = (f32 >> 16) & 1;
     uint32_t round = lsb + 0x7FFF;
     f32 += round;
