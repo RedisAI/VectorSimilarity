@@ -9,12 +9,19 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
-#include <bit>
-
 namespace vecsim_types {
+
 using float16 = uint16_t;
-inline float _interpret_as_float(uint32_t num) { return std::bit_cast<float>(num); }
-inline int32_t _interpret_as_int(float num) { return std::bit_cast<int32_t>(num); }
+
+inline float _interpret_as_float(uint32_t num) {
+    void *num_ptr = &num;
+    return *(float *)num_ptr;
+}
+
+inline int32_t _interpret_as_int(float num) {
+    void *num_ptr = &num;
+    return *(int32_t *)num_ptr;
+}
 
 static inline float FP16_to_FP32(float16 input) {
     // https://gist.github.com/2144712
