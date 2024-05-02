@@ -52,9 +52,9 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    dist_func_t<DistType>
-        distFunc;            // Index's distance function. Chosen by the type, metric and dimension.
     unsigned char alignment; // Alignment hint to allocate vectors with.
+    dist_func_t<DistType>
+        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
@@ -85,8 +85,8 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          distFunc(spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment)), alignment(0),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
+          distFunc(spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment)),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
           normalize_func(spaces::GetNormalizeFunc<DataType>()) {
         assert(VecSimType_sizeof(vecType));
