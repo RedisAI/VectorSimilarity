@@ -45,6 +45,6 @@
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \
-        switch (dim % chunk) { CASES##chunk(X, func) }                                             \
+        switch ((dim) % (chunk)) { CASES##chunk(X, func) }                                         \
         out = __ret_dist_func;                                                                     \
     } while (0)

@@ -36,10 +36,13 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Check that the compiler supports instructions flag.
 	# This will add the relevant flag both the the space selector and the optimization.
 	CHECK_CXX_COMPILER_FLAG(-mavx512bw CXX_AVX512BW)
+	CHECK_CXX_COMPILER_FLAG(-mavx512vl CXX_AVX512VL)
 	CHECK_CXX_COMPILER_FLAG(-mavx512vbmi2 CXX_AVX512VBMI2)
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
 	CHECK_CXX_COMPILER_FLAG(-mavx2 CXX_AVX2)
 	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
+	CHECK_CXX_COMPILER_FLAG(-mf16c CXX_F16C)
+	CHECK_CXX_COMPILER_FLAG(-mfma CXX_FMA)
 	CHECK_CXX_COMPILER_FLAG(-msse3 CXX_SSE3)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
@@ -49,6 +52,14 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 
 	if(CXX_AVX512BW AND CXX_AVX512VBMI2)
 		add_compile_definitions(OPT_AVX512_BW_VBMI2)
+	endif()
+
+	if(CXX_AVX512BW AND CXX_AVX512VL)
+		add_compile_definitions(OPT_AVX512_BW_VL)
+	endif()
+
+	if(CXX_F16C AND CXX_FMA AND CXX_AVX)
+		add_compile_definitions(OPT_F16C)
 	endif()
 
 	if(CXX_AVX2)
@@ -68,7 +79,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
-set(DATA_TYPE fp32 fp64 bf16)
+set(DATA_TYPE fp32 fp64 bf16 fp16)
 foreach(data_type IN LISTS DATA_TYPE)
 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
 	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark)

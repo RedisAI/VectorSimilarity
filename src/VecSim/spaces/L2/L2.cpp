@@ -6,9 +6,11 @@
 
 #include "L2.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 #include <cstring>
 
 using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *vec1 = (float *)pVect1v;
@@ -58,6 +60,18 @@ float BF16_L2Sqr_BigEndian(const void *pVect1v, const void *pVect2v, size_t dime
         float b = vecsim_types::bfloat16_to_float32_bigEndian(pVect2[i]);
         float diff = a - b;
         res += diff * diff;
+    }
+    return res;
+}
+
+float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {
+    auto *vec1 = (float16 *)pVect1;
+    auto *vec2 = (float16 *)pVect2;
+
+    float res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        float t = vecsim_types::FP16_to_FP32(vec1[i]) - vecsim_types::FP16_to_FP32(vec2[i]);
+        res += t * t;
     }
     return res;
 }

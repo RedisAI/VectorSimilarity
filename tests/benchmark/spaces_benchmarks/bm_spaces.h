@@ -15,7 +15,9 @@
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX512BW_VL.h"
 #include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE.h"
 
