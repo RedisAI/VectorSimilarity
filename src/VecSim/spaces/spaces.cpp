@@ -4,36 +4,74 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
+#include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/normalize/normalize_naive.h"
+
+#include <stdexcept>
 namespace spaces {
 
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *out_func,
-                 unsigned char *alignment) {
+// Set the distance function for a given data type, metric and dimension. The alignment hint is
+// determined according to the chosen implementation and available optimizations.
 
-    if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
-
-        *out_func = IP_FP32_GetDistFunc(dim, nullptr, alignment);
-
-    } else if (metric == VecSimMetric_L2) {
-
-        *out_func = L2_FP32_GetDistFunc(dim, nullptr, alignment);
+template <>
+dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metric, size_t dim,
+                                                              unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+    case VecSimMetric_IP:
+        return IP_BF16_GetDistFunc(dim, nullptr, alignment);
+    case VecSimMetric_L2:
+        return L2_BF16_GetDistFunc(dim, nullptr, alignment);
     }
+    throw std::invalid_argument("Invalid metric");
 }
 
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *out_func,
-                 unsigned char *alignment) {
-
-    if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
-
-        *out_func = IP_FP64_GetDistFunc(dim, nullptr, alignment);
-
-    } else if (metric == VecSimMetric_L2) {
-
-        *out_func = L2_FP64_GetDistFunc(dim, nullptr, alignment);
+template <>
+dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
+                                             unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+    case VecSimMetric_IP:
+        return IP_FP32_GetDistFunc(dim, nullptr, alignment);
+    case VecSimMetric_L2:
+        return L2_FP32_GetDistFunc(dim, nullptr, alignment);
     }
+    throw std::invalid_argument("Invalid metric");
 }
 
+template <>
+dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
+                                                unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+    case VecSimMetric_IP:
+        return IP_FP64_GetDistFunc(dim, nullptr, alignment);
+    case VecSimMetric_L2:
+        return L2_FP64_GetDistFunc(dim, nullptr, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
+normalizeVector_f<float> GetNormalizeFunc<float>(void) {
+    return normalizeVector_imp<float>;
+}
+
+template <>
+normalizeVector_f<double> GetNormalizeFunc<double>(void) {
+    return normalizeVector_imp<double>;
+}
+
+template <>
+normalizeVector_f<vecsim_types::bfloat16> GetNormalizeFunc<vecsim_types::bfloat16>(void) {
+    if (is_little_endian()) {
+        return bfloat16_normalizeVector<true>;
+    } else {
+        return bfloat16_normalizeVector<false>;
+    }
+}
 } // namespace spaces

@@ -26,7 +26,7 @@
 using spaces::dist_func_t;
 
 template <typename DataType, typename DistType>
-class BruteForceIndex : public VecSimIndexAbstract<DistType> {
+class BruteForceIndex : public VecSimIndexAbstract<DataType, DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<DataBlock> vectorBlocks;
@@ -83,6 +83,10 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+    virtual void fitMemory() {
+        idToLabelMapping.shrink_to_fit();
+        resizeLabelLookup(idToLabelMapping.size());
+    }
 #endif
 
 protected:
@@ -149,8 +153,8 @@ protected:
 template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
-    : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
-      vectorBlocks(this->allocator), count(0) {
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams),
+      idToLabelMapping(this->allocator), vectorBlocks(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
     size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);

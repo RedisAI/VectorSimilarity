@@ -2187,3 +2187,18 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
     }
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWTest, FitMemoryTest) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .initialCapacity = 1, .blockSize = 5};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+
+    size_t initial_size = index->getAllocationSize();
+    index->fitMemory();
+    size_t final_size = index->getAllocationSize();
+
+    ASSERT_LE(final_size, initial_size);
+    VecSimIndex_Free(index);
+}

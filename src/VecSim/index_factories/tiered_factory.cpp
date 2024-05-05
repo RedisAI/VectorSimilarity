@@ -9,6 +9,9 @@
 #include "VecSim/index_factories/brute_force_factory.h"
 
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "VecSim/types/bfloat16.h"
+
+using bfloat16 = vecsim_types::bfloat16;
 
 namespace TieredFactory {
 
@@ -61,6 +64,8 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
         est += sizeof(TieredHNSWIndex<float, float>);
     } else if (hnsw_params.type == VecSimType_FLOAT64) {
         est += sizeof(TieredHNSWIndex<double, double>);
+    } else if (hnsw_params.type == VecSimType_BFLOAT16) {
+        est += sizeof(TieredHNSWIndex<bfloat16, float>);
     }
     bf_params_output.type = hnsw_params.type;
     bf_params_output.multi = hnsw_params.multi;
@@ -75,6 +80,8 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         return TieredHNSWFactory::NewIndex<float>(params);
     } else if (type == VecSimType_FLOAT64) {
         return TieredHNSWFactory::NewIndex<double>(params);
+    } else if (type == VecSimType_BFLOAT16) {
+        return TieredHNSWFactory::NewIndex<bfloat16, float>(params);
     }
     return nullptr; // Invalid type.
 }
@@ -83,12 +90,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
     // Tiered index that contains HNSW index as primary index
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
-        if (type == VecSimType_FLOAT32) {
-            return TieredHNSWFactory::NewIndex<float>(params);
-        } else if (type == VecSimType_FLOAT64) {
-            return TieredHNSWFactory::NewIndex<double>(params);
-        }
+        return TieredHNSWFactory::NewIndex(params);
     }
     return nullptr; // Invalid algorithm or type.
 }
