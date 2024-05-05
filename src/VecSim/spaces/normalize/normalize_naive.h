@@ -37,18 +37,10 @@ static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
 
     float sum = 0;
 
-    if constexpr (is_little) {
-        for (size_t i = 0; i < dim; i++) {
-            float val = vecsim_types::bfloat16_to_float32(input_vector[i]);
-            f32_tmp[i] = val;
-            sum += val * val;
-        }
-    } else {
-        for (size_t i = 0; i < dim; i++) {
-            float val = vecsim_types::bfloat16_to_float32_bigEndian(input_vector[i]);
-            f32_tmp[i] = val;
-            sum += val * val;
-        }
+    for (size_t i = 0; i < dim; i++) {
+        float val = vecsim_types::bfloat16_to_float32<is_little>(input_vector[i]);
+        f32_tmp[i] = val;
+        sum += val * val;
     }
 
     float norm = sqrt(sum);

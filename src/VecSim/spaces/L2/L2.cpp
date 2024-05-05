@@ -36,32 +36,27 @@ double FP64_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return res;
 }
 
-float BF16_L2Sqr_LittleEndian(const void *pVect1v, const void *pVect2v, size_t dimension) {
+template <bool is_little>
+float BF16_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     bfloat16 *pVect1 = (bfloat16 *)pVect1v;
     bfloat16 *pVect2 = (bfloat16 *)pVect2v;
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        float a = vecsim_types::bfloat16_to_float32(pVect1[i]);
-        float b = vecsim_types::bfloat16_to_float32(pVect2[i]);
+        float a = vecsim_types::bfloat16_to_float32<is_little>(pVect1[i]);
+        float b = vecsim_types::bfloat16_to_float32<is_little>(pVect2[i]);
         float diff = a - b;
         res += diff * diff;
     }
     return res;
 }
 
-float BF16_L2Sqr_BigEndian(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    bfloat16 *pVect1 = (bfloat16 *)pVect1v;
-    bfloat16 *pVect2 = (bfloat16 *)pVect2v;
+float BF16_L2Sqr_LittleEndian(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return BF16_L2Sqr<true>(pVect1v, pVect2v, dimension);
+}
 
-    float res = 0;
-    for (size_t i = 0; i < dimension; i++) {
-        float a = vecsim_types::bfloat16_to_float32_bigEndian(pVect1[i]);
-        float b = vecsim_types::bfloat16_to_float32_bigEndian(pVect2[i]);
-        float diff = a - b;
-        res += diff * diff;
-    }
-    return res;
+float BF16_L2Sqr_BigEndian(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return BF16_L2Sqr<false>(pVect1v, pVect2v, dimension);
 }
 
 float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {

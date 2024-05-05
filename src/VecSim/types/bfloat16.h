@@ -23,16 +23,11 @@ static inline bfloat16 float_to_bf16(const float ff) {
     return f32 >> 16;
 }
 
-static inline float bfloat16_to_float32(bfloat16 val) {
+template <bool is_little = true>
+inline float bfloat16_to_float32(bfloat16 val) {
+    size_t constexpr bytes_offset = is_little ? 1 : 0;
     float result = 0;
-    bfloat16 *p_result = (bfloat16 *)&result + 1;
-    *p_result = val;
-    return result;
-}
-
-static inline float bfloat16_to_float32_bigEndian(bfloat16 val) {
-    float result = 0;
-    bfloat16 *p_result = (bfloat16 *)&result;
+    bfloat16 *p_result = (bfloat16 *)&result + bytes_offset;
     *p_result = val;
     return result;
 }
