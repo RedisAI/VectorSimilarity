@@ -127,6 +127,7 @@ TEST_F(SpacesTest, bf16_normalize_test) {
 
     spaces::GetNormalizeFunc<bfloat16>()(a, dim);
     spaces::GetNormalizeFunc<float>()(sanity_a, dim);
+    // Convert assuming little endian system
     for (size_t i = 0; i < dim; i++) {
         ASSERT_EQ(vecsim_types::bfloat16_to_float32(a[i]), sanity_a[i])
             << " bf16 normalization failed for i = " << i;
@@ -150,6 +151,22 @@ TEST_F(SpacesTest, bf16_ip_no_optimization_func_test2) {
 
     float dist = BF16_InnerProduct_LittleEndian((const void *)a, (const void *)b, dim);
     ASSERT_EQ(dist, FP32_InnerProduct((const void *)sanity_a, (const void *)sanity_b, dim));
+}
+
+TEST_F(SpacesTest, GetDistFuncInvalidMetricFP32) {
+    EXPECT_THROW(
+        (spaces::GetDistFunc<float, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        std::invalid_argument);
+}
+TEST_F(SpacesTest, GetDistFuncInvalidMetricFP64) {
+    EXPECT_THROW(
+        (spaces::GetDistFunc<double, double>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        std::invalid_argument);
+}
+TEST_F(SpacesTest, GetDistFuncInvalidMetricBF16) {
+    EXPECT_THROW((spaces::GetDistFunc<bfloat16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10,
+                                                       nullptr)),
+                 std::invalid_argument);
 }
 
 using namespace spaces;

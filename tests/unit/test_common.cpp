@@ -563,9 +563,10 @@ TEST(CommonAPITest, NormalizeBfloat16) {
 
     VecSim_Normalize(v, dim, VecSimType_BFLOAT16);
 
-    // Check that the normalized vector norm is 1
+    // Check that the normalized vector norm is 1.
     float norm = 0;
     for (size_t i = 0; i < dim; ++i) {
+        // Convert assuming little endian system.
         float val = vecsim_types::bfloat16_to_float32(v[i]);
         norm += val * val;
     }

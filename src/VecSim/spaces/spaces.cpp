@@ -26,9 +26,8 @@ dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metri
         return IP_BF16_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
         return L2_BF16_GetDistFunc(dim, nullptr, alignment);
-    default:
-        throw std::invalid_argument("Invalid metric");
     }
+    throw std::invalid_argument("Invalid metric");
 }
 
 template <>
@@ -40,9 +39,8 @@ dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
         return IP_FP32_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
         return L2_FP32_GetDistFunc(dim, nullptr, alignment);
-    default:
-        throw std::invalid_argument("Invalid metric");
     }
+    throw std::invalid_argument("Invalid metric");
 }
 
 template <>
@@ -54,9 +52,8 @@ dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
         return IP_FP64_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
         return L2_FP64_GetDistFunc(dim, nullptr, alignment);
-    default:
-        throw std::invalid_argument("Invalid metric");
     }
+    throw std::invalid_argument("Invalid metric");
 }
 
 template <>

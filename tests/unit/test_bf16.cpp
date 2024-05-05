@@ -211,6 +211,7 @@ void BF16Test::create_index_test(params_t index_params) {
     const void *v = this->GetDataByInternalId(0);
 
     for (size_t i = 0; i < dim; i++) {
+        // Convert assuming little endian system.
         ASSERT_EQ(vecsim_types::bfloat16_to_float32(((bfloat16 *)v)[i]),
                   initial_value + step * float(i));
     }
@@ -575,6 +576,7 @@ void BF16Test::test_override(params_t params) {
         ASSERT_EQ(id, new_n - 1 - index) << "id: " << id << " score: " << score;
         bfloat16 a = vecsim_types::float_to_bf16(new_n);
         bfloat16 b = vecsim_types::float_to_bf16(id);
+        // Convert assuming little endian system.
         float diff = vecsim_types::bfloat16_to_float32(a) - vecsim_types::bfloat16_to_float32(b);
         float exp_score = 4 * diff * diff;
         ASSERT_EQ(score, exp_score) << "id: " << id << " score: " << score;
