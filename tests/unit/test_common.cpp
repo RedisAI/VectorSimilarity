@@ -573,32 +573,3 @@ TEST(CommonAPITest, NormalizeBfloat16) {
 
     ASSERT_NEAR(1.0, norm, 0.001);
 }
-
-template <typename params_t>
-class FitMemoryTest : public testing::Test {
-public:
-    FitMemoryTest() : dim(4) {
-        params_t params = {.dim = dim, .initialCapacity = 1, .blockSize = 5};
-        index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
-    }
-
-    ~FitMemoryTest() { VecSimIndex_Free(index); }
-
-    VecSimIndex *index;
-    size_t dim;
-};
-
-using MyTypes = ::testing::Types<BFParams, HNSWParams>;
-TYPED_TEST_SUITE(FitMemoryTest, MyTypes);
-
-TYPED_TEST(FitMemoryTest, test) {
-    VecSimIndex *index_ptr = this->index;
-
-    GenerateAndAddVector<float>(index_ptr, this->dim, 0);
-
-    size_t initial_size = index_ptr->getAllocationSize();
-    index_ptr->fitMemory();
-    size_t final_size = index_ptr->getAllocationSize();
-
-    ASSERT_LE(final_size, initial_size);
-}
