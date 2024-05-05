@@ -3509,3 +3509,20 @@ TYPED_TEST(HNSWTieredIndexTestBasic, getElementNeighbors) {
         VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
     }
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, FitMemoryTest) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .initialCapacity = 1, .blockSize = 5};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+
+    size_t initial_size = tiered_index->getAllocationSize();
+    tiered_index->fitMemory();
+    size_t final_size = tiered_index->getAllocationSize();
+
+    ASSERT_LE(final_size, initial_size);
+}

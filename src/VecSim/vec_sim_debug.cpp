@@ -8,6 +8,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "VecSim/types/bfloat16.h"
 
 extern "C" int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
                                                           int ***neighborsData) {
@@ -20,20 +21,26 @@ extern "C" int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, si
     }
     if (!info.isTiered) {
         if (info.type == VecSimType_FLOAT32) {
-            return reinterpret_cast<HNSWIndex<float, float> *>(index)->getHNSWElementNeighbors(
+            return dynamic_cast<HNSWIndex<float, float> *>(index)->getHNSWElementNeighbors(
                 label, neighborsData);
         } else if (info.type == VecSimType_FLOAT64) {
-            return reinterpret_cast<HNSWIndex<double, double> *>(index)->getHNSWElementNeighbors(
+            return dynamic_cast<HNSWIndex<double, double> *>(index)->getHNSWElementNeighbors(
                 label, neighborsData);
+        } else if (info.type == VecSimType_BFLOAT16) {
+            return dynamic_cast<HNSWIndex<vecsim_types::bfloat16, float> *>(index)
+                ->getHNSWElementNeighbors(label, neighborsData);
         } else {
             assert(false && "Invalid data type");
         }
     } else {
         if (info.type == VecSimType_FLOAT32) {
-            return reinterpret_cast<TieredHNSWIndex<float, float> *>(index)
-                ->getHNSWElementNeighbors(label, neighborsData);
+            return dynamic_cast<TieredHNSWIndex<float, float> *>(index)->getHNSWElementNeighbors(
+                label, neighborsData);
         } else if (info.type == VecSimType_FLOAT64) {
-            return reinterpret_cast<TieredHNSWIndex<double, double> *>(index)
+            return dynamic_cast<TieredHNSWIndex<double, double> *>(index)->getHNSWElementNeighbors(
+                label, neighborsData);
+        } else if (info.type == VecSimType_BFLOAT16) {
+            return dynamic_cast<TieredHNSWIndex<vecsim_types::bfloat16, float> *>(index)
                 ->getHNSWElementNeighbors(label, neighborsData);
         } else {
             assert(false && "Invalid data type");

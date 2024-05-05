@@ -13,12 +13,17 @@ namespace spaces {
 template <typename RET_TYPE>
 using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
-// Set the distance function for a given metric and dimension, and the alignment hint according to
-// the chosen implementation and available optimizations.
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func,
-                 unsigned char *alignment);
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func,
-                 unsigned char *alignment);
+// Set the distance function for a given data type, metric and dimension. The alignment hint is
+// determined according to the chosen implementation and available optimizations.
+
+template <typename DataType, typename DistType>
+dist_func_t<DistType> GetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
+
+template <typename DataType>
+using normalizeVector_f = void (*)(void *input_vector, const size_t dim);
+
+template <typename DataType>
+normalizeVector_f<DataType> GetNormalizeFunc();
 
 static int inline is_little_endian() {
     unsigned int x = 1;

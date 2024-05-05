@@ -8,6 +8,7 @@ from scipy import spatial
 from numpy.testing import assert_allclose, assert_equal
 import time
 import math
+from bfloat16 import bfloat16
 
 def create_hnsw_params(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
                       is_multi=False):
@@ -22,8 +23,8 @@ def create_hnsw_params(dim, num_elements, metric, data_type, ef_construction=200
     hnsw_params.efRuntime = ef_runtime
     hnsw_params.epsilon = epsilon
     hnsw_params.multi = is_multi
-    
-    return hnsw_params    
+
+    return hnsw_params
 # Helper function for creating an index,uses the default HNSW parameters if not specified.
 def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
                       is_multi=False):
@@ -54,4 +55,14 @@ def round_(f_value, ndigits = 2):
 
 
 def round_ms(f_value, ndigits = 2):
-    return round(f_value * 1000, ndigits)  
+    return round(f_value * 1000, ndigits)
+
+def vec_to_bfloat16(vec):
+    return vec.astype(bfloat16)
+
+def get_ground_truth_results(dist_func, query, vectors, k):
+    results = [{"dist": dist_func(query, vec), "label": key} for key, vec in vectors]
+    results = sorted(results, key=lambda x: x["dist"])
+    keys = [res["label"] for res in results[:k]]
+
+    return results, keys

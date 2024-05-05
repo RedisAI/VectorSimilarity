@@ -56,31 +56,33 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned short index_offset) {
+    auto index = INDICES[VecSimAlgo_BF + index_offset];
+    index->fitMemory();
 
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] =
-        (double)VecSimIndex_Info(INDICES[VecSimAlgo_BF + index_offset]).commonInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_Info(index).commonInfo.memory;
 }
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, unsigned short index_offset) {
+    auto index = INDICES[VecSimAlgo_HNSWLIB + index_offset];
+    index->fitMemory();
 
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] =
-        (double)VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB + index_offset]).commonInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_Info(index).commonInfo.memory;
 }
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
                                                   unsigned short index_offset) {
-
+    auto index = INDICES[VecSimAlgo_TIERED + index_offset];
+    index->fitMemory();
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] =
-        (double)VecSimIndex_Info(INDICES[VecSimAlgo_TIERED + index_offset]).commonInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_Info(index).commonInfo.memory;
 }
 
 // TopK search BM
@@ -116,7 +118,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     std::atomic_int correct = 0;
     std::atomic_int iter = 0;
     auto *tiered_index =
-        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(INDICES[VecSimAlgo_TIERED]);
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
     size_t total_iters = 50;
     VecSimQueryReply *all_results[total_iters];
 

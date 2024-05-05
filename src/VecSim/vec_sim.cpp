@@ -8,8 +8,10 @@
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/index_factories/index_factory.h"
 #include "VecSim/vec_sim_index.h"
+#include "VecSim/types/bfloat16.h"
 #include <cassert>
 #include "memory.h"
 
@@ -129,9 +131,11 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
 
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     if (type == VecSimType_FLOAT32) {
-        normalizeVector<float>((float *)blob, dim);
+        spaces::GetNormalizeFunc<float>()(blob, dim);
     } else if (type == VecSimType_FLOAT64) {
-        normalizeVector<double>((double *)blob, dim);
+        spaces::GetNormalizeFunc<double>()(blob, dim);
+    } else if (type == VecSimType_BFLOAT16) {
+        spaces::GetNormalizeFunc<vecsim_types::bfloat16>()(blob, dim);
     }
 }
 

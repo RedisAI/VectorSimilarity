@@ -2,6 +2,7 @@
 
 #include "bm_vecsim_general.h"
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/types/bfloat16.h"
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -21,7 +22,7 @@ public:
 
 protected:
     static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+        return dynamic_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
     static inline const char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
@@ -44,10 +45,16 @@ template <>
 std::vector<std::vector<double>> BM_VecSimIndex<fp64_index_t>::queries{};
 
 template <>
+std::vector<std::vector<vecsim_types::bfloat16>> BM_VecSimIndex<bf16_index_t>::queries{};
+
+template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
 
 template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp64_index_t>::indices{};
+
+template <>
+std::vector<VecSimIndex *> BM_VecSimIndex<bf16_index_t>::indices{};
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
@@ -74,7 +81,7 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
 
     VecSimType type = index_type_t::get_index_type();
-    // dim, block_size, M, EF_C, n_veectors, is_multi, n_queries, hnsw_index_file and
+    // dim, block_size, M, EF_C, n_vectors, is_multi, n_queries, hnsw_index_file and
     // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
     // index type benchmarks.
     BFParams bf_params = {.type = type,

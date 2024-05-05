@@ -8,6 +8,9 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
+#include "VecSim/types/bfloat16.h"
+
+using bfloat16 = vecsim_types::bfloat16;
 
 namespace BruteForceFactory {
 template <typename DataType, typename DistType = DataType>
@@ -49,6 +52,8 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
         return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams);
     } else if (bfparams->type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams);
+    } else if (bfparams->type == VecSimType_BFLOAT16) {
+        return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams);
     }
 
     // If we got here something is wrong.
@@ -80,6 +85,8 @@ size_t EstimateInitialSize(const BFParams *params) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
+    } else if (params->type == VecSimType_BFLOAT16) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<bfloat16, float>(params->multi);
     }
     // Parameters related part.
 
