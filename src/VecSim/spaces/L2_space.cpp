@@ -10,7 +10,6 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/F16C.h"
-#include "VecSim/spaces/functions/AVX512BW_VL.h"
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
@@ -162,11 +161,11 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, const void *arch_opt, unsigne
     auto features = (arch_opt == nullptr)
                         ? cpu_features::GetX86Info().features
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
-    if (features.avx512bw && features.avx512vl) {
-#ifdef OPT_AVX512_BW_VL
+    if (features.avx512f) {
+#ifdef OPT_AVX512F
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(float16); // handles 32 floats
-        return Choose_FP16_L2_implementation_AVX512BW_VL(dim);
+        return Choose_FP16_L2_implementation_AVX512(dim);
 #endif
     }
     if (features.f16c && features.fma3 && features.avx) {
