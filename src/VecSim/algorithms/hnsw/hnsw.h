@@ -163,6 +163,7 @@ protected:
     size_t curElementCount;
     idType entrypointNode;
     size_t maxLevel; // this is the top level of the entry point's element
+    vecsim_stl::vector<idType> unreachableNodes;
 
     // Index data
     vecsim_stl::vector<DataBlock> vectorBlocks;
@@ -283,6 +284,10 @@ protected:
     inline bool isMarkedAs(idType internalId) const {
         return idToMetaData[internalId].flags & FLAG;
     }
+    void mutuallyRemoveNeighborAtPos(LevelData &node_level, size_t level, idType node_id,
+        size_t pos);
+    void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
+        size_t global_max_level, const void *vector_data);
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
@@ -302,6 +307,7 @@ public:
     inline labelType getExternalLabel(idType internal_id) const {
         return idToMetaData[internal_id].label;
     }
+    vecsim_stl::vector<idType> getUnreachableNodes() const;
     // Check if the given label exists in the labels lookup while holding the index data lock.
     // Optionally validate that the associated vector(s) are not in process and done indexing
     // (this option is used currently for tests).
@@ -354,6 +360,8 @@ public:
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
     VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
+
+    void removeNodeNeighbors(idType element_id, size_t level);
 
 #ifdef BUILD_TESTS
     /**
@@ -457,6 +465,11 @@ size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
 template <typename DataType, typename DistType>
 LevelData &HNSWIndex<DataType, DistType>::getLevelData(idType internal_id, size_t level) const {
     return getLevelData(getGraphDataByInternalId(internal_id), level);
+}
+
+template <typename DataType, typename DistType>
+vecsim_stl::vector<idType> HNSWIndex<DataType, DistType>::getUnreachableNodes() const {
+    return unreachableNodes;
 }
 
 template <typename DataType, typename DistType>
@@ -907,19 +920,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
             continue;
         }
         // Now we know that we are looking at a node to be removed from the neighbor's neighbors.
-        auto removed_node = neighbor_level.links[i];
-        LevelData &removed_node_level = getLevelData(removed_node, level);
-        // Perform the mutual update:
-        // if the removed node id (the neighbour's neighbour to be removed)
-        // wasn't pointing to the neighbour (i.e., the edge was uni-directional),
-        // we should remove the current neighbor from the node's incoming edges.
-        // otherwise, the edge turned from bidirectional to uni-directional, so we insert it to the
-        // neighbour's incoming edges set. Note: we assume that every update is performed atomically
-        // mutually, so it should be sufficient to look at the removed node's incoming edges set
-        // alone.
-        if (!removeIdFromList(*removed_node_level.incomingEdges, selected_neighbor)) {
-            neighbor_level.incomingEdges->push_back(removed_node);
-        }
+        mutuallyRemoveNeighborAtPos(neighbor_level, level, selected_neighbor, i);
     }
 
     if (update_cur_node_required && new_node_level.numLinks < max_M_cur &&
@@ -1444,19 +1445,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
             continue;
         }
         // Now we know that we are looking at a neighbor that needs to be removed.
-        auto removed_node = node_level.links[i];
-        LevelData &removed_node_level = getLevelData(removed_node, level);
-        // Perform the mutual update:
-        // if the removed node id (the node's neighbour to be removed)
-        // wasn't pointing to the node (i.e., the edge was uni-directional),
-        // we should remove the current neighbor from the node's incoming edges.
-        // otherwise, the edge turned from bidirectional to uni-directional, so we insert it to the
-        // neighbour's incoming edges set. Note: we assume that every update is performed atomically
-        // mutually, so it should be sufficient to look at the removed node's incoming edges set
-        // alone.
-        if (!removeIdFromList(*removed_node_level.incomingEdges, node_id)) {
-            node_level.incomingEdges->push_back(removed_node);
-        }
+        mutuallyRemoveNeighborAtPos(node_level, level, node_id, i);
     }
 
     // Go over the chosen new neighbors that are not connected yet and perform updates.
@@ -1495,8 +1484,14 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     }
     // Done updating the node's neighbors.
     node_level.numLinks = node_neighbors_idx;
+    bool unreachable_node = (node_level.numLinks == 0 || node_level.incomingEdges->empty());
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         unlockNodeLinks(nodes_to_update[i]);
+    }
+    if (unreachable_node) {
+        this->lockIndexDataGuard();
+        this->unreachableNodes.emplace_back(node_id);
+        this->unlockIndexDataGuard();
     }
 }
 
@@ -1622,6 +1617,82 @@ HNSWIndex<DataType, DistType>::removeIdFromList(vecsim_stl::vector<idType> &elem
     return false;
 }
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(LevelData &node_level, size_t level,
+    idType node_id, size_t pos) {
+    // Now we know that we are looking at a neighbor that needs to be removed.
+    auto removed_node = node_level.links[pos];
+    LevelData &removed_node_level = getLevelData(removed_node, level);
+    // Perform the mutual update:
+    // if the removed node id (the node's neighbour to be removed)
+    // wasn't pointing to the node (i.e., the edge was uni-directional),
+    // we should remove the current neighbor from the node's incoming edges.
+    // otherwise, the edge turned from bidirectional to uni-directional, so we insert it to the
+    // neighbour's incoming edges set. Note: we assume that every update is performed atomically
+    // mutually, so it should be sufficient to look at the removed node's incoming edges set
+    // alone.
+    if (!removeIdFromList(*removed_node_level.incomingEdges, node_id)) {
+        node_level.incomingEdges->push_back(removed_node);
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeNodeNeighbors(idType element_id, size_t level) {
+    // Copy the node's neighbor while holding the lock.
+    lockNodeLinks(element_id);
+    vecsim_stl::vector<idType> neighbors(this->allocator);
+    auto &node_data = getLevelData(element_id, level);
+    for (size_t i = 0; i < node_data.numLinks; i++) {
+        neighbors.push_back(node_data.links[i]);
+    }
+    unlockNodeLinks(element_id);
+
+    for (size_t i = 0; i < neighbors.size() ; i++) {
+        idType neighbor_id = neighbors[i];
+        if (element_id < neighbor_id) {
+            lockNodeLinks(element_id);
+            lockNodeLinks(neighbor_id);
+        } else {
+            lockNodeLinks(neighbor_id);
+            lockNodeLinks(element_id);
+        }
+        // Validate element data after reacquiring the lock.
+        node_data = getLevelData(element_id, level);
+        mutuallyRemoveNeighborAtPos(node_data, level, element_id, i);
+        unlockNodeLinks(element_id);
+        unlockNodeLinks(neighbor_id);
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
+    size_t element_max_level, idType entry_point, size_t global_max_level, const void *vector_data) {
+
+    idType curr_element = entry_point;
+    DistType cur_dist = std::numeric_limits<DistType>::max();
+    size_t max_common_level;
+    if (element_max_level < global_max_level) {
+        max_common_level = element_max_level;
+        cur_dist = this->distFunc(vector_data, getDataByInternalId(curr_element), this->dim);
+        for (int level = (int)global_max_level; level > (int)element_max_level; level--) {
+            // this is done for the levels which are above the max level
+            // to which we are going to insert the new element. We do
+            // a greedy search in the graph starting from the entry point
+            // at each level, and move on with the closest element we can find.
+            // When there is no improvement to do, we take a step down.
+            greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
+        }
+    } else {
+        max_common_level = global_max_level;
+    }
+
+    for (int level = max_common_level; level >= 0; level--) {
+        candidatesMaxHeap<DistType> top_candidates =
+            searchLayer<false>(curr_element, vector_data, level, efConstruction);
+        curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
+    }
+}
+
 /**
  * Ctor / Dtor
  */
@@ -1642,6 +1713,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DistType>(abstractInitParams), VecSimIndexTombstone(),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
+        unreachableNodes(this->allocator),
       vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
       idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
@@ -1889,34 +1961,12 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // they may (or may not) have changed due to the insertion.
     auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
 
-    // Start scanning the graph from the current entry point.
-    idType curr_element = prev_entry_point;
-    // This condition only means that we are not inserting the first (non-deleted) element.
-    if (curr_element != INVALID_ID) {
-        DistType cur_dist = std::numeric_limits<DistType>::max();
-        int max_common_level;
-        if (element_max_level < prev_max_level) {
-            max_common_level = element_max_level;
-            cur_dist = this->distFunc(vector_data, getDataByInternalId(curr_element), this->dim);
-            for (int level = prev_max_level; level > element_max_level; level--) {
-                // this is done for the levels which are above the max level
-                // to which we are going to insert the new element. We do
-                // a greedy search in the graph starting from the entry point
-                // at each level, and move on with the closest element we can find.
-                // When there is no improvement to do, we take a step down.
-                greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
-            }
-        } else {
-            max_common_level = prev_max_level;
-        }
-
-        for (int level = max_common_level; (int)level >= 0; level--) {
-            candidatesMaxHeap<DistType> top_candidates =
-                searchLayer<false>(curr_element, vector_data, level, efConstruction);
-            curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
-        }
-    } else {
-        // Inserting the first (non-deleted) element to the graph - do nothing.
+    // This condition only means that we are not inserting the first (non-deleted) element (for the
+    // first element we do nothing - we don't need to connect to it).
+    if (prev_entry_point != INVALID_ID) {
+        // Start scanning the graph from the current entry point.
+        insertElementToGraph(new_element_id, element_max_level, prev_entry_point,
+            prev_max_level, vector_data);
     }
     unmarkInProcess(new_element_id);
     if (auxiliaryCtx == nullptr && state.currMaxLevel < state.elementMaxLevel) {

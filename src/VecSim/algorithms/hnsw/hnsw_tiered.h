@@ -228,6 +228,8 @@ public:
         return res;
     }
 
+    void connectUnreachableNodes();
+
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
 #endif
@@ -849,6 +851,37 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
     // Return the minimum distance that is not NaN.
     return std::fmin(flat_dist, hnsw_dist);
 }
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::connectUnreachableNodes() {
+    this->mainIndexGuard.lock_shared();
+    auto hnsw_index = this->getHNSWIndex();
+    TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
+           "connecting unreachable nodes in HNSW index");
+    size_t num_nodes_handeled = 0;
+    hnsw_index->lockIndexDataGuard();
+    auto unreachable_nodes_copy = hnsw_index->getUnreachableNodes();
+    hnsw_index->unlockIndexDataGuard();
+
+    for (idType node_id : unreachable_nodes_copy) {
+        num_nodes_handeled++;
+        // Mark the element as in proccess so we won't connect new neighbors to it in another thread,
+        // we do it before we release the lock to ensure atomicity.
+        hnsw_index->markAs<IN_PROCESS>(node_id);
+        // Remove the element from the graph at every layer.
+        auto element_top_level = hnsw_index->getGraphDataByInternalId(node_id)->toplevel;
+        for (int level = element_top_level; level >= 0; level--) {
+            hnsw_index->removeNodeNeighbors(node_id, level);
+        }
+
+        // Insert the element again to the graph.
+        auto ep = hnsw_index->safeGetEntryPointState();
+        hnsw_index->insertElementToGraph(node_id, element_top_level, ep.first,
+            ep.second, hnsw_index->getDataByInternalId(node_id));
+        hnsw_index->unmarkInProcess(node_id);
+    }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  TieredHNSW_BatchIterator                                                                     //
