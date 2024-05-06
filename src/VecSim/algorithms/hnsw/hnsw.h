@@ -366,7 +366,7 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
-    virtual void fitMemory() {
+    virtual void fitMemory() override {
         idToMetaData.shrink_to_fit();
         resizeLabelLookup(idToMetaData.size());
     }
