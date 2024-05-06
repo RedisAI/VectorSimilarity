@@ -13,8 +13,8 @@ using float16 = vecsim_types::float16;
 
 static void L2SqrStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
     // Convert 16 half-floats into floats and store them in 512 bits register.
-    auto v1 = _mm512_cvtph_ps(_mm256_loadu_epi16(pVect1));
-    auto v2 = _mm512_cvtph_ps(_mm256_loadu_epi16(pVect2));
+    auto v1 = _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect1));
+    auto v2 = _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect2));
 
     // sum = (v1 - v2)^2 + sum
     auto c = _mm512_sub_ps(v1, v2);
@@ -39,8 +39,10 @@ float FP16_L2SqrSIMD32_AVX512BW_VL(const void *pVect1v, const void *pVect2v, siz
         // Convert the first half-floats in the residual positions into floats and store them
         // 512 bits register, where the floats in the positions corresponding to the non-residuals
         // positions are zeros.
-        auto v1 = _mm512_maskz_mov_ps(residuals_mask, _mm512_cvtph_ps(_mm256_loadu_epi16(pVect1)));
-        auto v2 = _mm512_maskz_mov_ps(residuals_mask, _mm512_cvtph_ps(_mm256_loadu_epi16(pVect2)));
+        auto v1 = _mm512_maskz_mov_ps(residuals_mask,
+                                      _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect1)));
+        auto v2 = _mm512_maskz_mov_ps(residuals_mask,
+                                      _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect2)));
         auto c = _mm512_sub_ps(v1, v2);
         sum = _mm512_mul_ps(c, c);
         pVect1 += residual % 16;
