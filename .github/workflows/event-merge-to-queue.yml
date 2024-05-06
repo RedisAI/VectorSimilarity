@@ -2,6 +2,7 @@ name: Merge a Pull-Request Flow
 run-name: Validate ${{ github.ref_name }}
 
 on:
+  workflow_call:
   merge_group:
     types: [checks_requested]
 
