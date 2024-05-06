@@ -101,7 +101,7 @@ public:
     }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
-    virtual void fitMemory() {
+    virtual void fitMemory() override {
         this->backendIndex->fitMemory();
         this->frontendIndex->fitMemory();
     }
