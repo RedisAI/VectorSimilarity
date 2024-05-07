@@ -1590,15 +1590,24 @@ TYPED_TEST(BruteForceTest, rangeQueryCosine) {
 
 TYPED_TEST(BruteForceTest, FitMemoryTest) {
     size_t dim = 4;
-    BFParams params = {.dim = dim, .initialCapacity = 1, .blockSize = 5};
+    BFParams params = {.dim = dim, .initialCapacity = 100, .blockSize = DEFAULT_BLOCK_SIZE};
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    // Fit memory to initial capacity shouldn't have any affect since the ctor initializes label2id
+    // size to the initial capacity.
+    size_t initial_memory = index->getAllocationSize();
+    index->fitMemory();
+    // TODO: change to ASSERT_EQ once the bf ctor initializes the label2id size to the initial
+    // capacity.
+    ASSERT_GT(index->getAllocationSize(), initial_memory);
 
-    size_t initial_size = index->getAllocationSize();
+    // Add vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    initial_memory = index->getAllocationSize();
     index->fitMemory();
     size_t final_size = index->getAllocationSize();
+    // Due to the initial capacity, the memory for the vector was already allocated
+    ASSERT_EQ(final_size, initial_memory);
 
-    ASSERT_LE(final_size, initial_size);
     VecSimIndex_Free(index);
 }
