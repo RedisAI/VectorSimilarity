@@ -24,10 +24,10 @@ static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
 
 template <unsigned short residual> // 0..31
 float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    auto *pVect1 = (uint16_t *)pVect1v;
-    auto *pVect2 = (uint16_t *)pVect2v;
+    auto *pVect1 = (float16 *)pVect1v;
+    auto *pVect2 = (float16 *)pVect2v;
 
-    const uint16_t *pEnd1 = pVect1 + dimension;
+    const float16 *pEnd1 = pVect1 + dimension;
 
     auto sum = _mm512_setzero_ps();
 

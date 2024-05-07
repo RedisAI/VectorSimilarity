@@ -10,8 +10,12 @@
 #include <cstring>
 #include <algorithm>
 namespace vecsim_types {
-
-using float16 = uint16_t;
+struct float16 {
+    uint16_t val;
+    constexpr float16(uint16_t val = 0) : val(val) {}
+    operator uint16_t() const { return val; }
+};
+using float16 = struct float16;
 
 inline float _interpret_as_float(uint32_t num) {
     void *num_ptr = &num;
@@ -42,7 +46,7 @@ static inline float FP16_to_FP32(float16 input) {
     return _interpret_as_float(((exp == shifted_exp) ? infnan_val : reg_val) | sign_bit);
 }
 
-static inline float16 FP32_to_FP16(float input) {
+static inline struct float16 FP32_to_FP16(float input) {
     // via Fabian "ryg" Giesen.
     // https://gist.github.com/2156668
     uint32_t sign_mask = 0x80000000u;

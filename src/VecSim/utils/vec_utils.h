@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 #include <VecSim/query_results.h>
 #include <utility>
 #include <cassert>
@@ -24,6 +25,7 @@ public:
     static const char *FLOAT32_STRING;
     static const char *FLOAT64_STRING;
     static const char *BFLOAT16_STRING;
+    static const char *FLOAT16_STRING;
     static const char *INT32_STRING;
     static const char *INT64_STRING;
 

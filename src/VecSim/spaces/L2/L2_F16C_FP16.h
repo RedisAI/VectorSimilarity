@@ -11,7 +11,7 @@
 
 using float16 = vecsim_types::float16;
 
-static void L2SqrStep(uint16_t *&pVect1, uint16_t *&pVect2, __m256 &sum) {
+static void L2SqrStep(float16 *&pVect1, float16 *&pVect2, __m256 &sum) {
     // Convert 8 half-floats into floats and store them in 256 bits register.
     auto v1 = _mm256_cvtph_ps(_mm_loadu_si128((__m128i_u const *)(pVect1)));
     auto v2 = _mm256_cvtph_ps(_mm_loadu_si128((__m128i_u const *)(pVect2)));
@@ -28,7 +28,7 @@ float FP16_L2SqrSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dim
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 
-    const uint16_t *pEnd1 = pVect1 + dimension;
+    const float16 *pEnd1 = pVect1 + dimension;
 
     auto sum = _mm256_setzero_ps();
 

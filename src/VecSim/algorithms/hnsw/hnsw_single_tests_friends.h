@@ -15,3 +15,5 @@ INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTest_testSizeEstimation_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTest_swapJobBasic_Test)
 friend class BF16HNSWTest_testSizeEstimation_Test;
 friend class BF16TieredTest_testSizeEstimation_Test;
+friend class FP16HNSWTest_testSizeEstimation_Test;
+friend class FP16TieredTest_testSizeEstimation_Test;

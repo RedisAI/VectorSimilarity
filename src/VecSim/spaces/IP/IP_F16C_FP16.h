@@ -27,7 +27,7 @@ float FP16_InnerProductSIMD32_F16C(const void *pVect1v, const void *pVect2v, siz
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 
-    const uint16_t *pEnd1 = pVect1 + dimension;
+    const float16 *pEnd1 = pVect1 + dimension;
 
     auto sum = _mm256_setzero_ps();
 
