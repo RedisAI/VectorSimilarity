@@ -2190,15 +2190,21 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
 
 TYPED_TEST(HNSWTest, FitMemoryTest) {
     size_t dim = 4;
-    HNSWParams params = {.dim = dim, .initialCapacity = 1, .blockSize = 5};
+    HNSWParams params = {.dim = dim, .initialCapacity = 100, .blockSize = DEFAULT_BLOCK_SIZE};
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
-
-    size_t initial_size = index->getAllocationSize();
+    // Fit memory to initial capacity shouldn't have any affect since the ctor initializes label2id
+    // size to the initial capacity.
+    size_t initial_memory = index->getAllocationSize();
     index->fitMemory();
-    size_t final_size = index->getAllocationSize();
+    ASSERT_EQ(index->getAllocationSize(), initial_memory);
 
-    ASSERT_LE(final_size, initial_size);
+    // Add vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    initial_memory = index->getAllocationSize();
+    index->fitMemory();
+    // Due to the initial capacity, the memory for the vector was already allocated
+    ASSERT_EQ(index->getAllocationSize(), initial_memory);
+
     VecSimIndex_Free(index);
 }
