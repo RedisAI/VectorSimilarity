@@ -1593,8 +1593,6 @@ TYPED_TEST(BruteForceTest, FitMemoryTest) {
     BFParams params = {.dim = dim, .initialCapacity = 100, .blockSize = DEFAULT_BLOCK_SIZE};
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    // Fit memory to initial capacity shouldn't have any affect since the ctor initializes label2id
-    // size to the initial capacity.
     size_t initial_memory = index->getAllocationSize();
     index->fitMemory();
     // TODO: change to ASSERT_EQ once the bf ctor initializes the label2id size to the initial
