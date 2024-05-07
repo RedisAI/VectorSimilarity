@@ -101,7 +101,7 @@ protected:
         dim = params.dim;
     }
 
-    virtual const void *GetDataByInternalId(idType id) {
+    virtual const void *GetDataByInternalId(idType id) override {
         return CastIndex<HNSWIndex_Single<bfloat16, float>>()->getDataByInternalId(id);
     }
 
@@ -109,7 +109,7 @@ protected:
         return CastIndex<HNSWIndex<bfloat16, float>>(new_index);
     }
 
-    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() override {
         return CastIndex<HNSWIndex<bfloat16, float>>(index);
     }
 
@@ -126,11 +126,11 @@ protected:
         dim = params.dim;
     }
 
-    virtual const void *GetDataByInternalId(idType id) {
+    virtual const void *GetDataByInternalId(idType id) override {
         return CastIndex<BruteForceIndex_Single<bfloat16, float>>()->getDataByInternalId(id);
     }
 
-    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() override {
         ADD_FAILURE() << "BF16BruteForceTest::CastToHNSW() this method should not be called";
         return nullptr;
     }
@@ -170,12 +170,12 @@ protected:
 
     virtual void TearDown() override {}
 
-    virtual const void *GetDataByInternalId(idType id) {
+    virtual const void *GetDataByInternalId(idType id) override {
         return CastIndex<BruteForceIndex<bfloat16, float>>(CastToBruteForce())
             ->getDataByInternalId(id);
     }
 
-    virtual HNSWIndex<bfloat16, float> *CastToHNSW() {
+    virtual HNSWIndex<bfloat16, float> *CastToHNSW() override {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<bfloat16, float> *>(index);
         return tiered_index->getHNSWIndex();
     }
@@ -1045,6 +1045,7 @@ void BF16HNSWTest::test_serialization(bool is_multi) {
 
     // Clean up.
     remove(file_name.c_str());
+    VecSimIndex_Free(serialized_index);
 }
 
 TEST_F(BF16HNSWTest, SerializationCurrentVersion) { test_serialization(false); }
