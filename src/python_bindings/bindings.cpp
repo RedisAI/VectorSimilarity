@@ -9,6 +9,7 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/batch_iterator.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 
 #include "pybind11/pybind11.h"
 #include "pybind11/numpy.h"
@@ -22,6 +23,7 @@
 namespace py = pybind11;
 
 using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
@@ -95,7 +97,7 @@ public:
 // @input or @query arguments are a py::object object. (numpy arrays are acceptable)
 class PyVecSimIndex {
 private:
-    template <typename DataType, typename DistType>
+    template <typename DataType, typename DistType, typename NPArrayType = DataType>
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
         std::vector<std::vector<DataType>> vectors;
         if (index->basicInfo().algo == VecSimAlgo_BF) {
@@ -107,37 +109,35 @@ private:
                 ->getDataByLabel(label, vectors);
         }
         size_t n_vectors = vectors.size();
-        if (std::is_same_v<DataType, bfloat16>) {
-            // Convert the vectors to float32 for numpy array.
-            auto *data_numpy = new float[n_vectors * dim];
+        auto *data_numpy = new NPArrayType[n_vectors * dim];
+
+        // Copy the vector blobs into one contiguous array of data, and free the original buffer
+        // afterwards.
+        if constexpr (std::is_same_v<DataType, bfloat16>) {
             for (size_t i = 0; i < n_vectors; i++) {
                 for (size_t j = 0; j < dim; j++) {
                     data_numpy[i * dim + j] = vecsim_types::bfloat16_to_float32(vectors[i][j]);
                 }
             }
-            py::capsule free_when_done(data_numpy,
-                                       [](void *vector_data) { delete[](float *) vector_data; });
-            return py::array_t<float>(
-                {n_vectors, dim}, // shape
-                {dim * sizeof(float),
-                 sizeof(float)}, // C-style contiguous strides for the data type
-                data_numpy,      // the data pointer
-                free_when_done);
-        }
-        auto *data_numpy = new DataType[n_vectors * dim];
-        // Copy the vector blobs into one contiguous array of data, and free the original buffer
-        // afterwards.
-        for (size_t i = 0; i < n_vectors; i++) {
-            memcpy(data_numpy + i * dim, vectors[i].data(), dim * sizeof(DataType));
+        } else if constexpr (std::is_same_v<DataType, float16>) {
+            for (size_t i = 0; i < n_vectors; i++) {
+                for (size_t j = 0; j < dim; j++) {
+                    data_numpy[i * dim + j] = vecsim_types::FP16_to_FP32(vectors[i][j]);
+                }
+            }
+        } else {
+            for (size_t i = 0; i < n_vectors; i++) {
+                memcpy(data_numpy + i * dim, vectors[i].data(), dim * sizeof(NPArrayType));
+            }
         }
 
         py::capsule free_when_done(data_numpy,
-                                   [](void *vector_data) { delete[](DataType *) vector_data; });
-        return py::array_t<DataType>(
+                                   [](void *vector_data) { delete[](NPArrayType *) vector_data; });
+        return py::array_t<NPArrayType>(
             {n_vectors, dim}, // shape
-            {dim * sizeof(DataType),
-             sizeof(DataType)}, // C-style contiguous strides for the data type
-            data_numpy,         // the data pointer
+            {dim * sizeof(NPArrayType),
+             sizeof(NPArrayType)}, // C-style contiguous strides for the data type
+            data_numpy,            // the data pointer
             free_when_done);
     }
 
@@ -213,7 +213,9 @@ public:
         } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
             return rawVectorsAsNumpy<double, double>(label, dim);
         } else if (info.commonInfo.basicInfo.type == VecSimType_BFLOAT16) {
-            return rawVectorsAsNumpy<bfloat16, float>(label, dim);
+            return rawVectorsAsNumpy<bfloat16, float, float>(label, dim);
+        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT16) {
+            return rawVectorsAsNumpy<float16, float, float>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
         }
@@ -288,6 +290,9 @@ public:
             hnsw->saveIndex(location);
         } else if (type == VecSimType_BFLOAT16) {
             auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
+            hnsw->saveIndex(location);
+        } else if (type == VecSimType_FLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
             hnsw->saveIndex(location);
         } else {
             throw std::runtime_error("Invalid index data type");
@@ -397,6 +402,10 @@ public:
             return dynamic_cast<HNSWIndex<bfloat16, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
+        } else if (type == VecSimType_FLOAT16) {
+            return dynamic_cast<HNSWIndex<float16, float> *>(this->index.get())
+                ->checkIntegrity()
+                .valid_state;
         } else {
             throw std::runtime_error("Invalid index data type");
         }
@@ -486,6 +495,7 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimType_FLOAT32", VecSimType_FLOAT32)
         .value("VecSimType_FLOAT64", VecSimType_FLOAT64)
         .value("VecSimType_BFLOAT16", VecSimType_BFLOAT16)
+        .value("VecSimType_FLOAT16", VecSimType_FLOAT16)
         .value("VecSimType_INT32", VecSimType_INT32)
         .value("VecSimType_INT64", VecSimType_INT64)
         .export_values();

@@ -12,7 +12,7 @@ def create_tiered_hnsw_params(swap_job_threshold = 0):
     return tiered_hnsw_params
 
 class IndexCtx:
-    array_conversion_func = {VecSimType_FLOAT32: np.float32, VecSimType_BFLOAT16: vec_to_bfloat16}
+    array_conversion_func = {VecSimType_FLOAT32: np.float32, VecSimType_BFLOAT16: vec_to_bfloat16, VecSimType_FLOAT16: vec_to_float16}
     def __init__(self, data_size=10000,
                  dim=16,
                  M=16,
@@ -109,7 +109,7 @@ class IndexCtx:
         return queries
 
     def get_vectors_memory_size(self):
-        memory_size = {VecSimType_FLOAT32:4, VecSimType_FLOAT64:8, VecSimType_BFLOAT16:2}
+        memory_size = {VecSimType_FLOAT32:4, VecSimType_FLOAT64:8, VecSimType_BFLOAT16:2, VecSimType_FLOAT16:2}
         return bytes_to_mega(self.num_vectors * self.dim * memory_size[self.data_type])
 
 
@@ -230,6 +230,10 @@ def test_create_bf16():
     print("Test create multi label tiered hnsw index")
     create_tiered_index(is_multi=False, data_type=VecSimType_BFLOAT16)
 
+def test_create_fp16():
+    print("Test create multi label tiered hnsw index")
+    create_tiered_index(is_multi=False, data_type=VecSimType_FLOAT16)
+
 def test_search_insert():
     print(f"\nStart insert & search test")
     search_insert(is_multi=False)
@@ -237,6 +241,10 @@ def test_search_insert():
 def test_search_insert_bf16():
     print(f"\nStart insert & search test")
     search_insert(is_multi=False, data_type=VecSimType_BFLOAT16)
+
+def test_search_insert_fp16():
+    print(f"\nStart insert & search test")
+    search_insert(is_multi=False, data_type=VecSimType_FLOAT16)
 
 def test_search_insert_multi_index():
     print(f"\nStart insert & search test for multi index")

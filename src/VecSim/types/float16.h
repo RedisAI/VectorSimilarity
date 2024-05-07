@@ -46,7 +46,7 @@ static inline float FP16_to_FP32(float16 input) {
     return _interpret_as_float(((exp == shifted_exp) ? infnan_val : reg_val) | sign_bit);
 }
 
-static inline struct float16 FP32_to_FP16(float input) {
+static inline float16 FP32_to_FP16(float input) {
     // via Fabian "ryg" Giesen.
     // https://gist.github.com/2156668
     uint32_t sign_mask = 0x80000000u;
