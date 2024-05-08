@@ -21,7 +21,6 @@
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
-#include "VecSim/spaces/functions/AVX512BW_VL.h"
 #include "VecSim/spaces/functions/F16C.h"
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -469,12 +468,12 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     float baseline = FP16_InnerProduct(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
 
-    if (optimization.avx512bw && optimization.avx512vl) {
+    if (optimization.avx512f) {
         arch_opt_func = IP_FP16_GetDistFunc(dim, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512BW_VL(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
-        optimization.avx512bw = optimization.avx512vl = 0;
+        optimization.avx512f = 0;
     }
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
         arch_opt_func = IP_FP16_GetDistFunc(dim, &optimization);
@@ -505,12 +504,12 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     float baseline = FP16_L2Sqr(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
 
-    if (optimization.avx512bw && optimization.avx512vl) {
+    if (optimization.avx512f) {
         arch_opt_func = L2_FP16_GetDistFunc(dim, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512BW_VL(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
-        optimization.avx512bw = optimization.avx512vl = 0;
+        optimization.avx512f = 0;
     }
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
         arch_opt_func = L2_FP16_GetDistFunc(dim, &optimization);
