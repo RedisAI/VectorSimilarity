@@ -3,6 +3,7 @@
 #include "bm_vecsim_general.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -48,6 +49,9 @@ template <>
 std::vector<std::vector<vecsim_types::bfloat16>> BM_VecSimIndex<bf16_index_t>::queries{};
 
 template <>
+std::vector<std::vector<vecsim_types::float16>> BM_VecSimIndex<fp16_index_t>::queries{};
+
+template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
 
 template <>
@@ -55,6 +59,9 @@ std::vector<VecSimIndex *> BM_VecSimIndex<fp64_index_t>::indices{};
 
 template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<bf16_index_t>::indices{};
+
+template <>
+std::vector<VecSimIndex *> BM_VecSimIndex<fp16_index_t>::indices{};
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
