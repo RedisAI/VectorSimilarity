@@ -248,7 +248,7 @@ TEST_F(BF16HNSWTest, testSizeEstimation) {
     // Initial capacity is rounded up to the block size.
     size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
 
-    HNSWParams params = {.dim = 256, .initialCapacity = n, .blockSize = bs, .M = M};
+    HNSWParams params = {.dim = 4, .initialCapacity = n, .blockSize = bs, .M = M};
     SetUp(params);
 
     // EstimateInitialSize is called after CreateNewIndex because params struct is
@@ -287,7 +287,7 @@ TEST_F(BF16HNSWTest, testSizeEstimation) {
 }
 
 TEST_F(BF16HNSWTest, testSizeEstimation_No_InitialCapacity) {
-    size_t dim = 128;
+    size_t dim = 4;
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
@@ -309,7 +309,7 @@ TEST_F(BF16HNSWTest, testSizeEstimation_No_InitialCapacity) {
 }
 
 TEST_F(BF16BruteForceTest, testSizeEstimation) {
-    size_t dim = 128;
+    size_t dim = 4;
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
@@ -333,7 +333,7 @@ TEST_F(BF16BruteForceTest, testSizeEstimation) {
 }
 
 TEST_F(BF16BruteForceTest, testSizeEstimation_No_InitialCapacity) {
-    size_t dim = 128;
+    size_t dim = 4;
     size_t n = 100;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
@@ -354,7 +354,7 @@ TEST_F(BF16TieredTest, testSizeEstimation) {
     size_t M = 32;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
-    HNSWParams hnsw_params = {.dim = 128, .initialCapacity = n, .M = M};
+    HNSWParams hnsw_params = {.dim = 4, .initialCapacity = n, .M = M};
     SetUp(hnsw_params);
     TieredIndexParams tiered_params = generate_tiered_params(hnsw_params);
     VecSimParams params = CreateParams(tiered_params);
