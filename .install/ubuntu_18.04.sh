@@ -18,5 +18,6 @@ cd valgrind-3.18.0
 ./configure
 make
 $MODE make install
+cd ..
 
 source install_cmake.sh $MODE
