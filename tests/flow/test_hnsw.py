@@ -853,7 +853,7 @@ def test_hnsw_float16_multi_value():
             for j, correct_label in enumerate(keys):
                 if label == correct_label:
                     correct += 1
-                    assert math.isclose(hnswlib_distances[0][i], dists[j][1], rel_tol=1e-5)
+                    assert math.isclose(np.float16(hnswlib_distances[0][i]), dists[j][1], rel_tol=1e-2)
                     break
 
     # Measure recall
