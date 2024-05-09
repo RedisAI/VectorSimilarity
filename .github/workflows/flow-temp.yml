@@ -14,9 +14,8 @@ on:
 jobs:
   check-if-docs-only:
     uses: ./.github/workflows/task-check-docs.yml
-  bionic:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+  macos:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: ubuntu:bionic
+      env: macos-latest
+      run-valgrind: false

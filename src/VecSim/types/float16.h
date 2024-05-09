@@ -12,10 +12,10 @@
 namespace vecsim_types {
 struct float16 {
     uint16_t val;
-    constexpr float16(uint16_t val = 0) : val(val) {}
+    float16() = default;
+    constexpr float16(uint16_t val) : val(val) {}
     operator uint16_t() const { return val; }
 };
-using float16 = struct float16;
 
 inline float _interpret_as_float(uint32_t num) {
     void *num_ptr = &num;
