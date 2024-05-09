@@ -135,6 +135,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);
+
+    VecSim_SetLogCallbackFunction(nullptr);
 }
 
 template <typename index_type_t>
