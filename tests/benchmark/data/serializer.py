@@ -142,7 +142,7 @@ TYPES_ATTR = {
     VecSimType_FLOAT32: {"size_in_bytes": 4, "vector_type": np.float32},
     VecSimType_FLOAT64: {"size_in_bytes": 8, "vector_type": np.float64},
     VecSimType_BFLOAT16: {"size_in_bytes": 2, "vector_type": bfloat16},
-    VecSimType_FLOAT16: {"size_in_bytes": 2, "vector_type": np.float16}
+    VecSimType_FLOAT16: {"size_in_bytes": 2, "vector_type": np.float16},
 }
 
 
