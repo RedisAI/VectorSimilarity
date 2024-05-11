@@ -9,13 +9,14 @@ name: temporary testing
 
 on:
   push:
-    branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
+    # branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
 
 jobs:
   check-if-docs-only:
     uses: ./.github/workflows/task-check-docs.yml
-  macos:
+  focal:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      env: macos-latest
-      run-valgrind: false
+      container: ubuntu:focal
