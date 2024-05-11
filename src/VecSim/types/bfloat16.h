@@ -13,7 +13,7 @@
 namespace vecsim_types {
 struct bfloat16 {
     uint16_t val;
-    constexpr bfloat16() = default;
+    bfloat16() = default;
     constexpr bfloat16(uint16_t val) : val(val) {}
     operator uint16_t() const { return val; }
 };
