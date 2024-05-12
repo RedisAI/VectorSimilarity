@@ -10,8 +10,12 @@
 #include <cstring>
 #include <algorithm>
 namespace vecsim_types {
-
-using float16 = uint16_t;
+struct float16 {
+    uint16_t val;
+    float16() = default;
+    constexpr float16(uint16_t val) : val(val) {}
+    operator uint16_t() const { return val; }
+};
 
 inline float _interpret_as_float(uint32_t num) {
     void *num_ptr = &num;

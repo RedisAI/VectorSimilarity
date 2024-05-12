@@ -11,8 +11,12 @@
 #include <cmath>
 
 namespace vecsim_types {
-
-using bfloat16 = unsigned short;
+struct bfloat16 {
+    uint16_t val;
+    bfloat16() = default;
+    constexpr bfloat16(uint16_t val) : val(val) {}
+    operator uint16_t() const { return val; }
+};
 
 static inline bfloat16 float_to_bf16(const float ff) {
     uint32_t *p_f32 = (uint32_t *)&ff;

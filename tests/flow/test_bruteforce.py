@@ -434,3 +434,112 @@ def test_bf_bfloat16_multivalue():
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+
+class TestFloat16():
+
+    num_labels=10_000
+    num_per_label=1
+    dim = 128
+    data = Data(VecSimType_FLOAT16, VecSimMetric_L2, spatial.distance.sqeuclidean, vec_to_float16, dim, num_labels, num_per_label)
+
+    # Not testing bfloat16 cosine as type conversion biases mess up the results
+    def test_bf_float16_L2(self):
+        k = 10
+
+        keys, dists = self.data.measure_dists(k)
+        bf_labels, bf_distances = self.data.index.knn_query(self.data.query, k=k)
+        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
+        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+        print(f"\nsanity test for {self.data.metric} and {self.data.type} pass")
+
+    def test_bf_float16_batch_iterator(self):
+        bfindex = self.data.index
+        num_elements = self.num_labels
+
+        batch_iterator = bfindex.create_batch_iterator(self.data.query)
+        labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
+        for i, _ in enumerate(labels_first_batch[0][:-1]):
+            # assert sorting by id
+            assert(labels_first_batch[0][i] < labels_first_batch[0][i+1])
+
+        _, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
+        for i, dist in enumerate(distances_second_batch[0][:-1]):
+            # assert sorting by score
+            assert(distances_second_batch[0][i] < distances_second_batch[0][i+1])
+            # assert that every distance in the second batch is higher than any distance of the first batch
+            assert(len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) == 0)
+
+        # reset
+        batch_iterator.reset()
+
+        # Run again in batches until depleted
+        batch_size = 1500
+        returned_results_num = 0
+        iterations = 0
+        start = time.time()
+        while batch_iterator.has_next():
+            iterations += 1
+            labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+            returned_results_num += len(labels[0])
+
+        print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={self.dim}: {time.time() - start}')
+        assert (returned_results_num == num_elements)
+        assert (iterations == np.ceil(num_elements/batch_size))
+
+    def test_bf_float16_range_query(self):
+        bfindex = self.data.index
+        query_data = self.data.query
+
+        radius = 14
+        start = time.time()
+        bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
+        end = time.time()
+        res_num = len(bf_labels[0])
+        print(f'\nlookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
+
+        # Verify that we got exactly all vectors within the range
+        results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data.flat, self.data.vectors, res_num)
+
+        assert_allclose(max(bf_distances[0]), results[res_num-1]["dist"], rtol=1e-05)
+        assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
+        assert max(bf_distances[0]) <= radius
+        # Verify that the next closest vector that hasn't returned is not within the range
+        assert results[res_num]["dist"] > radius
+
+        # Expect zero results for radius==0
+        bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
+        assert len(bf_labels[0]) == 0
+
+def test_bf_float16_multivalue():
+    num_labels=5_000
+    num_per_label=20
+    num_elements = num_labels * num_per_label
+
+    dim = 128
+
+    data = Data(VecSimType_FLOAT16, VecSimMetric_L2, spatial.distance.sqeuclidean, vec_to_float16, dim, num_labels, num_per_label)
+
+    k=10
+
+    query_data = data.query
+    dists = {}
+    for key, vec in data.vectors:
+        # Setting or updating the score for each label.
+        # If it's the first time we calculate a score for a label dists.get(key, dist)
+        # will return dist so we will choose the actual score the first time.
+        dist = spatial.distance.sqeuclidean(query_data.flat, vec)
+        dists[key] = min(dist, dists.get(key, dist))
+
+    dists = list(dists.items())
+    dists = sorted(dists, key=lambda pair: pair[1])[:k]
+    keys = [key for key, _ in dists[:k]]
+    dists = [dist for _, dist in dists[:k]]
+
+    start = time.time()
+    bf_labels, bf_distances = data.index.knn_query(query_data, k=10)
+    end = time.time()
+
+    print(f'\nlookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
+
+    assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
+    assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)

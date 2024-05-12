@@ -7,9 +7,11 @@
 #pragma once
 
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 #include <cmath>
 
 using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 namespace spaces {
 
@@ -47,6 +49,26 @@ static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
 
     for (size_t i = 0; i < dim; i++) {
         input_vector[i] = vecsim_types::float_to_bf16(f32_tmp[i] / norm);
+    }
+}
+
+static inline void float16_normalizeVector(void *vec, const size_t dim) {
+    float16 *input_vector = (float16 *)vec;
+
+    float f32_tmp[dim];
+
+    float sum = 0;
+
+    for (size_t i = 0; i < dim; i++) {
+        float val = vecsim_types::FP16_to_FP32(input_vector[i]);
+        f32_tmp[i] = val;
+        sum += val * val;
+    }
+
+    float norm = sqrt(sum);
+
+    for (size_t i = 0; i < dim; i++) {
+        input_vector[i] = vecsim_types::FP32_to_FP16(f32_tmp[i] / norm);
     }
 }
 

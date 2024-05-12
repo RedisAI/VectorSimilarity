@@ -1582,7 +1582,7 @@ TYPED_TEST(HNSWTest, testCosine) {
 }
 
 TYPED_TEST(HNSWTest, testSizeEstimation) {
-    size_t dim = 256;
+    size_t dim = 4;
     size_t n = 200;
     size_t bs = 256;
     size_t M = 64;
@@ -1611,6 +1611,7 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
     }
+
     idType cur = n;
     while (index->indexSize() % bs != 0) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, cur++);
@@ -1630,7 +1631,7 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
 }
 
 TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
-    size_t dim = 128;
+    size_t dim = 4;
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
 

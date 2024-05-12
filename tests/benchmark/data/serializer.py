@@ -59,6 +59,13 @@ DEFAULT_FILES = [
         'metric': VecSimMetric_Cosine,
     },
     {
+        'filename': 'dbpedia-768',
+        'nickname': 'dbpedia',
+        'dim': 768,
+        'type': VecSimType_FLOAT16,
+        'metric': VecSimMetric_Cosine,
+    },
+    {
         'filename': 'fashion_images_multi_value',
         'metric': VecSimMetric_Cosine,
         'multi': True,
@@ -73,6 +80,12 @@ DEFAULT_FILES = [
         'filename': 'fashion_images_multi_value',
         'metric': VecSimMetric_Cosine,
         'type': VecSimType_BFLOAT16,
+        'multi': True,
+    },
+    {
+        'filename': 'fashion_images_multi_value',
+        'metric': VecSimMetric_Cosine,
+        'type': VecSimType_FLOAT16,
         'multi': True,
     },
     {
@@ -128,7 +141,8 @@ DEFAULT_FILES = [
 TYPES_ATTR = {
     VecSimType_FLOAT32: {"size_in_bytes": 4, "vector_type": np.float32},
     VecSimType_FLOAT64: {"size_in_bytes": 8, "vector_type": np.float64},
-    VecSimType_BFLOAT16: {"size_in_bytes": 2, "vector_type": bfloat16}
+    VecSimType_BFLOAT16: {"size_in_bytes": 2, "vector_type": bfloat16},
+    VecSimType_FLOAT16: {"size_in_bytes": 2, "vector_type": np.float16},
 }
 
 
@@ -175,6 +189,9 @@ def serialize(files=DEFAULT_FILES):
             elif hnswparams.type == VecSimType_BFLOAT16:
                 serialized_file_name = serialized_file_name + '-bf16'
                 serialized_raw_name = serialized_raw_name + '-bf16'
+            elif hnswparams.type == VecSimType_FLOAT16:
+                serialized_file_name = serialized_file_name + '-fp16'
+                serialized_raw_name = serialized_raw_name + '-fp16
 
             print('first, exporting test set to binary')
             if not file.get('skipRaw', False):
@@ -184,6 +201,8 @@ def serialize(files=DEFAULT_FILES):
                 elif hnswparams.type == VecSimType_BFLOAT16:
                     test_set = test[:]
                     test = np.array(test_set, dtype=bfloat16)
+                elif hnswparams.type == VecSimType_FLOAT16:
+                    test = test.astype(np.float16)
                 print(f"creating test set of {len(test)} vectors")
                 with open(os.path.join(location, serialized_raw_name + '-test_vectors.raw'), 'wb') as testfile:
                     for vec in test:
@@ -203,6 +222,8 @@ def serialize(files=DEFAULT_FILES):
             elif hnswparams.type == VecSimType_BFLOAT16:
                 data_set = data[:]
                 data = np.array(data_set, dtype=bfloat16)
+            elif hnswparams.type == VecSimType_FLOAT16:
+                data = data.astype(np.float16)
             print(f"creating index with {hnswparams.initialCapacity} vectors")
             for label, cur in enumerate(data):
                 for vec in cur if hnswparams.multi else [cur]:
