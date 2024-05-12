@@ -16,6 +16,18 @@ elif [ "$BM_TYPE" = "bm-basics-fp64-single" ] \
 || [ "$BM_TYPE" = "bm-batch-iter-fp64-multi" ]
 then
     file_name="basic_fp64"
+elif [ "$BM_TYPE" = "bm-basics-bf16-single" ] \
+|| [ "$BM_TYPE" = "bm-basics-bf16-multi" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-bf16-single" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-bf16-multi" ]
+then
+    file_name="basic_bf16"
+elif [ "$BM_TYPE" = "bm-basics-fp16-single" ] \
+|| [ "$BM_TYPE" = "bm-basics-fp16-multi" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-fp16-single" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-fp16-multi" ]
+then
+    file_name="basic_fp16"
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 fi

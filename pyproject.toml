@@ -23,20 +23,21 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.10"
 
 [tool.poetry.dev-dependencies]
-numpy = "^1.21"
+numpy = "^1.26"
 hnswlib = "^0.6.2"
 pytest = "^6.2.4"
-scipy = "^1.9.1"
+scipy = "^1.10.1"
 h5py = "^3.7.0"
+bfloat16 = "^1.1"
 
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "setuptools"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.build] 
+[tool.poetry.build]
 script  = "setup.py"
-generate-setup-file = true 
+generate-setup-file = true

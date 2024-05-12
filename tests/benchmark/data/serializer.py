@@ -8,6 +8,7 @@ import numpy as np
 from VecSim import *
 import h5py
 import os
+from bfloat16 import bfloat16
 
 CUR_SERIALIZING_VERSION = 3
 
@@ -23,7 +24,7 @@ else:
     exit(1)
 print('working at: ', location)
 
-# Default files to serialize. Each file is expected to be a ditcionary with the following attributes:
+# Default files to serialize. Each file is expected to be a dictionary with the following attributes:
 # REQUIRED:
 #   filename:        HDF5 file, that contains the train and test sets. Should be in the data directory.
 #   metric:          metric of the vectors in the file, from the VecSimMetric enum.
@@ -51,6 +52,20 @@ DEFAULT_FILES = [
         'metric': VecSimMetric_Cosine,
     },
     {
+        'filename': 'dbpedia-768',
+        'nickname': 'dbpedia',
+        'dim': 768,
+        'type': VecSimType_BFLOAT16,
+        'metric': VecSimMetric_Cosine,
+    },
+    {
+        'filename': 'dbpedia-768',
+        'nickname': 'dbpedia',
+        'dim': 768,
+        'type': VecSimType_FLOAT16,
+        'metric': VecSimMetric_Cosine,
+    },
+    {
         'filename': 'fashion_images_multi_value',
         'metric': VecSimMetric_Cosine,
         'multi': True,
@@ -59,6 +74,18 @@ DEFAULT_FILES = [
         'filename': 'fashion_images_multi_value',
         'metric': VecSimMetric_Cosine,
         'type': VecSimType_FLOAT64,
+        'multi': True,
+    },
+    {
+        'filename': 'fashion_images_multi_value',
+        'metric': VecSimMetric_Cosine,
+        'type': VecSimType_BFLOAT16,
+        'multi': True,
+    },
+    {
+        'filename': 'fashion_images_multi_value',
+        'metric': VecSimMetric_Cosine,
+        'type': VecSimType_FLOAT16,
         'multi': True,
     },
     {
@@ -111,6 +138,30 @@ DEFAULT_FILES = [
     },
 ]
 
+TYPES_ATTR = {
+    VecSimType_FLOAT32: {"size_in_bytes": 4, "vector_type": np.float32},
+    VecSimType_FLOAT64: {"size_in_bytes": 8, "vector_type": np.float64},
+    VecSimType_BFLOAT16: {"size_in_bytes": 2, "vector_type": bfloat16},
+    VecSimType_FLOAT16: {"size_in_bytes": 2, "vector_type": np.float16},
+}
+
+
+def check_file(file_name, vecsim_type, dim, num_vectors_to_print=10):
+    size_in_bytes = os.path.getsize(os.path.join(location, file_name))
+    print(f"File size: {size_in_bytes/1000}k bytes")
+    np.set_printoptions(threshold=20)
+
+    type_attr = TYPES_ATTR[vecsim_type]
+    print(f"first {num_vectors_to_print} vectors in the file:")
+    with open(os.path.join(location, file_name), 'rb') as vecsfile:
+        vector_size_in_bytes = type_attr["size_in_bytes"] * dim
+        vecs = vecsfile.read(num_vectors_to_print * vector_size_in_bytes)
+        for i in range(num_vectors_to_print):
+            vec = np.frombuffer(
+                vecs[i*vector_size_in_bytes:(i+1)*vector_size_in_bytes], dtype=type_attr["vector_type"])
+            print(vec)
+
+
 def serialize(files=DEFAULT_FILES):
     for file in files:
         filename = file['filename']
@@ -126,7 +177,8 @@ def serialize(files=DEFAULT_FILES):
             hnswparams.type = file.get('type', VecSimType_FLOAT32)
             hnswparams.M = file.get('M', 64)
             hnswparams.efConstruction = file.get('efConstruction', 512)
-            hnswparams.initialCapacity = len(f['train'])
+            hnswparams.initialCapacity = len(
+                f['train']) * len(f['train'][0]) if hnswparams.multi else len(f['train'])
 
             metric = {VecSimMetric_Cosine: 'cosine', VecSimMetric_L2: 'euclidean'}[hnswparams.metric]
             serialized_raw_name = '%s-%s-dim%d' % (nickname, metric, hnswparams.dim)
@@ -134,15 +186,29 @@ def serialize(files=DEFAULT_FILES):
             if hnswparams.type == VecSimType_FLOAT64:
                 serialized_file_name = serialized_file_name + '-fp64'
                 serialized_raw_name = serialized_raw_name + '-fp64'
+            elif hnswparams.type == VecSimType_BFLOAT16:
+                serialized_file_name = serialized_file_name + '-bf16'
+                serialized_raw_name = serialized_raw_name + '-bf16'
+            elif hnswparams.type == VecSimType_FLOAT16:
+                serialized_file_name = serialized_file_name + '-fp16'
+                serialized_raw_name = serialized_raw_name + '-fp16
 
             print('first, exporting test set to binary')
             if not file.get('skipRaw', False):
                 test = f['test']
                 if hnswparams.type == VecSimType_FLOAT64:
                     test = test.astype(np.float64)
+                elif hnswparams.type == VecSimType_BFLOAT16:
+                    test_set = test[:]
+                    test = np.array(test_set, dtype=bfloat16)
+                elif hnswparams.type == VecSimType_FLOAT16:
+                    test = test.astype(np.float16)
+                print(f"creating test set of {len(test)} vectors")
                 with open(os.path.join(location, serialized_raw_name + '-test_vectors.raw'), 'wb') as testfile:
                     for vec in test:
                         testfile.write(vec.tobytes())
+                check_file(serialized_raw_name + '-test_vectors.raw',
+                           hnswparams.type, hnswparams.dim)
             else:
                 print('nevermind, skipping test set export')
 
@@ -153,6 +219,12 @@ def serialize(files=DEFAULT_FILES):
             data = f['train']
             if hnswparams.type == VecSimType_FLOAT64:
                 data = data.astype(np.float64)
+            elif hnswparams.type == VecSimType_BFLOAT16:
+                data_set = data[:]
+                data = np.array(data_set, dtype=bfloat16)
+            elif hnswparams.type == VecSimType_FLOAT16:
+                data = data.astype(np.float16)
+            print(f"creating index with {hnswparams.initialCapacity} vectors")
             for label, cur in enumerate(data):
                 for vec in cur if hnswparams.multi else [cur]:
                     index.add_vector(vec, label)
@@ -169,6 +241,8 @@ def serialize(files=DEFAULT_FILES):
         # Sanity check - attempt to load the index
         index = HNSWIndex(output)
         index.check_integrity()
+        file_size_in_bytes = os.path.getsize(output)
+        print(f"Serialized index file size: {file_size_in_bytes/(1024**3)}GB")
 
         # Release memory before next iteration
         del index

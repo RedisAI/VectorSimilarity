@@ -3509,3 +3509,21 @@ TYPED_TEST(HNSWTieredIndexTestBasic, getElementNeighbors) {
         VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
     }
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, FitMemoryTest) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .blockSize = DEFAULT_BLOCK_SIZE};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    // Add vector
+    GenerateAndAddVector<TEST_DATA_T>(index->frontendIndex, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index->backendIndex, dim, 0);
+    size_t initial_memory = index->getAllocationSize();
+    index->fitMemory();
+    // Tired backendIndex index doesn't have initial capacity, so adding the first vector triggers
+    // allocation.
+    ASSERT_EQ(index->getAllocationSize(), initial_memory) << "fitMemory() after adding 1 vector";
+}

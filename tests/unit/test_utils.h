@@ -134,6 +134,10 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
+void compareTieredHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimIndexInfo frontendIndexInfo,
+                                          VecSimIndexInfo backendIndexInfo,
+                                          VecSimInfoIterator *infoIterator);
+
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,

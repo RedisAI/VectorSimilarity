@@ -16,12 +16,18 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "mock_thread_pool.h"
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/spaces/spaces.h"
+#include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 
 #include <cstdlib>
 #include <limits>
 #include <cmath>
 #include <random>
 #include <cstdarg>
+
+using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 template <typename index_type_t>
 class CommonIndexTest : public ::testing::Test {};
@@ -320,7 +326,7 @@ TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
     v[dim - 1] = exp(44);
 
     // Normalize the vector
-    normalizeVector(v, dim);
+    spaces::GetNormalizeFunc<TypeParam>()(v, dim);
 
     // Check that the normelized vector norm is 1
     TypeParam norm = 0;
@@ -543,4 +549,54 @@ TEST(CommonAPITest, testlogTieredIndex) {
               "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0");
     ASSERT_EQ(log.logBuffer[3],
               "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs");
+}
+
+TEST(CommonAPITest, NormalizeBfloat16) {
+    size_t dim = 20;
+    bfloat16 v[dim];
+
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<> dis(-5.0, -5.0);
+
+    for (size_t i = 0; i < dim; i++) {
+        float random_number = dis(gen);
+        v[i] = vecsim_types::float_to_bf16(random_number);
+    }
+
+    VecSim_Normalize(v, dim, VecSimType_BFLOAT16);
+
+    // Check that the normalized vector norm is 1.
+    float norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        // Convert assuming little endian system.
+        float val = vecsim_types::bfloat16_to_float32(v[i]);
+        norm += val * val;
+    }
+
+    ASSERT_NEAR(1.0, norm, 0.001);
+}
+
+TEST(CommonAPITest, NormalizeFloat16) {
+    size_t dim = 20;
+    float16 v[dim];
+
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<> dis(-5.0, -5.0);
+
+    for (size_t i = 0; i < dim; i++) {
+        float random_number = dis(gen);
+        v[i] = vecsim_types::FP32_to_FP16(random_number);
+    }
+
+    VecSim_Normalize(v, dim, VecSimType_FLOAT16);
+
+    // Check that the normalized vector norm is 1.
+    float norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        // Convert assuming little endian system.
+        float val = vecsim_types::FP16_to_FP32(v[i]);
+        norm += val * val;
+    }
+
+    ASSERT_NEAR(1.0, norm, 0.001);
 }
