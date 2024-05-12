@@ -1,7 +1,8 @@
 #pragma once
 
 #include "VecSim/vec_sim_common.h"
-
+#include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 template <VecSimType type, typename DataType, typename DistType = DataType>
 struct IndexType {
 
@@ -13,6 +14,8 @@ struct IndexType {
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
+using bf16_index_t = IndexType<VecSimType_BFLOAT16, vecsim_types::bfloat16, float>;
+using fp16_index_t = IndexType<VecSimType_FLOAT16, vecsim_types::float16, float>;
 
 #define INDICES   BM_VecSimIndex<index_type_t>::indices
 #define QUERIES   BM_VecSimIndex<index_type_t>::queries

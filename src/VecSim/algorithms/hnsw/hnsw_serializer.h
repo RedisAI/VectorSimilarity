@@ -4,7 +4,7 @@ template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          Serializer::EncodingVersion version)
-    : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), Serializer(version),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
       epsilon(params->epsilon), vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
       idToMetaData(maxElements, this->allocator),

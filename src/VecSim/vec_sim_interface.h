@@ -255,4 +255,7 @@ public:
     inline static void setWriteMode(VecSimWriteMode mode) {
         VecSimIndexInterface::asyncWriteMode = mode;
     }
+#ifdef BUILD_TESTS
+    virtual void fitMemory() = 0;
+#endif
 };

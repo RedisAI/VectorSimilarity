@@ -2,6 +2,7 @@ name: Merge a Pull-Request Flow
 run-name: Validate ${{ github.ref_name }}
 
 on:
+  workflow_call:
   merge_group:
     types: [checks_requested]
 
@@ -27,12 +28,6 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:bionic
-  xenial:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:xenial
   bullseye:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -87,7 +82,6 @@ jobs:
       - jammy
       - focal
       - bionic
-      - xenial
       - bullseye
       - centos7
       - amazonlinux2

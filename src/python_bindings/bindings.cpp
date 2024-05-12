@@ -8,6 +8,8 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/batch_iterator.h"
+#include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 
 #include "pybind11/pybind11.h"
 #include "pybind11/numpy.h"
@@ -19,6 +21,9 @@
 #include "mock_thread_pool.h"
 
 namespace py = pybind11;
+
+using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
@@ -92,32 +97,47 @@ public:
 // @input or @query arguments are a py::object object. (numpy arrays are acceptable)
 class PyVecSimIndex {
 private:
-    template <typename DataType>
+    template <typename DataType, typename DistType, typename NPArrayType = DataType>
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
         std::vector<std::vector<DataType>> vectors;
         if (index->basicInfo().algo == VecSimAlgo_BF) {
-            reinterpret_cast<BruteForceIndex<DataType, DataType> *>(this->index.get())
+            dynamic_cast<BruteForceIndex<DataType, DistType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         } else {
             // index is HNSW
-            reinterpret_cast<HNSWIndex<DataType, DataType> *>(this->index.get())
+            dynamic_cast<HNSWIndex<DataType, DistType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         }
         size_t n_vectors = vectors.size();
-        auto *data_numpy = new DataType[n_vectors * dim];
+        auto *data_numpy = new NPArrayType[n_vectors * dim];
+
         // Copy the vector blobs into one contiguous array of data, and free the original buffer
         // afterwards.
-        for (size_t i = 0; i < n_vectors; i++) {
-            memcpy(data_numpy + i * dim, vectors[i].data(), dim * sizeof(DataType));
+        if constexpr (std::is_same_v<DataType, bfloat16>) {
+            for (size_t i = 0; i < n_vectors; i++) {
+                for (size_t j = 0; j < dim; j++) {
+                    data_numpy[i * dim + j] = vecsim_types::bfloat16_to_float32(vectors[i][j]);
+                }
+            }
+        } else if constexpr (std::is_same_v<DataType, float16>) {
+            for (size_t i = 0; i < n_vectors; i++) {
+                for (size_t j = 0; j < dim; j++) {
+                    data_numpy[i * dim + j] = vecsim_types::FP16_to_FP32(vectors[i][j]);
+                }
+            }
+        } else {
+            for (size_t i = 0; i < n_vectors; i++) {
+                memcpy(data_numpy + i * dim, vectors[i].data(), dim * sizeof(NPArrayType));
+            }
         }
 
         py::capsule free_when_done(data_numpy,
-                                   [](void *vector_data) { delete[](DataType *) vector_data; });
-        return py::array_t<DataType>(
+                                   [](void *vector_data) { delete[](NPArrayType *) vector_data; });
+        return py::array_t<NPArrayType>(
             {n_vectors, dim}, // shape
-            {dim * sizeof(DataType),
-             sizeof(DataType)}, // C-style contiguous strides for the data type
-            data_numpy,         // the data pointer
+            {dim * sizeof(NPArrayType),
+             sizeof(NPArrayType)}, // C-style contiguous strides for the data type
+            data_numpy,            // the data pointer
             free_when_done);
     }
 
@@ -175,6 +195,8 @@ public:
 
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
 
+    VecSimType indexType() { return index->info().commonInfo.basicInfo.type; }
+
     size_t indexMemory() { return this->index->getAllocationSize(); }
 
     PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
@@ -187,9 +209,13 @@ public:
         VecSimIndexInfo info = index->info();
         size_t dim = info.commonInfo.basicInfo.dim;
         if (info.commonInfo.basicInfo.type == VecSimType_FLOAT32) {
-            return rawVectorsAsNumpy<float>(label, dim);
+            return rawVectorsAsNumpy<float, float>(label, dim);
         } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
-            return rawVectorsAsNumpy<double>(label, dim);
+            return rawVectorsAsNumpy<double, double>(label, dim);
+        } else if (info.commonInfo.basicInfo.type == VecSimType_BFLOAT16) {
+            return rawVectorsAsNumpy<bfloat16, float, float>(label, dim);
+        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT16) {
+            return rawVectorsAsNumpy<float16, float, float>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
         }
@@ -255,8 +281,22 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index.get());
-        hnsw->saveIndex(location);
+        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+        if (type == VecSimType_FLOAT32) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
+            hnsw->saveIndex(location);
+        } else if (type == VecSimType_FLOAT64) {
+            auto *hnsw = dynamic_cast<HNSWIndex<double, double> *>(index.get());
+            hnsw->saveIndex(location);
+        } else if (type == VecSimType_BFLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
+            hnsw->saveIndex(location);
+        } else if (type == VecSimType_FLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
+            hnsw->saveIndex(location);
+        } else {
+            throw std::runtime_error("Invalid index data type");
+        }
     }
     py::object searchKnnParallel(const py::object &input, size_t k, VecSimQueryParams *query_params,
                                  int n_threads) {
@@ -351,11 +391,19 @@ public:
     bool checkIntegrity() {
         auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
         if (type == VecSimType_FLOAT32) {
-            return reinterpret_cast<HNSWIndex<float, float> *>(this->index.get())
+            return dynamic_cast<HNSWIndex<float, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
         } else if (type == VecSimType_FLOAT64) {
-            return reinterpret_cast<HNSWIndex<double, double> *>(this->index.get())
+            return dynamic_cast<HNSWIndex<double, double> *>(this->index.get())
+                ->checkIntegrity()
+                .valid_state;
+        } else if (type == VecSimType_BFLOAT16) {
+            return dynamic_cast<HNSWIndex<bfloat16, float> *>(this->index.get())
+                ->checkIntegrity()
+                .valid_state;
+        } else if (type == VecSimType_FLOAT16) {
+            return dynamic_cast<HNSWIndex<float16, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
         } else {
@@ -368,7 +416,7 @@ class PyTieredIndex : public PyVecSimIndex {
 protected:
     tieredIndexMock mock_thread_pool;
 
-    VecSimIndexAbstract<float> *getFlatBuffer() {
+    VecSimIndexAbstract<float, float> *getFlatBuffer() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
             ->getFlatBufferIndex();
     }
@@ -446,6 +494,8 @@ PYBIND11_MODULE(VecSim, m) {
     py::enum_<VecSimType>(m, "VecSimType")
         .value("VecSimType_FLOAT32", VecSimType_FLOAT32)
         .value("VecSimType_FLOAT64", VecSimType_FLOAT64)
+        .value("VecSimType_BFLOAT16", VecSimType_BFLOAT16)
+        .value("VecSimType_FLOAT16", VecSimType_FLOAT16)
         .value("VecSimType_INT32", VecSimType_INT32)
         .value("VecSimType_INT64", VecSimType_INT64)
         .export_values();
@@ -516,6 +566,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_query", &PyVecSimIndex::range, py::arg("vector"), py::arg("radius"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
+        .def("index_type", &PyVecSimIndex::indexType)
         .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)

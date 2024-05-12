@@ -132,7 +132,7 @@ struct ElementGraphData {
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
 template <typename DataType, typename DistType>
-class HNSWIndex : public VecSimIndexAbstract<DistType>,
+class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public VecSimIndexTombstone
 #ifdef BUILD_TESTS
     ,
@@ -366,6 +366,10 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+    virtual void fitMemory() override {
+        idToMetaData.shrink_to_fit();
+        resizeLabelLookup(idToMetaData.size());
+    }
 #endif
 
 protected:
@@ -1640,7 +1644,7 @@ template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecSimIndexAbstract<DistType>(abstractInitParams), VecSimIndexTombstone(),
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), VecSimIndexTombstone(),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
       vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
       idToMetaData(maxElements, this->allocator),

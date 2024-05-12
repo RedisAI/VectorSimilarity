@@ -8,6 +8,11 @@
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
+
+using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 namespace HNSWFactory {
 
@@ -44,6 +49,10 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams);
     } else if (hnswParams->type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams);
+    } else if (hnswParams->type == VecSimType_BFLOAT16) {
+        return NewIndex_ChooseMultiOrSingle<bfloat16, float>(hnswParams, abstractInitParams);
+    } else if (hnswParams->type == VecSimType_FLOAT16) {
+        return NewIndex_ChooseMultiOrSingle<float16, float>(hnswParams, abstractInitParams);
     }
 
     // If we got here something is wrong.
@@ -75,6 +84,10 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
+    } else if (params->type == VecSimType_BFLOAT16) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<bfloat16, float>(params->multi);
+    } else if (params->type == VecSimType_FLOAT16) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
 
     // Account for the visited nodes pool (assume that it holds one pointer to a handler).
@@ -184,6 +197,12 @@ VecSimIndex *NewIndex(const std::string &location) {
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version);
     } else if (params.type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version);
+    } else if (params.type == VecSimType_BFLOAT16) {
+        return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
+                                                             version);
+    } else if (params.type == VecSimType_FLOAT16) {
+        return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
+                                                            version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {

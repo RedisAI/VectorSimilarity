@@ -193,7 +193,7 @@ valgrind:
 
 flow_test:
 	$(SHOW)poetry install
-	$(SHOW)poetry run pytest tests/flow -v -s
+	$(SHOW)poetry run pytest tests/flow/$(TEST) -v -s
 
 .PHONY: flow_test
 
@@ -278,7 +278,7 @@ $(COVERAGE_REPORT)
 endef
 
 coverage:
-	$(SHOW)$(MAKE) build COV=1
+	$(SHOW)$(MAKE) build COV=1 FP_64=1
 	$(SHOW)$(COVERAGE_RESET)
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)

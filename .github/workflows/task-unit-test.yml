@@ -37,7 +37,7 @@ jobs:
         if: ${{ inputs.run-valgrind }}
         run: make valgrind
       - name: Archive valgrind tests reports
-        if: ${{ inputs.run-valgrind }}
+        if: ${{ inputs.run-valgrind }} && failure()
         uses: actions/upload-artifact@v3
         with:
           name: valgrind tests reports
