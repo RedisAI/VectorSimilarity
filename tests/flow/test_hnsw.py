@@ -650,3 +650,213 @@ def test_hnsw_bfloat16_multi_value():
     recall = float(correct) / (k * num_queries)
     print("\nrecall is: \n", recall)
     assert (recall > 0.9)
+
+class TestFloat16():
+    dim = 50
+    num_elements = 10_000
+    M = 32
+    efConstruction = 200
+    efRuntime = 50
+    data_type = VecSimType_FLOAT16
+
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, data_type, efConstruction, M, efRuntime)
+    hnsw_index.set_ef(efRuntime)
+
+    rng = np.random.default_rng(seed=42)
+    data = vec_to_float16(rng.random((num_elements, dim)))
+
+    vectors = []
+    for i, vector in enumerate(data):
+        hnsw_index.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    #### Create queries
+    num_queries = 10
+    query_data = vec_to_float16(rng.random((num_queries, dim)))
+
+    def test_serialization(self):
+        hnsw_index = self.hnsw_index
+        k = 10
+
+        correct = 0
+        correct_labels = []  # cache these
+        for target_vector in self.query_data:
+            hnswlib_labels, _ = hnsw_index.knn_query(target_vector, 10)
+
+            # sort distances of every vector from the target vector and get actual k nearest vectors
+            dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in self.vectors]
+            dists = sorted(dists)
+            keys = [key for _, key in dists[:k]]
+            correct_labels.append(keys)
+
+            for label in hnswlib_labels[0]:
+                for correct_label in keys:
+                    if label == correct_label:
+                        correct += 1
+                        break
+        # Measure recall
+        recall = float(correct) / (k * self.num_queries)
+        print("\nrecall is: \n", recall)
+
+        # Persist, delete and restore index.
+        file_name = os.getcwd() + "/dump"
+        hnsw_index.save_index(file_name)
+
+        new_hnsw_index = HNSWIndex(file_name)
+        os.remove(file_name)
+        assert new_hnsw_index.index_size() == self.num_elements
+        assert new_hnsw_index.index_type() == VecSimType_FLOAT16
+
+        # Check recall
+        correct_after = 0
+        for i, target_vector in enumerate(self.query_data):
+            hnswlib_labels, _ = new_hnsw_index.knn_query(target_vector, 10)
+            correct_labels_cur = correct_labels[i]
+            for label in hnswlib_labels[0]:
+                for correct_label in correct_labels_cur:
+                    if label == correct_label:
+                        correct_after += 1
+                        break
+
+        # Compare recall after reloading the index
+        recall_after = float(correct_after) / (k * self.num_queries)
+        print("\nrecall after is: \n", recall_after)
+        assert recall == recall_after
+
+    def test_float16_L2(self):
+        hnsw_index = self.hnsw_index
+        k = 10
+
+        correct = 0
+        for target_vector in self.query_data:
+            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+
+            results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, target_vector, self.vectors, k)
+            for i, label in enumerate(hnswlib_labels[0]):
+                for j, correct_label in enumerate(keys):
+                    if label == correct_label:
+                        correct += 1
+                        assert math.isclose(np.float16(hnswlib_distances[0][i]), (results[j]["dist"]), rel_tol=1e-2), f"label: {label}"
+                        break
+
+        # Measure recall
+        recall = float(correct) / (k * self.num_queries)
+        print("\nrecall is: \n", recall)
+        assert (recall > 0.9)
+
+    def test_batch_iterator(self):
+        hnsw_index = self.hnsw_index
+
+        efRuntime = 180
+        hnsw_index.set_ef(efRuntime)
+
+        batch_iterator = hnsw_index.create_batch_iterator(self.query_data)
+        labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
+        for i, _ in enumerate(labels_first_batch[0][:-1]):
+            # Assert sorting by id
+            assert (labels_first_batch[0][i] < labels_first_batch[0][i + 1])
+
+        labels_second_batch, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
+        should_have_return_in_first_batch = []
+        for i, dist in enumerate(distances_second_batch[0][:-1]):
+            # Assert sorting by score
+            assert (distances_second_batch[0][i] < distances_second_batch[0][i + 1])
+            # Assert that every distance in the second batch is higher than any distance of the first batch
+            if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
+                should_have_return_in_first_batch.append(dist)
+        assert (len(should_have_return_in_first_batch) <= 2)
+
+        # Verify that runtime args are sent properly to the batch iterator.
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.efRuntime = 5
+        batch_iterator_new = hnsw_index.create_batch_iterator(self.query_data, query_params)
+        labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+        # Verify that accuracy is worse with the new lower ef_runtime.
+        assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
+
+    def test_range_query(self):
+        index = self.hnsw_index
+
+        radius = 7.0
+        recalls = {}
+
+        for epsilon_rt in [0.001, 0.01, 0.1]:
+            query_params = VecSimQueryParams()
+            query_params.hnswRuntimeParams.epsilon = epsilon_rt
+            start = time.time()
+            hnsw_labels, hnsw_distances = index.range_query(self.query_data[0], radius=radius, query_param=query_params)
+            end = time.time()
+            res_num = len(hnsw_labels[0])
+
+            dists = sorted([(key, spatial.distance.sqeuclidean(self.query_data[0], vec)) for key, vec in self.vectors])
+            actual_results = [(key, dist) for key, dist in dists if dist <= radius]
+
+            print(
+                f'\nlookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
+                f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
+
+            # Compare the number of vectors that are actually within the range to the returned results.
+            assert np.all(np.isin(hnsw_labels, np.array([label for label, _ in actual_results])))
+
+            assert max(hnsw_distances[0]) <= radius
+            recalls[epsilon_rt] = res_num / len(actual_results)
+
+        # Expect higher recalls for higher epsilon values.
+        assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
+
+        # Expect zero results for radius==0
+        hnsw_labels, hnsw_distances = index.range_query(self.query_data[0], radius=0)
+        assert len(hnsw_labels[0]) == 0
+
+def test_hnsw_float16_multi_value():
+    num_labels = 1_000
+    num_per_label = 5
+    num_elements = num_labels * num_per_label
+
+    dim = 128
+    M = 32
+    efConstruction = 100
+    num_queries = 10
+
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT16, efConstruction, M,
+                                   is_multi=True)
+    k = 10
+    hnsw_index.set_ef(50)
+
+    data = vec_to_float16(np.random.random((num_labels, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        for _ in range(num_per_label):
+            hnsw_index.add_vector(vector, i)
+            vectors.append((i, vector))
+
+    query_data = vec_to_float16(np.random.random((num_queries, dim)))
+    correct = 0
+    for target_vector in query_data:
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+        assert (len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = {}
+        for key, vec in vectors:
+            # Setting or updating the score for each label.
+            # If it's the first time we calculate a score for a label dists.get(key, dist)
+            # will return dist so we will choose the actual score the first time.
+            dist = spatial.distance.sqeuclidean(target_vector, vec)
+            dists[key] = min(dist, dists.get(key, dist))
+
+        dists = list(dists.items())
+        dists = sorted(dists, key=lambda pair: pair[1])[:k]
+        keys = [key for key, _ in dists]
+
+        for i, label in enumerate(hnswlib_labels[0]):
+            for j, correct_label in enumerate(keys):
+                if label == correct_label:
+                    correct += 1
+                    assert math.isclose(np.float16(hnswlib_distances[0][i]), dists[j][1], rel_tol=1e-2)
+                    break
+
+    # Measure recall
+    recall = float(correct) / (k * num_queries)
+    print("\nrecall is: \n", recall)
+    assert (recall > 0.9)

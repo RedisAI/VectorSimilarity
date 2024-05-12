@@ -60,6 +60,9 @@ def round_ms(f_value, ndigits = 2):
 def vec_to_bfloat16(vec):
     return vec.astype(bfloat16)
 
+def vec_to_float16(vec):
+    return vec.astype(np.float16)
+
 def get_ground_truth_results(dist_func, query, vectors, k):
     results = [{"dist": dist_func(query, vec), "label": key} for key, vec in vectors]
     results = sorted(results, key=lambda x: x["dist"])

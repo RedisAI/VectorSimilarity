@@ -81,6 +81,23 @@ TEST_F(SpacesTest, bf16_l2_no_optimization_func_test) {
     ASSERT_EQ(dist, FP32_L2Sqr((const void *)sanity_a, (const void *)sanity_b, dim));
 }
 
+TEST_F(SpacesTest, fp16_l2_no_optimization_func_test) {
+    size_t dim = 4;
+
+    float16 a[dim], b[dim];
+    float sanity_a[dim], sanity_b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        // multiplication of 0.25 have no rounding error when converted to bfloat16
+        sanity_a[i] = 0.5f + i * 0.25f;
+        a[i] = vecsim_types::FP32_to_FP16(sanity_a[i]);
+        sanity_b[i] = (float)i * 0.25f;
+        b[i] = vecsim_types::FP32_to_FP16(sanity_b[i]);
+    }
+
+    float dist = FP16_L2Sqr((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, FP32_L2Sqr((const void *)sanity_a, (const void *)sanity_b, dim));
+}
+
 TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
     size_t dim = 5;
 
@@ -135,7 +152,28 @@ TEST_F(SpacesTest, bf16_normalize_test) {
     }
 }
 
-TEST_F(SpacesTest, bf16_ip_no_optimization_func_test2) {
+TEST_F(SpacesTest, fp16_normalize_test) {
+    size_t dim = 4;
+
+    float16 a[dim];
+    float sanity_a[dim];
+    for (size_t i = 0; i < dim; i++) {
+        // unit vector
+        sanity_a[i] = float(4);
+        a[i] = vecsim_types::FP32_to_FP16(sanity_a[i]);
+    }
+
+    spaces::GetNormalizeFunc<float16>()(a, dim);
+    spaces::GetNormalizeFunc<float>()(sanity_a, dim);
+    for (size_t i = 0; i < dim; i++) {
+        ASSERT_EQ(vecsim_types::FP16_to_FP32(a[i]), sanity_a[i])
+            << " fp16 normalization failed for i = " << i;
+        ASSERT_EQ(vecsim_types::FP16_to_FP32(a[i]), 0.5)
+            << " fp16 normalization failed for i = " << i;
+    }
+}
+
+TEST_F(SpacesTest, bf16_ip_no_optimization_func_test) {
     size_t dim = 4;
 
     bfloat16 a[dim], b[dim];
@@ -149,6 +187,23 @@ TEST_F(SpacesTest, bf16_ip_no_optimization_func_test2) {
     }
 
     float dist = BF16_InnerProduct_LittleEndian((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, FP32_InnerProduct((const void *)sanity_a, (const void *)sanity_b, dim));
+}
+
+TEST_F(SpacesTest, fp16_ip_no_optimization_func_test) {
+    size_t dim = 4;
+
+    float16 a[dim], b[dim];
+    float sanity_a[dim], sanity_b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        // multiplication of 0.25 have no rounding error when converted to bfloat16
+        sanity_a[i] = 0.5f + i * 0.25f;
+        a[i] = vecsim_types::FP32_to_FP16(sanity_a[i]);
+        sanity_b[i] = (float)i * 0.25f;
+        b[i] = vecsim_types::FP32_to_FP16(sanity_b[i]);
+    }
+
+    float dist = FP16_InnerProduct((const void *)a, (const void *)b, dim);
     ASSERT_EQ(dist, FP32_InnerProduct((const void *)sanity_a, (const void *)sanity_b, dim));
 }
 
@@ -166,6 +221,11 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricBF16) {
     EXPECT_THROW((spaces::GetDistFunc<bfloat16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10,
                                                        nullptr)),
                  std::invalid_argument);
+}
+TEST_F(SpacesTest, GetDistFuncInvalidMetricFP16) {
+    EXPECT_THROW(
+        (spaces::GetDistFunc<float16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        std::invalid_argument);
 }
 
 using namespace spaces;

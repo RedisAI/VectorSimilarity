@@ -5,6 +5,7 @@
  */
 
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
@@ -26,6 +27,19 @@ dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metri
         return IP_BF16_GetDistFunc(dim, nullptr, alignment);
     case VecSimMetric_L2:
         return L2_BF16_GetDistFunc(dim, nullptr, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
+dist_func_t<float> GetDistFunc<vecsim_types::float16, float>(VecSimMetric metric, size_t dim,
+                                                             unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+    case VecSimMetric_IP:
+        return IP_FP16_GetDistFunc(dim, nullptr, alignment);
+    case VecSimMetric_L2:
+        return L2_FP16_GetDistFunc(dim, nullptr, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }
@@ -74,4 +88,10 @@ normalizeVector_f<vecsim_types::bfloat16> GetNormalizeFunc<vecsim_types::bfloat1
         return bfloat16_normalizeVector<false>;
     }
 }
+
+template <>
+normalizeVector_f<vecsim_types::float16> GetNormalizeFunc<vecsim_types::float16>(void) {
+    return float16_normalizeVector;
+}
+
 } // namespace spaces
