@@ -2953,6 +2953,29 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
             // (the label that we just inserted), and the first result should be this vector.
             auto ver_res = [&](size_t label, double score, size_t index) {
                 if (index == 0) {
+                    if (label != i % n_labels + n_labels && !TypeParam::isMulti()) {
+                        // Print the graph for debugging this upon error (this test is currently
+                        // flaky)
+                        for (size_t cur_label = 0; cur_label <= i % n_labels + n_labels;
+                             cur_label++) {
+                            std::cout << "label " << cur_label << std::endl;
+                            int **neighbors_output;
+                            EXPECT_EQ(VecSimDebugCommandCode_OK,
+                                      VecSimDebug_GetElementNeighborsInHNSWGraph(
+                                          tiered_index, cur_label, &neighbors_output));
+                            size_t level = 0;
+                            while (neighbors_output[level] != nullptr) {
+                                std::cout << neighbors_output[level][0] << " neighbors in level "
+                                          << level << std::endl;
+                                for (size_t j = 1; j <= neighbors_output[level][0]; j++) {
+                                    std::cout << neighbors_output[level][j];
+                                    std::cout << std::endl;
+                                }
+                                level++;
+                            }
+                            VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+                        }
+                    }
                     EXPECT_EQ(label, i % n_labels + n_labels);
                     EXPECT_DOUBLE_EQ(score, 0);
                 }
