@@ -9,6 +9,7 @@
 #include "test_utils.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
+#include "cpu_features_macros.h"
 #include <cmath>
 
 template <typename index_type_t>
@@ -478,6 +479,18 @@ TYPED_TEST(BruteForceTest, test_delete_swap_block) {
     runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
 }
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+TYPED_TEST(BruteForceTest, AlignmentSanity) {
+    BFParams params = {.dim = 512};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *bf = this->CastToBF(index);
+    // Assuming we have some optimizations (at least SSE), the alignment should be non-zero
+    // (Register byte size)
+    ASSERT_NE(bf->getAlignment(), 0);
+    VecSimIndex_Free(index);
+}
+#endif
 
 TYPED_TEST(BruteForceTest, sanity_reinsert_1280) {
     size_t n = 5;
