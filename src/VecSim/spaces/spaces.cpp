@@ -24,9 +24,9 @@ dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metri
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_BF16_GetDistFunc(dim, nullptr, alignment);
+        return IP_BF16_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
-        return L2_BF16_GetDistFunc(dim, nullptr, alignment);
+        return L2_BF16_GetDistFunc(dim, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }
@@ -37,9 +37,9 @@ dist_func_t<float> GetDistFunc<vecsim_types::float16, float>(VecSimMetric metric
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_FP16_GetDistFunc(dim, nullptr, alignment);
+        return IP_FP16_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
-        return L2_FP16_GetDistFunc(dim, nullptr, alignment);
+        return L2_FP16_GetDistFunc(dim, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }
@@ -50,9 +50,9 @@ dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_FP32_GetDistFunc(dim, nullptr, alignment);
+        return IP_FP32_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
-        return L2_FP32_GetDistFunc(dim, nullptr, alignment);
+        return L2_FP32_GetDistFunc(dim, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }
@@ -63,9 +63,9 @@ dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
     switch (metric) {
     case VecSimMetric_Cosine:
     case VecSimMetric_IP:
-        return IP_FP64_GetDistFunc(dim, nullptr, alignment);
+        return IP_FP64_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
-        return L2_FP64_GetDistFunc(dim, nullptr, alignment);
+        return L2_FP64_GetDistFunc(dim, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }
