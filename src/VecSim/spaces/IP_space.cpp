@@ -21,7 +21,7 @@ using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
 namespace spaces {
-dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
+dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
@@ -61,8 +61,8 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const void *arch_opt, unsigne
     return ret_dist_func;
 }
 
-dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const void *arch_opt,
-                                        unsigned char *alignment) {
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
+                                        const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
@@ -102,7 +102,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const void *arch_opt,
     return ret_dist_func;
 }
 
-dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
+dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;
     if (!alignment) {
         alignment = &dummy_alignment;
@@ -145,7 +145,7 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, const void *arch_opt, unsigne
     return ret_dist_func;
 }
 
-dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, const void *arch_opt, unsigned char *alignment) {
+dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
