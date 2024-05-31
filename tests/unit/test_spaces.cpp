@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
@@ -500,6 +501,15 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = BF16_InnerProduct_LittleEndian(v, v2, dim);
+    if (optimization.avx512_bf16 && optimization.avx512vl) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_BF16_IP_implementation_AVX512BF16_VL(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+        optimization.avx512_bf16 = optimization.avx512vl = 0;
+    }
     if (optimization.avx512bw && optimization.avx512vbmi2) {
         unsigned char alignment = 0;
         arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -552,7 +562,15 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = BF16_L2Sqr_LittleEndian(v, v2, dim);
-
+    if (optimization.avx512_bf16 && optimization.avx512vl) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_BF16_L2_implementation_AVX512BF16_VL(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+        optimization.avx512_bf16 = optimization.avx512vl = 0;
+    }
     if (optimization.avx512bw && optimization.avx512vbmi2) {
         unsigned char alignment = 0;
         arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
