@@ -122,13 +122,6 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     auto features = (arch_opt == nullptr)
                         ? cpu_features::GetX86Info().features
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
-    if (features.avx512_bf16 && features.avx512vl) {
-#ifdef OPT_AVX512_BF16_VL
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(bfloat16); // align to 512 bits.
-        return Choose_BF16_L2_implementation_AVX512BF16_VL(dim);
-#endif
-    }
     if (features.avx512bw && features.avx512vbmi2) {
 #ifdef OPT_AVX512_BW_VBMI2
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual

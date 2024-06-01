@@ -14,7 +14,7 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 // AVX512_BF16 functions
 #ifdef OPT_AVX512_BF16_VL
 bool avx512_bf16_vl_supported = opt.avx512_bf16 && opt.avx512vl;
-INITIALIZE_BENCHMARKS_SET(BF16, AVX512BF16_VL, 32, avx512_bf16_vl_supported);
+INITIALIZE_BENCHMARKS_SET_IP(BF16, AVX512BF16_VL, 32, avx512_bf16_vl_supported);
 #endif // AVX512_BF16
 
 // AVX512 functions
