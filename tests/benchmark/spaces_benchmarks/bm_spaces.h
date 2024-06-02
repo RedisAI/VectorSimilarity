@@ -92,16 +92,11 @@
         ->Arg(dim_opt + dim_opt / 4)                                                               \
         ->Arg(dim_opt - 1)
 
-#define INITIALIZE_BENCHMARKS_SET_L2(type_prefix, arch, dim_opt, arch_supported)                   \
+#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt, arch_supported)                      \
     INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, L2, dim_opt, arch_supported);                    \
     INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, L2, dim_opt, arch_supported);                    \
-    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt, arch_supported);
-
-#define INITIALIZE_BENCHMARKS_SET_IP(type_prefix, arch, dim_opt, arch_supported)                   \
+    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt, arch_supported);                        \
+                                                                                                   \
     INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, IP, dim_opt, arch_supported);                    \
     INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, IP, dim_opt, arch_supported);                    \
     INITIALIZE_RESIDUAL_BM(type_prefix, arch, IP, dim_opt, arch_supported);
-
-#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt, arch_supported)                      \
-    INITIALIZE_BENCHMARKS_SET_L2(type_prefix, arch, dim_opt, arch_supported)                       \
-    INITIALIZE_BENCHMARKS_SET_IP(type_prefix, arch, dim_opt, arch_supported)
