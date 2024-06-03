@@ -330,7 +330,11 @@ public:
     size_t indexSize() const override {
         auto result = size_t{};
         if (index_) {
-            result = std::visit([](auto &&index) { return index.size(); }, *index_);
+            if (std::holds_alternative<index_flat_t>(*index_)) {
+                result = std::get<index_flat_t>(*index_).size();
+            } else {
+                result = std::get<index_pq_t>(*index_).size();
+            }
         }
         return result - this->numDeleted_;
     }
