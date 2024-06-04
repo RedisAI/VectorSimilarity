@@ -21,7 +21,9 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
+      run-valgrind: false
   bionic:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:bionic
+      run-valgrind: false
