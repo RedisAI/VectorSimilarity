@@ -538,8 +538,6 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
 #endif
 #ifdef OPT_AVX512_BW_VBMI2
     if (optimization.avx512bw && optimization.avx512vbmi2) {
-        ASSERT_EQ(1, 0) << "AVX512 with dim " << dim;
-
         unsigned char alignment = 0;
         arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_BF16_IP_implementation_AVX512BW_VBMI2(dim))
