@@ -3,7 +3,6 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 MODE=$1 # whether to install using sudo or not
 
-
 $MODE dnf update -y
 
 # Development Tools includes config-manager
@@ -18,7 +17,5 @@ $MODE dnf install epel-release -yqq
 $MODE dnf install -y gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ gcc-toolset-11-libatomic-devel  make valgrind wget git
 
 cp /opt/rh/gcc-toolset-11/enable /etc/profile.d/gcc-toolset-11.sh
-
-echo "source /opt/rh/gcc-toolset-11/enable" >> ~/.bashrc
 
 source install_cmake.sh $MODE
