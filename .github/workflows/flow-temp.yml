@@ -10,9 +10,6 @@ name: temporary testing
 on:
   push:
     # branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
-defaults:
-  run:
-    shell: bash -l -eo pipefail {0}
 jobs:
   # macos:
   #   uses: ./.github/workflows/task-unit-test.yml
