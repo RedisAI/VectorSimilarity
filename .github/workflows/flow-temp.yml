@@ -32,3 +32,6 @@ jobs:
     with:
       container: rockylinux:8
       run-valgrind: false
+    defaults:
+      run:
+        shell: bash -l -eo pipefail {0}
