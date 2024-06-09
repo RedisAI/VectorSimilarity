@@ -22,12 +22,6 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
-  bionic:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
   bullseye:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -81,7 +75,6 @@ jobs:
       - check-if-docs-only
       - jammy
       - focal
-      - bionic
       - bullseye
       - centos7
       - amazonlinux2
