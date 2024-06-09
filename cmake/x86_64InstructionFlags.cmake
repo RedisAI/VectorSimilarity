@@ -1,3 +1,6 @@
+# This file checks if the compiler supports certain CPU flags. If the flags are supported,
+# it adds compilation definitions to include code sections that require these flags.
+
 include(CheckCXXCompilerFlag)
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
