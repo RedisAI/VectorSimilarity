@@ -94,7 +94,7 @@ protected:
 
 class FP16HNSWTest : public FP16Test {
 protected:
-    virtual void SetUp(HNSWParams &params) {
+    virtual void SetUp(HNSWParams &params) override {
         params.type = VecSimType_FLOAT16;
         VecSimParams vecsim_params = CreateParams(params);
         index = VecSimIndex_New(&vecsim_params);
@@ -119,7 +119,7 @@ protected:
 
 class FP16BruteForceTest : public FP16Test {
 protected:
-    virtual void SetUp(BFParams &params) {
+    virtual void SetUp(BFParams &params) override {
         params.type = VecSimType_FLOAT16;
         VecSimParams vecsim_params = CreateParams(params);
         index = VecSimIndex_New(&vecsim_params);
@@ -170,12 +170,12 @@ protected:
 
     virtual void TearDown() override {}
 
-    virtual const void *GetDataByInternalId(idType id) {
+    virtual const void *GetDataByInternalId(idType id) override {
         return CastIndex<BruteForceIndex<float16, float>>(CastToBruteForce())
             ->getDataByInternalId(id);
     }
 
-    virtual HNSWIndex<float16, float> *CastToHNSW() {
+    virtual HNSWIndex<float16, float> *CastToHNSW() override {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<float16, float> *>(index);
         return tiered_index->getHNSWIndex();
     }

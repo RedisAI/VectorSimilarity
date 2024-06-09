@@ -15,6 +15,7 @@
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
@@ -91,11 +92,16 @@
         ->Arg(dim_opt + dim_opt / 4)                                                               \
         ->Arg(dim_opt - 1)
 
-#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt, arch_supported)                      \
+#define INITIALIZE_BENCHMARKS_SET_L2(type_prefix, arch, dim_opt, arch_supported)                   \
     INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, L2, dim_opt, arch_supported);                    \
     INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, L2, dim_opt, arch_supported);                    \
-    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt, arch_supported);                        \
-                                                                                                   \
+    INITIALIZE_RESIDUAL_BM(type_prefix, arch, L2, dim_opt, arch_supported);
+
+#define INITIALIZE_BENCHMARKS_SET_IP(type_prefix, arch, dim_opt, arch_supported)                   \
     INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, IP, dim_opt, arch_supported);                    \
     INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, IP, dim_opt, arch_supported);                    \
     INITIALIZE_RESIDUAL_BM(type_prefix, arch, IP, dim_opt, arch_supported);
+
+#define INITIALIZE_BENCHMARKS_SET(type_prefix, arch, dim_opt, arch_supported)                      \
+    INITIALIZE_BENCHMARKS_SET_L2(type_prefix, arch, dim_opt, arch_supported)                       \
+    INITIALIZE_BENCHMARKS_SET_IP(type_prefix, arch, dim_opt, arch_supported)

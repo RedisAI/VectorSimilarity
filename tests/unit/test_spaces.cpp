@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
@@ -281,6 +282,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_L2Sqr(v, v2, dim);
+#ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -291,6 +293,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         // Unset avx512f flag, so we'll choose the next optimization (AVX).
         optimization.avx512f = 0;
     }
+#endif
+#ifdef OPT_AVX
     if (optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -301,6 +305,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         // Unset avx flag as well, so we'll choose the next optimization (SSE).
         optimization.avx = 0;
     }
+#endif
+#ifdef OPT_SSE
     if (optimization.sse) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -311,6 +317,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         // Unset sse flag as well, so we'll choose the next option (default).
         optimization.sse = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP32_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -335,6 +342,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_InnerProduct(v, v2, dim);
+#ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -344,6 +352,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
+#endif
+#ifdef OPT_AVX
     if (optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -353,6 +363,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.avx = 0;
     }
+#endif
+#ifdef OPT_SSE
     if (optimization.sse) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -362,6 +374,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP32_InnerProduct)
@@ -392,6 +405,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
 
     dist_func_t<double> arch_opt_func;
     double baseline = FP64_L2Sqr(v, v2, dim);
+#ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
@@ -401,6 +415,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
+#endif
+#ifdef OPT_AVX
     if (optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
@@ -410,6 +426,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.avx = 0;
     }
+#endif
+#ifdef OPT_SSE
     if (optimization.sse) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
@@ -419,6 +437,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP64_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -443,6 +462,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 
     dist_func_t<double> arch_opt_func;
     double baseline = FP64_InnerProduct(v, v2, dim);
+#ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP64_GetDistFunc(dim, &alignment, &optimization);
@@ -452,6 +472,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
+#endif
+#ifdef OPT_AVX
     if (optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP64_GetDistFunc(dim, &alignment, &optimization);
@@ -461,6 +483,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.avx = 0;
     }
+#endif
+#ifdef OPT_SSE
     if (optimization.sse) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP64_GetDistFunc(dim, &alignment, &optimization);
@@ -470,6 +494,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_FP64_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP64_InnerProduct)
@@ -500,6 +525,18 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = BF16_InnerProduct_LittleEndian(v, v2, dim);
+#ifdef OPT_AVX512_BF16_VL
+    if (optimization.avx512_bf16 && optimization.avx512vl) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_BF16_IP_implementation_AVX512BF16_VL(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+        optimization.avx512_bf16 = optimization.avx512vl = 0;
+    }
+#endif
+#ifdef OPT_AVX512_BW_VBMI2
     if (optimization.avx512bw && optimization.avx512vbmi2) {
         unsigned char alignment = 0;
         arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -509,6 +546,8 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512bw = optimization.avx512vbmi2 = 0;
     }
+#endif
+#ifdef OPT_AVX2
     if (optimization.avx2) {
         unsigned char alignment = 0;
         arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -518,6 +557,8 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.avx2 = 0;
     }
+#endif
+#ifdef OPT_SSE3
     if (optimization.sse3) {
         unsigned char alignment = 0;
         arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -527,6 +568,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse3 = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, BF16_InnerProduct_LittleEndian)
@@ -552,7 +594,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = BF16_L2Sqr_LittleEndian(v, v2, dim);
-
+#ifdef OPT_AVX512_BW_VBMI2
     if (optimization.avx512bw && optimization.avx512vbmi2) {
         unsigned char alignment = 0;
         arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -562,6 +604,8 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512bw = optimization.avx512vbmi2 = 0;
     }
+#endif
+#ifdef OPT_AVX2
     if (optimization.avx2) {
         unsigned char alignment = 0;
         arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -571,6 +615,8 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.avx2 = 0;
     }
+#endif
+#ifdef OPT_SSE3
     if (optimization.sse3) {
         unsigned char alignment = 0;
         arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
@@ -580,6 +626,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse3 = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, BF16_L2Sqr_LittleEndian)
@@ -613,7 +660,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_InnerProduct(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
-
+#ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -623,6 +670,8 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
+#endif
+#ifdef OPT_F16C
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -632,6 +681,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "F16C with dim " << dim;
         optimization.f16c = optimization.fma3 = optimization.avx = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP16_InnerProduct)
@@ -660,7 +710,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_L2Sqr(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
-
+#ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -670,6 +720,8 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
+#endif
+#ifdef OPT_F16C
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -679,6 +731,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "F16C with dim " << dim;
         optimization.f16c = optimization.fma3 = optimization.avx = 0;
     }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP16_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
