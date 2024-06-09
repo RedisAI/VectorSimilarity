@@ -94,7 +94,7 @@ protected:
 
 class BF16HNSWTest : public BF16Test {
 protected:
-    virtual void SetUp(HNSWParams &params) {
+    virtual void SetUp(HNSWParams &params) override {
         params.type = VecSimType_BFLOAT16;
         VecSimParams vecsim_params = CreateParams(params);
         index = VecSimIndex_New(&vecsim_params);
@@ -119,7 +119,7 @@ protected:
 
 class BF16BruteForceTest : public BF16Test {
 protected:
-    virtual void SetUp(BFParams &params) {
+    virtual void SetUp(BFParams &params) override {
         params.type = VecSimType_BFLOAT16;
         VecSimParams vecsim_params = CreateParams(params);
         index = VecSimIndex_New(&vecsim_params);

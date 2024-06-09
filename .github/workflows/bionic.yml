@@ -1,9 +1,0 @@
-name: bionic flow
-
-on: [workflow_dispatch]
-
-jobs:
-  bionic:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
