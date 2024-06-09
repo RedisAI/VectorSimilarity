@@ -23,6 +23,9 @@ jobs:
     name: Test ${{ inputs.container || inputs.env }}
     runs-on: ${{ inputs.env }}
     container: ${{ inputs.container || null }}
+    defaults:
+      run:
+        shell: bash -l -eo pipefail {0}
     steps:
       - name: pre-checkout script
         if: ${{ inputs.pre-checkout-script }}
