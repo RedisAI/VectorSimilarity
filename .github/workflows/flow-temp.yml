@@ -9,37 +9,10 @@ name: temporary testing
 
 on:
   push:
-    branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
+    # branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
 jobs:
-  macos:
+  bionic:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      env: macos-latest
-      run-valgrind: false
-  rocky8:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: rockylinux:8
-      run-valgrind: false
-  amazonlinux2:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: amazonlinux:2
-      pre-checkout-script: yum install -y tar gzip
-      run-valgrind: false
-  mariner2:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: mcr.microsoft.com/cbl-mariner/base/core:2.0
-      pre-checkout-script: tdnf install -y --noplugins --skipsignature tar gzip
-      run-valgrind: false # TODO: enable valgrind? (requires to install valgrind)
-  rocky9:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: rockylinux:9
-      run-valgrind: false
-  jammy:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:jammy
+      container: ubuntu:bionic
       run-valgrind: false
