@@ -19,6 +19,18 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	CHECK_CXX_COMPILER_FLAG(-msse3 CXX_SSE3)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
+	# Turn off AVX512BF16 on Ubuntu 18.04 as it is not supported by its binutils assembler version.
+	if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
+		execute_process(COMMAND lsb_release -rs
+					OUTPUT_VARIABLE UBUNTU_VERSION
+					OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+		if("${UBUNTU_VERSION}" STREQUAL "18.04")
+			message(STATUS "Compiling on Ubuntu 18.04, turning off CXX_AVX512BF16 flag.")
+			set(CXX_AVX512BF16 FALSE)
+		endif()
+	endif()
+
 	if(CXX_AVX512VL AND CXX_AVX512BF16)
 		add_compile_definitions(OPT_AVX512_BF16_VL)
 	endif()
