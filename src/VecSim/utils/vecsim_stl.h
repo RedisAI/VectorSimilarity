@@ -93,4 +93,36 @@ public:
                                                                                        alloc) {}
 };
 
+#if defined(__clang__)
+#define CLANG_VERSION (__clang_major__ * 100 + __clang_minor__ * 10 + __clang_patchlevel__)
+#if (CLANG_VERSION >= 1316) // clang 13.1.6
+#define ONE_BYTE_MUTEX_AVAILABLE 1
+#endif
+#elif (__GNUC__ >= 11)
+#define ONE_BYTE_MUTEX_AVAILABLE 1
+#else
+#define ONE_BYTE_MUTEX_AVAILABLE 0
+#endif
+
+#if ONE_BYTE_MUTEX_AVAILABLE != 0
+struct one_byte_mutex {
+    void lock() {
+        if (state.exchange(locked, std::memory_order_acquire) == unlocked)
+            return;
+        while (state.exchange(sleeper, std::memory_order_acquire) != unlocked)
+            state.wait(sleeper, std::memory_order_relaxed);
+    }
+    void unlock() {
+        if (state.exchange(unlocked, std::memory_order_release) == sleeper)
+            state.notify_one();
+    }
+
+private:
+    std::atomic<uint8_t> state{unlocked};
+
+    static constexpr uint8_t unlocked = 0;
+    static constexpr uint8_t locked = 0b01;
+    static constexpr uint8_t sleeper = 0b10;
+};
+#endif
 } // namespace vecsim_stl

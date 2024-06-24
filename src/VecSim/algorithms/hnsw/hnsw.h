@@ -49,6 +49,11 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
+#if ONE_BYTE_MUTEX_AVAILABLE == 1
+using elem_mutex_t = vecsim_stl::one_byte_mutex;
+#else
+using elem_mutex_t = std::mutex;
+#endif
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 
 // Vectors flags (for marking a specific vector)
@@ -75,7 +80,6 @@ struct ElementMetaData {
 
     ElementMetaData(labelType label = SIZE_MAX) noexcept : label(label), flags(IN_PROCESS) {}
 };
-#pragma pack() // restore default packing
 
 struct LevelData {
     vecsim_stl::vector<idType> *incomingEdges;
@@ -109,7 +113,7 @@ struct LevelData {
 
 struct ElementGraphData {
     size_t toplevel;
-    std::mutex neighborsGuard;
+    elem_mutex_t neighborsGuard;
     LevelData *others;
     LevelData level0;
 
@@ -128,6 +132,7 @@ struct ElementGraphData {
     }
     ~ElementGraphData() = delete; // Should be destroyed using `destroyGraphData`
 };
+#pragma pack() // restore default packing
 
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
