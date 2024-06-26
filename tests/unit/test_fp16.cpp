@@ -101,7 +101,7 @@ protected:
         dim = params.dim;
     }
 
-    virtual const void *GetDataByInternalId(idType id) {
+    virtual const void *GetDataByInternalId(idType id) override {
         return CastIndex<HNSWIndex_Single<float16, float>>()->getDataByInternalId(id);
     }
 
@@ -109,7 +109,7 @@ protected:
         return CastIndex<HNSWIndex<float16, float>>(new_index);
     }
 
-    virtual HNSWIndex<float16, float> *CastToHNSW() {
+    virtual HNSWIndex<float16, float> *CastToHNSW() override {
         return CastIndex<HNSWIndex<float16, float>>(index);
     }
 
@@ -126,11 +126,11 @@ protected:
         dim = params.dim;
     }
 
-    virtual const void *GetDataByInternalId(idType id) {
+    virtual const void *GetDataByInternalId(idType id) override {
         return CastIndex<BruteForceIndex_Single<float16, float>>()->getDataByInternalId(id);
     }
 
-    virtual HNSWIndex<float16, float> *CastToHNSW() {
+    virtual HNSWIndex<float16, float> *CastToHNSW() override {
         ADD_FAILURE() << "FP16BruteForceTest::CastToHNSW() this method should not be called";
         return nullptr;
     }
