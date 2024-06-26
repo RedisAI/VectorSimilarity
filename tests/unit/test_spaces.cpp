@@ -15,7 +15,7 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/float16.h"
-#include "VecSim/spaces/functions/AVX512.h"
+#include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
@@ -286,7 +286,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -346,7 +346,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -410,7 +410,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
-        ASSERT_EQ(arch_opt_func, Choose_FP64_L2_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP64_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
@@ -466,7 +466,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP64_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP64_IP_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP64_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -664,7 +664,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -714,7 +714,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
