@@ -66,6 +66,7 @@ struct LevelData {
     }
     void increaseTotalIncomingEdgesNum() { this->totalIncomingLinks++; }
     void decreaseTotalIncomingEdgesNum() { this->totalIncomingLinks--; }
+    bool inDegreeZero() const { return this->totalIncomingLinks == 0; }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
         auto it = std::find(this->incomingEdges->begin(), this->incomingEdges->end(), id_before);
         // This should always succeed
