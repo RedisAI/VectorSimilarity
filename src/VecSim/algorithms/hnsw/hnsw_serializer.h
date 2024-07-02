@@ -49,13 +49,21 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->getAllocationSize();
-    size_t connections_checked = 0, double_connections = 0, num_deleted = 0;
-    std::vector<int> inbound_connections_num(this->curElementCount, 0);
-    size_t incoming_edges_sets_sizes = 0;
+    size_t connections_checked = 0, double_connections = 0, num_deleted = 0,
+           min_in_degree = SIZE_MAX, max_in_degree = 0;
+    size_t max_level_in_graph = 0; // including marked deleted elements
     for (size_t i = 0; i < this->curElementCount; i++) {
         if (this->isMarkedDeleted(i)) {
             num_deleted++;
         }
+        if (getGraphDataByInternalId(i)->toplevel > max_level_in_graph) {
+            max_level_in_graph = getGraphDataByInternalId(i)->toplevel;
+        }
+    }
+    std::vector<std::vector<int>> inbound_connections_num(
+        this->curElementCount, std::vector<int>(max_level_in_graph + 1, 0));
+    size_t incoming_edges_sets_sizes = 0;
+    for (size_t i = 0; i < this->curElementCount; i++) {
         for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
             LevelData &cur = this->getLevelData(i, l);
             std::set<idType> s;
@@ -68,7 +76,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                 if (isMarkedDeleted(cur.links[j])) {
                     res.connections_to_repair++;
                 }
-                inbound_connections_num[cur.links[j]]++;
+                inbound_connections_num[cur.links[j]][l]++;
                 s.insert(cur.links[j]);
                 connections_checked++;
 
@@ -91,16 +99,28 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     if (num_deleted != this->numMarkedDeleted) {
         return res;
     }
+
+    // Validate that each node's in-degree is coherent with the in-degree observed by the
+    // outgoing edges.
+    for (size_t i = 0; i < this->curElementCount; i++) {
+        for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
+            LevelData &cur = this->getLevelData(i, l);
+            if (cur.totalIncomingLinks != inbound_connections_num[i][l]) {
+                return res;
+            }
+            if (inbound_connections_num[i][l] > max_in_degree) {
+                max_in_degree = inbound_connections_num[i][l];
+            }
+            if (inbound_connections_num[i][l] < min_in_degree) {
+                min_in_degree = inbound_connections_num[i][l];
+            }
+        }
+    }
+
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
-    res.min_in_degree =
-        !inbound_connections_num.empty()
-            ? *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
-            : 0;
-    res.max_in_degree =
-        !inbound_connections_num.empty()
-            ? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
-            : 0;
+    res.min_in_degree = max_in_degree;
+    res.max_in_degree = min_in_degree;
     if (incoming_edges_sets_sizes + double_connections != connections_checked) {
         return res;
     }
@@ -133,7 +153,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
+void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingVersion version) {
     // Restore id to metadata vector
     labelType label = 0;
     elementFlags flags = 0;
@@ -194,15 +214,50 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
 
             // Restore the current element's graph data
             for (size_t k = 0; k <= toplevel; k++) {
-                restoreLevel(input, getLevelData(cur_egt, k));
+                restoreLevel(input, getLevelData(cur_egt, k), version);
             }
+        }
+    }
+    if (version < EncodingVersion_V4) {
+        this->computeIndegreeForAll();
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::computeIndegreeForAll() {
+    size_t max_level_in_graph = 0; // including marked deleted elements
+    for (size_t i = 0; i < this->curElementCount; i++) {
+        if (getGraphDataByInternalId(i)->toplevel > max_level_in_graph) {
+            max_level_in_graph = getGraphDataByInternalId(i)->toplevel;
+        }
+    }
+    std::vector<std::vector<int>> inbound_connections_num(
+        this->curElementCount, std::vector<int>(max_level_in_graph + 1, 0));
+    for (size_t i = 0; i < this->curElementCount; i++) {
+        for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
+            LevelData &cur = this->getLevelData(i, l);
+            std::set<idType> s;
+            for (unsigned int j = 0; j < cur.numLinks; j++) {
+                inbound_connections_num[cur.links[j]][l]++;
+            }
+        }
+    }
+    // Populate the total incoming links for each node.
+    for (size_t i = 0; i < this->curElementCount; i++) {
+        for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
+            LevelData &cur = this->getLevelData(i, l);
+            cur.totalIncomingLinks = inbound_connections_num[i][l];
         }
     }
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, LevelData &data) {
+void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, LevelData &data,
+                                                 EncodingVersion version) {
     // Restore the links of the current element
+    if (version >= EncodingVersion_V4) {
+        readBinaryPOD(input, data.totalIncomingLinks);
+    }
     readBinaryPOD(input, data.numLinks);
     for (size_t i = 0; i < data.numLinks; i++) {
         readBinaryPOD(input, data.links[i]);
@@ -296,6 +351,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, LevelData &data) const {
     // Save the links of the current element
+    writeBinaryPOD(output, data.totalIncomingLinks);
     writeBinaryPOD(output, data.numLinks);
     for (size_t i = 0; i < data.numLinks; i++) {
         writeBinaryPOD(output, data.links[i]);

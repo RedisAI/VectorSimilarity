@@ -7,7 +7,7 @@
 void Serializer::saveIndex(const std::string &location) {
 
     // Serializing with V3.
-    EncodingVersion version = EncodingVersion_V3;
+    EncodingVersion version = EncodingVersion_V4;
 
     std::ofstream output(location, std::ios::binary);
     writeBinaryPOD(output, version);
