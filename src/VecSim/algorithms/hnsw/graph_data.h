@@ -68,6 +68,7 @@ struct ElementLevelData {
     }
     void increaseTotalIncomingEdgesNum() { this->totalIncomingLinks++; }
     void decreaseTotalIncomingEdgesNum() { this->totalIncomingLinks--; }
+    bool inDegreeZero() const { return this->totalIncomingLinks == 0; }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
         auto it = std::find(this->incomingUnidirectionalEdges->begin(),
                             this->incomingUnidirectionalEdges->end(), id_before);
