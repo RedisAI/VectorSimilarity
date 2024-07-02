@@ -1988,7 +1988,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationV3) {
 
     // Test for multi and single
     for (size_t i = 0; i < 2; ++i) {
-        auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
+        auto file_name = std::string("/home/alon/Code/VectorSimialrity") + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
                          VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
                          ".hnsw_v3";
 
@@ -1999,19 +1999,19 @@ TYPED_TEST(HNSWTest, HNSWSerializationV3) {
         // Verify that the index was loaded as expected.
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
 
-        VecSimIndexInfo info2 = VecSimIndex_Info(serialized_index);
-        ASSERT_EQ(info2.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
-        ASSERT_EQ(info2.hnswInfo.M, M);
-        ASSERT_EQ(info2.commonInfo.basicInfo.isMulti, is_multi[i]);
-        ASSERT_EQ(info2.commonInfo.basicInfo.blockSize, blockSize);
-        ASSERT_EQ(info2.hnswInfo.efConstruction, ef);
-        ASSERT_EQ(info2.hnswInfo.efRuntime, ef);
-        ASSERT_EQ(info2.commonInfo.indexSize, n);
-        ASSERT_EQ(info2.commonInfo.basicInfo.metric, VecSimMetric_L2);
-        ASSERT_EQ(info2.commonInfo.basicInfo.type, TypeParam::get_index_type());
-        ASSERT_EQ(info2.commonInfo.basicInfo.dim, dim);
-        ASSERT_EQ(info2.commonInfo.indexLabelCount, n_labels[i]);
-        ASSERT_EQ(info2.hnswInfo.epsilon, epsilon);
+        VecSimIndexInfo info = VecSimIndex_Info(serialized_index);
+        ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
+        ASSERT_EQ(info.hnswInfo.M, M);
+        ASSERT_EQ(info.commonInfo.basicInfo.isMulti, is_multi[i]);
+        ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blockSize);
+        ASSERT_EQ(info.hnswInfo.efConstruction, ef);
+        ASSERT_EQ(info.hnswInfo.efRuntime, ef);
+        ASSERT_EQ(info.commonInfo.indexSize, n);
+        ASSERT_EQ(info.commonInfo.basicInfo.metric, VecSimMetric_L2);
+        ASSERT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
+        ASSERT_EQ(info.commonInfo.basicInfo.dim, dim);
+        ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels[i]);
+        ASSERT_EQ(info.hnswInfo.epsilon, epsilon);
 
         // Check the functionality of the loaded index.
 
@@ -2024,8 +2024,6 @@ TYPED_TEST(HNSWTest, HNSWSerializationV3) {
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
         ASSERT_EQ(VecSimIndex_IndexSize(serialized_index), n + 1 - n_per_label);
 
-        // Clean up.
-        remove(file_name.c_str());
         VecSimIndex_Free(serialized_index);
     }
 }
