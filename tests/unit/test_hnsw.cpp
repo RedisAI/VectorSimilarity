@@ -1991,7 +1991,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationV3) {
 
     // Test for multi and single
     for (size_t i = 0; i < 2; ++i) {
-        auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
+        auto file_name = std::string("/home/alon/Code/VectorSimialrity") + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
                          VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
                          ".hnsw_v3";
 
