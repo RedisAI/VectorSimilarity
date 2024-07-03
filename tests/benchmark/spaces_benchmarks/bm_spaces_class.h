@@ -8,6 +8,8 @@
 #include <random>
 #include <unistd.h>
 
+#pragma once
+
 template <typename DATA_TYPE>
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:

@@ -8,7 +8,9 @@
 #include "bm_spaces.h"
 
 class BM_VecSimSpaces_FP16 : public BM_VecSimSpaces<vecsim_types::float16> {
-    virtual vecsim_types::float16 DoubleToType(double val) { return vecsim_types::FP32_to_FP16(val); }
+    vecsim_types::float16 DoubleToType(double val) override {
+        return vecsim_types::FP32_to_FP16(val);
+    }
 };
 
 #ifdef CPU_FEATURES_ARCH_X86_64

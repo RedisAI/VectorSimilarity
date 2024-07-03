@@ -31,11 +31,6 @@ jobs:
     with:
       container: debian:bullseye
       run-valgrind: false
-  centos7:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: centos:7
-      run-valgrind: false
   amazonlinux2:
     uses: ./.github/workflows/amazon2.yml
   mariner2:
