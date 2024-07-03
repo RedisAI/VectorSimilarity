@@ -32,7 +32,7 @@ float FP16_L2SqrSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dim
 
     auto sum = _mm256_setzero_ps();
 
-    if (residual % 8) {
+    if constexpr (residual % 8) {
         // Deal with remainder first. `dim` is more than 32, so we have at least one block of 32
         // 16-bit float so mask loading is guaranteed to be safe.
         __mmask16 constexpr residuals_mask = (1 << (residual % 8)) - 1;
@@ -50,12 +50,12 @@ float FP16_L2SqrSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dim
         pVect1 += residual % 8;
         pVect2 += residual % 8;
     }
-    if (residual >= 8 && residual < 16) {
+    if constexpr (residual >= 8 && residual < 16) {
         L2SqrStep(pVect1, pVect2, sum);
-    } else if (residual >= 16 && residual < 24) {
+    } else if constexpr (residual >= 16 && residual < 24) {
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
-    } else if (residual >= 24) {
+    } else if constexpr (residual >= 24) {
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
