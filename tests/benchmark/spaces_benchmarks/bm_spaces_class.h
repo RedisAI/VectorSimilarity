@@ -8,36 +8,31 @@
 #include <random>
 #include <unistd.h>
 
-#pragma once
-
+template <typename DATA_TYPE>
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
     DATA_TYPE *v1, *v2;
 
+    virtual DATA_TYPE DoubleToType(double val) { return val; }
+
 public:
-    BM_VecSimSpaces();
+    BM_VecSimSpaces() { rng.seed(47); }
     ~BM_VecSimSpaces() = default;
 
-    void SetUp(const ::benchmark::State &state);
-    void TearDown(const ::benchmark::State &state);
-};
-
-BM_VecSimSpaces::BM_VecSimSpaces() { rng.seed(47); }
-
-void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {
-    dim = state.range(0);
-    v1 = new DATA_TYPE[dim];
-    v2 = new DATA_TYPE[dim];
-    std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-    for (size_t i = 0; i < dim; i++) {
-        v1[i] = (DATA_TYPE)distrib(rng);
-        v2[i] = (DATA_TYPE)distrib(rng);
+    void SetUp(const ::benchmark::State &state) {
+        dim = state.range(0);
+        v1 = new DATA_TYPE[dim];
+        v2 = new DATA_TYPE[dim];
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; i++) {
+            v1[i] = DoubleToType(distrib(rng));
+            v2[i] = DoubleToType(distrib(rng));
+        }
     }
-}
-
-void BM_VecSimSpaces::TearDown(const ::benchmark::State &state) {
-    delete v1;
-    delete v2;
-}
+    void TearDown(const ::benchmark::State &state) {
+        delete v1;
+        delete v2;
+    }
+};
