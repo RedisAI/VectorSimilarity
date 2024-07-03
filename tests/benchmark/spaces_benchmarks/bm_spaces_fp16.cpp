@@ -9,7 +9,7 @@
 #include <random>
 
 template <typename DATA_TYPE>
-class BM_VecSimSpaces_Inter :  public benchmark::Fixture {
+class BM_VecSimSpaces_Inter : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
@@ -18,10 +18,8 @@ protected:
 public:
     BM_VecSimSpaces_Inter() { rng.seed(47); }
     ~BM_VecSimSpaces_Inter() = default;
-    virtual DATA_TYPE Convert(double val) {
-        return val;
-    }
-    virtual void SetUp(const::benchmark::State &state) {
+    virtual DATA_TYPE Convert(double val) { return val; }
+    virtual void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
         v1 = new DATA_TYPE[dim];
         v2 = new DATA_TYPE[dim];
@@ -31,17 +29,14 @@ public:
             v2[i] = Convert(distrib(rng));
         }
     }
-    virtual void TearDown(const::benchmark::State &state) {
+    virtual void TearDown(const ::benchmark::State &state) {
         delete v1;
         delete v2;
     }
 };
 
-class BM_VecSimSpaces_fp16 :public BM_VecSimSpaces_Inter<vecsim_types::float16> {
-    virtual vecsim_types::float16 Convert(double val) {
-        return vecsim_types::FP32_to_FP16(val);
-    }
-
+class BM_VecSimSpaces_fp16 : public BM_VecSimSpaces_Inter<vecsim_types::float16> {
+    virtual vecsim_types::float16 Convert(double val) { return vecsim_types::FP32_to_FP16(val); }
 };
 
 #include <benchmark/benchmark.h>
@@ -64,8 +59,8 @@ class BM_VecSimSpaces_fp16 :public BM_VecSimSpaces_Inter<vecsim_types::float16> 
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
-#define BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                   \
-    BENCHMARK_DEFINE_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)               \
+#define BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)         \
+    BENCHMARK_DEFINE_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                      \
     (benchmark::State & st) {                                                                      \
         if (!arch_supported) {                                                                     \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -92,41 +87,44 @@ class BM_VecSimSpaces_fp16 :public BM_VecSimSpaces_Inter<vecsim_types::float16> 
 
 // Run each function at least one full 512 bits iteration + (1 * elements : elem_per_128_bits *
 // elements) FP32 = residual = 1,2,3, FP64 = residual = 1, BF16 = residual = 1,2,3,4,5,6,7...
-#define RESIDUAL_PARAMS(elem_per_128_bits) DenseRange(4 * 128 + 1, 4 * 128 + elem_per_128_bits - 1, 1)
+#define RESIDUAL_PARAMS(elem_per_128_bits)                                                         \
+    DenseRange(4 * 128 + 1, 4 * 128 + elem_per_128_bits - 1, 1)
 
-#define INITIALIZE_BM(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                          \
-    BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                       \
-    BENCHMARK_REGISTER_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)             \
+#define INITIALIZE_BM(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                \
+    BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)             \
+    BENCHMARK_REGISTER_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                    \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
-#define INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)             \
-    INITIALIZE_BM(bm_class, type_prefix, arch, metric, 512_bit_chunks, arch_supported)                       \
+#define INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)   \
+    INITIALIZE_BM(bm_class, type_prefix, arch, metric, 512_bit_chunks, arch_supported)             \
         ->EXACT_512BIT_PARAMS(dim_opt)
 
-#define INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)             \
-    INITIALIZE_BM(bm_class, type_prefix, arch, metric, 128_bit_chunks, arch_supported)                       \
+#define INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)   \
+    INITIALIZE_BM(bm_class, type_prefix, arch, metric, 128_bit_chunks, arch_supported)             \
         ->EXACT_128BIT_PARAMS(dim_opt / 4)
 
-#define INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)                 \
-    INITIALIZE_BM(bm_class, type_prefix, arch, metric, residual, arch_supported)->RESIDUAL_PARAMS(dim_opt / 4)
+#define INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)       \
+    INITIALIZE_BM(bm_class, type_prefix, arch, metric, residual, arch_supported)                   \
+        ->RESIDUAL_PARAMS(dim_opt / 4)
 
-#define INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, metric, arch_supported)                 \
-    INITIALIZE_BM(bm_class, type_prefix, arch, metric, high_dim, arch_supported)->DenseRange(900, 1000, 5)
+#define INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, metric, arch_supported)                   \
+    INITIALIZE_BM(bm_class, type_prefix, arch, metric, high_dim, arch_supported)                   \
+        ->DenseRange(900, 1000, 5)
 
 // Naive algorithms
 
-#define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                                \
-    BENCHMARK_DEFINE_F(bm_class, type_prefix##_NAIVE_##metric)                              \
+#define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
+    BENCHMARK_DEFINE_F(bm_class, type_prefix##_NAIVE_##metric)                                     \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
         }                                                                                          \
     }
 
-#define INITIALIZE_NAIVE_BM(bm_class, type_prefix, metric, dim_opt)                                          \
-    BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                                    \
-    BENCHMARK_REGISTER_F(bm_class, type_prefix##_NAIVE_##metric)                            \
+#define INITIALIZE_NAIVE_BM(bm_class, type_prefix, metric, dim_opt)                                \
+    BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                          \
+    BENCHMARK_REGISTER_F(bm_class, type_prefix##_NAIVE_##metric)                                   \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)                                                             \
         ->Arg(100)                                                                                 \
@@ -134,20 +132,20 @@ class BM_VecSimSpaces_fp16 :public BM_VecSimSpaces_Inter<vecsim_types::float16> 
         ->Arg(dim_opt + dim_opt / 4)                                                               \
         ->Arg(dim_opt - 1)
 
-#define INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)                   \
-    INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, L2, arch_supported);                    \
-    INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);                    \
-    INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);                    \
+#define INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)         \
+    INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, L2, arch_supported);                          \
+    INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);          \
+    INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);          \
     INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);
 
-#define INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)                   \
-    INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, IP, arch_supported);                    \
-    INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);                    \
-    INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);                    \
+#define INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)         \
+    INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, IP, arch_supported);                          \
+    INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);          \
+    INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);          \
     INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);
 
-#define INITIALIZE_BENCHMARKS_SET(bm_class, type_prefix, arch, dim_opt, arch_supported)                      \
-    INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)                       \
+#define INITIALIZE_BENCHMARKS_SET(bm_class, type_prefix, arch, dim_opt, arch_supported)            \
+    INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)             \
     INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -156,7 +154,7 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 // OPT_AVX512FP16 functions
 #ifdef OPT_AVX512_FP16
 
-class BM_VecSimSpaces_fp16_adv :  public BM_VecSimSpaces_Inter<_Float16> {};
+class BM_VecSimSpaces_fp16_adv : public BM_VecSimSpaces_Inter<_Float16> {};
 
 bool avx512fp16_supported = opt.avx512_fp16;
 INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_fp16_adv, FP16, AVX512FP16, 32, avx512fp16_supported);
@@ -175,7 +173,6 @@ INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_fp16, FP16, AVX512F, 32, avx512f_suppo
 bool avx512_bw_f16c_supported = opt.f16c && opt.fma3 && opt.avx;
 INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_fp16, FP16, F16C, 32, avx512_bw_f16c_supported);
 #endif // OPT_F16C
-
 
 #endif // x86_64
 
