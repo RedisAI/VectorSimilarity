@@ -34,12 +34,6 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
-  centos7:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: centos:7
   amazonlinux2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -82,7 +76,6 @@ jobs:
       - jammy
       - focal
       - bullseye
-      - centos7
       - amazonlinux2
       - mariner2
       - rocky8
