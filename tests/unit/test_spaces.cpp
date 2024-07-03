@@ -5,6 +5,7 @@
  */
 
 #include <utility>
+#include <random>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -20,6 +21,7 @@
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
+#include "VecSim/spaces/functions/AVX512FP16.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
@@ -690,6 +692,44 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
+#ifdef OPT_AVX512_FP16
+TEST_P(FP16SpacesOptimizationTest, FP16AdvancedInnerProductTest) {
+    auto optimization = cpu_features::GetX86Info().features;
+    if (optimization.avx512_fp16) {
+        size_t dim = GetParam();
+        float16 v1[dim], v2[dim];
+        float v1_fp32[dim], v2_fp32[dim];
+
+        std::mt19937 gen(42);
+        std::uniform_real_distribution<> dis(-0.999999, 0.999999);
+
+        _Float16 baseline = 0;
+        for (size_t i = 0; i < dim; i++) {
+            v1_fp32[i] = dis(gen);
+            v1[i] = _Float16(v1_fp32[i]);
+            v2_fp32[i] = dis(gen);
+            v2[i] = _Float16(v2_fp32[i]);
+
+            baseline += v1[i] * v2[i];
+        }
+        baseline = _Float16(1) - baseline;
+
+        auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+            size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
+            return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float16) : 0;
+        };
+
+        dist_func_t<float> arch_opt_func;
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512FP16(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+    }
+}
+#endif
+
 TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
@@ -738,6 +778,44 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "F16C with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
+
+#ifdef OPT_AVX512_FP16
+TEST_P(FP16SpacesOptimizationTest, FP16AdvancedL2SqrTest) {
+    auto optimization = cpu_features::GetX86Info().features;
+    if (optimization.avx512_fp16) {
+        size_t dim = GetParam();
+        float16 v1[dim], v2[dim];
+        float v1_fp32[dim], v2_fp32[dim];
+
+        std::mt19937 gen(42);
+        std::uniform_real_distribution<> dis(-0.999999, 0.999999);
+
+        _Float16 baseline = 0;
+        for (size_t i = 0; i < dim; i++) {
+            v1_fp32[i] = dis(gen);
+            v1[i] = _Float16(v1_fp32[i]);
+            v2_fp32[i] = dis(gen);
+            v2[i] = _Float16(v2_fp32[i]);
+
+            _Float16 diff = v1[i] - v2[i];
+            baseline += diff * diff;
+        }
+
+        auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+            size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
+            return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float16) : 0;
+        };
+
+        dist_func_t<float> arch_opt_func;
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512FP16(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+    }
+}
+#endif
 
 INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
                          testing::Range(32UL, 32 * 2UL + 1));

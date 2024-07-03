@@ -1,0 +1,49 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
+#include <cstdint>
+#include "VecSim/spaces/space_includes.h"
+#include "VecSim/types/float16.h"
+#include <cstring>
+
+using float16 = vecsim_types::float16;
+
+static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m512h &sum) {
+    __m512h v1 = _mm512_loadu_ph(pVect1);
+    __m512h v2 = _mm512_loadu_ph(pVect2);
+
+    sum = _mm512_fmadd_ph(v1, v2, sum);
+    pVect1 += 32;
+    pVect2 += 32;
+}
+
+template <unsigned short residual> // 0..31
+float FP16_InnerProductSIMD32_AVX512FP16(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    auto *pVect1 = (float16 *)pVect1v;
+    auto *pVect2 = (float16 *)pVect2v;
+
+    const float16 *pEnd1 = pVect1 + dimension;
+
+    __m512h sum = _mm512_setzero_ph();
+
+    if constexpr (residual) {
+        __mmask32 mask = (1LU << residual) - 1;
+        __m512h v1 = (__m512h)_mm512_maskz_loadu_epi16(mask, pVect1);
+        pVect1 += residual;
+        __m512h v2 = (__m512h)_mm512_maskz_loadu_epi16(mask, pVect2);
+        pVect2 += residual;
+        sum = _mm512_mul_ph(v1, v2);
+    }
+
+    // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
+    do {
+        InnerProductStep(pVect1, pVect2, sum);
+    } while (pVect1 < pEnd1);
+
+    _Float16 res = _mm512_reduce_add_ph(sum);
+    return _Float16(1) - res;
+}

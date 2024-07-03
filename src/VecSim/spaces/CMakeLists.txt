@@ -26,6 +26,12 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		list(APPEND OPTIMIZATIONS functions/AVX512BF16_VL.cpp)
 	endif()
 
+	if(CXX_AVX512FP16)
+		message("Building with AVX512FP16")
+		set_source_files_properties(functions/AVX512FP16.cpp PROPERTIES COMPILE_FLAGS "-mavx512fp16")
+		list(APPEND OPTIMIZATIONS functions/AVX512FP16.cpp)
+	endif()
+
 	if(CXX_AVX512BW AND CXX_AVX512VBMI2)
 		message("Building with AVX512BW and AVX512VBMI2")
 		set_source_files_properties(functions/AVX512BW_VBMI2.cpp PROPERTIES COMPILE_FLAGS "-mavx512bw  -mavx512vbmi2")
