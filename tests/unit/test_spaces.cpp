@@ -6,6 +6,7 @@
 
 #include <utility>
 #include <random>
+#include <cmath>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -744,28 +745,38 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
 INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
                          testing::Range(32UL, 32 * 2UL + 1));
 
-// avx512_fp16 flag functions are only chosen for high dimensions
+/** Since we are handling floats, the order of summation affect on the final result.
+ * This is very sifnificant when the entries are half precision floats, since the accumulated
+ * error is much higher than in single precision floats.
+ * In the following tests the error between the naive calculation to SIMD optimization function
+ * is allowed to be up to 1%. If we wanted to be accurate, we could have done the baseline
+ * calculations accumulating the results in a SIMD size vector and reduce the final result to float,
+ * but this is too complicated for the scope of this test.
+ * Special attention should be given to the implementation of the SIMD reduce function for float16,
+ * that has diffrent logic than the float32 and float64 reduce functions.
+ * For more info, refer to intel's intrinsinc guide.
+ */
 #ifdef OPT_AVX512_FP16
+// avx512_fp16 flag functions are only chosen for high dimensions
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
 
-TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTest) {
+TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
     if (optimization.avx512_fp16) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
-        float v1_fp32[dim], v2_fp32[dim];
 
         std::mt19937 gen(42);
-        std::uniform_real_distribution<> dis(-0.999999, 0.999999);
+        std::uniform_real_distribution<> dis(-0.99, 0.99);
 
         _Float16 baseline = 0;
         for (size_t i = 0; i < dim; i++) {
-            v1_fp32[i] = dis(gen);
-            v1[i] = _Float16(v1_fp32[i]);
-            v2_fp32[i] = dis(gen);
-            v2[i] = _Float16(v2_fp32[i]);
+            float val1 = (dis(gen));
+            float val2 = (dis(gen));
+            v1[i] = vecsim_types::FP32_to_FP16((val1));
+            v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-            baseline += v1[i] * v2[i];
+            baseline += static_cast<_Float16>(val1) * static_cast<_Float16>(val2);
         }
         baseline = _Float16(1) - baseline;
 
@@ -779,29 +790,33 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTest) {
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512FP16(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        float dist = arch_opt_func(v1, v2, dim);
+        float f_baseline = baseline;
+        float error = std::abs((dist / f_baseline) - 1);
+        // Alow 1% error
+        ASSERT_LE(error, 0.01) << "AVX512 with dim " << dim << ", baseline: " << f_baseline
+                               << ", dist: " << dist;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
     }
 }
 
-TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTest) {
+TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
     if (optimization.avx512_fp16) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
-        float v1_fp32[dim], v2_fp32[dim];
 
         std::mt19937 gen(42);
-        std::uniform_real_distribution<> dis(-0.999999, 0.999999);
+        std::uniform_real_distribution<float> dis(-0.99f, 0.99f);
 
         _Float16 baseline = 0;
         for (size_t i = 0; i < dim; i++) {
-            v1_fp32[i] = dis(gen);
-            v1[i] = _Float16(v1_fp32[i]);
-            v2_fp32[i] = dis(gen);
-            v2[i] = _Float16(v2_fp32[i]);
+            float val1 = (dis(gen));
+            float val2 = (dis(gen));
+            v1[i] = vecsim_types::FP32_to_FP16((val1));
+            v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-            _Float16 diff = v1[i] - v2[i];
+            _Float16 diff = static_cast<_Float16>(val1) - static_cast<_Float16>(val2);
             baseline += diff * diff;
         }
 
@@ -815,13 +830,18 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTest) {
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512FP16(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        float dist = arch_opt_func(v1, v2, dim);
+        float f_baseline = baseline;
+        float error = std::abs((dist / f_baseline) - 1);
+        // Alow 1% error
+        ASSERT_LE(error, 0.01) << "AVX512 with dim " << dim << ", baseline: " << f_baseline
+                               << ", dist: " << dist;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
     }
 }
 
 // Start from a 32 multiplier
-INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTestAdvanced,
+INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
                          testing::Range(512UL, 512 + 32UL + 1));
 
 #endif
