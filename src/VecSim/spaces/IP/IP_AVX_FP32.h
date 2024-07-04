@@ -26,7 +26,7 @@ float FP32_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size
 
     // Deal with 1-7 floats with mask loading, if needed. `dim` is >16, so we have at least one
     // 16-float block, so mask loading is guaranteed to be safe.
-    if (residual % 8) {
+    if constexpr (residual % 8) {
         __mmask8 constexpr mask = (1 << (residual % 8)) - 1;
         __m256 v1 = my_mm256_maskz_loadu_ps<mask>(pVect1);
         pVect1 += residual % 8;
@@ -36,7 +36,7 @@ float FP32_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size
     }
 
     // If the reminder is >=8, have another step of 8 floats
-    if (residual >= 8) {
+    if constexpr (residual >= 8) {
         InnerProductStep(pVect1, pVect2, sum256);
     }
 

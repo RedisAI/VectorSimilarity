@@ -108,7 +108,7 @@ float BF16_InnerProductSIMD32_AVX2(const void *pVect1v, const void *pVect2v, siz
     }
 
     // Do a single step if residual >=16
-    if (residual >= 16) {
+    if constexpr (residual >= 16) {
         InnerProductStep(pVect1, pVect2, sum_prod);
     }
 
