@@ -9,5 +9,6 @@ $MODE add-apt-repository ppa:ubuntu-toolchain-r/test -y
 $MODE apt update
 $MODE apt-get install -yqq wget gcc-11 g++-11 make clang-format valgrind python3-pip lcov git
 $MODE update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 --slave /usr/bin/g++ g++ /usr/bin/g++-11
-
+# align gcov version with gcc version
+update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-11 60
 source install_cmake.sh $MODE
