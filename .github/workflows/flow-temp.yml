@@ -16,8 +16,16 @@ jobs:
     with:
       container: rockylinux:8
       run-valgrind: false
+      run-codecov: false
   rocky9:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:9
       run-valgrind: false
+      run-codecov: false
+  focal:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      container: ubuntu:focal
+      run-valgrind: false
+      run-codecov: true
