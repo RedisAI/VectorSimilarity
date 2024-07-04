@@ -14,8 +14,8 @@ $MODE dnf config-manager --set-enabled powertools
 # get epel to install gcc12
 $MODE dnf install epel-release -yqq
 
-$MODE dnf install -y gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ gcc-toolset-12-libatomic-devel  make valgrind wget git
+$MODE dnf install -y gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-libatomic-devel  make valgrind wget git
 
-cp /opt/rh/gcc-toolset-12/enable /etc/profile.d/gcc-toolset-12.sh
+cp /opt/rh/gcc-toolset-13/enable /etc/profile.d/gcc-toolset-13.sh
 
 source install_cmake.sh $MODE
