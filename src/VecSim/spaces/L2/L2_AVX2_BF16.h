@@ -106,7 +106,7 @@ float BF16_L2SqrSIMD32_AVX2(const void *pVect1v, const void *pVect2v, size_t dim
     }
 
     // Do a single step if residual >=16
-    if (residual >= 16) {
+    if constexpr (residual >= 16) {
         L2SqrStep(pVect1, pVect2, sum);
     }
 
