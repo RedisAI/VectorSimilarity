@@ -746,15 +746,15 @@ INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
                          testing::Range(32UL, 32 * 2UL + 1));
 
 /** Since we are handling floats, the order of summation affect on the final result.
- * This is very sifnificant when the entries are half precision floats, since the accumulated
+ * This is very significant when the entries are half precision floats, since the accumulated
  * error is much higher than in single precision floats.
  * In the following tests the error between the naive calculation to SIMD optimization function
  * is allowed to be up to 1%. If we wanted to be accurate, we could have done the baseline
  * calculations accumulating the results in a SIMD size vector and reduce the final result to float,
  * but this is too complicated for the scope of this test.
  * Special attention should be given to the implementation of the SIMD reduce function for float16,
- * that has diffrent logic than the float32 and float64 reduce functions.
- * For more info, refer to intel's intrinsinc guide.
+ * that has different logic than the float32 and float64 reduce functions.
+ * For more info, refer to intel's intrinsics guide.
  */
 #ifdef OPT_AVX512_FP16
 // avx512_fp16 flag functions are only chosen for high dimensions
