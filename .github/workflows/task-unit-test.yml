@@ -17,10 +17,6 @@ on:
         description: 'Run valgrind tests'
         type: boolean
         default: true
-      run-codecov:
-        description: 'Run codecov tests'
-        type: boolean
-        default: false
 
 jobs:
   test:
@@ -49,6 +45,3 @@ jobs:
         with:
           name: valgrind tests reports
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
-      - name: codecov
-        if: ${{ inputs.run-codecov }}
-        run: make coverage
