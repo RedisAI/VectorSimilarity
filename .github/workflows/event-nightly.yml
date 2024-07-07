@@ -50,3 +50,26 @@ jobs:
   arm:
     uses: ./.github/workflows/arm.yml
     secrets: inherit
+
+  notify-on-failure:
+    needs:
+      - benchmark
+      - jammy
+      - focal
+      - bionic
+      - bullseye
+      - amazonlinux2
+      - mariner2
+      - rocky8
+      - rocky9
+      - macos
+      - arm
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Notify on failure
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: '{ "failed_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_NIGHTLY_FAILURE }}

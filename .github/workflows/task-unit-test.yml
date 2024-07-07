@@ -30,7 +30,24 @@ jobs:
       - name: pre-checkout script
         if: ${{ inputs.pre-checkout-script }}
         run: ${{ inputs.pre-checkout-script }}
+      - name: Check for node20 support
+        id: node20 # TODO: Remove this when node20 is supported on all platforms, or when we drop support for theses platforms
+        run: |
+          for os in amazonlinux:2 ubuntu:bionic; do
+              if [ "${{ inputs.container }}" = "$os" ]; then
+                  # https://github.com/actions/checkout/issues/1809
+                  # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+                  echo "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true" >> $GITHUB_ENV
+                  echo "supported=false" >> $GITHUB_OUTPUT
+                  exit 0
+              fi
+          done
+          echo "supported=true" >> $GITHUB_OUTPUT
       - name: checkout
+        if: steps.node20.outputs.supported == 'true'
+        uses: actions/checkout@v4
+      - name: checkout (fallback)
+        if: steps.node20.outputs.supported == 'false'
         uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
@@ -39,9 +56,21 @@ jobs:
       - name: valgrind
         if: ${{ inputs.run-valgrind }}
         run: make valgrind
+      - name: Set Artifact Names
+        # Artifact names have to be unique, so we base them on the environment.
+        # We also remove invalid characters from the name.
+        id: artifact-names
+        run: | # Invalid characters include: Double quote ", Colon :, Less than <, Greater than >, Vertical bar |, Asterisk *, Question mark ?
+          echo "name=$(echo "${{ inputs.container || inputs.env }} ${{ runner.arch }}" | sed -e 's/[":\/\\<>\|*?]/_/g')" >> $GITHUB_OUTPUT
       - name: Archive valgrind tests reports
-        if: ${{ inputs.run-valgrind }} && failure()
+        if: ${{ inputs.run-valgrind && failure() && steps.node20.outputs.supported == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: valgrind tests reports ${{ steps.artifact-names.outputs.name }}
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+      - name: Archive valgrind tests reports (fallback)
+        if: ${{ inputs.run-valgrind && failure() && steps.node20.outputs.supported == 'false' }}
         uses: actions/upload-artifact@v3
         with:
-          name: valgrind tests reports
+          name: valgrind tests reports ${{ steps.artifact-names.outputs.name }}
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
