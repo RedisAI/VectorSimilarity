@@ -11,6 +11,8 @@
 
 #include "VecSim/utils/vec_utils.h"
 
+#include <fstream>
+
 struct DataBlock : public VecsimBaseObject {
 
 public:
@@ -31,8 +33,9 @@ public:
         element_bytes_count = other.element_bytes_count;
         length = other.length;
         // take ownership of the data
-        data = other.data;
-        other.data = nullptr;
+        data = std::move(other.data);
+        buf = other.buf;
+        other.buf = nullptr;
         return *this;
     };
 
@@ -41,11 +44,15 @@ public:
     void updateElement(size_t index, const void *new_element);
 
     inline const char *getElement(size_t index) const {
-        return this->data + (index * element_bytes_count);
+        this->data.pubseekpos(index * element_bytes_count);
+        this->data.sgetn(this->buf, element_bytes_count);
+        return this->buf;
     }
 
     inline char *removeAndFetchLastElement() {
-        return this->data + ((--this->length) * element_bytes_count);
+        this->data.pubseekpos((--this->length) * element_bytes_count);
+        this->data.sgetn(this->buf, element_bytes_count);
+        return this->buf;
     }
 
     inline size_t getLength() const { return length; }
@@ -56,5 +63,6 @@ private:
     // Current block length.
     size_t length;
     // Elements hosted in the block.
-    char *data;
+    mutable std::filebuf data;
+    mutable char *buf; // for minimal API changes
 };

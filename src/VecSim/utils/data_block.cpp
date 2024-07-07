@@ -10,25 +10,28 @@
 
 DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,
                      std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment)
-    : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0),
-      data((char *)this->allocator->allocate_aligned(blockSize * elementBytesCount, alignment)) {}
+    : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0), data(),
+      buf((char *)this->allocator->allocate_aligned(elementBytesCount, alignment)) {
+    data.open(std::tmpnam(nullptr), // Not thread/process safe
+              std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+}
 
 DataBlock::DataBlock(DataBlock &&other) noexcept
     : VecsimBaseObject(other.allocator), element_bytes_count(other.element_bytes_count),
-      length(other.length), data(other.data) {
-    other.data = nullptr; // take ownership of the data
+      length(other.length), data(std::move(other.data)), buf(other.buf) {
+    other.buf = nullptr;
 }
 
-DataBlock::~DataBlock() noexcept { this->allocator->free_allocation(data); }
+DataBlock::~DataBlock() noexcept { this->allocator->free_allocation(buf); }
 
 void DataBlock::addElement(const void *element) {
-
     // Copy element data and update block size.
-    memcpy(this->data + (this->length * element_bytes_count), element, element_bytes_count);
+    this->data.pubseekpos(this->length * element_bytes_count);
+    this->data.sputn((const char *)element, element_bytes_count);
     this->length++;
 }
 
 void DataBlock::updateElement(size_t index, const void *new_element) {
-    char *destinaion = (char *)getElement(index);
-    memcpy(destinaion, new_element, element_bytes_count);
+    this->data.pubseekpos(index * element_bytes_count);
+    this->data.sputn((const char *)new_element, element_bytes_count);
 }
