@@ -29,6 +29,8 @@ on:
           - bm-batch-iter-fp16-multi
           - bm-updated-fp32-single
           - bm-spaces
+        description: 'Benchmarks set to run'
+        default: benchmarks-all
 
 jobs:
   start-runner:
