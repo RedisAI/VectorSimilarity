@@ -17,7 +17,7 @@ protected:
     size_t dim;
     DATA_TYPE *v1, *v2;
 
-    virtual DATA_TYPE DoubleToType(double val) { return val; }
+    virtual DATA_TYPE DoubleToType(double val) { return static_cast<DATA_TYPE>(val); }
 
 public:
     BM_VecSimSpaces() { rng.seed(47); }

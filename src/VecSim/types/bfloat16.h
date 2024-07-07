@@ -14,7 +14,7 @@ namespace vecsim_types {
 struct bfloat16 {
     uint16_t val;
     bfloat16() = default;
-    constexpr bfloat16(uint16_t val) : val(val) {}
+    explicit constexpr bfloat16(uint16_t val) : val(val) {}
     operator uint16_t() const { return val; }
 };
 
@@ -24,7 +24,7 @@ static inline bfloat16 float_to_bf16(const float ff) {
     uint32_t lsb = (f32 >> 16) & 1;
     uint32_t round = lsb + 0x7FFF;
     f32 += round;
-    return f32 >> 16;
+    return bfloat16(f32 >> 16);
 }
 
 template <bool is_little = true>

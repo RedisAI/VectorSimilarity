@@ -57,7 +57,7 @@ float BF16_L2SqrSIMD32_SSE3(const void *pVect1v, const void *pVect2v, size_t dim
     // Handle residual % 4
     if constexpr (residual % 4) {
         __m128i v1, v2;
-        constexpr bfloat16 zero = 0;
+        constexpr bfloat16 zero = bfloat16(0);
         if constexpr (residual % 4 == 3) {
             v1 = _mm_setr_epi16(zero, pVect1[0], zero, pVect1[1], zero, pVect1[2], zero,
                                 zero); // SSE2
