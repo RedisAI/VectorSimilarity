@@ -10,12 +10,23 @@ on:
         type: choice
         options:
           - benchmarks-all
+          - benchmarks-default
           - bm-basics-fp32-single
           - bm-basics-fp32-multi
+          - bm-basics-fp64-single
+          - bm-basics-fp64-multi
           - bm-basics-bf16-single
           - bm-basics-bf16-multi
           - bm-basics-fp16-single
           - bm-basics-fp16-multi
+          - bm-batch-iter-fp32-single
+          - bm-batch-iter-fp32-multi
+          - bm-batch-iter-fp64-single
+          - bm-batch-iter-fp64-multi
+          - bm-batch-iter-bf16-single
+          - bm-batch-iter-bf16-multi
+          - bm-batch-iter-fp16-single
+          - bm-batch-iter-fp16-multi
           - bm-updated-fp32-single
           - bm-spaces
 
