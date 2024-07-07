@@ -32,5 +32,4 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 fi
 
-# wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_$file_name.txt -P tests/benchmark/data
 cat tests/benchmark/data/hnsw_indices/hnsw_indices_$file_name.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
