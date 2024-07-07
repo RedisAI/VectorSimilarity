@@ -4,6 +4,8 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
+#pragma once
+
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
@@ -12,7 +14,8 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/functions/AVX512.h"
+#include "VecSim/spaces/functions/AVX512F.h"
+#include "VecSim/spaces/functions/AVX512FP16.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"

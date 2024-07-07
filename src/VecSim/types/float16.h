@@ -13,7 +13,7 @@ namespace vecsim_types {
 struct float16 {
     uint16_t val;
     float16() = default;
-    constexpr float16(uint16_t val) : val(val) {}
+    explicit constexpr float16(uint16_t val) : val(val) {}
     operator uint16_t() const { return val; }
 };
 
@@ -100,7 +100,7 @@ static inline float16 FP32_to_FP16(float input) {
     if (fint < f32infty)
         o = fint2 >> 13; // Take the bits!
 
-    return (o | (sign >> 16));
+    return float16(o | (sign >> 16));
 }
 
 } // namespace vecsim_types

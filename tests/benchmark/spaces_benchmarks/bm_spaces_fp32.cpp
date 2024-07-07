@@ -12,8 +12,8 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
 // AVX512 functions
 #ifdef OPT_AVX512F
-bool avx512_supported = opt.avx512f;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP32, FP32, AVX512, 16, avx512_supported);
+bool avx512f_supported = opt.avx512f;
+INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP32, FP32, AVX512F, 16, avx512f_supported);
 #endif // AVX512F
 
 // AVX functions

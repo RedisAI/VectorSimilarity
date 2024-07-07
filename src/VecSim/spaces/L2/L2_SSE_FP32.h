@@ -26,19 +26,19 @@ float FP32_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
 
     // Deal with %4 remainder first. `dim` is >16, so we have at least one 16-float block,
     // so loading 4 floats and then masking them is safe.
-    if (residual % 4) {
+    if constexpr (residual % 4) {
         __m128 v1, v2, diff;
-        if (residual % 4 == 3) {
+        if constexpr (residual % 4 == 3) {
             // Load 3 floats and set the last one to 0
             v1 = _mm_loadr_ps(pVect1); // load 4 floats
             v2 = _mm_loadr_ps(pVect2);
             // sets the last float of v1 to the last of v2, so the diff is 0.
             v1 = _mm_move_ss(v1, v2);
-        } else if (residual % 4 == 2) {
+        } else if constexpr (residual % 4 == 2) {
             // Load 2 floats and set the last two to 0
             v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
             v2 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect2);
-        } else if (residual % 4 == 1) {
+        } else if constexpr (residual % 4 == 1) {
             // Load 1 float and set the last three to 0
             v1 = _mm_load_ss(pVect1);
             v2 = _mm_load_ss(pVect2);
@@ -50,11 +50,11 @@ float FP32_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
     }
 
     // have another 1, 2 or 3 4-floats steps according to residual
-    if (residual >= 12)
+    if constexpr (residual >= 12)
         L2SqrStep(pVect1, pVect2, sum);
-    if (residual >= 8)
+    if constexpr (residual >= 8)
         L2SqrStep(pVect1, pVect2, sum);
-    if (residual >= 4)
+    if constexpr (residual >= 4)
         L2SqrStep(pVect1, pVect2, sum);
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
