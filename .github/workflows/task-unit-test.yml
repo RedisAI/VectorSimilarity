@@ -56,15 +56,21 @@ jobs:
       - name: valgrind
         if: ${{ inputs.run-valgrind }}
         run: make valgrind
+      - name: Set Artifact Names
+        # Artifact names have to be unique, so we base them on the environment.
+        # We also remove invalid characters from the name.
+        id: artifact-names
+        run: | # Invalid characters include: Double quote ", Colon :, Less than <, Greater than >, Vertical bar |, Asterisk *, Question mark ?
+          echo "name=$(echo "${{ inputs.container || inputs.env }} ${{ runner.arch }}" | sed -e 's/[":\/\\<>\|*?]/_/g')" >> $GITHUB_OUTPUT
       - name: Archive valgrind tests reports
-        if: ${{ inputs.run-valgrind }} && failure() && steps.node20.outputs.supported == 'true'
+        if: ${{ inputs.run-valgrind && failure() && steps.node20.outputs.supported == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: valgrind tests reports
+          name: valgrind tests reports ${{ steps.artifact-names.outputs.name }}
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
       - name: Archive valgrind tests reports (fallback)
-        if: ${{ inputs.run-valgrind }} && failure() && steps.node20.outputs.supported == 'false'
+        if: ${{ inputs.run-valgrind && failure() && steps.node20.outputs.supported == 'false' }}
         uses: actions/upload-artifact@v3
         with:
-          name: valgrind tests reports
+          name: valgrind tests reports ${{ steps.artifact-names.outputs.name }}
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
