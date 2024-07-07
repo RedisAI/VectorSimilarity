@@ -31,7 +31,7 @@ jobs:
         if: ${{ inputs.pre-checkout-script }}
         run: ${{ inputs.pre-checkout-script }}
       - name: Check for node20 support
-        id: node20
+        id: node20 # TODO: Remove this when node20 is supported on all platforms, or when we drop support for theses platforms
         run: |
           for os in amazonlinux:2 ubuntu:bionic; do
               if [ "${{ inputs.container }}" = "$os" ]; then
