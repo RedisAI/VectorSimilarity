@@ -31,19 +31,19 @@ jobs:
         if: ${{ inputs.pre-checkout-script }}
         run: ${{ inputs.pre-checkout-script }}
       - name: Check for node20 support
-        shell: python
         run: |
-          import os
-          supported = "${{ inputs.container }}" not in ["amazonlinux:2", "ubuntu:bionic"]
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              print('supported', str(supported).lower(), sep='=', file=f)
-          if not supported:
-              with open(os.environ['GITHUB_ENV'], 'a') as f:
+          for os in amazonlinux:2 ubuntu:bionic; do
+              if [ "${{ inputs.container }}" = "$os" ]; then
                   # https://github.com/actions/checkout/issues/1809
-                  print("ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION=node16", file=f)
-                  print("ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION=node16", file=f)
+                  echo "ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION=node16" >> $GITHUB_ENV
+                  echo "ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION=node16" >> $GITHUB_ENV
                   # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
-                  print("ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true", file=f)
+                  echo "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true" >> $GITHUB_ENV
+                  exit 0
+              fi
+          done
+          # with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+          #     print('supported', str(supported).lower(), sep='=', file=f)
       - name: checkout
         uses: actions/checkout@v4
       - name: install dependencies
