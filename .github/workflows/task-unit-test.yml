@@ -31,21 +31,24 @@ jobs:
         if: ${{ inputs.pre-checkout-script }}
         run: ${{ inputs.pre-checkout-script }}
       - name: Check for node20 support
+        id: node20
         run: |
           for os in amazonlinux:2 ubuntu:bionic; do
               if [ "${{ inputs.container }}" = "$os" ]; then
                   # https://github.com/actions/checkout/issues/1809
-                  echo "ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION=node16" >> $GITHUB_ENV
-                  echo "ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION=node16" >> $GITHUB_ENV
                   # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
                   echo "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true" >> $GITHUB_ENV
+                  echo "supported=false" >> $GITHUB_OUTPUT
                   exit 0
               fi
           done
-          # with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-          #     print('supported', str(supported).lower(), sep='=', file=f)
+          echo "supported=true" >> $GITHUB_OUTPUT
       - name: checkout
+        if: steps.node20.outputs.supported == 'true'
         uses: actions/checkout@v4
+      - name: checkout (fallback)
+        if: steps.node20.outputs.supported == 'false'
+        uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
       - name: unit tests
@@ -54,7 +57,13 @@ jobs:
         if: ${{ inputs.run-valgrind }}
         run: make valgrind
       - name: Archive valgrind tests reports
-        if: ${{ inputs.run-valgrind }} && failure()
+        if: ${{ inputs.run-valgrind }} && failure() && steps.node20.outputs.supported == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+      - name: Archive valgrind tests reports (fallback)
+        if: ${{ inputs.run-valgrind }} && failure() && steps.node20.outputs.supported == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: valgrind tests reports
