@@ -1082,9 +1082,9 @@ void BF16Test::get_element_neighbors(params_t params) {
         for (size_t l = 0; l <= graph_data->toplevel; l++) {
             auto &level_data = hnsw_index->getLevelData(graph_data, l);
             auto &neighbours = neighbors_output[l];
-            ASSERT_EQ(neighbours[0], level_data.numLinks);
+            ASSERT_EQ(neighbours[0], level_data.numLinks());
             for (size_t j = 1; j <= neighbours[0]; j++) {
-                ASSERT_EQ(neighbours[j], level_data.links[j - 1]);
+                ASSERT_EQ(neighbours[j], level_data.link(j - 1));
             }
         }
         VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);

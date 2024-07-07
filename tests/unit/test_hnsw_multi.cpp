@@ -1759,9 +1759,9 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
         LevelData &level_data = this->CastToHNSW(index)->getLevelData(n, level);
-        for (size_t idx = 0; idx < level_data.numLinks; idx++) {
-            ASSERT_TRUE((level_data.links[idx] / per_label) % 2 != ep_reminder)
-                << "Got a link to " << level_data.links[idx] << " on level " << level;
+        for (size_t idx = 0; idx < level_data.numLinks(); idx++) {
+            ASSERT_TRUE((level_data.link(idx) / per_label) % 2 != ep_reminder)
+                << "Got a link to " << level_data.link(idx) << " on level " << level;
         }
     }
 
