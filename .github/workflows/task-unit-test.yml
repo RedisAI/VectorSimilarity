@@ -64,7 +64,7 @@ jobs:
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
       - name: Archive valgrind tests reports (fallback)
         if: ${{ inputs.run-valgrind }} && failure() && steps.node20.outputs.supported == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: valgrind tests reports
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
