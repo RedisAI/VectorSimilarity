@@ -32,11 +32,11 @@ float FP16_InnerProductSIMD32_AVX512FP16(const void *pVect1v, const void *pVect2
 
     if constexpr (residual) {
         constexpr __mmask32 mask = (1LU << residual) - 1;
-        __m512h v1 = (__m512h)_mm512_maskz_loadu_epi16(mask, pVect1);
+        __m512h v1 = _mm512_loadu_ph(pVect1);
         pVect1 += residual;
-        __m512h v2 = (__m512h)_mm512_maskz_loadu_epi16(mask, pVect2);
+        __m512h v2 = _mm512_loadu_ph(pVect2);
         pVect2 += residual;
-        sum = _mm512_mul_ph(v1, v2);
+        sum = _mm512_maskz_mul_ph(mask, v1, v2);
     }
 
     // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
