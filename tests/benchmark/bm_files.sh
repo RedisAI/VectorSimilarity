@@ -30,6 +30,7 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 else
     echo "No files to download for BM_TYPE=$BM_TYPE"
+    exit 0
 fi
 
 cat tests/benchmark/data/hnsw_indices/hnsw_indices_$file_name.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
