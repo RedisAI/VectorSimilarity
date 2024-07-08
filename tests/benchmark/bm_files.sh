@@ -2,7 +2,7 @@ BM_TYPE=$1
 if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     file_name="all"
 elif [ "$BM_TYPE" = "bm-spaces" ]; then
-    :
+    exit 0
 elif [ "$BM_TYPE" = "benchmarks-default" ] \
 || [ "$BM_TYPE" = "bm-basics-fp32-single" ] \
 || [ "$BM_TYPE" = "bm-basics-fp32-multi" ] \
