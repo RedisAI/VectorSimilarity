@@ -191,7 +191,7 @@ def serialize(files=DEFAULT_FILES):
                 serialized_raw_name = serialized_raw_name + '-bf16'
             elif hnswparams.type == VecSimType_FLOAT16:
                 serialized_file_name = serialized_file_name + '-fp16'
-                serialized_raw_name = serialized_raw_name + '-fp16
+                serialized_raw_name = serialized_raw_name + '-fp16'
 
             print('first, exporting test set to binary')
             if not file.get('skipRaw', False):
