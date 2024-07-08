@@ -53,6 +53,12 @@ jobs:
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
       - name: unit tests
         run: make unit_test
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
       - name: flow tests
         run: make flow_test VERBOSE=1
       - name: valgrind
