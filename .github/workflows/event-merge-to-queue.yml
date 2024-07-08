@@ -75,6 +75,7 @@ jobs:
       - check-if-docs-only
       - jammy
       - focal
+      - bionic
       - bullseye
       - amazonlinux2
       - mariner2
