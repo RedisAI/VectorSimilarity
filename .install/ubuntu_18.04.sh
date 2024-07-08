@@ -9,7 +9,7 @@ $MODE apt-get dist-upgrade -yqq
 $MODE apt install -yqq software-properties-common
 $MODE add-apt-repository ppa:ubuntu-toolchain-r/test -y
 $MODE apt update
-$MODE apt-get install -yqq git wget make gcc-11 g++-11 libc6-dbg curl
+$MODE apt-get install -yqq git wget make gcc-11 g++-11 libc6-dbg
 $MODE update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 --slave /usr/bin/g++ g++ /usr/bin/g++-11
 
 wget https://sourceware.org/pub/valgrind/valgrind-3.18.0.tar.bz2
