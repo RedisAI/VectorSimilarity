@@ -5,6 +5,8 @@
  */
 
 #include <utility>
+#include <random>
+#include <cmath>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -15,11 +17,12 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/float16.h"
-#include "VecSim/spaces/functions/AVX512.h"
+#include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
+#include "VecSim/spaces/functions/AVX512FP16.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
@@ -286,7 +289,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -346,7 +349,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -410,7 +413,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
-        ASSERT_EQ(arch_opt_func, Choose_FP64_L2_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP64_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
@@ -466,7 +469,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP64_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP64_IP_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP64_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -664,7 +667,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -714,7 +717,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512(dim))
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
@@ -741,5 +744,106 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
 
 INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
                          testing::Range(32UL, 32 * 2UL + 1));
+
+/** Since we are handling floats, the order of summation affect on the final result.
+ * This is very significant when the entries are half precision floats, since the accumulated
+ * error is much higher than in single precision floats.
+ * In the following tests the error between the naive calculation to SIMD optimization function
+ * is allowed to be up to 1%. If we wanted to be accurate, we could have done the baseline
+ * calculations accumulating the results in a SIMD size vector and reduce the final result to float,
+ * but this is too complicated for the scope of this test.
+ * Special attention should be given to the implementation of the SIMD reduce function for float16,
+ * that has different logic than the float32 and float64 reduce functions.
+ * For more info, refer to intel's intrinsics guide.
+ */
+#ifdef OPT_AVX512_FP16
+// avx512_fp16 flag functions are only chosen for high dimensions
+class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
+
+TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
+    auto optimization = cpu_features::GetX86Info().features;
+    if (optimization.avx512_fp16) {
+        size_t dim = GetParam();
+        float16 v1[dim], v2[dim];
+
+        std::mt19937 gen(42);
+        std::uniform_real_distribution<> dis(-0.99, 0.99);
+
+        _Float16 baseline = 0;
+        for (size_t i = 0; i < dim; i++) {
+            float val1 = (dis(gen));
+            float val2 = (dis(gen));
+            v1[i] = vecsim_types::FP32_to_FP16((val1));
+            v2[i] = vecsim_types::FP32_to_FP16((val2));
+
+            baseline += static_cast<_Float16>(val1) * static_cast<_Float16>(val2);
+        }
+        baseline = _Float16(1) - baseline;
+
+        auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+            size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
+            return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float16) : 0;
+        };
+
+        dist_func_t<float> arch_opt_func;
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512FP16(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        float dist = arch_opt_func(v1, v2, dim);
+        float f_baseline = baseline;
+        float error = std::abs((dist / f_baseline) - 1);
+        // Alow 1% error
+        ASSERT_LE(error, 0.01) << "AVX512 with dim " << dim << ", baseline: " << f_baseline
+                               << ", dist: " << dist;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+    }
+}
+
+TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
+    auto optimization = cpu_features::GetX86Info().features;
+    if (optimization.avx512_fp16) {
+        size_t dim = GetParam();
+        float16 v1[dim], v2[dim];
+
+        std::mt19937 gen(42);
+        std::uniform_real_distribution<float> dis(-0.99f, 0.99f);
+
+        _Float16 baseline = 0;
+        for (size_t i = 0; i < dim; i++) {
+            float val1 = (dis(gen));
+            float val2 = (dis(gen));
+            v1[i] = vecsim_types::FP32_to_FP16((val1));
+            v2[i] = vecsim_types::FP32_to_FP16((val2));
+
+            _Float16 diff = static_cast<_Float16>(val1) - static_cast<_Float16>(val2);
+            baseline += diff * diff;
+        }
+
+        auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+            size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
+            return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float16) : 0;
+        };
+
+        dist_func_t<float> arch_opt_func;
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512FP16(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        float dist = arch_opt_func(v1, v2, dim);
+        float f_baseline = baseline;
+        float error = std::abs((dist / f_baseline) - 1);
+        // Alow 1% error
+        ASSERT_LE(error, 0.01) << "AVX512 with dim " << dim << ", baseline: " << f_baseline
+                               << ", dist: " << dist;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+    }
+}
+
+// Start from a 32 multiplier
+INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
+                         testing::Range(512UL, 512 + 32UL + 1));
+
+#endif
 
 #endif // CPU_FEATURES_ARCH_X86_64
