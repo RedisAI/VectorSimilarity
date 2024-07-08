@@ -9,11 +9,12 @@
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include "VecSim/spaces/functions/AVX512.h"
+#include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX512FP16.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
@@ -41,7 +42,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (features.avx512f) {
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
-        return Choose_FP32_IP_implementation_AVX512(dim);
+        return Choose_FP32_IP_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_AVX
@@ -82,7 +83,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
     if (features.avx512f) {
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(double); // handles 8 doubles
-        return Choose_FP64_IP_implementation_AVX512(dim);
+        return Choose_FP64_IP_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_AVX
@@ -168,11 +169,20 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     auto features = (arch_opt == nullptr)
                         ? cpu_features::GetX86Info().features
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
+#ifdef OPT_AVX512_FP16
+    // More details about the dimension limitation can be found in this PR's description:
+    // https://github.com/RedisAI/VectorSimilarity/pull/477
+    if (features.avx512_fp16 && dim >= 500) {
+        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 32 * sizeof(float16); // handles 32 floats
+        return Choose_FP16_IP_implementation_AVX512FP16(dim);
+    }
+#endif
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(float16); // handles 32 floats
-        return Choose_FP16_IP_implementation_AVX512(dim);
+        return Choose_FP16_IP_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_F16C
