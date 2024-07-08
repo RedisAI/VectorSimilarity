@@ -53,6 +53,8 @@ jobs:
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
       - name: unit tests
         run: make unit_test
+      - name: flow tests
+        run: make flow_test VERBOSE=1
       - name: valgrind
         if: ${{ inputs.run-valgrind }}
         run: make valgrind
