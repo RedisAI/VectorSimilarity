@@ -48,10 +48,7 @@
         ->Unit(benchmark::kNanosecond)
 
 /**
- * @param dim_opt: Number of elements in 512 bits.
- * Also, the smallest dimension to satisfy:
- * dim % num_elements_in_512_bits == 0.
- * @param min_no_res_th_dim: A number that is
+ * A number that is
  * 1. divisible by 32 to ensure that we have at least one full 512 bits iteration in all types
  * 2. higher than the minimum dimension requires to choose all possible optimizations.
  * (currently it's 500 for IP with AVX512_FP16)
@@ -59,6 +56,13 @@
 static constexpr size_t min_no_res_th_dim = 512;
 
 /**
+ * @param dim_opt: Number of elements in 512 bits.
+ */
+
+/**
+ * @param dim_opt is also, the smallest dimension to satisfy:
+ * dim % num_elements_in_512_bits == 0.
+ * We use it to start this set of BM from the smallest dimension that satisfies the above condition.
  * RangeMultiplier(val)->Range(start, end) generates powers of `val` in the range [start, end],
  * including `start` and `end`.
  */
@@ -67,8 +71,9 @@ static constexpr size_t min_no_res_th_dim = 512;
         ->RangeMultiplier(4)                                                                       \
         ->Range(dim_opt, 1024)
 
-/** for `start` = min_no_res_th_dim, we run bm for all dimensions
+/** for `start` = min_no_res_th_dim (defined above) we run bm for all dimensions
  * in the following range: (start, start + 1, start + 2, start + 3, ... start + dim_opt)
+ * to test all possible residual cases.
  */
 static constexpr size_t start = min_no_res_th_dim;
 #define INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)       \
