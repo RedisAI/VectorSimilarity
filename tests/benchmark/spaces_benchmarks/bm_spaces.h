@@ -48,12 +48,13 @@
         ->Unit(benchmark::kNanosecond)
 
 /**
- * @param dim_opt: smallest dimension with no residual.
- * i.e smallest dimension to satisfy:
+ * @param dim_opt: Number of elements in 512 bits.
+ * Also, the smallest dimension to satisfy:
  * dim % num_elements_in_512_bits == 0.
- * @param min_no_res_th_dim: a number that is both divisible by 32 to ensure that we have at least
- * one full 512 bits iteration in all types, and higher than the minimum dimension requires to
- * choose all possible optimizations. (currently it's 500 for IP with AVX512_FP16)
+ * @param min_no_res_th_dim: A number that is
+ * 1. divisible by 32 to ensure that we have at least one full 512 bits iteration in all types
+ * 2. higher than the minimum dimension requires to choose all possible optimizations.
+ * (currently it's 500 for IP with AVX512_FP16)
  */
 static constexpr size_t min_no_res_th_dim = 512;
 
