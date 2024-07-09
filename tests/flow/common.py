@@ -8,7 +8,7 @@ from scipy import spatial
 from numpy.testing import assert_allclose, assert_equal
 import time
 import math
-from bfloat16 import bfloat16
+from ml_dtypes import bfloat16
 
 def create_hnsw_params(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
                       is_multi=False):

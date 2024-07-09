@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.25)
 project(VecSim LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 
@@ -25,6 +26,6 @@ include_directories(${root}/src ${root}/tests/utils)
 
 pybind11_add_module(VecSim ../../tests/utils/mock_thread_pool.cpp bindings.cpp)
 
-target_link_libraries(VecSim VectorSimilarity)
+target_link_libraries(VecSim PRIVATE VectorSimilarity)
 
 add_dependencies(VecSim VectorSimilarity)
