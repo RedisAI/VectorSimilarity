@@ -26,12 +26,12 @@ classifiers = [
 python = "^3.10"
 
 [tool.poetry.dev-dependencies]
-numpy = "^1.26"
+numpy = "*"
 hnswlib = "^0.6.2"
 pytest = "^6.2.4"
 scipy = "^1.10.1"
 h5py = "^3.7.0"
-bfloat16 = "^1.1"
+ml_dtypes = "*"
 
 
 [build-system]
