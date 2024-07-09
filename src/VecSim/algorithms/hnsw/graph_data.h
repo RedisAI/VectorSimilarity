@@ -37,13 +37,11 @@ public:
 
 	// old interface
     inline void setLinks(vecsim_stl::vector<idType> &links) {
-		assert (numLinks_ >= links.size());
         numLinks_ = links.size();
         memcpy(links_, links.data(), numLinks_ * sizeof(idType));
     }
     template <typename DistType>
     inline void setLinks(candidatesList<DistType> &links) {		
-		assert (numLinks_ >= links.size());
         numLinks_ = 0;
         for (auto &link : links) {
             links_[numLinks_++] = link.second;
@@ -68,7 +66,7 @@ public:
 		return links_[i];
 	}
 	
-	void Save(std::ofstream &output);
+	void save(std::ofstream &output) ;
 	void restore(std::ifstream &input);
 
 private:
@@ -83,7 +81,6 @@ private:
     // `elementGraphDataSize`). Notice that this member must be the last member of the struct and
     // all nesting structs.
     idType links_[];
-
 
 };
 
@@ -109,11 +106,13 @@ struct ElementGraphData {
     ~ElementGraphData() = delete; // Should be destroyed using `destroyGraphData`
 	void lock() { neighborsGuard.lock();}
 	void unlock() {neighborsGuard.unlock();}
+	void restoreLevels(std::ifstream &input);
+	
+	
 };
 
 struct IndexMetaData
 {
-	size_t maxElements;
     size_t M;
     size_t M0;
     size_t efConstruction;
@@ -126,14 +125,17 @@ struct IndexMetaData
     // Index meta-data (based on the data dimensionality and index parameters)
     size_t elementGraphDataSize;
     size_t levelDataSize;
+	size_t vectorDataSize;
     double mult;
     // Index global state - these should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
     size_t curElementCount;
+	size_t numMarkedDeleted_;
     idType entrypointNode;
     size_t maxLevel; // this is the top level of the entry point's element
 	size_t blockSize_;
-	size_t alignment_;
+	size_t alignment_;	   
+	size_t maxElements;
 	void restore(std::ifstream &input);
 	void save(std::ofstream &output) const;
 };
@@ -149,7 +151,11 @@ public:
 		indexMetaData(indexMetaData)
 		{			
 		}
-	void Init(size_t initial_vector_size) {
+	void Init() {
+		idToMetaData_.resize(indexMetaData.maxElements);
+		auto initial_vector_size = indexMetaData.maxElements / blockSize();
+			
+		
 		vectorBlocks_.reserve(initial_vector_size);
 		graphDataBlocks_.reserve(initial_vector_size);
 	}

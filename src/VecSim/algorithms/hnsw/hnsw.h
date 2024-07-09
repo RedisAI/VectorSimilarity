@@ -298,6 +298,7 @@ protected:
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
     // For debugging - unsafe (assume index data guard is held in MT mode).
     virtual inline vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
+
 };
 
 /**
@@ -1490,10 +1491,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M0;
     levelDataSize = sizeof(LevelData) + sizeof(idType) * M;
-
-    auto initialVectorSize = maxElements / blockSize_;
 	alignment_ = this->alignment;
-	graphData.Init(initialVectorSize);
+	vectorDataSize = this->dataSize;
+	graphData.Init();
 }
 
 template <typename DataType, typename DistType>

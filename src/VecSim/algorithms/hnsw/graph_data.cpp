@@ -6,7 +6,7 @@ void GraphData::growByBlock() {
     assert(vectorBlocks_.size() == graphDataBlocks_.size());
     assert(vectorBlocks_.size() == 0 || vectorBlocks_.back().getLength() == blockSize());
 
-    vectorBlocks_.emplace_back(blockSize(), indexMetaData.levelDataSize, allocator_, indexMetaData.alignment_);
+    vectorBlocks_.emplace_back(blockSize(), indexMetaData.vectorDataSize, allocator_, indexMetaData.alignment_);
     graphDataBlocks_.emplace_back(blockSize(), indexMetaData.elementGraphDataSize, allocator_);
 
 }
@@ -21,10 +21,104 @@ void GraphData::shrinkByBlock() {
     vectorBlocks_.pop_back();
     graphDataBlocks_.pop_back();
 }
-void GraphData::save(std::ofstream &) const {
+#ifdef BUILD_TESTS
+void GraphData::save(std::ofstream &output) const {
+	indexMetaData.save(output);
+	
+	
 }
-void GraphData::restore(std::ifstream &) {
+void GraphData::restore(std::ifstream &input) {
+	// indexMetaData.restore(input); called during construct TBD
+	
+
+    // Restore id to metadata vector
+    labelType label = 0;
+    elementFlags flags = 0;
+    for (idType id = 0; id < indexMetaData.curElementCount; id++) {
+        Serializer::readBinaryPOD(input, label);
+        Serializer::readBinaryPOD(input, flags);
+        idToMetaData_[id].label = label;
+        idToMetaData_[id].flags = flags;		
+    }
+    // Get number of blocks
+    unsigned int num_blocks = 0;
+    Serializer::readBinaryPOD(input, num_blocks);
+    this->vectorBlocks_.reserve(num_blocks);
+    this->graphDataBlocks_.reserve(num_blocks);
+
+    // Get data blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+		auto dataSize = indexMetaData.vectorDataSize;
+        vectorBlocks_.emplace_back(blockSize(),
+								   dataSize,
+								   allocator_,
+								   indexMetaData.alignment_);
+        unsigned int block_len = 0;
+        Serializer::readBinaryPOD(input, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            char cur_vec[dataSize];
+            input.read(cur_vec, dataSize);
+            this->vectorBlocks_.back().addElement(cur_vec);
+        }
+    }
+
+    // Get graph data blocks
+    ElementGraphData *cur_egt;
+	auto graphDataSize = indexMetaData.elementGraphDataSize;
+    char tmpData[graphDataSize];
+    size_t toplevel = 0;
+    for (size_t i = 0; i < num_blocks; i++) {
+        this->graphDataBlocks_.emplace_back(blockSize(),
+											graphDataSize,
+											allocator_);
+        unsigned int block_len = 0;
+        Serializer::readBinaryPOD(input, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            // Reset tmpData
+            memset(tmpData, 0, graphDataSize);
+            // Read the current element top level
+            Serializer::readBinaryPOD(input, toplevel);
+            // Allocate space and structs for the current element
+            try {
+                new (tmpData) ElementGraphData(toplevel,
+											   indexMetaData.levelDataSize,
+											   allocator_);
+            } catch (std::runtime_error &e) {
+				
+                printf(VecSimCommonStrings::LOG_WARNING_STRING,
+                          "Error - allocating memory for new element failed due to low memory");
+                throw e;
+            }
+            // Add the current element to the current block, and update cur_egt to point to it.
+            graphDataBlocks_.back().addElement(tmpData);
+            cur_egt = (ElementGraphData *)graphDataBlocks_.back().getElement(j);
+
+            // Restore the current element's graph data
+			for (size_t i = 0 ; i <= toplevel; i++)
+				getLevelData(cur_egt, i).restore(input);			
+        }
+    }
+
 }
+
+void LevelData::restore(std::ifstream &input) {		
+	Serializer::readBinaryPOD(input, numLinks_);
+	for (size_t i = 0; i < numLinks_; i++) {
+		Serializer::readBinaryPOD(input, links_[i]);
+	}
+	
+	// Restore the incoming edges of the current element
+	unsigned int size;
+	Serializer::readBinaryPOD(input, size);
+	incomingEdges_->reserve(size);
+	idType id = INVALID_ID;
+	for (size_t i = 0; i < size; i++) {
+		Serializer::readBinaryPOD(input, id);
+		incomingEdges_->push_back(id);
+    }
+}
+
+#endif
 
 void GraphData::replaceEntryPoint()
 {
@@ -121,125 +215,77 @@ void GraphData::multiGet(const LevelData &levelData) const {
 
 	
 
-#if BUILD_TEST
 void IndexMetaData::restore(std::ifstream &input) {
     // Restore index build parameters
-    readBinaryPOD(input, this->M);
-    readBinaryPOD(input, this->M0);
-    readBinaryPOD(input, this->efConstruction);
+    Serializer::readBinaryPOD(input, this->M);
+    Serializer::readBinaryPOD(input, this->M0);
+    Serializer::readBinaryPOD(input, this->efConstruction);
 
     // Restore index search parameter
-    readBinaryPOD(input, this->ef);
-    readBinaryPOD(input, this->epsilon);
+    Serializer::readBinaryPOD(input, this->ef);
+    Serializer::readBinaryPOD(input, this->epsilon);
 
     // Restore index meta-data
     this->elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * this->M0;
     this->levelDataSize = sizeof(LevelData) + sizeof(idType) * this->M;
-    readBinaryPOD(input, this->mult);
+    Serializer::readBinaryPOD(input, this->mult);
 
     // Restore index state
-    readBinaryPOD(input, this->curElementCount);
-    readBinaryPOD(input, this->numMarkedDeleted);
-    readBinaryPOD(input, this->maxLevel);
-    readBinaryPOD(input, this->entrypointNode);
+    Serializer::readBinaryPOD(input, this->curElementCount);
+    Serializer::readBinaryPOD(input, this->numMarkedDeleted_);
+    Serializer::readBinaryPOD(input, this->maxLevel);
+    Serializer::readBinaryPOD(input, this->entrypointNode);
 }
 
 void IndexMetaData::save(std::ofstream &output) const {
+	
     // Save index type
-    writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
+    Serializer::writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
+#if 0
     // Save VecSimIndex fields
-    writeBinaryPOD(output, this->dim);
-    writeBinaryPOD(output, this->vecType);
-    writeBinaryPOD(output, this->metric);
-    writeBinaryPOD(output, this->blockSize);
-    writeBinaryPOD(output, this->isMulti);
-    writeBinaryPOD(output, this->maxElements); // This will be used to restore the index initial
+    Serializer::writeBinaryPOD(output, this->dim_);
+    Serializer::writeBinaryPOD(output, this->vecType);
+    Serializer::writeBinaryPOD(output, this->metric);
+    Serializer::writeBinaryPOD(output, this->blockSize_);
+    Serializer::writeBinaryPOD(output, this->isMulti);
+    Serializer::writeBinaryPOD(output, this->maxElements); // This will be used to restore the index initial
                                                // capacity
 
     // Save index build parameters
-    writeBinaryPOD(output, this->M);
-    writeBinaryPOD(output, this->M0);
-    writeBinaryPOD(output, this->efConstruction);
+    Serializer::writeBinaryPOD(output, this->M);
+    Serializer::writeBinaryPOD(output, this->M0);
+    Serializer::writeBinaryPOD(output, this->efConstruction);
 
     // Save index search parameter
-    writeBinaryPOD(output, this->ef);
-    writeBinaryPOD(output, this->epsilon);
+    Serializer::writeBinaryPOD(output, this->ef);
+    Serializer::writeBinaryPOD(output, this->epsilon);
 
     // Save index meta-data
-    writeBinaryPOD(output, this->mult);
+    Serializer::writeBinaryPOD(output, this->mult);
 
     // Save index state
-    writeBinaryPOD(output, this->curElementCount);
-    writeBinaryPOD(output, this->numMarkedDeleted);
-    writeBinaryPOD(output, this->maxLevel);
-    writeBinaryPOD(output, this->entrypointNode);
+    Serializer::writeBinaryPOD(output, this->curElementCount);
+    Serializer::writeBinaryPOD(output, this->numMarkedDeleted);
+    Serializer::writeBinaryPOD(output, this->maxLevel);
+    Serializer::writeBinaryPOD(output, this->entrypointNode);
+#endif
 }
 
-void graphData::restoreGraph(std::ifstream &input) {
-	// Restore id to metadata vector
-	indexMetaData_.restore(input);
-    unsigned int num_blocks = 0;
-    readBinaryPOD(input, num_blocks);
-	restoreVectorBlocks(input, num_blocksd);
-	restoreGraphData(input, num_blocksd);
-	
-	
-}
 
-graphData::saveGraph(std::ofstream &output) const {
-    for (idType id = 0; id < this->curElementCount; id++) {
-        labelType label = this->idToMetaData[id].label;
-        elementFlags flags = this->idToMetaData[id].flags;
-        writeBinaryPOD(output, label);
-        writeBinaryPOD(output, flags);
-    }
-
-    // Save number of blocks
-    unsigned int num_blocks = this->vectorBlocks.size();
-    writeBinaryPOD(output, num_blocks);
-
-    // Save data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        auto &block = this->vectorBlocks[i];
-        unsigned int block_len = block.getLength();
-        writeBinaryPOD(output, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            output.write(block.getElement(j), this->dataSize);
-        }
-    }
-
-    // Save graph data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        auto &block = this->graphDataBlocks[i];
-        unsigned int block_len = block.getLength();
-        writeBinaryPOD(output, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            ElementGraphData *cur_element = (ElementGraphData *)block.getElement(j);
-            writeBinaryPOD(output, cur_element->toplevel);
-
-            // Save all the levels of the current element
-            for (size_t level = 0; level <= cur_element->toplevel; level++) {
-                saveLevel(output, getLevelData(cur_element, level));
-            }
-        }
-    }
-}
-
-LevelData::saveLevel(LevelData &data) const {
+void LevelData::save(std::ofstream &output)  {
     // Save the links of the current element
-    writeBinaryPOD(output, numLinks());
+    Serializer::writeBinaryPOD(output, numLinks());
     for (size_t i = 0; i < numLinks(); i++) {
-        writeBinaryPOD(output, link(i));
+        Serializer::writeBinaryPOD(output, link(i));
     }
 
     // Save the incoming edges of the current element
     unsigned int size = incomingEdges()->size();
-    writeBinaryPOD(output, size);
+    Serializer::writeBinaryPOD(output, size);
     for (idType id : *incomingEdges()) {
-        writeBinaryPOD(output, id);
+        Serializer::writeBinaryPOD(output, id);
     }
 
     // Shrink the incoming edges vector for integrity check
     incomingEdges()->shrink_to_fit();
 }
-#endif

@@ -10,6 +10,20 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 	
 	maxElements = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
 	epsilon = params->epsilon;
+	blockSize_ = this->blockSize;
+	alignment_ = this->alignment;
+	vectorDataSize = this->dataSize;
+
+	IndexMetaData::restore(input);
+    this->fieldsValidation();
+
+    // Since level generator is implementation-defined, we dont read its value from the file.
+    // We use seed = 200 and not the default value (100) to get different sequence of
+    // levels value than the loaded index.
+    levelGenerator.seed(200);
+
+	graphData.Init();
+	
 }
 
 template <typename DataType, typename DistType>
@@ -100,5 +114,9 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {	
 	graphData.restore(input);
+    for (idType id = 0; id < this->curElementCount; id++) {
+		setVectorId(graphData.label(id), id);
+	}
+	
 }
 
