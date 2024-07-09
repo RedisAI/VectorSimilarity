@@ -32,7 +32,7 @@ jobs:
       - name: unit tests
         run: make unit_test
       - name: flow tests
-        run: make flow_test
+        run: make flow_test VERBOSE=1
 
   coverage:
     needs: [basic-tests, check-if-docs-only]

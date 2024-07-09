@@ -75,6 +75,7 @@ make unit_test     # run unit tests
 make valgrind      # build for Valgrind and run tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
+  VERBOSE=1        # print detailed bindings build info
 make mod_test      # run Redis module intergration tests (with RLTest)
   TEST=file:name     # run specific test
   VERBOSE=1          # show more test detail
@@ -190,9 +191,12 @@ valgrind:
 .PHONY: unit_test valgrind
 
 #----------------------------------------------------------------------------------------------
+ifeq ($(VERBOSE),1)
+POETRY_ARGS += -vv
+endif
 
 flow_test:
-	$(SHOW)poetry install
+	$(SHOW)poetry install $(POETRY_ARGS)
 	$(SHOW)poetry run pytest tests/flow/$(TEST) -v -s
 
 .PHONY: flow_test
