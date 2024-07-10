@@ -1,6 +1,8 @@
 #include "hnsw.h"
 #include "VecSim/utils/serializer.h"
 
+
+
 void GraphData::growByBlock() {
     // Validations
     assert(vectorBlocks_.size() == graphDataBlocks_.size());
@@ -101,22 +103,7 @@ void GraphData::restore(std::ifstream &input) {
 
 }
 
-void LevelData::restore(std::ifstream &input) {		
-	Serializer::readBinaryPOD(input, numLinks_);
-	for (size_t i = 0; i < numLinks_; i++) {
-		Serializer::readBinaryPOD(input, links_[i]);
-	}
-	
-	// Restore the incoming edges of the current element
-	unsigned int size;
-	Serializer::readBinaryPOD(input, size);
-	incomingEdges_->reserve(size);
-	idType id = INVALID_ID;
-	for (size_t i = 0; i < size; i++) {
-		Serializer::readBinaryPOD(input, id);
-		incomingEdges_->push_back(id);
-    }
-}
+
 
 #endif
 
@@ -279,13 +266,36 @@ void LevelData::save(std::ofstream &output)  {
         Serializer::writeBinaryPOD(output, link(i));
     }
 
-    // Save the incoming edges of the current element
-    unsigned int size = incomingEdges()->size();
-    Serializer::writeBinaryPOD(output, size);
-    for (idType id : *incomingEdges()) {
+	incomingEdges_.save(output);
+}
+
+void LevelData::restore(std::ifstream &input) {		
+	Serializer::readBinaryPOD(input, numLinks_);
+	for (size_t i = 0; i < numLinks_; i++) {
+		Serializer::readBinaryPOD(input, links_[i]);
+	}
+	
+	// Restore the incoming edges of the current element
+	incomingEdges_.restore(input);
+}
+
+void IncomingEdges::save(std::ofstream &output)  {
+    unsigned int _size = size();
+    Serializer::writeBinaryPOD(output, _size);
+    for (idType id : *this) {
         Serializer::writeBinaryPOD(output, id);
     }
-
     // Shrink the incoming edges vector for integrity check
-    incomingEdges()->shrink_to_fit();
+    shrink_to_fit();
 }
+void  IncomingEdges::restore(std::ifstream &input) {
+	unsigned int _size;
+	Serializer::readBinaryPOD(input, _size);
+	reserve(_size);
+	idType id = INVALID_ID;
+	for (size_t i = 0; i < _size; i++) {
+		Serializer::readBinaryPOD(input, id);
+		push_back(id);
+    }
+}
+

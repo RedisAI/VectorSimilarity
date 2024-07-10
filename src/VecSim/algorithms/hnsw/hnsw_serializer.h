@@ -87,7 +87,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             if (s.size() != cur.numLinks()) {
                 return res;
             }
-            incoming_edges_sets_sizes += cur.incomingEdges()->size();
+            incoming_edges_sets_sizes += cur.incomingEdges()->Get().size();
         }
     }
     if (num_deleted != this->numMarkedDeleted) {

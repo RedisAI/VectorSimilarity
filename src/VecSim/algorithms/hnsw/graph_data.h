@@ -29,11 +29,38 @@ struct ElementMetaData {
 };
 #pragma pack() // restore default packing
 
+class IncomingEdges : private 	vecsim_stl::vector<idType>  {
+public:
+	IncomingEdges(std::shared_ptr<VecSimAllocator> allocator) :
+		vecsim_stl::vector<idType>(allocator) {}
+	void push_back(idType id) {
+		vecsim_stl::vector<idType>::push_back(id);
+	}
+	bool removeIdFromList(idType element_id) {
+		auto it = std::find(begin(), end(), element_id);
+		if (it != end()) {
+			// Swap the last element with the current one (equivalent to removing the element id from
+			// the list).
+			*it = back();
+			pop_back();
+			return true;
+		}
+		return false;
+	}
+	vecsim_stl::vector<idType> &Get() {
+		return *this;
+	}
+	void save(std::ofstream &output) ;
+	void restore(std::ifstream &input);
+};
+		
+	
 
 class LevelData {
 public:
     LevelData(std::shared_ptr<VecSimAllocator> allocator)
-        : incomingEdges_(new (allocator) vecsim_stl::vector<idType>(allocator)), numLinks_(0) {}
+        : incomingEdges_(allocator),
+		  numLinks_(0) {}
 
 	// old interface
     inline void setLinks(vecsim_stl::vector<idType> &links) {
@@ -51,10 +78,6 @@ public:
 	void AddOutgoingLink(idType);
 	void DeleteOutgoingLink(idType);	
 
-	// inverted edges management 
-	vecsim_stl::vector<idType> *incomingEdges() {
-		return incomingEdges_;
-	}
     linkListSize numLinks() const {return numLinks_;}
     linkListSize &numLinks() {return numLinks_;}
 	idType link(linkListSize i) const {
@@ -68,10 +91,10 @@ public:
 	
 	void save(std::ofstream &output) ;
 	void restore(std::ifstream &input);
-
+	IncomingEdges *incomingEdges() {return &incomingEdges_;}
 private:
 	
-    vecsim_stl::vector<idType> *incomingEdges_;
+    IncomingEdges incomingEdges_;
     linkListSize numLinks_;
     // Flexible array member - https://en.wikipedia.org/wiki/Flexible_array_member
     // Using this trick, we can have the links list as part of the LevelData struct, and avoid

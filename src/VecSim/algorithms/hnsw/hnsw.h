@@ -176,7 +176,6 @@ protected:
                               DistType dist, idType id) const;
     // Helper method that swaps the last element in the ids list with the given one (equivalent to
     // removing the given element id from the list).
-    inline bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);
 
     template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
@@ -834,7 +833,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         // neighbour's incoming edges set. Note: we assume that every update is performed atomically
         // mutually, so it should be sufficient to look at the removed node's incoming edges set
         // alone.
-        if (!removeIdFromList(*removed_node_level.incomingEdges(), selected_neighbor)) {
+        if (!removed_node_level.incomingEdges()->removeIdFromList(selected_neighbor)) {
             neighbor_level.incomingEdges()->push_back(removed_node);
         }
     }
@@ -987,9 +986,9 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 // we should remove it from the node's incoming edges.
                 // otherwise, edge turned from bidirectional to one directional,
                 // and it should be saved in the neighbor's incoming edges.
-				
-                if (!removeIdFromList(*graphData.getLevelData(node_id, level).
-									  incomingEdges(), neighbour_id)) {
+				auto *incoming_edges = graphData.getLevelData(node_id, level).
+					incomingEdges();
+                if (!incoming_edges->removeIdFromList(neighbour_id)) {
                     neighbor_level.incomingEdges()->push_back(node_id);
                 }
             }
@@ -1013,7 +1012,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 if (node_level.link(j) == neighbour_id) {
                     // Swap the last element with the current one (equivalent to removing the
                     // neighbor from the list) - this should always succeed and return true.
-                    removeIdFromList(*neighbor_level.incomingEdges(), node_id);
+                    neighbor_level.incomingEdges()->removeIdFromList(node_id);
                     bidirectional_edge = true;
                     break;
                 }
@@ -1064,17 +1063,20 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             // If this edge is uni-directional, we should update the id in the neighbor's
             // incoming edges.
             if (!bidirectional_edge) {
-                auto it = std::find(neighbor_level.incomingEdges()->begin(),
-                                    neighbor_level.incomingEdges()->end(), curElementCount);
+				auto &incoming_edges = neighbor_level.incomingEdges()->Get();
+                auto it = std::find(incoming_edges.begin(),
+                                    incoming_edges.end(), curElementCount);
                 // This should always succeed
-                assert(it != neighbor_level.incomingEdges()->end());
+                assert(it != incoming_edges().end());
                 *it = element_internal_id;
             }
         }
 
         // Next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // updates.
-        for (auto incoming_edge : *cur_level.incomingEdges()) {
+		auto &incoming_edges = cur_level.incomingEdges()->Get();
+		
+        for (auto incoming_edge : incoming_edges) {
             LevelData &incoming_neighbor_level = getLevelData(incoming_edge, level);
             for (size_t j = 0; j < incoming_neighbor_level.numLinks(); j++) {
                 if (incoming_neighbor_level.link(j) == curElementCount) {
@@ -1202,7 +1204,8 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         // Next, collect the rest of incoming edges (the ones that are not bidirectional) in the
         // current level to repair them.
         lockNodeLinks(element);
-        for (auto incoming_edge : *node_level_data.incomingEdges()) {
+		auto &incoming_edges = node_level_data.incomingEdges()->Get();
+        for (auto incoming_edge : incoming_edges) {
             incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
         }
         unlockNodeLinks(element);
@@ -1256,9 +1259,10 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         }
         // Check if the current neighbor is in the chosen neighbors list, and remove it from there
         // if so.
-        if (removeIdFromList(chosen_neighbors, node_level.link(i))) {
-            // A chosen neighbor is already connected to the node - leave it as is.
-            node_level.link(node_neighbors_idx++) = node_level.link(i);
+		auto it = std::find(chosen_neighbors.begin(), chosen_neighbors.end(),
+							node_level.link(i));
+        if (it != chosen_neighbors.end()) {
+            // A chosen neighbor is already connected to the node - leave it as is.			
             continue;
         }
         // Now we know that we are looking at a neighbor that needs to be removed.
@@ -1272,7 +1276,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // neighbour's incoming edges set. Note: we assume that every update is performed atomically
         // mutually, so it should be sufficient to look at the removed node's incoming edges set
         // alone.
-        if (!removeIdFromList(*removed_node_level.incomingEdges(), node_id)) {
+        if (!removed_node_level.incomingEdges()->removeIdFromList(node_id)) {
             node_level.incomingEdges()->push_back(removed_node);
         }
     }
@@ -1307,7 +1311,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // remove it from the incoming edges set. Otherwise, the edge is created unidirectional, so
         // we add it to the unidirectional edges set. Note: we assume that all updates occur
         // mutually and atomically, then can rely on this assumption.
-        if (!removeIdFromList(*node_level.incomingEdges(), chosen_id)) {
+        if (!node_level.incomingEdges()->removeIdFromList( chosen_id)) {
             getLevelData(chosen_id, level).incomingEdges()->push_back(node_id);
         }
     }
@@ -1425,20 +1429,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                                   chosen_neighbors, max_M_cur);
 }
 
-template <typename DataType, typename DistType>
-inline bool
-HNSWIndex<DataType, DistType>::removeIdFromList(vecsim_stl::vector<idType> &element_ids_list,
-                                                idType element_id) {
-    auto it = std::find(element_ids_list.begin(), element_ids_list.end(), element_id);
-    if (it != element_ids_list.end()) {
-        // Swap the last element with the current one (equivalent to removing the element id from
-        // the list).
-        *it = element_ids_list.back();
-        element_ids_list.pop_back();
-        return true;
-    }
-    return false;
-}
 
 /**
  * Ctor / Dtor
@@ -1530,7 +1520,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             LevelData &neighbour = getLevelData(cur_level.link(i), level);
             // This should always succeed, since every outgoing edge should be unidirectional at
             // this point (after all the repair jobs are done).
-            removeIdFromList(*neighbour.incomingEdges(), internalId);
+            neighbour.incomingEdges()->removeIdFromList(internalId);
         }
     }
 
@@ -1602,13 +1592,14 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
             // incoming edges.
             if (!bidirectional_edge) {
                 // This should always return true (remove should succeed).
-                removeIdFromList(*neighbor_level.incomingEdges(), element_internal_id);
+                neighbor_level.incomingEdges()->removeIdFromList(element_internal_id);
             }
         }
 
         // Next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // repairs.
-        for (auto incoming_edge : *cur_level.incomingEdges()) {
+		auto &incomingEdges = cur_level.incomingEdges()->Get();
+        for (auto incoming_edge : incomingEdges) {
             repairConnectionsForDeletion(element_internal_id, incoming_edge, cur_level,
                                          graphData.getLevelData(incoming_edge, level), level,
                                          neighbours_bitmap);
