@@ -41,47 +41,60 @@
         }                                                                                          \
     }
 
-// dim_opt:   number of elements in 512 bits.
-//            i.e. 512/sizeof(type): FP32 = 16, FP64 = 8, BF16 = 32 ...
-//            The is the number of elements calculated in each distance function loop,
-//            regardless of the arch optimization type.
-// Run each function for {1, 4, 16} iterations.
-#define EXACT_512BIT_PARAMS(dim_opt) RangeMultiplier(4)->Range(dim_opt, 400)
-
-// elem_per_128_bits:   dim_opt / 4.  FP32 = 4, FP64 = 2, BF16 = 8...
-// Dimensions to test 128 bit chunks.
-// Run each function at least one full 512 bits iteration + 1/2/3 iterations of 128 bit chunks.
-#define EXACT_128BIT_PARAMS(elem_per_128_bits)                                                     \
-    DenseRange(128 + elem_per_128_bits, 128 + 3 * elem_per_128_bits, elem_per_128_bits)
-
-// Run each function at least one full 512 bits iteration + (1 * elements : elem_per_128_bits *
-// elements) FP32 = residual = 1,2,3, FP64 = residual = 1, BF16 = residual = 1,2,3,4,5,6,7...
-#define RESIDUAL_PARAMS(elem_per_128_bits) DenseRange(128 + 1, 128 + elem_per_128_bits - 1, 1)
-
 #define INITIALIZE_BM(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                \
     BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)             \
     BENCHMARK_REGISTER_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                    \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
+/**
+ * A number that is
+ * 1. divisible by 32 to ensure that we have at least one full 512 bits iteration in all types
+ * 2. higher than the minimum dimension requires to choose all possible optimizations.
+ * (currently it's 500 for IP with AVX512_FP16)
+ */
+static constexpr size_t min_no_res_th_dim = 512;
+
+/**
+ * @param dim_opt: Number of elements in 512 bits.
+ */
+
+/**
+ * @param dim_opt is also, the smallest dimension to satisfy:
+ * dim % num_elements_in_512_bits == 0.
+ * We use it to start this set of BM from the smallest dimension that satisfies the above condition.
+ * RangeMultiplier(val)->Range(start, end) generates powers of `val` in the range [start, end],
+ * including `start` and `end`.
+ */
 #define INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)   \
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, 512_bit_chunks, arch_supported)             \
-        ->EXACT_512BIT_PARAMS(dim_opt)
+        ->RangeMultiplier(4)                                                                       \
+        ->Range(dim_opt, 1024)
 
-#define INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)   \
-    INITIALIZE_BM(bm_class, type_prefix, arch, metric, 128_bit_chunks, arch_supported)             \
-        ->EXACT_128BIT_PARAMS(dim_opt / 4)
-
+/** for `start` = min_no_res_th_dim (defined above) we run bm for all dimensions
+ * in the following range: (start, start + 1, start + 2, start + 3, ... start + dim_opt)
+ * to test all possible residual cases.
+ */
+static constexpr size_t start = min_no_res_th_dim;
 #define INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)       \
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, residual, arch_supported)                   \
-        ->RESIDUAL_PARAMS(dim_opt / 4)
+        ->DenseRange(start + 1, start + dim_opt - 1, 1)
 
+/** Test high dim
+ * This range satisfies at least one full 512 bits iteration in all types.
+ */
 #define INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, metric, arch_supported)                   \
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, high_dim, arch_supported)                   \
         ->DenseRange(900, 1000, 15)
 
-// Naive algorithms
+/** Test low dim
+ * This range satisfies at least one full 512-bit iteration in all types (160).
+ */
+#define INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, metric, arch_supported)                    \
+    INITIALIZE_BM(bm_class, type_prefix, arch, metric, low_dim, arch_supported)                    \
+        ->DenseRange(100, 200, 15)
 
+/* Naive algorithms */
 #define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
     BENCHMARK_DEFINE_F(bm_class, type_prefix##_NAIVE_##metric)                                     \
     (benchmark::State & st) {                                                                      \
@@ -102,13 +115,13 @@
 
 #define INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)         \
     INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, L2, arch_supported);                          \
-    INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);          \
+    INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, L2, arch_supported);                           \
     INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);          \
     INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);
 
 #define INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)         \
     INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, IP, arch_supported);                          \
-    INITIALIZE_EXACT_128BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);          \
+    INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, IP, arch_supported);                           \
     INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);          \
     INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);
 
