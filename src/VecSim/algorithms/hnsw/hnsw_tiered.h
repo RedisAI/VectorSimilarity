@@ -228,8 +228,6 @@ public:
         return res;
     }
 
-    size_t connectUnreachableNodes();
-
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
 #endif
@@ -474,6 +472,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
+        // Reinsert nodes that became unreachable due to this operation.
+        hnsw_index->connectUnreachableNodes();
         this->mainIndexGuard.unlock_shared();
     }
 }
@@ -591,7 +591,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     this->idToRepairJobsGuard.unlock();
 
     hnsw_index->repairNodeConnections(job->node_id, job->level);
-
+    // Reinsert nodes that became unreachable due to this operation.
+    hnsw_index->connectUnreachableNodes();
     this->mainIndexGuard.unlock_shared();
 }
 
@@ -851,45 +852,6 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
 
     // Return the minimum distance that is not NaN.
     return std::fmin(flat_dist, hnsw_dist);
-}
-
-template <typename DataType, typename DistType>
-size_t TieredHNSWIndex<DataType, DistType>::connectUnreachableNodes() {
-    // this->mainIndexGuard.lock_shared();
-    // auto hnsw_index = this->getHNSWIndex();
-    //
-    // size_t num_nodes_handeled = 0;
-    // hnsw_index->lockIndexDataGuard();
-    // auto unreachable_nodes_copy = hnsw_index->getUnreachableNodes();
-    // hnsw_index->clearUnreachableNodes();
-    // hnsw_index->unlockIndexDataGuard();
-    //
-    // for (idType node_id : unreachable_nodes_copy) {
-    //     auto ep = hnsw_index->safeGetEntryPointState();
-    //     if (node_id == ep.first) {
-    //         continue;  // entry point is always reachable
-    //     }
-    //     // Mark the element as in proccess so we won't connect new neighbors to it in another thread,
-    //     // we do it before we release the lock to ensure atomicity.
-    //     hnsw_index->markInProcess(node_id);
-    //     // Remove the element from the graph at every layer.
-    //     auto element_top_level = hnsw_index->getGraphDataByInternalId(node_id)->toplevel;
-    //     // for (int level = element_top_level; level >= 0; --level) {
-    //     //     hnsw_index->removeNodeNeighbors(node_id, level);
-    //     // }
-    //     if (hnsw_index->unreachableElement(node_id)) {
-    //         // Insert the element again to the graph.
-    //         hnsw_index->insertElementToGraph(node_id, element_top_level, ep.first,
-    //             ep.second, hnsw_index->getDataByInternalId(node_id));
-    //         num_nodes_handeled++;
-    //     }
-    //     hnsw_index->unmarkInProcess(node_id);
-    // }
-    // this->mainIndexGuard.unlock_shared();
-    // // TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
-    // // "Done reinserting %zu elements into HNSW index", unreachable_nodes_copy.size());
-    // return unreachable_nodes_copy.size();
-    return 1;
 }
 
 
