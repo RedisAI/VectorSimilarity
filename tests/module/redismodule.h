@@ -855,10 +855,10 @@ RedisModuleString *(*RedisModule_HoldString)(RedisModuleCtx *ctx,
 REDISMODULE_API int (*RedisModule_StringCompare)(RedisModuleString *a,
                                                  RedisModuleString *b) REDISMODULE_ATTR;
 REDISMODULE_API RedisModuleCtx *(*RedisModule_GetContextFromIO)(RedisModuleIO *io)REDISMODULE_ATTR;
-REDISMODULE_API const
-    RedisModuleString *(*RedisModule_GetKeyNameFromIO)(RedisModuleIO *io)REDISMODULE_ATTR;
-REDISMODULE_API const
-    RedisModuleString *(*RedisModule_GetKeyNameFromModuleKey)(RedisModuleKey *key)REDISMODULE_ATTR;
+REDISMODULE_API const RedisModuleString *(*RedisModule_GetKeyNameFromIO)(RedisModuleIO *io)
+    REDISMODULE_ATTR;
+REDISMODULE_API const RedisModuleString *(*RedisModule_GetKeyNameFromModuleKey)(RedisModuleKey *key)
+    REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromModuleKey)(RedisModuleKey *key) REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromIO)(RedisModuleIO *io) REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromOptCtx)(RedisModuleKeyOptCtx *ctx) REDISMODULE_ATTR;
