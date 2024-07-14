@@ -10,7 +10,8 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include <VecSim/query_results.h>
+#include "VecSim/query_results.h"
+#include "VecSim/utils/vecsim_stl.h"
 #include <utility>
 #include <cassert>
 
@@ -89,3 +90,7 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 
 size_t VecSimType_sizeof(VecSimType vecsimType);
+
+// Helper method that swaps the last element in the ids list with the given one (equivalent to
+// removing the given element id from the list).
+bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);

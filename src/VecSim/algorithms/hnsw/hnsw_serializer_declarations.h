@@ -20,8 +20,8 @@ void saveIndexFields(std::ofstream &output) const;
 
 void saveGraph(std::ofstream &output) const;
 
-void saveLevel(std::ofstream &output, LevelData &data) const;
-void restoreLevel(std::ifstream &input, LevelData &data, EncodingVersion version);
+void saveLevel(std::ofstream &output, ElementLevelData &data) const;
+void restoreLevel(std::ifstream &input, ElementLevelData &data, EncodingVersion version);
 void computeIndegreeForAll();
 
 // Functions for index loading.

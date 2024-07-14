@@ -2091,7 +2091,7 @@ TYPED_TEST(HNSWTest, markDelete) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
     for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
-        LevelData &cur = this->CastToHNSW(index)->getLevelData(n, level);
+        ElementLevelData &cur = this->CastToHNSW(index)->getElementLevelData(n, level);
         for (size_t idx = 0; idx < cur.numLinks; idx++) {
             ASSERT_TRUE(cur.links[idx] % 2 != ep_reminder)
                 << "Got a link to " << cur.links[idx] << " on level " << level;
@@ -2179,7 +2179,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
         vec[i] = 0.0;
     }
     for (size_t i = 0; i < n; i++) {
-        LevelData &cur = hnsw_index->getLevelData(i, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 1);
     }
 
@@ -2189,7 +2189,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 1; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for element 0 as neighbors.
-        LevelData &cur = hnsw_index->getLevelData(i, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 2);
     }
 
@@ -2199,7 +2199,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 3; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for elements 0-2 as neighbors.
-        LevelData &cur = hnsw_index->getLevelData(i, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 4);
     }
 
@@ -2230,12 +2230,12 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
     // Go over all vectors and validate that the getElementNeighbors debug command returns the
     // neighbors properly.
     for (size_t id = 0; id < n; id++) {
-        LevelData &cur = hnsw_index->getLevelData(id, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(id, 0);
         int **neighbors_output;
         VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output);
         auto graph_data = hnsw_index->getGraphDataByInternalId(id);
         for (size_t l = 0; l <= graph_data->toplevel; l++) {
-            auto &level_data = hnsw_index->getLevelData(graph_data, l);
+            auto &level_data = hnsw_index->getElementLevelData(graph_data, l);
             auto &neighbours = neighbors_output[l];
             ASSERT_EQ(neighbours[0], level_data.numLinks);
             for (size_t j = 1; j <= neighbours[0]; j++) {

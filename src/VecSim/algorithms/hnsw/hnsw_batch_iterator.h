@@ -120,7 +120,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
         candidates.pop();
         auto *node_graph_data = this->index->getGraphDataByInternalId(curr_node_id);
         this->index->lockNodeLinks(node_graph_data);
-        LevelData &node_level_data = this->index->getLevelData(node_graph_data, 0);
+        ElementLevelData &node_level_data = this->index->getElementLevelData(node_graph_data, 0);
         if (node_level_data.numLinks > 0) {
 
             // Pre-fetch first candidate tag address.

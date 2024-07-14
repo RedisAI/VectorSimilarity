@@ -1068,12 +1068,12 @@ void FP16Test::get_element_neighbors(params_t params) {
     // Go over all vectors and validate that the getElementNeighbors debug command returns the
     // neighbors properly.
     for (size_t id = 0; id < n; id++) {
-        LevelData &cur = hnsw_index->getLevelData(id, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(id, 0);
         int **neighbors_output;
         VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output);
         auto graph_data = hnsw_index->getGraphDataByInternalId(id);
         for (size_t l = 0; l <= graph_data->toplevel; l++) {
-            auto &level_data = hnsw_index->getLevelData(graph_data, l);
+            auto &level_data = hnsw_index->getElementLevelData(graph_data, l);
             auto &neighbours = neighbors_output[l];
             ASSERT_EQ(neighbours[0], level_data.numLinks);
             for (size_t j = 1; j <= neighbours[0]; j++) {

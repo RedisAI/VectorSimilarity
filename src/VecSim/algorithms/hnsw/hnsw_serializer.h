@@ -65,7 +65,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     size_t incoming_edges_sets_sizes = 0;
     for (size_t i = 0; i < this->curElementCount; i++) {
         for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            LevelData &cur = this->getLevelData(i, l);
+            ElementLevelData &cur = this->getElementLevelData(i, l);
             std::set<idType> s;
             for (unsigned int j = 0; j < cur.numLinks; j++) {
                 // Check if we found an invalid neighbor.
@@ -81,7 +81,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                LevelData &other = this->getLevelData(cur.links[j], l);
+                ElementLevelData &other = this->getElementLevelData(cur.links[j], l);
                 for (int r = 0; r < other.numLinks; r++) {
                     if (other.links[r] == (idType)i) {
                         double_connections++;
@@ -93,7 +93,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             if (s.size() != cur.numLinks) {
                 return res;
             }
-            incoming_edges_sets_sizes += cur.incomingEdges->size();
+            incoming_edges_sets_sizes += cur.incomingUnidirectionalEdges->size();
         }
     }
     if (num_deleted != this->numMarkedDeleted) {
@@ -104,7 +104,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     // outgoing edges.
     for (size_t i = 0; i < this->curElementCount; i++) {
         for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            LevelData &cur = this->getLevelData(i, l);
+            ElementLevelData &cur = this->getElementLevelData(i, l);
             if (cur.totalIncomingLinks != inbound_connections_num[i][l]) {
                 return res;
             }
@@ -142,7 +142,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 
     // Restore index meta-data
     this->elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * this->M0;
-    this->levelDataSize = sizeof(LevelData) + sizeof(idType) * this->M;
+    this->levelDataSize = sizeof(ElementLevelData) + sizeof(idType) * this->M;
     readBinaryPOD(input, this->mult);
 
     // Restore index state
@@ -214,7 +214,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
 
             // Restore the current element's graph data
             for (size_t k = 0; k <= toplevel; k++) {
-                restoreLevel(input, getLevelData(cur_egt, k), version);
+                restoreLevel(input, getElementLevelData(cur_egt, k), version);
             }
         }
     }
@@ -235,7 +235,7 @@ void HNSWIndex<DataType, DistType>::computeIndegreeForAll() {
         this->curElementCount, std::vector<int>(max_level_in_graph + 1, 0));
     for (size_t i = 0; i < this->curElementCount; i++) {
         for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            LevelData &cur = this->getLevelData(i, l);
+            ElementLevelData &cur = this->getElementLevelData(i, l);
             std::set<idType> s;
             for (unsigned int j = 0; j < cur.numLinks; j++) {
                 inbound_connections_num[cur.links[j]][l]++;
@@ -245,14 +245,14 @@ void HNSWIndex<DataType, DistType>::computeIndegreeForAll() {
     // Populate the total incoming links for each node.
     for (size_t i = 0; i < this->curElementCount; i++) {
         for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            LevelData &cur = this->getLevelData(i, l);
+            ElementLevelData &cur = this->getElementLevelData(i, l);
             cur.totalIncomingLinks = inbound_connections_num[i][l];
         }
     }
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, LevelData &data,
+void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, ElementLevelData &data,
                                                  EncodingVersion version) {
     // Restore the links of the current element
     if (version >= EncodingVersion_V4) {
@@ -266,11 +266,11 @@ void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, LevelData
     // Restore the incoming edges of the current element
     unsigned int size;
     readBinaryPOD(input, size);
-    data.incomingEdges->reserve(size);
+    data.incomingUnidirectionalEdges->reserve(size);
     idType id = INVALID_ID;
     for (size_t i = 0; i < size; i++) {
         readBinaryPOD(input, id);
-        data.incomingEdges->push_back(id);
+        data.incomingUnidirectionalEdges->push_back(id);
     }
 }
 
@@ -342,14 +342,14 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
 
             // Save all the levels of the current element
             for (size_t level = 0; level <= cur_element->toplevel; level++) {
-                saveLevel(output, getLevelData(cur_element, level));
+                saveLevel(output, getElementLevelData(cur_element, level));
             }
         }
     }
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, LevelData &data) const {
+void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, ElementLevelData &data) const {
     // Save the links of the current element
     writeBinaryPOD(output, data.totalIncomingLinks);
     writeBinaryPOD(output, data.numLinks);
@@ -358,12 +358,12 @@ void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, LevelData &
     }
 
     // Save the incoming edges of the current element
-    unsigned int size = data.incomingEdges->size();
+    unsigned int size = data.incomingUnidirectionalEdges->size();
     writeBinaryPOD(output, size);
-    for (idType id : *data.incomingEdges) {
+    for (idType id : *data.incomingUnidirectionalEdges) {
         writeBinaryPOD(output, id);
     }
 
     // Shrink the incoming edges vector for integrity check
-    data.incomingEdges->shrink_to_fit();
+    data.incomingUnidirectionalEdges->shrink_to_fit();
 }

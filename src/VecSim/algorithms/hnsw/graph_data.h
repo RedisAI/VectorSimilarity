@@ -2,34 +2,31 @@
 #pragma once
 
 #include <cassert>
-#include "VecSim/utils/vecsim_stl.h"
+#include <algorithm>
+#include "VecSim/utils/vec_utils.h"
 
 template <typename DistType>
 using candidatesList = vecsim_stl::vector<std::pair<DistType, idType>>;
 
 typedef uint16_t linkListSize;
 
-// Helper method that swaps the last element in the ids list with the given one (equivalent to
-// removing the given element id from the list).
-bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);
-
-struct LevelData {
+struct ElementLevelData {
     // A list of ids that are pointing to the node where each edge is *unidirectional*
-    vecsim_stl::vector<idType> *incomingEdges;
-    // Total size of incoming links to the node (both uni and bi directinal).
+    vecsim_stl::vector<idType> *incomingUnidirectionalEdges;
+    // Total size of incoming links to the node (both uni and bi directional).
     linkListSize totalIncomingLinks;
     linkListSize numLinks;
     // Flexible array member - https://en.wikipedia.org/wiki/Flexible_array_member
-    // Using this trick, we can have the links list as part of the LevelData struct, and avoid
-    // the need to dereference a pointer to get to the links list.
-    // We have to calculate the size of the struct manually, as `sizeof(LevelData)` will not include
-    // this member. We do so in the constructor of the index, under the name `levelDataSize` (and
+    // Using this trick, we can have the links list as part of the ElementLevelData struct, and
+    // avoid the need to dereference a pointer to get to the links list. We have to calculate the
+    // size of the struct manually, as `sizeof(ElementLevelData)` will not include this member. We
+    // do so in the constructor of the index, under the name `levelDataSize` (and
     // `elementGraphDataSize`). Notice that this member must be the last member of the struct and
     // all nesting structs.
     idType links[];
 
-    explicit LevelData(std::shared_ptr<VecSimAllocator> allocator)
-        : incomingEdges(new (allocator) vecsim_stl::vector<idType>(allocator)),
+    explicit ElementLevelData(std::shared_ptr<VecSimAllocator> allocator)
+        : incomingUnidirectionalEdges(new(allocator) vecsim_stl::vector<idType>(allocator)),
           totalIncomingLinks(0), numLinks(0) {}
 
     linkListSize getNumLinks() const { return this->numLinks; }
@@ -37,7 +34,9 @@ struct LevelData {
         assert(pos < numLinks);
         return this->links[pos];
     }
-    const vecsim_stl::vector<idType> &getIncomingEdges() const { return *incomingEdges; }
+    const vecsim_stl::vector<idType> &getIncomingEdges() const {
+        return *incomingUnidirectionalEdges;
+    }
     std::vector<idType> copyLinks() {
         std::vector<idType> links_copy;
         links_copy.assign(links, links + numLinks);
@@ -60,16 +59,19 @@ struct LevelData {
     void setNumLinks(linkListSize num) { this->numLinks = num; }
     void setLinkAtPos(size_t pos, idType node_id) { this->links[pos] = node_id; }
     void appendLink(idType node_id) { this->links[this->numLinks++] = node_id; }
-    void newIncomingUnidirectionalEdge(idType node_id) { this->incomingEdges->push_back(node_id); }
+    void newIncomingUnidirectionalEdge(idType node_id) {
+        this->incomingUnidirectionalEdges->push_back(node_id);
+    }
     bool removeIncomingUnidirectionalEdgeIfExists(idType node_id) {
-        return removeIdFromList(*this->incomingEdges, node_id);
+        return removeIdFromList(*this->incomingUnidirectionalEdges, node_id);
     }
     void increaseTotalIncomingEdgesNum() { this->totalIncomingLinks++; }
     void decreaseTotalIncomingEdgesNum() { this->totalIncomingLinks--; }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
-        auto it = std::find(this->incomingEdges->begin(), this->incomingEdges->end(), id_before);
+        auto it = std::find(this->incomingUnidirectionalEdges->begin(),
+                            this->incomingUnidirectionalEdges->end(), id_before);
         // This should always succeed
-        assert(it != this->incomingEdges->end());
+        assert(it != this->incomingUnidirectionalEdges->end());
         *it = id_after;
     }
 };
@@ -77,21 +79,40 @@ struct LevelData {
 struct ElementGraphData {
     size_t toplevel;
     std::mutex neighborsGuard;
-    LevelData *others;
-    LevelData level0;
+    ElementLevelData *others;
+    ElementLevelData level0;
 
     ElementGraphData(size_t maxLevel, size_t high_level_size,
                      std::shared_ptr<VecSimAllocator> allocator)
         : toplevel(maxLevel), others(nullptr), level0(allocator) {
         if (toplevel > 0) {
-            others = (LevelData *)allocator->callocate(high_level_size * toplevel);
+            others = (ElementLevelData *)allocator->callocate(high_level_size * toplevel);
             if (others == nullptr) {
                 throw std::runtime_error("VecSim index low memory error");
             }
             for (size_t i = 0; i < maxLevel; i++) {
-                new ((char *)others + i * high_level_size) LevelData(allocator);
+                new ((char *)others + i * high_level_size) ElementLevelData(allocator);
             }
         }
     }
-    ~ElementGraphData() = delete; // Should be destroyed using `destroyGraphData`
+    ~ElementGraphData() = delete; // should be destroyed using `destroy'
+
+    void destroy(size_t levelDataSize, std::shared_ptr<VecSimAllocator> allocator) {
+        delete this->level0.incomingUnidirectionalEdges;
+        ElementLevelData *cur_ld = this->others;
+        for (size_t i = 0; i < this->toplevel; i++) {
+            delete cur_ld->incomingUnidirectionalEdges;
+            cur_ld = reinterpret_cast<ElementLevelData *>(reinterpret_cast<char *>(cur_ld) +
+                                                          levelDataSize);
+        }
+        allocator->free_allocation(this->others);
+    }
+    ElementLevelData &getElementLevelData(size_t level, size_t levelDataSize) {
+        assert(level <= this->toplevel);
+        if (level == 0) {
+            return this->level0;
+        }
+        return *reinterpret_cast<ElementLevelData *>(reinterpret_cast<char *>(this->others) +
+                                                     (level - 1) * levelDataSize);
+    }
 };
