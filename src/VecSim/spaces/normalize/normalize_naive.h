@@ -9,6 +9,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include <cmath>
+// #include <vector>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -35,7 +36,8 @@ template <bool is_little>
 static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
     bfloat16 *input_vector = (bfloat16 *)vec;
 
-    float f32_tmp[dim];
+    // float f32_tmp[dim];
+    // std::vector<float> f32_tmp(dim);
 
     float sum = 0;
 
@@ -55,7 +57,8 @@ static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
 static inline void float16_normalizeVector(void *vec, const size_t dim) {
     float16 *input_vector = (float16 *)vec;
 
-    float f32_tmp[dim];
+    // float f32_tmp[dim];
+    // std::vector<float> f32_tmp(dim);
 
     float sum = 0;
 
