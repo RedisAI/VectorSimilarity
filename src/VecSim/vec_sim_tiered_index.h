@@ -109,33 +109,50 @@ public:
 
 private:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        auto aligned_mem = this->getAllocator()->allocate_aligned(
+            this->backendIndex->getDataSize(), this->backendIndex->getAlignment());
+
+        // char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
         const void *processed_blob = this->backendIndex->processBlob(blob, aligned_mem);
-        return this->addVector(processed_blob, label, auxiliaryCtx);
+        auto ret = this->addVector(processed_blob, label, auxiliaryCtx);
+        this->getAllocator()->free_allocation(aligned_mem);
+        return ret;
     }
 
     virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const override {
-        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        // char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        auto aligned_mem = this->getAllocator()->allocate_aligned(
+            this->backendIndex->getDataSize(), this->backendIndex->getAlignment());
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
-        return this->topKQuery(processed_blob, k, queryParams);
+        auto ret = this->topKQuery(processed_blob, k, queryParams);
+        this->getAllocator()->free_allocation(aligned_mem);
+        return ret;
     }
 
     virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams,
                                                 VecSimQueryReply_Order order) const override {
-        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        // char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        auto aligned_mem = this->getAllocator()->allocate_aligned(
+            this->backendIndex->getDataSize(), this->backendIndex->getAlignment());
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
-        return this->rangeQuery(processed_blob, radius, queryParams, order);
+        auto ret = this->rangeQuery(processed_blob, radius, queryParams, order);
+        this->getAllocator()->free_allocation(aligned_mem);
+        return ret;
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        // char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        auto aligned_mem = this->getAllocator()->allocate_aligned(
+            this->backendIndex->getDataSize(), this->backendIndex->getAlignment());
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
-        return this->newBatchIterator(processed_blob, queryParams);
+        auto ret = this->newBatchIterator(processed_blob, queryParams);
+        this->getAllocator()->free_allocation(aligned_mem);
+        return ret;
     }
 };
 
