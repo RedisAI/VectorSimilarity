@@ -160,9 +160,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            auto cur_vec =
-                static_cast<char *>(this->getAllocator()->allocate_unique(this->dataSize));
-            input.read(cur_vec.get(), this->dataSize);
+            auto cur_vec = this->getAllocator()->allocate_unique(this->dataSize);
+            input.read(static_cast<char *>(cur_vec.get()), this->dataSize);
             this->vectorBlocks.back().addElement(cur_vec.get());
         }
     }
@@ -191,7 +190,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
                 throw e;
             }
             // Add the current element to the current block, and update cur_egt to point to it.
-            this->graphDataBlocks.back().addElement(tmpData);
+            this->graphDataBlocks.back().addElement(tmpData.get());
             cur_egt = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
 
             // Restore the current element's graph data
