@@ -1820,7 +1820,7 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     // Create the new element's graph metadata.
     // We must assign manually enough memory on the stack and not just declare an `ElementGraphData`
     // variable, since it has a flexible array member.
-    char tmpData[this->elementGraphDataSize];
+    void *tmpData = this->allocator->allocate_unique(this->elementGraphDataSize).get();
     memset(tmpData, 0, this->elementGraphDataSize);
     ElementGraphData *cur_egd = (ElementGraphData *)tmpData;
     // Allocate memory (inside `ElementGraphData` constructor) for the links in higher levels and

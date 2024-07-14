@@ -19,6 +19,11 @@ struct VecSimAllocator {
     friend inline void vecsim_free(void *p);
 
 private:
+    struct Deleter {
+        VecSimAllocator *allocator;
+        explicit constexpr Deleter(VecSimAllocator *allocator) : allocator(allocator) {}
+        void operator()(void *ptr) const { allocator->free_allocation(ptr); }
+    };
     std::atomic_uint64_t allocated;
 
     // Static member that indicates each allocation additional size.
@@ -31,6 +36,17 @@ public:
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();
     void *allocate(size_t size);
     void *allocate_aligned(size_t size, unsigned char alignment);
+    // Custom deleter
+
+    std::unique_ptr<void, Deleter> allocate_aligned_unique(size_t size, size_t alignment) {
+        void *ptr = this->allocate_aligned(size, alignment);
+        return {ptr, Deleter(this)};
+    }
+
+    std::unique_ptr<void, Deleter> allocate_unique(size_t size) {
+        void *ptr = this->allocate(size);
+        return {ptr, Deleter(this)};
+    }
     void *callocate(size_t size);
     void deallocate(void *p, size_t size);
     void *reallocate(void *p, size_t size);

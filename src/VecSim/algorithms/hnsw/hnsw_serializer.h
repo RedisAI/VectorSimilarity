@@ -160,19 +160,16 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            // char cur_vec[this->dataSize];
-            auto cur_vec = static_cast<char *>(this->getAllocator()->allocate(this->dataSize));
+            auto cur_vec =
+                static_cast<char *>(this->getAllocator()->allocate_unique(this->dataSize).get());
             input.read(cur_vec, this->dataSize);
             this->vectorBlocks.back().addElement(cur_vec);
-            this->getAllocator()->free_allocation(cur_vec);
         }
     }
 
     // Get graph data blocks
     ElementGraphData *cur_egt;
-    auto tmpData = this->getAllocator()->allocate(this->elementGraphDataSize);
-
-    // char tmpData[this->elementGraphDataSize];
+    auto tmpData = this->getAllocator()->allocate_unique(this->elementGraphDataSize).get();
     size_t toplevel = 0;
     for (size_t i = 0; i < num_blocks; i++) {
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
@@ -202,7 +199,6 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             }
         }
     }
-    this->getAllocator()->free_allocation(tmpData);
 }
 
 template <typename DataType, typename DistType>
