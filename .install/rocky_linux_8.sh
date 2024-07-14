@@ -11,11 +11,11 @@ $MODE dnf groupinstall "Development Tools" -yqq
 # powertools is needed to install epel
 $MODE dnf config-manager --set-enabled powertools
 
-# get epel to install gcc11
+# get epel to install gcc13
 $MODE dnf install epel-release -yqq
 
-$MODE dnf install -y gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ gcc-toolset-11-libatomic-devel  make valgrind wget git
+$MODE dnf install -y gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-libatomic-devel  make valgrind wget git
 
-cp /opt/rh/gcc-toolset-11/enable /etc/profile.d/gcc-toolset-11.sh
+cp /opt/rh/gcc-toolset-13/enable /etc/profile.d/gcc-toolset-13.sh
 
 source install_cmake.sh $MODE

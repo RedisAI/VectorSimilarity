@@ -11,19 +11,20 @@
 
 using float16 = vecsim_types::float16;
 
-static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
+static void L2SqrStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
     // Convert 16 half-floats into floats and store them in 512 bits register.
     auto v1 = _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect1));
     auto v2 = _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect2));
 
-    // sum = v1 * v2 + sum
-    sum = _mm512_fmadd_ps(v1, v2, sum);
+    // sum = (v1 - v2)^2 + sum
+    auto c = _mm512_sub_ps(v1, v2);
+    sum = _mm512_fmadd_ps(c, c, sum);
     pVect1 += 16;
     pVect2 += 16;
 }
 
 template <unsigned short residual> // 0..31
-float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_L2SqrSIMD32_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
 
@@ -31,7 +32,7 @@ float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, s
 
     auto sum = _mm512_setzero_ps();
 
-    if (residual % 16) {
+    if constexpr (residual % 16) {
         // Deal with remainder first. `dim` is more than 32, so we have at least one block of 32
         // 16-bit float so mask loading is guaranteed to be safe.
         __mmask16 constexpr residuals_mask = (1 << (residual % 16)) - 1;
@@ -42,20 +43,21 @@ float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, s
                                       _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect1)));
         auto v2 = _mm512_maskz_mov_ps(residuals_mask,
                                       _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect2)));
-        sum = _mm512_mul_ps(v1, v2);
+        auto c = _mm512_sub_ps(v1, v2);
+        sum = _mm512_mul_ps(c, c);
         pVect1 += residual % 16;
         pVect2 += residual % 16;
     }
-    if (residual >= 16) {
-        InnerProductStep(pVect1, pVect2, sum);
+    if constexpr (residual >= 16) {
+        L2SqrStep(pVect1, pVect2, sum);
     }
 
     // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
-    // In every iteration we process 2 chunks of 256bit (32 FP16)
+    // In every iteration we process 2 chunk of 256bit (32 FP16)
     do {
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    return 1.0f - _mm512_reduce_add_ps(sum);
+    return _mm512_reduce_add_ps(sum);
 }
