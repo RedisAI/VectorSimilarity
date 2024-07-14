@@ -161,15 +161,15 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
             auto cur_vec =
-                static_cast<char *>(this->getAllocator()->allocate_unique(this->dataSize).get());
-            input.read(cur_vec, this->dataSize);
-            this->vectorBlocks.back().addElement(cur_vec);
+                static_cast<char *>(this->getAllocator()->allocate_unique(this->dataSize));
+            input.read(cur_vec.get(), this->dataSize);
+            this->vectorBlocks.back().addElement(cur_vec.get());
         }
     }
 
     // Get graph data blocks
     ElementGraphData *cur_egt;
-    auto tmpData = this->getAllocator()->allocate_unique(this->elementGraphDataSize).get();
+    auto tmpData = this->getAllocator()->allocate_unique(this->elementGraphDataSize);
     size_t toplevel = 0;
     for (size_t i = 0; i < num_blocks; i++) {
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
@@ -178,12 +178,13 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
             // Reset tmpData
-            memset(tmpData, 0, this->elementGraphDataSize);
+            memset(tmpData.get(), 0, this->elementGraphDataSize);
             // Read the current element top level
             readBinaryPOD(input, toplevel);
             // Allocate space and structs for the current element
             try {
-                new (tmpData) ElementGraphData(toplevel, this->levelDataSize, this->allocator);
+                new (tmpData.get())
+                    ElementGraphData(toplevel, this->levelDataSize, this->allocator);
             } catch (std::runtime_error &e) {
                 this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                           "Error - allocating memory for new element failed due to low memory");
