@@ -101,7 +101,7 @@ jobs:
 
       - name: Collect results
         run: |
-          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -I {} redisbench-admin export     \
+          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export     \
           --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
           --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
           --redistimeseries_user      default                                       \
