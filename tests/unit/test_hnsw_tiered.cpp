@@ -987,7 +987,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     ASSERT_EQ(tiered_index->getHNSWIndex()->getGraphDataByInternalId(vec_id)->toplevel, 1);
     // This should be an array of length 1.
     auto &level_one = tiered_index->getHNSWIndex()->getLevelData(vec_id, 1);
-    ASSERT_EQ(level_one.numLinks, 1);
+    ASSERT_EQ(level_one.numLinks(), 1);
 
     size_t num_repair_jobs = mock_thread_pool.jobQ.size();
     // There should be at least two nodes to repair, the neighbors of next_id in levels 0 and 1
@@ -1000,7 +1000,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
 
     // The last job should be repairing the single neighbor in level 1.
     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, level_one.links[0]);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, level_one.link(0));
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
@@ -1046,9 +1046,10 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                 tiered_index->getHNSWIndex()->getLevelData(repair_node_id, repair_node_level);
             // This makes sure that the deleted node is no longer in the neighbors set of the
             // repaired node.
-            ASSERT_TRUE(std::find(node_level.links, node_level.links + node_level.numLinks, ep) ==
-                        node_level.links + node_level.numLinks);
-            // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
+			for (size_t i = 0; i < node_level.numLinks(); i++) {
+				ASSERT_TRUE(node_level.link(i) != ep);
+			}
+			// Remove the job from the id -> repair_jobs lookup, so we won't think that it is
             // still pending and avoid creating new jobs for nodes that already been repaired
             // as they were pointing to deleted elements.
             tiered_index->idToRepairJobs.erase(repair_node_id);
@@ -1766,8 +1767,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
     // Manually shrink the vectors so that memory would be as it was before we started inserting
-    tiered_index->getHNSWIndex()->vectorBlocks.shrink_to_fit();
-    tiered_index->getHNSWIndex()->graphDataBlocks.shrink_to_fit();
+    tiered_index->getHNSWIndex()->shrinkToFit();
 
     EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
     EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
@@ -3524,9 +3524,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, getElementNeighbors) {
         for (size_t l = 0; l <= graph_data->toplevel; l++) {
             auto &level_data = hnsw_index->getLevelData(graph_data, l);
             auto &neighbours = neighbors_output[l];
-            ASSERT_EQ(neighbours[0], level_data.numLinks);
+            ASSERT_EQ(neighbours[0], level_data.numLinks());
             for (size_t j = 1; j <= neighbours[0]; j++) {
-                ASSERT_EQ(neighbours[j], level_data.links[j - 1]);
+                ASSERT_EQ(neighbours[j], level_data.link(j - 1));
             }
         }
         VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
