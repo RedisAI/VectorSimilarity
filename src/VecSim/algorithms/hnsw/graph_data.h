@@ -63,7 +63,7 @@ struct ElementLevelData {
         this->incomingUnidirectionalEdges->push_back(node_id);
     }
     bool removeIncomingUnidirectionalEdgeIfExists(idType node_id) {
-        return removeIdFromList(*this->incomingUnidirectionalEdges, node_id);
+        return this->incomingUnidirectionalEdges->remove(node_id);
     }
     void increaseTotalIncomingEdgesNum() { this->totalIncomingLinks++; }
     void decreaseTotalIncomingEdgesNum() { this->totalIncomingLinks--; }

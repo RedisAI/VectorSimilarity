@@ -1369,7 +1369,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         }
         // Check if the current neighbor is in the chosen neighbors list, and remove it from there
         // if so.
-        if (removeIdFromList(chosen_neighbors, node_level.getLinkAtPos(i))) {
+        if (chosen_neighbors.remove(node_level.getLinkAtPos(i))) {
             // A chosen neighbor is already connected to the node - leave it as is.
             node_level.setLinkAtPos(node_neighbors_idx++, node_level.getLinkAtPos(i));
             continue;

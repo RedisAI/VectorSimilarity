@@ -202,15 +202,3 @@ size_t VecSimType_sizeof(VecSimType type) {
     }
     return 0;
 }
-
-bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id) {
-    auto it = std::find(element_ids_list.begin(), element_ids_list.end(), element_id);
-    if (it != element_ids_list.end()) {
-        // Swap the last element with the current one (equivalent to removing the element id from
-        // the list).
-        *it = element_ids_list.back();
-        element_ids_list.pop_back();
-        return true;
-    }
-    return false;
-}
