@@ -102,12 +102,12 @@ void *VecSimAllocator::callocate(size_t size) {
 std::unique_ptr<void, VecSimAllocator::Deleter>
 VecSimAllocator::allocate_aligned_unique(size_t size, size_t alignment) {
     void *ptr = this->allocate_aligned(size, alignment);
-    return {ptr, Deleter(this)};
+    return {ptr, Deleter(*this)};
 }
 
 std::unique_ptr<void, VecSimAllocator::Deleter> VecSimAllocator::allocate_unique(size_t size) {
     void *ptr = this->allocate(size);
-    return {ptr, Deleter(this)};
+    return {ptr, Deleter(*this)};
 }
 
 void *VecSimAllocator::operator new(size_t size) { return vecsim_malloc(size); }

@@ -65,9 +65,9 @@ private:
     inline size_t getPointerAllocationSize(void *p) { return *(((size_t *)p) - 1); }
 
     struct Deleter {
-        VecSimAllocator *allocator;
-        explicit constexpr Deleter(VecSimAllocator *allocator) : allocator(allocator) {}
-        void operator()(void *ptr) const { allocator->free_allocation(ptr); }
+        VecSimAllocator &allocator;
+        explicit constexpr Deleter(VecSimAllocator &allocator) : allocator(allocator) {}
+        void operator()(void *ptr) const { allocator.free_allocation(ptr); }
     };
 };
 
