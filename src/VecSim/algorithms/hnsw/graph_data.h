@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <algorithm>
+#include <mutex>
 #include "VecSim/utils/vec_utils.h"
 
 template <typename DistType>
