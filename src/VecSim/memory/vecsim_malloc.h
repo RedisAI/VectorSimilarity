@@ -25,6 +25,8 @@ private:
     static size_t allocation_header_size;
     static VecSimMemoryFunctions memFunctions;
 
+    // Forward declaration of the deleter for the unique_ptr.
+    struct Deleter;
     VecSimAllocator() : allocated(std::atomic_uint64_t(sizeof(VecSimAllocator))) {}
 
 public:
@@ -35,6 +37,10 @@ public:
     void deallocate(void *p, size_t size);
     void *reallocate(void *p, size_t size);
     void free_allocation(void *p);
+
+    // Allocations for scope-life-time memory.
+    std::unique_ptr<void, Deleter> allocate_aligned_unique(size_t size, size_t alignment);
+    std::unique_ptr<void, Deleter> allocate_unique(size_t size);
 
     void *operator new(size_t size);
     void *operator new[](size_t size);
@@ -55,8 +61,14 @@ public:
     static size_t getAllocationOverheadSize() { return allocation_header_size; }
 
 private:
-    // Retrive the original requested allocation size. Required for remalloc.
+    // Retrieve the original requested allocation size. Required for remalloc.
     inline size_t getPointerAllocationSize(void *p) { return *(((size_t *)p) - 1); }
+
+    struct Deleter {
+        VecSimAllocator &allocator;
+        explicit constexpr Deleter(VecSimAllocator &allocator) : allocator(allocator) {}
+        void operator()(void *ptr) const { allocator.free_allocation(ptr); }
+    };
 };
 
 /**
