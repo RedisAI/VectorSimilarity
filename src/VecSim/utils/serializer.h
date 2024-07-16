@@ -9,10 +9,11 @@ public:
     typedef enum EncodingVersion {
         EncodingVersion_DEPRECATED = 2, // Last deprecated version
         EncodingVersion_V3,
+        EncodingVersion_V4,
         EncodingVersion_INVALID, // This should always be last.
     } EncodingVersion;
 
-    Serializer(EncodingVersion version = EncodingVersion_V3) : m_version(version) {}
+    Serializer(EncodingVersion version = EncodingVersion_V4) : m_version(version) {}
 
     // Persist index into a file in the specified location with V3 encoding routine.
     void saveIndex(const std::string &location);
