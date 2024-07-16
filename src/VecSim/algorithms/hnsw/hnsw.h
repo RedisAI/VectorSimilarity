@@ -442,9 +442,7 @@ void HNSWIndex<DataType, DistType>::connectUnreachableNodes() {
     auto nodes_to_connect = fetchAndClearUnreachableNodes();
     if (nodes_to_connect.empty()) return;
     for (auto node : nodes_to_connect) {
-        this->markInProcess(node.first);
         reinsertElementToGraphAtLevel(node.first, node.second);
-        this->unmarkInProcess(node.first);
         this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
             "Reinserted node id %zu in level %zu to the graph", node.first, node.second);
     }
@@ -945,7 +943,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     // Use the heuristic to filter the top candidates, and get the next closest entry point.
     idType next_closest_entry_point = getNeighborsByHeuristic2(top_candidates_list, M);
     assert(top_candidates_list.size() <= M &&
-           "Should be not be more than M candidates returned by the heuristic");
+           "Should not be more than M candidates returned by the heuristic");
 
     auto *new_node_level = getGraphDataByInternalId(new_node_id);
     ElementLevelData &new_node_level_data = getElementLevelData(new_node_level, level);
@@ -1485,7 +1483,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
-
     vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
@@ -1661,9 +1658,10 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
                                                          size_t level_to_insert) {
 
     auto [entry_point, max_level] = this->safeGetEntryPointState();
-    if (element_id == entry_point || isMarkedDeleted(element_id)) {
+    if (element_id == entry_point || entry_point == INVALID_ID || isMarkedDeleted(element_id)) {
         return;  // entry point is always reachable, no need to connect deleted element
     }
+    this->markInProcess(element_id);
     DistType cur_dist = std::numeric_limits<DistType>::max();
     const void *vector_data = this->getDataByInternalId(element_id);
     idType curr_element = entry_point;
@@ -1682,29 +1680,22 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
     bool unreachable = node_data.inDegreeZero();
     unlockNodeLinks(element_id);
     if (!unreachable) {
+        this->unmarkInProcess(element_id);
         return;  // node is no longer unreachable, we can skip reinserting it.
     }
-    // All links (if any) are unidirectional, let's remove them before we collect the new neighbors.
-    for (size_t i = 0; i < node_data.getNumLinks(); i++) {
-        idType neighbor = node_data.getLinkAtPos(i);
-        auto &neighbor_data = getLevelData(neighbor, level_to_insert);
-        lockNodeLinks(neighbor);
-        neighbor_data.removeIncomingUnidirectionalEdgeIfExists(element_id); // always true
-        neighbor_data.decreaseTotalIncomingEdgesNum();
-        unlockNodeLinks(neighbor);
-    }
-    node_data.setNumLinks(0);
 
     candidatesMaxHeap<DistType> top_candidates =
         searchLayer<true>(curr_element, vector_data, level_to_insert, efConstruction);
     // If the entry point was marked deleted between iterations, we may recieve an empty
     // candidates set.
     if (!top_candidates.empty()) {
+        // TODO: USE A DIFFERENT METHOD THAT TAKES INTO ACCOUNT EXISTING NEIGHBORS AT ANY POINT IN TIME
         curr_element = mutuallyConnectNewElement(element_id, top_candidates, level_to_insert);
     } else {
         // Node has no neighbors - it is defintly unreachable
         this->setUnreachableNode(std::make_pair(element_id, level_to_insert));
     }
+    this->unmarkInProcess(element_id);
 }
 
 /**
