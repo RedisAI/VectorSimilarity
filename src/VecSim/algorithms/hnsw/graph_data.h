@@ -43,6 +43,7 @@ struct ElementLevelData {
         links_copy.assign(links, links + numLinks);
         return links_copy;
     }
+    size_t inDegree() const { return totalIncomingLinks; }
     // Sets the outgoing links of the current element.
     // Assumes that the object has the capacity to hold all the links.
     void setLinks(vecsim_stl::vector<idType> &links) {

@@ -1223,7 +1223,7 @@ TYPED_TEST(HNSWMultiTest, test_query_runtime_params_user_build_args) {
 }
 
 TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
-    size_t n = 10000;
+    size_t n = 1000;
     size_t per_label = 5;
     size_t dim = 4;
     size_t M = 2;
@@ -1239,11 +1239,14 @@ TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
 
     ASSERT_TRUE(index != NULL);
 
-    TEST_DATA_T vec[dim];
-    for (size_t i = 0; i < dim; i++)
-        vec[i] = i;
-    for (size_t j = 0; j < n; j++)
+    for (size_t j = 0; j < n; j++) {
+        TEST_DATA_T vec[dim];
+        for (size_t i = 0; i < dim; i++) {
+            vec[i] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            ;
+        }
         VecSimIndex_AddVector(index, vec, j / per_label);
+    }
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
 

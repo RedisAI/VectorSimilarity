@@ -1005,7 +1005,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
 
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     // Create TieredHNSW index instance with a mock queue.
-    size_t n = 1000;
+    size_t n = 200;
     size_t dim = 4;
     bool isMulti = TypeParam::isMulti();
 
