@@ -376,3 +376,12 @@ size_t getLabelsLookupNodeSize() {
     size_t memory_after = allocator->getAllocationSize();
     return memory_after - memory_before;
 }
+
+size_t getUnreachableNodeSize() {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    auto dummy_lookup = vecsim_stl::unordered_set<graphNodeType, hashForPair>(1, allocator);
+    size_t memory_before = allocator->getAllocationSize();
+    dummy_lookup.insert({1, 1}); // Insert a dummy {key, value} element pair.
+    size_t memory_after = allocator->getAllocationSize();
+    return memory_after - memory_before;
+}

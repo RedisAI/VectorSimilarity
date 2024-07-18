@@ -145,6 +145,8 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
 
 size_t getLabelsLookupNodeSize();
 
+size_t getUnreachableNodeSize();
+
 inline double GetInfVal(VecSimType type) {
     if (type == VecSimType_FLOAT64) {
         return exp(500);

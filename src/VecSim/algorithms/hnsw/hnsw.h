@@ -856,7 +856,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
-    ElementLevelData &new_node_level, ElementLevelData &neighbor_level) {
+    ElementLevelData &new_node_level, ElementLevelData &neighbor_level, bool &unreachable) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
@@ -955,7 +955,7 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
 
     auto *node_graph_data = getGraphDataByInternalId(node_id);
     lockNodeLinks(node_graph_data);
-    auto &node_level_data = getLevelData(node_graph_data, level);
+    auto &node_level_data = getElementLevelData(node_graph_data, level);
     for (size_t i = 0; i < node_level_data.getNumLinks(); i++) {
         nodes_to_update.push_back(node_level_data.getLinkAtPos(i));
     }
@@ -982,7 +982,7 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
         }
     }
     for (idType id_to_remove : ids_to_remove) {
-        removeIdFromList(nodes_to_update, id_to_remove);
+        nodes_to_update.remove(id_to_remove);
     }
     nodes_to_update.insert(nodes_to_update.end(), selected_neighbors.begin(),
                            selected_neighbors.end());
@@ -997,7 +997,7 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
     }
 
     // Try to make mutuall connection for the current node neighbors that were found.
-    node_level_data = getLevelData(node_graph_data, level);
+    node_level_data = getElementLevelData(node_graph_data, level);
     for (size_t i = 0; i < node_level_data.getNumLinks(); i++) {
         idType neighbor = node_level_data.getLinkAtPos(i);
         if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), neighbor)) {
@@ -1008,10 +1008,10 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
         if (std::find(selected_neighbors.begin(), selected_neighbors.end(), neighbor) !=
             selected_neighbors.end()) {
             // Neighbor already exists, no need to connect it later on.
-            removeIdFromList(selected_neighbors, neighbor);
+            selected_neighbors.remove(neighbor);
         }
         // Connect the neighbor back if it has the capacity, and...
-        auto &neighbor_data = getLevelData(neighbor, level);
+        auto &neighbor_data = getElementLevelData(neighbor, level);
         if (neighbor_data.getNumLinks() < max_M_cur && !isMarkedDeleted(node_id) &&
             !isMarkedDeleted(neighbor)) {
             // The edge was unidirectional (no exisiting outgoing edge from the neighbor to the
@@ -1034,7 +1034,7 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
             isMarkedAs<IN_REPAIR>(chosen_id)) {
             continue;
         }
-        auto &chosen_node_level_data = getLevelData(chosen_id, level);
+        auto &chosen_node_level_data = getElementLevelData(chosen_id, level);
         // Perform mutuall or exclusive unidriectional connectoins accordin to degree limitations.
         if (node_level_data.getNumLinks() < max_M_cur) {
             node_level_data.appendLink(chosen_id);
@@ -1091,8 +1091,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(top_candidates_list.size() <= M &&
            "Should not be more than M candidates returned by the heuristic");
 
-    auto *new_node_level = getGraphDataByInternalId(new_node_id);
-    ElementLevelData &new_node_level_data = getElementLevelData(new_node_level, level);
+    auto *new_node_graph_data = getGraphDataByInternalId(new_node_id);
+    ElementLevelData &new_node_level_data = getElementLevelData(new_node_graph_data, level);
     assert(new_node_level_data.getNumLinks() == 0 &&
            "The newly inserted element should have blank link list");
 
@@ -1107,7 +1107,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             lockNodeLinks(neighbor_graph_data);
             lockNodeLinks(new_node_graph_data);
         }
-        LevelData &new_node_level_data = getLevelData(new_node_graph_data, level);
+        new_node_level_data = getElementLevelData(new_node_graph_data, level);
 
         // validations...
         assert(new_node_level_data.getNumLinks() <= max_M_cur && "Neighbors number exceeds limit");
@@ -1795,8 +1795,6 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
         // If the entry point was marked deleted between iterations, we may recieve an empty
         // candidates set.
         if (!top_candidates.empty()) {
-            assert(getLevelData(element_id, level).getNumLinks() == 0 &&
-                   "The newly inserted element should have blank link list");
             curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
         } else {
             // Node has no neighbors - it is defintly unreachable
@@ -1832,7 +1830,7 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
     }
 
     lockNodeLinks(element_id);
-    auto &node_data = getLevelData(element_id, level_to_insert);
+    auto &node_data = getElementLevelData(element_id, level_to_insert);
     bool unreachable = node_data.inDegreeZero();
     unlockNodeLinks(element_id);
     if (!unreachable) {
