@@ -30,6 +30,7 @@ struct ElementLevelData {
         : incomingUnidirectionalEdges(new (allocator) vecsim_stl::vector<idType>(allocator)),
           totalIncomingLinks(0), numLinks(0) {}
 
+    /*************************** Getters ********************************/
     linkListSize getNumLinks() const { return this->numLinks; }
     idType getLinkAtPos(size_t pos) const {
         assert(pos < numLinks);
@@ -38,12 +39,14 @@ struct ElementLevelData {
     const vecsim_stl::vector<idType> &getIncomingEdges() const {
         return *incomingUnidirectionalEdges;
     }
+    size_t inDegree() const { return totalIncomingLinks; }
     std::vector<idType> copyLinks() {
         std::vector<idType> links_copy;
         links_copy.assign(links, links + numLinks);
         return links_copy;
     }
-    size_t inDegree() const { return totalIncomingLinks; }
+
+    /************************************ Setters ****************************/
     // Sets the outgoing links of the current element.
     // Assumes that the object has the capacity to hold all the links.
     void setLinks(vecsim_stl::vector<idType> &links) {
@@ -69,7 +72,6 @@ struct ElementLevelData {
     }
     void increaseTotalIncomingEdgesNum() { this->totalIncomingLinks++; }
     void decreaseTotalIncomingEdgesNum() { this->totalIncomingLinks--; }
-    bool inDegreeZero() const { return this->totalIncomingLinks == 0; }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
         auto it = std::find(this->incomingUnidirectionalEdges->begin(),
                             this->incomingUnidirectionalEdges->end(), id_before);

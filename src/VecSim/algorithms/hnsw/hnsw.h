@@ -61,8 +61,8 @@ public:
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
-    IN_PROCESS = 0x2,  // element is being inserted into the graph
-    IN_REPAIR = 0x4,
+    IN_PROCESS = 0x2,  // element is being inserted/reinserted into the graph
+    IN_REPAIR = 0x4,   // element is being repaired due to deletion of its neighbor(s)
 } Flags;
 
 // The state of the index and the newly inserted vector to be passed into addVector API in case that
@@ -154,7 +154,6 @@ protected:
         tag_t *elements_tags, tag_t visited_tag,
         std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
         candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, DistType radius) const;
-    template <bool has_marked_deleted>
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
     template <bool has_marked_deleted>
@@ -298,8 +297,6 @@ public:
     void markDeletedInternal(idType internalId);
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
-    void markInProcess(idType internalId);
-    void unmarkInProcess(idType internalId);
     AddVectorCtx storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
@@ -506,22 +503,8 @@ bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
-    // Atomically set the IN_PROCESS mark flag (note that other parallel threads may set the flags
-    // at the same time (for marking the element with IN_PROCCESS flag).
-    markAs<IN_PROCESS>(internalId);
-}
-
-template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     return isMarkedAs<IN_PROCESS>(internalId);
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
-    // Atomically unset the IN_PROCESS mark flag (note that other parallel threads may set the flags
-    // at the same time (for marking the element with IN_PROCCESS flag).
-    unmarkAs<IN_PROCESS>(internalId);
 }
 
 template <typename DataType, typename DistType>
@@ -736,7 +719,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 candidatesMaxHeap<DistType>
 HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
@@ -748,7 +730,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType lowerBound;
-    if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
+    if (!isMarkedDeleted(ep_id)) {
         DistType dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
         lowerBound = dist;
         top_candidates.emplace(dist, ep_id);
@@ -768,9 +750,9 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
-                                             visited_nodes_handler->getElementsTags(), visited_tag,
-                                             top_candidates, candidate_set, lowerBound);
+        processCandidate<true>(curr_el_pair.second, data_point, layer, ef,
+                               visited_nodes_handler->getElementsTags(), visited_tag,
+                               top_candidates, candidate_set, lowerBound);
     }
 
     returnVisitedList(visited_nodes_handler);
@@ -1217,7 +1199,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 }
                 // anyway update the incoming nodes counter.
                 node_level_data.decreaseTotalIncomingEdgesNum();
-                if (node_level_data.inDegreeZero()) {
+                if (node_level_data.inDegree() == 0) {
                     this->setUnreachableNode(std::make_pair(node_id, level));
                 }
             }
@@ -1632,7 +1614,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
     this->markAs<IN_REPAIR>(node_id);
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "running repair for node %zu", node_id);
     vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
@@ -1758,7 +1739,7 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
         node_level.newIncomingUnidirectionalEdge(removed_node);
     }
     removed_node_level.decreaseTotalIncomingEdgesNum();
-    if (removed_node_level.inDegreeZero()) {
+    if (removed_node_level.inDegree() == 0) {
         this->setUnreachableNode(std::make_pair(removed_node, level));
     }
 }
@@ -1791,7 +1772,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
-            searchLayer<true>(curr_element, vector_data, level, efConstruction);
+            searchLayer(curr_element, vector_data, level, efConstruction);
         // If the entry point was marked deleted between iterations, we may recieve an empty
         // candidates set.
         if (!top_candidates.empty()) {
@@ -1812,10 +1793,10 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
         return; // entry point is always reachable, no need to connect deleted element
     }
     if (this->isInProcess(element_id)) {
-        return; // If it being inserted - no need to reconnect. If it is being reconnected by other
-                // thread, also no need to reconnect.
+        return; // If it being inserted - no need to reconnect, and if it is being reconnected by
+                // another thread, there is no need for someelse to this job as well.
     }
-    this->markInProcess(element_id);
+    this->markAs<IN_PROCESS>(element_id);
     DistType cur_dist = std::numeric_limits<DistType>::max();
     const void *vector_data = this->getDataByInternalId(element_id);
     idType curr_element = entry_point;
@@ -1831,15 +1812,15 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
 
     lockNodeLinks(element_id);
     auto &node_data = getElementLevelData(element_id, level_to_insert);
-    bool unreachable = node_data.inDegreeZero();
+    bool unreachable = node_data.inDegree() == 0;
     unlockNodeLinks(element_id);
     if (!unreachable) {
-        this->unmarkInProcess(element_id);
-        return; // node is no longer unreachable, we can skip reinserting it.
+        this->unmarkAs<IN_PROCESS>(element_id);
+        return; // node is no longer unreachable, we can skip on reinserting it.
     }
 
     candidatesMaxHeap<DistType> top_candidates =
-        searchLayer<true>(curr_element, vector_data, level_to_insert, efConstruction);
+        searchLayer(curr_element, vector_data, level_to_insert, efConstruction);
     if (top_candidates.empty()) {
         // No candidates found (entry point been deleted in the meantime).
         this->setUnreachableNode(std::make_pair(element_id, level_to_insert));
@@ -1850,7 +1831,7 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
             this->setUnreachableNode(std::make_pair(element_id, level_to_insert));
         }
     }
-    this->unmarkInProcess(element_id);
+    this->unmarkAs<IN_PROCESS>(element_id);
 }
 
 /**
@@ -1943,7 +1924,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             // this point (after all the repair jobs are done).
             neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
             neighbour.decreaseTotalIncomingEdgesNum();
-            if (neighbour.inDegreeZero()) {
+            if (neighbour.inDegree() == 0) {
                 this->setUnreachableNode(std::make_pair(cur_level.getLinkAtPos(i), level));
             }
         }
@@ -2137,10 +2118,10 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         insertElementToGraph(new_element_id, element_max_level, prev_entry_point, prev_max_level,
                              vector_data);
     }
-    unmarkInProcess(new_element_id);
+    unmarkAs<IN_PROCESS>(new_element_id);
     if (auxiliaryCtx == nullptr) {
         // No external auxiliaryCtx, so it's this function responsibility to release the lock if
-        // needed connect unreachable nodes that were created due to this operation.
+        // needed and connect unreachable nodes that were created due to this operation.
         if (state.currMaxLevel < state.elementMaxLevel) {
             this->unlockIndexDataGuard();
         }

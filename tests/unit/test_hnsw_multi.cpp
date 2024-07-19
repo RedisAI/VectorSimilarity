@@ -1243,7 +1243,6 @@ TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
         TEST_DATA_T vec[dim];
         for (size_t i = 0; i < dim; i++) {
             vec[i] = std::rand() / (TEST_DATA_T)RAND_MAX;
-            ;
         }
         VecSimIndex_AddVector(index, vec, j / per_label);
     }

@@ -2953,10 +2953,6 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
             // (the label that we just inserted), and the first result should be this vector.
             auto ver_res = [&](size_t label, double score, size_t index) {
                 if (index == 0) {
-                    if (label != i % n_labels + n_labels && !TypeParam::isMulti()) {
-                        // TODO: remove after we have a mechanism for connecting new elements
-                        return; // this is flaky - ignore for now
-                    }
                     EXPECT_EQ(label, i % n_labels + n_labels);
                     EXPECT_DOUBLE_EQ(score, 0);
                 }
