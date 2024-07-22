@@ -435,7 +435,7 @@ vecsim_stl::unordered_set<graphNodeType, hashForPair>
 HNSWIndex<DataType, DistType>::fetchAndClearUnreachableNodes(bool permanent) {
     std::unique_lock<std::mutex> lock(unreachableNodesGuard);
     auto unreachable_copy = permanent ? unreachableNodesPermanent : unreachableNodes;
-    unreachableNodes.clear();
+    permanent ? unreachableNodesPermanent.clear() : unreachableNodes.clear();
     return unreachable_copy;
 }
 
