@@ -1512,10 +1512,6 @@ void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     idToMetaData.shrink_to_fit();
 
     maxElements = new_max_elements;
-    // Try to reinsert permanent unreachable nodes
-    this->log(VecSimCommonStrings::LOG_NOTICE_STRING,
-       "Goiong over permanent unreachable nodes:");
-    this->connectUnreachableNodes(true);
 }
 
 template <typename DataType, typename DistType>

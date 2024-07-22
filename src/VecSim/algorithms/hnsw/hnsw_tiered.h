@@ -208,6 +208,12 @@ public:
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
+        // Try to reinsert permanent unreachable nodes
+        TIERED_LOG(VecSimCommonStrings::LOG_NOTICE_STRING,
+           "Goiong over permanent unreachable nodes:");
+        this->mainIndexGuard.lock_shared();
+        this->getHNSWIndex()->connectUnreachableNodes(true);
+        this->mainIndexGuard.unlock_shared();
     }
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
@@ -423,9 +429,13 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+        hnsw_index->unlockIndexDataGuard();
+        // Try to reinsert permanent unreachable nodes
+        TIERED_LOG(VecSimCommonStrings::LOG_NOTICE_STRING,
+           "Goiong over permanent unreachable nodes:");
+        hnsw_index->connectUnreachableNodes(true);
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
-        hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
 
