@@ -208,6 +208,10 @@ public:
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
+        // Try to reinsert permanent unreachable nodes
+        TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
+           "Try to reinsert permanent unreachable nodes");
+        this->getHNSWIndex()->connectUnreachableNodes(true);
     }
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
