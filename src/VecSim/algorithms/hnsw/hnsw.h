@@ -165,13 +165,13 @@ protected:
     searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point, double epsilon,
                                        DistType radius, void *timeoutCtx,
                                        VecSimQueryReply_Code *rc) const;
-    idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M) const;
+    idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M, float alpha = 1.0f) const;
     void getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M,
                                   vecsim_stl::vector<idType> &not_chosen_candidates) const;
     template <bool record_removed>
     void getNeighborsByHeuristic2_internal(
         candidatesList<DistType> &top_candidates, size_t M,
-        vecsim_stl::vector<idType> *removed_candidates = nullptr) const;
+        vecsim_stl::vector<idType> *removed_candidates = nullptr, float alpha = 1.0f) const;
     // Helper function for re-selecting node's neighbors which was selected as a neighbor for
     // a newly inserted node. Also, responsible for mutually connect the new node and the neighbor
     // (unidirectional or bidirectional connection).
@@ -762,13 +762,13 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 template <typename DataType, typename DistType>
 idType
 HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates,
-                                                        const size_t M) const {
+                                                        const size_t M, float alpha) const {
     if (top_candidates.size() < M) {
         return std::min_element(top_candidates.begin(), top_candidates.end(),
                                 [](const auto &a, const auto &b) { return a.first < b.first; })
             ->second;
     }
-    getNeighborsByHeuristic2_internal<false>(top_candidates, M, nullptr);
+    getNeighborsByHeuristic2_internal<false>(top_candidates, M, nullptr, alpha);
     return top_candidates.front().second;
 }
 
@@ -783,7 +783,7 @@ template <typename DataType, typename DistType>
 template <bool record_removed>
 void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
     candidatesList<DistType> &top_candidates, const size_t M,
-    vecsim_stl::vector<idType> *removed_candidates) const {
+    vecsim_stl::vector<idType> *removed_candidates, float alpha) const {
     if (top_candidates.size() < M) {
         return;
     }
@@ -812,7 +812,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
         for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
                 this->distFunc(cached_vectors[i], curr_vector, this->dim);
-            if (candidate_to_selected_dist < candidate_to_query_dist) {
+            if (candidate_to_selected_dist < candidate_to_query_dist * alpha) {
                 if constexpr (record_removed) {
                     removed_candidates->push_back(current_pair->second);
                 }
@@ -945,7 +945,8 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
 
     selected_neighbors_cands.insert(selected_neighbors_cands.end(), top_candidates.begin(),
                                     top_candidates.end());
-    getNeighborsByHeuristic2(selected_neighbors_cands, M);
+    float alpha = 1.5f; // we relax the heuristcs to get more neighbors
+    getNeighborsByHeuristic2(selected_neighbors_cands, M, alpha);
     assert(selected_neighbors_cands.size() <= M &&
            "Should not be more than M candidates returned by the heuristic");
 
