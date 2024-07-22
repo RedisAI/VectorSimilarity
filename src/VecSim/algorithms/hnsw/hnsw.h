@@ -812,7 +812,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
         for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
                 this->distFunc(cached_vectors[i], curr_vector, this->dim);
-            if (candidate_to_selected_dist < candidate_to_query_dist * alpha) {
+            if (alpha * candidate_to_selected_dist < candidate_to_query_dist) {
                 if constexpr (record_removed) {
                     removed_candidates->push_back(current_pair->second);
                 }
