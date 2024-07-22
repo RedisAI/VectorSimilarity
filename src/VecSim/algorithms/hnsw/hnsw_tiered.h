@@ -209,10 +209,8 @@ public:
                    "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
         // Try to reinsert permanent unreachable nodes
-        TIERED_LOG(VecSimCommonStrings::LOG_NOTICE_STRING,
-           "Goiong over permanent unreachable nodes:");
         this->mainIndexGuard.lock_shared();
-        this->getHNSWIndex()->connectUnreachableNodes(true);
+        this->getHNSWIndex()->template connectUnreachableNodes<true>();
         this->mainIndexGuard.unlock_shared();
     }
     void acquireSharedLocks() override {
@@ -433,7 +431,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // Try to reinsert permanent unreachable nodes
         TIERED_LOG(VecSimCommonStrings::LOG_NOTICE_STRING,
            "Goiong over permanent unreachable nodes:");
-        hnsw_index->connectUnreachableNodes(true);
+        hnsw_index->template connectUnreachableNodes<true>();
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
         this->mainIndexGuard.lock();

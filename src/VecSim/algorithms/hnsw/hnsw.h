@@ -121,7 +121,7 @@ protected:
     idType entrypointNode;
     size_t maxLevel; // this is the top level of the entry point's element
     vecsim_stl::unordered_set<graphNodeType, hashForPair> unreachableNodes;
-    vecsim_stl::unordered_set<graphNodeType, hashForPair> unreachableNodesPermanent;
+    vecsim_stl::unordered_set<graphNodeType, hashForPair> hardUnreachableNodes;
 
     // Index data
     vecsim_stl::vector<DataBlock> vectorBlocks;
@@ -183,6 +183,7 @@ protected:
                                     ElementLevelData &neighbor_level, bool &unreachable);
     idType mutuallyConnectNewElement(idType new_node_id,
                                      candidatesMaxHeap<DistType> &top_candidates, size_t level);
+    template <bool force=false>
     size_t mutuallyReconnectElement(idType node_id, candidatesMaxHeap<DistType> &top_candidates,
                                     size_t level);
     void mutuallyUpdateForRepairedNode(idType node_id, size_t level,
@@ -225,9 +226,10 @@ protected:
     template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
 
-    vecsim_stl::unordered_set<graphNodeType, hashForPair> fetchAndClearUnreachableNodes(bool permanent);
+    template <bool force>
+    vecsim_stl::unordered_set<graphNodeType, hashForPair> fetchAndClearUnreachableNodes();
+    template <bool force=false>
     void setUnreachableNode(const graphNodeType &node);
-    void setUnreachablePermNode(const graphNodeType &node);
 
     size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
 
@@ -246,6 +248,8 @@ protected:
     }
     void mutuallyRemoveNeighborAtPos(ElementLevelData &node_level, size_t level, idType node_id,
                                      size_t pos);
+    template <bool force>
+    void reinsertElementToGraphAtLevel(idType element_id, size_t level_to_insert);
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
@@ -278,7 +282,8 @@ public:
     void lockNodeLinks(ElementGraphData *node_data) const;
     void unlockNodeLinks(ElementGraphData *node_data) const;
     VisitedNodesHandler *getVisitedList() const;
-    void connectUnreachableNodes(bool permanent = false);
+    template <bool force=false>
+    void connectUnreachableNodes();
     void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
     VecSimIndexBasicInfo basicInfo() const override;
@@ -318,8 +323,6 @@ public:
 
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
-
-    void reinsertElementToGraphAtLevel(idType element_id, size_t level_to_insert);
 
 #ifdef BUILD_TESTS
     /**
@@ -431,44 +434,43 @@ ElementLevelData &HNSWIndex<DataType, DistType>::getElementLevelData(idType inte
 }
 
 template <typename DataType, typename DistType>
+template <bool force>
 vecsim_stl::unordered_set<graphNodeType, hashForPair>
-HNSWIndex<DataType, DistType>::fetchAndClearUnreachableNodes(bool permanent) {
+HNSWIndex<DataType, DistType>::fetchAndClearUnreachableNodes() {
     std::unique_lock<std::mutex> lock(unreachableNodesGuard);
-    auto unreachable_copy = permanent ? unreachableNodesPermanent : unreachableNodes;
-    permanent ? unreachableNodesPermanent.clear() : unreachableNodes.clear();
+    auto unreachable_copy = force ? hardUnreachableNodes : unreachableNodes;
+    force ? hardUnreachableNodes.clear() : unreachableNodes.clear();
     return unreachable_copy;
 }
 
 template <typename DataType, typename DistType>
+template <bool force>
 void HNSWIndex<DataType, DistType>::setUnreachableNode(const graphNodeType &node) {
     if (isMarkedDeleted(node.first))
         return;
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Element %zu is unreachable in level %zu",
-              node.first, node.second);
     std::unique_lock<std::mutex> lock(unreachableNodesGuard);
-    unreachableNodes.insert(node);
+    if (force) {
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Element %zu still unreachable in "
+                                                   "level %zu after trying to reinsert - setting as permanent unreachable",
+          node.first, node.second);
+        hardUnreachableNodes.insert(node);
+    } else {
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Element %zu is unreachable in level %zu",
+          node.first, node.second);
+        unreachableNodes.insert(node);
+    }
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::setUnreachablePermNode(const graphNodeType &node) {
-    if (isMarkedDeleted(node.first))
-        return;
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Element %zu still unreachable in "
-                                                       "level %zu after trying to reinsert - setting as permanent unreachable",
-              node.first, node.second);
-    std::unique_lock<std::mutex> lock(unreachableNodesGuard);
-    unreachableNodesPermanent.insert(node);
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::connectUnreachableNodes(bool permanent) {
-    auto nodes_to_connect = fetchAndClearUnreachableNodes(permanent);
+template <bool force>
+void HNSWIndex<DataType, DistType>::connectUnreachableNodes() {
+    auto nodes_to_connect = fetchAndClearUnreachableNodes<force>();
     if (nodes_to_connect.empty())
         return;
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Try to reinsert %zu nodes to the graph",
-          nodes_to_connect.size());
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Try to reinsert %zu nodes to the graph %s",
+          nodes_to_connect.size(), force ? "- hard unreachable nodes" : "");
     for (auto node : nodes_to_connect) {
-        reinsertElementToGraphAtLevel(node.first, node.second);
+        reinsertElementToGraphAtLevel<force>(node.first, node.second);
     }
 }
 
@@ -939,6 +941,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
 }
 
 template <typename DataType, typename DistType>
+template <bool force>
 size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
     idType node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
 
@@ -956,7 +959,7 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
 
     selected_neighbors_cands.insert(selected_neighbors_cands.end(), top_candidates.begin(),
                                     top_candidates.end());
-    float alpha = 1.5f; // we relax the heuristcs to get more neighbors
+    float alpha = force ? 1.5f : 1.2f; // we relax the heuristcs to get more neighbors
     getNeighborsByHeuristic2(selected_neighbors_cands, M, alpha);
     assert(selected_neighbors_cands.size() <= M &&
            "Should not be more than M candidates returned by the heuristic");
@@ -1391,9 +1394,9 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             this->unreachableNodes.erase({curElementCount, l});
             this->unreachableNodes.insert(std::make_pair(element_internal_id, l));
         }
-        if (this->unreachableNodesPermanent.contains({curElementCount, l})) {
-            this->unreachableNodesPermanent.erase({curElementCount, l});
-            this->unreachableNodesPermanent.insert(std::make_pair(element_internal_id, l));
+        if (this->hardUnreachableNodes.contains({curElementCount, l})) {
+            this->hardUnreachableNodes.erase({curElementCount, l});
+            this->hardUnreachableNodes.insert(std::make_pair(element_internal_id, l));
         }
     }
 
@@ -1795,12 +1798,13 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
             curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
         } else {
             // Node still has no neighbors - it is defintly unreachable
-            this->setUnreachablePermNode(std::make_pair(element_id, level));
+            this->setUnreachableNode(std::make_pair(element_id, level));
         }
     }
 }
 
 template <typename DataType, typename DistType>
+template <bool force>
 void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element_id,
                                                                   size_t level_to_insert) {
 
@@ -1841,10 +1845,10 @@ void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element
         // No candidates found (entry point been deleted in the meantime).
         this->setUnreachableNode(std::make_pair(element_id, level_to_insert));
     } else {
-        size_t ret = mutuallyReconnectElement(element_id, top_candidates, level_to_insert);
+        size_t ret = mutuallyReconnectElement<force>(element_id, top_candidates, level_to_insert);
         if (ret == 0) {
             // Node is still unreachable with 0 inDegree.
-            this->setUnreachablePermNode(std::make_pair(element_id, level_to_insert));
+            this->setUnreachableNode<true>(std::make_pair(element_id, level_to_insert));
         }
     }
     this->unmarkAs<IN_PROCESS>(element_id);
@@ -1870,7 +1874,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), VecSimIndexTombstone(),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
-      unreachableNodes(this->allocator), unreachableNodesPermanent(this->allocator),
+      unreachableNodes(this->allocator), hardUnreachableNodes(this->allocator),
 vectorBlocks(this->allocator),
       graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
@@ -1950,7 +1954,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     // Remove it from the unreachable nodes container for every level in which it exists.
     for (size_t l = 0; l <= element->toplevel; l++) {
         this->unreachableNodes.erase({internalId, l});
-        this->unreachableNodesPermanent.erase({internalId, l});
+        this->hardUnreachableNodes.erase({internalId, l});
     }
 
     // Free the element's resources

@@ -6,7 +6,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), Serializer(version),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
-      epsilon(params->epsilon), unreachableNodes(this->allocator), unreachableNodesPermanent(this->allocator),
+      epsilon(params->epsilon), unreachableNodes(this->allocator), hardUnreachableNodes(this->allocator),
        vectorBlocks(this->allocator),
       graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(1, maxElements, this->allocator) {
