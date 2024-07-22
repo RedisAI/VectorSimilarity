@@ -956,9 +956,8 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
 
     selected_neighbors_cands.insert(selected_neighbors_cands.end(), top_candidates.begin(),
                                     top_candidates.end());
-    // float alpha = 1.5f; // we relax the heuristcs to get more neighbors
-    // getNeighborsByHeuristic2(selected_neighbors_cands, M, alpha);
-    getNeighborsByHeuristic2(selected_neighbors_cands, M);
+    float alpha = 1.5f; // we relax the heuristcs to get more neighbors
+    getNeighborsByHeuristic2(selected_neighbors_cands, M, alpha);
     assert(selected_neighbors_cands.size() <= M &&
            "Should not be more than M candidates returned by the heuristic");
 
