@@ -465,13 +465,11 @@ void HNSWIndex<DataType, DistType>::connectUnreachableNodes(bool permanent) {
     auto nodes_to_connect = fetchAndClearUnreachableNodes(permanent);
     if (nodes_to_connect.empty())
         return;
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Try to reinsert %zu nodes to the graph",
+          nodes_to_connect.size());
     for (auto node : nodes_to_connect) {
         reinsertElementToGraphAtLevel(node.first, node.second);
-        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-                  "Reinserted node id %zu in level %zu to the graph", node.first, node.second);
     }
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Reinserted %zu nodes to the graph",
-              nodes_to_connect.size());
 }
 
 template <typename DataType, typename DistType>
@@ -1514,6 +1512,10 @@ void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     idToMetaData.shrink_to_fit();
 
     maxElements = new_max_elements;
+    // Try to reinsert permanent unreachable nodes
+    this->log(VecSimCommonStrings::LOG_NOTICE_STRING,
+       "Goiong over permanent unreachable nodes:");
+    this->connectUnreachableNodes(true);
 }
 
 template <typename DataType, typename DistType>
