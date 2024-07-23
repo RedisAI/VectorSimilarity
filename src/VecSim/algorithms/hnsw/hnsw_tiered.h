@@ -429,8 +429,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
         hnsw_index->unlockIndexDataGuard();
         // Try to reinsert permanent unreachable nodes
-        TIERED_LOG(VecSimCommonStrings::LOG_NOTICE_STRING,
-           "Goiong over permanent unreachable nodes:");
+        TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
+           "Going over permanent unreachable nodes:");
         hnsw_index->template connectUnreachableNodes<true>();
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
