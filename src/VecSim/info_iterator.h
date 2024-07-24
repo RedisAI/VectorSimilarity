@@ -6,6 +6,12 @@
 
 #pragma once
 #include <stdlib.h>
+
+// Required to support Alpine Linux 3.19
+#if !defined(__GLIBC__) 
+#include <sys/types.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
