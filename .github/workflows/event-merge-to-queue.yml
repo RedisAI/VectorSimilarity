@@ -54,6 +54,10 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:9
+  alpine319:
+    needs: [check-if-docs-only]
+    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    uses: ./.github/workflows/alpine319.yml
   macos:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -81,6 +85,7 @@ jobs:
       - mariner2
       - rocky8
       - rocky9
+      - alpine319
       - macos
       - arm
       - coverage
