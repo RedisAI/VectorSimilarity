@@ -1023,6 +1023,7 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
     // if possible.
     for (idType chosen_id : selected_neighbors) {
         if (isMarkedDeleted(node_id)) {
+            // don't add neighbors from/to a deleted node
             break;
         }
         // If this specific new neighbor is deleted, we don't add this connection and continue.
