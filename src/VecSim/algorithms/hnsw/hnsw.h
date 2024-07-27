@@ -62,7 +62,6 @@ public:
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
     IN_PROCESS = 0x2,  // element is being inserted/reinserted into the graph
-    IN_REPAIR = 0x4,   // element is being repaired due to deletion of its neighbor(s)
 } Flags;
 
 // The state of the index and the newly inserted vector to be passed into addVector API in case that
@@ -1023,12 +1022,14 @@ size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
     // Go over the chosen new neighbors that are not connected yet and perform mutuall updates
     // if possible.
     for (idType chosen_id : selected_neighbors) {
+        if (isMarkedDeleted(node_id)) {
+            break;
+        }
         // If this specific new neighbor is deleted, we don't add this connection and continue.
         // Also, don't add a new node whose being indexed in parallel, as it may choose this node
         // as its neighbor and create a double connection (then this node will have a duplicate
         // neighbor).
-        if (isMarkedDeleted(chosen_id) || isInProcess(chosen_id) ||
-            isMarkedAs<IN_REPAIR>(chosen_id)) {
+        if (isMarkedDeleted(chosen_id) || isInProcess(chosen_id)) {
             continue;
         }
         auto &chosen_node_level_data = getElementLevelData(chosen_id, level);
@@ -1632,7 +1633,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
-    this->markAs<IN_REPAIR>(node_id);
     vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
@@ -1664,7 +1664,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // If there are not deleted neighbors at that point the repair job has already been made by
     // another parallel job, and there is no need to repair the node anymore.
     if (deleted_neighbors.empty()) {
-        this->unmarkAs<IN_REPAIR>(node_id);
         return;
     }
 
@@ -1736,7 +1735,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // locks.
     mutuallyUpdateForRepairedNode(node_id, level, neighbors_to_remove, nodes_to_update,
                                   chosen_neighbors, max_M_cur);
-    this->unmarkAs<IN_REPAIR>(node_id);
 }
 
 template <typename DataType, typename DistType>
