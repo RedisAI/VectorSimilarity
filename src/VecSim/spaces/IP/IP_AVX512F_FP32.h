@@ -7,13 +7,14 @@
 #include "VecSim/spaces/space_includes.h"
 
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m256 &sum256) {
-    __m256 v1 = _mm256_loadu_ps(pVect1); // AVX
+    __mmask8 constexpr mask = -1;
+    __m256 v1 = _mm256_maskz_loadu_ps (mask, pVect1); // AVX512F + AVX512VL
     pVect1 += 8;
-    __m256 v2 = _mm256_loadu_ps(pVect2);
+    __m256 v2 = _mm256_maskz_loadu_ps (mask, pVect2);
     pVect2 += 8;
-    sum256 = _mm256_fmadd_ps(v1, v2, sum256); // FMA
+    sum256 = _mm256_mask_fmadd_ps(v1, mask, v2, sum256); // AVX512F + AVX512VL
 }
-
+//_mm256_maskz_mul_ps
 template <unsigned char residual> // 0..15
 float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
@@ -21,7 +22,7 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
 
     const float *pEnd1 = pVect1 + dimension;
 
-    __m256 sum256 = _mm256_setzero_ps(); // AVX
+    __m256 sum256 = _mm512_castps512_ps256(_mm512_setzero_ps());
 
     // Deal with remainder first. `dim` is more than 16, so we have at least one 16-float block,
     // so mask loading is guaranteed to be safe
@@ -31,7 +32,9 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
         pVect1 += residual % 8;
         __m256 v2 = _mm256_maskz_loadu_ps(mask, pVect2);
         pVect2 += residual % 8;
-        sum256 = _mm256_mul_ps(v1, v2);
+        __mmask8 constexpr mask2 = -1;
+
+        sum256 = _mm256_maskz_mul_ps (mask2, v1, v2);  // AVX512F + AVX512VL
     }
     // If the reminder is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
@@ -45,8 +48,10 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
     } while (pVect1 < pEnd1);
 
     float PORTABLE_ALIGN32 TmpRes[8];
-    _mm256_store_ps(TmpRes, sum256); // AVX
+    __mmask8 constexpr mask = -1;
+
+    _mm256_mask_store_ps (TmpRes, mask, sum256); // AVX512F + AVX512VL
     float res = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
-           TmpRes[7];
+                TmpRes[7];
     return 1.0f - res;
 }
