@@ -52,7 +52,7 @@ jobs:
   alpine319:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: alpine:3.19
+      container: alpine:3
       pre-checkout-script: apk add bash
       run-valgrind: false
   macos:
