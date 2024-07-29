@@ -9,7 +9,7 @@ name: temporary testing
 
 on:
   push:
-    branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
+    # branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
 jobs:
   jammy:
     uses: ./.github/workflows/task-unit-test.yml
@@ -49,12 +49,12 @@ jobs:
     with:
       container: rockylinux:9
       run-valgrind: false
-  alpine319:
+  alpine3:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: alpine:3
       pre-checkout-script: apk add bash
-      run-valgrind: false
+      run-valgrind: true
   macos:
     uses: ./.github/workflows/macos.yml
   arm:

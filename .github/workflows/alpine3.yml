@@ -1,10 +1,10 @@
-name: alpine 3.19 flow
+name: alpine 3 flow
 
 on: [workflow_dispatch, workflow_call]
 
 jobs:
-  alpine319:
+  alpine3:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: alpine:3.19
+      container: alpine:3
       pre-checkout-script: apk add bash
