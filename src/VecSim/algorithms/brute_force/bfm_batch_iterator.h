@@ -24,14 +24,15 @@ private:
         this->scores.reserve(this->index_label_count);
         vecsim_stl::unordered_map<labelType, DistType> tmp_scores(this->index_label_count,
                                                                   this->allocator);
-        auto &blocks = this->index->getVectorBlocks();
         VecSimQueryReply_Code rc;
 
         idType curr_id = 0;
-        for (auto &block : blocks) {
+        while (curr_id < this->index->indexSize()) {
+            idType last_id =
+                MIN(curr_id + this->index->getBlockSize() - 1, this->index->indexSize() - 1);
             // compute the scores for the vectors in every block and extend the scores array.
-            auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
-                                                                this->getTimeoutCtx(), &rc);
+            auto block_scores = this->index->computeBlockScores(
+                curr_id, last_id, this->getQueryBlob(), this->getTimeoutCtx(), &rc);
             if (VecSim_OK != rc) {
                 return rc;
             }

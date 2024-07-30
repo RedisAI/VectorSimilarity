@@ -88,7 +88,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     ASSERT_EQ(info.commonInfo.indexSize, n);
     ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n - n % blockSize + blockSize);
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
+    ASSERT_EQ(bf_index->getVectorsContainer()->size(), n);
 
     // remove invalid id
     ASSERT_EQ(bf_index->deleteVector(3459), 0);
@@ -98,7 +98,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     ASSERT_EQ(info.commonInfo.indexSize, n);
     ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n - n % blockSize + blockSize);
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
+    ASSERT_EQ(bf_index->getVectorsContainer()->size(), n);
 
     // Add another vector (index capacity should remain the same).
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
@@ -468,8 +468,7 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     ASSERT_EQ(deleted_label_id_pair, bfm_index->labelToIdsLookup.end());
 
     // The vector in index1 should hold id5 data.
-    DataBlock &block = bfm_index->getVectorVectorBlock(1);
-    TEST_DATA_T *vector_data = (TEST_DATA_T *)block.getElement(1);
+    TEST_DATA_T *vector_data = (TEST_DATA_T *)bfm_index->getVectorsContainer()->getElement(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
         ++vector_data;
