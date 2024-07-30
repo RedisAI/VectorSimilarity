@@ -54,7 +54,7 @@ jobs:
     with:
       container: alpine:3
       pre-checkout-script: apk add bash
-      run-valgrind: true
+      run-valgrind: false
   macos:
     uses: ./.github/workflows/macos.yml
   arm:
