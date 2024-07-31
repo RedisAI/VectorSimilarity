@@ -802,7 +802,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
-    if (optimization.avx512_fp16 && optimization.avx512dq && optimization.avx512v) {
+    if (optimization.avx512_fp16 && optimization.avx512dq && optimization.avx512vl) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
 
