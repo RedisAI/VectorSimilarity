@@ -756,13 +756,13 @@ INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
  * that has different logic than the float32 and float64 reduce functions.
  * For more info, refer to intel's intrinsics guide.
  */
-#ifdef OPT_AVX512_FP16
+#ifdef OPT_AVX512_FP16_VL_DQ
 // avx512_fp16 flag functions are only chosen for high dimensions
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
-    if (optimization.avx512_fp16) {
+    if (optimization.avx512_fp16 && optimization.avx512dq && optimization.avx512vl) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
 
@@ -802,7 +802,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
-    if (optimization.avx512_fp16) {
+    if (optimization.avx512_fp16 && optimization.avx512dq && optimization.avx512v) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
 

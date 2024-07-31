@@ -8,7 +8,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/types/float16.h"
 
-#ifdef OPT_AVX512_FP16
+#ifdef OPT_AVX512_FP16_VL_DQ
 class FP16Type : public ::testing::Test {};
 
 TEST_F(FP16Type, Test_Float16VSvecsim) {

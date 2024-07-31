@@ -162,10 +162,10 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     auto features = (arch_opt == nullptr)
                         ? cpu_features::GetX86Info().features
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
-#ifdef OPT_AVX512_FP16
+#ifdef OPT_AVX512_FP16_VL_DQ
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
-    if (features.avx512_fp16 && dim >= 440) {
+    if (features.avx512_fp16 && features.avx512dq && features.avx512vl) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(float16); // handles 32 floats
         return Choose_FP16_L2_implementation_AVX512FP16(dim);
