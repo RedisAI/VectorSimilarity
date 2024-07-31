@@ -8,9 +8,9 @@
 
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m256 &sum256) {
     __mmask8 constexpr mask = -1;
-    __m256 v1 = _mm256_maskz_loadu_ps (mask, pVect1); // AVX512F + AVX512VL
+    __m256 v1 = _mm256_maskz_loadu_ps(mask, pVect1); // AVX512F + AVX512VL
     pVect1 += 8;
-    __m256 v2 = _mm256_maskz_loadu_ps (mask, pVect2);
+    __m256 v2 = _mm256_maskz_loadu_ps(mask, pVect2);
     pVect2 += 8;
     sum256 = _mm256_mask_fmadd_ps(v1, mask, v2, sum256); // AVX512F + AVX512VL
 }
@@ -34,7 +34,7 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
         pVect2 += residual % 8;
         __mmask8 constexpr mask2 = -1;
 
-        sum256 = _mm256_maskz_mul_ps (mask2, v1, v2);  // AVX512F + AVX512VL
+        sum256 = _mm256_maskz_mul_ps(mask2, v1, v2); // AVX512F + AVX512VL
     }
     // If the reminder is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
@@ -50,7 +50,7 @@ float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, s
     float PORTABLE_ALIGN32 TmpRes[8];
     __mmask8 constexpr mask = -1;
 
-    _mm256_mask_store_ps (TmpRes, mask, sum256); // AVX512F + AVX512VL
+    _mm256_mask_store_ps(TmpRes, mask, sum256); // AVX512F + AVX512VL
     float res = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
                 TmpRes[7];
     return 1.0f - res;
