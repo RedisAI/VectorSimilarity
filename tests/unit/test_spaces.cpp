@@ -663,6 +663,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_InnerProduct(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+    optimization.avx512_fp16 = optimization.avx512dq = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -713,6 +714,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_L2Sqr(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+    optimization.avx512_fp16 = optimization.avx512dq = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
