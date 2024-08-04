@@ -383,6 +383,26 @@ TYPED_TEST(UtilsTests, results_containers) {
     VecSimQueryReply_Free(res2);
 }
 
+TYPED_TEST(UtilsTests, data_blocks_container) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    // Create a simple data blocks container of chars with block of size 1.
+    auto chars_container = DataBlocksContainer(1, 1, allocator, 64);
+    ASSERT_EQ(chars_container.size(), 0);
+    ASSERT_EQ(chars_container.addElement(std::string("a").c_str(), 0), RAW_DATA_CONTAINER_OK);
+    ASSERT_EQ(chars_container.size(), 1);
+    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 1), RAW_DATA_CONTAINER_OK);
+    ASSERT_EQ(chars_container.size(), 2);
+    ASSERT_EQ(chars_container.updateElement(0, std::string("c").c_str()), RAW_DATA_CONTAINER_OK);
+    ASSERT_EQ(*chars_container.getElement(0), *std::string("c").c_str());
+    ASSERT_EQ(chars_container.removeElement(1), RAW_DATA_CONTAINER_OK);
+    ASSERT_EQ(chars_container.size(), 1);
+    ASSERT_EQ(chars_container.removeElement(0), RAW_DATA_CONTAINER_OK);
+    ASSERT_EQ(chars_container.size(), 0);
+    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 0), RAW_DATA_CONTAINER_OK);
+    ASSERT_EQ(chars_container.size(), 1);
+    ASSERT_EQ(*chars_container.getElement(0), *std::string("b").c_str());
+}
+
 class CommonAPITest : public ::testing::Test {};
 
 TEST(CommonAPITest, VecSim_QueryResult_Iterator) {

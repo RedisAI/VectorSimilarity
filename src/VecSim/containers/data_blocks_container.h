@@ -8,7 +8,7 @@
 class DataBlocksContainer : public VecsimBaseObject, public RawDataContainer {
 
     size_t element_bytes_count;           // Element size in bytes
-    size_t len;                           // Number of items in the container
+    size_t element_count;                 // Number of items in the container
     vecsim_stl::vector<DataBlock> blocks; // data blocks
     size_t block_size;                    // number of element in block
     unsigned char alignment;              // alignment for data allocationin each block
@@ -20,7 +20,7 @@ public:
 
     size_t size() const override;
 
-    RawDataContainer_Status appendElement(const void *element) override;
+    RawDataContainer_Status addElement(const void *element, size_t id) override;
 
     const char *getElement(size_t id) const override;
 

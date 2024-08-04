@@ -5,7 +5,7 @@
  */
 
 #include "data_block.h"
-#include "../memory/vecsim_malloc.h"
+#include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
 
 DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,

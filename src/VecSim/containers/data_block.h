@@ -5,7 +5,7 @@
  */
 
 #pragma once
-#include "../memory/vecsim_base.h"
+#include "VecSim/memory/vecsim_base.h"
 
 #include <cassert>
 

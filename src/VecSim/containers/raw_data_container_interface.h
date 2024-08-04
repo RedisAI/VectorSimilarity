@@ -2,6 +2,7 @@
 
 typedef enum {
     RAW_DATA_CONTAINER_OK = 0,
+    RAW_DATA_CONTAINER_ID_ALREADY_EXIST,
     RAW_DATA_CONTAINER_ID_NOT_EXIST,
     RAW_DATA_CONTAINER_ERR
 } RawDataContainer_Status;
@@ -20,9 +21,10 @@ struct RawDataContainer {
     virtual size_t size() const = 0;
     /**
      * @param element element's raw data to be added into the container
+     * @param id of the new element
      * @return status
      */
-    virtual RawDataContainer_Status appendElement(const void *element) = 0;
+    virtual RawDataContainer_Status addElement(const void *element, size_t id) = 0;
     /**
      * @param id of the element to return
      * @return Immutable reference to the element's data, NULL if id doesn't exist

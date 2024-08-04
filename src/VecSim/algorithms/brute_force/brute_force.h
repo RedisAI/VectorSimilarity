@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "../../containers/data_block.h"
+#include "VecSim/containers/data_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
@@ -19,9 +19,7 @@
 #include "VecSim/utils/vec_utils.h"
 
 #include <cstring>
-#include <cmath>
 #include <memory>
-#include <queue>
 #include <cassert>
 #include <limits>
 #include <sys/param.h>
@@ -166,7 +164,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         growByBlock();
     }
     // add vector data to vector raw data container
-    vectors->appendElement(vector_data);
+    vectors->addElement(vector_data, id);
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);

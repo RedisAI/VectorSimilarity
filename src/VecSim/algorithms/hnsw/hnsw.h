@@ -8,11 +8,10 @@
 
 #include "graph_data.h"
 #include "visited_nodes_handler.h"
-#include "VecSim/spaces/spaces.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
-#include "../../containers/data_block.h"
+#include "VecSim/containers/data_block.h"
 #include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
