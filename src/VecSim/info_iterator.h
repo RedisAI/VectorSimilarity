@@ -6,6 +6,7 @@
 
 #pragma once
 #include <stdlib.h>
+#include "vec_sim_common.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,7 +29,7 @@ typedef enum {
 typedef union {
     double floatingPointValue;         // Floating point value. 64 bits float.
     int64_t integerValue;              // Integer value. Signed 64 bits integer.
-    u_int64_t uintegerValue;           // Unsigned value. Unsigned 64 buts integer.
+    uint64_t uintegerValue;            // Unsigned value. Unsigned 64 bits integer.
     const char *stringValue;           // String value.
     VecSimInfoIterator *iteratorValue; // Iterator value.
 } FieldValue;

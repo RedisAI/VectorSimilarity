@@ -29,6 +29,7 @@ jobs:
     steps:
       - name: pre-checkout script
         if: ${{ inputs.pre-checkout-script }}
+        shell: sh -l -eo pipefail {0}
         run: ${{ inputs.pre-checkout-script }}
       - name: Check for node20 support
         id: node20 # TODO: Remove this when node20 is supported on all platforms, or when we drop support for theses platforms
