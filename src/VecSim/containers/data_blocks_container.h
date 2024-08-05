@@ -20,6 +20,10 @@ public:
 
     size_t size() const override;
 
+    size_t blockSize() const;
+
+    size_t elementByteCount() const;
+
     RawDataContainer_Status addElement(const void *element, size_t id) override;
 
     const char *getElement(size_t id) const override;
@@ -27,4 +31,20 @@ public:
     RawDataContainer_Status removeElement(size_t id) override;
 
     RawDataContainer_Status updateElement(size_t id, const void *element) override;
+
+    RawDataContainer_Iterator *getIterator() override;
+};
+
+class DataBlocksContainer_Iterator : public RawDataContainer_Iterator {
+    size_t cur_id;
+    const char *cur_element;
+    const DataBlocksContainer &container;
+
+public:
+    explicit DataBlocksContainer_Iterator(const DataBlocksContainer &container);
+    ~DataBlocksContainer_Iterator() override;
+
+    bool hasNext() override;
+    const char *next() override;
+    void reset() override;
 };

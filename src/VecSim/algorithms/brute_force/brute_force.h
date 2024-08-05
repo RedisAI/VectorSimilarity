@@ -22,6 +22,7 @@
 #include <memory>
 #include <cassert>
 #include <limits>
+#include <ranges>
 #include <sys/param.h>
 
 using spaces::dist_func_t;
@@ -38,14 +39,10 @@ public:
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    vecsim_stl::vector<DistType> computeBlockScores(idType start_id, idType end_id,
-                                                    const void *queryBlob, void *timeoutCtx,
-                                                    VecSimQueryReply_Code *rc) const;
-    inline DataType *getDataByInternalId(idType id) const {
-        return (DataType *)vectors->getElement(id);
-    }
-    virtual VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
-                                        VecSimQueryParams *queryParams) const override;
+    RawDataContainer_Iterator *getVectorsIterator() const;
+    DataType *getDataByInternalId(idType id) const { return (DataType *)vectors->getElement(id); }
+    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                VecSimQueryParams *queryParams) const override;
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams) const override;
     VecSimIndexInfo info() const override;
@@ -216,23 +213,9 @@ size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
     return this->idToLabelMapping.size();
 }
 
-// Compute the score for every vector in the block by using the given distance function.
 template <typename DataType, typename DistType>
-vecsim_stl::vector<DistType>
-BruteForceIndex<DataType, DistType>::computeBlockScores(idType start_id, idType end_id,
-                                                        const void *queryBlob, void *timeoutCtx,
-                                                        VecSimQueryReply_Code *rc) const {
-    size_t len = end_id - start_id + 1;
-    vecsim_stl::vector<DistType> scores(len, this->allocator);
-    for (size_t i = start_id; i <= end_id; i++) {
-        if (VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryReply_TimedOut;
-            return scores;
-        }
-        scores[i - start_id] = this->distFunc(vectors->getElement(i), queryBlob, this->dim);
-    }
-    *rc = VecSim_QueryReply_OK;
-    return scores;
+RawDataContainer_Iterator *BruteForceIndex<DataType, DistType>::getVectorsIterator() const {
+    return vectors->getIterator();
 }
 
 template <typename DataType, typename DistType>
@@ -251,33 +234,33 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
         getNewMaxPriorityQueue();
-    // For every block, compute its vectors scores and update the Top candidates max heap
+
+    // For vector, compute its scores and update the Top candidates max heap
+    auto *vectors_it = vectors->getIterator();
     idType curr_id = 0;
-    while (curr_id < this->count) {
-        idType last_id = MIN(curr_id + this->blockSize - 1, this->count - 1);
-        auto scores = computeBlockScores(curr_id, last_id, queryBlob, timeoutCtx, &rep->code);
-        if (VecSim_OK != rep->code) {
+    while (vectors_it->hasNext()) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
+            rep->code = VecSim_QueryReply_TimedOut;
             delete TopCandidates;
             return rep;
         }
-        for (size_t i = 0; i < scores.size(); i++) {
-            // If we have less than k or a better score, insert it.
-            if (scores[i] < upperBound || TopCandidates->size() < k) {
-                TopCandidates->emplace(scores[i], getVectorLabel(curr_id));
-                if (TopCandidates->size() > k) {
-                    // If we now have more than k results, pop the worst one.
-                    TopCandidates->pop();
-                }
-                upperBound = TopCandidates->top().first;
+        auto score = this->distFunc(vectors_it->next(), queryBlob, this->dim);
+        // If we have less than k or a better score, insert it.
+        if (score < upperBound || TopCandidates->size() < k) {
+            TopCandidates->emplace(score, getVectorLabel(curr_id));
+            if (TopCandidates->size() > k) {
+                // If we now have more than k results, pop the worst one.
+                TopCandidates->pop();
             }
-            ++curr_id;
+            upperBound = TopCandidates->top().first;
         }
+        ++curr_id;
     }
     assert(curr_id == this->count);
 
     rep->results.resize(TopCandidates->size());
-    for (auto result = rep->results.rbegin(); result != rep->results.rend(); ++result) {
-        std::tie(result->score, result->id) = TopCandidates->top();
+    for (auto &result : std::ranges::reverse_view(rep->results)) {
+        std::tie(result.score, result.id) = TopCandidates->top();
         TopCandidates->pop();
     }
     delete TopCandidates;
@@ -297,19 +280,18 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
         getNewResultsContainer(10); // Use 10 as the initial capacity for the dynamic array.
 
     DistType radius_ = DistType(radius);
+    auto *vectors_it = vectors->getIterator();
     idType curr_id = 0;
-    while (curr_id < this->count) {
-        idType last_id = MIN(curr_id + this->blockSize - 1, this->count - 1);
-        auto scores = computeBlockScores(curr_id, last_id, queryBlob, timeoutCtx, &rep->code);
-        if (VecSim_OK != rep->code) {
+    while (vectors_it->hasNext()) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
+            rep->code = VecSim_QueryReply_TimedOut;
             break;
         }
-        for (size_t i = 0; i < scores.size(); i++) {
-            if (scores[i] <= radius_) {
-                res_container->emplace(getVectorLabel(curr_id), scores[i]);
-            }
-            ++curr_id;
+        auto score = this->distFunc(vectors_it->next(), queryBlob, this->dim);
+        if (score <= radius_) {
+            res_container->emplace(getVectorLabel(curr_id), score);
         }
+        ++curr_id;
     }
     // assert only if the loop finished iterating all the ids (we didn't get rep->code !=
     // VecSim_OK).

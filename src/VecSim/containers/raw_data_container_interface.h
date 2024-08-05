@@ -7,6 +7,8 @@ typedef enum {
     RAW_DATA_CONTAINER_ERR
 } RawDataContainer_Status;
 
+struct RawDataContainer_Iterator; // forward declaration
+
 struct RawDataContainer {
     /**
      * This is an abstract interface, constructor/destructor should be implemented by the derived
@@ -41,4 +43,24 @@ struct RawDataContainer {
      * @return status
      */
     virtual RawDataContainer_Status updateElement(size_t id, const void *element) = 0;
+    /**
+     * Create a new iterator. Should be freed by the iterator's destroctor.
+     */
+    virtual RawDataContainer_Iterator *getIterator() = 0;
+};
+
+struct RawDataContainer_Iterator {
+    /**
+     * This is an abstract interface, constructor/destructor should be implemented by the derived
+     * classes
+     */
+    RawDataContainer_Iterator() = default;
+    virtual ~RawDataContainer_Iterator() = default;
+
+    /**
+     * The basic iterator operations API
+     */
+    virtual bool hasNext() = 0;
+    virtual const char *next() = 0;
+    virtual void reset() = 0;
 };
