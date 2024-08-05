@@ -39,7 +39,7 @@ public:
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    std::unique_ptr<RawDataContainer_Iterator> getVectorsIterator() const;
+    std::unique_ptr<RawDataContainer::Iterator> getVectorsIterator() const;
     DataType *getDataByInternalId(idType id) const { return (DataType *)vectors->getElement(id); }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
@@ -214,7 +214,7 @@ size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
 }
 
 template <typename DataType, typename DistType>
-std::unique_ptr<RawDataContainer_Iterator>
+std::unique_ptr<RawDataContainer::Iterator>
 BruteForceIndex<DataType, DistType>::getVectorsIterator() const {
     return vectors->getIterator();
 }

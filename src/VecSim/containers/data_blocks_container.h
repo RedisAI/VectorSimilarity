@@ -32,19 +32,19 @@ public:
 
     RawDataContainer_Status updateElement(size_t id, const void *element) override;
 
-    std::unique_ptr<RawDataContainer_Iterator> getIterator() override;
-};
+    std::unique_ptr<RawDataContainer::Iterator> getIterator() override;
 
-class DataBlocksContainer_Iterator : public RawDataContainer_Iterator {
-    size_t cur_id;
-    const char *cur_element;
-    const DataBlocksContainer &container;
+    class Iterator : public RawDataContainer::Iterator {
+        size_t cur_id;
+        const char *cur_element;
+        const DataBlocksContainer &container;
 
-public:
-    explicit DataBlocksContainer_Iterator(const DataBlocksContainer &container);
-    ~DataBlocksContainer_Iterator() override = default;
+    public:
+        explicit Iterator(const DataBlocksContainer &container);
+        ~Iterator() override = default;
 
-    bool hasNext() override;
-    const char *next() override;
-    void reset() override;
+        bool hasNext() override;
+        const char *next() override;
+        void reset() override;
+    };
 };
