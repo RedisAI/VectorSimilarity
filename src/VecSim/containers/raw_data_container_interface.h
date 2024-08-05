@@ -46,7 +46,7 @@ struct RawDataContainer {
     /**
      * Create a new iterator. Should be freed by the iterator's destroctor.
      */
-    virtual RawDataContainer_Iterator *getIterator() = 0;
+    virtual std::unique_ptr<RawDataContainer_Iterator> getIterator() = 0;
 };
 
 struct RawDataContainer_Iterator {

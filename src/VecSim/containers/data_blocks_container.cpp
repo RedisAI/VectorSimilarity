@@ -47,16 +47,14 @@ RawDataContainer_Status DataBlocksContainer::updateElement(size_t id, const void
     return RAW_DATA_CONTAINER_OK;
 }
 
-RawDataContainer_Iterator *DataBlocksContainer::getIterator() {
-    return new DataBlocksContainer_Iterator(*this);
+std::unique_ptr<RawDataContainer_Iterator> DataBlocksContainer::getIterator() {
+    return std::make_unique<DataBlocksContainer_Iterator>(*this);
 }
 
 /********************************** Iterator API ************************************************/
 
 DataBlocksContainer_Iterator::DataBlocksContainer_Iterator(const DataBlocksContainer &container_)
     : RawDataContainer_Iterator(), cur_id(0), cur_element(nullptr), container(container_) {}
-
-DataBlocksContainer_Iterator::~DataBlocksContainer_Iterator() { delete this; }
 
 bool DataBlocksContainer_Iterator::hasNext() { return this->cur_id != this->container.size(); }
 

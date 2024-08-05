@@ -24,7 +24,7 @@ private:
         this->scores.reserve(this->index_label_count);
 
         idType curr_id = 0;
-        auto *vectors_it = this->index->getVectorsIterator();
+        auto vectors_it = this->index->getVectorsIterator();
         auto DistFunc = this->index->getDistFunc();
         while (vectors_it->hasNext()) {
             // Compute the scores for every vector and extend the scores array.

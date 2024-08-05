@@ -39,7 +39,7 @@ public:
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    RawDataContainer_Iterator *getVectorsIterator() const;
+    std::unique_ptr<RawDataContainer_Iterator> getVectorsIterator() const;
     DataType *getDataByInternalId(idType id) const { return (DataType *)vectors->getElement(id); }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
@@ -70,7 +70,7 @@ public:
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
-    virtual ~BruteForceIndex() = default;
+    virtual ~BruteForceIndex() { delete vectors; }
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
@@ -214,7 +214,8 @@ size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
 }
 
 template <typename DataType, typename DistType>
-RawDataContainer_Iterator *BruteForceIndex<DataType, DistType>::getVectorsIterator() const {
+std::unique_ptr<RawDataContainer_Iterator>
+BruteForceIndex<DataType, DistType>::getVectorsIterator() const {
     return vectors->getIterator();
 }
 
@@ -236,7 +237,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         getNewMaxPriorityQueue();
 
     // For vector, compute its scores and update the Top candidates max heap
-    auto *vectors_it = vectors->getIterator();
+    auto vectors_it = vectors->getIterator();
     idType curr_id = 0;
     while (vectors_it->hasNext()) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
@@ -280,7 +281,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
         getNewResultsContainer(10); // Use 10 as the initial capacity for the dynamic array.
 
     DistType radius_ = DistType(radius);
-    auto *vectors_it = vectors->getIterator();
+    auto vectors_it = vectors->getIterator();
     idType curr_id = 0;
     while (vectors_it->hasNext()) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
