@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "vec_sim_common.h"
 #include "info_iterator.h"
 #include "VecSim/utils/vecsim_stl.h"
 

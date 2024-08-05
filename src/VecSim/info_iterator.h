@@ -6,6 +6,7 @@
 
 #pragma once
 #include <stdlib.h>
+#include "vec_sim_common.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
