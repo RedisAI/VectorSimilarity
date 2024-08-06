@@ -29,6 +29,7 @@ jobs:
     steps:
       - name: pre-checkout script
         if: ${{ inputs.pre-checkout-script }}
+        shell: sh -l -eo pipefail {0}
         run: ${{ inputs.pre-checkout-script }}
       - name: checkout
         uses: actions/checkout@v3

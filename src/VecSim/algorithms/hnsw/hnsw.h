@@ -47,7 +47,7 @@ template <typename DistType>
 using candidatesList = vecsim_stl::vector<pair<DistType, idType>>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
-using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
+using graphNodeType = pair<idType, unsigned short>; // represented as: (element_id, level)
 
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 
@@ -1348,7 +1348,7 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
             for (size_t j = 0; j < neighbour_level_data.numLinks; j++) {
                 // A bidirectional edge was found - this connection should be repaired.
                 if (neighbour_level_data.links[j] == node_id) {
-                    incoming_neighbors.emplace_back(neighbour_id, (ushort)level);
+                    incoming_neighbors.emplace_back(neighbour_id, (unsigned short)level);
                     break;
                 }
             }
@@ -1359,7 +1359,7 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         // current level to repair them.
         lockNodeLinks(element);
         for (auto incoming_edge : *node_level_data.incomingEdges) {
-            incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
+            incoming_neighbors.emplace_back(incoming_edge, (unsigned short)level);
         }
         unlockNodeLinks(element);
     }
