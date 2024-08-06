@@ -49,6 +49,12 @@ jobs:
     with:
       container: rockylinux:9
       run-valgrind: false
+  alpine3:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      container: alpine:3
+      pre-checkout-script: apk add bash
+      run-valgrind: false
   macos:
     uses: ./.github/workflows/macos.yml
   arm:

@@ -1348,7 +1348,7 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_RANGE),
               VecSim_OK);
-    ASSERT_EQ(qparams.hnswRuntimeParams.epsilon, 0.001);
+    ASSERT_FLOAT_EQ(qparams.hnswRuntimeParams.epsilon, 0.001);
 
     rparams[0] = (VecSimRawParam){.name = "wrong_name",
                                   .nameLen = strlen("wrong_name"),

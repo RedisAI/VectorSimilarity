@@ -351,7 +351,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
         // Protect the id->repair_jobs lookup while we update it with the new jobs.
         this->idToRepairJobsGuard.lock();
-        for (pair<idType, ushort> &node : incomingEdges) {
+        for (pair<idType, unsigned short> &node : incomingEdges) {
             bool repair_job_exists = false;
             HNSWRepairJob *repair_job = nullptr;
             if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
