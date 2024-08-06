@@ -239,13 +239,13 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     // For vector, compute its scores and update the Top candidates max heap
     auto vectors_it = vectors->getIterator();
     idType curr_id = 0;
-    while (vectors_it->hasNext()) {
+    while (auto *vector = vectors_it->next()) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             rep->code = VecSim_QueryReply_TimedOut;
             delete TopCandidates;
             return rep;
         }
-        auto score = this->distFunc(vectors_it->next(), queryBlob, this->dim);
+        auto score = this->distFunc(vector, queryBlob, this->dim);
         // If we have less than k or a better score, insert it.
         if (score < upperBound || TopCandidates->size() < k) {
             TopCandidates->emplace(score, getVectorLabel(curr_id));
