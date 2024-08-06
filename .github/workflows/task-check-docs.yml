@@ -16,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # required for changed-files action to work
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
       - name: Check if only docs were changed
         id: check-docs
         uses: tj-actions/changed-files@v44
