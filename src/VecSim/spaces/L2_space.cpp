@@ -190,3 +190,6 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
 }
 
 } // namespace spaces
+
+
+
