@@ -22,7 +22,7 @@
  */
 struct VecSimQueryResult {
     size_t id;
-    double score;
+    double score;;;
 };
 
 using VecSimQueryResultContainer = vecsim_stl::vector<VecSimQueryResult>;
