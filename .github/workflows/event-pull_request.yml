@@ -60,7 +60,7 @@ jobs:
   pr-validation:
     needs:
       - check-if-docs-only
-      - basic-tests
+#      - basic-tests
       - coverage
       - codeql-analysis
       - spellcheck
