@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-        with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
       - name: setup python
         uses: actions/setup-python@v5
         with:
@@ -52,8 +50,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
       - name: Spellcheck
         uses: rojopolis/spellcheck-github-actions@v0
         with:
