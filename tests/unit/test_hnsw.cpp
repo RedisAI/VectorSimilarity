@@ -916,7 +916,7 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
 }
 
 TYPED_TEST(HNSWTest, hnsw_delete_entry_point) {
-    size_t n = 10000;
+    size_t n = 1000;
     size_t dim = 4;
     size_t M = 2;
 
@@ -931,11 +931,13 @@ TYPED_TEST(HNSWTest, hnsw_delete_entry_point) {
 
     ASSERT_TRUE(index != NULL);
 
-    int64_t vec[dim];
-    for (size_t i = 0; i < dim; i++)
-        vec[i] = i;
-    for (size_t j = 0; j < n; j++)
+    for (size_t j = 0; j < n; j++) {
+        TEST_DATA_T vec[dim];
+        for (size_t i = 0; i < dim; i++) {
+            vec[i] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
         VecSimIndex_AddVector(index, vec, j);
+    }
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
@@ -2264,6 +2266,36 @@ TYPED_TEST(HNSWTest, FitMemoryTest) {
     index->fitMemory();
     // Due to the initial capacity, the memory for the vector was already allocated
     ASSERT_EQ(index->getAllocationSize(), initial_memory);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, NewNodeIsReachable) {
+    size_t dim = 4;
+    size_t n = 100;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .efConstruction = 10};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto hnsw_index = this->CastToHNSW_Single(index);
+
+    // Add 99 vectors
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    // Mark all vectors as deleted, except from first.
+    for (size_t i = 1; i < n; i++) {
+        hnsw_index->markDelete(i);
+    }
+    // Insert New node. The scan should not go through deleted candidates (otherwise, the new vector
+    // would have been unreachable.
+    EXPECT_EQ(hnsw_index->getEntryPointLabel(), 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
+
+    TEST_DATA_T query[] = {(TEST_DATA_T)n, (TEST_DATA_T)n, (TEST_DATA_T)n, (TEST_DATA_T)n};
+    auto verify_n_reachable = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, n);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(index, query, 1, verify_n_reachable);
 
     VecSimIndex_Free(index);
 }

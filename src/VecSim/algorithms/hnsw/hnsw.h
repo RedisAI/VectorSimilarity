@@ -49,12 +49,19 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, unsigned short>; // represented as: (element_id, level)
 
+class hashForPair {
+public:
+    size_t operator()(const graphNodeType &x) const {
+        return std::hash<idType>()(x.first) ^ std::hash<ushort>()(x.second);
+    }
+};
+
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
-    IN_PROCESS = 0x2,  // element is being inserted into the graph
+    IN_PROCESS = 0x2,  // element is being inserted/reinserted into the graph
 } Flags;
 
 // The state of the index and the newly inserted vector to be passed into addVector API in case that
@@ -112,6 +119,8 @@ protected:
     size_t curElementCount;
     idType entrypointNode;
     size_t maxLevel; // this is the top level of the entry point's element
+    vecsim_stl::unordered_set<graphNodeType, hashForPair> unreachableNodes;
+    vecsim_stl::unordered_set<graphNodeType, hashForPair> hardUnreachableNodes;
 
     // Index data
     vecsim_stl::vector<DataBlock> vectorBlocks;
@@ -122,6 +131,7 @@ protected:
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
     mutable std::shared_mutex indexDataGuard;
+    std::mutex unreachableNodesGuard;
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
@@ -144,7 +154,6 @@ protected:
         tag_t *elements_tags, tag_t visited_tag,
         std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
         candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, DistType radius) const;
-    template <bool has_marked_deleted>
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
     template <bool has_marked_deleted>
@@ -156,13 +165,13 @@ protected:
     searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point, double epsilon,
                                        DistType radius, void *timeoutCtx,
                                        VecSimQueryReply_Code *rc) const;
-    idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M) const;
+    idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M, float alpha = 1.0f) const;
     void getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M,
                                   vecsim_stl::vector<idType> &not_chosen_candidates) const;
     template <bool record_removed>
     void getNeighborsByHeuristic2_internal(
         candidatesList<DistType> &top_candidates, size_t M,
-        vecsim_stl::vector<idType> *removed_candidates = nullptr) const;
+        vecsim_stl::vector<idType> *removed_candidates = nullptr, float alpha = 1.0f) const;
     // Helper function for re-selecting node's neighbors which was selected as a neighbor for
     // a newly inserted node. Also, responsible for mutually connect the new node and the neighbor
     // (unidirectional or bidirectional connection).
@@ -170,9 +179,12 @@ protected:
     void revisitNeighborConnections(size_t level, idType new_node_id,
                                     const std::pair<DistType, idType> &neighbor_data,
                                     ElementLevelData &new_node_level,
-                                    ElementLevelData &neighbor_level);
+                                    ElementLevelData &neighbor_level, bool &unreachable);
     idType mutuallyConnectNewElement(idType new_node_id,
                                      candidatesMaxHeap<DistType> &top_candidates, size_t level);
+    template <bool force=false>
+    size_t mutuallyReconnectElement(idType node_id, candidatesMaxHeap<DistType> &top_candidates,
+                                    size_t level);
     void mutuallyUpdateForRepairedNode(idType node_id, size_t level,
                                        vecsim_stl::vector<idType> &neighbors_to_remove,
                                        vecsim_stl::vector<idType> &nodes_to_update,
@@ -213,6 +225,11 @@ protected:
     template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
 
+    template <bool force>
+    vecsim_stl::unordered_set<graphNodeType, hashForPair> fetchAndClearUnreachableNodes();
+    template <bool force=false>
+    void setUnreachableNode(const graphNodeType &node);
+
     size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
 
     // Flagging API
@@ -230,6 +247,8 @@ protected:
     }
     void mutuallyRemoveNeighborAtPos(ElementLevelData &node_level, size_t level, idType node_id,
                                      size_t pos);
+    template <bool force>
+    void reinsertElementToGraphAtLevel(idType element_id, size_t level_to_insert);
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
@@ -262,6 +281,8 @@ public:
     void lockNodeLinks(ElementGraphData *node_data) const;
     void unlockNodeLinks(ElementGraphData *node_data) const;
     VisitedNodesHandler *getVisitedList() const;
+    template <bool force=false>
+    void connectUnreachableNodes();
     void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
     VecSimIndexBasicInfo basicInfo() const override;
@@ -282,7 +303,6 @@ public:
     void markDeletedInternal(idType internalId);
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
-    void unmarkInProcess(idType internalId);
     AddVectorCtx storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
@@ -413,6 +433,47 @@ ElementLevelData &HNSWIndex<DataType, DistType>::getElementLevelData(idType inte
 }
 
 template <typename DataType, typename DistType>
+template <bool force>
+vecsim_stl::unordered_set<graphNodeType, hashForPair>
+HNSWIndex<DataType, DistType>::fetchAndClearUnreachableNodes() {
+    std::unique_lock<std::mutex> lock(unreachableNodesGuard);
+    auto unreachable_copy = force ? hardUnreachableNodes : unreachableNodes;
+    force ? hardUnreachableNodes.clear() : unreachableNodes.clear();
+    return unreachable_copy;
+}
+
+template <typename DataType, typename DistType>
+template <bool force>
+void HNSWIndex<DataType, DistType>::setUnreachableNode(const graphNodeType &node) {
+    if (isMarkedDeleted(node.first))
+        return;
+    std::unique_lock<std::mutex> lock(unreachableNodesGuard);
+    if (force) {
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Element %zu still unreachable in "
+                                                   "level %zu after trying to reinsert - setting as permanent unreachable",
+          node.first, node.second);
+        hardUnreachableNodes.insert(node);
+    } else {
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Element %zu is unreachable in level %zu",
+          node.first, node.second);
+        unreachableNodes.insert(node);
+    }
+}
+
+template <typename DataType, typename DistType>
+template <bool force>
+void HNSWIndex<DataType, DistType>::connectUnreachableNodes() {
+    auto nodes_to_connect = fetchAndClearUnreachableNodes<force>();
+    if (nodes_to_connect.empty())
+        return;
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Try to reinsert %zu nodes to the graph %s",
+          nodes_to_connect.size(), force ? "- hard unreachable nodes" : "");
+    for (auto node : nodes_to_connect) {
+        reinsertElementToGraphAtLevel<force>(node.first, node.second);
+    }
+}
+
+template <typename DataType, typename DistType>
 ElementLevelData &HNSWIndex<DataType, DistType>::getElementLevelData(ElementGraphData *graph_data,
                                                                      size_t level) const {
     return graph_data->getElementLevelData(level, this->levelDataSize);
@@ -438,6 +499,8 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         if (internalId == entrypointNode) {
             // Internally, we hold and release the entrypoint neighbors lock.
             replaceEntryPoint();
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
+                      "New entry point due to deletion is %zu", entrypointNode);
         }
         // Atomically set the deletion mark flag (note that other parallel threads may set the flags
         // at the same time (for changing the IN_PROCESS flag).
@@ -454,13 +517,6 @@ bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     return isMarkedAs<IN_PROCESS>(internalId);
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
-    // Atomically unset the IN_PROCESS mark flag (note that other parallel threads may set the flags
-    // at the same time (for marking the element with IN_PROCCESS flag).
-    unmarkAs<IN_PROCESS>(internalId);
 }
 
 template <typename DataType, typename DistType>
@@ -506,7 +562,6 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
 /**
  * helper functions
  */
-
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
     vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
@@ -676,7 +731,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 candidatesMaxHeap<DistType>
 HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
@@ -688,7 +742,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType lowerBound;
-    if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
+    if (!isMarkedDeleted(ep_id)) {
         DistType dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
         lowerBound = dist;
         top_candidates.emplace(dist, ep_id);
@@ -708,9 +762,9 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
-                                             visited_nodes_handler->getElementsTags(), visited_tag,
-                                             top_candidates, candidate_set, lowerBound);
+        processCandidate<true>(curr_el_pair.second, data_point, layer, ef,
+                               visited_nodes_handler->getElementsTags(), visited_tag,
+                               top_candidates, candidate_set, lowerBound);
     }
 
     returnVisitedList(visited_nodes_handler);
@@ -720,13 +774,13 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 template <typename DataType, typename DistType>
 idType
 HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates,
-                                                        const size_t M) const {
+                                                        const size_t M, float alpha) const {
     if (top_candidates.size() < M) {
         return std::min_element(top_candidates.begin(), top_candidates.end(),
                                 [](const auto &a, const auto &b) { return a.first < b.first; })
             ->second;
     }
-    getNeighborsByHeuristic2_internal<false>(top_candidates, M, nullptr);
+    getNeighborsByHeuristic2_internal<false>(top_candidates, M, nullptr, alpha);
     return top_candidates.front().second;
 }
 
@@ -741,7 +795,7 @@ template <typename DataType, typename DistType>
 template <bool record_removed>
 void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
     candidatesList<DistType> &top_candidates, const size_t M,
-    vecsim_stl::vector<idType> *removed_candidates) const {
+    vecsim_stl::vector<idType> *removed_candidates, float alpha) const {
     if (top_candidates.size() < M) {
         return;
     }
@@ -770,7 +824,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
         for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
                 this->distFunc(cached_vectors[i], curr_vector, this->dim);
-            if (candidate_to_selected_dist < candidate_to_query_dist) {
+            if (alpha * candidate_to_selected_dist < candidate_to_query_dist) {
                 if constexpr (record_removed) {
                     removed_candidates->push_back(current_pair->second);
                 }
@@ -796,7 +850,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
-    ElementLevelData &new_node_level, ElementLevelData &neighbor_level) {
+    ElementLevelData &new_node_level, ElementLevelData &neighbor_level, bool &unreachable) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
@@ -856,6 +910,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
             // as is.
             neighbor_level.setLinkAtPos(neighbour_neighbours_idx++, neighbor_level.getLinkAtPos(i));
             update_cur_node_required = false;
+            unreachable = false;
             continue;
         }
         // Now we know that we are looking at a node to be removed from the neighbor's neighbors.
@@ -871,6 +926,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
             // connection is mutual - both new node and the selected neighbor in each other's list.
             neighbor_level.setLinkAtPos(neighbour_neighbours_idx++, new_node_id);
             new_node_level.increaseTotalIncomingEdgesNum();
+            unreachable = false;
         } else {
             // unidirectional connection - put the new node in the neighbour's incoming edges.
             neighbor_level.newIncomingUnidirectionalEdge(new_node_id);
@@ -881,6 +937,140 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         unlockNodeLinks(nodes_to_update[i]);
     }
+}
+
+template <typename DataType, typename DistType>
+template <bool force>
+size_t HNSWIndex<DataType, DistType>::mutuallyReconnectElement(
+    idType node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
+
+    size_t max_M_cur = level ? M : M0;
+    candidatesList<DistType> selected_neighbors_cands(this->allocator);
+    vecsim_stl::vector<idType> nodes_to_update(this->allocator);
+
+    auto *node_graph_data = getGraphDataByInternalId(node_id);
+    lockNodeLinks(node_graph_data);
+    auto &node_level_data = getElementLevelData(node_graph_data, level);
+    for (size_t i = 0; i < node_level_data.getNumLinks(); i++) {
+        nodes_to_update.push_back(node_level_data.getLinkAtPos(i));
+    }
+    unlockNodeLinks(node_graph_data);
+
+    selected_neighbors_cands.insert(selected_neighbors_cands.end(), top_candidates.begin(),
+                                    top_candidates.end());
+    float alpha = force ? 1.5f : 1.2f; // we relax the heuristcs to get more neighbors
+    getNeighborsByHeuristic2(selected_neighbors_cands, M, alpha);
+    assert(selected_neighbors_cands.size() <= M &&
+           "Should not be more than M candidates returned by the heuristic");
+
+    vecsim_stl::vector<idType> selected_neighbors(selected_neighbors_cands.size(), this->allocator);
+    std::transform(selected_neighbors_cands.begin(), selected_neighbors_cands.end(),
+                   selected_neighbors.begin(), [](pair<DistType, idType> el) { return el.second; });
+
+    // Sort the selected neighbors set for fast lookup.
+    std::sort(selected_neighbors.begin(), selected_neighbors.end());
+
+    // Remove duplications in advanced here - if a selected neighbors already exists in this set.
+    std::vector<idType> ids_to_remove;
+    for (idType node : nodes_to_update) {
+        if (std::binary_search(selected_neighbors.begin(), selected_neighbors.end(), node)) {
+            ids_to_remove.push_back(node);
+        }
+    }
+    for (idType id_to_remove : ids_to_remove) {
+        nodes_to_update.remove(id_to_remove);
+    }
+    nodes_to_update.insert(nodes_to_update.end(), selected_neighbors.begin(),
+                           selected_neighbors.end());
+    nodes_to_update.push_back(node_id);
+
+    // Acquire the required locks for the updates, after sorting the nodes to update
+    // (to avoid deadlocks)
+    std::sort(nodes_to_update.begin(), nodes_to_update.end());
+    size_t nodes_to_update_count = nodes_to_update.size();
+    for (size_t i = 0; i < nodes_to_update_count; i++) {
+        lockNodeLinks(nodes_to_update[i]);
+    }
+
+    // Try to make mutuall connection for the current node neighbors that were found.
+    node_level_data = getElementLevelData(node_graph_data, level);
+    for (size_t i = 0; i < node_level_data.getNumLinks(); i++) {
+        idType neighbor = node_level_data.getLinkAtPos(i);
+        if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), neighbor)) {
+            // This neighbor was added in the meantime while we release the lock - we cannot
+            // perofrm mutuall update.
+            continue;
+        }
+        if (std::find(selected_neighbors.begin(), selected_neighbors.end(), neighbor) !=
+            selected_neighbors.end()) {
+            // Neighbor already exists, no need to connect it later on.
+            selected_neighbors.remove(neighbor);
+        }
+        // Connect the neighbor back if it has the capacity, and...
+        auto &neighbor_data = getElementLevelData(neighbor, level);
+        if (neighbor_data.getNumLinks() < max_M_cur && !isMarkedDeleted(node_id) &&
+            !isMarkedDeleted(neighbor)) {
+            // The edge was unidirectional (no exisiting outgoing edge from the neighbor to the
+            // node)
+            if (neighbor_data.removeIncomingUnidirectionalEdgeIfExists(node_id)) {
+                neighbor_data.appendLink(node_id);
+                node_level_data.increaseTotalIncomingEdgesNum();
+            }
+        }
+    }
+
+    // Go over the chosen new neighbors that are not connected yet and perform mutuall updates
+    // if possible.
+    for (idType chosen_id : selected_neighbors) {
+        if (isMarkedDeleted(node_id)) {
+            // don't add neighbors from/to a deleted node
+            break;
+        }
+        // If this specific new neighbor is deleted, we don't add this connection and continue.
+        // Also, don't add a new node whose being indexed in parallel, as it may choose this node
+        // as its neighbor and create a double connection (then this node will have a duplicate
+        // neighbor).
+        if (isMarkedDeleted(chosen_id) || isInProcess(chosen_id)) {
+            continue;
+        }
+        auto &chosen_node_level_data = getElementLevelData(chosen_id, level);
+        // Perform mutuall or exclusive unidriectional connectoins accordin to degree limitations.
+        if (node_level_data.getNumLinks() < max_M_cur) {
+            node_level_data.appendLink(chosen_id);
+            chosen_node_level_data.increaseTotalIncomingEdgesNum();
+            if (chosen_node_level_data.getNumLinks() < max_M_cur) {
+                // Unless the chosen new neighbor was already pointing the node id, connect them
+                // now.
+                if (!node_level_data.removeIncomingUnidirectionalEdgeIfExists(chosen_id)) {
+                    chosen_node_level_data.appendLink(node_id);
+                    node_level_data.increaseTotalIncomingEdgesNum();
+                } // else - the neighbors is already pointing to the node and the undirectional
+                  // edge has been removed.
+            } else if (!node_level_data.removeIncomingUnidirectionalEdgeIfExists(chosen_id)) {
+                // The neighbor cannot add the node to its neighbors (and it was not there before) -
+                // so we update the unidirectional incoming edges.
+                chosen_node_level_data.newIncomingUnidirectionalEdge(node_id);
+            }
+        } else if (chosen_node_level_data.getNumLinks() < max_M_cur) {
+            // We can only connect the chosen neighbor to the node as a unidirectional link, if it
+            // was not already exist.
+            auto &incoming_uni_edges = node_level_data.getIncomingEdges();
+            if (std::find(incoming_uni_edges.begin(), incoming_uni_edges.end(), chosen_id) ==
+                incoming_uni_edges.end()) {
+                chosen_node_level_data.appendLink(node_id);
+                node_level_data.increaseTotalIncomingEdgesNum();
+                node_level_data.newIncomingUnidirectionalEdge(chosen_id);
+            } // nothing to do otherwise - edge already exists.
+        }
+    }
+    size_t ret = node_level_data.inDegree();
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+              "Node %d now holds %zu links and %zu incoming links", node_id,
+              node_level_data.getNumLinks(), ret);
+    for (size_t i = 0; i < nodes_to_update_count; i++) {
+        unlockNodeLinks(nodes_to_update[i]);
+    }
+    return ret;
 }
 
 template <typename DataType, typename DistType>
@@ -898,23 +1088,25 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     // Use the heuristic to filter the top candidates, and get the next closest entry point.
     idType next_closest_entry_point = getNeighborsByHeuristic2(top_candidates_list, M);
     assert(top_candidates_list.size() <= M &&
-           "Should be not be more than M candidates returned by the heuristic");
+           "Should not be more than M candidates returned by the heuristic");
 
-    auto *new_node_level = getGraphDataByInternalId(new_node_id);
-    ElementLevelData &new_node_level_data = getElementLevelData(new_node_level, level);
+    auto *new_node_graph_data = getGraphDataByInternalId(new_node_id);
+    ElementLevelData &new_node_level_data = getElementLevelData(new_node_graph_data, level);
     assert(new_node_level_data.getNumLinks() == 0 &&
            "The newly inserted element should have blank link list");
 
+    bool unreachable = true;
     for (auto &neighbor_data : top_candidates_list) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
         auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
         if (new_node_id < selected_neighbor) {
-            lockNodeLinks(new_node_level);
+            lockNodeLinks(new_node_graph_data);
             lockNodeLinks(neighbor_graph_data);
         } else {
             lockNodeLinks(neighbor_graph_data);
-            lockNodeLinks(new_node_level);
+            lockNodeLinks(new_node_graph_data);
         }
+        new_node_level_data = getElementLevelData(new_node_graph_data, level);
 
         // validations...
         assert(new_node_level_data.getNumLinks() <= max_M_cur && "Neighbors number exceeds limit");
@@ -926,14 +1118,14 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             // The new node cannot add more neighbors
             this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
                       "Couldn't add all chosen neighbors upon inserting a new node");
-            unlockNodeLinks(new_node_level);
+            unlockNodeLinks(new_node_graph_data);
             unlockNodeLinks(neighbor_graph_data);
             break;
         }
 
         // If one of the two nodes has already deleted - skip the operation.
         if (isMarkedDeleted(new_node_id) || isMarkedDeleted(selected_neighbor)) {
-            unlockNodeLinks(new_node_level);
+            unlockNodeLinks(new_node_graph_data);
             unlockNodeLinks(neighbor_graph_data);
             continue;
         }
@@ -947,8 +1139,9 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             neighbor_level_data.increaseTotalIncomingEdgesNum();
             neighbor_level_data.appendLink(new_node_id);
             new_node_level_data.increaseTotalIncomingEdgesNum();
-            unlockNodeLinks(new_node_level);
+            unlockNodeLinks(new_node_graph_data);
             unlockNodeLinks(neighbor_graph_data);
+            unreachable = false;
             continue;
         }
 
@@ -956,7 +1149,10 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // We collect all the existing neighbors and the new node as candidates, and mutually update
         // the neighbor's neighbors. We also release the acquired locks inside this call.
         revisitNeighborConnections(level, new_node_id, neighbor_data, new_node_level_data,
-                                   neighbor_level_data);
+                                   neighbor_level_data, unreachable);
+    }
+    if (unreachable) {
+        this->setUnreachableNode(std::make_pair(new_node_id, level));
     }
     return next_closest_entry_point;
 }
@@ -1020,6 +1216,9 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 }
                 // anyway update the incoming nodes counter.
                 node_level_data.decreaseTotalIncomingEdgesNum();
+                if (node_level_data.inDegree() == 0) {
+                    this->setUnreachableNode(std::make_pair(node_id, level));
+                }
             }
         }
     } else {
@@ -1190,6 +1389,18 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     memcpy((void *)data, last_element_data, this->dataSize);
 
     this->idToMetaData[element_internal_id] = this->idToMetaData[curElementCount];
+
+    // Update the unreachable nodes conrainer for every level in which an unreachable node exists.
+    for (size_t l = 0; l <= last_element->toplevel; l++) {
+        if (this->unreachableNodes.contains({curElementCount, l})) {
+            this->unreachableNodes.erase({curElementCount, l});
+            this->unreachableNodes.insert(std::make_pair(element_internal_id, l));
+        }
+        if (this->hardUnreachableNodes.contains({curElementCount, l})) {
+            this->hardUnreachableNodes.erase({curElementCount, l});
+            this->hardUnreachableNodes.insert(std::make_pair(element_internal_id, l));
+        }
+    }
 
     if (curElementCount == this->entrypointNode) {
         this->entrypointNode = element_internal_id;
@@ -1423,7 +1634,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
-
     vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
@@ -1547,6 +1757,9 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
         node_level.newIncomingUnidirectionalEdge(removed_node);
     }
     removed_node_level.decreaseTotalIncomingEdgesNum();
+    if (removed_node_level.inDegree() == 0) {
+        this->setUnreachableNode(std::make_pair(removed_node, level));
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1577,9 +1790,67 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
-            searchLayer<false>(curr_element, vector_data, level, efConstruction);
-        curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
+            searchLayer(curr_element, vector_data, level, efConstruction);
+        // If the entry point was marked deleted between iterations, we may recieve an empty
+        // candidates set.
+        if (!top_candidates.empty()) {
+            curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
+        } else {
+            // Node still has no neighbors - it is defintly unreachable
+            this->setUnreachableNode(std::make_pair(element_id, level));
+        }
     }
+}
+
+template <typename DataType, typename DistType>
+template <bool force>
+void HNSWIndex<DataType, DistType>::reinsertElementToGraphAtLevel(idType element_id,
+                                                                  size_t level_to_insert) {
+
+    auto [entry_point, max_level] = this->safeGetEntryPointState();
+    if (element_id == entry_point || entry_point == INVALID_ID || isMarkedDeleted(element_id)) {
+        return; // entry point is always reachable, no need to connect deleted element
+    }
+    if (this->isInProcess(element_id)) {
+        return; // If it being inserted - no need to reconnect, and if it is being reconnected by
+                // another thread, there is no need for someelse to this job as well.
+    }
+    this->markAs<IN_PROCESS>(element_id);
+    DistType cur_dist = std::numeric_limits<DistType>::max();
+    const void *vector_data = this->getDataByInternalId(element_id);
+    idType curr_element = entry_point;
+    cur_dist = this->distFunc(vector_data, getDataByInternalId(curr_element), this->dim);
+    for (auto level = max_level; level > level_to_insert; --level) {
+        // this is done for the levels which are above the level to insert
+        // to which we are going to insert the new element. We do
+        // a greedy search in the graph starting from the entry point
+        // at each level, and move on with the closest element we can find.
+        // When there is no improvement to do, we take a step down.
+        greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
+    }
+
+    lockNodeLinks(element_id);
+    auto &node_data = getElementLevelData(element_id, level_to_insert);
+    bool unreachable = node_data.inDegree() == 0;
+    unlockNodeLinks(element_id);
+    if (!unreachable) {
+        this->unmarkAs<IN_PROCESS>(element_id);
+        return; // node is no longer unreachable, we can skip on reinserting it.
+    }
+
+    candidatesMaxHeap<DistType> top_candidates =
+        searchLayer(curr_element, vector_data, level_to_insert, efConstruction);
+    if (top_candidates.empty()) {
+        // No candidates found (entry point been deleted in the meantime).
+        this->setUnreachableNode(std::make_pair(element_id, level_to_insert));
+    } else {
+        size_t ret = mutuallyReconnectElement<force>(element_id, top_candidates, level_to_insert);
+        if (ret == 0) {
+            // Node is still unreachable with 0 inDegree.
+            this->setUnreachableNode<true>(std::make_pair(element_id, level_to_insert));
+        }
+    }
+    this->unmarkAs<IN_PROCESS>(element_id);
 }
 
 /**
@@ -1602,8 +1873,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), VecSimIndexTombstone(),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
-      vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
-      idToMetaData(maxElements, this->allocator),
+      unreachableNodes(this->allocator), hardUnreachableNodes(this->allocator),
+vectorBlocks(this->allocator),
+      graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
@@ -1672,7 +1944,16 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             // this point (after all the repair jobs are done).
             neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
             neighbour.decreaseTotalIncomingEdgesNum();
+            if (neighbour.inDegree() == 0) {
+                this->setUnreachableNode(std::make_pair(cur_level.getLinkAtPos(i), level));
+            }
         }
+    }
+
+    // Remove it from the unreachable nodes container for every level in which it exists.
+    for (size_t l = 0; l <= element->toplevel; l++) {
+        this->unreachableNodes.erase({internalId, l});
+        this->hardUnreachableNodes.erase({internalId, l});
     }
 
     // Free the element's resources
@@ -1759,6 +2040,7 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
     removeAndSwap<false>(element_internal_id);
+    this->connectUnreachableNodes();
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
@@ -1857,10 +2139,14 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         insertElementToGraph(new_element_id, element_max_level, prev_entry_point, prev_max_level,
                              vector_data);
     }
-    unmarkInProcess(new_element_id);
-    if (auxiliaryCtx == nullptr && state.currMaxLevel < state.elementMaxLevel) {
-        // No external auxiliaryCtx, so it's this function responsibility to release the lock.
-        this->unlockIndexDataGuard();
+    unmarkAs<IN_PROCESS>(new_element_id);
+    if (auxiliaryCtx == nullptr) {
+        // No external auxiliaryCtx, so it's this function responsibility to release the lock if
+        // needed and connect unreachable nodes that were created due to this operation.
+        if (state.currMaxLevel < state.elementMaxLevel) {
+            this->unlockIndexDataGuard();
+        }
+        this->connectUnreachableNodes();
     }
 }
 

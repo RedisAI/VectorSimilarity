@@ -271,10 +271,10 @@ template <typename DataType, typename DistType>
 VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
     this->flatIndexGuard.lock_shared();
+    this->mainIndexGuard.lock();
     VecSimIndexInfo frontendInfo = this->frontendIndex->info();
     this->flatIndexGuard.unlock_shared();
 
-    this->mainIndexGuard.lock();
     VecSimIndexInfo backendInfo = this->backendIndex->info();
     this->mainIndexGuard.unlock();
 

@@ -208,6 +208,10 @@ public:
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
+        // Try to reinsert permanent unreachable nodes
+        this->mainIndexGuard.lock_shared();
+        this->getHNSWIndex()->template connectUnreachableNodes<true>();
+        this->mainIndexGuard.unlock_shared();
     }
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
@@ -423,9 +427,13 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+        hnsw_index->unlockIndexDataGuard();
+        // Try to reinsert permanent unreachable nodes
+        TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
+           "Going over permanent unreachable nodes:");
+        hnsw_index->template connectUnreachableNodes<true>();
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
-        hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
 
@@ -472,6 +480,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
+        // Reinsert nodes that became unreachable due to this operation.
+        hnsw_index->connectUnreachableNodes();
         this->mainIndexGuard.unlock_shared();
     }
 }
@@ -589,7 +599,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     this->idToRepairJobsGuard.unlock();
 
     hnsw_index->repairNodeConnections(job->node_id, job->level);
-
+    // Reinsert nodes that became unreachable due to this operation.
+    hnsw_index->connectUnreachableNodes();
     this->mainIndexGuard.unlock_shared();
 }
 

@@ -92,18 +92,16 @@ public:
         : VecsimBaseObject(alloc), std::set<T, std::less<T>, VecsimSTLAllocator<T>>(alloc) {}
 };
 
-template <typename T>
-class unordered_set
-    : public VecsimBaseObject,
-      public std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>> {
+template <typename T, typename hash = std::hash<T>>
+class unordered_set : public VecsimBaseObject,
+                      public std::unordered_set<T, hash, std::equal_to<T>, VecsimSTLAllocator<T>> {
 public:
     explicit unordered_set(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc),
-          std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(alloc) {}
+          std::unordered_set<T, hash, std::equal_to<T>, VecsimSTLAllocator<T>>(alloc) {}
     explicit unordered_set(size_t n_bucket, const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc),
-          std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
-                                                                                       alloc) {}
+          std::unordered_set<T, hash, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket, alloc) {}
 };
 
 } // namespace vecsim_stl

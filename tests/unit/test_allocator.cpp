@@ -18,6 +18,8 @@ const size_t vecsimAllocationOverhead = VecSimAllocator::getAllocationOverheadSi
 
 const size_t hashTableNodeSize = getLabelsLookupNodeSize();
 
+const size_t unreachableNodeHashTableNodeSize = getUnreachableNodeSize();
+
 class AllocatorTest : public ::testing::Test {};
 struct SimpleObject : public VecsimBaseObject {
 public:
@@ -323,8 +325,9 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
 
     /* Compute the expected allocation delta:
      * 1. empty incoming edges set in every level (+ allocator's header).
-     * 2. A node in the labels_lookup has table (+ allocator's header). If rehashing occurred, we
-     * account also for the diff in the buckets size (each bucket has sizeof(size_t) overhead).
+     * 2. A node in the labels_lookup hash table (+ allocator's header). If rehashing occurred, we
+     * account also for the diff in the buckets size (each bucket has sizeof(size_t) overhead). Same
+     * applies for the unreachable nodes unoredered set.
      * 3. Account for allocating link lists for levels higher than 0, if exists.
      * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1 due
      * to the insertion, and the fact that vec1 will re-select its neighbours.
@@ -333,7 +336,10 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
         (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
         hashTableNodeSize;
     size_t buckets_diff = hnswIndex->labelLookup.bucket_count() - buckets_num_before;
-    expected_allocation_delta += buckets_diff * sizeof(size_t);
+    size_t unreachable_nodes_overhead =
+        hnswIndex->unreachableNodes.bucket_count() * sizeof(graphNodeType) +
+        vecsimAllocationOverhead;
+    expected_allocation_delta += buckets_diff * sizeof(size_t) + unreachable_nodes_overhead;
     if (vec_max_level > 0) {
         expected_allocation_delta +=
             hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
@@ -448,6 +454,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
+    // This applies for the unordered ser unreachable nodes as well.
+    hash_table_memory += hnswIndex->unreachableNodes.bucket_count() * sizeof(size_t);
     // Data block vectors do not shrink on resize so extra memory is expected.
     size_t block_vectors_memory = sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() +
                                                        hnswIndex->vectorBlocks.capacity()) +

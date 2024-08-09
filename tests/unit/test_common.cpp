@@ -539,15 +539,17 @@ TEST(CommonAPITest, testlogTieredIndex) {
     GenerateAndAddVector<float>(tiered_index, 4, 1);
     mock_thread_pool.thread_iteration();
     tiered_index->deleteVector(1);
-    ASSERT_EQ(log.logBuffer.size(), 4);
+    ASSERT_EQ(log.logBuffer.size(), 5);
     ASSERT_EQ(log.logBuffer[0],
               "verbose: " + log.prefix + "Updating HNSW index capacity from 0 to 1024");
-    ASSERT_EQ(log.logBuffer[1],
+    ASSERT_EQ(log.logBuffer[1], "debug: " + log.prefix + "New entry point due to deletion is " +
+                                    std::to_string(INVALID_ID));
+    ASSERT_EQ(log.logBuffer[2],
               "verbose: " + log.prefix +
                   "Tiered HNSW index GC: there are 1 ready swap jobs. Start executing 1 swap jobs");
-    ASSERT_EQ(log.logBuffer[2],
-              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0");
     ASSERT_EQ(log.logBuffer[3],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0");
+    ASSERT_EQ(log.logBuffer[4],
               "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs");
 }
 
