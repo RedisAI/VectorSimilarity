@@ -17,16 +17,16 @@ class BM_VecSimSpaces_FP16 : public BM_VecSimSpaces<vecsim_types::float16> {
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
 // OPT_AVX512FP16 functions
-#ifdef OPT_AVX512_FP16
+#ifdef OPT_AVX512_FP16_VL_DQ
 
 class BM_VecSimSpaces_FP16_adv : public BM_VecSimSpaces<_Float16> {};
 
-bool avx512fp16_supported = opt.avx512_fp16;
+bool avx512fp16_supported = opt.avx512_fp16 && opt.avx512dq && opt.avx512vl;
 INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP16_adv, FP16, AVX512FP16, 32, avx512fp16_supported);
 
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_FP16_adv, FP16, InnerProduct, 32);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_FP16_adv, FP16, L2Sqr, 32);
-#endif // OPT_AVX512_FP16
+#endif // OPT_AVX512_FP16_VL_DQ
 
 // OPT_AVX512F functions
 #ifdef OPT_AVX512F

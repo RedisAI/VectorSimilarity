@@ -44,6 +44,15 @@ float FP16_InnerProductSIMD32_AVX512FP16(const void *pVect1v, const void *pVect2
         InnerProductStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    _Float16 res = _mm512_reduce_add_ph(sum);
+    // Extract the lower 256 bits
+    __m256h low = _mm512_castph512_ph256(sum);
+    // Extract the upper 256 bits
+    __m512i sum_i = _mm512_castph_si512(sum);
+    __m256i high_i = _mm512_extracti32x8_epi32(sum_i, 1);
+    // Convert to FP16
+    __m256h high = _mm256_castsi256_ph(high_i);
+    _Float16 res_low = _mm256_reduce_add_ph(low);
+    _Float16 res_high = _mm256_reduce_add_ph(high);
+    _Float16 res = res_low + res_high;
     return _Float16(1) - res;
 }

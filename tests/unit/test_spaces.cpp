@@ -663,6 +663,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_InnerProduct(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+    optimization.avx512_fp16 = optimization.avx512dq = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -713,6 +714,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_L2Sqr(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+    optimization.avx512_fp16 = optimization.avx512dq = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -756,13 +758,13 @@ INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
  * that has different logic than the float32 and float64 reduce functions.
  * For more info, refer to intel's intrinsics guide.
  */
-#ifdef OPT_AVX512_FP16
+#ifdef OPT_AVX512_FP16_VL_DQ
 // avx512_fp16 flag functions are only chosen for high dimensions
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
-    if (optimization.avx512_fp16) {
+    if (optimization.avx512_fp16 && optimization.avx512dq && optimization.avx512vl) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
 
@@ -802,7 +804,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
-    if (optimization.avx512_fp16) {
+    if (optimization.avx512_fp16 && optimization.avx512dq && optimization.avx512vl) {
         size_t dim = GetParam();
         float16 v1[dim], v2[dim];
 
