@@ -91,7 +91,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // VectorBlocks vector is empty.
-    ASSERT_EQ(bf_index->vectorBlocks.size(), 0);
+    ASSERT_EQ(bf_index->vectors->size(), 0);
     // idTolabel size should also decrease to zero.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);
 
@@ -344,7 +344,7 @@ TYPED_TEST(BruteForceTest, brute_force_reindexing_same_vector) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // The vector block should be removed.
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), 0);
+    ASSERT_EQ(bf_index->getVectorsContainer()->size(), 0);
 
     // id2label size and capacity should turn to zero.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);

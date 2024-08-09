@@ -5,11 +5,9 @@
  */
 
 #pragma once
-#include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
-#include "VecSim/utils/vecsim_stl.h"
 
-#include "VecSim/utils/vec_utils.h"
+#include <cassert>
 
 struct DataBlock : public VecsimBaseObject {
 
@@ -40,15 +38,20 @@ public:
 
     void updateElement(size_t index, const void *new_element);
 
-    inline const char *getElement(size_t index) const {
+    const char *getElement(size_t index) const {
         return this->data + (index * element_bytes_count);
     }
 
-    inline char *removeAndFetchLastElement() {
+    void popLastElement() {
+        assert(this->length > 0);
+        this->length--;
+    }
+
+    char *removeAndFetchLastElement() {
         return this->data + ((--this->length) * element_bytes_count);
     }
 
-    inline size_t getLength() const { return length; }
+    size_t getLength() const { return length; }
 
 private:
     // Element size in bytes
