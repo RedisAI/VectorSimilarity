@@ -31,7 +31,7 @@ public:
 
     inline void *getTimeoutCtx() const { return timeoutCtx; }
 
-    inline size_t getResultsCount() const { return returned_results_count; }
+    inline size_t getResultsCount() const { return returned_results_count;; }
 
     inline void updateResultsCount(size_t num) { returned_results_count += num; }
 
