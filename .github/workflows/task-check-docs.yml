@@ -16,7 +16,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # required for changed-files action to work
-          ref: ${{ github.ref_base || github.head_ref }}  # required for fork PRs
       - name: Check if only docs were changed
         id: check-docs
         uses: tj-actions/changed-files@v44
