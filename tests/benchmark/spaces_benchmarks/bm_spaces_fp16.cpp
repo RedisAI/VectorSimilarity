@@ -19,14 +19,25 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 // OPT_AVX512FP16 functions
 #ifdef OPT_AVX512_FP16
 
-
 class BM_VecSimSpaces_FP16_adv : public BM_VecSimSpaces<_Float16> {};
 
 bool avx512fp16_supported = opt.avx512_fp16;
-// INITIALIZE_BM(BM_VecSimSpaces_FP16_adv, FP16, AVX512FP16,<metric>, <bm_name>, avx512fp16_supported)                 \
-//         ->Arg(<dim>)
-INITIALIZE_BM(BM_VecSimSpaces_FP16_adv, FP16, AVX512FP16,<metric>, <bm_name>, avx512fp16_supported) \
-        ->Arg(<dim>);
+BENCHMARK_DEFINE_F(BM_VecSimSpaces_FP16_adv, FP16_InnerProductSIMD32_AVX512FP16_512Reduce)
+(benchmark::State &st) {
+    if (!avx512fp16_supported) {
+        st.SkipWithError("This benchmark requires AVX512FP16, which is not available");
+        return;
+    }
+    auto func = spaces::Choose_FP16_IP_implementation_AVX512FP16(dim);
+    for (auto _ : st) {
+        func(v1, v2, dim);
+    }
+}
+
+BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP16_adv, FP16_InnerProductSIMD32_AVX512FP16_512Reduce)
+    ->ArgName("Dimension")
+    ->Unit(benchmark::kNanosecond)
+    ->Arg(900);
 #endif // OPT_AVX512_FP16
 
 #endif // x86_64
