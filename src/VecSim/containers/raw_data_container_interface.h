@@ -1,13 +1,7 @@
 #pragma once
 
-typedef enum {
-    RAW_DATA_CONTAINER_OK = 0,
-    RAW_DATA_CONTAINER_ID_ALREADY_EXIST,
-    RAW_DATA_CONTAINER_ID_NOT_EXIST,
-    RAW_DATA_CONTAINER_ERR
-} RawDataContainer_Status;
-
 struct RawDataContainer {
+    enum Status { OK = 0, ID_ALREADY_EXIST, ID_NOT_EXIST, ERR };
     /**
      * This is an abstract interface, constructor/destructor should be implemented by the derived
      * classes
@@ -24,7 +18,7 @@ struct RawDataContainer {
      * @param id of the new element
      * @return status
      */
-    virtual RawDataContainer_Status addElement(const void *element, size_t id) = 0;
+    virtual Status addElement(const void *element, size_t id) = 0;
     /**
      * @param id of the element to return
      * @return Immutable reference to the element's data, NULL if id doesn't exist
@@ -34,13 +28,13 @@ struct RawDataContainer {
      * @param id of the element to remove
      * @return status
      */
-    virtual RawDataContainer_Status removeElement(size_t id) = 0;
+    virtual Status removeElement(size_t id) = 0;
     /**
      * @param id to change its asociated data
      * @param element the new raw data to associate with id
      * @return status
      */
-    virtual RawDataContainer_Status updateElement(size_t id, const void *element) = 0;
+    virtual Status updateElement(size_t id, const void *element) = 0;
 
     struct Iterator {
         /**
@@ -53,7 +47,7 @@ struct RawDataContainer {
         /**
          * The basic iterator operations API
          */
-        virtual bool hasNext() = 0;
+        virtual bool hasNext() const = 0;
         virtual const char *next() = 0;
         virtual void reset() = 0;
     };
@@ -61,5 +55,5 @@ struct RawDataContainer {
     /**
      * Create a new iterator. Should be freed by the iterator's destroctor.
      */
-    virtual std::unique_ptr<Iterator> getIterator() = 0;
+    virtual std::unique_ptr<Iterator> getIterator() const = 0;
 };

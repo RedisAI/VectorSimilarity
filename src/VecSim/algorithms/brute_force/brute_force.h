@@ -177,9 +177,6 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     idType last_idx = --this->count;
     labelType last_idx_label = getVectorLabel(last_idx);
 
-    // Get last vector data.
-    const char *last_vector_data = vectors->getElement(last_idx);
-
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
@@ -193,6 +190,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         replaceIdOfLabel(last_idx_label, id_to_delete, last_idx);
 
         // Put data of last vector inplace of the deleted vector.
+        const char *last_vector_data = vectors->getElement(last_idx);
         vectors->updateElement(id_to_delete, last_vector_data);
     }
     vectors->removeElement(last_idx);
