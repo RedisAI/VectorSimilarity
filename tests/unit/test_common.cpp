@@ -388,17 +388,21 @@ TYPED_TEST(UtilsTests, data_blocks_container) {
     // Create a simple data blocks container of chars with block of size 1.
     auto chars_container = DataBlocksContainer(1, 1, allocator, 64);
     ASSERT_EQ(chars_container.size(), 0);
-    ASSERT_EQ(chars_container.addElement(std::string("a").c_str(), 0), RawDataContainer::OK);
+    ASSERT_EQ(chars_container.addElement(std::string("a").c_str(), 0),
+              RawDataContainer::Status::OK);
     ASSERT_EQ(chars_container.size(), 1);
-    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 1), RawDataContainer::OK);
+    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 1),
+              RawDataContainer::Status::OK);
     ASSERT_EQ(chars_container.size(), 2);
-    ASSERT_EQ(chars_container.updateElement(0, std::string("c").c_str()), RawDataContainer::OK);
+    ASSERT_EQ(chars_container.updateElement(0, std::string("c").c_str()),
+              RawDataContainer::Status::OK);
     ASSERT_EQ(*chars_container.getElement(0), *std::string("c").c_str());
-    ASSERT_EQ(chars_container.removeElement(1), RawDataContainer::OK);
+    ASSERT_EQ(chars_container.removeElement(1), RawDataContainer::Status::OK);
     ASSERT_EQ(chars_container.size(), 1);
-    ASSERT_EQ(chars_container.removeElement(0), RawDataContainer::OK);
+    ASSERT_EQ(chars_container.removeElement(0), RawDataContainer::Status::OK);
     ASSERT_EQ(chars_container.size(), 0);
-    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 0), RawDataContainer::OK);
+    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 0),
+              RawDataContainer::Status::OK);
     ASSERT_EQ(chars_container.size(), 1);
     ASSERT_EQ(*chars_container.getElement(0), *std::string("b").c_str());
 }

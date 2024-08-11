@@ -22,7 +22,7 @@ RawDataContainer::Status DataBlocksContainer::addElement(const void *element, si
     }
     blocks.back().addElement(element);
     element_count++;
-    return OK;
+    return Status::OK;
 }
 
 const char *DataBlocksContainer::getElement(size_t id) const {
@@ -37,14 +37,14 @@ RawDataContainer::Status DataBlocksContainer::removeElement(size_t id) {
         blocks.pop_back();
     }
     element_count--;
-    return OK;
+    return Status::OK;
 }
 
 RawDataContainer::Status DataBlocksContainer::updateElement(size_t id, const void *element) {
     assert(id < element_count);
     auto &block = blocks.at(id / this->block_size);
     block.updateElement(id % block_size, element); // update the relative index in the block
-    return OK;
+    return Status::OK;
 }
 
 std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() const {

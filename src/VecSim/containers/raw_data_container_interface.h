@@ -1,7 +1,7 @@
 #pragma once
 
 struct RawDataContainer {
-    enum Status { OK = 0, ID_ALREADY_EXIST, ID_NOT_EXIST, ERR };
+    enum class Status { OK = 0, ID_ALREADY_EXIST, ID_NOT_EXIST, ERR };
     /**
      * This is an abstract interface, constructor/destructor should be implemented by the derived
      * classes
