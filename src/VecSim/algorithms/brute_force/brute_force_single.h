@@ -26,13 +26,13 @@ public:
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
 
-    inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
         return std::unique_ptr<vecsim_stl::abstract_results_container>(
             new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator));
     }
 
-    inline size_t indexLabelCount() const override { return this->count; }
+    size_t indexLabelCount() const override { return this->count; }
     std::unordered_map<idType, std::pair<idType, labelType>>
     deleteVectorAndGetUpdatedIds(labelType label) override;
 
@@ -52,35 +52,22 @@ public:
 #endif
 protected:
     // inline definitions
+    void setVectorId(labelType label, idType id) override { labelToIdLookup.emplace(label, id); }
 
-    inline void updateVector(idType id, const void *vector_data) {
-
-        // Get the vector block
-        DataBlock &vectorBlock = this->getVectorVectorBlock(id);
-        size_t index = BruteForceIndex<DataType, DistType>::getVectorRelativeIndex(id);
-
-        // Update vector data in the block.
-        vectorBlock.updateElement(index, vector_data);
-    }
-
-    inline void setVectorId(labelType label, idType id) override {
-        labelToIdLookup.emplace(label, id);
-    }
-
-    inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
+    void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
         labelToIdLookup.at(label) = new_id;
     }
 
-    inline void resizeLabelLookup(size_t new_max_elements) override {
+    void resizeLabelLookup(size_t new_max_elements) override {
         labelToIdLookup.reserve(new_max_elements);
     }
 
-    inline bool isLabelExists(labelType label) override {
+    bool isLabelExists(labelType label) override {
         return labelToIdLookup.find(label) != labelToIdLookup.end();
     }
     // Return a set of all labels that are stored in the index (helper for computing label count
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
-    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+    vecsim_stl::set<labelType> getLabelsSet() const override {
         vecsim_stl::set<labelType> keys(this->allocator);
         for (auto &it : labelToIdLookup) {
             keys.insert(it.first);
@@ -88,13 +75,13 @@ protected:
         return keys;
     };
 
-    inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() const override {
         return new (this->allocator)
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
 
-    inline BF_BatchIterator<DataType, DistType> *
+    BF_BatchIterator<DataType, DistType> *
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
         return new (this->allocator)
             BFS_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
@@ -122,7 +109,7 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
         idType id = optionalID->second;
-        updateVector(id, vector_data);
+        this->vectors->updateElement(id, vector_data);
         return 0;
     }
 

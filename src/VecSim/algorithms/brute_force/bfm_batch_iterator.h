@@ -19,33 +19,30 @@ public:
     ~BFM_BatchIterator() override = default;
 
 private:
-    inline VecSimQueryReply_Code calculateScores() override {
+    VecSimQueryReply_Code calculateScores() override {
         this->index_label_count = this->index->indexLabelCount();
         this->scores.reserve(this->index_label_count);
         vecsim_stl::unordered_map<labelType, DistType> tmp_scores(this->index_label_count,
                                                                   this->allocator);
-        auto &blocks = this->index->getVectorBlocks();
-        VecSimQueryReply_Code rc;
 
         idType curr_id = 0;
-        for (auto &block : blocks) {
-            // compute the scores for the vectors in every block and extend the scores array.
-            auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
-                                                                this->getTimeoutCtx(), &rc);
-            if (VecSim_OK != rc) {
-                return rc;
+        auto vectors_it = this->index->getVectorsIterator();
+        auto DistFunc = this->index->getDistFunc();
+        while (auto *vector = vectors_it->next()) {
+            // Compute the scores for every vector and extend the scores array.
+            if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
+                return VecSim_QueryReply_TimedOut;
             }
-            for (size_t i = 0; i < block_scores.size(); i++) {
-                labelType curr_label = this->index->getVectorLabel(curr_id);
-                auto curr_pair = tmp_scores.find(curr_label);
-                // For each score, emplace or update the score of the label.
-                if (curr_pair == tmp_scores.end()) {
-                    tmp_scores.emplace(curr_label, block_scores[i]);
-                } else if (curr_pair->second > block_scores[i]) {
-                    curr_pair->second = block_scores[i];
-                }
-                ++curr_id;
+            auto score = DistFunc(vector, this->getQueryBlob(), this->index->getDim());
+            labelType curr_label = this->index->getVectorLabel(curr_id);
+            auto curr_pair = tmp_scores.find(curr_label);
+            // For each score, emplace or update the score of the label.
+            if (curr_pair == tmp_scores.end()) {
+                tmp_scores.emplace(curr_label, score);
+            } else if (curr_pair->second > score) {
+                curr_pair->second = score;
             }
+            ++curr_id;
         }
         assert(curr_id == this->index->indexSize());
         for (auto p : tmp_scores) {
