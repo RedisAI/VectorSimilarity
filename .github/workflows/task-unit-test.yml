@@ -47,9 +47,13 @@ jobs:
       - name: checkout
         if: steps.node20.outputs.supported == 'true'
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
       - name: checkout (fallback)
         if: steps.node20.outputs.supported == 'false'
         uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
       - name: install dependencies
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
       - name: unit tests
