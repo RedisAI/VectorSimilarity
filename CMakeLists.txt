@@ -13,7 +13,7 @@ message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 
 if(USE_COVERAGE)
 	if(NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-		message(FATAL_ERROR "Build type must be DEBUG for coverage")
+		message(FATAL_ERROR "Build  type must be DEBUG for coverage")
 	endif()
 
 	set(COV_CXX_FLAGS "-coverage")
