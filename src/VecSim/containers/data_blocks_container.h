@@ -20,6 +20,8 @@ public:
 
     size_t size() const override;
 
+    size_t capacity() const;
+
     size_t blockSize() const;
 
     size_t elementByteCount() const;
@@ -33,6 +35,13 @@ public:
     Status updateElement(size_t id, const void *element) override;
 
     std::unique_ptr<RawDataContainer::Iterator> getIterator() const override;
+
+#ifdef BUILD_TESTS
+    void saveBlocks(std::ostream &output) const;
+    void restoreBlocks(std::istream &input);
+    void shrinkToFit();
+    size_t numBlocks() const;
+#endif
 
     class Iterator : public RawDataContainer::Iterator {
         size_t cur_id;

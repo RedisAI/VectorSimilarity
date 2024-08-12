@@ -1,4 +1,5 @@
 #include "data_blocks_container.h"
+#include "VecSim/utils/serializer.h"
 
 DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCount,
                                          std::shared_ptr<VecSimAllocator> allocator,
@@ -9,6 +10,8 @@ DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCo
 DataBlocksContainer::~DataBlocksContainer() = default;
 
 size_t DataBlocksContainer::size() const { return element_count; }
+
+size_t DataBlocksContainer::capacity() const { return blocks.capacity(); }
 
 size_t DataBlocksContainer::blockSize() const { return block_size; }
 
@@ -51,6 +54,51 @@ std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() c
     return std::make_unique<DataBlocksContainer::Iterator>(*this);
 }
 
+#ifdef BUILD_TESTS
+void DataBlocksContainer::saveBlocks(std::ostream &output) const {
+    // Save number of blocks
+    unsigned int num_blocks = this->numBlocks();
+    Serializer::writeBinaryPOD(output, num_blocks);
+
+    // Save data blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+        auto &block = this->blocks[i];
+        unsigned int block_len = block.getLength();
+        Serializer::writeBinaryPOD(output, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            output.write(block.getElement(j), this->element_bytes_count);
+        }
+    }
+}
+
+void DataBlocksContainer::restoreBlocks(std::istream &input) {
+
+    // Get number of blocks
+    unsigned int num_blocks = 0;
+    Serializer::readBinaryPOD(input, num_blocks);
+    this->blocks.reserve(num_blocks);
+
+    // Get data blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+        this->blocks.emplace_back(this->block_size, this->element_bytes_count, this->allocator,
+                                  this->alignment);
+        unsigned int block_len = 0;
+        Serializer::readBinaryPOD(input, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            auto cur_vec = this->getAllocator()->allocate_unique(this->element_bytes_count);
+            input.read(static_cast<char *>(cur_vec.get()),
+                       (std::streamsize)this->element_bytes_count);
+            this->blocks.back().addElement(cur_vec.get());
+            this->element_count++;
+        }
+    }
+}
+
+void DataBlocksContainer::shrinkToFit() { this->blocks.shrink_to_fit(); }
+
+size_t DataBlocksContainer::numBlocks() const { return this->blocks.size(); }
+
+#endif
 /********************************** Iterator API ************************************************/
 
 DataBlocksContainer::Iterator::Iterator(const DataBlocksContainer &container_)

@@ -325,6 +325,9 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     size_t n = 10000;
     size_t k = 11;
     size_t dim = 32;
+    // r/w lock to ensure that index is locked (stop the world) upon adding a new block to the
+    // global data structures, which is non read safe for parallel insertions.
+    std::shared_mutex indexGuard;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
@@ -337,11 +340,20 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
 
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
+    std::atomic<int> counter{};
 
     auto parallel_insert = [&](int myID) {
         for (labelType label = myID; label < n; label += n_threads) {
             completed_tasks[myID]++;
+            bool exclusive = false;
+            if (++counter % DEFAULT_BLOCK_SIZE) {
+                indexGuard.lock();
+                exclusive = true;
+            } else {
+                indexGuard.lock_shared();
+            }
             GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
+            exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
         }
     };
     std::thread thread_objs[n_threads];
@@ -378,6 +390,10 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
     size_t k = 11;
     size_t dim = 32;
 
+    // r/w lock to ensure that index is locked (stop the world) upon adding a new block to the
+    // global data structures, which is non read safe for parallel insertions.
+    std::shared_mutex indexGuard;
+
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
@@ -389,10 +405,19 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
 
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
+    std::atomic<int> counter{};
     auto parallel_insert = [&](int myID) {
         for (size_t i = myID; i < n; i += n_threads) {
             completed_tasks[myID]++;
+            bool exclusive = false;
+            if (++counter % DEFAULT_BLOCK_SIZE) {
+                indexGuard.lock();
+                exclusive = true;
+            } else {
+                indexGuard.lock_shared();
+            }
             GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, i % n_labels, i);
+            exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
         }
     };
     std::thread thread_objs[n_threads];
@@ -427,6 +452,9 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
     size_t n = 10000;
     size_t k = 11;
     size_t dim = 32;
+    // r/w lock to ensure that index is locked (stop the world) upon adding a new block to the
+    // global data structures, which is non read safe for parallel insertions.
+    std::shared_mutex indexGuard;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
@@ -440,11 +468,20 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
         // Save the number fo tasks done by thread i in the i-th entry.
         std::vector<size_t> completed_tasks(n_threads, 0);
+        std::atomic<int> counter{};
 
         auto parallel_insert = [&](int myID) {
             for (labelType label = myID; label < n; label += n_threads / 2) {
+                bool exclusive = false;
+                if (++counter % DEFAULT_BLOCK_SIZE) {
+                    indexGuard.lock();
+                    exclusive = true;
+                } else {
+                    indexGuard.lock_shared();
+                }
                 completed_tasks[myID]++;
                 GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
+                exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
             }
         };
 
