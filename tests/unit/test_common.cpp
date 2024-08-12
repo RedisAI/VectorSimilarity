@@ -11,7 +11,7 @@
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
-#include "VecSim/utils/vecsim_results_container.h"
+#include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "mock_thread_pool.h"
@@ -381,6 +381,30 @@ TYPED_TEST(UtilsTests, results_containers) {
 
     VecSimQueryReply_Free(res1);
     VecSimQueryReply_Free(res2);
+}
+
+TYPED_TEST(UtilsTests, data_blocks_container) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    // Create a simple data blocks container of chars with block of size 1.
+    auto chars_container = DataBlocksContainer(1, 1, allocator, 64);
+    ASSERT_EQ(chars_container.size(), 0);
+    ASSERT_EQ(chars_container.addElement(std::string("a").c_str(), 0),
+              RawDataContainer::Status::OK);
+    ASSERT_EQ(chars_container.size(), 1);
+    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 1),
+              RawDataContainer::Status::OK);
+    ASSERT_EQ(chars_container.size(), 2);
+    ASSERT_EQ(chars_container.updateElement(0, std::string("c").c_str()),
+              RawDataContainer::Status::OK);
+    ASSERT_EQ(*chars_container.getElement(0), *std::string("c").c_str());
+    ASSERT_EQ(chars_container.removeElement(1), RawDataContainer::Status::OK);
+    ASSERT_EQ(chars_container.size(), 1);
+    ASSERT_EQ(chars_container.removeElement(0), RawDataContainer::Status::OK);
+    ASSERT_EQ(chars_container.size(), 0);
+    ASSERT_EQ(chars_container.addElement(std::string("b").c_str(), 0),
+              RawDataContainer::Status::OK);
+    ASSERT_EQ(chars_container.size(), 1);
+    ASSERT_EQ(*chars_container.getElement(0), *std::string("b").c_str());
 }
 
 class CommonAPITest : public ::testing::Test {};

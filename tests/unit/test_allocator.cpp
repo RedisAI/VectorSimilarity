@@ -103,6 +103,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     expectedAllocationSize +=
         sizeof(BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
+    expectedAllocationSize += sizeof(DataBlocksContainer) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
