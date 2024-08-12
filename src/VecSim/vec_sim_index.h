@@ -14,6 +14,8 @@
 #include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
+#include "containers/raw_data_container_interface.h"
+
 #include <cassert>
 
 using spaces::dist_func_t;
@@ -58,6 +60,8 @@ protected:
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
+
+    RawDataContainer *vectors; // The raw vectors data container.
 
     /**
      * @brief Get the common info object

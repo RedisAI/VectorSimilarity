@@ -115,7 +115,6 @@ protected:
     size_t maxLevel; // this is the top level of the entry point's element
 
     // Index data
-    RawDataContainer *vectors;
     vecsim_stl::vector<DataBlock> graphDataBlocks;
     vecsim_stl::vector<ElementMetaData> idToMetaData;
 
@@ -1593,7 +1592,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
 
-    vectors = new (this->allocator)
+    this->vectors = new (this->allocator)
         DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -1629,7 +1628,7 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
     for (idType id = 0; id < curElementCount; id++) {
         getGraphDataByInternalId(id)->destroy(this->levelDataSize, this->allocator);
     }
-    delete vectors;
+    delete this->vectors;
 }
 
 /**
@@ -1675,7 +1674,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // Get the last element's metadata and data.
     // If we are deleting the last element, we already destroyed it's metadata.
-    auto *last_element_data = vectors->getElement(curElementCount);
+    auto *last_element_data = this->vectors->getElement(curElementCount);
     DataBlock &last_gd_block = graphDataBlocks.back();
     auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
 
@@ -1687,7 +1686,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // If we need to free a complete block and there is at least one block between the
     // capacity and the size.
-    vectors->removeElement(curElementCount);
+    this->vectors->removeElement(curElementCount);
     if (curElementCount % this->blockSize == 0) {
         shrinkByBlock();
     }
