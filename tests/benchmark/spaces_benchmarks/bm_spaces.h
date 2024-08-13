@@ -15,7 +15,7 @@
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/functions/AVX512F.h"
-#include "VecSim/spaces/functions/AVX512FP16.h"
+#include "VecSim/spaces/functions/AVX512FP16_VL.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
@@ -48,10 +48,8 @@
         ->Unit(benchmark::kNanosecond)
 
 /**
- * A number that is
- * 1. divisible by 32 to ensure that we have at least one full 512 bits iteration in all types
- * 2. higher than the minimum dimension requires to choose all possible optimizations.
- * (currently it's 500 for IP with AVX512_FP16)
+ * A number that is divisible by 32 to ensure that we have at least one full 512 bits iteration in
+ * all types
  */
 static constexpr size_t min_no_res_th_dim = 512;
 
@@ -92,7 +90,7 @@ static constexpr size_t start = min_no_res_th_dim;
  */
 #define INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, metric, arch_supported)                    \
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, low_dim, arch_supported)                    \
-        ->DenseRange(100, 200, 15)
+        ->DenseRange(55, 200, 15)
 
 /* Naive algorithms */
 #define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
