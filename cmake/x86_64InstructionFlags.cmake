@@ -36,8 +36,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		add_compile_definitions(OPT_AVX512_BF16_VL)
 	endif()
 
-	if(CXX_AVX512FP16)
-		add_compile_definitions(OPT_AVX512_FP16)
+	if(CXX_AVX512VL AND CXX_AVX512FP16)
+		add_compile_definitions(OPT_AVX512_FP16_VL)
 	endif()
 
 	if(CXX_AVX512F)
