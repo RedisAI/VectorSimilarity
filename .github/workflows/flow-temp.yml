@@ -15,6 +15,7 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: alpine:3
+      pre-checkout-script: apk add bash
       run-valgrind: true
   # focal:
   #   uses: ./.github/workflows/task-unit-test.yml
