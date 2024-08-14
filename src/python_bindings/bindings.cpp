@@ -63,35 +63,24 @@ py::object wrap_results(VecSimQueryReply **res, size_t num_res, size_t num_queri
             free_when_done_d));
 }
 
+class PyVecSimIndex;  // forward decleration
 class PyBatchIterator {
 private:
     // Hold the index pointer, so that it will be destroyed **after** the batch iterator. Hence,
     // the index field should come before the iterator field.
-    std::shared_ptr<VecSimIndex> vectorIndex;
+    std::shared_ptr<PyVecSimIndex> vectorIndex;
     std::shared_ptr<VecSimBatchIterator> batchIterator;
 
 public:
-    PyBatchIterator(const std::shared_ptr<VecSimIndex> &vecIndex,
+    PyBatchIterator(const std::shared_ptr<PyVecSimIndex> &vecIndex,
                     VecSimBatchIterator *batchIterator)
         : vectorIndex(vecIndex), batchIterator(batchIterator, VecSimBatchIterator_Free) {}
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
-    py::object getNextResults(size_t n_res, VecSimQueryReply_Order order) {
-        VecSimQueryReply *results;
-        {
-            // We create this object inside the scope to enable parallel execution of the batch
-            // iterator from different Python threads.
-            py::gil_scoped_release py_gil;
-            results = VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
-        }
-        // The number of results may be lower than n_res, if there are less than n_res remaining
-        // vectors in the index that hadn't been returned yet.
-        size_t actual_n_res = VecSimQueryReply_Len(results);
-        return wrap_results(&results, actual_n_res);
-    }
+    py::object getNextResults(size_t n_res, VecSimQueryReply_Order order); // implement after declaring PyVecSimHNSWIndex
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
-    virtual ~PyBatchIterator() = default;
+    ~PyBatchIterator() = default;
 };
 
 // @input or @query arguments are a py::object object. (numpy arrays are acceptable)
@@ -202,7 +191,7 @@ public:
     PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
         py::array query(input);
         return PyBatchIterator(
-            index, VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params));
+            std::make_shared<PyVecSimIndex>(*this), VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params));
     }
 
     py::object getVector(labelType label) {
@@ -210,15 +199,17 @@ public:
         size_t dim = info.commonInfo.basicInfo.dim;
         if (info.commonInfo.basicInfo.type == VecSimType_FLOAT32) {
             return rawVectorsAsNumpy<float, float>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
-            return rawVectorsAsNumpy<double, double>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_BFLOAT16) {
-            return rawVectorsAsNumpy<bfloat16, float, float>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT16) {
-            return rawVectorsAsNumpy<float16, float, float>(label, dim);
-        } else {
-            throw std::runtime_error("Invalid vector data type");
         }
+        if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
+            return rawVectorsAsNumpy<double, double>(label, dim);
+        }
+        if (info.commonInfo.basicInfo.type == VecSimType_BFLOAT16) {
+            return rawVectorsAsNumpy<bfloat16, float, float>(label, dim);
+        }
+        if (info.commonInfo.basicInfo.type == VecSimType_FLOAT16) {
+            return rawVectorsAsNumpy<float16, float, float>(label, dim);
+        }
+        throw std::runtime_error("Invalid vector data type");
     }
 
     virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
@@ -424,7 +415,29 @@ public:
             throw std::runtime_error("Invalid index data type");
         }
     }
+    void lockIndexGuardShared() { indexGuard.lock_shared(); }
+    void unlockIndexGuardShared() { indexGuard.unlock_shared(); }
 };
+
+py::object PyBatchIterator::getNextResults(size_t n_res, VecSimQueryReply_Order order) {
+    VecSimQueryReply *results;
+    {
+        // We create this object inside the scope to enable parallel execution of the batch
+        // iterator from different Python threads.
+        py::gil_scoped_release py_gil;
+        // if (dynamic_cast<PyHNSWLibIndex *>(vectorIndex.get())) {
+        //     dynamic_cast<PyHNSWLibIndex *>(this->vectorIndex.get())->lockIndexGuardShared();
+        // }
+        results = VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
+        // if (dynamic_cast<PyHNSWLibIndex *>(vectorIndex.get())) {
+        //     dynamic_cast<PyHNSWLibIndex *>(this->vectorIndex.get())->unlockIndexGuardShared();
+        // }
+    }
+    // The number of results may be lower than n_res, if there are less than n_res remaining
+    // vectors in the index that hadn't been returned yet.
+    size_t actual_n_res = VecSimQueryReply_Len(results);
+    return wrap_results(&results, actual_n_res);
+}
 
 class PyTieredIndex : public PyVecSimIndex {
 protected:
