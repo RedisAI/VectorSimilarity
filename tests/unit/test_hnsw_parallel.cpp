@@ -24,8 +24,10 @@ public:
     using dist_t = typename index_type_t::dist_t;
 
 protected:
+    VecSimIndex *index = nullptr;
     VecSimIndex *CreateNewIndex(HNSWParams &params, bool is_multi = false) {
-        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
+        index = test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
+        return index;
     }
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
@@ -34,6 +36,10 @@ protected:
         return reinterpret_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
     }
 
+    void TearDown() override {
+        if (index)
+            VecSimIndex_Free(index);
+    }
     /* Helper methods for testing repair jobs:
      * Collect all the nodes that require repair due to the deletions, from top level down, and
      * insert them into a queue.
@@ -71,12 +77,30 @@ protected:
             }
         }
     }
+
+    void parallelInsertSearch(bool is_multi);
 };
 
 // DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
 TYPED_TEST_SUITE(HNSWTestParallel, DataTypeSet);
 
+void Foo() {}
+TYPED_TEST(HNSWTestParallel, testingTheTest) {
+    size_t n_threads = 1;
+    auto fail_now = [&](int myID) { ASSERT_EQ(1, 1); };
+
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i] = std::thread(fail_now, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    if (testing::Test::HasFatalFailure())
+        return;
+    // ASSERT_EQ(7,1);
+}
 TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     size_t n = 20000;
     size_t k = 11;
@@ -141,8 +165,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
                             (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
                              2 * sizeof(size_t) + sizeof(void *));
     ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
-
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
@@ -193,8 +215,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     // Validate that every thread executed a single job.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
-
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
@@ -318,7 +338,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
                             (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
                              2 * sizeof(size_t) + sizeof(void *));
     ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsert) {
@@ -368,7 +387,6 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
-    VecSimIndex_Free(parallel_index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
@@ -420,13 +438,16 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
-    VecSimIndex_Free(parallel_index);
 }
 
-TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
+template <class index_type_t>
+void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
     size_t n = 10000;
     size_t k = 11;
     size_t dim = 32;
+    data_t query_val = (data_t)n / 4;
+    labelType first_res_label = query_val - k / 2;
+    labelType last_res_label = query_val + k / 2;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
@@ -435,82 +456,71 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                          .efConstruction = 200,
                          .efRuntime = n};
 
-    for (bool is_multi : {true, false}) {
-        VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
-        size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
-        // Save the number fo tasks done by thread i in the i-th entry.
-        std::vector<size_t> completed_tasks(n_threads, 0);
+    VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
 
-        auto parallel_insert = [&](int myID) {
-            for (labelType label = myID; label < n; label += n_threads / 2) {
-                completed_tasks[myID]++;
-                GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
-            }
-        };
-
-        TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
-        std::atomic_int successful_searches(0);
-        auto parallel_knn_search = [&](int myID) {
-            completed_tasks[myID]++;
-            // Make sure were still indexing in parallel to the search (at most 90% if the vectors
-            // were already indexed).
-            ASSERT_LT(VecSimIndex_IndexSize(parallel_index), 0.9 * n);
-            TEST_DATA_T query[dim];
-            GenerateVector<TEST_DATA_T>(query, dim, query_val);
-            auto verify_res = [&](size_t id, double score, size_t res_index) {
-                // We expect to get the results with increasing order of the distance between the
-                // res label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is
-                // the L2 distance between the vectors that correspond the ids.
-                size_t diff_id = std::abs(int(id - query_val));
-                ASSERT_EQ(diff_id, (res_index + 1) / 2);
-                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
-            };
-            runTopKSearchTest(parallel_index, query, k, verify_res);
-            successful_searches++;
-        };
-
-        auto hnsw_index = this->CastToHNSW(parallel_index);
-        std::thread thread_objs[n_threads];
-        for (size_t i = 0; i < n_threads; i++) {
-            if (i < n_threads / 2) {
-                thread_objs[i] = std::thread(parallel_insert, i);
-            } else {
-                // Search threads are waiting in bust wait until the vectors of the query results
-                // are done being indexed.
-                bool wait_for_results = true;
-                while (wait_for_results) {
-                    wait_for_results = false;
-                    for (labelType res_label = query_val - k / 2; res_label <= query_val + k / 2;
-                         res_label++) {
-                        if (!hnsw_index->safeCheckIfLabelExistsInIndex(res_label, true)) {
-                            wait_for_results = true;
-                            break; // results are not ready yet, restart the check.
-                        }
-                    }
-                }
-                thread_objs[i] = std::thread(parallel_knn_search, i);
-            }
-        }
-        for (size_t i = 0; i < n_threads; i++) {
-            thread_objs[i].join();
-        }
-        ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-        ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
-        // Validate that every insertion thread executed n/(n_threads/2_ jobs).
-        ASSERT_EQ(
-            *std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
-            n / (n_threads / 2));
-        ASSERT_EQ(
-            *std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
-            ceil((double)n / (n_threads / 2)));
-        // Validate that every search thread executed a single job.
-        ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
-                  1);
-        ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
-                  1);
-        VecSimIndex_Free(parallel_index);
+    // Insert the vectors we expect to search for.
+    for (labelType res_label = first_res_label; res_label <= last_res_label; res_label++) {
+        GenerateAndAddVector<data_t>(parallel_index, dim, res_label, res_label);
     }
+    size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
+    auto parallel_insert = [&](int myID) {
+        for (labelType label = myID; label < n; label += n_threads / 2) {
+            completed_tasks[myID]++;
+            if (label >= first_res_label && label <= last_res_label) {
+                continue; // Skip the vectors we already indexed.
+            }
+            GenerateAndAddVector<data_t>(parallel_index, dim, label, label);
+        }
+    };
+
+    std::atomic_int successful_searches(0);
+    auto parallel_knn_search = [&](int myID) {
+        completed_tasks[myID]++;
+        // Make sure we're still indexing in parallel to the search (at most 90% if the vectors
+        // were already indexed).
+        ASSERT_LT(VecSimIndex_IndexSize(parallel_index), 0.9 * n);
+        data_t query[dim];
+        GenerateVector<data_t>(query, dim, query_val);
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            // We expect to get the results with increasing order of the distance between the
+            // res label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is
+            // the L2 distance between the vectors that correspond the ids.
+            size_t diff_id = std::abs(int(id - query_val));
+            ASSERT_EQ(diff_id, (res_index + 1) / 2);
+            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        };
+        runTopKSearchTest(parallel_index, query, k, verify_res);
+        successful_searches++;
+    };
+
+    auto hnsw_index = this->CastToHNSW(parallel_index);
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        if (i < n_threads / 2) {
+            thread_objs[i] = std::thread(parallel_insert, i);
+        } else {
+            thread_objs[i] = std::thread(parallel_knn_search, i);
+        }
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+    ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
+    // Validate that every insertion thread executed n/(n_threads/2_ jobs).
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+              n / (n_threads / 2));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+              ceil((double)n / (n_threads / 2)));
+    // Validate that every search thread executed a single job.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
+    ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
 }
+TYPED_TEST(HNSWTestParallel, parallelInsertSearchSingle) { this->parallelInsertSearch(false); }
+TYPED_TEST(HNSWTestParallel, parallelInsertSearchMulti) { this->parallelInsertSearch(true); }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairs) {
     size_t n = 1000;
@@ -575,7 +585,6 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
               floorf((float)n_jobs / n_threads));
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
               ceilf((float)n_jobs / n_threads));
-    VecSimIndex_Free(hnsw_index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
@@ -670,7 +679,6 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
               floorf((float)n_jobs / (n_threads / 2.0)));
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
               ceilf((float)n_jobs / (n_threads / 2.0)));
-    VecSimIndex_Free(hnsw_index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
@@ -773,5 +781,4 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(hnsw_index, query, k, verify_res);
-    VecSimIndex_Free(hnsw_index);
 }
