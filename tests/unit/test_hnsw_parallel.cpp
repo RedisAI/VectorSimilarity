@@ -40,6 +40,7 @@ protected:
         if (index)
             VecSimIndex_Free(index);
     }
+
     /* Helper methods for testing repair jobs:
      * Collect all the nodes that require repair due to the deletions, from top level down, and
      * insert them into a queue.
@@ -85,22 +86,6 @@ protected:
 
 TYPED_TEST_SUITE(HNSWTestParallel, DataTypeSet);
 
-void Foo() {}
-TYPED_TEST(HNSWTestParallel, testingTheTest) {
-    size_t n_threads = 1;
-    auto fail_now = [&](int myID) { ASSERT_EQ(1, 1); };
-
-    std::thread thread_objs[n_threads];
-    for (size_t i = 0; i < n_threads; i++) {
-        thread_objs[i] = std::thread(fail_now, i);
-    }
-    for (size_t i = 0; i < n_threads; i++) {
-        thread_objs[i].join();
-    }
-    if (testing::Test::HasFatalFailure())
-        return;
-    // ASSERT_EQ(7,1);
-}
 TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     size_t n = 20000;
     size_t k = 11;
@@ -458,9 +443,11 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
 
     VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
 
+    std::atomic<size_t> indexed_vectors(0);
     // Insert the vectors we expect to search for.
     for (labelType res_label = first_res_label; res_label <= last_res_label; res_label++) {
         GenerateAndAddVector<data_t>(parallel_index, dim, res_label, res_label);
+        indexed_vectors++;
     }
     size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
     // Save the number fo tasks done by thread i in the i-th entry.
@@ -473,27 +460,33 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
                 continue; // Skip the vectors we already indexed.
             }
             GenerateAndAddVector<data_t>(parallel_index, dim, label, label);
+            indexed_vectors++;
         }
     };
-
     std::atomic_int successful_searches(0);
+    size_t batch_size = n / 20;
     auto parallel_knn_search = [&](int myID) {
-        completed_tasks[myID]++;
-        // Make sure we're still indexing in parallel to the search (at most 90% if the vectors
-        // were already indexed).
-        ASSERT_LT(VecSimIndex_IndexSize(parallel_index), 0.9 * n);
-        data_t query[dim];
-        GenerateVector<data_t>(query, dim, query_val);
-        auto verify_res = [&](size_t id, double score, size_t res_index) {
-            // We expect to get the results with increasing order of the distance between the
-            // res label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is
-            // the L2 distance between the vectors that correspond the ids.
-            size_t diff_id = std::abs(int(id - query_val));
-            ASSERT_EQ(diff_id, (res_index + 1) / 2);
-            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
-        };
-        runTopKSearchTest(parallel_index, query, k, verify_res);
-        successful_searches++;
+        size_t local_search_count = 0;
+        while (indexed_vectors < 0.95 * n) {
+            if (indexed_vectors < (local_search_count * batch_size)) {
+                usleep(100); // Wait for another batch of vectors to be indexed.
+                continue;
+            }
+            completed_tasks[myID]++;
+            data_t query[dim];
+            GenerateVector<data_t>(query, dim, query_val);
+            auto verify_res = [&](size_t id, double score, size_t res_index) {
+                // We expect to get the results with increasing order of the distance between the
+                // res label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is
+                // the L2 distance between the vectors that correspond the ids.
+                size_t diff_id = std::abs(int(id - query_val));
+                ASSERT_EQ(diff_id, (res_index + 1) / 2);
+                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            };
+            runTopKSearchTest(parallel_index, query, k, verify_res);
+            successful_searches++;
+            local_search_count++;
+        }
     };
 
     auto hnsw_index = this->CastToHNSW(parallel_index);
@@ -508,16 +501,18 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
     }
+
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
+    // Validate that every search thread executed at least 1 jobs.
+    for (size_t i = n_threads / 2; i < n_threads; i++) {
+        ASSERT_GE(completed_tasks[i], 2);
+    }
     // Validate that every insertion thread executed n/(n_threads/2_ jobs).
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
               n / (n_threads / 2));
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
               ceil((double)n / (n_threads / 2)));
-    // Validate that every search thread executed a single job.
-    ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
-    ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
 }
 TYPED_TEST(HNSWTestParallel, parallelInsertSearchSingle) { this->parallelInsertSearch(false); }
 TYPED_TEST(HNSWTestParallel, parallelInsertSearchMulti) { this->parallelInsertSearch(true); }
