@@ -90,6 +90,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
 
+    est += sizeof(DataBlocksContainer) + allocations_overhead;
+
     // Account for the visited nodes pool (assume that it holds one pointer to a handler).
     est += sizeof(VisitedNodesHandler) + allocations_overhead;
     // The visited nodes pool inner vector buffer (contains one pointer).
@@ -99,7 +101,6 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (initial_cap) {
         size_t num_blocks = initial_cap / blockSize; // should be divisible by block size
-        est += sizeof(DataBlock) * num_blocks + allocations_overhead;        // data blocks
         est += sizeof(DataBlock) * num_blocks + allocations_overhead;        // meta blocks
         est += sizeof(ElementMetaData) * initial_cap + allocations_overhead; // idToMetaData
         // Labels lookup hash table buckets.
@@ -171,7 +172,6 @@ VecSimIndex *NewIndex(const std::string &location) {
     if (!input.is_open()) {
         throw std::runtime_error("Cannot open file");
     }
-
     Serializer::EncodingVersion version = Serializer::ReadVersion(input);
 
     VecSimAlgo algo = VecSimAlgo_BF;

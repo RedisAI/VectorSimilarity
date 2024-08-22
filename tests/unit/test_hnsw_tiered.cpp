@@ -1766,7 +1766,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
     // Manually shrink the vectors so that memory would be as it was before we started inserting
-    tiered_index->getHNSWIndex()->vectorBlocks.shrink_to_fit();
+    dynamic_cast<DataBlocksContainer *>(tiered_index->getHNSWIndex()->vectors)->shrinkToFit();
     tiered_index->getHNSWIndex()->graphDataBlocks.shrink_to_fit();
 
     EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);

@@ -416,9 +416,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     expected_mem_delta +=
         (hnswIndex->labelLookup.bucket_count() - prev_bucket_count) * sizeof(size_t);
     // New blocks allocated - 1 aligned block for vectors and 1 unaligned block for graph data.
+    auto *data_blocks = dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors);
     expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->alignment;
-    expected_mem_delta +=
-        (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
+    expected_mem_delta += (data_blocks->capacity() - data_blocks->numBlocks()) * sizeof(DataBlock);
     expected_mem_delta +=
         (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
         sizeof(DataBlock);
@@ -433,7 +433,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
     size_t expected_allocation_size = initial_memory_size + accumulated_mem_delta;
     expected_allocation_size +=
-        (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
+        (data_blocks->capacity() - data_blocks->numBlocks()) * sizeof(DataBlock);
     expected_allocation_size +=
         (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
         sizeof(DataBlock);
@@ -450,9 +450,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
     // Data block vectors do not shrink on resize so extra memory is expected.
-    size_t block_vectors_memory = sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() +
-                                                       hnswIndex->vectorBlocks.capacity()) +
-                                  2 * vecsimAllocationOverhead;
+    size_t block_vectors_memory =
+        sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() + data_blocks->capacity()) +
+        2 * vecsimAllocationOverhead;
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to
     // zero, while in others the entire capacity reduced to zero (including the header).
