@@ -9,6 +9,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "test_utils.h"
 #include "VecSim/query_result_definitions.h"
+#include "VecSim/vec_sim_debug.h"
 #include <unistd.h>
 #include <random>
 #include <thread>
@@ -30,10 +31,10 @@ protected:
         return index;
     }
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+        return static_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
     HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
+        return static_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
     }
 
     void TearDown() override {
@@ -368,10 +369,22 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         // label and the query val (n/2, n/2-1, n/2+1, n/2-2, n/2+2, ...) The score is the L2
         // distance between the vectors that correspond the ids.
         size_t diff_id = std::abs(int(id - n / 2));
-        ASSERT_EQ(diff_id, (res_index + 1) / 2);
+        if (diff_id != (res_index + 1) / 2) {
+            auto *hnsw_index = this->CastToHNSW(parallel_index);
+            int **neighbors_output;
+            VecSimDebug_GetElementNeighborsInHNSWGraph(hnsw_index, id, &neighbors_output);
+            auto graph_data = hnsw_index->getGraphDataByInternalId(id);
+            for (size_t l = 0; l <= graph_data->toplevel; l++) {
+                auto &neighbours = neighbors_output[l];
+                ASSERT_GT(neighbours[0], 0);
+            }
+            VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+            ADD_FAILURE();
+        }
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
