@@ -2950,15 +2950,17 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
             EXPECT_EQ(tiered_index->addVector(vector, i % n_labels + n_labels),
                       TypeParam::isMulti() ? 1 : 1 - overwrite);
             // Run a query and see that we only receive ids with label < n_labels+i
-            // (the label that we just inserted), and the first result should be this vector.
+            // (the label that we just inserted), and the first result should be this vector
+            // (unless it is unreachable)
             auto ver_res = [&](size_t label, double score, size_t index) {
                 if (index == 0) {
-                    if (label != i % n_labels + n_labels && !TypeParam::isMulti()) {
-                        // TODO: remove after we have a mechanism for connecting new elements
-                        return; // this is flaky - ignore for now
+                    if (label == i % n_labels + n_labels) {
+                        EXPECT_DOUBLE_EQ(score, 0);
+                    } else {
+                        tiered_index->getHNSWIndex()->lockSharedIndexDataGuard();
+                        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, vector), 0);
+                        tiered_index->getHNSWIndex()->unlockSharedIndexDataGuard();
                     }
-                    EXPECT_EQ(label, i % n_labels + n_labels);
-                    EXPECT_DOUBLE_EQ(score, 0);
                 }
                 if (!overwrite) {
                     ASSERT_LE(label, i + n_labels);
