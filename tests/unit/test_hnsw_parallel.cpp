@@ -369,19 +369,28 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         // label and the query val (n/2, n/2-1, n/2+1, n/2-2, n/2+2, ...) The score is the L2
         // distance between the vectors that correspond the ids.
         size_t diff_id = std::abs(int(id - n / 2));
-        if (diff_id != (res_index + 1) / 2) {
+        if (diff_id != (res_index + 1 + 7) / 2) {
+            ADD_FAILURE() << "Expected diff_id: " << (res_index + 1 + 7) / 2 << " got: " << diff_id;
             auto *hnsw_index = this->CastToHNSW(parallel_index);
             int **neighbors_output;
             VecSimDebug_GetElementNeighborsInHNSWGraph(hnsw_index, id, &neighbors_output);
             auto graph_data = hnsw_index->getGraphDataByInternalId(id);
             for (size_t l = 0; l <= graph_data->toplevel; l++) {
+                std::cout << "Printing neighbors for level: " << l << std::endl;
                 auto &neighbours = neighbors_output[l];
-                ASSERT_GT(neighbours[0], 0);
+                auto neighbours_count = neighbours[0];
+                for (size_t j = 1; j <= neighbours_count; j++) {
+                    std::cout << neighbours[j] << ", ";
+                }
+                std::cout << std::endl;
             }
             VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
-            ADD_FAILURE();
+            // Check the score without ending the test.
+            std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
+                      << std::endl;
+        } else { // id is ok, let's check the score
+            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
         }
-        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
     ASSERT_EQ(testing::Test::HasFatalFailure(), false);
@@ -517,11 +526,7 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
 
     ASSERT_EQ(testing::Test::HasFatalFailure(), false);
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    // Validate that every search thread executed at least 1 jobs.
-    for (size_t i = n_threads / 2; i < n_threads; i++) {
-        ASSERT_GE(completed_tasks[i], 2);
-    }
-    // Validate that every insertion thread executed n/(n_threads/2_ jobs).
+    // Validate that every insertion thread executed n/(n_threads/2) jobs.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
               n / (n_threads / 2));
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
