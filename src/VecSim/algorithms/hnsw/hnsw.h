@@ -1588,7 +1588,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), VecSimIndexTombstone(),
-      maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
+      // maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
+        maxElements(this->blockSize),  // todo: in a different PR remove initial capacity, as this is a bug
       graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
 
