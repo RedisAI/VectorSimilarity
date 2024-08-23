@@ -30,10 +30,10 @@ protected:
         index = test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
         return index;
     }
-    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) const {
         return static_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
-    HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndex *index) {
+    HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndex *index) const {
         return static_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
     }
 
@@ -80,6 +80,23 @@ protected:
         }
     }
 
+    void printNeighboursOfId(VecSimIndex *index, idType id) const {
+        auto *hnsw_index = CastToHNSW(index);
+        int **neighbors_output;
+        VecSimDebug_GetElementNeighborsInHNSWGraph(hnsw_index, id, &neighbors_output);
+        auto graph_data = hnsw_index->getGraphDataByInternalId(id);
+        for (size_t l = 0; l <= graph_data->toplevel; l++) {
+            std::cout << "Printing neighbors for level: " << l << std::endl;
+            auto &neighbours = neighbors_output[l];
+            auto neighbours_count = neighbours[0];
+            for (size_t j = 1; j <= neighbours_count; j++) {
+                std::cout << neighbours[j] << ", ";
+            }
+            std::cout << std::endl;
+        }
+        VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+    }
+
     void parallelInsertSearch(bool is_multi);
 };
 
@@ -123,8 +140,15 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
             // query_val+2, ...) The score is the L2 distance between the vectors that correspond
             // the ids.
             size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
-            ASSERT_EQ(diff_id, (res_index + 1) / 2);
-            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            if (diff_id != (res_index + 1) / 2) {
+                ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
+                this->printNeighboursOfId(index, id);
+                // Check the score without ending the test.
+                std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
+                          << std::endl;
+            } else { // id is ok, let's check the score
+                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            }
         };
         runTopKSearchTest(index, query, k, verify_res);
         successful_searches++;
@@ -138,6 +162,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
     }
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
     ASSERT_EQ(successful_searches, n_threads);
 
     // Validate that every thread executed a single job.
@@ -241,8 +266,15 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
             // query_val+2, ...) The score is the L2 distance between the vectors that correspond
             // the ids.
             size_t diff_id = std::abs(id - query_val);
-            ASSERT_EQ(diff_id, (res_index + 1) / 2);
-            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            if (diff_id != (res_index + 1) / 2) {
+                ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
+                this->printNeighboursOfId(index, id);
+                // Check the score without ending the test.
+                std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
+                          << std::endl;
+            } else { // id is ok, let's check the score
+                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            }
         };
         runTopKSearchTest(index, query, k, verify_res);
         successful_searches++;
@@ -311,6 +343,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
     }
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
+
     ASSERT_EQ(successful_searches, n_threads);
     // Validate that every thread executed a single job.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
@@ -369,22 +403,9 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         // label and the query val (n/2, n/2-1, n/2+1, n/2-2, n/2+2, ...) The score is the L2
         // distance between the vectors that correspond the ids.
         size_t diff_id = std::abs(int(id - n / 2));
-        if (diff_id != (res_index + 1 + 7) / 2) {
-            ADD_FAILURE() << "Expected diff_id: " << (res_index + 1 + 7) / 2 << " got: " << diff_id;
-            auto *hnsw_index = this->CastToHNSW(parallel_index);
-            int **neighbors_output;
-            VecSimDebug_GetElementNeighborsInHNSWGraph(hnsw_index, id, &neighbors_output);
-            auto graph_data = hnsw_index->getGraphDataByInternalId(id);
-            for (size_t l = 0; l <= graph_data->toplevel; l++) {
-                std::cout << "Printing neighbors for level: " << l << std::endl;
-                auto &neighbours = neighbors_output[l];
-                auto neighbours_count = neighbours[0];
-                for (size_t j = 1; j <= neighbours_count; j++) {
-                    std::cout << neighbours[j] << ", ";
-                }
-                std::cout << std::endl;
-            }
-            VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+        if (diff_id != (res_index + 1) / 2) {
+            ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
+            this->printNeighboursOfId(parallel_index, id);
             // Check the score without ending the test.
             std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
                       << std::endl;
@@ -502,8 +523,21 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
                 // res label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is
                 // the L2 distance between the vectors that correspond the ids.
                 size_t diff_id = std::abs(int(id - query_val));
-                ASSERT_EQ(diff_id, (res_index + 1) / 2);
-                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+                if (is_multi) {
+                    ASSERT_EQ(diff_id, (res_index + 1) / 2);
+                    ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+                    return;
+                }
+                if (diff_id != (res_index + 1) / 2) {
+                    ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2
+                                  << " got: " << diff_id;
+                    this->printNeighboursOfId(index, id);
+                    // Check the score without ending the test.
+                    std::cout << "Expected score: " << (dim * (diff_id * diff_id))
+                              << " got: " << score << std::endl;
+                } else { // id is ok, let's check the score
+                    ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+                }
             };
             runTopKSearchTest(parallel_index, query, k, verify_res);
             successful_searches++;
@@ -652,8 +686,15 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
             // query_val-3, query_val+3, ...) The score is the L2 distance between the vectors that
             // correspond the ids.
             size_t diff_id = std::abs(int(id - query_val));
-            ASSERT_EQ(diff_id, res_index + (1 - res_index % 2));
-            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            if (diff_id != res_index + (1 - res_index % 2)) {
+                ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
+                this->printNeighboursOfId(hnsw_index, id);
+                // Check the score without ending the test.
+                std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
+                          << std::endl;
+            } else { // id is ok, let's check the score
+                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            }
         };
         do {
             runTopKSearchTest(hnsw_index, query, k, verify_res);
@@ -680,6 +721,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
         thread_objs[i].join();
     }
 
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
     // Check index integrity, also make sure that no node is pointing to a deleted node.
     auto report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
@@ -777,10 +819,19 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         // res label and the query val (3n/4, 3n/4 - 2, 3n/4 + 2, 3n/4 - 4 3n/4 + 4, ...) The score
         // is the L2 distance between the vectors that correspond the ids.
         size_t diff_id = std::abs(int(id - query_val));
-        ASSERT_EQ(diff_id, res_index % 2 ? res_index + 1 : res_index);
-        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        size_t expected_diff_id = res_index % 2 ? res_index + 1 : res_index;
+        if (diff_id != expected_diff_id) {
+            ADD_FAILURE() << "Expected diff_id: " << expected_diff_id << " got: " << diff_id;
+            this->printNeighboursOfId(hnsw_index, id);
+            // Check the score without ending the test.
+            std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
+                      << std::endl;
+        } else { // id is ok, let's check the score
+            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        }
     };
     runTopKSearchTest(hnsw_index, query, k, verify_res_even);
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
 
     // Around n/4 we should have all vectors (even and odd).
     query_val = n / 4;
@@ -790,8 +841,16 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         // res label and the query val (n/4, n/4 - 1, n/4 + 1, n/4 - 2 n/4 + 2, ...) The score
         // is the L2 distance between the vectors that correspond the ids.
         size_t diff_id = std::abs(int(id - query_val));
-        ASSERT_EQ(diff_id, (res_index + 1) / 2);
-        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        if (diff_id != (res_index + 1) / 2) {
+            ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
+            this->printNeighboursOfId(hnsw_index, id);
+            // Check the score without ending the test.
+            std::cout << "Expected score: " << (dim * (diff_id * diff_id)) << " got: " << score
+                      << std::endl;
+        } else { // id is ok, let's check the score
+            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        }
     };
     runTopKSearchTest(hnsw_index, query, k, verify_res);
+    ASSERT_EQ(testing::Test::HasFatalFailure(), false);
 }
