@@ -167,7 +167,8 @@ pybind:
 _CTEST_ARGS=$(CTEST_ARGS)
 _CTEST_ARGS += \
 	--output-on-failure \
-	$(MAKE_J)
+	$(MAKE_J) \
+	-V
 
 ifeq ($(VERBOSE),1)
 _CTEST_ARGS += -V
