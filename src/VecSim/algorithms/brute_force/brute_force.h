@@ -143,7 +143,7 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
-    size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
+    size_t initialCapacity = this->blockSize;
     this->idToLabelMapping.resize(initialCapacity);
     vectors = new (this->allocator)
         DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
