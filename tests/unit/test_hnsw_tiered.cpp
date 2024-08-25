@@ -2947,23 +2947,24 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
             for (size_t j = 0; j < dim; j++) {
                 vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
             }
-            EXPECT_EQ(tiered_index->addVector(vector, i % n_labels + n_labels),
+            labelType cur_label = i % n_labels + n_labels;
+            EXPECT_EQ(tiered_index->addVector(vector, cur_label),
                       TypeParam::isMulti() ? 1 : 1 - overwrite);
             // Run a query and see that we only receive ids with label < n_labels+i
             // (the label that we just inserted), and the first result should be this vector
             // (unless it is unreachable)
-            auto ver_res = [&](size_t label, double score, size_t index) {
+            auto ver_res = [&](size_t res_label, double score, size_t index) {
                 if (index == 0) {
-                    if (label == i % n_labels + n_labels) {
+                    if (res_label == cur_label) {
                         EXPECT_DOUBLE_EQ(score, 0);
                     } else {
                         tiered_index->getHNSWIndex()->lockSharedIndexDataGuard();
-                        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, vector), 0);
+                        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(cur_label, vector), 0);
                         tiered_index->getHNSWIndex()->unlockSharedIndexDataGuard();
                     }
                 }
                 if (!overwrite) {
-                    ASSERT_LE(label, i + n_labels);
+                    ASSERT_LE(res_label, i + n_labels);
                 }
             };
             runTopKSearchTest(tiered_index, vector, 10, ver_res);
