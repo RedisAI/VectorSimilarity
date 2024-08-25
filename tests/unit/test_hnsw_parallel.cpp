@@ -84,8 +84,7 @@ protected:
         auto *hnsw_index = CastToHNSW(index);
         int **neighbors_output;
         VecSimDebug_GetElementNeighborsInHNSWGraph(hnsw_index, id, &neighbors_output);
-        auto graph_data = hnsw_index->getGraphDataByInternalId(id);
-        for (size_t l = 0; l <= graph_data->toplevel; l++) {
+        for (size_t l = 0; neighbors_output[l]; l++) {
             std::cout << "Printing neighbors for level: " << l << std::endl;
             auto &neighbours = neighbors_output[l];
             auto neighbours_count = neighbours[0];
@@ -140,7 +139,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
             // query_val+2, ...) The score is the L2 distance between the vectors that correspond
             // the ids.
             size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
-            if (diff_id != (res_index + 1) / 2) {
+            if (diff_id != (res_index + 1 + 7) / 2) {
                 ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
                 this->printNeighboursOfId(index, id);
                 // Check the score without ending the test.
@@ -841,7 +840,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         // res label and the query val (n/4, n/4 - 1, n/4 + 1, n/4 - 2 n/4 + 2, ...) The score
         // is the L2 distance between the vectors that correspond the ids.
         size_t diff_id = std::abs(int(id - query_val));
-        if (diff_id != (res_index + 1) / 2) {
+        if (diff_id != (res_index + 1 + 7) / 2) {
             ADD_FAILURE() << "Expected diff_id: " << (res_index + 1) / 2 << " got: " << diff_id;
             this->printNeighboursOfId(hnsw_index, id);
             // Check the score without ending the test.
