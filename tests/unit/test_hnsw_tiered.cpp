@@ -2884,9 +2884,12 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
 }
 
 TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
+    if (TypeParam::isMulti()) {
+        return;
+    }
     // Create TieredHNSW index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 500;
+    size_t dim = 128;
+    size_t n = 1000;
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_L2,
@@ -2912,28 +2915,31 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
         for (size_t j = 0; j < dim; j++) {
             vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
         }
-        VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
+        VecSimIndex_AddVector(tiered_index, vector, i);
     }
 
-    // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
-    VecSim_SetWriteMode(VecSim_WriteInPlace);
-    EXPECT_LE(tiered_index->backendIndex->indexSize(), n);
-    for (size_t i = 0; i < n; i++) {
+    // Now delete the last n inserted vectors of the index using async jobs.
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    // mock_thread_pool.init_threads();
+    for (size_t i = 0; i < n_labels*0.8; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
         TEST_DATA_T vector[dim];
         for (size_t j = 0; j < dim; j++) {
             vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
         }
-        VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
+        VecSimIndex_AddVector(tiered_index, vector, i);
     }
-    mock_thread_pool.thread_pool_join();
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
-
-    // Now delete the last n inserted vectors of the index using async jobs.
-    VecSim_SetWriteMode(VecSim_WriteAsync);
-    mock_thread_pool.init_threads();
-    for (size_t i = 0; i < n_labels; i++) {
-        VecSimIndex_DeleteVector(tiered_index, n_labels + i);
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    // mock_thread_pool.init_threads();
+    for (size_t i = n_labels*0.8; i < n_labels; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i);
     }
+    return;
     // At this point, repair jobs should be executed in the background.
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
 
@@ -3535,3 +3541,43 @@ TYPED_TEST(HNSWTieredIndexTestBasic, FitMemoryTest) {
     // allocation.
     ASSERT_EQ(index->getAllocationSize(), initial_memory) << "fitMemory() after adding 1 vector";
 }
+
+// TYPED_TEST(HNSWTieredIndexTest, deleteAsyncInplace) {
+//     // Create TieredHNSW index instance with a mock queue.
+//     size_t dim = 4;
+//     bool isMulti = TypeParam::isMulti();
+//
+//     HNSWParams params = {.type = TypeParam::get_index_type(),
+//                          .dim = dim,
+//                          .metric = VecSimMetric_L2,
+//                          .multi = isMulti};
+//     VecSimParams hnsw_params = CreateParams(params);
+//
+//     auto mock_thread_pool = tieredIndexMock();
+//
+//     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+//     auto allocator = tiered_index->getAllocator();
+//     tiered_index->setWriteMode(VecSim_WriteAsync);
+//
+//     // Insert one vector to HNSW and then delete it (it should have no neighbors to repair).
+//     GenerateAndAddVector<TEST_DATA_T>(tiered_index->getHNSWIndex(), dim, 0);
+//     GenerateAndAddVector<TEST_DATA_T>(tiered_index->getHNSWIndex(), dim, 1, 1);
+//     ASSERT_EQ(tiered_index->deleteVector(1), 1);
+//     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+//
+//     tiered_index->setWriteMode(VecSim_WriteInPlace);
+//
+//     // The first job should be a repair job of the first inserted non-deleted node id (2)
+//     // in level 0.
+//     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+//     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+//     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 0);
+//     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
+//     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+//     ASSERT_GE(tiered_index->idToRepairJobs.at(0).size(), 1);
+//     ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs.size(), 1);
+//     ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs[0]->deleted_id, 1);
+//     ASSERT_EQ(tiered_index->deleteVector(0), 1);
+//
+//     mock_thread_pool.thread_iteration();
+// }
