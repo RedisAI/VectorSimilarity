@@ -257,8 +257,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
                                                          vecsim_stl::vector<idType> &idsToRemove) {
-    auto hnsw_index = this->getHNSWIndex();
-    hnsw_index->removeAndSwapDeletedElement(job->deleted_id);
     // Get the id that was last and was had been swapped with the job's deleted id.
     idType prev_last_id = this->getHNSWIndex()->indexSize();
 
@@ -316,6 +314,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
         auto *swap_job = it.second;
         if (swap_job->pending_repair_jobs_counter.load() == 0) {
             // Swap job is ready for execution - execute and delete it.
+            this->getHNSWIndex()->removeAndSwapDeletedElement(swap_job->deleted_id);
             this->executeSwapJob(swap_job, idsToRemove);
             delete swap_job;
         }
@@ -800,7 +799,19 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     } else {
         // delete in place.
         this->mainIndexGuard.lock();
+        auto ids = this->getHNSWIndex()->getElementIds(label);
         num_deleted_vectors += this->backendIndex->deleteVector(label);
+        // dispoase pending repair and swap jobs.
+        vecsim_stl::vector<idType> idsToRemove(this->allocator);
+        for (auto id : ids) {
+            auto swap_job = HNSWSwapJob(this->allocator, id);
+            idToSwapJob[id] = &swap_job;
+            this->executeSwapJob(&swap_job, idsToRemove);
+        }
+        for (idType id : idsToRemove) {
+            idToSwapJob.erase(id);
+        }
+        readySwapJobs -= idsToRemove.size();
         this->mainIndexGuard.unlock();
     }
 

@@ -187,7 +187,6 @@ protected:
                                       vecsim_stl::vector<bool> &neighbours_bitmap);
     void replaceEntryPoint();
 
-    template <bool has_marked_deleted>
     void SwapLastIdWithDeletedId(idType element_internal_id, ElementGraphData *last_element,
                                  void *last_element_data);
 
@@ -301,6 +300,8 @@ public:
 
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
+    // Unsafe (assume index data guard is held in MT mode).
+    virtual vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -326,8 +327,6 @@ protected:
     virtual void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual void setVectorId(labelType label, idType id) = 0;
     virtual void resizeLabelLookup(size_t new_max_elements) = 0;
-    // For debugging - unsafe (assume index data guard is held in MT mode).
-    virtual vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 };
 
 /**
@@ -1131,13 +1130,12 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
                                                             ElementGraphData *last_element,
                                                             void *last_element_data) {
     // Swap label - this is relevant when the last element's label exists (it is not marked as
-    // deleted). For inplace delete, this is always the case.
-    if (!has_marked_deleted || !isMarkedDeleted(curElementCount)) {
+    // deleted).
+    if (!isMarkedDeleted(curElementCount)) {
         replaceIdOfLabel(getExternalLabel(curElementCount), element_internal_id, curElementCount);
     }
 
@@ -1692,7 +1690,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // Swap the last id with the deleted one, and invalidate the last id data.
     if (curElementCount != internalId) {
-        SwapLastIdWithDeletedId<has_marked_deleted>(internalId, last_element, last_element_data);
+        SwapLastIdWithDeletedId(internalId, last_element, last_element_data);
     }
 
     // If we need to free a complete block and there is at least one block between the
