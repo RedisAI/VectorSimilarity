@@ -3589,4 +3589,5 @@ TYPED_TEST(HNSWTieredIndexTest, deleteAsyncInplace) {
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
     ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
     ASSERT_FALSE(tiered_index->idToSwapJob.contains(2));
+    ASSERT_EQ(tiered_index->readySwapJobs, 2);
 }

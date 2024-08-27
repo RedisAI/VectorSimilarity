@@ -803,6 +803,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         num_deleted_vectors += this->backendIndex->deleteVector(label);
         // dispoase pending repair and swap jobs.
         vecsim_stl::vector<idType> idsToRemove(this->allocator);
+        readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
         for (auto id : ids) {
             auto swap_job = HNSWSwapJob(this->allocator, id);
             idToSwapJob[id] = &swap_job;
