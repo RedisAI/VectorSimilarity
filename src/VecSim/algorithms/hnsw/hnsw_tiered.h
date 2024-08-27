@@ -695,13 +695,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
     if (this->getWriteMode() == VecSim_WriteInPlace) {
-        this->mainIndexGuard.lock();
         // First, check if we need to overwrite the vector in-place for single (from both indexes).
         if (!this->backendIndex->isMultiValue()) {
             ret -= this->deleteVector(label);
         }
         // Insert the vector to the HNSW index. Internally, we will never have to overrite the label
         // since we already checked it outside.
+        this->mainIndexGuard.lock();
         hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
         return ret;
