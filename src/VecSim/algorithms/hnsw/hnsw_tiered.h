@@ -126,6 +126,9 @@ private:
     // Returns the id that the job was stored under (to be set in the job id field).
     idType setAndSaveInvalidJob(AsyncJob *job);
 
+    // Handle deletion of vector inplace condering that async deletion might occurred beforhand.
+    int deleteLabelInplace(labelType label);
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -485,6 +488,25 @@ idType TieredHNSWIndex<DataType, DistType>::setAndSaveInvalidJob(AsyncJob *job) 
     return curInvalidId;
 }
 
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::deleteLabelInplace(labelType label) {
+    auto ids = this->getHNSWIndex()->getElementIds(label);
+    int num_deleted_vectors = this->backendIndex->deleteVector(label);
+    // dispoase pending repair and swap jobs for the removed ids.
+    vecsim_stl::vector<idType> idsToRemove(this->allocator);
+    readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
+    for (auto id : ids) {
+        auto swap_job = HNSWSwapJob(this->allocator, id);
+        idToSwapJob[id] = &swap_job;
+        this->executeSwapJob(&swap_job, idsToRemove);
+    }
+    for (idType id : idsToRemove) {
+        idToSwapJob.erase(id);
+    }
+    readySwapJobs -= idsToRemove.size();
+    return num_deleted_vectors;
+}
+
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
@@ -674,9 +696,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     auto hnsw_index = this->getHNSWIndex();
     if (this->getWriteMode() == VecSim_WriteInPlace) {
         this->mainIndexGuard.lock();
-        // Internally, we may overwrite (delete the previous vector stored under this label), and
-        // may need to increase the capacity when we append the new vector afterwards.
-        ret = hnsw_index->addVector(blob, label);
+        // First, check if we need to overwrite the vector in-place for single (from both indexes).
+        if (!this->backendIndex->isMultiValue()) {
+            ret -= this->deleteVector(label);
+        }
+        // Insert the vector to the HNSW index. Internally, we will never have to overrite the label
+        // since we already checked it outside.
+        hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
         return ret;
     }
@@ -799,20 +825,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     } else {
         // delete in place.
         this->mainIndexGuard.lock();
-        auto ids = this->getHNSWIndex()->getElementIds(label);
-        num_deleted_vectors += this->backendIndex->deleteVector(label);
-        // dispoase pending repair and swap jobs for the removed ids.
-        vecsim_stl::vector<idType> idsToRemove(this->allocator);
-        readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
-        for (auto id : ids) {
-            auto swap_job = HNSWSwapJob(this->allocator, id);
-            idToSwapJob[id] = &swap_job;
-            this->executeSwapJob(&swap_job, idsToRemove);
-        }
-        for (idType id : idsToRemove) {
-            idToSwapJob.erase(id);
-        }
-        readySwapJobs -= idsToRemove.size();
+        num_deleted_vectors += this->deleteLabelInplace(label);
         this->mainIndexGuard.unlock();
     }
 
