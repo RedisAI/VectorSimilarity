@@ -3536,7 +3536,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, FitMemoryTest) {
     ASSERT_EQ(index->getAllocationSize(), initial_memory) << "fitMemory() after adding 1 vector";
 }
 
-TYPED_TEST(HNSWTieredIndexTest, deleteAsyncInplace) {
+TYPED_TEST(HNSWTieredIndexTest, deleteBothAsyncAndInplace) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     bool isMulti = TypeParam::isMulti();
@@ -3554,12 +3554,12 @@ TYPED_TEST(HNSWTieredIndexTest, deleteAsyncInplace) {
 
     // Insert one vector to HNSW.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0);
-    // Add another vector and remove it. Expect that at backendIndex one repair job will be created.
+    // Add another vector and remove it. Expect that at HNSW index one repair job will be created.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 1);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
 
-    // The first job should be a repair job of the first inserted  node id (0) in level 0.
+    // The first job should be a repair job of the first inserted node id (0) in level 0.
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_TRUE(mock_thread_pool.jobQ.front().job->isValid);
@@ -3570,15 +3570,18 @@ TYPED_TEST(HNSWTieredIndexTest, deleteAsyncInplace) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs.size(), 1);
     ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs[0]->deleted_id, 1);
 
-    // Add one more vector and remove it.
+    // Add one more vector and remove it, expect that the same repair job for 0 would be created
+    // for reapring 0->2.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(2), 1);
-    ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
     ASSERT_TRUE(tiered_index->idToSwapJob.contains(2));
-    ASSERT_EQ(tiered_index->indexSize(), 3);
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs.size(), 2);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs[1]->deleted_id, 2);
+    ASSERT_EQ(tiered_index->readySwapJobs, 0);
 
     tiered_index->setWriteMode(VecSim_WriteInPlace);
-    // Delete inplace, expect that the repair job for 0->1 will not be valid anymore.
+    // Delete inplace, expect that the repair job for 0->1 and 0->2 will not be valid anymore.
     ASSERT_EQ(tiered_index->deleteVector(0), 1);
     ASSERT_EQ(tiered_index->indexSize(), 2);
     ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 0);
@@ -3589,5 +3592,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteAsyncInplace) {
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
     ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
     ASSERT_FALSE(tiered_index->idToSwapJob.contains(2));
+    // Both ids 1 and 0 (previously was 2) are now ready due to the deletion of 1 and its associated
+    // jobs.
     ASSERT_EQ(tiered_index->readySwapJobs, 2);
 }

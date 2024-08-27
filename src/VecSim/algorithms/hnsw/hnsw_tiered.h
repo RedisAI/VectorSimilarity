@@ -801,7 +801,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         this->mainIndexGuard.lock();
         auto ids = this->getHNSWIndex()->getElementIds(label);
         num_deleted_vectors += this->backendIndex->deleteVector(label);
-        // dispoase pending repair and swap jobs.
+        // dispoase pending repair and swap jobs for the removed ids.
         vecsim_stl::vector<idType> idsToRemove(this->allocator);
         readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
         for (auto id : ids) {
