@@ -282,8 +282,7 @@ public:
     void removeVectorInPlace(idType id);
 
     /*************************** Labels lookup API ***************************/
-    /* Virtual functions that access the label lookup which is implemeted in the derved classes */
-
+    /* Virtual functions that access the label lookup which is implemented in the derived classes */
     // Return all the labels in the index - this should be used for computing the number of distinct
     // labels in a tiered index, and caller should hold the index data guard.
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
@@ -1642,7 +1641,9 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
-
+    // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
+    // upon marking it as deleted.
+    assert(entrypointNode != internalId);
     auto element = getGraphDataByInternalId(internalId);
 
     // Remove the deleted id form the relevant incoming edges sets in which it appears.

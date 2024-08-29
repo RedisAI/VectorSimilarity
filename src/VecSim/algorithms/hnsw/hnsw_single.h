@@ -96,7 +96,7 @@ vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() 
         keys.insert(it.first);
     }
     return keys;
-};
+}
 
 template <typename DataType, typename DistType>
 double

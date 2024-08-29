@@ -127,7 +127,7 @@ private:
     idType setAndSaveInvalidJob(AsyncJob *job);
 
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
-    int deleteLabelInplace(labelType label);
+    int deleteLabelFromHNSWInplace(labelType label);
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -495,7 +495,7 @@ idType TieredHNSWIndex<DataType, DistType>::setAndSaveInvalidJob(AsyncJob *job) 
 }
 
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::deleteLabelInplace(labelType label) {
+int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType label) {
     auto *hnsw_index = this->getHNSWIndex();
 
     auto ids = hnsw_index->getElementIds(label);
@@ -836,7 +836,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     } else {
         // delete in place.
         this->mainIndexGuard.lock();
-        num_deleted_vectors += this->deleteLabelInplace(label);
+        num_deleted_vectors += this->deleteLabelFromHNSWInplace(label);
         this->mainIndexGuard.unlock();
     }
 

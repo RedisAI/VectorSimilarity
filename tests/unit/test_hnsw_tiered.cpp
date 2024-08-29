@@ -3639,10 +3639,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteBothAsyncAndInplaceMulti) {
     ASSERT_EQ(tiered_index->indexSize(), 3);
     ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
     mock_thread_pool.thread_iteration();
-    // the next job in the queue shoule be the repair job for 2->3 and invalidate as well.
+    // The next job in the queue shoule be the repair job for 2->3 and invalidate as well.
     ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
     mock_thread_pool.thread_iteration();
-    // the next job in the queue shoule be the repair job for 4->3, we validate that the id of 4
+    // The next job in the queue shoule be the repair job for 4->3, we validate that the id of 4
     // swapped properly to a valid id (lower than index size).
     ASSERT_LT(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id,
               tiered_index->indexSize());
