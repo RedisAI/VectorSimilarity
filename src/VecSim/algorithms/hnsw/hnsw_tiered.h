@@ -291,13 +291,9 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(idType deleted_id,
         // with the deleted id.
         idsToRemove.push_back(prev_last_id);
         idToSwapJob.at(prev_last_id)->deleted_id = deleted_id;
-        if (idToSwapJob.contains(deleted_id)) {
-            idToSwapJob.at(deleted_id) = idToSwapJob.at(prev_last_id);
-        } else {
-            // Id was deleted in-place so there was no swap job for it, create a new one for the
-            // swapped id
-            idToSwapJob.insert({deleted_id, idToSwapJob.at(prev_last_id)});
-        }
+        // If id was deleted in-place and there is no swap job for it, this will create a new entry
+        // in idToSwapJob for the swapped id, otherwise it will update the existing entry.
+        idToSwapJob[deleted_id] = idToSwapJob.at(prev_last_id);
     } else {
         idsToRemove.push_back(deleted_id);
     }
@@ -502,6 +498,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
     hnsw_index->removeLabel(label);
     // dispose pending repair and swap jobs for the removed ids.
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
+    idsToRemove.reserve(ids.size());
     readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
     for (auto id : ids) {
         hnsw_index->removeVectorInPlace(id);
