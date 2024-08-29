@@ -35,7 +35,8 @@ protected:
     idType count;
 
 public:
-    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
+    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+                    IndexComputerAbstract<DistType> *indexComputer);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -138,8 +139,9 @@ protected:
 /******************** Ctor / Dtor **************/
 template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
-    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams),
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+    IndexComputerAbstract<DistType> *indexComputer)
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.

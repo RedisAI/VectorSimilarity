@@ -17,8 +17,9 @@ private:
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> labelToIdsLookup;
 
 public:
-    BruteForceIndex_Multi(const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
-        : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
+    BruteForceIndex_Multi(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+                          IndexComputerAbstract<DistType> *indexComputer)
+        : BruteForceIndex<DataType, DistType>(params, abstractInitParams, indexComputer),
           labelToIdsLookup(this->allocator) {}
 
     ~BruteForceIndex_Multi() = default;

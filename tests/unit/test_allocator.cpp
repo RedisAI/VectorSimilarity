@@ -104,6 +104,11 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationSize +=
         sizeof(BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     expectedAllocationSize += sizeof(DataBlocksContainer) + vecsimAllocationOverhead;
+    expectedAllocationSize +=
+        sizeof(DistanceCalculatorCommon<TEST_DIST_T>) + vecsimAllocationOverhead;
+    expectedAllocationSize +=
+        sizeof(IndexComputerBasic<TEST_DIST_T, spaces::dist_func_t<TEST_DIST_T>>) +
+        vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);

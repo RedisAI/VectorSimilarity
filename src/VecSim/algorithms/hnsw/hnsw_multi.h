@@ -53,15 +53,18 @@ private:
 
 public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-                    size_t random_seed = 100, size_t initial_pool_size = 1)
-        : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
+                    IndexComputerAbstract<DistType> *indexComputer, size_t random_seed = 100,
+                    size_t initial_pool_size = 1)
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, indexComputer, random_seed,
+                                        initial_pool_size),
           labelLookup(this->maxElements, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
-                    Serializer::EncodingVersion version)
-        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
+                    Serializer::EncodingVersion version,
+                    IndexComputerAbstract<DistType> *indexComputer)
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version, indexComputer),
           labelLookup(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
