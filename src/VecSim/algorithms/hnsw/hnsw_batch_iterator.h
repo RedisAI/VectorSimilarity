@@ -20,8 +20,6 @@ template <typename DataType, typename DistType>
 class HNSW_BatchIterator : public VecSimBatchIterator {
 protected:
     const HNSWIndex<DataType, DistType> *index;
-    dist_func_t<DistType> distFunc;
-    size_t dim;
     VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     tag_t visited_tag;                 // Used to mark nodes that were scanned.
     idType entry_point;                // Internal id of the node to begin the scan from.
@@ -77,8 +75,6 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
       index(index), depleted(false), top_candidates_extras(this->allocator),
       candidates(this->allocator) {
 
-    this->distFunc = index->getDistFunc();
-    this->dim = index->getDim();
     this->entry_point = INVALID_ID; // temporary until we store the entry point to level 0.
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = index->getVisitedList();
@@ -143,7 +139,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
                 DistType candidate_dist =
-                    distFunc(this->getQueryBlob(), (const void *)candidate_data, dim);
+                    this->index->calcDistance(this->getQueryBlob(), (const void *)candidate_data);
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -155,7 +151,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
                 DistType candidate_dist =
-                    distFunc(this->getQueryBlob(), (const void *)candidate_data, dim);
+                    this->index->calcDistance(this->getQueryBlob(), (const void *)candidate_data);
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -179,8 +175,8 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
         if (!index->isMarkedDeleted(this->entry_point)) {
-            this->lower_bound = distFunc(this->getQueryBlob(),
-                                         this->index->getDataByInternalId(this->entry_point), dim);
+            this->lower_bound = this->index->calcDistance(
+                this->getQueryBlob(), this->index->getDataByInternalId(this->entry_point));
         } else {
             this->lower_bound = std::numeric_limits<DistType>::max();
         }

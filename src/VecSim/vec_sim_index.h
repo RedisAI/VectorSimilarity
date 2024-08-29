@@ -106,11 +106,8 @@ public:
      */
     virtual ~VecSimIndexAbstract() = default;
 
-    inline dist_func_t<DistType> getDistFunc() const { return distFunc; }
-    inline std::function<DistType(const IndexComputerAbstract<DistType> &, const void *v1,
-                                  const void *v2, size_t dim)>
-    getDistFunc2() const {
-        return &(this->indexComputer->calcDistance);
+    DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
+        return indexComputer->calcDistance(vector_data1, vector_data2, this->dim);
     }
 
     inline size_t getDim() const { return dim; }
