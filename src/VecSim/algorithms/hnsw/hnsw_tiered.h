@@ -90,7 +90,7 @@ private:
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper. Main HNSW
     // lock is assumed to be held exclusive here.
-    void executeSwapJob(HNSWSwapJob *job, vecsim_stl::vector<idType> &idsToRemove);
+    void executeSwapJob(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
 
     // Execute the ready swap jobs, run no more than 'maxSwapsToRun' jobs (run all of them for -1).
     void executeReadySwapJobs(size_t maxSwapsToRun = -1);
@@ -126,7 +126,7 @@ private:
     // Returns the id that the job was stored under (to be set in the job id field).
     idType setAndSaveInvalidJob(AsyncJob *job);
 
-    // Handle deletion of vector inplace condering that async deletion might occurred beforhand.
+    // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelInplace(labelType label);
 
 #ifdef BUILD_TESTS
@@ -258,14 +258,14 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
+void TieredHNSWIndex<DataType, DistType>::executeSwapJob(idType deleted_id,
                                                          vecsim_stl::vector<idType> &idsToRemove) {
     // Get the id that was last and was had been swapped with the job's deleted id.
     idType prev_last_id = this->getHNSWIndex()->indexSize();
 
     // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
-    if (idToRepairJobs.find(job->deleted_id) != idToRepairJobs.end()) {
-        for (auto &job_it : idToRepairJobs.at(job->deleted_id)) {
+    if (idToRepairJobs.find(deleted_id) != idToRepairJobs.end()) {
+        for (auto &job_it : idToRepairJobs.at(deleted_id)) {
             job_it->node_id = this->setAndSaveInvalidJob(job_it);
             for (auto &swap_job_it : job_it->associatedSwapJobs) {
                 if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
@@ -273,27 +273,33 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
                 }
             }
         }
-        idToRepairJobs.erase(job->deleted_id);
+        idToRepairJobs.erase(deleted_id);
     }
     // Swap the ids in the pending jobs for the current last id (if exist).
     if (idToRepairJobs.find(prev_last_id) != idToRepairJobs.end()) {
         for (auto &job_it : idToRepairJobs.at(prev_last_id)) {
-            job_it->node_id = job->deleted_id;
+            job_it->node_id = deleted_id;
         }
-        idToRepairJobs.insert({job->deleted_id, idToRepairJobs.at(prev_last_id)});
+        idToRepairJobs.insert({deleted_id, idToRepairJobs.at(prev_last_id)});
         idToRepairJobs.erase(prev_last_id);
     }
     // Update the swap jobs if the last id also needs a swap, otherwise just collect to deleted id
     // to be removed from the swap jobs.
-    if (prev_last_id != job->deleted_id && idToSwapJob.find(prev_last_id) != idToSwapJob.end() &&
+    if (prev_last_id != deleted_id && idToSwapJob.find(prev_last_id) != idToSwapJob.end() &&
         std::find(idsToRemove.begin(), idsToRemove.end(), prev_last_id) == idsToRemove.end()) {
         // Update the curr_last_id pending swap job id after the removal that renamed curr_last_id
         // with the deleted id.
         idsToRemove.push_back(prev_last_id);
-        idToSwapJob.at(prev_last_id)->deleted_id = job->deleted_id;
-        idToSwapJob.at(job->deleted_id) = idToSwapJob.at(prev_last_id);
+        idToSwapJob.at(prev_last_id)->deleted_id = deleted_id;
+        if (idToSwapJob.contains(deleted_id)) {
+            idToSwapJob.at(deleted_id) = idToSwapJob.at(prev_last_id);
+        } else {
+            // Id was deleted in-place so there was no swap job for it, create a new one for the
+            // swapped id
+            idToSwapJob.insert({deleted_id, idToSwapJob.at(prev_last_id)});
+        }
     } else {
-        idsToRemove.push_back(job->deleted_id);
+        idsToRemove.push_back(deleted_id);
     }
 }
 
@@ -317,8 +323,8 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
         auto *swap_job = it.second;
         if (swap_job->pending_repair_jobs_counter.load() == 0) {
             // Swap job is ready for execution - execute and delete it.
-            this->getHNSWIndex()->removeAndSwapDeletedElement(swap_job->deleted_id);
-            this->executeSwapJob(swap_job, idsToRemove);
+            this->getHNSWIndex()->removeAndSwapMarkDeletedElement(swap_job->deleted_id);
+            this->executeSwapJob(swap_job->deleted_id, idsToRemove);
             delete swap_job;
         }
         if (maxJobsToRun > 0 && idsToRemove.size() >= maxJobsToRun) {
@@ -490,21 +496,22 @@ idType TieredHNSWIndex<DataType, DistType>::setAndSaveInvalidJob(AsyncJob *job) 
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteLabelInplace(labelType label) {
-    auto ids = this->getHNSWIndex()->getElementIds(label);
-    int num_deleted_vectors = this->backendIndex->deleteVector(label);
-    // dispoase pending repair and swap jobs for the removed ids.
+    auto *hnsw_index = this->getHNSWIndex();
+
+    auto ids = hnsw_index->getElementIds(label);
+    hnsw_index->removeLabel(label);
+    // dispose pending repair and swap jobs for the removed ids.
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
     for (auto id : ids) {
-        auto swap_job = HNSWSwapJob(this->allocator, id);
-        idToSwapJob[id] = &swap_job;
-        this->executeSwapJob(&swap_job, idsToRemove);
+        hnsw_index->removeVectorInPlace(id);
+        this->executeSwapJob(id, idsToRemove);
     }
     for (idType id : idsToRemove) {
         idToSwapJob.erase(id);
     }
     readySwapJobs -= idsToRemove.size();
-    return num_deleted_vectors;
+    return ids.size();
 }
 
 /******************** Job's callbacks **********************************/
@@ -694,13 +701,15 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                                                    void *auxiliaryCtx) {
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
+    // writeMode is not protected since it is assumed to be called only from the "main thread"
+    // (that is the thread that is exculusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteInPlace) {
         // First, check if we need to overwrite the vector in-place for single (from both indexes).
         if (!this->backendIndex->isMultiValue()) {
             ret -= this->deleteVector(label);
         }
-        // Insert the vector to the HNSW index. Internally, we will never have to overrite the label
-        // since we already checked it outside.
+        // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
+        // label since we already checked it outside.
         this->mainIndexGuard.lock();
         hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
@@ -815,6 +824,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
     // Note that we may remove the same vector that has been removed from the flat index, if it was
     // being ingested at that time.
+    // writeMode is not protected since it is assumed to be called only from the "main thread"
+    // (that is the thread that is exculusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteAsync) {
         num_deleted_vectors += this->deleteLabelFromHNSW(label);
         // Apply ready swap jobs if number of deleted vectors reached the threshold
