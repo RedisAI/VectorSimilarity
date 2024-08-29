@@ -115,7 +115,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     }
     idType id = it->second;
 
-    return this->distFunc(vector_data, this->getDataByInternalId(id), this->dim);
+    return this->indexComputer->calcDistance(vector_data, this->getDataByInternalId(id), this->dim);
 }
 
 template <typename DataType, typename DistType>

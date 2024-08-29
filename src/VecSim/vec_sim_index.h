@@ -16,6 +16,7 @@
 #include "VecSim/spaces/computer/computer.h"
 #include "info_iterator_struct.h"
 #include <cassert>
+#include <functional>
 
 using spaces::dist_func_t; // TODO calculator : remove!!!
 
@@ -53,10 +54,10 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    unsigned char alignment; // Alignment hint to allocate vectors with.
-    dist_func_t<DistType>    // computer TODO:  remove1!!!
-        distFunc;            // Index's distance function. Chosen by the type, metric and dimension.
     IndexComputerAbstract<DistType> *indexComputer; // Index's computer.
+    unsigned char alignment;                        // Alignment hint to allocate vectors with.
+    dist_func_t<DistType>                           // computer TODO:  remove1!!!
+        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
@@ -89,8 +90,9 @@ public:
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          alignment(indexComputer->getAlignment()), lastMode(EMPTY_MODE), isMulti(params.multi),
-          logCallbackCtx(params.logCtx), normalize_func(spaces::GetNormalizeFunc<DataType>()) {
+          indexComputer(indexComputer), alignment(indexComputer->getAlignment()),
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
+          normalize_func(spaces::GetNormalizeFunc<DataType>()) {
         // computer TODO: remove1!!! inclkuding alignmen
         unsigned char dummy_alignment;
 
@@ -105,6 +107,12 @@ public:
     virtual ~VecSimIndexAbstract() = default;
 
     inline dist_func_t<DistType> getDistFunc() const { return distFunc; }
+    inline std::function<DistType(const IndexComputerAbstract<DistType> &, const void *v1,
+                                  const void *v2, size_t dim)>
+    getDistFunc2() const {
+        return &(this->indexComputer->calcDistance);
+    }
+
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
     inline bool isMultiValue() const { return isMulti; }

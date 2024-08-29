@@ -204,7 +204,8 @@ BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom_Unsafe(labelType labe
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
+        DistType d = this->indexComputer->calcDistance(this->getDataByInternalId(id), vector_data,
+                                                       this->dim);
         dist = (dist < d) ? dist : d;
     }
 
