@@ -865,11 +865,9 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         !isMarkedDeleted(new_node_id) && !isMarkedDeleted(selected_neighbor)) {
         // update the connection between the new node and the neighbor.
         new_node_level.appendLink(selected_neighbor);
-        neighbor_level.increaseTotalIncomingEdgesNum();
         if (cur_node_chosen && neighbour_neighbours_idx < max_M_cur) {
             // connection is mutual - both new node and the selected neighbor in each other's list.
             neighbor_level.setLinkAtPos(neighbour_neighbours_idx++, new_node_id);
-            new_node_level.increaseTotalIncomingEdgesNum();
         } else {
             // unidirectional connection - put the new node in the neighbour's incoming edges.
             neighbor_level.newIncomingUnidirectionalEdge(new_node_id);
@@ -943,9 +941,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // and finish.
         if (neighbor_level_data.getNumLinks() < max_M_cur) {
             new_node_level_data.appendLink(selected_neighbor);
-            neighbor_level_data.increaseTotalIncomingEdgesNum();
             neighbor_level_data.appendLink(new_node_id);
-            new_node_level_data.increaseTotalIncomingEdgesNum();
             unlockNodeLinks(new_node_level);
             unlockNodeLinks(neighbor_graph_data);
             continue;
@@ -1017,8 +1013,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 if (!node_level_data.removeIncomingUnidirectionalEdgeIfExists(neighbour_id)) {
                     neighbor_level.newIncomingUnidirectionalEdge(node_id);
                 }
-                // anyway update the incoming nodes counter.
-                node_level_data.decreaseTotalIncomingEdgesNum();
             }
         }
     } else {
@@ -1048,7 +1042,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             if (!bidirectional_edge) {
                 node_level.newIncomingUnidirectionalEdge(neighbour_id);
             }
-            node_level.increaseTotalIncomingEdgesNum();
         }
     }
 }
@@ -1408,7 +1401,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // we add it to the unidirectional edges set. Note: we assume that all updates occur
         // mutually and atomically, then can rely on this assumption.
         auto &chosen_node_level_data = getElementLevelData(chosen_id, level);
-        chosen_node_level_data.increaseTotalIncomingEdgesNum();
         if (!node_level.removeIncomingUnidirectionalEdgeIfExists(chosen_id)) {
             chosen_node_level_data.newIncomingUnidirectionalEdge(node_id);
         }
@@ -1545,7 +1537,6 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
     if (!removed_node_level.removeIncomingUnidirectionalEdgeIfExists(node_id)) {
         node_level.newIncomingUnidirectionalEdge(removed_node);
     }
-    removed_node_level.decreaseTotalIncomingEdgesNum();
 }
 
 template <typename DataType, typename DistType>
@@ -1670,7 +1661,6 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             // This should always succeed, since every outgoing edge should be unidirectional at
             // this point (after all the repair jobs are done).
             neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
-            neighbour.decreaseTotalIncomingEdgesNum();
         }
     }
 
