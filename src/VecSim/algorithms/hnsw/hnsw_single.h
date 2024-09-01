@@ -52,29 +52,26 @@ public:
 #endif
     ~HNSWIndex_Single() = default;
 
-    inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
+    candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
-    inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
         return std::unique_ptr<vecsim_stl::abstract_results_container>(
             new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator));
     }
-
-    inline size_t indexLabelCount() const override;
+    size_t indexLabelCount() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
-    inline vecsim_stl::vector<idType> markDelete(labelType label) override;
-    inline bool safeCheckIfLabelExistsInIndex(labelType label,
-                                              bool also_done_processing = false) const override;
-
+    vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
     }
+    int removeLabel(labelType label) override { return labelLookup.erase(label); }
 };
 
 /**
@@ -93,13 +90,13 @@ size_t HNSWIndex_Single<DataType, DistType>::indexLabelCount() const {
 // Return all the labels in the index - this should be used for computing the number of distinct
 // labels in a tiered index, and caller should hold the index data guard.
 template <typename DataType, typename DistType>
-inline vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
+vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
     vecsim_stl::set<labelType> keys(this->allocator);
     for (auto &it : labelLookup) {
         keys.insert(it.first);
     }
     return keys;
-};
+}
 
 template <typename DataType, typename DistType>
 double
@@ -188,20 +185,6 @@ vecsim_stl::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labe
         labelLookup.erase(label);
     }
     return internal_ids;
-}
-
-template <typename DataType, typename DistType>
-inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
-    labelType label, bool also_done_processing) const {
-    std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
-    auto it = labelLookup.find(label);
-    bool exists = it != labelLookup.end();
-    // If we want to make sure that the vector stored under the label was already indexed,
-    // we go on and check that its associated internal id is no longer in process.
-    if (exists && also_done_processing) {
-        return !this->isInProcess(it->second);
-    }
-    return exists;
 }
 
 template <typename DataType, typename DistType>
