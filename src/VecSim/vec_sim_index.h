@@ -55,9 +55,8 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     IndexComputerAbstract<DistType> *indexComputer; // Index's computer.
-    unsigned char alignment;                        // Alignment hint to allocate vectors with.
-    dist_func_t<DistType>                           // computer TODO:  remove1!!!
-        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
+    // TODO: remove alignment once datablock is implemented in HNSW
+    unsigned char alignment;        // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
@@ -90,13 +89,12 @@ public:
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          indexComputer(indexComputer), alignment(indexComputer->getAlignment()),
+          indexComputer(indexComputer),
+          alignment(
+              indexComputer
+                  ->getAlignment()), // computer TODO: remove alignmen also from the index members
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
           normalize_func(spaces::GetNormalizeFunc<DataType>()) {
-        // computer TODO: remove1!!! inclkuding alignmen
-        unsigned char dummy_alignment;
-
-        this->distFunc = spaces::GetDistFunc<DataType, DistType>(metric, dim, &dummy_alignment);
         assert(VecSimType_sizeof(vecType));
     }
 
@@ -181,21 +179,21 @@ public:
             .fieldType = INFOFIELD_STRING,
             .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.lastMode)}}});
     }
+
+    std::unique_ptr<void, alloc_deleter_t> processQuery(const void *queryBlob) const {
+        return this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+    }
     const void *processBlob(const void *original_blob, void *aligned_mem) const {
         void *processed_blob;
-        // if the blob is not aligned, or we need to normalize, we copy it
-        if ((this->alignment && (uintptr_t)original_blob % this->alignment) ||
-            this->metric == VecSimMetric_Cosine) {
-            memcpy(aligned_mem, original_blob, this->dataSize);
-            processed_blob = aligned_mem;
-        } else {
-            processed_blob = (void *)original_blob;
-        }
-
         // if the metric is cosine, we need to normalize
         if (this->metric == VecSimMetric_Cosine) {
+            memcpy(aligned_mem, original_blob, this->dataSize);
+            processed_blob = aligned_mem;
+
             // normalize the copy in place
             normalize_func(processed_blob, this->dim);
+        } else {
+            processed_blob = (void *)original_blob;
         }
 
         return processed_blob;
@@ -217,8 +215,8 @@ public:
 
 protected:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
+        // TODO: remove once normalization is implemented
+        auto aligned_mem = this->getAllocator()->allocate_unique(this->dataSize);
         const void *processed_blob = processBlob(blob, aligned_mem.get());
 
         return this->addVector(processed_blob, label, auxiliaryCtx);
@@ -226,8 +224,7 @@ protected:
 
     virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
+        auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
         const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
 
         return this->topKQuery(processed_blob, k, queryParams);
@@ -236,8 +233,7 @@ protected:
     virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams,
                                                 VecSimQueryReply_Order order) const override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
+        auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
         const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
 
         return this->rangeQuery(processed_blob, radius, queryParams, order);
@@ -245,8 +241,7 @@ protected:
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
+        auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
         const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
 
         return this->newBatchIterator(processed_blob, queryParams);

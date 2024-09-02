@@ -9,6 +9,8 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/computer/calculator.h"
 #include <iostream> // TODO: REMOVE!!!!!
+#include <functional>
+using alloc_deleter_t = std::function<void(void *)>;
 
 template <typename DistType>
 class IndexComputerAbstract : public VecsimBaseObject {
@@ -16,7 +18,8 @@ public:
     IndexComputerAbstract(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
     // virtual const void *preprocessForStorage(const void *blob) = 0;
-    // virtual const void *preprocessQuery(const void *blob) = 0;
+    virtual std::unique_ptr<void, alloc_deleter_t>
+    preprocessQuery(const void *blob, size_t processed_bytes_count) = 0;
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
     virtual unsigned char getAlignment() const = 0; // TODO:remove!!!!!!!
 };
@@ -36,14 +39,27 @@ public:
     // TODO:remove!!!!!!!
     virtual unsigned char getAlignment() const override { return alignment; }
 
-    virtual void preprocessQuery() {
-        std::cout << "IndexComputerBasic::preprocessQuery" << std::endl;
-        if (alignment) {
-            std::cout << "IndexComputerBasic::preprocessQuery alignment: " << alignment
-                      << std::endl;
-        } else {
-            std::cout << "IndexComputer::preprocessQuery no alignment" << std::endl;
+    // TODO: think where to place
+
+    static void dummyFreeAllocation(void *ptr) {}
+    // static void FreeAllocation(void *ptr) { this->allocator->free_allocation(ptr); }
+
+    virtual std::unique_ptr<void, alloc_deleter_t> preprocessQuery(const void *original_blob,
+                                                                   size_t processed_bytes_count) {
+        if (this->alignment) {
+            // if the blob is not aligned, or we need to normalize, we copy it
+            if ((this->alignment && (uintptr_t)original_blob % this->alignment)) {
+                auto aligned_mem =
+                    this->allocator->allocate_aligned(processed_bytes_count, this->alignment);
+                memcpy(aligned_mem, original_blob, processed_bytes_count);
+                return std::unique_ptr<void, alloc_deleter_t>(
+                    aligned_mem, [this](void *ptr) { this->allocator->free_allocation(ptr); });
+            }
         }
+
+        // Returning a unique_ptr with a no-op deleter
+        return std::unique_ptr<void, alloc_deleter_t>(const_cast<void *>(original_blob),
+                                                      dummyFreeAllocation);
     }
 
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
