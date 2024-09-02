@@ -10,7 +10,8 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include <VecSim/query_results.h>
+#include "VecSim/query_results.h"
+#include "VecSim/utils/vecsim_stl.h"
 #include <utility>
 #include <cassert>
 

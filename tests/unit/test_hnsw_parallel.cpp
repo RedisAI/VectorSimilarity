@@ -55,12 +55,14 @@ protected:
             }
             ElementGraphData *element_data = hnsw_index->getGraphDataByInternalId(element_id);
             for (size_t level = 0; level <= element_data->toplevel; level++) {
-                LevelData &cur_level_data = hnsw_index->getLevelData(element_data, level);
+                ElementLevelData &cur_level_data =
+                    hnsw_index->getElementLevelData(element_data, level);
 
                 // Go over the neighbours of the element in a specific level.
                 for (size_t i = 0; i < cur_level_data.numLinks; i++) {
                     idType cur_neighbor = cur_level_data.links[i];
-                    LevelData &neighbor_level_data = hnsw_index->getLevelData(cur_neighbor, level);
+                    ElementLevelData &neighbor_level_data =
+                        hnsw_index->getElementLevelData(cur_neighbor, level);
                     for (size_t j = 0; j < neighbor_level_data.numLinks; j++) {
                         // If the edge is bidirectional, do repair for this neighbor
                         if (neighbor_level_data.links[j] == element_id) {
@@ -71,7 +73,7 @@ protected:
                 }
                 // Next, go over the rest of incoming edges (the ones that are not bidirectional)
                 // and make repairs.
-                for (auto incoming_edge : *cur_level_data.incomingEdges) {
+                for (auto incoming_edge : *cur_level_data.incomingUnidirectionalEdges) {
                     jobQ.emplace_back(incoming_edge, level);
                 }
             }
