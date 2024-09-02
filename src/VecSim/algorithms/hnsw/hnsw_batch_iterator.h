@@ -36,7 +36,6 @@ protected:
     candidatesMinHeap<labelType> top_candidates_extras;
     candidatesMinHeap<idType> candidates;
 
-    template <bool has_marked_deleted>
     VecSimQueryReply_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
     candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryReply_Code *rc);
     virtual inline void prepareResults(VecSimQueryReply *rep,
@@ -94,7 +93,6 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
     candidatesLabelsMaxHeap<DistType> *top_candidates) {
     while (!candidates.empty()) {
@@ -113,14 +111,14 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
         }
         // Checks if we need to add the current id to the top_candidates heap,
         // and updates the extras heap accordingly.
-        if (!has_marked_deleted || !index->isMarkedDeleted(curr_node_id))
+        if (!index->isMarkedDeleted(curr_node_id))
             updateHeaps(top_candidates, curr_node_dist, curr_node_id);
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
         auto *node_graph_data = this->index->getGraphDataByInternalId(curr_node_id);
         this->index->lockNodeLinks(node_graph_data);
-        LevelData &node_level_data = this->index->getLevelData(node_graph_data, 0);
+        ElementLevelData &node_level_data = this->index->getElementLevelData(node_graph_data, 0);
         if (node_level_data.numLinks > 0) {
 
             // Pre-fetch first candidate tag address.
@@ -198,11 +196,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     if (top_candidates->size() == this->ef) {
         return top_candidates;
     }
-
-    if (index->getNumMarkedDeleted())
-        *rc = this->scanGraphInternal<true>(top_candidates);
-    else
-        *rc = this->scanGraphInternal<false>(top_candidates);
+    *rc = this->scanGraphInternal(top_candidates);
 
     // If we found fewer results than wanted, mark the search as depleted.
     if (top_candidates->size() < this->ef) {

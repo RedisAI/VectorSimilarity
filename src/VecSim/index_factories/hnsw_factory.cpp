@@ -137,7 +137,7 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
         index = new (abstractInitParams.allocator)
             HNSWIndex_Single<DataType, DistType>(input, params, abstractInitParams, version);
 
-    index->restoreGraph(input);
+    index->restoreGraph(input, version);
 
     return index;
 }

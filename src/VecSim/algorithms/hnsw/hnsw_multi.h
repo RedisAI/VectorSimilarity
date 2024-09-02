@@ -30,6 +30,13 @@ private:
         }
         labelLookup.at(label).push_back(id);
     }
+    inline vecsim_stl::vector<idType> getElementIds(size_t label) override {
+        auto it = labelLookup.find(label);
+        if (it == labelLookup.end()) {
+            return vecsim_stl::vector<idType>{this->allocator}; // return an empty collection
+        }
+        return it->second;
+    }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
     // Return all the labels in the index - this should be used for computing the number of distinct
@@ -93,6 +100,7 @@ public:
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
     }
+    int removeLabel(labelType label) override { return labelLookup.erase(label); }
 };
 
 /**

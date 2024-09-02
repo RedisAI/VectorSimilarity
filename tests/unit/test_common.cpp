@@ -383,7 +383,7 @@ protected:
 
 TEST_F(SerializerTest, HNSWSerialzer) {
 
-    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/bad_index.hnsw";
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/bad_index.hnsw";
 
     // Try to load an index from a file that doesnt exist.
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
