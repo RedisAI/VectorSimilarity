@@ -982,7 +982,7 @@ void FP16HNSWTest::test_serialization(bool is_multi) {
         VecSimIndex_AddVector(index, data.data() + dim * j, j % n_labels[i]);
     }
 
-    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
+    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/1k-d4-L2-M8-ef_c10_" +
                      VecSimType_ToString(VecSimType_FLOAT16) + "_" + multiToString[i] +
                      ".hnsw_current_version";
 

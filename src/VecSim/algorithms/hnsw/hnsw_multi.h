@@ -97,12 +97,11 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
-    inline vecsim_stl::vector<idType> markDelete(labelType label) override;
-    inline bool safeCheckIfLabelExistsInIndex(labelType label,
-                                              bool also_done_processing) const override;
+    vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
     }
+    int removeLabel(labelType label) override { return labelLookup.erase(label); }
 };
 
 /**
@@ -225,24 +224,4 @@ vecsim_stl::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(label
     }
     labelLookup.erase(label);
     return ids;
-}
-
-template <typename DataType, typename DistType>
-inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(
-    labelType label, bool also_done_processing) const {
-    std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
-    auto search_res = labelLookup.find(label);
-    bool exists = search_res != labelLookup.end();
-    // If we want to make sure that the vector(s) stored under the label were already indexed,
-    // we go on and check that every associated vector is no longer in process.
-    if (exists && also_done_processing) {
-        for (auto id : search_res->second) {
-            exists = !this->isInProcess(id);
-            // If we find at least one internal id that is still in process, consider it as not
-            // ready.
-            if (!exists)
-                return false;
-        }
-    }
-    return exists;
 }
