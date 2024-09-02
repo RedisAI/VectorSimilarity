@@ -1860,8 +1860,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
     // be particularly attentive to datasize when using SQ (should be sizeof(float) * dim and not
     // sizeof(uint8) *dim)
-    auto vector_as_query_data =
-        this->indexComputer->preprocessQuery(vector_data, this->dataSize);
+    auto vector_as_query_data = this->indexComputer->preprocessQuery(vector_data, this->dataSize);
     vector_data = vector_as_query_data.get();
     // This condition only means that we are not inserting the first (non-deleted) element (for the
     // first element we do nothing - we don't need to connect to it).

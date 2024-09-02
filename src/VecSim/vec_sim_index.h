@@ -102,7 +102,7 @@ public:
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndexAbstract() = default;
+    virtual ~VecSimIndexAbstract() { delete indexComputer; }
 
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
         return indexComputer->calcDistance(vector_data1, vector_data2, this->dim);

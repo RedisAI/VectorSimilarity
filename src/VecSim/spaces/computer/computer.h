@@ -32,6 +32,11 @@ public:
         DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
         : IndexComputerAbstract<DistType>(allocator), alignment(alignment),
           distance_calculator(distance_calculator) {}
+    ~IndexComputerBasic() override {
+        if (distance_calculator) {
+            delete distance_calculator;
+        }
+    }
     virtual void preprocessForStorage() {
         std::cout << "Computer::preprocessForStorage nothing to do" << std::endl;
     }
