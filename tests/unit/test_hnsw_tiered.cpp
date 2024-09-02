@@ -3594,3 +3594,26 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteBothAsyncAndInplaceMulti) {
     // Id 1 is now ready due to the deletion of 0 and its associated jobs.
     ASSERT_EQ(tiered_index->readySwapJobs, 1);
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceMultiSwapId) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    // Insert three vector to HNSW - first and last under the same label.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0);
+    tiered_index->setWriteMode(VecSim_WriteInPlace);
+    // Delete in-place and validate that the second id of label 0 swapped properly with the last id
+    // before the deletion, and that eventually entry point was set correctly,
+    ASSERT_EQ(tiered_index->deleteVector(0), 2);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, 0);
+}
