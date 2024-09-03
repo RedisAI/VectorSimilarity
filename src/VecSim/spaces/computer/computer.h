@@ -107,7 +107,9 @@ public:
     }
 
     ~IndexComputerExtended() override {
-        for (size_t i = 0; preprocessors[i] && i < n_preprocessors; i++) {
+        for (size_t i = 0; i < n_preprocessors; i++) {
+            if (preprocessors[i] == nullptr)
+                break;
             delete preprocessors[i];
         }
 
@@ -122,7 +124,9 @@ public:
             this->allocator->allocate_aligned(processed_bytes_count, this->alignment),
             [this](void *ptr) { this->allocator->free_allocation(ptr); });
         memcpy(aligned_mem.get(), original_blob, processed_bytes_count);
-        for (size_t i = 0; preprocessors[i] && i < n_preprocessors; i++) {
+        for (size_t i = 0; i < n_preprocessors; i++) {
+            if (preprocessors[i] == nullptr)
+                break;
             // modifies the aligned memory in place
             preprocessors[i]->preprocessQuery(aligned_mem);
         }
