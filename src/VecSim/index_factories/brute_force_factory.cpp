@@ -52,20 +52,20 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams) {
     if (bfparams->type == VecSimType_FLOAT32) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComputer);
     } else if (bfparams->type == VecSimType_FLOAT64) {
-        IndexComputerAbstract<double> *indexComputer = CreateIndexComputerBasic<double>(
+        IndexComputerAbstract<double> *indexComputer = CreateIndexComputer<double>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComputer);
     } else if (bfparams->type == VecSimType_BFLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<bfloat16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams,
                                                              indexComputer);
     } else if (bfparams->type == VecSimType_FLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<float16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
                                                             indexComputer);

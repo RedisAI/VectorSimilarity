@@ -118,28 +118,22 @@ private:
 
     virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const override {
+        // We assume common query preprocessing for both frontend and backend indices.
         auto aligned_mem = this->backendIndex->processQuery(queryBlob);
-        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem.get());
-
-        return this->topKQuery(processed_blob, k, queryParams);
+        return this->topKQuery(aligned_mem.get(), k, queryParams);
     }
 
     virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams,
                                                 VecSimQueryReply_Order order) const override {
         auto aligned_mem = this->backendIndex->processQuery(queryBlob);
-        ;
-        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem.get());
-
-        return this->rangeQuery(processed_blob, radius, queryParams, order);
+        return this->rangeQuery(aligned_mem.get(), radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
         auto aligned_mem = this->backendIndex->processQuery(queryBlob);
-        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem.get());
-
-        return this->newBatchIterator(processed_blob, queryParams);
+        return this->newBatchIterator(aligned_mem.get(), queryParams);
     }
 };
 

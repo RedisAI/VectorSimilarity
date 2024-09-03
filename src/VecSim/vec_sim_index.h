@@ -183,6 +183,7 @@ public:
     std::unique_ptr<void, alloc_deleter_t> processQuery(const void *queryBlob) const {
         return this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
     }
+
     const void *processBlob(const void *original_blob, void *aligned_mem) const {
         void *processed_blob;
         // if the metric is cosine, we need to normalize
@@ -225,26 +226,20 @@ protected:
     virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const override {
         auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
-        const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
-
-        return this->topKQuery(processed_blob, k, queryParams);
+        return this->topKQuery(aligned_mem.get(), k, queryParams);
     }
 
     virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams,
                                                 VecSimQueryReply_Order order) const override {
         auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
-        const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
-
-        return this->rangeQuery(processed_blob, radius, queryParams, order);
+        return this->rangeQuery(aligned_mem.get(), radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
         auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
-        const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
-
-        return this->newBatchIterator(processed_blob, queryParams);
+        return this->newBatchIterator(aligned_mem.get(), queryParams);
     }
 
     void runGC() override {}              // Do nothing, relevant for tiered index only.

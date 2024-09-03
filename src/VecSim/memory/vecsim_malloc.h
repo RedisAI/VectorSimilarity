@@ -10,6 +10,9 @@
 #include <memory>
 #include <atomic>
 #include <cstring>
+#include <functional>
+
+using alloc_deleter_t = std::function<void(void *)>;
 
 struct VecSimAllocator {
     // Allow global vecsim memory functions to access this class.
@@ -39,6 +42,7 @@ public:
     void free_allocation(void *p);
 
     // Allocations for scope-life-time memory.
+    // TODO: remove???
     std::unique_ptr<void, Deleter> allocate_aligned_unique(size_t size, size_t alignment);
     std::unique_ptr<void, Deleter> allocate_unique(size_t size);
 

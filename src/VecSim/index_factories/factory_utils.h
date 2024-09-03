@@ -12,15 +12,26 @@
 #include "VecSim/vec_sim_common.h"
 
 template <typename DataType, typename DistType = DataType>
-IndexComputerAbstract<DistType> *
-CreateIndexComputerBasic(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric,
-                         size_t dim) {
+IndexComputerAbstract<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAllocator> allocator,
+                                                     VecSimMetric metric, size_t dim) {
     unsigned char alignment = 0;
     spaces::dist_func_t<DistType> distFunc =
         spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment);
     DistanceCalculatorCommon<DistType> *distance_calculator =
         new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
-    IndexComputerBasic<DistType, spaces::dist_func_t<DistType>> *indexComputer = new (allocator)
+
+    if (metric == VecSimMetric_Cosine) {
+        IndexComputerExtended<DistType, spaces::dist_func_t<DistType>> *indexComputer =
+            new (allocator) IndexComputerExtended<DistType, spaces::dist_func_t<DistType>>(
+                allocator, alignment, 1, distance_calculator);
+        PreprocessorAbstract *cosine_preprocessor =
+            new (allocator) CosinePreprocessor<DataType>(allocator, dim);
+        indexComputer->addPreprocessor(cosine_preprocessor);
+
+        return indexComputer;
+    }
+
+    auto indexComputer = new (allocator)
         IndexComputerBasic<DistType, spaces::dist_func_t<DistType>>(allocator, alignment,
                                                                     distance_calculator);
 
@@ -32,7 +43,15 @@ size_t EstimateContainersMemory(VecSimMetric metric) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = allocations_overhead + sizeof(DistanceCalculatorCommon<DistType>);
     // TODO : if !SQ
-    // TODO: if metric == cosine
+
+    if (metric == VecSimMetric_Cosine) {
+        est += allocations_overhead +
+               sizeof(IndexComputerExtended<DistType, spaces::dist_func_t<DistType>>);
+        // One entry in preprocessors array
+        est += allocations_overhead + 1 * sizeof(PreprocessorAbstract *);
+        est += allocations_overhead + sizeof(CosinePreprocessor<DataType>);
+        return est;
+    }
     est +=
         allocations_overhead + sizeof(IndexComputerBasic<DistType, spaces::dist_func_t<DistType>>);
 

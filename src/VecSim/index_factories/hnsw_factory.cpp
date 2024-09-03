@@ -49,22 +49,22 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
 
     if (hnswParams->type == VecSimType_FLOAT32) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float>(
             abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams, indexComputer);
 
     } else if (hnswParams->type == VecSimType_FLOAT64) {
-        IndexComputerAbstract<double> *indexComputer = CreateIndexComputerBasic<double>(
+        IndexComputerAbstract<double> *indexComputer = CreateIndexComputer<double>(
             abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams, indexComputer);
 
     } else if (hnswParams->type == VecSimType_BFLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<bfloat16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
             abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(hnswParams, abstractInitParams,
                                                              indexComputer);
     } else if (hnswParams->type == VecSimType_FLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<float16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
             abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(hnswParams, abstractInitParams,
                                                             indexComputer);
@@ -213,22 +213,22 @@ VecSimIndex *NewIndex(const std::string &location) {
                                  .algoParams = {.hnswParams = HNSWParams{params}}};
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<float>(
-            abstractInitParams.allocator, params.metric, params.dim);
+        IndexComputerAbstract<float> *indexComputer =
+            CreateIndexComputer<float>(abstractInitParams.allocator, params.metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version,
                                                    indexComputer);
     } else if (params.type == VecSimType_FLOAT64) {
-        IndexComputerAbstract<double> *indexComputer = CreateIndexComputerBasic<double>(
-            abstractInitParams.allocator, params.metric, params.dim);
+        IndexComputerAbstract<double> *indexComputer =
+            CreateIndexComputer<double>(abstractInitParams.allocator, params.metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version,
                                                     indexComputer);
     } else if (params.type == VecSimType_BFLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<bfloat16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
             abstractInitParams.allocator, params.metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
                                                              version, indexComputer);
     } else if (params.type == VecSimType_FLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputerBasic<float16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
             abstractInitParams.allocator, params.metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
                                                             version, indexComputer);

@@ -8,16 +8,18 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/spaces/computer/preprocessor.h"
+#include "VecSim/utils/vecsim_stl.h"
+
 #include <iostream> // TODO: REMOVE!!!!!
-#include <functional>
-using alloc_deleter_t = std::function<void(void *)>;
 
 template <typename DistType>
 class IndexComputerAbstract : public VecsimBaseObject {
 public:
     IndexComputerAbstract(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
-    // virtual const void *preprocessForStorage(const void *blob) = 0;
+    // virtual std::unique_ptr<void, alloc_deleter_t>
+    // preprocessForStorage(const void *blob, size_t processed_bytes_count) = 0;
     virtual std::unique_ptr<void, alloc_deleter_t>
     preprocessQuery(const void *blob, size_t processed_bytes_count) = 0;
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
@@ -32,14 +34,14 @@ public:
         DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
         : IndexComputerAbstract<DistType>(allocator), alignment(alignment),
           distance_calculator(distance_calculator) {}
+
     ~IndexComputerBasic() override {
         if (distance_calculator) {
             delete distance_calculator;
         }
     }
-    virtual void preprocessForStorage() {
-        std::cout << "Computer::preprocessForStorage nothing to do" << std::endl;
-    }
+    // virtual void preprocessForStorage() { /*nothing to do*/
+    // }
 
     // TODO:remove!!!!!!!
     virtual unsigned char getAlignment() const override { return alignment; }
@@ -75,4 +77,59 @@ public:
 protected:
     const unsigned char alignment;
     DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator;
+};
+
+template <typename DistType, typename DistFuncType>
+class IndexComputerExtended : public IndexComputerBasic<DistType, DistFuncType> {
+public:
+    IndexComputerExtended(
+        std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment, size_t n_preprocessors,
+        DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
+        : IndexComputerBasic<DistType, DistFuncType>(allocator, alignment, distance_calculator),
+          n_preprocessors(n_preprocessors) {
+        assert(n_preprocessors);
+        preprocessors = static_cast<PreprocessorAbstract **>(
+            this->allocator->allocate(sizeof(PreprocessorAbstract *) * n_preprocessors));
+        for (size_t i = 0; i < n_preprocessors; i++) {
+            preprocessors[i] = nullptr;
+        }
+    }
+
+    // returns next uninitialized index. returns 0 in case capacity is reached.
+    size_t addPreprocessor(PreprocessorAbstract *preprocessor) {
+        for (size_t i = 0; i < n_preprocessors; i++) {
+            if (preprocessors[i] == nullptr) {
+                preprocessors[i] = preprocessor;
+                return i + 1;
+            }
+        }
+        return 0;
+    }
+
+    ~IndexComputerExtended() override {
+        for (size_t i = 0; preprocessors[i] && i < n_preprocessors; i++) {
+            delete preprocessors[i];
+        }
+
+        this->allocator->free_allocation(preprocessors);
+    }
+    virtual std::unique_ptr<void, alloc_deleter_t> preprocessQuery(const void *original_blob,
+                                                                   size_t processed_bytes_count) {
+        assert(preprocessors[0]);
+        // when Using this class, we always need to modify the blob, so we always copy it
+        // if aligment = 0, allocate aligned will call simple allocate
+        std::unique_ptr<void, alloc_deleter_t> aligned_mem(
+            this->allocator->allocate_aligned(processed_bytes_count, this->alignment),
+            [this](void *ptr) { this->allocator->free_allocation(ptr); });
+        memcpy(aligned_mem.get(), original_blob, processed_bytes_count);
+        for (size_t i = 0; preprocessors[i] && i < n_preprocessors; i++) {
+            // modifies the aligned memory in place
+            preprocessors[i]->preprocessQuery(aligned_mem);
+        }
+        return aligned_mem;
+    }
+
+protected:
+    PreprocessorAbstract **preprocessors;
+    const size_t n_preprocessors;
 };
