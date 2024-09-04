@@ -12,7 +12,7 @@ HNSWIndexMetaData checkIntegrity() const;
 virtual void saveIndexIMP(std::ofstream &output) override;
 
 // used by index factory to load nodes connections
-void restoreGraph(std::ifstream &input);
+void restoreGraph(std::ifstream &input, EncodingVersion version);
 
 private:
 // Functions for index saving.
@@ -20,8 +20,9 @@ void saveIndexFields(std::ofstream &output) const;
 
 void saveGraph(std::ofstream &output) const;
 
-void saveLevel(std::ofstream &output, LevelData &data) const;
-void restoreLevel(std::ifstream &input, LevelData &data);
+void saveLevel(std::ofstream &output, ElementLevelData &data) const;
+void restoreLevel(std::ifstream &input, ElementLevelData &data, EncodingVersion version);
+void computeIndegreeForAll();
 
 // Functions for index loading.
 void restoreIndexFields(std::ifstream &input);

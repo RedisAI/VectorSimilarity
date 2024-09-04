@@ -342,7 +342,8 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     // Expect that the first element is pushed to the incoming edges vector of element 1 in level 0.
     // Then, we account for the capacity of the buffer that is allocated for the vector data.
     expected_allocation_delta +=
-        hnswIndex->getLevelData(1, 0).incomingEdges->capacity() * sizeof(idType) +
+        hnswIndex->getElementLevelData(1, 0).incomingUnidirectionalEdges->capacity() *
+            sizeof(idType) +
         vecsimAllocationOverhead;
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 

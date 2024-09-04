@@ -8,6 +8,7 @@
 
 #include "VecSim/memory/vecsim_base.h"
 #include <vector>
+#include <algorithm>
 #include <set>
 #include <unordered_set>
 #include <unordered_map>
@@ -28,6 +29,18 @@ public:
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, alloc) {}
     explicit vector(size_t cap, T val, const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, val, alloc) {}
+
+    bool remove(T element) {
+        auto it = std::find(this->begin(), this->end(), element);
+        if (it != this->end()) {
+            // Swap the last element with the current one (equivalent to removing the element from
+            // the list).
+            *it = this->back();
+            this->pop_back();
+            return true;
+        }
+        return false;
+    }
 };
 
 template <typename Priority, typename Value>
@@ -37,11 +50,11 @@ public:
         : VecsimBaseObject(alloc) {}
     ~abstract_priority_queue() {}
 
-    virtual inline void emplace(Priority p, Value v) = 0;
-    virtual inline bool empty() const = 0;
-    virtual inline void pop() = 0;
-    virtual inline const std::pair<Priority, Value> top() const = 0;
-    virtual inline size_t size() const = 0;
+    virtual void emplace(Priority p, Value v) = 0;
+    virtual bool empty() const = 0;
+    virtual void pop() = 0;
+    virtual const std::pair<Priority, Value> top() const = 0;
+    virtual size_t size() const = 0;
 };
 
 // max-heap
@@ -55,15 +68,15 @@ public:
         : abstract_priority_queue<Priority, Value>(alloc), std_queue(alloc) {}
     ~max_priority_queue() {}
 
-    inline void emplace(Priority p, Value v) override { std_queue::emplace(p, v); }
-    inline bool empty() const override { return std_queue::empty(); }
-    inline void pop() override { std_queue::pop(); }
-    inline const std::pair<Priority, Value> top() const override { return std_queue::top(); }
-    inline size_t size() const override { return std_queue::size(); }
+    void emplace(Priority p, Value v) override { std_queue::emplace(p, v); }
+    bool empty() const override { return std_queue::empty(); }
+    void pop() override { std_queue::pop(); }
+    const std::pair<Priority, Value> top() const override { return std_queue::top(); }
+    size_t size() const override { return std_queue::size(); }
 
     // Random order iteration
-    inline const auto begin() const { return this->c.begin(); }
-    inline const auto end() const { return this->c.end(); }
+    const auto begin() const { return this->c.begin(); }
+    const auto end() const { return this->c.end(); }
 };
 
 // min-heap

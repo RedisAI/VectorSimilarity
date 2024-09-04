@@ -1912,7 +1912,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
             VecSimIndex_AddVector(index, data.data() + dim * j, j % n_labels[i]);
         }
 
-        auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
+        auto file_name = std::string(getenv("ROOT")) + "/tests/unit/1k-d4-L2-M8-ef_c10_" +
                          VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
                          ".hnsw_current_version";
 
@@ -2029,7 +2029,7 @@ TYPED_TEST(HNSWTest, markDelete) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
     for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
-        LevelData &cur = this->CastToHNSW(index)->getLevelData(n, level);
+        ElementLevelData &cur = this->CastToHNSW(index)->getElementLevelData(n, level);
         for (size_t idx = 0; idx < cur.numLinks; idx++) {
             ASSERT_TRUE(cur.links[idx] % 2 != ep_reminder)
                 << "Got a link to " << cur.links[idx] << " on level " << level;
@@ -2117,7 +2117,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
         vec[i] = 0.0;
     }
     for (size_t i = 0; i < n; i++) {
-        LevelData &cur = hnsw_index->getLevelData(i, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 1);
     }
 
@@ -2127,7 +2127,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 1; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for element 0 as neighbors.
-        LevelData &cur = hnsw_index->getLevelData(i, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 2);
     }
 
@@ -2137,7 +2137,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 3; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for elements 0-2 as neighbors.
-        LevelData &cur = hnsw_index->getLevelData(i, 0);
+        ElementLevelData &cur = hnsw_index->getElementLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 4);
     }
 

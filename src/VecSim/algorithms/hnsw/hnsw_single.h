@@ -24,7 +24,7 @@ private:
     inline void setVectorId(labelType label, idType id) override { labelLookup[label] = id; }
     inline void resizeLabelLookup(size_t new_max_elements) override;
     inline vecsim_stl::set<labelType> getLabelsSet() const override;
-
+    inline vecsim_stl::vector<idType> getElementIds(size_t label) override;
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:
@@ -75,6 +75,7 @@ public:
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
     }
+    int removeLabel(labelType label) override { return labelLookup.erase(label); }
 };
 
 /**
@@ -204,4 +205,16 @@ inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
         return !this->isInProcess(it->second);
     }
     return exists;
+}
+
+template <typename DataType, typename DistType>
+inline vecsim_stl::vector<idType>
+HNSWIndex_Single<DataType, DistType>::getElementIds(size_t label) {
+    vecsim_stl::vector<idType> ids(this->allocator);
+    auto it = labelLookup.find(label);
+    if (it == labelLookup.end()) {
+        return ids;
+    }
+    ids.push_back(it->second);
+    return ids;
 }
