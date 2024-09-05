@@ -3678,3 +3678,42 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceMultiSwapId) {
     ASSERT_EQ(tiered_index->deleteVector(0), 2);
     ASSERT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, 0);
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    // Insert three vector to HNSW
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
+
+    // Delete vector with id=0 asynchronously, expect to have a repair job for the other vectors.
+    ASSERT_EQ(tiered_index->deleteVector(0), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 2);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs.size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
+
+    // Delete in-place id=2, expect that upon reapiring inplace 1 due to 1->2, there will *not* be
+    // a new edge 1->0 since 0 is deleted. Also the other repair job 2->0 should be invalidated.
+    tiered_index->setWriteMode(VecSim_WriteInPlace);
+    ASSERT_EQ(tiered_index->deleteVector(2), 1);
+    // Execute the repair job for 1->0. Now, 0->1 is unidirectional edge
+    ASSERT_TRUE(mock_thread_pool.jobQ.front().job->isValid);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
+    ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
+    // Expect that id=0 is a ready swap job and execute it.
+    ASSERT_EQ(tiered_index->readySwapJobs, 1);
+    ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
+    tiered_index->runGC();
+}
