@@ -69,7 +69,8 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const AddVectorCtx *add_vector_ctx, labelType label) override;
+    int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
@@ -143,23 +144,26 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                    void *auxiliaryCtx) {
-
-    // Checking if an element with the given label already exists.
+int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
+                                                    const labelType label) {
     bool label_exists = false;
-    // Note that is it the caller responsibility to ensure that this label doesn't exist in the
-    // index and increase the element count before calling this, if auxiliaryCtx is *not* NULL.
-    if (auxiliaryCtx == nullptr) {
-        if (labelLookup.find(label) != labelLookup.end()) {
-            label_exists = true;
-            // Remove the vector in place if override allowed (in non-async scenario).
-            deleteVector(label);
-        }
+    if (labelLookup.find(label) != labelLookup.end()) {
+        // Checking if an element with the given label already exists.
+        label_exists = true;
+        // Remove the vector in place if override allowed (in non-async scenario).
+        deleteVector(label);
     }
-    this->appendVector(vector_data, label, (AddVectorCtx *)auxiliaryCtx);
-    // Return the delta in the index size due to the insertion.
+
+    this->appendVector(vector_data, label);
     return label_exists ? 0 : 1;
+}
+
+template <typename DataType, typename DistType>
+int HNSWIndex_Single<DataType, DistType>::addVector(const AddVectorCtx *add_vector_ctx,
+                                                    labelType label) {
+    this->appendVector(label, static_cast<const HNSWAddVectorCtx *>(add_vector_ctx));
+    // Return the delta in the index size due to the insertion.
+    return 1;
 }
 
 template <typename DataType, typename DistType>

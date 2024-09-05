@@ -13,9 +13,19 @@ class PreprocessorAbstract : public VecsimBaseObject {
 public:
     PreprocessorAbstract(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
-    // virtual void preprocessForStorage() = 0;
+    struct PreprocessorParams;
+    virtual void preprocess(const void *original_blob,
+                            std::unique_ptr<void, alloc_deleter_t> &storage_blob,
+                            std::unique_ptr<void, alloc_deleter_t> &query_blob,
+                            PreprocessorParams &params) = 0;
+    virtual void preprocessForStorage(std::unique_ptr<void, alloc_deleter_t> &blob) = 0;
     virtual void preprocessQuery(std::unique_ptr<void, alloc_deleter_t> &blob) = 0;
-    // pre process for const memory, need to copy.
+
+    struct PreprocessorParams {
+        const size_t processed_bytes_count;
+        bool is_populated_storage;
+        bool is_populated_query;
+    };
 };
 
 template <typename DataType>
@@ -25,9 +35,29 @@ public:
         : PreprocessorAbstract(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim) {}
 
-    // virtual void preprocessForStorage(std::unique_ptr<void, alloc_deleter_t> blob, size_t dim) {
-    //     normalize_func(blob, this->dim);
-    // }
+    virtual void preprocess(const void *original_blob,
+                            std::unique_ptr<void, alloc_deleter_t> &storage_blob,
+                            std::unique_ptr<void, alloc_deleter_t> &query_blob,
+                            PreprocessorParams &params) override {
+        if (!params.is_populated_storage) {
+            memcpy(storage_blob.get(), original_blob, params.processed_bytes_count);
+            params.is_populated_storage = true;
+        }
+        normalize_func(storage_blob.get(), this->dim);
+
+        if (!params.is_populated_query) {
+            // No need to normalize again, just copy the normalized vector
+            memcpy(query_blob.get(), storage_blob.get(), params.processed_bytes_count);
+            params.is_populated_query = true;
+        } else {
+            // Normalize the query vector
+            normalize_func(query_blob.get(), this->dim);
+        }
+    }
+
+    virtual void preprocessForStorage(std::unique_ptr<void, alloc_deleter_t> &blob) override {
+        normalize_func(blob.get(), this->dim);
+    }
 
     virtual void preprocessQuery(std::unique_ptr<void, alloc_deleter_t> &blob) override {
         normalize_func(blob.get(), this->dim);

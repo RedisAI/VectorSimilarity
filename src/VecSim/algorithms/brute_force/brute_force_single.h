@@ -22,7 +22,12 @@ public:
                            IndexComputerAbstract<DistType> *indexComputer);
     ~BruteForceIndex_Single() = default;
 
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label) override;
+    // currently should not be used
+    int addVector(const AddVectorCtx *add_vector_ctx, labelType label) override {
+        assert(false);
+        return 0;
+    }
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
@@ -104,8 +109,8 @@ BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(
       labelToIdLookup(this->allocator) {}
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                          void *auxiliaryCtx) {
+int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
+                                                          labelType label) {
 
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.

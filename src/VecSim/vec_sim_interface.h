@@ -34,31 +34,14 @@ public:
     virtual ~VecSimIndexInterface() = default;
 
     /**
-     * @brief This Function prepares the blob before sending it to addVector.
-     * @param blob binary representation of the vector. Blob size should match the index data type
-     * and dimension. (for example, if the distance metric is cosine,
-     * it will call addVector with the normalized blob)
-     * It is assumed the the index saves its own copy of the blob.
-     */
-    virtual int addVectorWrapper(const void *blob, labelType label,
-                                 void *auxiliaryCtx = nullptr) = 0;
-
-    /**
      * @brief Add a vector blob and its id to the index.
      *
      * @param blob binary representation of the vector. Blob size should match the index data type
-     * and dimension. It is assumed that the queryBlob has been already processed
-     *  (for example, if the distance metric is cosine, the blob is already *normalized*)
+     * and dimension. The blob will be copied and processed by the index.
      * @param label the label of the added vector.
-     * @param auxiliaryCtx if this is not the main index (but a layer in a tiered index for example)
-     * we pass a state of the index to be used internally. Otherwise, if auxiliaryCtx just perform
-     * a "vanilla" insertion of a new vector.
-     * In addition, if id is not given, and this label already exists overwrite it. Otherwise,
-     * it's the caller main index responsibility to validate that the new label and id are
-     * appropriate.
      * @return the number of new vectors inserted (1 for new insertion, 0 for override).
      */
-    virtual int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) = 0;
+    virtual int addVector(const void *blob, labelType label) = 0;
 
     /**
      * @brief Remove a vector from an index.

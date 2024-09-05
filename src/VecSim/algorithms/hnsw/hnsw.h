@@ -60,11 +60,29 @@ typedef enum {
 // the index global data structures are updated atomically from an external scope (such as in
 // tiered index),
 // TODO: this might need to be generalized for future usages of async indexing.
-struct AddVectorCtx {
+struct HNSWAddVectorState {
     idType newElementId;
     int elementMaxLevel;
     idType currEntryPoint;
     int currMaxLevel;
+};
+
+struct HNSWAddVectorCtx : public AddVectorCtx {
+    HNSWAddVectorCtx() = default;
+    HNSWAddVectorCtx(ProcessedBlobs processedBlobs) : AddVectorCtx(std::move(processedBlobs)) {}
+    HNSWAddVectorState state;
+
+    // Move assignment operator
+    HNSWAddVectorCtx &operator=(HNSWAddVectorCtx &&other) noexcept {
+        if (this != &other) {
+            // Move the base class members (ProcessedBlobs)
+            AddVectorCtx::operator=(std::move(other));
+
+            // Copy the state member
+            this->state = other.state;
+        }
+        return *this;
+    }
 };
 
 #pragma pack(1)
@@ -187,9 +205,15 @@ protected:
     void SwapLastIdWithDeletedId(idType element_internal_id, ElementGraphData *last_element,
                                  void *last_element_data);
 
+    /** Add vector functions */
     // Protected internal function that implements generic single vector insertion.
-    void appendVector(const void *vector_data, labelType label,
-                      AddVectorCtx *auxiliaryCtx = nullptr);
+
+    void appendVector(labelType label, const HNSWAddVectorCtx *auxiliaryCtx);
+    void appendVector(const void *vector_data, labelType label);
+
+    HNSWAddVectorState storeVector(const void *vector_data, const labelType label);
+    void indexVector(const void *vector_data, const labelType label,
+                     const HNSWAddVectorState &add_vector_ctx);
 
     // Protected internal functions for index resizing.
     void growByBlock();
@@ -269,7 +293,7 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    AddVectorCtx storeNewElement(labelType label, const void *vector_data);
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapMarkDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
@@ -1751,9 +1775,9 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 // Store the new element in the global data structures and keep the new state. In multithreaded
 // scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
-AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                            const void *vector_data) {
-    AddVectorCtx state{};
+HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
+                                                                  const void *vector_data) {
+    HNSWAddVectorState state{};
 
     // Choose randomly the maximum level in which the new element will be in the index.
     state.elementMaxLevel = getRandomLevel(mult);
@@ -1813,32 +1837,28 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     }
     return state;
 }
+template <typename DataType, typename DistType>
+HNSWAddVectorState HNSWIndex<DataType, DistType>::storeVector(const void *vector_data,
+                                                              const labelType label) {
+    HNSWAddVectorState state{};
+
+    this->lockIndexDataGuard();
+    state = storeNewElement(label, vector_data);
+    if (state.currMaxLevel >= state.elementMaxLevel) {
+        this->unlockIndexDataGuard();
+    }
+
+    return state;
+}
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
-                                                 AddVectorCtx *auxiliaryCtx) {
-
-    // If auxiliaryCtx is not NULL, the index state has already been updated from outside (such as
-    // in tiered index). Also, the synchronization responsibility in this case is on the caller,
-    // otherwise, this function should acquire and release the lock to ensure proper parallelism.
-    AddVectorCtx state{};
-    if (auxiliaryCtx == nullptr) {
-        this->lockIndexDataGuard();
-        state = storeNewElement(label, vector_data);
-        if (state.currMaxLevel >= state.elementMaxLevel) {
-            this->unlockIndexDataGuard();
-        }
-    } else {
-        state = *auxiliaryCtx;
-    }
+void HNSWIndex<DataType, DistType>::indexVector(const void *vector_data, const labelType label,
+                                                const HNSWAddVectorState &state) {
     // Deconstruct the state variables from the auxiliaryCtx. prev_entry_point and prev_max_level
     // are the entry point and index max level at the point of time when the element was stored, and
     // they may (or may not) have changed due to the insertion.
     auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
-    // be particularly attentive to datasize when using SQ (should be sizeof(float) * dim and not
-    // sizeof(uint8) *dim)
-    auto vector_as_query_data = this->indexComputer->preprocessQuery(vector_data, this->dataSize);
-    vector_data = vector_as_query_data.get();
+
     // This condition only means that we are not inserting the first (non-deleted) element (for the
     // first element we do nothing - we don't need to connect to it).
     if (prev_entry_point != INVALID_ID) {
@@ -1847,10 +1867,25 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
                              vector_data);
     }
     unmarkInProcess(new_element_id);
-    if (auxiliaryCtx == nullptr && state.currMaxLevel < state.elementMaxLevel) {
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
+
+    ProcessedBlobs processedBlobs = this->indexComputer->preprocess(vector_data, this->dataSize);
+    HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
+
+    this->indexVector(processedBlobs.getQueryBlob(), label, state);
+
+    if (state.currMaxLevel < state.elementMaxLevel) {
         // No external auxiliaryCtx, so it's this function responsibility to release the lock.
         this->unlockIndexDataGuard();
     }
+}
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::appendVector(labelType label,
+                                                 const HNSWAddVectorCtx *add_vector_ctx) {
+    this->indexVector(add_vector_ctx->getQueryBlob(), label, add_vector_ctx->state);
 }
 
 template <typename DataType, typename DistType>

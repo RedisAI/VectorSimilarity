@@ -108,14 +108,6 @@ public:
 #endif
 
 private:
-    virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        auto aligned_mem = this->getAllocator()->allocate_aligned_unique(
-            this->backendIndex->getDataSize(), this->backendIndex->getAlignment());
-        const void *processed_blob = this->backendIndex->processBlob(blob, aligned_mem.get());
-
-        return this->addVector(processed_blob, label, auxiliaryCtx);
-    }
-
     virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const override {
         // We assume common query preprocessing for both frontend and backend indices.

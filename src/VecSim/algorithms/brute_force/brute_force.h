@@ -163,6 +163,8 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         growByBlock();
     }
     // add vector data to vector raw data container
+    auto processed_blob = this->indexComputer->preprocessForStorage(vector_data, this->dataSize);
+    vector_data = processed_blob.get();
     vectors->addElement(vector_data, id);
 
     // add label to idToLabelMapping

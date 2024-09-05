@@ -113,7 +113,7 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label) {
-    return index->addVectorWrapper(blob, label);
+    return index->addVector(blob, label);
 }
 
 extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {

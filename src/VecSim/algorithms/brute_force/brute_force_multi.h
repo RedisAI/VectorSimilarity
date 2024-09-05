@@ -24,7 +24,12 @@ public:
 
     ~BruteForceIndex_Multi() = default;
 
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label) override;
+    // currently should not be used
+    int addVector(const AddVectorCtx *add_vector_ctx, labelType label) override {
+        assert(false);
+        return 0;
+    }
     int deleteVector(labelType labelType) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
@@ -94,8 +99,7 @@ private:
 /******************************* Implementation **********************************/
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                         void *auxiliaryCtx) {
+int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label) {
     this->appendVector(vector_data, label);
     return 1;
 }
