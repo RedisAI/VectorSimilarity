@@ -951,7 +951,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     idType element_internal_id, idType neighbour_id, ElementLevelData &node_level,
     ElementLevelData &neighbor_level, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
-    // put the deleted element's neighbours in the candidates.
+    // Put the deleted element's neighbours in the candidates.
     vecsim_stl::vector<idType> candidate_ids(this->allocator);
     candidate_ids.reserve(node_level.getNumLinks() + neighbor_level.getNumLinks());
     for (size_t j = 0; j < node_level.getNumLinks(); j++) {
@@ -960,7 +960,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             candidate_ids.push_back(node_level.getLinkAtPos(j));
         }
     }
-    // add the deleted element's neighbour's original neighbors in the candidates.
+    // Add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<bool> neighbour_orig_neighbours_set(curElementCount, false, this->allocator);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
         neighbour_orig_neighbours_set[neighbor_level.getLinkAtPos(j)] = true;
@@ -988,7 +988,18 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         auto &not_chosen_candidates = candidate_ids; // rename and reuse the vector
         getNeighborsByHeuristic2(candidates, Mcurmax, not_chosen_candidates);
 
-        neighbor_level.setLinks(candidates);
+        size_t new_num_links = 0;
+        for (auto chosen_cand : candidates) {
+            // We will add the selected element as a new neighbor ONLY IF:
+            // 1. The selected element was already a connection before - hence, no update performed.
+            // 2. Both the neighbour which we are updating and the selected element to connect are
+            // not deleted, hence we do not create new connections for marked deleted elements.
+            if (neighbour_orig_neighbours_set[chosen_cand.second] ||
+                (!isMarkedDeleted(neighbour_id) && !isMarkedDeleted(chosen_cand.second))) {
+                neighbor_level.setLinkAtPos(new_num_links++, chosen_cand.second);
+            }
+        }
+        neighbor_level.setNumLinks(new_num_links);
 
         // remove neighbour id from the incoming list of nodes for his
         // neighbours that were chosen to remove
@@ -1007,24 +1018,35 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         }
     } else {
         // We don't need to filter the candidates - just update the edges.
-        neighbor_level.setLinks(candidate_ids);
+        size_t new_num_links = 0;
+        for (idType chosen_cand : candidate_ids) {
+            // We will add the selected element as a new neighbor ONLY IF:
+            // 1. The selected element was already a connection before - hence, no update performed.
+            // 2. Both the neighbour which we are updating and the selected element to connect are
+            // not deleted, hence we do not create new connections for marked deleted elements.
+            if (neighbour_orig_neighbours_set[chosen_cand] ||
+                (!isMarkedDeleted(neighbour_id) && !isMarkedDeleted(chosen_cand))) {
+                neighbor_level.setLinkAtPos(new_num_links++, chosen_cand);
+            }
+        }
+        neighbor_level.setNumLinks(new_num_links);
     }
 
-    // updates for the new edges created
+    // Updates for the new edges created
     for (size_t i = 0; i < neighbor_level.getNumLinks(); i++) {
         idType node_id = neighbor_level.getLinkAtPos(i);
         if (!neighbour_orig_neighbours_set[node_id]) {
             ElementLevelData &node_level = getElementLevelData(node_id, level);
-            // if the node has an edge to the neighbour as well, remove it
-            // from the incoming nodes of the neighbour
-            // otherwise, need to update the edge as incoming.
-
+            // If the node has an edge to the neighbour as well, remove it from the incoming nodes
+            // of the neighbour. Otherwise, we need to update the edge as unidirectional incoming.
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_level.getNumLinks(); j++) {
                 if (node_level.getLinkAtPos(j) == neighbour_id) {
                     // Swap the last element with the current one (equivalent to removing the
                     // neighbor from the list) - this should always succeed and return true.
-                    neighbor_level.removeIncomingUnidirectionalEdgeIfExists(node_id);
+                    bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(node_id);
+                    (void)res;
+                    assert(res && "The edge should be in the incoming unidirectional edges");
                     bidirectional_edge = true;
                     break;
                 }
@@ -1642,9 +1664,15 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         ElementLevelData &cur_level = getElementLevelData(element, level);
         for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
             ElementLevelData &neighbour = getElementLevelData(cur_level.getLinkAtPos(i), level);
-            // This should always succeed, since every outgoing edge should be unidirectional at
-            // this point (after all the repair jobs are done).
-            neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
+            // Note that in case of in-place delete, we might have not accounted for this edge in
+            // in the undirectional edges, since there is no point in keeping it there temporarily
+            // (we know we will get here and remove this deleted id permanently).
+            // However, upon asynchronoush delete, this should always succeed since we do update
+            // the incoming edges in the mutual update even for deleted elements.
+            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
+            // Assert the logical condition of: is_marked_deleted(id) => res==True.
+            (void)res;
+            // assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming unidirectional edges");
         }
     }
 
@@ -1716,7 +1744,9 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
             // incoming edges.
             if (!bidirectional_edge) {
                 // This should always return true (remove should succeed).
-                neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
+                bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
+                (void)res;
+                assert(res && "The edge should be in the incoming unidirectional edges");
             }
         }
 
