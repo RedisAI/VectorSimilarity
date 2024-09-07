@@ -3720,14 +3720,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
     ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
     int **neighbours;
     ASSERT_EQ(tiered_index->getHNSWIndex()->getHNSWElementNeighbors(1, &neighbours),
-        VecSimDebugCommandCode_OK);
+              VecSimDebugCommandCode_OK);
     // Expect 1 neighbors at level 0 (id=3) and that 0 is NOT a new neighbor for 1.
     ASSERT_EQ(neighbours[0][0], 1);
     ASSERT_EQ(neighbours[0][1], 3);
     VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbours);
 
     ASSERT_EQ(tiered_index->getHNSWIndex()->getHNSWElementNeighbors(3, &neighbours),
-        VecSimDebugCommandCode_OK);
+              VecSimDebugCommandCode_OK);
     ASSERT_EQ(neighbours[0][0], 1);
     // Expect 1 neighbors at level 0 (id=1) and that 0 is NOT a new neighbor for 3.
     ASSERT_EQ(neighbours[0][1], 1);
@@ -3748,17 +3748,19 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 16;
     size_t n = 1000;
-    size_t swap_job_threshold = 100;;
-    HNSWParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2,
-                        .blockSize = 100,
+    size_t swap_job_threshold = 10;
+    ;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .blockSize = 100,
     };
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool,
-        swap_job_threshold);
+    auto *tiered_index =
+        this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, swap_job_threshold);
     auto allocator = tiered_index->getAllocator();
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -3786,7 +3788,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
         if (i % 10 == 0) {
             // Change mode every 10 vectors.
             auto next_mode = tiered_index->getWriteMode() == VecSim_WriteInPlace
-            ? VecSim_WriteAsync : VecSim_WriteInPlace;
+                                 ? VecSim_WriteAsync
+                                 : VecSim_WriteInPlace;
             VecSim_SetWriteMode(next_mode);
         }
     }

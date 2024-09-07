@@ -1672,7 +1672,8 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
             // Assert the logical condition of: is_marked_deleted(id) => res==True.
             (void)res;
-            // assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming unidirectional edges");
+            // assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming
+            // unidirectional edges");
         }
     }
 
@@ -1744,7 +1745,8 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
             // incoming edges.
             if (!bidirectional_edge) {
                 // This should always return true (remove should succeed).
-                bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
+                bool res =
+                    neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
                 (void)res;
                 assert(res && "The edge should be in the incoming unidirectional edges");
             }
