@@ -58,6 +58,17 @@ struct ElementLevelData {
     void setNumLinks(linkListSize num) { this->numLinks = num; }
     void setLinkAtPos(size_t pos, idType node_id) { this->links[pos] = node_id; }
     void appendLink(idType node_id) { this->links[this->numLinks++] = node_id; }
+    void removeLink(idType node_id) {
+        size_t i = 0;
+        for (; i < numLinks; i++) {
+            if (links[i] == node_id) {
+                links[i] = links[numLinks - 1];
+                break;
+            }
+        }
+        assert(i < numLinks); // node_id not found - curroption in graph
+        numLinks--;
+    }
     void newIncomingUnidirectionalEdge(idType node_id) {
         this->incomingUnidirectionalEdges->push_back(node_id);
     }
