@@ -56,33 +56,12 @@ typedef enum {
     IN_PROCESS = 0x2,  // element is being inserted into the graph
 } Flags;
 
-// The state of the index and the newly inserted vector to be passed into addVector API in case that
-// the index global data structures are updated atomically from an external scope (such as in
-// tiered index),
-// TODO: this might need to be generalized for future usages of async indexing.
+// The state of the index and the newly stored vector to be passed to indexVector.
 struct HNSWAddVectorState {
     idType newElementId;
     int elementMaxLevel;
     idType currEntryPoint;
     int currMaxLevel;
-};
-
-struct HNSWAddVectorCtx : public AddVectorCtx {
-    HNSWAddVectorCtx() = default;
-    HNSWAddVectorCtx(ProcessedBlobs processedBlobs) : AddVectorCtx(std::move(processedBlobs)) {}
-    HNSWAddVectorState state;
-
-    // Move assignment operator
-    HNSWAddVectorCtx &operator=(HNSWAddVectorCtx &&other) noexcept {
-        if (this != &other) {
-            // Move the base class members (ProcessedBlobs)
-            AddVectorCtx::operator=(std::move(other));
-
-            // Copy the state member
-            this->state = other.state;
-        }
-        return *this;
-    }
 };
 
 #pragma pack(1)
@@ -208,12 +187,9 @@ protected:
     /** Add vector functions */
     // Protected internal function that implements generic single vector insertion.
 
-    void appendVector(labelType label, const HNSWAddVectorCtx *auxiliaryCtx);
     void appendVector(const void *vector_data, labelType label);
 
     HNSWAddVectorState storeVector(const void *vector_data, const labelType label);
-    void indexVector(const void *vector_data, const labelType label,
-                     const HNSWAddVectorState &add_vector_ctx);
 
     // Protected internal functions for index resizing.
     void growByBlock();
@@ -284,6 +260,8 @@ public:
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryReply_Code *rc) const;
 
+    void indexVector(const void *vector_data, const labelType label,
+                     const HNSWAddVectorState &state);
     VecSimQueryReply *topKQuery(const void *query_data, size_t k,
                                 VecSimQueryParams *queryParams) const override;
     VecSimQueryReply *rangeQuery(const void *query_data, double radius,
@@ -1837,6 +1815,7 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
     }
     return state;
 }
+
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeVector(const void *vector_data,
                                                               const labelType label) {
@@ -1881,11 +1860,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         // No external auxiliaryCtx, so it's this function responsibility to release the lock.
         this->unlockIndexDataGuard();
     }
-}
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::appendVector(labelType label,
-                                                 const HNSWAddVectorCtx *add_vector_ctx) {
-    this->indexVector(add_vector_ctx->getQueryBlob(), label, add_vector_ctx->state);
 }
 
 template <typename DataType, typename DistType>

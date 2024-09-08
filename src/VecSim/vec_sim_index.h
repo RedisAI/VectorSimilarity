@@ -42,30 +42,6 @@ struct AbstractIndexInitParams {
 };
 
 /**
- * @brief AddVectorCtx facilitates the management and transfer of vector processing contexts.
- *
- */
-
-struct AddVectorCtx {
-    AddVectorCtx() = default;
-    explicit AddVectorCtx(ProcessedBlobs processedBlobs)
-        : processedBlobs(std::move(processedBlobs)) {}
-
-    AddVectorCtx(AddVectorCtx &&other) noexcept = default;
-    AddVectorCtx &operator=(AddVectorCtx &&other) noexcept = default;
-
-    const void setBlobs(ProcessedBlobs processedBlobs) {
-        this->processedBlobs = std::move(processedBlobs);
-    }
-
-    const void *getStorageBlob() const { return this->processedBlobs.getStorageBlob(); }
-    const void *getQueryBlob() const { return this->processedBlobs.getQueryBlob(); }
-
-private:
-    ProcessedBlobs processedBlobs;
-};
-
-/**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
@@ -138,20 +114,6 @@ public:
      */
     virtual int addVector(const void *blob, labelType label) = 0;
 
-    /**
-     * @brief Add a preprocessed vector and its id to the index.
-     *
-     * @param add_vector_ctx contains the vector blob processed for storage purposes, and the vector
-     * blob processed for query (for example, to find its nearest neighbors in a HNSW graph).
-     * The processed blobs may be identical, for example in case of a dense vectors cosine index,
-     * where both storage and query are normalized, or different for example in SQ index, in which
-     * we need to quantize the storage blob and keep the query blob as is. It is the index
-     * computer's responsibility to handle complex cases like cosine-SQ index.
-     * @param label the label of the added vector.
-     * @return the number of new vectors inserted (1 for new insertion, 0 for override).
-     */
-    virtual int addVector(const AddVectorCtx *add_vector_ctx, labelType label) = 0;
-
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
         return indexComputer->calcDistance(vector_data1, vector_data2, this->dim);
     }
@@ -171,6 +133,14 @@ public:
      * @return unique_ptr of the processed blob.
      */
     std::unique_ptr<void, alloc_deleter_t> processQuery(const void *queryBlob) const;
+
+    /**
+     * @brief Preprocess a blob for storage.
+     *
+     * @param blob will be copied.
+     * @return unique_ptr of the processed blob.
+     */
+    std::unique_ptr<void, alloc_deleter_t> processForStorage(const void *original_blob) const;
 
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
@@ -292,4 +262,10 @@ template <typename DataType, typename DistType>
 std::unique_ptr<void, alloc_deleter_t>
 VecSimIndexAbstract<DataType, DistType>::processQuery(const void *queryBlob) const {
     return this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+}
+
+template <typename DataType, typename DistType>
+std::unique_ptr<void, alloc_deleter_t>
+VecSimIndexAbstract<DataType, DistType>::processForStorage(const void *original_blob) const {
+    return this->indexComputer->preprocessForStorage(original_blob, this->dataSize);
 }

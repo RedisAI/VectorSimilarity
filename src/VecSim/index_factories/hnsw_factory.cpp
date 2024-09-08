@@ -31,22 +31,29 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
             HNSWIndex_Single<DataType, DistType>(params, abstractInitParams, indexComputer);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
+                                                     bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
+    VecSimMetric metric;
+    if (is_normalized && hnswParams->metric == VecSimMetric_Cosine) {
+        metric = VecSimMetric_IP;
+    } else {
+        metric = hnswParams->metric;
+    }
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
                                                   .vecType = hnswParams->type,
-                                                  .metric = hnswParams->metric,
+                                                  .metric = metric,
                                                   .blockSize = hnswParams->blockSize,
                                                   .multi = hnswParams->multi,
                                                   .logCtx = params->logCtx};
     return abstractInitParams;
 }
 
-VecSimIndex *NewIndex(const VecSimParams *params) {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params, is_normalized);
 
     if (hnswParams->type == VecSimType_FLOAT32) {
         IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float>(
@@ -74,7 +81,7 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
     return NULL;
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params) {
+VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized) {
     VecSimParams vecSimParams = {.algoParams = {.hnswParams = HNSWParams{*params}}};
     return NewIndex(&vecSimParams);
 }
@@ -184,7 +191,7 @@ static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
     Serializer::readBinaryPOD(source_params, params.initialCapacity);
 }
 
-VecSimIndex *NewIndex(const std::string &location) {
+VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -211,7 +218,8 @@ VecSimIndex *NewIndex(const std::string &location) {
 
     VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
                                  .algoParams = {.hnswParams = HNSWParams{params}}};
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
+    AbstractIndexInitParams abstractInitParams =
+        NewAbstractInitParams(&vecsimParams, is_normalized);
     if (params.type == VecSimType_FLOAT32) {
         IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float>(abstractInitParams.allocator, params.metric, params.dim);

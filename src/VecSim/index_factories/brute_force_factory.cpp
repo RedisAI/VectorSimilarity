@@ -30,24 +30,31 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
             BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, indexComputer);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
+                                                     bool is_normalized) {
     const BFParams *bfParams = &params->algoParams.bfParams;
+
+    VecSimMetric metric;
+    if (is_normalized && bfParams->metric == VecSimMetric_Cosine) {
+        metric = VecSimMetric_IP;
+    } else {
+        metric = bfParams->metric;
+    }
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,
                                                   .vecType = bfParams->type,
-                                                  .metric = bfParams->metric,
+                                                  .metric = metric,
                                                   .blockSize = bfParams->blockSize,
                                                   .multi = bfParams->multi,
                                                   .logCtx = params->logCtx};
     return abstractInitParams;
 }
 
-VecSimIndex *NewIndex(const VecSimParams *params) {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const BFParams *bfParams = &params->algoParams.bfParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
-    return NewIndex(bfParams, NewAbstractInitParams(params));
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params, is_normalized);
+    return NewIndex(bfParams, abstractInitParams);
 }
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams) {
@@ -75,9 +82,9 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
     return NULL;
 }
 
-VecSimIndex *NewIndex(const BFParams *bfparams) {
+VecSimIndex *NewIndex(const BFParams *bfparams, bool is_normalized) {
     VecSimParams params = {.algoParams{.bfParams = BFParams{*bfparams}}};
-    return NewIndex(&params);
+    return NewIndex(&params, is_normalized);
 }
 
 template <typename DataType, typename DistType = DataType>

@@ -420,17 +420,11 @@ template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
-    // If the blob came from the flat buffer, it is assumed to be processed and ready for insertion.
-    HNSWAddVectorCtx add_vector_ctx;
-    if constexpr (releaseFlatGuard) {
-        // create blobs from the blob without preprocessing
-        ProcessedBlobs processed_blobs(blob, blob);
-        add_vector_ctx.setBlobs(std::move(processed_blobs));
 
-    } else {
-        ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
-        add_vector_ctx.setBlobs(std::move(processed_blobs));
-    }
+    // Preprocess for storage and indexing in the hnsw index
+    ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
+    const void *processed_storage_blob = processed_blobs.getStorageBlob();
+    const void *processed_for_index = processed_blobs.getQueryBlob();
 
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
@@ -449,7 +443,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
         // we hold the main index lock for exclusive access.
-        add_vector_ctx.state = hnsw_index->storeNewElement(label, add_vector_ctx.getStorageBlob());
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -458,12 +452,12 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // shared ownership as it may cause deadlocks, and we also cannot release the main index
         // lock between, since we cannot allow swap jobs to happen, as they will make the
         // saved state invalid. Hence, we insert the vector with the current exclusive lock held.
-        if (add_vector_ctx.state.elementMaxLevel <= add_vector_ctx.state.currMaxLevel) {
+        if (state.elementMaxLevel <= state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->addVector(&add_vector_ctx, label);
-        if (add_vector_ctx.state.elementMaxLevel > add_vector_ctx.state.currMaxLevel) {
+        hnsw_index->indexVector(processed_for_index, label, state);
+        if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
         this->mainIndexGuard.unlock();
@@ -474,17 +468,17 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // At this point we are certain that the index has enough capacity for the new element, and
         // this call will not resize the index.
-        add_vector_ctx.state = hnsw_index->storeNewElement(label, add_vector_ctx.getStorageBlob());
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
 
-        if (add_vector_ctx.state.elementMaxLevel <= add_vector_ctx.state.currMaxLevel) {
+        if (state.elementMaxLevel <= state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->addVector(&add_vector_ctx, label);
-        if (add_vector_ctx.state.elementMaxLevel > add_vector_ctx.state.currMaxLevel) {
+        hnsw_index->indexVector(processed_for_index, label, state);
+        if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
         this->mainIndexGuard.unlock_shared();
@@ -715,10 +709,12 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         if (!this->backendIndex->isMultiValue()) {
             ret -= this->deleteVector(label);
         }
+
+        auto storage_blob = this->frontendIndex->processForStorage(blob);
         // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
         // label since we already checked it outside.
         this->mainIndexGuard.lock();
-        hnsw_index->addVector(blob, label);
+        hnsw_index->addVector(storage_blob.get(), label);
         this->mainIndexGuard.unlock();
         return ret;
     }
@@ -733,7 +729,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
             // directly to HNSW. Since flat buffer guard was not held, no need to release it
             // internally.
-            this->insertVectorToHNSW<false>(hnsw_index, label, blob);
+            auto storage_blob = this->frontendIndex->processForStorage(blob);
+            this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer

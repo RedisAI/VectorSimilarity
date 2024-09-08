@@ -96,7 +96,6 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const AddVectorCtx *add_vector_ctx, labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
@@ -190,14 +189,6 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
     }
     labelLookup.erase(label);
     return ret;
-}
-
-template <typename DataType, typename DistType>
-int HNSWIndex_Multi<DataType, DistType>::addVector(const AddVectorCtx *add_vector_ctx,
-                                                   labelType label) {
-
-    this->appendVector(label, static_cast<const HNSWAddVectorCtx *>(add_vector_ctx));
-    return 1; // We always add the vector, no overrides in multi.
 }
 
 template <typename DataType, typename DistType>

@@ -23,11 +23,6 @@ public:
     ~BruteForceIndex_Single() = default;
 
     int addVector(const void *vector_data, labelType label) override;
-    // currently should not be used
-    int addVector(const AddVectorCtx *add_vector_ctx, labelType label) override {
-        assert(false);
-        return 0;
-    }
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;

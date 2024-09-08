@@ -155,6 +155,7 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
+    auto processed_blob = this->indexComputer->preprocessForStorage(vector_data, this->dataSize);
     // Give the vector new id and increase count.
     idType id = this->count++;
 
@@ -163,9 +164,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         growByBlock();
     }
     // add vector data to vector raw data container
-    auto processed_blob = this->indexComputer->preprocessForStorage(vector_data, this->dataSize);
-    vector_data = processed_blob.get();
-    vectors->addElement(vector_data, id);
+    vectors->addElement(processed_blob.get(), id);
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);

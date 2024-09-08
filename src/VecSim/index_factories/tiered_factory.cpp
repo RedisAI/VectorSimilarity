@@ -22,10 +22,11 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
     // initialize hnsw index
+    // Normalization is done by the frontend index.
     auto *hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
-        HNSWFactory::NewIndex(params->primaryIndexParams));
-    // initialize brute force index
+        HNSWFactory::NewIndex(params->primaryIndexParams, true));
 
+    // initialize brute force index
     BFParams bf_params = {.type = params->primaryIndexParams->algoParams.hnswParams.type,
                           .dim = params->primaryIndexParams->algoParams.hnswParams.dim,
                           .metric = params->primaryIndexParams->algoParams.hnswParams.metric,

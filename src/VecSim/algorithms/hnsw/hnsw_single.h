@@ -69,7 +69,6 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const AddVectorCtx *add_vector_ctx, labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
@@ -156,14 +155,6 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
 
     this->appendVector(vector_data, label);
     return label_exists ? 0 : 1;
-}
-
-template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVector(const AddVectorCtx *add_vector_ctx,
-                                                    labelType label) {
-    this->appendVector(label, static_cast<const HNSWAddVectorCtx *>(add_vector_ctx));
-    // Return the delta in the index size due to the insertion.
-    return 1;
 }
 
 template <typename DataType, typename DistType>
