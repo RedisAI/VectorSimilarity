@@ -500,15 +500,17 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
     auto *hnsw_index = this->getHNSWIndex();
 
     auto ids = hnsw_index->getElementIds(label);
-    hnsw_index->removeLabel(label);
-    // dispose pending repair and swap jobs for the removed ids.
+    // Dispose pending repair and swap jobs for the removed ids.
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(ids.size());
     readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
-    for (auto id : ids) {
+    for (size_t id_ind = 0; id_ind < ids.size(); id_ind++) {
+        // Get the id in every iteration, since the ids can be swapped in every iteration.
+        idType id = hnsw_index->getElementIds(label).at(id_ind);
         hnsw_index->removeVectorInPlace(id);
         this->executeSwapJob(id, idsToRemove);
     }
+    hnsw_index->removeLabel(label);
     for (idType id : idsToRemove) {
         idToSwapJob.erase(id);
     }
