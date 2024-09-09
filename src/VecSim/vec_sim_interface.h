@@ -159,9 +159,9 @@ public:
     virtual VecSimInfoIterator *infoIterator() const = 0;
 
     /**
-     * @brief Create a new batch iterator for a specific index, for a specific query vector,
-     * using the Index_BatchIteratorNew method of the index. Should be released with
-     * VecSimBatchIterator_Free call.
+     * @brief Prepares the query blob and creates a new batch iterator for a specific index, for a
+     * specific query vector, using the Index_BatchIteratorNew method of the index. Should be
+     * released with VecSimBatchIterator_Free call.
      *
      * @param queryBlob binary representation of the vector. Blob size should match the index data
      * type and dimension.

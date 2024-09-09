@@ -228,18 +228,23 @@ public:
         return info;
     }
 
-protected:
     virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const override {
-        auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
-        return this->topKQuery(aligned_mem.get(), k, queryParams);
+        auto processed_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+        return this->topKQuery(processed_mem.get(), k, queryParams);
+    }
+
+    VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
+                                        VecSimQueryParams *queryParams) const {
+        auto processed_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+        return this->rangeQuery(processed_mem.get(), radius, queryParams);
     }
 
     virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams,
                                                 VecSimQueryReply_Order order) const override {
-        auto aligned_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
-        return this->rangeQuery(aligned_mem.get(), radius, queryParams, order);
+        auto processed_mem = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+        return this->rangeQuery(processed_mem.get(), radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
@@ -248,6 +253,7 @@ protected:
         return this->newBatchIterator(aligned_mem.get(), queryParams);
     }
 
+protected:
     void runGC() override {}              // Do nothing, relevant for tiered index only.
     void acquireSharedLocks() override {} // Do nothing, relevant for tiered index only.
     void releaseSharedLocks() override {} // Do nothing, relevant for tiered index only.

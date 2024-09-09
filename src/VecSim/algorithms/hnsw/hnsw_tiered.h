@@ -197,7 +197,7 @@ public:
     VecSimInfoIterator *infoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
+        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
         void *queryBlobCopy = this->allocator->allocate(blobSize);
         memcpy(queryBlobCopy, queryBlob, blobSize);
         return new (this->allocator)
@@ -959,7 +959,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         // it until the iterator is depleted or freed.
         this->index->mainIndexGuard.lock_shared();
         this->hnsw_iterator =
-            this->index->backendIndex->newBatchIterator(getQueryBlob(), queryParams);
+            this->index->backendIndex->newBatchIteratorWrapper(getQueryBlob(), queryParams);
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         hnsw_code = cur_hnsw_results->code;
         this->hnsw_results.swap(cur_hnsw_results->results);
