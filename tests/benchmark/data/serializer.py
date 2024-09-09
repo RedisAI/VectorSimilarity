@@ -177,8 +177,6 @@ def serialize(files=DEFAULT_FILES):
             hnswparams.type = file.get('type', VecSimType_FLOAT32)
             hnswparams.M = file.get('M', 64)
             hnswparams.efConstruction = file.get('efConstruction', 512)
-            hnswparams.initialCapacity = len(
-                f['train']) * len(f['train'][0]) if hnswparams.multi else len(f['train'])
 
             metric = {VecSimMetric_Cosine: 'cosine', VecSimMetric_L2: 'euclidean'}[hnswparams.metric]
             serialized_raw_name = '%s-%s-dim%d' % (nickname, metric, hnswparams.dim)

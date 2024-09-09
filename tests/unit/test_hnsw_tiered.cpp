@@ -126,7 +126,6 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
                               .dim = dim,
                               .metric = VecSimMetric_L2,
                               .multi = isMulti,
-                              .initialCapacity = n,
                               .M = M};
     VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
 
@@ -1896,7 +1895,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
@@ -1965,7 +1963,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
@@ -2057,7 +2054,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
@@ -2122,7 +2118,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
     };
     VecSimParams params = CreateParams(hnsw_params);
@@ -2235,7 +2230,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };

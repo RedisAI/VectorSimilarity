@@ -62,8 +62,7 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
     BFParams bf_params = {.type = type,
                           .dim = DIM,
                           .metric = VecSimMetric_Cosine,
-                          .multi = IS_MULTI,
-                          .initialCapacity = N_VECTORS};
+                          .multi = IS_MULTI};
     // This index will be inserted after the basic indices at indices[VecSimAlfo_BF + update_offset]
     INDICES.push_back(BM_VecSimIndex<index_type_t>::CreateNewIndex(bf_params));
 

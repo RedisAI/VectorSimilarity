@@ -23,7 +23,6 @@ class TestIndex:
 
         bf_params = BFParams()
 
-        bf_params.initialCapacity = num_elements_
         bf_params.blockSize = num_elements_
         bf_params.dim = dim_
         bf_params.type = data_type_

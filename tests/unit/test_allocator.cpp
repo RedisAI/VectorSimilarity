@@ -93,7 +93,6 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     BFParams params = {.type = TypeParam::get_index_type(),
                        .dim = dim,
                        .metric = VecSimMetric_IP,
-                       .initialCapacity = 0,
                        .blockSize = 1};
     auto *bfIndex = dynamic_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
         BruteForceFactory::NewIndex(&params));
@@ -206,8 +205,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     // Build with default args
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = d,
-                         .metric = VecSimMetric_L2,
-                         .initialCapacity = 0};
+                         .metric = VecSimMetric_L2};
 
     TEST_DATA_T vec[128] = {};
     auto *hnswIndex =
@@ -269,7 +267,6 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = d,
                          .metric = VecSimMetric_L2,
-                         .initialCapacity = 10,
                          .M = 2};
     auto *hnswIndex =
         dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
@@ -357,7 +354,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     VecSimType type = TypeParam::get_index_type();
 
     // Build HNSW index with default args and initial capacity of zero.
-    HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2};
     auto *hnswIndex =
         dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
     auto allocator = hnswIndex->getAllocator();

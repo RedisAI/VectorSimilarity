@@ -81,7 +81,6 @@ class IndexCtx:
 
     def init_and_populate_flat_index(self):
         bfparams = BFParams()
-        bfparams.initialCapacity = self.num_vectors
         bfparams.dim = self.dim
         bfparams.type = self.data_type
         bfparams.metric = self.metric
