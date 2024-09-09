@@ -3657,25 +3657,21 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
     tiered_index->setWriteMode(VecSim_WriteInPlace);
     ASSERT_EQ(tiered_index->deleteVector(2), 1);
     ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
-    int **neighbours;
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getHNSWElementNeighbors(1, &neighbours),
-              VecSimDebugCommandCode_OK);
-    // Expect 1 neighbors at level 0 (id=3) and that 0 is NOT a new neighbor for 1.
-    ASSERT_EQ(neighbours[0][0], 1);
-    ASSERT_EQ(neighbours[0][1], 3);
-    VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbours);
 
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getHNSWElementNeighbors(3, &neighbours),
-              VecSimDebugCommandCode_OK);
-    ASSERT_EQ(neighbours[0][0], 1);
-    // Expect 1 neighbors at level 0 (id=1) and that 0 is NOT a new neighbor for 3.
-    ASSERT_EQ(neighbours[0][1], 1);
-    VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbours);
+    // Expect 1 neighbors at level 0 (label=3) and that 0 is NOT a new neighbor for 1.
+    auto &level_data1 = tiered_index->getHNSWIndex()->getElementLevelData((idType)1, 0);
+    ASSERT_EQ(level_data1.getNumLinks(), 1);
+    ASSERT_EQ(level_data1.getLinkAtPos(0), 2); // 3 is under id=2 after the delete in-place and swap
 
-    auto &level_data = tiered_index->getHNSWIndex()->getElementLevelData((idType)0, 0);
+    // Expect 1 neighbors at level 0 (id=1) and that 0 is NOT a new neighbor for 3 (whose id is 2).
+    auto &level_data3 = tiered_index->getHNSWIndex()->getElementLevelData((idType)2, 0);
+    ASSERT_EQ(level_data3.getNumLinks(), 1);
+    ASSERT_EQ(level_data3.getLinkAtPos(0), 1);
+
+    auto &level_data0 = tiered_index->getHNSWIndex()->getElementLevelData((idType)0, 0);
     // Expect 1 neighbors at level 0 (id=1) and that 3 is NOT a new neighbor for 0.
-    ASSERT_EQ(level_data.getNumLinks(), 1);
-    ASSERT_EQ(level_data.getLinkAtPos(0), 1);
+    ASSERT_EQ(level_data0.getNumLinks(), 1);
+    ASSERT_EQ(level_data0.getLinkAtPos(0), 1);
 
     // Expect that id=0 is a ready swap job and execute it.
     ASSERT_EQ(tiered_index->readySwapJobs, 1);
