@@ -66,7 +66,7 @@ struct ElementLevelData {
                 break;
             }
         }
-        assert(i < numLinks); // node_id not found - curroption in graph
+        assert(i < numLinks && "Corruption in HNSW index"); // node_id not found - error
         numLinks--;
     }
     void newIncomingUnidirectionalEdge(idType node_id) {

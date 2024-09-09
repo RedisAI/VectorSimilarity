@@ -3711,9 +3711,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
     // Insert another vector with id=3, that should be connected to both 1 and 2.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 3, -1);
 
-    // Delete in-place id=2, expect that upon reapiring inplace 1 due to 1->2, there will *not* be
+    // Delete in-place id=2, expect that upon repairing inplace 1 due to 1->2, there will *not* be
     // a new edge 1->0 since 0 is deleted. Also the other repair job 2->0 should be invalidated.
-    // Also, expect that reapiring 3 in-place will not create a new edge to marked deleted 0 and
+    // Also, expect that repairing 3 in-place will not create a new edge to marked deleted 0 and
     // vice versa.
     tiered_index->setWriteMode(VecSim_WriteInPlace);
     ASSERT_EQ(tiered_index->deleteVector(2), 1);
@@ -3749,7 +3749,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
     size_t dim = 16;
     size_t n = 1000;
     size_t swap_job_threshold = 10;
-    ;
     HNSWParams params = {
         .type = TypeParam::get_index_type(),
         .dim = dim,

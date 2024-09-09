@@ -960,18 +960,18 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
     // Add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<idType> candidate_ids(this->allocator);
+    candidate_ids.reserve(node_level.getNumLinks() + neighbor_level.getNumLinks());
     vecsim_stl::vector<bool> neighbour_orig_neighbours_set(curElementCount, false, this->allocator);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
-        neighbour_orig_neighbours_set[neighbor_level.getLinkAtPos(j)] = true;
+        idType cand = neighbor_level.getLinkAtPos(j);
+        neighbour_orig_neighbours_set[cand] = true;
         // Don't add the removed element to the candidates, nor nodes that are neighbors of the
         // original deleted element and will also be added to the candidates set.
-        idType cand = neighbor_level.getLinkAtPos(j);
         if (cand != element_internal_id && !neighbours_bitmap[cand]) {
             candidate_ids.push_back(cand);
         }
     }
     // Put the deleted element's neighbours in the candidates.
-    candidate_ids.reserve(node_level.getNumLinks() + neighbor_level.getNumLinks());
     for (size_t j = 0; j < node_level.getNumLinks(); j++) {
         // Don't put the neighbor itself in his own candidates and nor marked deleted elements that
         // were not neighbors before.
@@ -1652,9 +1652,9 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
             ElementLevelData &neighbour = getElementLevelData(cur_level.getLinkAtPos(i), level);
             // Note that in case of in-place delete, we might have not accounted for this edge in
-            // in the undirectional edges, since there is no point in keeping it there temporarily
+            // in the unidirectional edges, since there is no point in keeping it there temporarily
             // (we know we will get here and remove this deleted id permanently).
-            // However, upon asynchronoush delete, this should always succeed since we do update
+            // However, upon asynchronous delete, this should always succeed since we do update
             // the incoming edges in the mutual update even for deleted elements.
             bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
             // Assert the logical condition of: is_marked_deleted(id) => res==True.
