@@ -16,8 +16,10 @@
 
 static void dummyFreeAllocation(void *ptr) {}
 
+// TODO : move oto a general lcation and use in preprocess.h
+using unique_blob = std::unique_ptr<void, alloc_deleter_t>;
+
 struct ProcessedBlobs {
-    using unique_blob = std::unique_ptr<void, alloc_deleter_t>;
     explicit ProcessedBlobs() = default;
 
     explicit ProcessedBlobs(const void *storage_blob, const void *query_blob)
@@ -46,9 +48,13 @@ struct ProcessedBlobs {
     const void *getStorageBlob() const { return storage_blob.get(); }
     const void *getQueryBlob() const { return query_blob.get(); }
 
+    static unique_blob uniqueWithDummyDeleter(void *ptr) {
+        return unique_blob(ptr, dummyFreeAllocation);
+    }
+
 private:
-    std::unique_ptr<void, alloc_deleter_t> storage_blob;
-    std::unique_ptr<void, alloc_deleter_t> query_blob;
+    unique_blob storage_blob;
+    unique_blob query_blob;
 };
 
 template <typename DistType>
@@ -57,13 +63,12 @@ public:
     IndexComputerAbstract(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
 
-    virtual ProcessedBlobs preprocess(const void *blob, size_t processed_bytes_count) = 0;
+    virtual ProcessedBlobs preprocess(const void *blob, size_t processed_bytes_count) const = 0;
 
-    virtual std::unique_ptr<void, alloc_deleter_t>
-    preprocessForStorage(const void *blob, size_t processed_bytes_count) = 0;
+    virtual unique_blob preprocessForStorage(const void *blob,
+                                             size_t processed_bytes_count) const = 0;
 
-    virtual std::unique_ptr<void, alloc_deleter_t>
-    preprocessQuery(const void *blob, size_t processed_bytes_count) = 0;
+    virtual unique_blob preprocessQuery(const void *blob, size_t processed_bytes_count) const = 0;
 
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
     virtual unsigned char getAlignment() const = 0; // TODO:remove!!!!!!!
@@ -84,40 +89,17 @@ public:
         }
     }
 
-    virtual ProcessedBlobs preprocess(const void *blob, size_t processed_bytes_count) {
-        auto storage_blob = preprocessForStorage(blob, processed_bytes_count);
-        auto query_blob = preprocessQuery(blob, processed_bytes_count);
-        return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
-    }
+    virtual ProcessedBlobs preprocess(const void *original_blob,
+                                      size_t processed_bytes_count) const override;
 
-    virtual std::unique_ptr<void, alloc_deleter_t>
-    preprocessForStorage(const void *original_blob, size_t processed_bytes_count) {
-        return std::unique_ptr<void, alloc_deleter_t>(const_cast<void *>(original_blob),
-                                                      dummyFreeAllocation);
-    }
+    virtual unique_blob preprocessForStorage(const void *original_blob,
+                                             size_t processed_bytes_count) const override;
 
     // TODO:remove!!!!!!!
     virtual unsigned char getAlignment() const override { return alignment; }
 
-    // static void FreeAllocation(void *ptr) { this->allocator->free_allocation(ptr); }
-
-    virtual std::unique_ptr<void, alloc_deleter_t> preprocessQuery(const void *original_blob,
-                                                                   size_t processed_bytes_count) {
-        if (this->alignment) {
-            // if the blob is not aligned, or we need to normalize, we copy it
-            if ((this->alignment && (uintptr_t)original_blob % this->alignment)) {
-                auto aligned_mem =
-                    this->allocator->allocate_aligned(processed_bytes_count, this->alignment);
-                memcpy(aligned_mem, original_blob, processed_bytes_count);
-                return std::unique_ptr<void, alloc_deleter_t>(
-                    aligned_mem, [this](void *ptr) { this->allocator->free_allocation(ptr); });
-            }
-        }
-
-        // Returning a unique_ptr with a no-op deleter
-        return std::unique_ptr<void, alloc_deleter_t>(const_cast<void *>(original_blob),
-                                                      dummyFreeAllocation);
-    }
+    virtual unique_blob preprocessQuery(const void *original_blob,
+                                        size_t processed_bytes_count) const override;
 
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         assert(this->distance_calculator);
@@ -127,6 +109,9 @@ public:
 protected:
     const unsigned char alignment;
     DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator;
+
+    // Allocate and copy the blob only if the original blob is not aligned.
+    unique_blob maybeCopyToAlignedMem(const void *original_blob, size_t blob_bytes_count) const;
 };
 
 template <typename DistType, typename DistFuncType>
@@ -149,17 +134,6 @@ public:
         }
     }
 
-    // returns next uninitialized index. returns 0 in case capacity is reached.
-    size_t addPreprocessor(PreprocessorAbstract *preprocessor) {
-        for (size_t i = 0; i < n_preprocessors; i++) {
-            if (preprocessors[i] == nullptr) {
-                preprocessors[i] = preprocessor;
-                return i + 1;
-            }
-        }
-        return 0;
-    }
-
     ~IndexComputerExtended() override {
         for (size_t i = 0; i < n_preprocessors; i++) {
             if (preprocessors[i] == nullptr)
@@ -170,89 +144,202 @@ public:
         this->allocator->free_allocation(preprocessors);
     }
 
-    virtual ProcessedBlobs preprocess(const void *original_blob, size_t processed_bytes_count) {
-        assert(preprocessors[0]);
+    // returns next uninitialized index. returns 0 in case capacity is reached.
+    size_t addPreprocessor(PreprocessorAbstract *preprocessor);
 
-        // Create modifiable memory slot for the processed blobs.
-        auto storage_blob = allocateBlob<false>(processed_bytes_count);
-        auto query_blob = allocateBlob<true>(processed_bytes_count);
+    virtual ProcessedBlobs preprocess(const void *original_blob,
+                                      size_t processed_bytes_count) const override;
 
-        // Flags indicating rather the memory was populated, to be updated by the preprocessor
-        PreprocessorAbstract::PreprocessorParams params = {.processed_bytes_count =
-                                                               processed_bytes_count,
-                                                           .is_populated_storage = false,
-                                                           .is_populated_query = false};
-        for (size_t i = 0; i < n_preprocessors; i++) {
-            if (preprocessors[i] == nullptr)
-                break;
-            // modifies the blob for storage or for query or both, and updates is_populated* flags
-            // accordingly.
-            preprocessors[i]->preprocess(original_blob, storage_blob, query_blob, params);
-        }
-        // This class is always used with some preprocessor
-        assert(params.is_populated_storage || params.is_populated_query);
+    virtual unique_blob preprocessForStorage(const void *original_blob,
+                                             size_t processed_bytes_count) const override;
 
-        if (!params.is_populated_storage) {
-            memcpy(storage_blob.get(), original_blob, processed_bytes_count);
-        }
-        if (!params.is_populated_query) {
-            memcpy(query_blob.get(), original_blob, processed_bytes_count);
-        }
-        return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
-    }
+    virtual unique_blob preprocessQuery(const void *original_blob,
+                                        size_t processed_bytes_count) const override;
 
-    virtual std::unique_ptr<void, alloc_deleter_t>
-    preprocessForStorage(const void *original_blob, size_t processed_bytes_count) {
+private:
+    unsigned char flags = 0;
 
-        assert(preprocessors[0]);
-        // when Using this class, we always need to modify the blob, so we always copy it
-        auto processed_mem = copyBlobToNewAllocation<false>(original_blob, processed_bytes_count);
-
-        for (size_t i = 0; i < n_preprocessors; i++) {
-            if (preprocessors[i] == nullptr)
-                break;
-            // modifies the aligned memory in place
-            preprocessors[i]->preprocessForStorage(processed_mem);
-        }
-        return processed_mem;
-    }
-
-    virtual std::unique_ptr<void, alloc_deleter_t> preprocessQuery(const void *original_blob,
-                                                                   size_t processed_bytes_count) {
-        assert(preprocessors[0]);
-        // when Using this class, we always need to modify the blob, so we always copy it
-        // if aligment = 0, allocate aligned will call simple allocate
-        auto aligned_mem = copyBlobToNewAllocation<true>(original_blob, processed_bytes_count);
-        for (size_t i = 0; i < n_preprocessors; i++) {
-            if (preprocessors[i] == nullptr)
-                break;
-            // modifies the aligned memory in place
-            preprocessors[i]->preprocessQuery(aligned_mem);
-        }
-        return aligned_mem;
-    }
-
-protected:
+    // Allocate a memory slot for the blob. If the aligned = true, the blob will be allocated in an
+    // aligned memory address.
     template <bool aligned>
-    std::unique_ptr<void, alloc_deleter_t> copyBlobToNewAllocation(const void *original_blob,
-                                                                   size_t blob_bytes_count) {
-        auto blob_copy = allocateBlob<aligned>(blob_bytes_count);
-        memcpy(blob_copy.get(), original_blob, blob_bytes_count);
+    unique_blob allocBlob(const void *original_blob, size_t blob_bytes_count) const;
 
-        return blob_copy;
-    }
-
+    // Allocate and copy the blob. If the aligned = true, the blob will be allocated in an aligned
+    // memory address.
     template <bool aligned>
-    std::unique_ptr<void, alloc_deleter_t> allocateBlob(size_t blob_bytes_count) {
-        void *allocated_mem;
-        if constexpr (aligned) {
-            allocated_mem = this->allocator->allocate_aligned(blob_bytes_count, this->alignment);
-        } else {
-            allocated_mem = this->allocator->allocate(blob_bytes_count);
-        }
+    unique_blob allocBlobCopy(const void *original_blob, size_t blob_bytes_count) const;
 
-        std::unique_ptr<void, alloc_deleter_t> ret_mem(
-            allocated_mem, [this](void *ptr) { this->allocator->free_allocation(ptr); });
-        return ret_mem;
-    }
+    struct Flags {
+        static constexpr unsigned char STORAGE = 0x1;
+        static constexpr unsigned char QUERY = 0x2;
+    };
 };
+
+/* ====================================== Implementation ======================================*/
+
+/* ======================= IndexComputerBasic ======================= */
+
+template <typename DistType, typename DistFuncType>
+ProcessedBlobs
+IndexComputerBasic<DistType, DistFuncType>::preprocess(const void *original_blob,
+                                                       size_t processed_bytes_count) const {
+    auto storage_blob = preprocessForStorage(original_blob, processed_bytes_count);
+    auto query_blob = preprocessQuery(original_blob, processed_bytes_count);
+    return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
+}
+
+template <typename DistType, typename DistFuncType>
+unique_blob IndexComputerBasic<DistType, DistFuncType>::preprocessForStorage(
+    const void *original_blob, size_t processed_bytes_count) const {
+    return unique_blob(const_cast<void *>(original_blob), dummyFreeAllocation);
+}
+
+template <typename DistType, typename DistFuncType>
+unique_blob
+IndexComputerBasic<DistType, DistFuncType>::preprocessQuery(const void *original_blob,
+                                                            size_t processed_bytes_count) const {
+    return maybeCopyToAlignedMem(original_blob, processed_bytes_count);
+}
+
+template <typename DistType, typename DistFuncType>
+unique_blob
+IndexComputerBasic<DistType, DistFuncType>::maybeCopyToAlignedMem(const void *original_blob,
+                                                                  size_t blob_bytes_count) const {
+    if (this->alignment) {
+        if ((this->alignment && (uintptr_t)original_blob % this->alignment)) {
+            auto aligned_mem =
+                this->allocator->allocate_force_aligned(blob_bytes_count, this->alignment);
+            memcpy(aligned_mem, original_blob, blob_bytes_count);
+            return unique_blob(aligned_mem,
+                               [this](void *ptr) { this->allocator->free_allocation(ptr); });
+        }
+    }
+
+    // Returning a unique_ptr with a no-op deleter
+    return unique_blob(const_cast<void *>(original_blob), dummyFreeAllocation);
+}
+
+/* ======================= IndexComputerExtended ======================= */
+
+template <typename DistType, typename DistFuncType>
+size_t
+IndexComputerExtended<DistType, DistFuncType>::addPreprocessor(PreprocessorAbstract *preprocessor) {
+    for (size_t i = 0; i < n_preprocessors; i++) {
+        if (preprocessors[i] == nullptr) {
+            if (preprocessor->hasQueryPreprocessor()) {
+                flags |= Flags::QUERY;
+            }
+
+            if (preprocessor->hasStoragePreprocessor()) {
+                flags |= Flags::STORAGE;
+            }
+
+            preprocessors[i] = preprocessor;
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
+template <typename DistType, typename DistFuncType>
+ProcessedBlobs
+IndexComputerExtended<DistType, DistFuncType>::preprocess(const void *original_blob,
+                                                          size_t processed_bytes_count) const {
+    assert(preprocessors[0]);
+
+    if (this->flags & Flags::STORAGE) {
+        auto storage_blob = allocBlobCopy<false>(original_blob, processed_bytes_count);
+
+        PreprocessorAbstract::PreprocessParams params = {.processed_bytes_count =
+                                                             processed_bytes_count,
+                                                         .is_populated_storage = true,
+                                                         .is_populated_query = false};
+
+        if (this->flags & Flags::QUERY) {
+            auto query_blob = allocBlob<true>(original_blob, processed_bytes_count);
+            for (size_t i = 0; i < n_preprocessors; i++) {
+                if (preprocessors[i] == nullptr)
+                    break;
+                preprocessors[i]->preprocess(original_blob, storage_blob, query_blob, params);
+            }
+
+            return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
+            // only storage preprocessing, maybe alignment for query
+        } else { // if (this->flags & Flags::QUERY)
+            for (size_t i = 0; i < n_preprocessors; i++) {
+                if (preprocessors[i] == nullptr)
+                    break;
+                preprocessors[i]->preprocessForStorage(storage_blob);
+            }
+            auto query_blob = this->maybeCopyToAlignedMem(original_blob, processed_bytes_count);
+            return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
+        }
+    }
+
+    // We always have at least one preprocessor, so it must be a query preprocessor
+    auto query_blob = allocBlobCopy<true>(original_blob, processed_bytes_count);
+    for (size_t i = 0; i < n_preprocessors; i++) {
+        if (preprocessors[i] == nullptr)
+            break;
+        preprocessors[i]->preprocessQuery(query_blob);
+    }
+
+    return ProcessedBlobs(
+        std::move(ProcessedBlobs::uniqueWithDummyDeleter(const_cast<void *>(original_blob))),
+        std::move(query_blob));
+}
+
+template <typename DistType, typename DistFuncType>
+unique_blob IndexComputerExtended<DistType, DistFuncType>::preprocessForStorage(
+    const void *original_blob, size_t processed_bytes_count) const {
+    assert(preprocessors[0]);
+    auto storage_blob = allocBlobCopy<false>(original_blob, processed_bytes_count);
+
+    for (size_t i = 0; i < n_preprocessors; i++) {
+        if (preprocessors[i] == nullptr)
+            break;
+        preprocessors[i]->preprocessForStorage(storage_blob);
+    }
+    return storage_blob;
+}
+
+template <typename DistType, typename DistFuncType>
+unique_blob
+IndexComputerExtended<DistType, DistFuncType>::preprocessQuery(const void *original_blob,
+                                                               size_t processed_bytes_count) const {
+    assert(preprocessors[0]);
+    auto query_blob = allocBlobCopy<true>(original_blob, processed_bytes_count);
+    for (size_t i = 0; i < n_preprocessors; i++) {
+        if (preprocessors[i] == nullptr)
+            break;
+        // modifies the aligned memory in place
+        preprocessors[i]->preprocessQuery(query_blob);
+    }
+    return query_blob;
+}
+
+template <typename DistType, typename DistFuncType>
+template <bool aligned>
+unique_blob
+IndexComputerExtended<DistType, DistFuncType>::allocBlob(const void *original_blob,
+                                                         size_t blob_bytes_count) const {
+    void *allocated_mem;
+    if constexpr (aligned) {
+        allocated_mem = this->allocator->allocate_aligned(blob_bytes_count, this->alignment);
+    } else {
+        allocated_mem = this->allocator->allocate(blob_bytes_count);
+    }
+
+    return unique_blob(allocated_mem, [this](void *ptr) { this->allocator->free_allocation(ptr); });
+}
+
+template <typename DistType, typename DistFuncType>
+template <bool aligned>
+unique_blob
+IndexComputerExtended<DistType, DistFuncType>::allocBlobCopy(const void *original_blob,
+                                                             size_t blob_bytes_count) const {
+    auto allocated_mem_ptr = allocBlob<aligned>(original_blob, blob_bytes_count);
+
+    memcpy(allocated_mem_ptr.get(), original_blob, blob_bytes_count);
+    return allocated_mem_ptr;
+}
