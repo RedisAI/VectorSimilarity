@@ -14,8 +14,6 @@ typedef uint16_t linkListSize;
 struct ElementLevelData {
     // A list of ids that are pointing to the node where each edge is *unidirectional*
     vecsim_stl::vector<idType> *incomingUnidirectionalEdges;
-    // Total size of incoming links to the node (both uni and bi directional).
-    linkListSize totalIncomingLinks;
     linkListSize numLinks;
     // Flexible array member - https://en.wikipedia.org/wiki/Flexible_array_member
     // Using this trick, we can have the links list as part of the ElementLevelData struct, and
@@ -28,7 +26,7 @@ struct ElementLevelData {
 
     explicit ElementLevelData(std::shared_ptr<VecSimAllocator> allocator)
         : incomingUnidirectionalEdges(new (allocator) vecsim_stl::vector<idType>(allocator)),
-          totalIncomingLinks(0), numLinks(0) {}
+          numLinks(0) {}
 
     linkListSize getNumLinks() const { return this->numLinks; }
     idType getLinkAtPos(size_t pos) const {
@@ -66,8 +64,6 @@ struct ElementLevelData {
     bool removeIncomingUnidirectionalEdgeIfExists(idType node_id) {
         return this->incomingUnidirectionalEdges->remove(node_id);
     }
-    void increaseTotalIncomingEdgesNum() { this->totalIncomingLinks++; }
-    void decreaseTotalIncomingEdgesNum() { this->totalIncomingLinks--; }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
         auto it = std::find(this->incomingUnidirectionalEdges->begin(),
                             this->incomingUnidirectionalEdges->end(), id_before);
