@@ -95,7 +95,6 @@ size_t EstimateInitialSize(const BFParams *params) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
     est += sizeof(DataBlocksContainer) + allocations_overhead;
-    // Parameters related part.
 
     est += params->blockSize * sizeof(labelType) + allocations_overhead;
 
