@@ -970,9 +970,7 @@ void IndexComputerMixedPreprocessorNoAlignment() {
     }
 
     // try adding another preprocessor and fail.
-    auto preprocessor_out_bounds =
-        new (allocator) DummyMixedPreprocessor<DummyType>(allocator, value_to_add);
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor_out_bounds), -1);
+    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor2), -1);
 
     delete indexComputer;
 }
