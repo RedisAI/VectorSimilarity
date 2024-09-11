@@ -23,7 +23,8 @@ namespace BruteForceFactory {
  */
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
 VecSimIndex *NewIndex(const BFParams *bfparams, bool is_normalized = false);
-VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams);
+VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
+                      bool is_normalized);
 size_t EstimateInitialSize(const BFParams *params);
 size_t EstimateElementSize(const BFParams *params);
 

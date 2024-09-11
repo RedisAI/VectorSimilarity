@@ -42,7 +42,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                                                   .multi = bf_params.multi,
                                                   .logCtx = params->primaryIndexParams->logCtx};
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
-        BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
     // Create new tiered hnsw index
     std::shared_ptr<VecSimAllocator> management_layer_allocator =

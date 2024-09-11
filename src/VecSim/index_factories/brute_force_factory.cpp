@@ -30,21 +30,14 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
             BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, indexComputer);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
-                                                     bool is_normalized) {
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const BFParams *bfParams = &params->algoParams.bfParams;
 
-    VecSimMetric metric;
-    if (is_normalized && bfParams->metric == VecSimMetric_Cosine) {
-        metric = VecSimMetric_IP;
-    } else {
-        metric = bfParams->metric;
-    }
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,
                                                   .vecType = bfParams->type,
-                                                  .metric = metric,
+                                                  .metric = bfParams->metric,
                                                   .blockSize = bfParams->blockSize,
                                                   .multi = bfParams->multi,
                                                   .logCtx = params->logCtx};
@@ -53,27 +46,36 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const BFParams *bfParams = &params->algoParams.bfParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params, is_normalized);
-    return NewIndex(bfParams, abstractInitParams);
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    return NewIndex(bfParams, abstractInitParams, is_normalized);
 }
 
-VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams) {
+VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
+                      bool is_normalized) {
+    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
+    // and query blobs.
+    VecSimMetric metric;
+    if (is_normalized && bfparams->metric == VecSimMetric_Cosine) {
+        metric = VecSimMetric_IP;
+    } else {
+        metric = bfparams->metric;
+    }
     if (bfparams->type == VecSimType_FLOAT32) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float>(
-            abstractInitParams.allocator, bfparams->metric, bfparams->dim);
+        IndexComputerAbstract<float> *indexComputer =
+            CreateIndexComputer<float>(abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComputer);
     } else if (bfparams->type == VecSimType_FLOAT64) {
-        IndexComputerAbstract<double> *indexComputer = CreateIndexComputer<double>(
-            abstractInitParams.allocator, bfparams->metric, bfparams->dim);
+        IndexComputerAbstract<double> *indexComputer =
+            CreateIndexComputer<double>(abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComputer);
     } else if (bfparams->type == VecSimType_BFLOAT16) {
         IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
-            abstractInitParams.allocator, bfparams->metric, bfparams->dim);
+            abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams,
                                                              indexComputer);
     } else if (bfparams->type == VecSimType_FLOAT16) {
         IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
-            abstractInitParams.allocator, bfparams->metric, bfparams->dim);
+            abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
                                                             indexComputer);
     }

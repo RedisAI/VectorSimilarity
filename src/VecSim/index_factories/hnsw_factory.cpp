@@ -31,20 +31,14 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
             HNSWIndex_Single<DataType, DistType>(params, abstractInitParams, indexComputer);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
-                                                     bool is_normalized) {
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-    VecSimMetric metric;
-    if (is_normalized && hnswParams->metric == VecSimMetric_Cosine) {
-        metric = VecSimMetric_IP;
-    } else {
-        metric = hnswParams->metric;
-    }
+
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
                                                   .vecType = hnswParams->type,
-                                                  .metric = metric,
+                                                  .metric = hnswParams->metric,
                                                   .blockSize = hnswParams->blockSize,
                                                   .multi = hnswParams->multi,
                                                   .logCtx = params->logCtx};
@@ -53,26 +47,35 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params, is_normalized);
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+
+    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
+    // and query blobs.
+    VecSimMetric metric;
+    if (is_normalized && hnswParams->metric == VecSimMetric_Cosine) {
+        metric = VecSimMetric_IP;
+    } else {
+        metric = hnswParams->metric;
+    }
 
     if (hnswParams->type == VecSimType_FLOAT32) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float>(
-            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
+        IndexComputerAbstract<float> *indexComputer =
+            CreateIndexComputer<float>(abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams, indexComputer);
 
     } else if (hnswParams->type == VecSimType_FLOAT64) {
-        IndexComputerAbstract<double> *indexComputer = CreateIndexComputer<double>(
-            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
+        IndexComputerAbstract<double> *indexComputer =
+            CreateIndexComputer<double>(abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams, indexComputer);
 
     } else if (hnswParams->type == VecSimType_BFLOAT16) {
         IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
-            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
+            abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(hnswParams, abstractInitParams,
                                                              indexComputer);
     } else if (hnswParams->type == VecSimType_FLOAT16) {
         IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
-            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim);
+            abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(hnswParams, abstractInitParams,
                                                             indexComputer);
     }
@@ -218,26 +221,33 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
 
     VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
                                  .algoParams = {.hnswParams = HNSWParams{params}}};
-    AbstractIndexInitParams abstractInitParams =
-        NewAbstractInitParams(&vecsimParams, is_normalized);
+
+    VecSimMetric metric;
+    if (is_normalized && params.metric == VecSimMetric_Cosine) {
+        metric = VecSimMetric_IP;
+    } else {
+        metric = params.metric;
+    }
+
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
         IndexComputerAbstract<float> *indexComputer =
-            CreateIndexComputer<float>(abstractInitParams.allocator, params.metric, params.dim);
+            CreateIndexComputer<float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version,
                                                    indexComputer);
     } else if (params.type == VecSimType_FLOAT64) {
         IndexComputerAbstract<double> *indexComputer =
-            CreateIndexComputer<double>(abstractInitParams.allocator, params.metric, params.dim);
+            CreateIndexComputer<double>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version,
                                                     indexComputer);
     } else if (params.type == VecSimType_BFLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
-            abstractInitParams.allocator, params.metric, params.dim);
+        IndexComputerAbstract<float> *indexComputer =
+            CreateIndexComputer<bfloat16, float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
                                                              version, indexComputer);
     } else if (params.type == VecSimType_FLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
-            abstractInitParams.allocator, params.metric, params.dim);
+        IndexComputerAbstract<float> *indexComputer =
+            CreateIndexComputer<float16, float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
                                                             version, indexComputer);
     } else {

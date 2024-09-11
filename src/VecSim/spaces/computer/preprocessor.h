@@ -8,18 +8,18 @@
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/memory/memory_utils.h"
 
 class PreprocessorAbstract : public VecsimBaseObject {
 public:
     PreprocessorAbstract(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
     struct PreprocessParams;
-    virtual void preprocess(const void *original_blob,
-                            std::unique_ptr<void, alloc_deleter_t> &storage_blob,
-                            std::unique_ptr<void, alloc_deleter_t> &query_blob,
+    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
+                            MemoryUtils::unique_blob &query_blob,
                             PreprocessParams &params) const = 0;
-    virtual void preprocessForStorage(std::unique_ptr<void, alloc_deleter_t> &blob) const = 0;
-    virtual void preprocessQuery(std::unique_ptr<void, alloc_deleter_t> &blob) const = 0;
+    virtual void preprocessForStorage(MemoryUtils::unique_blob &blob) const = 0;
+    virtual void preprocessQuery(MemoryUtils::unique_blob &blob) const = 0;
 
     virtual bool hasQueryPreprocessor() const = 0;
     virtual bool hasStoragePreprocessor() const = 0;
@@ -38,9 +38,8 @@ public:
         : PreprocessorAbstract(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim) {}
 
-    virtual void preprocess(const void *original_blob,
-                            std::unique_ptr<void, alloc_deleter_t> &storage_blob,
-                            std::unique_ptr<void, alloc_deleter_t> &query_blob,
+    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
+                            MemoryUtils::unique_blob &query_blob,
                             PreprocessParams &params) const override {
         if (!params.is_populated_storage) {
             memcpy(storage_blob.get(), original_blob, params.processed_bytes_count);
@@ -58,11 +57,11 @@ public:
         }
     }
 
-    virtual void preprocessForStorage(std::unique_ptr<void, alloc_deleter_t> &blob) const override {
+    virtual void preprocessForStorage(MemoryUtils::unique_blob &blob) const override {
         normalize_func(blob.get(), this->dim);
     }
 
-    virtual void preprocessQuery(std::unique_ptr<void, alloc_deleter_t> &blob) const override {
+    virtual void preprocessQuery(MemoryUtils::unique_blob &blob) const override {
         normalize_func(blob.get(), this->dim);
     }
 

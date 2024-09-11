@@ -65,6 +65,13 @@ int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value
     return VecSimIndex_AddVector(index, v, id);
 }
 
+template <typename data_t>
+void CompareVectors(const data_t *v1, const data_t *v2, size_t dim) {
+    for (size_t i = 0; i < dim; i++) {
+        ASSERT_EQ(v1[i], v2[i]) << "Vectors are not equal at index " << i;
+    }
+}
+
 inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};

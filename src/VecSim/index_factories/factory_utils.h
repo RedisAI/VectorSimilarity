@@ -26,7 +26,9 @@ IndexComputerAbstract<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAlloc
                 allocator, alignment, 1, distance_calculator);
         PreprocessorAbstract *cosine_preprocessor =
             new (allocator) CosinePreprocessor<DataType>(allocator, dim);
-        indexComputer->addPreprocessor(cosine_preprocessor);
+        int next_valid_pp_index = indexComputer->addPreprocessor(cosine_preprocessor);
+        UNUSED(next_valid_pp_index);
+        assert(next_valid_pp_index == -1 && "Cosine preprocessor was not added correctly");
 
         return indexComputer;
     }
@@ -42,7 +44,6 @@ template <typename DataType, typename DistType = DataType>
 size_t EstimateContainersMemory(VecSimMetric metric) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = allocations_overhead + sizeof(DistanceCalculatorCommon<DistType>);
-    // TODO : if !SQ
 
     if (metric == VecSimMetric_Cosine) {
         est += allocations_overhead +

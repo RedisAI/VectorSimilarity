@@ -24,6 +24,11 @@ protected:
         auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
         return tiered_index->getHNSWIndex();
     }
+
+    BruteForceIndex<data_t, dist_t> *GetFlatIndex(TieredHNSWIndex<data_t, dist_t> *tiered_index) {
+        return tiered_index->frontendIndex;
+    }
+
     TieredHNSWIndex<data_t, dist_t> *CreateTieredHNSWIndex(VecSimParams &hnsw_params,
                                                            tieredIndexMock &mock_thread_pool,
                                                            size_t swap_job_threshold = 0,
@@ -58,7 +63,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = 4,
-                         .metric = VecSimMetric_L2,
+                         .metric = VecSimMetric_IP,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
@@ -69,7 +74,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
 
     // Add a vector to the flat index.
     TEST_DATA_T vector[tiered_index->backendIndex->getDim()];
-    GenerateVector<TEST_DATA_T>(vector, tiered_index->backendIndex->getDim());
+    GenerateVector<TEST_DATA_T>(vector, tiered_index->backendIndex->getDim(), 0.5f);
     labelType vector_label = 1;
     VecSimIndex_AddVector(tiered_index->frontendIndex, vector, vector_label);
 
@@ -3677,4 +3682,123 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceMultiSwapId) {
     // before the deletion, and that eventually entry point was set correctly,
     ASSERT_EQ(tiered_index->deleteVector(0), 2);
     ASSERT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerTest) {
+    // Create TieredHNSW index with cosine metric
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    // Both indices' metric should be Cosine
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    ASSERT_EQ(frontend_index->getMetric(), VecSimMetric_Cosine);
+
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_EQ(hnsw_index->getMetric(), VecSimMetric_Cosine);
+
+    // However, We assume that all the blobs are normalized before sent to the HNSW index.
+    // and the hnsw index should not normalize the vectors.
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 1);
+
+    // Add a vector directly to the hnsw index.
+    VecSimIndex_AddVector(hnsw_index, vector, 0);
+    // Verify that the vector was not normalized.
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(
+        reinterpret_cast<const TEST_DATA_T *>(hnsw_index->getDataByInternalId(0)), vector, dim));
+
+    // Add the same vector to the flat index.
+    VecSimIndex_AddVector(frontend_index, vector, 0);
+    // Verify that the stored vector is normalized.
+    VecSim_Normalize(vector, dim, TypeParam::get_index_type());
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(
+        reinterpret_cast<const TEST_DATA_T *>(frontend_index->getDataByInternalId(0)), vector,
+        dim));
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
+    // Create TieredHNSW index with cosine metric
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+    // Create tiered index with buffer limit set to 1.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 0, 1);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    TEST_DATA_T value = 1;
+    TEST_DATA_T normalized_vec[dim];
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, value);
+    GenerateVector<TEST_DATA_T>(normalized_vec, dim, value);
+    VecSim_Normalize(normalized_vec, dim, TypeParam::get_index_type());
+
+    // Add a vector to the flat buffer and submit a job to transfer it to the hnsw index.
+    VecSimIndex_AddVector(tiered_index, vector, 0);
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 0);
+
+    // Verify the vector is normalized in the flat index.
+    {
+        SCOPED_TRACE("submit insertion job");
+        // Verify that the vector stored in the flat buffer is normalized.
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        frontend_index->getDataByLabel(0, stored_vec);
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+
+    // Add another vector and exceed the flat buffer capacity.
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    // First vector was not yet moved to the hnsw index, so the new vector should be inserted
+    // directly to the hnsw, due to lack of space in the flat index.
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 1);
+    {
+        SCOPED_TRACE("Full buffer; add vector directly to hnsw");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(1, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+
+    // execute the first vector insertion job
+    mock_thread_pool.thread_iteration();
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 2);
+    {
+        SCOPED_TRACE("Moved vector from the buffer to the hnsw index");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(0, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+
+    // Change the mode to WriteInPlace
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    VecSimIndex_AddVector(tiered_index, vector, 2);
+    // Reset mode.
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 3);
+    {
+        SCOPED_TRACE("Add vector in WriteInPlace mode");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(2, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
 }

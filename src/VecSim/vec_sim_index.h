@@ -18,8 +18,6 @@
 #include <cassert>
 #include <functional>
 
-using spaces::dist_func_t; // TODO calculator : remove!!!
-
 /**
  * @brief Struct for initializing an abstract index class.
  *
@@ -89,10 +87,7 @@ public:
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          indexComputer(indexComputer),
-          alignment(
-              indexComputer
-                  ->getAlignment()), // computer TODO: remove alignmen also from the index members
+          indexComputer(indexComputer), alignment(indexComputer->getAlignment()),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
           normalize_func(spaces::GetNormalizeFunc<DataType>()) {
         assert(VecSimType_sizeof(vecType));
@@ -132,7 +127,7 @@ public:
      * @param blob will be copied.
      * @return unique_ptr of the processed blob.
      */
-    std::unique_ptr<void, alloc_deleter_t> processQuery(const void *queryBlob) const;
+    MemoryUtils::unique_blob processQuery(const void *queryBlob) const;
 
     /**
      * @brief Preprocess a blob for storage.
@@ -140,7 +135,7 @@ public:
      * @param blob will be copied.
      * @return unique_ptr of the processed blob.
      */
-    std::unique_ptr<void, alloc_deleter_t> processForStorage(const void *original_blob) const;
+    MemoryUtils::unique_blob processForStorage(const void *original_blob) const;
 
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
@@ -265,13 +260,13 @@ ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *b
 }
 
 template <typename DataType, typename DistType>
-std::unique_ptr<void, alloc_deleter_t>
+MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::processQuery(const void *queryBlob) const {
     return this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
 }
 
 template <typename DataType, typename DistType>
-std::unique_ptr<void, alloc_deleter_t>
+MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::processForStorage(const void *original_blob) const {
     return this->indexComputer->preprocessForStorage(original_blob, this->dataSize);
 }
