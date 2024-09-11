@@ -28,7 +28,7 @@ IndexComputerAbstract<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAlloc
             new (allocator) CosinePreprocessor<DataType>(allocator, dim);
         int next_valid_pp_index = indexComputer->addPreprocessor(cosine_preprocessor);
         UNUSED(next_valid_pp_index);
-        assert(next_valid_pp_index == -1 && "Cosine preprocessor was not added correctly");
+        assert(next_valid_pp_index == 0 && "Cosine preprocessor was not added correctly");
 
         return indexComputer;
     }
