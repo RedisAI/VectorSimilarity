@@ -9,6 +9,7 @@
 #include <memory>
 #include <string.h>
 #include <sys/param.h>
+#include <cassert>
 
 std::shared_ptr<VecSimAllocator> VecSimAllocator::newVecsimAllocator() {
     std::shared_ptr<VecSimAllocator> allocator(new VecSimAllocator());
@@ -50,6 +51,7 @@ void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
 }
 
 void *VecSimAllocator::allocate_force_aligned(size_t size, unsigned char alignment) {
+    assert(alignment);
     size += alignment; // Add enough space for alignment.
     auto ptr = static_cast<unsigned char *>(vecsim_malloc(size + allocation_header_size));
     if (ptr) {

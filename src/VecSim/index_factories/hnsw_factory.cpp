@@ -33,7 +33,6 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
@@ -163,21 +162,22 @@ size_t EstimateElementSize(const HNSWParams *params) {
      */
     return size_meta_data + size_total_data_per_element;
 }
+
 #ifdef BUILD_TESTS
 
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
-                                                 Serializer::EncodingVersion version,
-                                                 IndexComputerAbstract<DistType> *indexComputer) {
+                                                 IndexComputerAbstract<DistType> *indexComputer,
+                                                 Serializer::EncodingVersion version) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
         index = new (abstractInitParams.allocator) HNSWIndex_Multi<DataType, DistType>(
-            input, params, abstractInitParams, version, indexComputer);
+            input, params, abstractInitParams, indexComputer, version);
     else
         index = new (abstractInitParams.allocator) HNSWIndex_Single<DataType, DistType>(
-            input, params, abstractInitParams, version, indexComputer);
+            input, params, abstractInitParams, indexComputer, version);
 
     index->restoreGraph(input, version);
 
@@ -233,23 +233,23 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     if (params.type == VecSimType_FLOAT32) {
         IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float>(abstractInitParams.allocator, metric, params.dim);
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version,
-                                                   indexComputer);
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
+                                                   indexComputer, version);
     } else if (params.type == VecSimType_FLOAT64) {
         IndexComputerAbstract<double> *indexComputer =
             CreateIndexComputer<double>(abstractInitParams.allocator, metric, params.dim);
-        return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version,
-                                                    indexComputer);
+        return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams,
+                                                    indexComputer, version);
     } else if (params.type == VecSimType_BFLOAT16) {
         IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<bfloat16, float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
-                                                             version, indexComputer);
+                                                             indexComputer, version);
     } else if (params.type == VecSimType_FLOAT16) {
         IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float16, float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
-                                                            version, indexComputer);
+                                                            indexComputer, version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {

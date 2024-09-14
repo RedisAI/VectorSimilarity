@@ -25,7 +25,6 @@ public:
     ~BruteForceIndex_Multi() = default;
 
     int addVector(const void *vector_data, labelType label) override;
-
     int deleteVector(labelType labelType) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
@@ -204,8 +203,7 @@ BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom_Unsafe(labelType labe
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->indexComputer->calcDistance(this->getDataByInternalId(id), vector_data,
-                                                       this->dim);
+        DistType d = this->calcDistance(this->getDataByInternalId(id), vector_data);
         dist = (dist < d) ? dist : d;
     }
 

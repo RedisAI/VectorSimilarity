@@ -62,9 +62,9 @@ public:
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
-                    Serializer::EncodingVersion version,
-                    IndexComputerAbstract<DistType> *indexComputer)
-        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version, indexComputer),
+                    IndexComputerAbstract<DistType> *indexComputer,
+                    Serializer::EncodingVersion version)
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, indexComputer, version),
           labelLookup(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
@@ -134,8 +134,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
-        DistType d = this->indexComputer->calcDistance(this->getDataByInternalId(id), vector_data,
-                                                       this->dim);
+        DistType d = this->calcDistance(this->getDataByInternalId(id), vector_data);
         dist = std::fmin(dist, d);
     }
 

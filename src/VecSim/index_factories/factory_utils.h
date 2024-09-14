@@ -17,15 +17,14 @@ IndexComputerAbstract<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAlloc
     unsigned char alignment = 0;
     spaces::dist_func_t<DistType> distFunc =
         spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment);
-    DistanceCalculatorCommon<DistType> *distance_calculator =
+    auto distance_calculator =
         new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
 
     if (metric == VecSimMetric_Cosine) {
-        IndexComputerExtended<DistType, spaces::dist_func_t<DistType>> *indexComputer =
-            new (allocator) IndexComputerExtended<DistType, spaces::dist_func_t<DistType>>(
-                allocator, alignment, 1, distance_calculator);
-        PreprocessorAbstract *cosine_preprocessor =
-            new (allocator) CosinePreprocessor<DataType>(allocator, dim);
+        auto indexComputer = new (allocator)
+            IndexComputerExtended<DistType, spaces::dist_func_t<DistType>>(allocator, alignment, 1,
+                                                                           distance_calculator);
+        auto cosine_preprocessor = new (allocator) CosinePreprocessor<DataType>(allocator, dim);
         int next_valid_pp_index = indexComputer->addPreprocessor(cosine_preprocessor);
         UNUSED(next_valid_pp_index);
         assert(next_valid_pp_index == 0 && "Cosine preprocessor was not added correctly");

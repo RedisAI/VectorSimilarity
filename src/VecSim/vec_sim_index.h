@@ -97,7 +97,7 @@ public:
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndexAbstract() { delete indexComputer; }
+    virtual ~VecSimIndexAbstract() noexcept { delete indexComputer; }
 
     /**
      * @brief Add a vector blob and its id to the index.

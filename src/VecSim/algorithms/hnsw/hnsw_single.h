@@ -38,9 +38,9 @@ public:
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
                      const AbstractIndexInitParams &abstractInitParams,
-                     Serializer::EncodingVersion version,
-                     IndexComputerAbstract<DistType> *indexComputer)
-        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version, indexComputer),
+                     IndexComputerAbstract<DistType> *indexComputer,
+                     Serializer::EncodingVersion version)
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, indexComputer, version),
           labelLookup(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
@@ -112,7 +112,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     }
     idType id = it->second;
 
-    return this->indexComputer->calcDistance(vector_data, this->getDataByInternalId(id), this->dim);
+    return this->calcDistance(vector_data, this->getDataByInternalId(id));
 }
 
 template <typename DataType, typename DistType>
@@ -145,10 +145,9 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                     const labelType label) {
-    bool label_exists = false;
-    if (labelLookup.find(label) != labelLookup.end()) {
-        // Checking if an element with the given label already exists.
-        label_exists = true;
+    // Checking if an element with the given label already exists.
+    bool label_exists = labelLookup.find(label) != labelLookup.end();
+    if (label_exists) {
         // Remove the vector in place if override allowed (in non-async scenario).
         deleteVector(label);
     }

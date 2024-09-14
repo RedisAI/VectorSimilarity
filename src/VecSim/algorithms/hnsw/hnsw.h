@@ -551,7 +551,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->indexComputer->calcDistance(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
 
                 candidate_set.emplace(-cur_dist, candidate_id);
@@ -579,7 +579,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->indexComputer->calcDistance(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
@@ -636,7 +636,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->indexComputer->calcDistance(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (cur_dist < dyn_range) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
@@ -654,7 +654,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->indexComputer->calcDistance(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (cur_dist < dyn_range) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
@@ -681,8 +681,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     DistType lowerBound;
     if (!isMarkedDeleted(ep_id)) {
-        DistType dist =
-            this->indexComputer->calcDistance(data_point, getDataByInternalId(ep_id), this->dim);
+        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         lowerBound = dist;
         top_candidates.emplace(dist, ep_id);
         candidate_set.emplace(-dist, ep_id);
@@ -762,7 +761,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
         // to both q and the candidate than the distance between the candidate and q.
         for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
-                this->indexComputer->calcDistance(cached_vectors[i], curr_vector, this->dim);
+                this->calcDistance(cached_vectors[i], curr_vector);
             if (candidate_to_selected_dist < candidate_to_query_dist) {
                 if constexpr (record_removed) {
                     removed_candidates->push_back(current_pair->second);
@@ -802,8 +801,8 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
         candidates.emplace_back(
-            this->indexComputer->calcDistance(getDataByInternalId(neighbor_level.getLinkAtPos(j)),
-                                              selected_neighbor_data, this->dim),
+            this->calcDistance(getDataByInternalId(neighbor_level.getLinkAtPos(j)),
+                               selected_neighbor_data),
             neighbor_level.getLinkAtPos(j));
     }
 
@@ -995,8 +994,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         auto neighbours_data = getDataByInternalId(neighbour_id);
         for (auto candidate_id : candidate_ids) {
             candidates.emplace_back(
-                this->indexComputer->calcDistance(getDataByInternalId(candidate_id),
-                                                  neighbours_data, this->dim),
+                this->calcDistance(getDataByInternalId(candidate_id), neighbours_data),
                 candidate_id);
         }
 
@@ -1227,8 +1225,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             if (isInProcess(candidate)) {
                 continue;
             }
-            DistType d = this->indexComputer->calcDistance(
-                vector_data, getDataByInternalId(candidate), this->dim);
+            DistType d = this->calcDistance(vector_data, getDataByInternalId(candidate));
             if (d < curDist) {
                 curDist = d;
                 bestCand = candidate;
@@ -1494,9 +1491,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         const void *node_data = getDataByInternalId(node_id);
         for (idType candidate : neighbors_candidate_ids) {
             neighbors_candidates.emplace_back(
-                this->indexComputer->calcDistance(getDataByInternalId(candidate), node_data,
-                                                  this->dim),
-                candidate);
+                this->calcDistance(getDataByInternalId(candidate), node_data), candidate);
         }
         vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
         getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
@@ -1558,8 +1553,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     size_t max_common_level;
     if (element_max_level < global_max_level) {
         max_common_level = element_max_level;
-        cur_dist = this->indexComputer->calcDistance(vector_data, getDataByInternalId(curr_element),
-                                                     this->dim);
+        cur_dist = this->calcDistance(vector_data, getDataByInternalId(curr_element));
         for (auto level = static_cast<int>(global_max_level);
              level > static_cast<int>(element_max_level); level--) {
             // this is done for the levels which are above the max level
@@ -1896,8 +1890,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
-    DistType cur_dist =
-        this->indexComputer->calcDistance(query_data, getDataByInternalId(curr_element), this->dim);
+    DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element));
     for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; --level) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
@@ -1920,8 +1913,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     if (!isMarkedDeleted(ep_id)) {
         // If ep is not marked as deleted, get its distance and set lower bound and heaps
         // accordingly
-        DistType dist =
-            this->indexComputer->calcDistance(data_point, getDataByInternalId(ep_id), this->dim);
+        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         lowerBound = dist;
         top_candidates->emplace(dist, getExternalLabel(ep_id));
         candidate_set.emplace(-dist, ep_id);
@@ -2027,8 +2019,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
         dynamic_range_search_boundaries = dynamic_range = ep_dist;
     } else {
         // If ep is not marked as deleted, get its distance and set ranges accordingly
-        ep_dist =
-            this->indexComputer->calcDistance(data_point, getDataByInternalId(ep_id), this->dim);
+        ep_dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         dynamic_range = ep_dist;
         if (ep_dist <= radius) {
             // Entry-point is within the radius - add it to the results.

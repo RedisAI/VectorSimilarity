@@ -3,8 +3,8 @@
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
-                                         Serializer::EncodingVersion version,
-                                         IndexComputerAbstract<DistType> *indexComputer)
+                                         IndexComputerAbstract<DistType> *indexComputer,
+                                         Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
       Serializer(version),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),

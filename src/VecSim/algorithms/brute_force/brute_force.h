@@ -246,7 +246,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
             delete TopCandidates;
             return rep;
         }
-        auto score = this->indexComputer->calcDistance(vector, queryBlob, this->dim);
+        auto score = this->calcDistance(vector, queryBlob);
         // If we have less than k or a better score, insert it.
         if (score < upperBound || TopCandidates->size() < k) {
             TopCandidates->emplace(score, getVectorLabel(curr_id));
@@ -289,7 +289,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
             rep->code = VecSim_QueryReply_TimedOut;
             break;
         }
-        auto score = this->indexComputer->calcDistance(vectors_it->next(), queryBlob, this->dim);
+        auto score = this->calcDistance(vectors_it->next(), queryBlob);
         if (score <= radius_) {
             res_container->emplace(getVectorLabel(curr_id), score);
         }

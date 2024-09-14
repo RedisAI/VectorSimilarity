@@ -3,8 +3,8 @@
 // Serializing and tests functions.
 public:
 HNSWIndex(std::ifstream &input, const HNSWParams *params,
-          const AbstractIndexInitParams &abstractInitParams, EncodingVersion version,
-          IndexComputerAbstract<DistType> *indexComputer);
+          const AbstractIndexInitParams &abstractInitParams,
+          IndexComputerAbstract<DistType> *indexComputer, EncodingVersion version);
 
 // Validates the connections between vectors
 HNSWIndexMetaData checkIntegrity() const;

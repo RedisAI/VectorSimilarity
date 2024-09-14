@@ -31,8 +31,8 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
 }
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-    const BFParams *bfParams = &params->algoParams.bfParams;
 
+    const BFParams *bfParams = &params->algoParams.bfParams;
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,

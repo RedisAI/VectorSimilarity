@@ -180,5 +180,5 @@ BruteForceIndex_Single<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
     }
     idType id = optionalId->second;
 
-    return this->indexComputer->calcDistance(this->getDataByInternalId(id), vector_data, this->dim);
+    return this->calcDistance(this->getDataByInternalId(id), vector_data);
 }
