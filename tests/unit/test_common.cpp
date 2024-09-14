@@ -804,11 +804,11 @@ void IndexComputerExtendedEmpty() {
     const int original_blob[dim] = {1, 2, 3, 4};
     const int original_blob_cpy[dim] = {1, 2, 3, 4};
 
-    size_t n_preprocessors = 3;
+    constexpr size_t n_preprocessors = 3;
 
     // Test computer with multiple preprocessors of the same type.
     auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t>(allocator, alignment, n_preprocessors);
+        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
 
     {
         ProcessedBlobs processed_blobs =
@@ -851,7 +851,7 @@ void IndexComputerPreprocessorNoAlignment(dummyComputer::pp_mode MODE) {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    size_t n_preprocessors = 2;
+    constexpr size_t n_preprocessors = 2;
     unsigned char alignment = 0;
     int initial_value = 1;
     int value_to_add = 7;
@@ -860,7 +860,7 @@ void IndexComputerPreprocessorNoAlignment(dummyComputer::pp_mode MODE) {
 
     // Test computer with multiple preprocessors of the same type.
     auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t>(allocator, alignment, n_preprocessors);
+        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
@@ -917,7 +917,7 @@ void IndexComputerMixedPreprocessorNoAlignment() {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    size_t n_preprocessors = 3;
+    constexpr size_t n_preprocessors = 3;
     unsigned char alignment = 0;
     int initial_value = 1;
     int value_to_add = 7;
@@ -926,7 +926,7 @@ void IndexComputerMixedPreprocessorNoAlignment() {
 
     // Test computer with multiple preprocessors of the same type.
     auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t>(allocator, alignment, n_preprocessors);
+        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
 
     /* ==== Add one preprocessor of each type ==== */
     auto preprocessor0 = new (allocator) FirstPreprocessorType(allocator, value_to_add);
@@ -993,14 +993,14 @@ void IndexComputerPreprocessorAlignment(dummyComputer::pp_mode MODE) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     unsigned char alignment = 5;
-    size_t n_preprocessors = 1;
+    constexpr size_t n_preprocessors = 1;
     int initial_value = 1;
     int value_to_add = 7;
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
     size_t processed_bytes_count = sizeof(original_blob);
 
     auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t>(allocator, alignment, n_preprocessors);
+        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =

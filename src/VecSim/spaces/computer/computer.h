@@ -106,21 +106,17 @@ protected:
                                                    size_t blob_bytes_count) const;
 };
 
-template <typename DistType, typename DistFuncType>
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 class IndexComputerExtended : public IndexComputerBasic<DistType, DistFuncType> {
 protected:
-    PreprocessorAbstract **preprocessors;
-    const size_t n_preprocessors;
+    PreprocessorAbstract *preprocessors[n_preprocessors];
 
 public:
     IndexComputerExtended(
-        std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment, size_t n_preprocessors,
+        std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment,
         DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
-        : IndexComputerBasic<DistType, DistFuncType>(allocator, alignment, distance_calculator),
-          n_preprocessors(n_preprocessors) {
+        : IndexComputerBasic<DistType, DistFuncType>(allocator, alignment, distance_calculator) {
         assert(n_preprocessors);
-        preprocessors = static_cast<PreprocessorAbstract **>(
-            this->allocator->allocate(sizeof(PreprocessorAbstract *) * n_preprocessors));
         for (size_t i = 0; i < n_preprocessors; i++) {
             preprocessors[i] = nullptr;
         }
@@ -132,8 +128,6 @@ public:
                 break;
             delete preprocessors[i];
         }
-
-        this->allocator->free_allocation(preprocessors);
     }
 
     /** @returns On success, next uninitialized index, or 0 in case capacity is reached (after
@@ -218,8 +212,8 @@ IndexComputerBasic<DistType, DistFuncType>::maybeCopyToAlignedMem(const void *or
 
 /* ======================= IndexComputerExtended ======================= */
 
-template <typename DistType, typename DistFuncType>
-int IndexComputerExtended<DistType, DistFuncType>::addPreprocessor(
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
+int IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::addPreprocessor(
     PreprocessorAbstract *preprocessor) {
     for (size_t i = 0; i < n_preprocessors; i++) {
         if (preprocessors[i] == nullptr) {
@@ -238,10 +232,9 @@ int IndexComputerExtended<DistType, DistFuncType>::addPreprocessor(
     return -1;
 }
 
-template <typename DistType, typename DistFuncType>
-ProcessedBlobs
-IndexComputerExtended<DistType, DistFuncType>::preprocess(const void *original_blob,
-                                                          size_t processed_bytes_count) const {
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
+ProcessedBlobs IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocess(
+    const void *original_blob, size_t processed_bytes_count) const {
     // No preprocessors were added yet.
     if (preprocessors[0] == nullptr) {
         return IndexComputerBasic<DistType, DistFuncType>::preprocess(original_blob,
@@ -290,8 +283,9 @@ IndexComputerExtended<DistType, DistFuncType>::preprocess(const void *original_b
         std::move(query_blob));
 }
 
-template <typename DistType, typename DistFuncType>
-MemoryUtils::unique_blob IndexComputerExtended<DistType, DistFuncType>::preprocessForStorage(
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
+MemoryUtils::unique_blob
+IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocessForStorage(
     const void *original_blob, size_t processed_bytes_count) const {
 
     // Not a storage preprocessor or no preprocessors were added yet.
@@ -310,10 +304,10 @@ MemoryUtils::unique_blob IndexComputerExtended<DistType, DistFuncType>::preproce
     return storage_blob;
 }
 
-template <typename DistType, typename DistFuncType>
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 MemoryUtils::unique_blob
-IndexComputerExtended<DistType, DistFuncType>::preprocessQuery(const void *original_blob,
-                                                               size_t processed_bytes_count) const {
+IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocessQuery(
+    const void *original_blob, size_t processed_bytes_count) const {
     // Not a query preprocessor or no preprocessors were added yet.
     if (!(this->flags & Flags::QUERY) || preprocessors[0] == nullptr) {
         return IndexComputerBasic<DistType, DistFuncType>::preprocessQuery(original_blob,
@@ -329,11 +323,10 @@ IndexComputerExtended<DistType, DistFuncType>::preprocessQuery(const void *origi
     return query_blob;
 }
 
-template <typename DistType, typename DistFuncType>
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 template <bool aligned>
-MemoryUtils::unique_blob
-IndexComputerExtended<DistType, DistFuncType>::allocBlob(const void *original_blob,
-                                                         size_t blob_bytes_count) const {
+MemoryUtils::unique_blob IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::allocBlob(
+    const void *original_blob, size_t blob_bytes_count) const {
     void *allocated_mem;
     if constexpr (aligned) {
         allocated_mem = this->allocator->allocate_aligned(blob_bytes_count, this->alignment);
@@ -345,11 +338,11 @@ IndexComputerExtended<DistType, DistFuncType>::allocBlob(const void *original_bl
                                     [this](void *ptr) { this->allocator->free_allocation(ptr); });
 }
 
-template <typename DistType, typename DistFuncType>
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 template <bool aligned>
 MemoryUtils::unique_blob
-IndexComputerExtended<DistType, DistFuncType>::allocBlobCopy(const void *original_blob,
-                                                             size_t blob_bytes_count) const {
+IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::allocBlobCopy(
+    const void *original_blob, size_t blob_bytes_count) const {
     auto allocated_mem_ptr = allocBlob<aligned>(original_blob, blob_bytes_count);
 
     memcpy(allocated_mem_ptr.get(), original_blob, blob_bytes_count);
