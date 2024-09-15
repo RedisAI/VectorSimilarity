@@ -81,16 +81,16 @@ public:
         }
     }
 
-    virtual ProcessedBlobs preprocess(const void *original_blob,
-                                      size_t processed_bytes_count) const override;
+    ProcessedBlobs preprocess(const void *original_blob,
+                              size_t processed_bytes_count) const override;
 
-    virtual MemoryUtils::unique_blob
-    preprocessForStorage(const void *original_blob, size_t processed_bytes_count) const override;
+    MemoryUtils::unique_blob preprocessForStorage(const void *original_blob,
+                                                  size_t processed_bytes_count) const override;
 
-    virtual unsigned char getAlignment() const override { return alignment; }
+    unsigned char getAlignment() const override { return alignment; }
 
-    virtual MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
-                                                     size_t processed_bytes_count) const override;
+    MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
+                                             size_t processed_bytes_count) const override;
 
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         assert(this->distance_calculator);
@@ -135,14 +135,14 @@ public:
      */
     int addPreprocessor(PreprocessorAbstract *preprocessor);
 
-    virtual ProcessedBlobs preprocess(const void *original_blob,
-                                      size_t processed_bytes_count) const override;
+    ProcessedBlobs preprocess(const void *original_blob,
+                              size_t processed_bytes_count) const override;
 
-    virtual MemoryUtils::unique_blob
-    preprocessForStorage(const void *original_blob, size_t processed_bytes_count) const override;
+    MemoryUtils::unique_blob preprocessForStorage(const void *original_blob,
+                                                  size_t processed_bytes_count) const override;
 
-    virtual MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
-                                                     size_t processed_bytes_count) const override;
+    MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
+                                             size_t processed_bytes_count) const override;
 
 private:
     unsigned char flags = 0;

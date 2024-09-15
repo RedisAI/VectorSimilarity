@@ -30,7 +30,7 @@ public:
         : DistanceCalculatorAbstract<DistType, spaces::dist_func_t<DistType>>(allocator,
                                                                               dist_func) {}
 
-    virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const {
+    DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         return this->dist_func(v1, v2, dim);
     }
 };

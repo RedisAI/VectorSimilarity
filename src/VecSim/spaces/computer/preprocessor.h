@@ -38,9 +38,8 @@ public:
         : PreprocessorAbstract(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim) {}
 
-    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
-                            MemoryUtils::unique_blob &query_blob,
-                            PreprocessParams &params) const override {
+    void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
+                    MemoryUtils::unique_blob &query_blob, PreprocessParams &params) const override {
         if (!params.is_populated_storage) {
             memcpy(storage_blob.get(), original_blob, params.processed_bytes_count);
             params.is_populated_storage = true;
@@ -57,17 +56,17 @@ public:
         }
     }
 
-    virtual void preprocessForStorage(MemoryUtils::unique_blob &blob) const override {
+    void preprocessForStorage(MemoryUtils::unique_blob &blob) const override {
         normalize_func(blob.get(), this->dim);
     }
 
-    virtual void preprocessQuery(MemoryUtils::unique_blob &blob) const override {
+    void preprocessQuery(MemoryUtils::unique_blob &blob) const override {
         normalize_func(blob.get(), this->dim);
     }
 
-    virtual bool hasQueryPreprocessor() const override { return true; };
+    bool hasQueryPreprocessor() const override { return true; };
 
-    virtual bool hasStoragePreprocessor() const override { return true; };
+    bool hasStoragePreprocessor() const override { return true; };
 
 private:
     spaces::normalizeVector_f<DataType> normalize_func;
