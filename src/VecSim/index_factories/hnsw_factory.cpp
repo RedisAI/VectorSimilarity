@@ -74,7 +74,6 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
-    size_t initial_cap = params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE;
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
@@ -87,20 +86,6 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     } else if (params->type == VecSimType_FLOAT16) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
-
-    // Account for the visited nodes pool (assume that it holds one pointer to a handler).
-    est += sizeof(VisitedNodesHandler) + allocations_overhead;
-    // The visited nodes pool inner vector buffer (contains one pointer).
-    est += sizeof(void *) + allocations_overhead;
-    est += sizeof(tag_t) * initial_cap + allocations_overhead; // visited nodes array
-
-    // Implicit allocation calls - allocates memory + a header for one block each.
-    est += sizeof(DataBlock) + allocations_overhead;        // data blocks
-    est += sizeof(DataBlock) + allocations_overhead;        // meta blocks
-    est += sizeof(ElementMetaData) * initial_cap + allocations_overhead; // idToMetaData
-    // Labels lookup hash table buckets.
-    est += sizeof(size_t) * initial_cap + allocations_overhead;
-
     return est;
 }
 

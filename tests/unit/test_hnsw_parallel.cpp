@@ -108,11 +108,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     size_t k = 11;
     size_t dim = 45;
 
-    HNSWParams params = {.dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 64,
-                         .efConstruction = 200,
-                         .efRuntime = n};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efConstruction = 200, .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -182,8 +179,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     size_t n_labels = 1000;
     size_t k = 11;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efRuntime = n};
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 64, .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params, true);
 
     for (size_t i = 0; i < n; i++) {
@@ -231,11 +227,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     size_t k = 11;
     size_t dim = 64;
 
-    HNSWParams params = {.dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 64,
-                         .efConstruction = 200,
-                         .efRuntime = n};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efConstruction = 200, .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -365,10 +358,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
 
-    HNSWParams params = {.dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 16,
-                         .efConstruction = 200};
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
 
     VecSimIndex *parallel_index = this->CreateNewIndex(params);
     size_t n_threads = 10;
@@ -437,10 +427,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
 
-    HNSWParams params = {.dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 16,
-                         .efConstruction = 200};
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
 
     VecSimIndex *parallel_index = this->CreateNewIndex(params, true);
     size_t n_threads = 10;
@@ -502,11 +489,8 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
     labelType first_res_label = query_val - k / 2;
     labelType last_res_label = query_val + k / 2;
 
-    HNSWParams params = {.dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 64,
-                         .efConstruction = 200,
-                         .efRuntime = n};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efConstruction = 200, .efRuntime = n};
 
     VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
 
@@ -673,8 +657,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
     size_t k = 10;
     size_t dim = 32;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .efRuntime = n};
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
     size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
@@ -779,8 +762,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .efRuntime = n};
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
     size_t n_threads = std::min(8U, FLOOR_EVEN(std::thread::hardware_concurrency()));

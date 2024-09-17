@@ -68,7 +68,9 @@ public:
     // This should be called under a guarded section only (NOT in parallel).
     void resize(size_t new_size);
 
-    inline size_t getPoolSize() { return pool.size(); }
+    size_t getPoolSize() { return pool.size(); }
+
+    void clearPool();
 
     ~VisitedNodesHandlerPool() override;
 };

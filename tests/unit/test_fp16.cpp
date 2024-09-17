@@ -243,23 +243,13 @@ TEST_F(FP16HNSWTest, testSizeEstimation) {
     size_t bs = 256;
     size_t M = 64;
 
-    // Initial capacity is rounded up to the block size.
-    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
-
     HNSWParams params = {.dim = 4, .blockSize = bs, .M = M};
     SetUp(params);
 
     // EstimateInitialSize is called after CreateNewIndex because params struct is
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
-
     size_t actual = index->getAllocationSize();
-    // labels_lookup hash table has additional memory, since STL implementation chooses "an
-    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
-    // buckets are created)
-    estimation += (this->CastIndex<HNSWIndex_Single<float16, float>>()->labelLookup.bucket_count() -
-                   (n + extra_cap)) *
-                  sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 
@@ -307,23 +297,6 @@ TEST_F(FP16BruteForceTest, testSizeEstimation) {
     ASSERT_LE(estimation * 0.99, actual);
 }
 
-TEST_F(FP16BruteForceTest, testSizeEstimation_No_InitialCapacity) {
-    size_t dim = 4;
-    size_t n = 100;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
-    SetUp(params);
-
-    // EstimateInitialSize is called after CreateNewIndex because params struct is
-    // changed in CreateNewIndex.
-    size_t estimation = EstimateInitialSize(params);
-
-    size_t actual = index->getAllocationSize();
-    ASSERT_EQ(estimation, actual);
-}
-
 TEST_F(FP16TieredTest, testSizeEstimation) {
     size_t n = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
@@ -342,7 +315,6 @@ TEST_F(FP16TieredTest, testSizeEstimation) {
     // buckets are created)
     auto hnsw_index = CastToHNSW();
     auto hnsw = CastIndex<HNSWIndex_Single<float16, float>>(hnsw_index);
-    initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
 
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
 
@@ -960,9 +932,9 @@ void FP16HNSWTest::test_serialization(bool is_multi) {
         VecSimIndex_AddVector(index, data.data() + dim * j, j % n_labels[i]);
     }
 
-    auto file_name = std::string("/home/alon-reshef/Code/VectorSimilarity") + "/tests/unit/1k-d4-L2-M8-ef_c10_" +
-                     VecSimType_ToString(VecSimType_FLOAT16) + "_" + multiToString[i] +
-                     ".hnsw_current_version";
+    auto file_name = std::string("/home/alon-reshef/Code/VectorSimilarity") +
+                     "/tests/unit/1k-d4-L2-M8-ef_c10_" + VecSimType_ToString(VecSimType_FLOAT16) +
+                     "_" + multiToString[i] + ".hnsw_current_version";
 
     // Save the index with the default version (V3).
     hnsw_index->saveIndex(file_name);

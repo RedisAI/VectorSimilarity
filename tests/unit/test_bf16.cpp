@@ -251,15 +251,7 @@ TEST_F(BF16HNSWTest, testSizeEstimation) {
     // EstimateInitialSize is called after CreateNewIndex because params struct is
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
-
     size_t actual = index->getAllocationSize();
-    // labels_lookup hash table has additional memory, since STL implementation chooses "an
-    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
-    // buckets are created)
-    estimation +=
-        (this->CastIndex<HNSWIndex_Single<bfloat16, float>>()->labelLookup.bucket_count() -
-         n) *
-        sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 
@@ -307,23 +299,6 @@ TEST_F(BF16BruteForceTest, testSizeEstimation) {
     ASSERT_LE(estimation * 0.99, actual);
 }
 
-TEST_F(BF16BruteForceTest, testSizeEstimation_No_InitialCapacity) {
-    size_t dim = 4;
-    size_t n = 100;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
-    SetUp(params);
-
-    // EstimateInitialSize is called after CreateNewIndex because params struct is
-    // changed in CreateNewIndex.
-    size_t estimation = EstimateInitialSize(params);
-
-    size_t actual = index->getAllocationSize();
-    ASSERT_EQ(estimation, actual);
-}
-
 TEST_F(BF16TieredTest, testSizeEstimation) {
     size_t n = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
@@ -336,14 +311,7 @@ TEST_F(BF16TieredTest, testSizeEstimation) {
 
     // auto allocator = index->getAllocator();
     size_t initial_size_estimation = VecSimIndex_EstimateInitialSize(&params);
-
-    // labels_lookup hash table has additional memory, since STL implementation chooses "an
-    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
-    // buckets are created)
     auto hnsw_index = CastToHNSW();
-    auto hnsw = CastIndex<HNSWIndex_Single<bfloat16, float>>(hnsw_index);
-    initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
-
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
 
     // Add vectors up to initial capacity (initial capacity == block size).

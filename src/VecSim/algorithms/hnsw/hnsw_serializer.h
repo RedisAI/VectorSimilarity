@@ -6,8 +6,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), Serializer(version),
       epsilon(params->epsilon), vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator),
-      visitedNodesHandlerPool(1, 0, this->allocator) {
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, 0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
