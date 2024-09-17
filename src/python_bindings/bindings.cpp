@@ -226,6 +226,7 @@ public:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
+    std::shared_mutex indexGuard;      // to protect parallel operations on the index.
     template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
         std::function<VecSimQueryReply *(const char *, search_param_t, VecSimQueryParams *)>;
@@ -247,7 +248,9 @@ private:
                 if (ind >= n_queries) {
                     break;
                 }
+                indexGuard.lock_shared();
                 results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
+                indexGuard.unlock_shared();
             }
         };
         std::thread thread_objs[n_threads];
@@ -363,16 +366,27 @@ public:
             n_threads = (int)std::thread::hardware_concurrency();
         }
 
-        std::atomic_int global_counter(0);
+        std::atomic<int> global_counter{};
+        size_t block_size = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.blockSize;
         auto parallel_insert =
             [&](const py::array &data,
                 const py::array_t<labelType, py::array::c_style | py::array::forcecast> &labels) {
                 while (true) {
-                    int ind = global_counter.fetch_add(1);
+                    // Lock exclusively unless we are not performing resizing due to a new block.
+                    bool exclusive = true;
+                    indexGuard.lock();
+                    int ind = global_counter++;
                     if (ind >= n_vectors) {
+                        indexGuard.unlock();
                         break;
                     }
+                    if (ind % block_size != 0) {
+                        indexGuard.unlock();
+                        indexGuard.lock_shared();
+                        exclusive = false;
+                    }
                     this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
+                    exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
                 }
             };
         std::thread thread_objs[n_threads];

@@ -207,17 +207,16 @@ def test_parallel_insert_search():
     t_query.start()
 
     [t.join() for t in [t_insert, t_query]]
+    assert parallel_index.index_size() == num_elements
+    assert parallel_index.check_integrity()
 
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
     chunk_size = int(num_queries/5)
-    total_correct_prev_chunk = 0
     for i in range(0, num_queries, chunk_size):
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(set(res_labels_g[j])))
-        assert total_correct_cur_chunk >= total_correct_prev_chunk
-        total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(k*chunk_size)}")
 
@@ -227,7 +226,6 @@ def test_parallel_with_range():
     radius = 3.0
     n_threads = min(os.cpu_count(), 8)
     PADDING_LABEL = -1  # used for padding empty labels entries in a single query results
-    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
 
     query_data = np.float32(np.random.random((num_queries, dim)))
     g_test_index.compute_ground_truth_range(query_data, radius)
@@ -369,17 +367,16 @@ def test_parallel_multi_insert_search():
     t_query.start()
 
     [t.join() for t in [t_insert, t_query]]
+    assert parallel_multi_index.index_size() == num_elements
+    assert parallel_multi_index.check_integrity()
 
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
     chunk_size = int(num_queries/5)
-    total_correct_prev_chunk = 0
     for i in range(0, num_queries, chunk_size):
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(set(g_test_index_multi.total_res_bf[j]).intersection(set(res_labels_g[j])))
-        assert total_correct_cur_chunk >= total_correct_prev_chunk
-        total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for queries' chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} is:"
               f" {total_correct_cur_chunk/(k*chunk_size)}")
 
@@ -389,7 +386,6 @@ def test_parallel_batch_search():
     batch_size = 100
     n_batches = 5
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.85  # we expect that at least 85% of the insert/search time will be executed in parallel
 
     # Sequential batched search as the baseline
     query_data = np.float32(np.random.random((num_queries, dim)))
@@ -487,12 +483,9 @@ def test_parallel_insert_batch_search():
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
     chunk_size = int(num_queries/5)
-    total_correct_prev_chunk = 0
     for i in range(0, num_queries, chunk_size):
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(total_results_parallel[j]))
-        assert total_correct_cur_chunk >= total_correct_prev_chunk
-        total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")

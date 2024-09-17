@@ -932,9 +932,9 @@ void FP16HNSWTest::test_serialization(bool is_multi) {
         VecSimIndex_AddVector(index, data.data() + dim * j, j % n_labels[i]);
     }
 
-    auto file_name = std::string("/home/alon-reshef/Code/VectorSimilarity") +
-                     "/tests/unit/1k-d4-L2-M8-ef_c10_" + VecSimType_ToString(VecSimType_FLOAT16) +
-                     "_" + multiToString[i] + ".hnsw_current_version";
+    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/1k-d4-L2-M8-ef_c10_" +
+                     VecSimType_ToString(VecSimType_FLOAT16) + "_" + multiToString[i] +
+                     ".hnsw_current_version";
 
     // Save the index with the default version (V3).
     hnsw_index->saveIndex(file_name);
