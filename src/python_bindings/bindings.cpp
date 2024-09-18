@@ -72,8 +72,8 @@ private:
 
 public:
     PyBatchIterator(const std::shared_ptr<VecSimIndex> &vecIndex,
-                    VecSimBatchIterator *batchIterator)
-        : vectorIndex(vecIndex), batchIterator(batchIterator, VecSimBatchIterator_Free) {}
+                    const std::shared_ptr<VecSimBatchIterator> &batchIterator)
+        : vectorIndex(vecIndex), batchIterator(batchIterator) {}
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
@@ -199,10 +199,13 @@ public:
 
     size_t indexMemory() { return this->index->getAllocationSize(); }
 
-    PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
+    virtual PyBatchIterator createBatchIterator(const py::object &input,
+                                                VecSimQueryParams *query_params) {
         py::array query(input);
-        return PyBatchIterator(
-            index, VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params));
+        auto py_batch_ptr = std::shared_ptr<VecSimBatchIterator>(
+            VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params),
+            VecSimBatchIterator_Free);
+        return PyBatchIterator(index, py_batch_ptr);
     }
 
     py::object getVector(labelType label) {
@@ -424,6 +427,18 @@ public:
             throw std::runtime_error("Invalid index data type");
         }
     }
+    PyBatchIterator createBatchIterator(const py::object &input,
+                                        VecSimQueryParams *query_params) override {
+        py::array query(input);
+        auto del = [&](VecSimBatchIterator *pyBatchIter) {
+            VecSimBatchIterator_Free(pyBatchIter);
+            this->indexGuard.unlock_shared();
+        };
+        indexGuard.lock_shared();
+        auto py_batch_ptr = std::shared_ptr<VecSimBatchIterator>(
+            VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params), del);
+        return PyBatchIterator(index, py_batch_ptr);
+    }
 };
 
 class PyTieredIndex : public PyVecSimIndex {
@@ -599,7 +614,9 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("labels"), py::arg("num_threads") = -1)
         .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
-             py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
+             py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1)
+        .def("create_batch_iterator", &PyHNSWLibIndex::createBatchIterator, py::arg("query_blob"),
+             py::arg("query_param") = nullptr);
 
     py::class_<PyTieredIndex, PyVecSimIndex>(m, "TieredIndex")
         .def("wait_for_index", &PyTieredIndex::WaitForIndex, py::arg("waiting_duration") = 10)
