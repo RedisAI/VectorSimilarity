@@ -126,7 +126,6 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
                               .dim = dim,
                               .metric = VecSimMetric_L2,
                               .multi = isMulti,
-                              .initialCapacity = n,
                               .M = M};
     VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
 
@@ -149,10 +148,8 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     auto hnsw_index = this->CastToHNSW(index);
     if (isMulti == false) {
         auto hnsw = reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     } else { // if its a multi value index cast to HNSW_Multi
         auto hnsw = reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     }
 
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
@@ -1717,6 +1714,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // memory (that is equivalent to the memory consumption upon reserving 0 buckets).
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
+
     TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
                                ->labelLookup.reserve(0)
@@ -1765,9 +1763,12 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // started inserting vectors.
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
+    tiered_index->getHNSWIndex()->resizeLabelLookup(0);
+
     // Manually shrink the vectors so that memory would be as it was before we started inserting
     tiered_index->getHNSWIndex()->vectorBlocks.shrink_to_fit();
     tiered_index->getHNSWIndex()->graphDataBlocks.shrink_to_fit();
+    tiered_index->getHNSWIndex()->visitedNodesHandlerPool.clearPool();
 
     EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
     EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
@@ -1896,7 +1897,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
@@ -1965,7 +1965,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
@@ -2057,7 +2056,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
@@ -2122,7 +2120,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
     };
     VecSimParams params = CreateParams(hnsw_params);
@@ -2235,7 +2232,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         .dim = d,
         .metric = VecSimMetric_L2,
         .multi = TypeParam::isMulti(),
-        .initialCapacity = n,
         .efConstruction = ef,
         .efRuntime = ef,
     };
