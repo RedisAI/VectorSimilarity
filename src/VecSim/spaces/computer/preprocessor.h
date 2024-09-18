@@ -14,21 +14,12 @@ class PreprocessorAbstract : public VecsimBaseObject {
 public:
     PreprocessorAbstract(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
-    struct PreprocessParams;
-    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
-                            MemoryUtils::unique_blob &query_blob,
-                            PreprocessParams &params) const = 0;
-    virtual void preprocessForStorage(MemoryUtils::unique_blob &blob) const = 0;
-    virtual void preprocessQuery(MemoryUtils::unique_blob &blob) const = 0;
-
-    virtual bool hasQueryPreprocessor() const = 0;
-    virtual bool hasStoragePreprocessor() const = 0;
-
-    struct PreprocessParams {
-        const size_t processed_bytes_count;
-        bool is_populated_storage;
-        bool is_populated_query;
-    };
+    virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                            size_t processed_bytes_count, unsigned char alignment) const = 0;
+    virtual void preprocessForStorage(const void *original_blob, void *&storage_blob,
+                                      size_t processed_bytes_count) const = 0;
+    virtual void preprocessQuery(const void *original_blob, void *&query_blob,
+                                 size_t processed_bytes_count, unsigned char alignment) const = 0;
 };
 
 template <typename DataType>
@@ -38,35 +29,56 @@ public:
         : PreprocessorAbstract(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim) {}
 
-    void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
-                    MemoryUtils::unique_blob &query_blob, PreprocessParams &params) const override {
-        if (!params.is_populated_storage) {
-            memcpy(storage_blob.get(), original_blob, params.processed_bytes_count);
-            params.is_populated_storage = true;
+    // If a blob (storage_blob or query_blob) is not nullptr, it means a previous preprocessor
+    // already allocated and processed it. So, we process it inplace. If it's null, we need to
+    // allocate memory for it and copy the original_blob to it.
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
+
+        // Case 1: Blobs are different (one might be null, or both are allocated and processed
+        // separately).
+        if (storage_blob != query_blob) {
+            // If one of them is null, allocate memory for it and copy the original_blob to it.
+            if (storage_blob == nullptr) {
+                storage_blob = this->allocator->allocate(processed_bytes_count);
+                memcpy(storage_blob, original_blob, processed_bytes_count);
+            } else if (query_blob == nullptr) {
+                query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+                memcpy(query_blob, original_blob, processed_bytes_count);
+            }
+
+            // Normalize both blobs.
+            normalize_func(storage_blob, this->dim);
+            normalize_func(query_blob, this->dim);
+        } else { // Case 2: Blobs are the same (either both are null or processed in the same way).
+            if (query_blob == nullptr) { // If both blobs are null, allocate query_blob and set
+                                         // storage_blob to point to it.
+                query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+                memcpy(query_blob, original_blob, processed_bytes_count);
+                storage_blob = query_blob;
+            }
+            // normalize one of them (since they point to the same memory).
+            normalize_func(query_blob, this->dim);
         }
-        normalize_func(storage_blob.get(), this->dim);
+    }
 
-        if (!params.is_populated_query) {
-            // No need to normalize again, just copy the normalized vector
-            memcpy(query_blob.get(), storage_blob.get(), params.processed_bytes_count);
-            params.is_populated_query = true;
-        } else {
-            // Normalize the query vector
-            normalize_func(query_blob.get(), this->dim);
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(blob, original_blob, processed_bytes_count);
         }
+        normalize_func(blob, this->dim);
     }
 
-    void preprocessForStorage(MemoryUtils::unique_blob &blob) const override {
-        normalize_func(blob.get(), this->dim);
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        normalize_func(blob, this->dim);
     }
-
-    void preprocessQuery(MemoryUtils::unique_blob &blob) const override {
-        normalize_func(blob.get(), this->dim);
-    }
-
-    bool hasQueryPreprocessor() const override { return true; };
-
-    bool hasStoragePreprocessor() const override { return true; };
 
 private:
     spaces::normalizeVector_f<DataType> normalize_func;

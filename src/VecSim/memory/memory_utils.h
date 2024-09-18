@@ -12,6 +12,4 @@ namespace MemoryUtils {
 using alloc_deleter_t = std::function<void(void *)>;
 using unique_blob = std::unique_ptr<void, alloc_deleter_t>;
 
-static void dummyFreeAllocation(void *ptr) {}
-
 } // namespace MemoryUtils

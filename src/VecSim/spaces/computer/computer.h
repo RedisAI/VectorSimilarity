@@ -38,10 +38,6 @@ struct ProcessedBlobs {
     const void *getStorageBlob() const { return storage_blob.get(); }
     const void *getQueryBlob() const { return query_blob.get(); }
 
-    static MemoryUtils::unique_blob uniqueWithDummyDeleter(void *ptr) {
-        return MemoryUtils::unique_blob(ptr, MemoryUtils::dummyFreeAllocation);
-    }
-
 private:
     MemoryUtils::unique_blob storage_blob;
     MemoryUtils::unique_blob query_blob;
@@ -104,12 +100,21 @@ protected:
     // Allocate and copy the blob only if the original blob is not aligned.
     MemoryUtils::unique_blob maybeCopyToAlignedMem(const void *original_blob,
                                                    size_t blob_bytes_count) const;
+
+    MemoryUtils::unique_blob wrapAllocated(void *blob) const {
+        return MemoryUtils::unique_blob(
+            blob, [this](void *ptr) { this->allocator->free_allocation(ptr); });
+    }
+
+    static MemoryUtils::unique_blob wrapWithDummyDeleter(void *ptr) {
+        return MemoryUtils::unique_blob(ptr, [](void *) {});
+    }
 };
 
 template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 class IndexComputerExtended : public IndexComputerBasic<DistType, DistFuncType> {
 protected:
-    PreprocessorAbstract *preprocessors[n_preprocessors];
+    std::array<PreprocessorAbstract *, n_preprocessors> preprocessors;
 
 public:
     IndexComputerExtended(
@@ -117,16 +122,15 @@ public:
         DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
         : IndexComputerBasic<DistType, DistFuncType>(allocator, alignment, distance_calculator) {
         assert(n_preprocessors);
-        for (size_t i = 0; i < n_preprocessors; i++) {
-            preprocessors[i] = nullptr;
-        }
+        std::fill_n(preprocessors.begin(), n_preprocessors, nullptr);
     }
 
     ~IndexComputerExtended() override {
-        for (size_t i = 0; i < n_preprocessors; i++) {
-            if (preprocessors[i] == nullptr)
+        for (auto pp : preprocessors) {
+            if (!pp)
                 break;
-            delete preprocessors[i];
+
+            delete pp;
         }
     }
 
@@ -145,23 +149,7 @@ public:
                                              size_t processed_bytes_count) const override;
 
 private:
-    unsigned char flags = 0;
-
-    // Allocate a memory slot for the blob. If the aligned = true, the blob will be allocated in an
-    // aligned memory address.
-    template <bool aligned>
-    MemoryUtils::unique_blob allocBlob(const void *original_blob, size_t blob_bytes_count) const;
-
-    // Allocate and copy the blob. If the aligned = true, the blob will be allocated in an aligned
-    // memory address.
-    template <bool aligned>
-    MemoryUtils::unique_blob allocBlobCopy(const void *original_blob,
-                                           size_t blob_bytes_count) const;
-
-    struct Flags {
-        static constexpr unsigned char STORAGE = 0x1;
-        static constexpr unsigned char QUERY = 0x2;
-    };
+    using Base = IndexComputerBasic<DistType, DistFuncType>;
 };
 
 /* ====================================== Implementation ======================================*/
@@ -180,8 +168,7 @@ IndexComputerBasic<DistType, DistFuncType>::preprocess(const void *original_blob
 template <typename DistType, typename DistFuncType>
 MemoryUtils::unique_blob IndexComputerBasic<DistType, DistFuncType>::preprocessForStorage(
     const void *original_blob, size_t processed_bytes_count) const {
-    return MemoryUtils::unique_blob(const_cast<void *>(original_blob),
-                                    MemoryUtils::dummyFreeAllocation);
+    return std::move(wrapWithDummyDeleter(const_cast<void *>(original_blob)));
 }
 
 template <typename DistType, typename DistFuncType>
@@ -196,18 +183,15 @@ MemoryUtils::unique_blob
 IndexComputerBasic<DistType, DistFuncType>::maybeCopyToAlignedMem(const void *original_blob,
                                                                   size_t blob_bytes_count) const {
     if (this->alignment) {
-        if ((this->alignment && (uintptr_t)original_blob % this->alignment)) {
-            auto aligned_mem =
-                this->allocator->allocate_force_aligned(blob_bytes_count, this->alignment);
+        if ((uintptr_t)original_blob % this->alignment) {
+            auto aligned_mem = this->allocator->allocate_aligned(blob_bytes_count, this->alignment);
             memcpy(aligned_mem, original_blob, blob_bytes_count);
-            return MemoryUtils::unique_blob(
-                aligned_mem, [this](void *ptr) { this->allocator->free_allocation(ptr); });
+            return std::move(this->wrapAllocated(aligned_mem));
         }
     }
 
     // Returning a unique_ptr with a no-op deleter
-    return MemoryUtils::unique_blob(const_cast<void *>(original_blob),
-                                    MemoryUtils::dummyFreeAllocation);
+    return std::move(wrapWithDummyDeleter(const_cast<void *>(original_blob)));
 }
 
 /* ======================= IndexComputerExtended ======================= */
@@ -217,14 +201,6 @@ int IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::addPreproces
     PreprocessorAbstract *preprocessor) {
     for (size_t i = 0; i < n_preprocessors; i++) {
         if (preprocessors[i] == nullptr) {
-            if (preprocessor->hasQueryPreprocessor()) {
-                flags |= Flags::QUERY;
-            }
-
-            if (preprocessor->hasStoragePreprocessor()) {
-                flags |= Flags::STORAGE;
-            }
-
             preprocessors[i] = preprocessor;
             return i + 1 >= n_preprocessors ? 0 : i + 1;
         }
@@ -237,50 +213,43 @@ ProcessedBlobs IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::p
     const void *original_blob, size_t processed_bytes_count) const {
     // No preprocessors were added yet.
     if (preprocessors[0] == nullptr) {
-        return IndexComputerBasic<DistType, DistFuncType>::preprocess(original_blob,
-                                                                      processed_bytes_count);
+        // query might need to be aligned
+        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, processed_bytes_count);
+        return ProcessedBlobs(
+            std::move(Base::wrapWithDummyDeleter(const_cast<void *>(original_blob))),
+            std::move(query_ptr));
     }
 
-    if (this->flags & Flags::STORAGE) {
-        auto storage_blob = allocBlobCopy<false>(original_blob, processed_bytes_count);
-
-        PreprocessorAbstract::PreprocessParams params = {.processed_bytes_count =
-                                                             processed_bytes_count,
-                                                         .is_populated_storage = true,
-                                                         .is_populated_query = false};
-
-        if (this->flags & Flags::QUERY) {
-            auto query_blob = allocBlob<true>(original_blob, processed_bytes_count);
-            for (size_t i = 0; i < n_preprocessors; i++) {
-                if (preprocessors[i] == nullptr)
-                    break;
-                preprocessors[i]->preprocess(original_blob, storage_blob, query_blob, params);
-            }
-
-            return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
-            // only storage preprocessing, maybe alignment for query
-        } else { // !(this->flags & Flags::QUERY)
-            for (size_t i = 0; i < n_preprocessors; i++) {
-                if (preprocessors[i] == nullptr)
-                    break;
-                preprocessors[i]->preprocessForStorage(storage_blob);
-            }
-            auto query_blob = this->maybeCopyToAlignedMem(original_blob, processed_bytes_count);
-            return ProcessedBlobs(std::move(storage_blob), std::move(query_blob));
-        }
-    } // if (this->flags & Flags::STORAGE)
-
-    // Since we have at least one preprocessor, it must be a query preprocessor
-    auto query_blob = allocBlobCopy<true>(original_blob, processed_bytes_count);
-    for (size_t i = 0; i < n_preprocessors; i++) {
-        if (preprocessors[i] == nullptr)
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    for (auto pp : preprocessors) {
+        if (!pp)
             break;
-        preprocessors[i]->preprocessQuery(query_blob);
+        pp->preprocess(original_blob, storage_blob, query_blob, processed_bytes_count,
+                       this->alignment);
     }
 
-    return ProcessedBlobs(
-        std::move(ProcessedBlobs::uniqueWithDummyDeleter(const_cast<void *>(original_blob))),
-        std::move(query_blob));
+    // If they point to the same memory, we need to free only one of them.
+    if (storage_blob == query_blob) {
+        return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)),
+                              std::move(Base::wrapWithDummyDeleter(storage_blob)));
+    }
+
+    if (storage_blob == nullptr) { // we processed only the query
+        return ProcessedBlobs(
+            std::move(Base::wrapWithDummyDeleter(const_cast<void *>(original_blob))),
+            std::move(this->wrapAllocated(query_blob)));
+    }
+
+    if (query_blob == nullptr) { // we processed only the storage
+        // query might need to be aligned
+        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, processed_bytes_count);
+        return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)), std::move(query_ptr));
+    }
+
+    // Else, both were allocated separately, we need to release both.
+    return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)),
+                          std::move(this->wrapAllocated(query_blob)));
 }
 
 template <typename DistType, typename DistFuncType, size_t n_preprocessors>
@@ -288,63 +257,30 @@ MemoryUtils::unique_blob
 IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocessForStorage(
     const void *original_blob, size_t processed_bytes_count) const {
 
-    // Not a storage preprocessor or no preprocessors were added yet.
-    if (!(this->flags & Flags::STORAGE) || preprocessors[0] == nullptr) {
-        return IndexComputerBasic<DistType, DistFuncType>::preprocessForStorage(
-            original_blob, processed_bytes_count);
-    }
-
-    auto storage_blob = allocBlobCopy<false>(original_blob, processed_bytes_count);
-
-    for (size_t i = 0; i < n_preprocessors; i++) {
-        if (preprocessors[i] == nullptr)
+    void *storage_blob = nullptr;
+    for (auto pp : preprocessors) {
+        if (!pp)
             break;
-        preprocessors[i]->preprocessForStorage(storage_blob);
+        pp->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
     }
-    return storage_blob;
+
+    return storage_blob ? std::move(this->wrapAllocated(storage_blob))
+                        : std::move(Base::wrapWithDummyDeleter(const_cast<void *>(original_blob)));
 }
 
 template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 MemoryUtils::unique_blob
 IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocessQuery(
     const void *original_blob, size_t processed_bytes_count) const {
-    // Not a query preprocessor or no preprocessors were added yet.
-    if (!(this->flags & Flags::QUERY) || preprocessors[0] == nullptr) {
-        return IndexComputerBasic<DistType, DistFuncType>::preprocessQuery(original_blob,
-                                                                           processed_bytes_count);
-    }
-    auto query_blob = allocBlobCopy<true>(original_blob, processed_bytes_count);
-    for (size_t i = 0; i < n_preprocessors; i++) {
-        if (preprocessors[i] == nullptr)
+
+    void *query_blob = nullptr;
+    for (auto pp : preprocessors) {
+        if (!pp)
             break;
         // modifies the aligned memory in place
-        preprocessors[i]->preprocessQuery(query_blob);
+        pp->preprocessQuery(original_blob, query_blob, processed_bytes_count, this->alignment);
     }
-    return query_blob;
-}
-
-template <typename DistType, typename DistFuncType, size_t n_preprocessors>
-template <bool aligned>
-MemoryUtils::unique_blob IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::allocBlob(
-    const void *original_blob, size_t blob_bytes_count) const {
-    void *allocated_mem;
-    if constexpr (aligned) {
-        allocated_mem = this->allocator->allocate_aligned(blob_bytes_count, this->alignment);
-    } else {
-        allocated_mem = this->allocator->allocate(blob_bytes_count);
-    }
-
-    return MemoryUtils::unique_blob(allocated_mem,
-                                    [this](void *ptr) { this->allocator->free_allocation(ptr); });
-}
-
-template <typename DistType, typename DistFuncType, size_t n_preprocessors>
-template <bool aligned>
-MemoryUtils::unique_blob
-IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::allocBlobCopy(
-    const void *original_blob, size_t blob_bytes_count) const {
-    auto allocated_mem_ptr = allocBlob<aligned>(original_blob, blob_bytes_count);
-
-    memcpy(allocated_mem_ptr.get(), original_blob, blob_bytes_count);
-    return allocated_mem_ptr;
+    return query_blob
+               ? std::move(this->wrapAllocated(query_blob))
+               : std::move(this->maybeCopyToAlignedMem(original_blob, processed_bytes_count));
 }

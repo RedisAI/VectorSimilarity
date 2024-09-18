@@ -652,108 +652,127 @@ enum pp_mode { STORAGE_ONLY, QUERY_ONLY, BOTH, EMPTY };
 template <typename DataType>
 class DummyStoragePreprocessor : public PreprocessorAbstract {
 public:
-    DummyStoragePreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add)
-        : PreprocessorAbstract(allocator), value_to_add(value_to_add) {}
+    DummyStoragePreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
+                             int value_to_add_query = 0)
+        : PreprocessorAbstract(allocator), value_to_add_storage(value_to_add_storage),
+          value_to_add_query(value_to_add_query) {
+        if (!value_to_add_query)
+            value_to_add_query = value_to_add_storage;
+    }
 
-    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
-                            MemoryUtils::unique_blob &query_blob,
-                            PreprocessParams &params) const override {
-        if (!params.is_populated_storage) {
-            memcpy(storage_blob.get(), original_blob, params.processed_bytes_count);
-            params.is_populated_storage = true;
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
+
+        this->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(blob, original_blob, processed_bytes_count);
         }
-
-        this->preprocessForStorage(storage_blob);
+        static_cast<DataType *>(blob)[0] += value_to_add_storage;
     }
 
-    virtual void preprocessForStorage(MemoryUtils::unique_blob &storage_blob) const override {
-        static_cast<DataType *>(storage_blob.get())[0] += value_to_add;
-    }
-
-    virtual void preprocessQuery(MemoryUtils::unique_blob &query_blob) const override {
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
         /* do nothing*/
     }
 
-    virtual bool hasQueryPreprocessor() const override { return false; };
-
-    virtual bool hasStoragePreprocessor() const override { return true; };
-
 private:
-    int value_to_add;
+    int value_to_add_storage;
+    int value_to_add_query;
 };
 
 // Dummy query preprocessor
 template <typename DataType>
 class DummyQueryPreprocessor : public PreprocessorAbstract {
 public:
-    DummyQueryPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add)
-        : PreprocessorAbstract(allocator), value_to_add(value_to_add) {}
-
-    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
-                            MemoryUtils::unique_blob &query_blob,
-                            PreprocessParams &params) const override {
-        if (!params.is_populated_query) {
-            memcpy(query_blob.get(), original_blob, params.processed_bytes_count);
-            params.is_populated_query = true;
-        }
-
-        this->preprocessQuery(query_blob);
+    DummyQueryPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
+                           int _value_to_add_query = 0)
+        : PreprocessorAbstract(allocator), value_to_add_storage(value_to_add_storage),
+          value_to_add_query(_value_to_add_query) {
+        if (!_value_to_add_query)
+            value_to_add_query = value_to_add_storage;
     }
 
-    virtual void preprocessForStorage(MemoryUtils::unique_blob &storage_blob) const override {
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
+        this->preprocessQuery(original_blob, query_blob, processed_bytes_count, alignment);
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
         /* do nothing*/
     }
 
-    virtual void preprocessQuery(MemoryUtils::unique_blob &query_blob) const override {
-        static_cast<DataType *>(query_blob.get())[0] += value_to_add;
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        static_cast<DataType *>(blob)[0] += value_to_add_query;
     }
 
-    virtual bool hasQueryPreprocessor() const override { return true; };
-
-    virtual bool hasStoragePreprocessor() const override { return false; };
-
 private:
-    int value_to_add;
+    int value_to_add_storage;
+    int value_to_add_query;
 };
 
-// Dummy mixed preprocessor
+// Dummy mixed preprocessor (precesses the blobs  differently)
 template <typename DataType>
 class DummyMixedPreprocessor : public PreprocessorAbstract {
 public:
-    DummyMixedPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add)
-        : PreprocessorAbstract(allocator), value_to_add(value_to_add) {}
+    DummyMixedPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
+                           int value_to_add_query)
+        : PreprocessorAbstract(allocator), value_to_add_storage(value_to_add_storage),
+          value_to_add_query(value_to_add_query) {}
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
 
-    virtual void preprocess(const void *original_blob, MemoryUtils::unique_blob &storage_blob,
-                            MemoryUtils::unique_blob &query_blob,
-                            PreprocessParams &params) const override {
-        if (!params.is_populated_query) {
-            memcpy(query_blob.get(), original_blob, params.processed_bytes_count);
-            params.is_populated_query = true;
+        // One blob was already allocated by a previous preprocessor(s) that process both blobs the
+        // same. The blobs are pointing to the same memory, we need to allocate another memory slot
+        // to split them.
+        if ((storage_blob == query_blob) && (query_blob != nullptr)) {
+            storage_blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(storage_blob, query_blob, processed_bytes_count);
         }
-        if (!params.is_populated_storage) {
-            memcpy(storage_blob.get(), original_blob, params.processed_bytes_count);
-            params.is_populated_storage = true;
+
+        // Either both are nullptr or they are pointing to different memory slots. Both cases are
+        // handled by the designated functions.
+        this->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
+        this->preprocessQuery(original_blob, query_blob, processed_bytes_count, alignment);
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(blob, original_blob, processed_bytes_count);
         }
-
-        this->preprocessQuery(query_blob);
-        this->preprocessForStorage(storage_blob);
+        static_cast<DataType *>(blob)[0] += value_to_add_storage;
     }
 
-    virtual void preprocessForStorage(MemoryUtils::unique_blob &storage_blob) const override {
-        static_cast<DataType *>(storage_blob.get())[0] += value_to_add;
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        static_cast<DataType *>(blob)[0] += value_to_add_query;
     }
-
-    virtual void preprocessQuery(MemoryUtils::unique_blob &query_blob) const override {
-        static_cast<DataType *>(query_blob.get())[0] += value_to_add;
-    }
-
-    virtual bool hasQueryPreprocessor() const override { return true; };
-
-    virtual bool hasStoragePreprocessor() const override { return true; };
 
 private:
-    int value_to_add;
+    int value_to_add_storage;
+    int value_to_add_query;
 };
+
 } // namespace dummyComputer
 
 TEST(IndexComputerTest, IndexComputerCalculatorTest) {
@@ -920,7 +939,8 @@ void IndexComputerMixedPreprocessorNoAlignment() {
     constexpr size_t n_preprocessors = 3;
     unsigned char alignment = 0;
     int initial_value = 1;
-    int value_to_add = 7;
+    int value_to_add_storage = 7;
+    int value_to_add_query = 2;
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
     size_t processed_bytes_count = sizeof(original_blob);
 
@@ -929,9 +949,11 @@ void IndexComputerMixedPreprocessorNoAlignment() {
         IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
 
     /* ==== Add one preprocessor of each type ==== */
-    auto preprocessor0 = new (allocator) FirstPreprocessorType(allocator, value_to_add);
+    auto preprocessor0 =
+        new (allocator) FirstPreprocessorType(allocator, value_to_add_storage, value_to_add_query);
     ASSERT_EQ(indexComputer->addPreprocessor(preprocessor0), 1);
-    auto preprocessor1 = new (allocator) SecondPreprocessorType(allocator, value_to_add);
+    auto preprocessor1 =
+        new (allocator) SecondPreprocessorType(allocator, value_to_add_storage, value_to_add_query);
     ASSERT_EQ(indexComputer->addPreprocessor(preprocessor1), 2);
 
     // scope this section so the blobs are released before the allocator.
@@ -949,12 +971,15 @@ void IndexComputerMixedPreprocessorNoAlignment() {
         // the new value.
         ASSERT_NE(storage_blob, original_blob);
         ASSERT_NE(query_blob, original_blob);
-        ASSERT_EQ(((const int *)storage_blob)[0], initial_value + value_to_add);
-        ASSERT_EQ(((const int *)query_blob)[0], initial_value + value_to_add);
+        ASSERT_NE(query_blob, storage_blob);
+
+        ASSERT_EQ(((const int *)storage_blob)[0], initial_value + value_to_add_storage);
+        ASSERT_EQ(((const int *)query_blob)[0], initial_value + value_to_add_query);
     }
 
     /* ==== Add a preprocessor that processes both storage and query ==== */
-    auto preprocessor2 = new (allocator) DummyMixedPreprocessor<DummyType>(allocator, value_to_add);
+    auto preprocessor2 = new (allocator)
+        DummyMixedPreprocessor<DummyType>(allocator, value_to_add_storage, value_to_add_query);
     // add preprocessor returns 0 when adding the last preprocessor.
     ASSERT_EQ(indexComputer->addPreprocessor(preprocessor2), 0);
     {
@@ -965,8 +990,9 @@ void IndexComputerMixedPreprocessorNoAlignment() {
         const void *mixed_pp_query_blob = mixed_processed_blobs.getQueryBlob();
 
         // Ensure the computer process both blobs.
-        ASSERT_EQ(((const int *)mixed_pp_storage_blob)[0], initial_value + 2 * value_to_add);
-        ASSERT_EQ(((const int *)mixed_pp_query_blob)[0], initial_value + 2 * value_to_add);
+        ASSERT_EQ(((const int *)mixed_pp_storage_blob)[0],
+                  initial_value + 2 * value_to_add_storage);
+        ASSERT_EQ(((const int *)mixed_pp_query_blob)[0], initial_value + 2 * value_to_add_query);
     }
 
     // try adding another preprocessor and fail.
@@ -1045,4 +1071,146 @@ TEST(IndexComputerTest, IndexComputerStoragePreprocessorWithAlignment) {
 TEST(IndexComputerTest, IndexComputerQueryPreprocessorWithAlignment) {
     using namespace dummyComputer;
     IndexComputerPreprocessorAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
+}
+
+TEST(IndexComputerTest, IndexComputerCosineThenMixedPreprocess) {
+    using namespace dummyComputer;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    constexpr size_t n_preprocessors = 2;
+    constexpr size_t dim = 4;
+    unsigned char alignment = 5;
+
+    float initial_value = 1.0f;
+    float normalized_value = 0.5f;
+    float value_to_add_storage = 7.0f;
+    float value_to_add_query = 2.0f;
+    const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    // Test computer with multiple preprocessors of the same type.
+    auto indexComputer = new (allocator)
+        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+
+    // adding cosine preprocessor
+    auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
+    indexComputer->addPreprocessor(cosine_preprocessor);
+    {
+        ProcessedBlobs processed_blobs =
+            indexComputer->preprocess(original_blob, sizeof(original_blob));
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+        // blobs should point to the same memory slot
+        ASSERT_EQ(storage_blob, query_blob);
+        // memory should be aligned
+        unsigned char address_alignment = (uintptr_t)(storage_blob) % alignment;
+        ASSERT_EQ(address_alignment, 0);
+        // They need to be allocated and processed
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_EQ(((const float *)storage_blob)[0], normalized_value);
+        // the original blob should not change
+        ASSERT_NE(storage_blob, original_blob);
+    }
+    // adding mixed preprocessor
+    auto mixed_preprocessor = new (allocator)
+        DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
+    indexComputer->addPreprocessor(mixed_preprocessor);
+    {
+        ProcessedBlobs processed_blobs =
+            indexComputer->preprocess(original_blob, sizeof(original_blob));
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+        // blobs should point to a different memory slot
+        ASSERT_NE(storage_blob, query_blob);
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(query_blob, nullptr);
+
+        // query blob should be aligned
+        unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
+        ASSERT_EQ(address_alignment, 0);
+
+        // They need to be processed by both processors.
+        ASSERT_EQ(((const float *)storage_blob)[0], normalized_value + value_to_add_storage);
+        ASSERT_EQ(((const float *)query_blob)[0], normalized_value + value_to_add_query);
+
+        // the original blob should not change
+        ASSERT_NE(storage_blob, original_blob);
+        ASSERT_NE(query_blob, original_blob);
+    }
+    // The preprocessors should be released by the computer
+    delete indexComputer;
+}
+
+TEST(IndexComputerTest, IndexComputerMixedThenCosinePreprocess) {
+    using namespace dummyComputer;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    constexpr size_t n_preprocessors = 2;
+    constexpr size_t dim = 4;
+    unsigned char alignment = 5;
+
+    float initial_value = 1.0f;
+    float normalized_value = 0.5f;
+    float value_to_add_storage = 7.0f;
+    float value_to_add_query = 2.0f;
+    const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    // Test computer with multiple preprocessors of the same type.
+    auto indexComputer = new (allocator)
+        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+
+    // adding mixed preprocessor
+    auto mixed_preprocessor = new (allocator)
+        DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
+    indexComputer->addPreprocessor(mixed_preprocessor);
+    {
+        ProcessedBlobs processed_blobs =
+            indexComputer->preprocess(original_blob, sizeof(original_blob));
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+        // blobs should point to a different memory slot
+        ASSERT_NE(storage_blob, query_blob);
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(query_blob, nullptr);
+
+        // query blob should be aligned
+        unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
+        ASSERT_EQ(address_alignment, 0);
+
+        // They need to be processed by both processors.
+        ASSERT_EQ(((const float *)storage_blob)[0], initial_value + value_to_add_storage);
+        ASSERT_EQ(((const float *)query_blob)[0], initial_value + value_to_add_query);
+
+        // the original blob should not change
+        ASSERT_NE(storage_blob, original_blob);
+        ASSERT_NE(query_blob, original_blob);
+    }
+
+    // adding cosine preprocessor
+    auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
+    indexComputer->addPreprocessor(cosine_preprocessor);
+    {
+        ProcessedBlobs processed_blobs =
+            indexComputer->preprocess(original_blob, sizeof(original_blob));
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+        // blobs should point to a different memory slot
+        ASSERT_NE(storage_blob, query_blob);
+        // query memory should be aligned
+        unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
+        ASSERT_EQ(address_alignment, 0);
+        // They need to be allocated and processed
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(query_blob, nullptr);
+        float expected_processed_storage[dim] = {initial_value + value_to_add_storage,
+                                                 initial_value, initial_value, initial_value};
+        float expected_processed_query[dim] = {initial_value + value_to_add_query, initial_value,
+                                               initial_value, initial_value};
+        VecSim_Normalize(expected_processed_storage, dim, VecSimType_FLOAT32);
+        VecSim_Normalize(expected_processed_query, dim, VecSimType_FLOAT32);
+        ASSERT_EQ(((const float *)storage_blob)[0], expected_processed_storage[0]);
+        ASSERT_EQ(((const float *)query_blob)[0], expected_processed_query[0]);
+        // the original blob should not change
+        ASSERT_NE(storage_blob, original_blob);
+        ASSERT_NE(query_blob, original_blob);
+    }
+    // The preprocessors should be released by the computer
+    delete indexComputer;
 }
