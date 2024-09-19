@@ -233,6 +233,8 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         return rep;
     }
 
+    auto processed_query_ptr = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+    const void *processed_query = processed_query_ptr.get();
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
         getNewMaxPriorityQueue();
@@ -246,7 +248,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
             delete TopCandidates;
             return rep;
         }
-        auto score = this->calcDistance(vector, queryBlob);
+        auto score = this->calcDistance(vector, processed_query);
         // If we have less than k or a better score, insert it.
         if (score < upperBound || TopCandidates->size() < k) {
             TopCandidates->emplace(score, getVectorLabel(curr_id));
@@ -273,6 +275,7 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) const {
+    auto processed_query_ptr = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
     auto rep = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->lastMode = RANGE_QUERY;
@@ -284,12 +287,13 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     DistType radius_ = DistType(radius);
     auto vectors_it = vectors->getIterator();
     idType curr_id = 0;
+    const void *processed_query = processed_query_ptr.get();
     while (vectors_it->hasNext()) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             rep->code = VecSim_QueryReply_TimedOut;
             break;
         }
-        auto score = this->calcDistance(vectors_it->next(), queryBlob);
+        auto score = this->calcDistance(vectors_it->next(), processed_query);
         if (score <= radius_) {
             res_container->emplace(getVectorLabel(curr_id), score);
         }
@@ -345,8 +349,10 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
-    auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    auto *queryBlobCopy =
+        this->allocator->allocate_aligned(this->dataSize, this->indexComputer->getAlignment());
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    this->indexComputer->preprocessQueryInPlace(queryBlobCopy, this->dataSize);
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }

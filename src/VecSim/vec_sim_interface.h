@@ -85,20 +85,9 @@ public:
     virtual size_t indexLabelCount() const = 0;
 
     /**
-     * @brief This Function prepares the blob before sending it to topKQuery.
-     * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension.
-     * for example, if the distance metric is cosine, it will call topKQuery with the normalized
-     * blob.
-     */
-    virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
-                                               VecSimQueryParams *queryParams) const = 0;
-
-    /**
      * @brief Search for the k closest vectors to a given vector in the index.
      * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension. It is assumed that the queryBlob has been already processed
-     *  (for example, if the distance metric is cosine, the blob is already *normalized*)
+     * data type and dimension. The index is responsible to process the query vector.
      * @param k the number of "nearest neighbors" to return (upper bound).
      * @param queryParams run time params for the search, which are algorithm-specific.
      * @return An opaque object the represents a list of results. User can access the id and score
@@ -109,21 +98,10 @@ public:
                                         VecSimQueryParams *queryParams) const = 0;
 
     /**
-     * @brief This Function prepares the blob before sending it to rangeQuery.
-     * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension.
-     * for example, if the distance metric is cosine, it will call rangeQuery with the normalized
-     * blob.
-     */
-    virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
-                                                VecSimQueryParams *queryParams,
-                                                VecSimQueryReply_Order order) const = 0;
-    /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
      * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension. It is assumed that the queryBlob has been already processed
-     *  (for example, if the distance metric is cosine, the blob is already *normalized*)
+     * data type and dimension. The index is responsible to process the query vector.
      * @param radius the radius around the query vector to search vectors within it.
      * @param queryParams run time params for the search, which are algorithm-specific.
      * @param order the criterion to sort the results list by it. Options are by score, or by id.
@@ -159,21 +137,9 @@ public:
     virtual VecSimInfoIterator *infoIterator() const = 0;
 
     /**
-     * @brief Prepares the query blob and creates a new batch iterator for a specific index, for a
-     * specific query vector, using the Index_BatchIteratorNew method of the index. Should be
-     * released with VecSimBatchIterator_Free call.
-     *
-     * @param queryBlob binary representation of the vector. Blob size should match the index data
-     * type and dimension.
-     * @return Fresh batch iterator
-     */
-    virtual VecSimBatchIterator *newBatchIteratorWrapper(const void *queryBlob,
-                                                         VecSimQueryParams *queryParams) const = 0;
-
-    /**
      * @brief A function to be implemented by the inheriting index and called by rangeQuery.
-     * @param blob is a processed vector (for example, if the distance metric is cosine,
-     * blob is already *normalized* )
+     * @param queryBlob binary representation of the query vector. Blob size should match the index
+     * data type and dimension. The index is responsible to process the query vector.
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const = 0;

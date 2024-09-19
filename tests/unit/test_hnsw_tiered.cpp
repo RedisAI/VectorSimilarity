@@ -3095,6 +3095,192 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearchCosine) {
+    size_t n = 800;
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .initialCapacity = n / 2};
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = TEST_DATA_T(i + 1) / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        // Use as label := n - (internal id)
+        VecSimIndex_AddVector(tiered_index, f, n - i);
+    }
+
+    // Move some of the vectors to the hnsw index
+    for (size_t i = 0; i < 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(frontend_index->indexSize(), n - 10);
+    ASSERT_EQ(hnsw_index->indexSize(), 10);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+    TEST_DATA_T query[dim];
+    TEST_DATA_T normalized_query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0;
+        normalized_query[i] = 1.0;
+    }
+
+    VecSim_Normalize(normalized_query, dim, params.type);
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, result_rank + 1);
+        double expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+        ASSERT_EQ(score, expected_score);
+    };
+    uint expected_num_results = 31;
+    // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
+    // to get the radius.
+    double radius = tiered_index->getDistanceFrom_Unsafe(31, normalized_query);
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_SCORE);
+
+    // Return results BY_ID should give the same results.
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_ID);
+
+    // Index rest of the vectors and run the same test again.
+    for (size_t i = 0; i < n - 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_SCORE);
+
+    // Return results BY_ID should give the same results.
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_ID);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, TopKCosine) {
+    size_t n = 100;
+    size_t dim = 128;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+    };
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 1; i <= n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        VecSimIndex_AddVector(tiered_index, f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+
+    // Move some of the vectors to the hnsw index
+    for (size_t i = 0; i < 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(frontend_index->indexSize(), n - 10);
+    ASSERT_EQ(hnsw_index->indexSize(), 10);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, (n - result_rank));
+        TEST_DATA_T expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+        ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
+    };
+    runTopKSearchTest(tiered_index, query, 10, verify_res);
+
+    // Index rest of the vectors and run the same test again.
+    for (size_t i = 0; i < n - 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+    runTopKSearchTest(tiered_index, query, 10, verify_res);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorCosine) {
+    size_t n = 100;
+    size_t dim = 128;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+    };
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 1; i <= n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        VecSimIndex_AddVector(tiered_index, f, i);
+    }
+
+    // Move some of the vectors to the hnsw index
+    for (size_t i = 0; i < 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+    ASSERT_EQ(frontend_index->indexSize(), n - 10);
+    ASSERT_EQ(hnsw_index->indexSize(), 10);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
+    // Test with batch iterator.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+    size_t iteration_num = 0;
+
+    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+    // in every iteration. The order should be from the largest to the lowest id.
+    size_t n_res = 10;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::vector<size_t> expected_ids(n_res);
+        auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            TEST_DATA_T expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+            ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, n / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     size_t dim = 4;
     size_t k = 11;

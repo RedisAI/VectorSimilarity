@@ -20,6 +20,8 @@ public:
                                       size_t processed_bytes_count) const = 0;
     virtual void preprocessQuery(const void *original_blob, void *&query_blob,
                                  size_t processed_bytes_count, unsigned char alignment) const = 0;
+    virtual void preprocessQueryInPlace(void *original_blob, size_t processed_bytes_count,
+                                        unsigned char alignment) const = 0;
 };
 
 template <typename DataType>
@@ -77,6 +79,12 @@ public:
             blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
             memcpy(blob, original_blob, processed_bytes_count);
         }
+        normalize_func(blob, this->dim);
+    }
+
+    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
+                                unsigned char alignment) const override {
+        assert(blob);
         normalize_func(blob, this->dim);
     }
 

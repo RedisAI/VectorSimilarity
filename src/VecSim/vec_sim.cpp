@@ -201,7 +201,7 @@ extern "C" VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const voi
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryReply *results;
-    results = index->topKQueryWrapper(queryBlob, k, queryParams);
+    results = index->topKQuery(queryBlob, k, queryParams);
 
     if (order == BY_ID) {
         sort_results_by_id(results);
@@ -218,7 +218,7 @@ extern "C" VecSimQueryReply *VecSimIndex_RangeQuery(VecSimIndex *index, const vo
     if (radius < 0) {
         throw std::runtime_error("radius must be non-negative");
     }
-    return index->rangeQueryWrapper(queryBlob, radius, queryParams, order);
+    return index->rangeQuery(queryBlob, radius, queryParams, order);
 }
 
 extern "C" void VecSimIndex_Free(VecSimIndex *index) {
@@ -239,7 +239,7 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
-    return index->newBatchIteratorWrapper(queryBlob, queryParams);
+    return index->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {

@@ -57,6 +57,8 @@ public:
     virtual MemoryUtils::unique_blob preprocessQuery(const void *blob,
                                                      size_t processed_bytes_count) const = 0;
 
+    virtual void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const = 0;
+
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
     // TODO: remove alignment once datablock is implemented in HNSW
     virtual unsigned char getAlignment() const = 0;
@@ -87,6 +89,8 @@ public:
 
     MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
                                              size_t processed_bytes_count) const override;
+
+    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const override;
 
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         assert(this->distance_calculator);
@@ -148,6 +152,8 @@ public:
     MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
                                              size_t processed_bytes_count) const override;
 
+    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const override;
+
 private:
     using Base = IndexComputerBasic<DistType, DistFuncType>;
 };
@@ -177,6 +183,10 @@ IndexComputerBasic<DistType, DistFuncType>::preprocessQuery(const void *original
                                                             size_t processed_bytes_count) const {
     return maybeCopyToAlignedMem(original_blob, processed_bytes_count);
 }
+
+template <typename DistType, typename DistFuncType>
+void IndexComputerBasic<DistType, DistFuncType>::preprocessQueryInPlace(
+    void *blob, size_t processed_bytes_count) const {}
 
 template <typename DistType, typename DistFuncType>
 MemoryUtils::unique_blob
@@ -277,10 +287,22 @@ IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocessQuery(
     for (auto pp : preprocessors) {
         if (!pp)
             break;
-        // modifies the aligned memory in place
+        // modifies the memory in place
         pp->preprocessQuery(original_blob, query_blob, processed_bytes_count, this->alignment);
     }
     return query_blob
                ? std::move(this->wrapAllocated(query_blob))
                : std::move(this->maybeCopyToAlignedMem(original_blob, processed_bytes_count));
+}
+
+template <typename DistType, typename DistFuncType, size_t n_preprocessors>
+void IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::preprocessQueryInPlace(
+    void *blob, size_t processed_bytes_count) const {
+
+    for (auto pp : preprocessors) {
+        if (!pp)
+            break;
+        // modifies the memory in place
+        pp->preprocessQueryInPlace(blob, processed_bytes_count, this->alignment);
+    }
 }

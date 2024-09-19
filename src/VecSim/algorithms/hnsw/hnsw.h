@@ -1962,6 +1962,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         return rep;
     }
 
+    auto processed_query_ptr = this->indexComputer->preprocessQuery(query_data, this->dataSize);
+    const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
 
     // Get original efRuntime and store it.
@@ -1974,7 +1976,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    idType bottom_layer_ep = searchBottomLayerEP(processed_query, timeoutCtx, &rep->code);
     if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
         // that another thread deleted all the elements or didn't finish inserting the first element
@@ -1984,8 +1986,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
 
     // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results;
-    results = searchBottomLayer_WithTimeout(bottom_layer_ep, query_data, std::max(query_ef, k), k,
-                                            timeoutCtx, &rep->code);
+    results = searchBottomLayer_WithTimeout(bottom_layer_ep, processed_query, std::max(query_ef, k),
+                                            k, timeoutCtx, &rep->code);
 
     if (VecSim_OK == rep->code) {
         rep->results.resize(results->size());
@@ -2074,6 +2076,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
     if (curElementCount == 0) {
         return rep;
     }
+    auto processed_query_ptr = this->indexComputer->preprocessQuery(query_data, this->dataSize);
+    const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
 
     double query_epsilon = epsilon;
@@ -2084,7 +2088,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    idType bottom_layer_ep = searchBottomLayerEP(processed_query, timeoutCtx, &rep->code);
     // Although we checked that the index is not empty (curElementCount == 0), it might be
     // that another thread deleted all the elements or didn't finish inserting the first element
     // yet. Anyway, we observed that the index is empty, so we return an empty result list.
@@ -2094,8 +2098,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
-    rep->results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, query_epsilon,
-                                                      radius, timeoutCtx, &rep->code);
+    rep->results = searchRangeBottomLayer_WithTimeout(
+        bottom_layer_ep, processed_query, query_epsilon, radius, timeoutCtx, &rep->code);
     return rep;
 }
 
