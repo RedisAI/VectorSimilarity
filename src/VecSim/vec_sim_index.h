@@ -223,6 +223,13 @@ public:
         return info;
     }
 
+#ifdef BUILD_TESTS
+    void replaceIndexComputer(IndexComputerAbstract<DistType> *newComputer) {
+        delete indexComputer;
+        indexComputer = newComputer;
+    }
+#endif
+
 protected:
     void runGC() override {}              // Do nothing, relevant for tiered index only.
     void acquireSharedLocks() override {} // Do nothing, relevant for tiered index only.

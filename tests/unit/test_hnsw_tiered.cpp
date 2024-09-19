@@ -4054,14 +4054,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
     GenerateVector<TEST_DATA_T>(normalized_vec, dim, value);
     VecSim_Normalize(normalized_vec, dim, TypeParam::get_index_type());
 
-    // Add a vector to the flat buffer and submit a job to transfer it to the hnsw index.
+    // Add a vector to the flat buffer
     VecSimIndex_AddVector(tiered_index, vector, 0);
     EXPECT_EQ(frontend_index->indexSize(), 1);
     EXPECT_EQ(hnsw_index->indexSize(), 0);
 
     // Verify the vector is normalized in the flat index.
     {
-        SCOPED_TRACE("submit insertion job");
+        SCOPED_TRACE("Store in the flat buffer");
         // Verify that the vector stored in the flat buffer is normalized.
         std::vector<std::vector<TEST_DATA_T>> stored_vec;
         frontend_index->getDataByLabel(0, stored_vec);
@@ -4087,7 +4087,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
     EXPECT_EQ(frontend_index->indexSize(), 0);
     EXPECT_EQ(hnsw_index->indexSize(), 2);
     {
-        SCOPED_TRACE("Moved vector from the buffer to the hnsw index");
+        SCOPED_TRACE("Execute insertion job");
         std::vector<std::vector<TEST_DATA_T>> stored_vec;
         hnsw_index->getDataByLabel(0, stored_vec);
         // Verify that the vector stored in the hnsw is normalized.
@@ -4108,5 +4108,180 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
         hnsw_index->getDataByLabel(2, stored_vec);
         // Verify that the vector stored in the hnsw is normalized.
         ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+}
+
+template <typename DataType>
+class PreprocessorDoubleValue : public PreprocessorAbstract {
+private:
+    size_t dim;
+
+public:
+    PreprocessorDoubleValue(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        : PreprocessorAbstract(allocator), dim(dim) {}
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
+
+        // One blob was already allocated by a previous preprocessor(s) that process both blobs the
+        // same. The blobs are pointing to the same memory, we need to allocate another memory slot
+        // to split them.
+        if ((storage_blob == query_blob) && (query_blob != nullptr)) {
+            storage_blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(storage_blob, query_blob, processed_bytes_count);
+        }
+
+        // Either both are nullptr or they are pointing to different memory slots. Both cases are
+        // handled by the designated functions.
+        this->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
+        this->preprocessQuery(original_blob, query_blob, processed_bytes_count, alignment);
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
+                                unsigned char alignment) const override {
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+};
+
+TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
+    // Create TieredHNSW index with cosine metric
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+    // Create tiered index with buffer limit set to 1.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 0, 1);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    TEST_DATA_T value = 50;
+    TEST_DATA_T normalized_vec[dim];
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, value);
+    GenerateVector<TEST_DATA_T>(normalized_vec, dim, value);
+    VecSim_Normalize(normalized_vec, dim, TypeParam::get_index_type());
+    TEST_DATA_T query[dim] = {0.1, 0.2, 0.3, 0.4};
+    TEST_DATA_T normalized_query[dim] = {0.1, 0.2, 0.3, 0.4};
+    VecSim_Normalize(normalized_query, dim, TypeParam::get_index_type());
+
+    // create IP computer
+    constexpr size_t n_preprocessors = 1;
+    auto indexComputer = test_utils::NewTestIndexComputerExtended<TEST_DATA_T, n_preprocessors>(
+        allocator, VecSimMetric_IP, dim);
+    auto pp_double_value = new (allocator) PreprocessorDoubleValue<TEST_DATA_T>(allocator, dim);
+    ASSERT_EQ(indexComputer->addPreprocessor(pp_double_value), 0);
+
+    // replace the hnsw computer
+    hnsw_index->replaceIndexComputer(indexComputer);
+
+    // Add a vector to the flat buffer.
+    VecSimIndex_AddVector(tiered_index, vector, 0);
+
+    {
+        SCOPED_TRACE("Store in the flat buffer");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        frontend_index->getDataByLabel(0, stored_vec);
+        // the vector should be normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+
+        // we search in the flat index, so the the query should be only normalized
+        auto verify_res = [&](size_t id, double score, size_t result_rank) {
+            double expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+            ASSERT_EQ(score, expected_score);
+        };
+        runTopKSearchTest(tiered_index, query, 1, verify_res);
+        runRangeQueryTest(tiered_index, query, 0.5, verify_res, 1, BY_SCORE);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        runBatchIteratorSearchTest(batchIterator, 1, verify_res);
+        VecSimBatchIterator_Free(batchIterator);
+    }
+
+    // Add another vector and exceed the flat buffer capacity. The vector should be stored directly
+    // in the hnsw index
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 1);
+    TEST_DATA_T norm_double_vec[dim];
+    TEST_DATA_T norm_double_query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        norm_double_vec[i] = 2 * normalized_vec[i];
+        norm_double_query[i] = 2 * normalized_query[i];
+    }
+    {
+        SCOPED_TRACE("Full buffer; add vector directly to hnsw");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(1, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized *and doubled*.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), norm_double_vec, dim));
+        auto verify_res = [&](size_t label, double score, size_t result_rank) {
+            double expected_score = INVALID_SCORE;
+            if (label == 0) { // the result in the flat buffer
+                expected_score = frontend_index->calcDistance(normalized_query, normalized_vec);
+            }
+            if (label == 1) { // the result in the hnsw index
+                expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+            }
+            ASSERT_EQ(score, expected_score) << "label: " << label;
+        };
+
+        size_t k = 2;
+        runTopKSearchTest(tiered_index, query, k, verify_res);
+        runRangeQueryTest(tiered_index, query, 100, verify_res, k, BY_SCORE);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        runBatchIteratorSearchTest(batchIterator, k, verify_res);
+        VecSimBatchIterator_Free(batchIterator);
+    }
+
+    // Move the first vector to the hnsw index.
+    mock_thread_pool.thread_iteration();
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 2);
+    {
+        SCOPED_TRACE("Execute insertion job");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(0, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized *and doubled*.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), norm_double_vec, dim));
+        // Both vector were processed by the hnsw preprocessor, as well as the query.
+        // The score should be the distance from the doubled query to the doubled vector.
+        auto verify_res = [&](size_t label, double score, size_t result_rank) {
+            double expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+            ASSERT_EQ(score, expected_score) << "label: " << label;
+        };
+
+        size_t k = 2;
+        runTopKSearchTest(tiered_index, query, k, verify_res);
+        runRangeQueryTest(tiered_index, query, 100, verify_res, k, BY_SCORE);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        runBatchIteratorSearchTest(batchIterator, k, verify_res);
+        VecSimBatchIterator_Free(batchIterator);
     }
 }
