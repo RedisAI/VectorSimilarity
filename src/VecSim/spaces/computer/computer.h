@@ -238,6 +238,7 @@ ProcessedBlobs IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::p
         pp->preprocess(original_blob, storage_blob, query_blob, processed_bytes_count,
                        this->alignment);
     }
+    // At least one blob was allocated.
 
     // If they point to the same memory, we need to free only one of them.
     if (storage_blob == query_blob) {
