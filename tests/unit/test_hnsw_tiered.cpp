@@ -63,7 +63,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = 4,
-                         .metric = VecSimMetric_IP,
+                         .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
