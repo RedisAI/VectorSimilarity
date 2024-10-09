@@ -4112,13 +4112,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
 }
 
 template <typename DataType>
-class PreprocessorDoubleValue : public PreprocessorAbstract {
+class PreprocessorDoubleValue : public PreprocessorInterface {
 private:
     size_t dim;
 
 public:
     PreprocessorDoubleValue(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
-        : PreprocessorAbstract(allocator), dim(dim) {}
+        : PreprocessorInterface(allocator), dim(dim) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t processed_bytes_count, unsigned char alignment) const override {
 

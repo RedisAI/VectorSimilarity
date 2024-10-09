@@ -52,7 +52,7 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    IndexComputerAbstract<DistType> *indexComputer; // Index's computer.
+    IndexComputerInterface<DistType> *indexComputer; // Index's computer.
     // TODO: remove alignment once datablock is implemented in HNSW
     unsigned char alignment;        // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
@@ -83,7 +83,7 @@ public:
      *
      */
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
-                        IndexComputerAbstract<DistType> *indexComputer)
+                        IndexComputerInterface<DistType> *indexComputer)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
@@ -109,6 +109,11 @@ public:
      */
     virtual int addVector(const void *blob, labelType label) = 0;
 
+    /**
+     * @brief Calculate the distance between two vectors based on index parameters.
+     *
+     * @return the distance between the vectors.
+     */
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
         return indexComputer->calcDistance(vector_data1, vector_data2, this->dim);
     }
@@ -224,7 +229,7 @@ public:
     }
 
 #ifdef BUILD_TESTS
-    void replaceIndexComputer(IndexComputerAbstract<DistType> *newComputer) {
+    void replaceIndexComputer(IndexComputerInterface<DistType> *newComputer) {
         delete indexComputer;
         indexComputer = newComputer;
     }

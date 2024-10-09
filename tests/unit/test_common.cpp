@@ -635,10 +635,10 @@ using dummy_dist_func_t = DummyType (*)(int);
 int dummyDistFunc(int value) { return value; }
 
 template <typename DistType>
-class DistanceCalculatorDummy : public DistanceCalculatorAbstract<DistType, dummy_dist_func_t> {
+class DistanceCalculatorDummy : public DistanceCalculatorInterface<DistType, dummy_dist_func_t> {
 public:
     DistanceCalculatorDummy(std::shared_ptr<VecSimAllocator> allocator, dummy_dist_func_t dist_func)
-        : DistanceCalculatorAbstract<DistType, dummy_dist_func_t>(allocator, dist_func) {}
+        : DistanceCalculatorInterface<DistType, dummy_dist_func_t>(allocator, dist_func) {}
 
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const {
         return this->dist_func(7);
@@ -650,11 +650,11 @@ enum pp_mode { STORAGE_ONLY, QUERY_ONLY, BOTH, EMPTY };
 
 // Dummy storage preprocessor
 template <typename DataType>
-class DummyStoragePreprocessor : public PreprocessorAbstract {
+class DummyStoragePreprocessor : public PreprocessorInterface {
 public:
     DummyStoragePreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
                              int value_to_add_query = 0)
-        : PreprocessorAbstract(allocator), value_to_add_storage(value_to_add_storage),
+        : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(value_to_add_query) {
         if (!value_to_add_query)
             value_to_add_query = value_to_add_storage;
@@ -689,11 +689,11 @@ private:
 
 // Dummy query preprocessor
 template <typename DataType>
-class DummyQueryPreprocessor : public PreprocessorAbstract {
+class DummyQueryPreprocessor : public PreprocessorInterface {
 public:
     DummyQueryPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
                            int _value_to_add_query = 0)
-        : PreprocessorAbstract(allocator), value_to_add_storage(value_to_add_storage),
+        : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(_value_to_add_query) {
         if (!_value_to_add_query)
             value_to_add_query = value_to_add_storage;
@@ -729,11 +729,11 @@ private:
 
 // Dummy mixed preprocessor (precesses the blobs  differently)
 template <typename DataType>
-class DummyMixedPreprocessor : public PreprocessorAbstract {
+class DummyMixedPreprocessor : public PreprocessorInterface {
 public:
     DummyMixedPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
                            int value_to_add_query)
-        : PreprocessorAbstract(allocator), value_to_add_storage(value_to_add_storage),
+        : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(value_to_add_query) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t processed_bytes_count, unsigned char alignment) const override {

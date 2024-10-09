@@ -700,6 +700,11 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     return output.size();
 }
 
+// In the tiered index, we assume that the blobs are processed by the flat buffer
+// before being transferred to the HNSW index.
+// When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
+// the flat buffer is full, we must manually preprocess the blob according to the **frontend** index
+// parameters.
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
     int ret = 1;
@@ -712,6 +717,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             ret -= this->deleteVector(label);
         }
 
+        // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
+        // index.
         auto storage_blob = this->frontendIndex->processForStorage(blob);
         // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
         // label since we already checked it outside.
@@ -731,6 +738,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
             // directly to HNSW. Since flat buffer guard was not held, no need to release it
             // internally.
+            // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
+            // index.
             auto storage_blob = this->frontendIndex->processForStorage(blob);
             this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
             return ret;

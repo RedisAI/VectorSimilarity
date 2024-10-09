@@ -10,10 +10,17 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/memory/memory_utils.h"
 
-class PreprocessorAbstract : public VecsimBaseObject {
+// TODO: Handle processed_bytes_count that might change down the preprocessors pipeline.
+// The preprocess function calls a pipeline of preprocessors, one of which can be a quantization
+// preprocessor. In such cases, the quantization preprocessor compresses the vector, resulting in a
+// change in the allocation size.
+class PreprocessorInterface : public VecsimBaseObject {
 public:
-    PreprocessorAbstract(std::shared_ptr<VecSimAllocator> allocator)
+    PreprocessorInterface(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
+    // TODO: handle a dynamic processed_bytes_count, as the allocation size of the blob might change
+    // down the preprocessors pipeline (such as in quantization preprocessor that compresses the
+    // vector).
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                             size_t processed_bytes_count, unsigned char alignment) const = 0;
     virtual void preprocessForStorage(const void *original_blob, void *&storage_blob,
@@ -25,10 +32,10 @@ public:
 };
 
 template <typename DataType>
-class CosinePreprocessor : public PreprocessorAbstract {
+class CosinePreprocessor : public PreprocessorInterface {
 public:
     CosinePreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
-        : PreprocessorAbstract(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
+        : PreprocessorInterface(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim) {}
 
     // If a blob (storage_blob or query_blob) is not nullptr, it means a previous preprocessor

@@ -9,7 +9,6 @@
 #include <memory>
 #include <string.h>
 #include <sys/param.h>
-#include <cassert>
 
 std::shared_ptr<VecSimAllocator> VecSimAllocator::newVecsimAllocator() {
     std::shared_ptr<VecSimAllocator> allocator(new VecSimAllocator());

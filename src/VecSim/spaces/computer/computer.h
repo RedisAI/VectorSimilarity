@@ -44,9 +44,9 @@ private:
 };
 
 template <typename DistType>
-class IndexComputerAbstract : public VecsimBaseObject {
+class IndexComputerInterface : public VecsimBaseObject {
 public:
-    IndexComputerAbstract(std::shared_ptr<VecSimAllocator> allocator)
+    IndexComputerInterface(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
 
     virtual ProcessedBlobs preprocess(const void *blob, size_t processed_bytes_count) const = 0;
@@ -65,12 +65,12 @@ public:
 };
 
 template <typename DistType, typename DistFuncType>
-class IndexComputerBasic : public IndexComputerAbstract<DistType> {
+class IndexComputerBasic : public IndexComputerInterface<DistType> {
 public:
     IndexComputerBasic(
         std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment,
-        DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
-        : IndexComputerAbstract<DistType>(allocator), alignment(alignment),
+        DistanceCalculatorInterface<DistType, DistFuncType> *distance_calculator = nullptr)
+        : IndexComputerInterface<DistType>(allocator), alignment(alignment),
           distance_calculator(distance_calculator) {}
 
     ~IndexComputerBasic() override {
@@ -99,7 +99,7 @@ public:
 
 protected:
     const unsigned char alignment;
-    DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator;
+    DistanceCalculatorInterface<DistType, DistFuncType> *distance_calculator;
 
     // Allocate and copy the blob only if the original blob is not aligned.
     MemoryUtils::unique_blob maybeCopyToAlignedMem(const void *original_blob,
@@ -118,12 +118,12 @@ protected:
 template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 class IndexComputerExtended : public IndexComputerBasic<DistType, DistFuncType> {
 protected:
-    std::array<PreprocessorAbstract *, n_preprocessors> preprocessors;
+    std::array<PreprocessorInterface *, n_preprocessors> preprocessors;
 
 public:
     IndexComputerExtended(
         std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment,
-        DistanceCalculatorAbstract<DistType, DistFuncType> *distance_calculator = nullptr)
+        DistanceCalculatorInterface<DistType, DistFuncType> *distance_calculator = nullptr)
         : IndexComputerBasic<DistType, DistFuncType>(allocator, alignment, distance_calculator) {
         assert(n_preprocessors);
         std::fill_n(preprocessors.begin(), n_preprocessors, nullptr);
@@ -141,7 +141,7 @@ public:
     /** @returns On success, next uninitialized index, or 0 in case capacity is reached (after
      * inserting the preprocessor). -1 if capacity is full and we failed to add the preprocessor.
      */
-    int addPreprocessor(PreprocessorAbstract *preprocessor);
+    int addPreprocessor(PreprocessorInterface *preprocessor);
 
     ProcessedBlobs preprocess(const void *original_blob,
                               size_t processed_bytes_count) const override;
@@ -206,13 +206,16 @@ IndexComputerBasic<DistType, DistFuncType>::maybeCopyToAlignedMem(const void *or
 
 /* ======================= IndexComputerExtended ======================= */
 
+// On success, returns the array size after adding the preprocessor, or 0 when we add the last
+// preprocessor. Returns -1 if the array is full and we failed to add the preprocessor.
 template <typename DistType, typename DistFuncType, size_t n_preprocessors>
 int IndexComputerExtended<DistType, DistFuncType, n_preprocessors>::addPreprocessor(
-    PreprocessorAbstract *preprocessor) {
-    for (size_t i = 0; i < n_preprocessors; i++) {
-        if (preprocessors[i] == nullptr) {
-            preprocessors[i] = preprocessor;
-            return i + 1 >= n_preprocessors ? 0 : i + 1;
+    PreprocessorInterface *preprocessor) {
+    for (size_t curr_pp_idx = 0; curr_pp_idx < n_preprocessors; curr_pp_idx++) {
+        if (preprocessors[curr_pp_idx] == nullptr) {
+            preprocessors[curr_pp_idx] = preprocessor;
+            const size_t pp_arr_size = curr_pp_idx + 1;
+            return pp_arr_size >= n_preprocessors ? 0 : pp_arr_size;
         }
     }
     return -1;

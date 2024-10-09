@@ -53,7 +53,7 @@ private:
 
 public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-                    IndexComputerAbstract<DistType> *indexComputer, size_t random_seed = 100,
+                    IndexComputerInterface<DistType> *indexComputer, size_t random_seed = 100,
                     size_t initial_pool_size = 1)
         : HNSWIndex<DataType, DistType>(params, abstractInitParams, indexComputer, random_seed,
                                         initial_pool_size),
@@ -62,7 +62,7 @@ public:
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
-                    IndexComputerAbstract<DistType> *indexComputer,
+                    IndexComputerInterface<DistType> *indexComputer,
                     Serializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, indexComputer, version),
           labelLookup(this->maxElements, this->allocator) {}

@@ -11,9 +11,11 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/vec_sim_common.h"
 
+// TODO: Implement here the abstract index components creation and utils.
+
 template <typename DataType, typename DistType = DataType>
-IndexComputerAbstract<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAllocator> allocator,
-                                                     VecSimMetric metric, size_t dim) {
+IndexComputerInterface<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAllocator> allocator,
+                                                      VecSimMetric metric, size_t dim) {
     unsigned char alignment = 0;
     spaces::dist_func_t<DistType> distFunc =
         spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment);
@@ -39,8 +41,9 @@ IndexComputerAbstract<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAlloc
     return indexComputer;
 }
 
+// TODO: move here the size estimation of data and graph containers.
 template <typename DataType, typename DistType = DataType>
-size_t EstimateContainersMemory(VecSimMetric metric) {
+size_t EstimateComponentsMemory(VecSimMetric metric) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = allocations_overhead + sizeof(DistanceCalculatorCommon<DistType>);
 
