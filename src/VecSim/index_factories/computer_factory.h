@@ -6,12 +6,9 @@
 
 #pragma once
 
-#include <cstddef>
 #include "VecSim/spaces/computer/computer.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/vec_sim_common.h"
-
-// TODO: Implement here the abstract index components creation and utils.
 
 template <typename DataType, typename DistType = DataType>
 IndexComputerInterface<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAllocator> allocator,
@@ -41,9 +38,8 @@ IndexComputerInterface<DistType> *CreateIndexComputer(std::shared_ptr<VecSimAllo
     return indexComputer;
 }
 
-// TODO: move here the size estimation of data and graph containers.
 template <typename DataType, typename DistType = DataType>
-size_t EstimateComponentsMemory(VecSimMetric metric) {
+size_t EstimateComputerMemory(VecSimMetric metric) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = allocations_overhead + sizeof(DistanceCalculatorCommon<DistType>);
 
