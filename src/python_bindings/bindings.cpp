@@ -43,8 +43,8 @@ py::object wrap_results(VecSimQueryReply **res, size_t num_res, size_t num_queri
         VecSimQueryReply_Free(res[i]);
     }
 
-    py::capsule free_when_done_l(data_numpy_l, [](void *labels) { delete[](long *) labels; });
-    py::capsule free_when_done_d(data_numpy_d, [](void *dists) { delete[](double *) dists; });
+    py::capsule free_when_done_l(data_numpy_l, [](void *labels) { delete[] (long *)labels; });
+    py::capsule free_when_done_d(data_numpy_d, [](void *dists) { delete[] (double *)dists; });
     return py::make_tuple(
         py::array_t<long>(
             {(size_t)num_queries, num_res},         // shape
