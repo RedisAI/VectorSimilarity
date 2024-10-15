@@ -804,19 +804,18 @@ TEST(IndexComputerTest, IndexComputerBasicAlignmentTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     unsigned char alignment = 5;
-    auto indexComputer = new (allocator)
+    auto indexComputer =
         IndexComputerBasic<DummyType, dummy_dist_func_t>(allocator, alignment, nullptr);
     const int original_blob[4] = {1, 1, 1, 1};
     size_t processed_bytes_count = sizeof(original_blob);
 
     {
-        auto aligned_query = indexComputer->preprocessQuery(original_blob, processed_bytes_count);
+        auto aligned_query = indexComputer.preprocessQuery(original_blob, processed_bytes_count);
         unsigned char address_alignment = (uintptr_t)(aligned_query.get()) % alignment;
         ASSERT_EQ(address_alignment, 0);
     }
 
     // The index computer is responsible for releasing the distance calculator.
-    delete indexComputer;
 }
 
 template <unsigned char alignment>
@@ -829,12 +828,12 @@ void MultiPPContainerEmpty() {
 
     constexpr size_t n_preprocessors = 3;
 
-    auto multiPPContainer = new (allocator)
+    auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
         // Original blob should not be changed
         CompareVectors(original_blob, original_blob_cpy, dim);
 
@@ -854,8 +853,6 @@ void MultiPPContainerEmpty() {
             ASSERT_EQ(address_alignment, 0);
         }
     }
-
-    delete multiPPContainer;
 }
 
 TEST(IndexComputerTest, MultiPPContainerEmptyNoAlignment) {
@@ -881,12 +878,12 @@ void MultiPreprocessorsContainerNoAlignment(dummyComputer::pp_mode MODE) {
     size_t processed_bytes_count = sizeof(original_blob);
 
     // Test computer with multiple preprocessors of the same type.
-    auto multiPPContainer = new (allocator)
+    auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, processed_bytes_count);
         // Original blob should not be changed
         ASSERT_EQ(original_blob[0], initial_value);
 
@@ -910,17 +907,14 @@ void MultiPreprocessorsContainerNoAlignment(dummyComputer::pp_mode MODE) {
     /* ==== Add the first preprocessor ==== */
     auto preprocessor0 = new (allocator) PreprocessorType(allocator, value_to_add);
     // add preprocessor returns next free spot in its preprocessors array.
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor0), 1);
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor0), 1);
     verify_preprocess(initial_value + value_to_add);
 
     /* ==== Add the second preprocessor ==== */
     auto preprocessor1 = new (allocator) PreprocessorType(allocator, value_to_add);
     // add preprocessor returns 0 when adding the last preprocessor.
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor1), 0);
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor1), 0);
     ASSERT_NO_FATAL_FAILURE(verify_preprocess(initial_value + 2 * value_to_add));
-
-    // The preprocessors should be released by the computer
-    delete multiPPContainer;
 }
 
 TEST(IndexComputerTest, MultiPreprocessorsContainerStorageNoAlignment) {
@@ -948,21 +942,21 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     size_t processed_bytes_count = sizeof(original_blob);
 
     // Test computer with multiple preprocessors of the same type.
-    auto multiPPContainer = new (allocator)
+    auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     /* ==== Add one preprocessor of each type ==== */
     auto preprocessor0 =
         new (allocator) FirstPreprocessorType(allocator, value_to_add_storage, value_to_add_query);
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor0), 1);
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor0), 1);
     auto preprocessor1 =
         new (allocator) SecondPreprocessorType(allocator, value_to_add_storage, value_to_add_query);
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor1), 2);
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor1), 2);
 
     // scope this section so the blobs are released before the allocator.
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, processed_bytes_count);
         // Original blob should not be changed
         ASSERT_EQ(original_blob[0], initial_value);
 
@@ -984,10 +978,10 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     auto preprocessor2 = new (allocator)
         DummyMixedPreprocessor<DummyType>(allocator, value_to_add_storage, value_to_add_query);
     // add preprocessor returns 0 when adding the last preprocessor.
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor2), 0);
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor2), 0);
     {
         ProcessedBlobs mixed_processed_blobs =
-            multiPPContainer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, processed_bytes_count);
 
         const void *mixed_pp_storage_blob = mixed_processed_blobs.getStorageBlob();
         const void *mixed_pp_query_blob = mixed_processed_blobs.getQueryBlob();
@@ -999,9 +993,7 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     }
 
     // try adding another preprocessor and fail.
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor2), -1);
-
-    delete multiPPContainer;
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor2), -1);
 }
 
 TEST(IndexComputerTest, multiPPContainerMixedPreprocessorQueryFirst) {
@@ -1028,12 +1020,12 @@ void multiPPContainerAlignment(dummyComputer::pp_mode MODE) {
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
     size_t processed_bytes_count = sizeof(original_blob);
 
-    auto multiPPContainer = new (allocator)
+    auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, processed_bytes_count);
 
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
@@ -1059,11 +1051,8 @@ void multiPPContainerAlignment(dummyComputer::pp_mode MODE) {
 
     auto preprocessor0 = new (allocator) PreprocessorType(allocator, value_to_add);
     // add preprocessor returns next free spot in its preprocessors array.
-    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor0), 0);
+    ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor0), 0);
     verify_preprocess(initial_value + value_to_add);
-
-    // The preprocessors should be released by the computer
-    delete multiPPContainer;
 }
 
 TEST(IndexComputerTest, IndexComputerStoragePreprocessorWithAlignment) {
@@ -1090,15 +1079,15 @@ TEST(IndexComputerTest, multiPPContainerCosineThenMixedPreprocess) {
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
 
-    auto multiPPContainer = new (allocator)
+    auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     // adding cosine preprocessor
     auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
-    multiPPContainer->addPreprocessor(cosine_preprocessor);
+    multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to the same memory slot
@@ -1115,10 +1104,10 @@ TEST(IndexComputerTest, multiPPContainerCosineThenMixedPreprocess) {
     // adding mixed preprocessor
     auto mixed_preprocessor = new (allocator)
         DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
-    multiPPContainer->addPreprocessor(mixed_preprocessor);
+    multiPPContainer.addPreprocessor(mixed_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -1138,8 +1127,7 @@ TEST(IndexComputerTest, multiPPContainerCosineThenMixedPreprocess) {
         ASSERT_NE(storage_blob, original_blob);
         ASSERT_NE(query_blob, original_blob);
     }
-    // The preprocessors should be released by the computer
-    delete multiPPContainer;
+    // The preprocessors should be released by the preprocessors container.
 }
 
 TEST(IndexComputerTest, multiPPContainerMixedThenCosinePreprocess) {
@@ -1159,13 +1147,13 @@ TEST(IndexComputerTest, multiPPContainerMixedThenCosinePreprocess) {
     // Creating multi preprocessors container
     auto mixed_preprocessor = new (allocator)
         DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
-    auto multiPPContainer = new (allocator)
+    auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
-    multiPPContainer->addPreprocessor(mixed_preprocessor);
+    multiPPContainer.addPreprocessor(mixed_preprocessor);
 
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -1188,10 +1176,10 @@ TEST(IndexComputerTest, multiPPContainerMixedThenCosinePreprocess) {
 
     // adding cosine preprocessor
     auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
-    multiPPContainer->addPreprocessor(cosine_preprocessor);
+    multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -1214,6 +1202,5 @@ TEST(IndexComputerTest, multiPPContainerMixedThenCosinePreprocess) {
         ASSERT_NE(storage_blob, original_blob);
         ASSERT_NE(query_blob, original_blob);
     }
-    // The preprocessors should be released by the computer
-    delete multiPPContainer;
+    // The preprocessors should be released by the preprocessors container.
 }
