@@ -28,9 +28,7 @@ jobs:
       - name: install python packages
         run: pip3 install -r requirements.txt
       - name: check format
-        run: |
-          echo -n "clang-format --version: " && clang-format --version
-          make check-format
+        run: make check-format
       - name: unit tests
         run: make unit_test
       - name: flow tests
