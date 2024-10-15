@@ -112,7 +112,7 @@ private:
         }
 
         py::capsule free_when_done(data_numpy,
-                                   [](void *vector_data) { delete[](DataType *) vector_data; });
+                                   [](void *vector_data) { delete[] (DataType *)vector_data; });
         return py::array_t<DataType>(
             {n_vectors, dim}, // shape
             {dim * sizeof(DataType),
