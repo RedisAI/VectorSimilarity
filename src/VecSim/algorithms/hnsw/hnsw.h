@@ -223,7 +223,7 @@ protected:
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-              IndexComputerInterface<DistType> *indexComputer, size_t random_seed = 100,
+              IndexComputerAbstract<DistType> *indexComputer, size_t random_seed = 100,
               size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
 
@@ -1595,7 +1595,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
-                                         IndexComputerInterface<DistType> *indexComputer,
+                                         IndexComputerAbstract<DistType> *indexComputer,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
       VecSimIndexTombstone(),

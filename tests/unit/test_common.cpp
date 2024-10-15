@@ -792,12 +792,11 @@ TEST(IndexComputerTest, IndexComputerCalculatorTest) {
     ASSERT_EQ(distance_calculator->calcDistance(nullptr, nullptr, 0), 7);
 
     // Call from the index computer.
-    auto indexComputer = new (allocator)
-        IndexComputerBasic<DummyType, dummy_dist_func_t>(allocator, 0, distance_calculator);
-    ASSERT_EQ(indexComputer->calcDistance(nullptr, nullptr, 0), 7);
+    auto indexComputer = IndexComputerBasic<DummyType, dummy_dist_func_t>(
+        allocator, static_cast<unsigned char>(0), distance_calculator);
+    ASSERT_EQ(indexComputer.calcDistance(nullptr, nullptr, 0), 7);
 
     // The index computer is responsible for releasing the distance calculator.
-    delete indexComputer;
 }
 
 TEST(IndexComputerTest, IndexComputerBasicAlignmentTest) {
@@ -805,8 +804,8 @@ TEST(IndexComputerTest, IndexComputerBasicAlignmentTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     unsigned char alignment = 5;
-    auto indexComputer =
-        new (allocator) IndexComputerBasic<DummyType, dummy_dist_func_t>(allocator, alignment);
+    auto indexComputer = new (allocator)
+        IndexComputerBasic<DummyType, dummy_dist_func_t>(allocator, alignment, nullptr);
     const int original_blob[4] = {1, 1, 1, 1};
     size_t processed_bytes_count = sizeof(original_blob);
 
@@ -821,22 +820,21 @@ TEST(IndexComputerTest, IndexComputerBasicAlignmentTest) {
 }
 
 template <unsigned char alignment>
-void IndexComputerExtendedEmpty() {
+void MultiPPContainerEmpty() {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    size_t dim = 4;
+    constexpr size_t dim = 4;
     const int original_blob[dim] = {1, 2, 3, 4};
     const int original_blob_cpy[dim] = {1, 2, 3, 4};
 
     constexpr size_t n_preprocessors = 3;
 
-    // Test computer with multiple preprocessors of the same type.
-    auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
         // Original blob should not be changed
         CompareVectors(original_blob, original_blob_cpy, dim);
 
@@ -857,21 +855,21 @@ void IndexComputerExtendedEmpty() {
         }
     }
 
-    delete indexComputer;
+    delete multiPPContainer;
 }
 
-TEST(IndexComputerTest, IndexComputerExtendedEmptyNoAlignment) {
+TEST(IndexComputerTest, MultiPPContainerEmptyNoAlignment) {
     using namespace dummyComputer;
-    IndexComputerExtendedEmpty<0>();
+    MultiPPContainerEmpty<0>();
 }
 
-TEST(IndexComputerTest, IndexComputerExtendedEmptyAlignment) {
+TEST(IndexComputerTest, MultiPPContainerEmptyAlignment) {
     using namespace dummyComputer;
-    IndexComputerExtendedEmpty<5>();
+    MultiPPContainerEmpty<5>();
 }
 
 template <typename PreprocessorType>
-void IndexComputerPreprocessorNoAlignment(dummyComputer::pp_mode MODE) {
+void MultiPreprocessorsContainerNoAlignment(dummyComputer::pp_mode MODE) {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -883,12 +881,12 @@ void IndexComputerPreprocessorNoAlignment(dummyComputer::pp_mode MODE) {
     size_t processed_bytes_count = sizeof(original_blob);
 
     // Test computer with multiple preprocessors of the same type.
-    auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer->preprocess(original_blob, processed_bytes_count);
         // Original blob should not be changed
         ASSERT_EQ(original_blob[0], initial_value);
 
@@ -912,32 +910,32 @@ void IndexComputerPreprocessorNoAlignment(dummyComputer::pp_mode MODE) {
     /* ==== Add the first preprocessor ==== */
     auto preprocessor0 = new (allocator) PreprocessorType(allocator, value_to_add);
     // add preprocessor returns next free spot in its preprocessors array.
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor0), 1);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor0), 1);
     verify_preprocess(initial_value + value_to_add);
 
     /* ==== Add the second preprocessor ==== */
     auto preprocessor1 = new (allocator) PreprocessorType(allocator, value_to_add);
     // add preprocessor returns 0 when adding the last preprocessor.
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor1), 0);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor1), 0);
     ASSERT_NO_FATAL_FAILURE(verify_preprocess(initial_value + 2 * value_to_add));
 
     // The preprocessors should be released by the computer
-    delete indexComputer;
+    delete multiPPContainer;
 }
 
-TEST(IndexComputerTest, IndexComputerStoragePreprocessorNoAlignment) {
+TEST(IndexComputerTest, MultiPreprocessorsContainerStorageNoAlignment) {
     using namespace dummyComputer;
-    IndexComputerPreprocessorNoAlignment<DummyStoragePreprocessor<DummyType>>(
+    MultiPreprocessorsContainerNoAlignment<DummyStoragePreprocessor<DummyType>>(
         pp_mode::STORAGE_ONLY);
 }
 
-TEST(IndexComputerTest, IndexComputerQueryPreprocessorNoAlignment) {
+TEST(IndexComputerTest, MultiPreprocessorsContainerQueryNoAlignment) {
     using namespace dummyComputer;
-    IndexComputerPreprocessorNoAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
+    MultiPreprocessorsContainerNoAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
 }
 
 template <typename FirstPreprocessorType, typename SecondPreprocessorType>
-void IndexComputerMixedPreprocessorNoAlignment() {
+void multiPPContainerMixedPreprocessorNoAlignment() {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -950,21 +948,21 @@ void IndexComputerMixedPreprocessorNoAlignment() {
     size_t processed_bytes_count = sizeof(original_blob);
 
     // Test computer with multiple preprocessors of the same type.
-    auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     /* ==== Add one preprocessor of each type ==== */
     auto preprocessor0 =
         new (allocator) FirstPreprocessorType(allocator, value_to_add_storage, value_to_add_query);
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor0), 1);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor0), 1);
     auto preprocessor1 =
         new (allocator) SecondPreprocessorType(allocator, value_to_add_storage, value_to_add_query);
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor1), 2);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor1), 2);
 
     // scope this section so the blobs are released before the allocator.
     {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer->preprocess(original_blob, processed_bytes_count);
         // Original blob should not be changed
         ASSERT_EQ(original_blob[0], initial_value);
 
@@ -986,10 +984,10 @@ void IndexComputerMixedPreprocessorNoAlignment() {
     auto preprocessor2 = new (allocator)
         DummyMixedPreprocessor<DummyType>(allocator, value_to_add_storage, value_to_add_query);
     // add preprocessor returns 0 when adding the last preprocessor.
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor2), 0);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor2), 0);
     {
         ProcessedBlobs mixed_processed_blobs =
-            indexComputer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer->preprocess(original_blob, processed_bytes_count);
 
         const void *mixed_pp_storage_blob = mixed_processed_blobs.getStorageBlob();
         const void *mixed_pp_query_blob = mixed_processed_blobs.getQueryBlob();
@@ -1001,25 +999,25 @@ void IndexComputerMixedPreprocessorNoAlignment() {
     }
 
     // try adding another preprocessor and fail.
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor2), -1);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor2), -1);
 
-    delete indexComputer;
+    delete multiPPContainer;
 }
 
-TEST(IndexComputerTest, IndexComputerMixedPreprocessorQueryFirst) {
+TEST(IndexComputerTest, multiPPContainerMixedPreprocessorQueryFirst) {
     using namespace dummyComputer;
-    IndexComputerMixedPreprocessorNoAlignment<DummyQueryPreprocessor<DummyType>,
-                                              DummyStoragePreprocessor<DummyType>>();
+    multiPPContainerMixedPreprocessorNoAlignment<DummyQueryPreprocessor<DummyType>,
+                                                 DummyStoragePreprocessor<DummyType>>();
 }
 
-TEST(IndexComputerTest, IndexComputerMixedPreprocessorStorageFirst) {
+TEST(IndexComputerTest, multiPPContainerMixedPreprocessorStorageFirst) {
     using namespace dummyComputer;
-    IndexComputerMixedPreprocessorNoAlignment<DummyStoragePreprocessor<DummyType>,
-                                              DummyQueryPreprocessor<DummyType>>();
+    multiPPContainerMixedPreprocessorNoAlignment<DummyStoragePreprocessor<DummyType>,
+                                                 DummyQueryPreprocessor<DummyType>>();
 }
 
 template <typename PreprocessorType>
-void IndexComputerPreprocessorAlignment(dummyComputer::pp_mode MODE) {
+void multiPPContainerAlignment(dummyComputer::pp_mode MODE) {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -1030,12 +1028,12 @@ void IndexComputerPreprocessorAlignment(dummyComputer::pp_mode MODE) {
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
     size_t processed_bytes_count = sizeof(original_blob);
 
-    auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, processed_bytes_count);
+            multiPPContainer->preprocess(original_blob, processed_bytes_count);
 
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
@@ -1061,24 +1059,24 @@ void IndexComputerPreprocessorAlignment(dummyComputer::pp_mode MODE) {
 
     auto preprocessor0 = new (allocator) PreprocessorType(allocator, value_to_add);
     // add preprocessor returns next free spot in its preprocessors array.
-    ASSERT_EQ(indexComputer->addPreprocessor(preprocessor0), 0);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(preprocessor0), 0);
     verify_preprocess(initial_value + value_to_add);
 
     // The preprocessors should be released by the computer
-    delete indexComputer;
+    delete multiPPContainer;
 }
 
 TEST(IndexComputerTest, IndexComputerStoragePreprocessorWithAlignment) {
     using namespace dummyComputer;
-    IndexComputerPreprocessorAlignment<DummyStoragePreprocessor<DummyType>>(pp_mode::STORAGE_ONLY);
+    multiPPContainerAlignment<DummyStoragePreprocessor<DummyType>>(pp_mode::STORAGE_ONLY);
 }
 
 TEST(IndexComputerTest, IndexComputerQueryPreprocessorWithAlignment) {
     using namespace dummyComputer;
-    IndexComputerPreprocessorAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
+    multiPPContainerAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
 }
 
-TEST(IndexComputerTest, IndexComputerCosineThenMixedPreprocess) {
+TEST(IndexComputerTest, multiPPContainerCosineThenMixedPreprocess) {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -1091,16 +1089,16 @@ TEST(IndexComputerTest, IndexComputerCosineThenMixedPreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
-    // Test computer with multiple preprocessors of the same type.
-    auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
+
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     // adding cosine preprocessor
     auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
-    indexComputer->addPreprocessor(cosine_preprocessor);
+    multiPPContainer->addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to the same memory slot
@@ -1117,10 +1115,10 @@ TEST(IndexComputerTest, IndexComputerCosineThenMixedPreprocess) {
     // adding mixed preprocessor
     auto mixed_preprocessor = new (allocator)
         DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
-    indexComputer->addPreprocessor(mixed_preprocessor);
+    multiPPContainer->addPreprocessor(mixed_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -1141,10 +1139,10 @@ TEST(IndexComputerTest, IndexComputerCosineThenMixedPreprocess) {
         ASSERT_NE(query_blob, original_blob);
     }
     // The preprocessors should be released by the computer
-    delete indexComputer;
+    delete multiPPContainer;
 }
 
-TEST(IndexComputerTest, IndexComputerMixedThenCosinePreprocess) {
+TEST(IndexComputerTest, multiPPContainerMixedThenCosinePreprocess) {
     using namespace dummyComputer;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -1157,17 +1155,17 @@ TEST(IndexComputerTest, IndexComputerMixedThenCosinePreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
-    // Test computer with multiple preprocessors of the same type.
-    auto indexComputer = new (allocator)
-        IndexComputerExtended<DummyType, dummy_dist_func_t, n_preprocessors>(allocator, alignment);
 
-    // adding mixed preprocessor
+    // Creating multi preprocessors container
     auto mixed_preprocessor = new (allocator)
         DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
-    indexComputer->addPreprocessor(mixed_preprocessor);
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
+    multiPPContainer->addPreprocessor(mixed_preprocessor);
+
     {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -1190,10 +1188,10 @@ TEST(IndexComputerTest, IndexComputerMixedThenCosinePreprocess) {
 
     // adding cosine preprocessor
     auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
-    indexComputer->addPreprocessor(cosine_preprocessor);
+    multiPPContainer->addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            indexComputer->preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer->preprocess(original_blob, sizeof(original_blob));
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -1217,5 +1215,5 @@ TEST(IndexComputerTest, IndexComputerMixedThenCosinePreprocess) {
         ASSERT_NE(query_blob, original_blob);
     }
     // The preprocessors should be released by the computer
-    delete indexComputer;
+    delete multiPPContainer;
 }

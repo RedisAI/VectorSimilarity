@@ -4168,7 +4168,7 @@ public:
 
 TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
     // Create TieredHNSW index with cosine metric
-    size_t dim = 4;
+    constexpr size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_Cosine,
@@ -4192,15 +4192,16 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
     TEST_DATA_T normalized_query[dim] = {0.1, 0.2, 0.3, 0.4};
     VecSim_Normalize(normalized_query, dim, TypeParam::get_index_type());
 
-    // create IP computer
+    // the backend index was created with a basic PP container, so we need to replace it with a
+    // preprocessor container that is able to hold a preprocessor array.
     constexpr size_t n_preprocessors = 1;
-    auto indexComputer = test_utils::NewTestIndexComputerExtended<TEST_DATA_T, n_preprocessors>(
-        allocator, VecSimMetric_IP, dim);
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getAlignment());
     auto pp_double_value = new (allocator) PreprocessorDoubleValue<TEST_DATA_T>(allocator, dim);
-    ASSERT_EQ(indexComputer->addPreprocessor(pp_double_value), 0);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(pp_double_value), 0);
 
-    // replace the hnsw computer
-    hnsw_index->replaceIndexComputer(indexComputer);
+    // replace the hnsw PP container
+    hnsw_index->replacePPContainer(multiPPContainer);
 
     // Add a vector to the flat buffer.
     VecSimIndex_AddVector(tiered_index, vector, 0);

@@ -36,7 +36,7 @@ protected:
 
 public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
-                    IndexComputerInterface<DistType> *indexComputer);
+                    IndexComputerAbstract<DistType> *indexComputer);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -140,7 +140,7 @@ protected:
 template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
-    IndexComputerInterface<DistType> *indexComputer)
+    IndexComputerAbstract<DistType> *indexComputer)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));

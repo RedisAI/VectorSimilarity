@@ -52,7 +52,7 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    IndexComputerInterface<DistType> *indexComputer; // Index's computer.
+    IndexComputerAbstract<DistType> *indexComputer; // Index's computer.
     // TODO: remove alignment once datablock is implemented in HNSW
     unsigned char alignment;        // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
@@ -83,7 +83,7 @@ public:
      *
      */
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
-                        IndexComputerInterface<DistType> *indexComputer)
+                        IndexComputerAbstract<DistType> *indexComputer)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
@@ -229,9 +229,8 @@ public:
     }
 
 #ifdef BUILD_TESTS
-    void replaceIndexComputer(IndexComputerInterface<DistType> *newComputer) {
-        delete indexComputer;
-        indexComputer = newComputer;
+    void replacePPContainer(PreprocessorsContainerAbstract *newPPComputer) {
+        indexComputer->replacePPContainer(newPPComputer);
     }
 #endif
 

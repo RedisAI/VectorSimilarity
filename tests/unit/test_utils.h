@@ -101,21 +101,8 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
 
 extern VecsimQueryType query_types[4];
 
-template <typename DataType, size_t n_preprocessors, typename DistType = DataType>
-IndexComputerExtended<DistType, spaces::dist_func_t<DistType>, n_preprocessors> *
-NewTestIndexComputerExtended(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric,
-                             size_t dim) {
-    unsigned char alignment = 0;
-    spaces::dist_func_t<DistType> distFunc =
-        spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment);
-    auto distance_calculator =
-        new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
-
-    return new (allocator)
-        IndexComputerExtended<DistType, spaces::dist_func_t<DistType>, n_preprocessors>(
-            allocator, alignment, distance_calculator);
-}
 } // namespace test_utils
+
 template <typename IndexParams>
 size_t EstimateInitialSize(const IndexParams &index_params) {
     VecSimParams params = CreateParams(index_params);

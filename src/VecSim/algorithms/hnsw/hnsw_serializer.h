@@ -3,7 +3,7 @@
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
-                                         IndexComputerInterface<DistType> *indexComputer,
+                                         IndexComputerAbstract<DistType> *indexComputer,
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
       Serializer(version),

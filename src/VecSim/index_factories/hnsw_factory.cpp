@@ -21,7 +21,7 @@ template <typename DataType, typename DistType = DataType>
 inline HNSWIndex<DataType, DistType> *
 NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
                              const AbstractIndexInitParams &abstractInitParams,
-                             IndexComputerInterface<DistType> *indexComputer) {
+                             IndexComputerAbstract<DistType> *indexComputer) {
     // check if single and return new hnsw_index
     if (params->multi)
         return new (abstractInitParams.allocator)
@@ -58,22 +58,22 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     }
 
     if (hnswParams->type == VecSimType_FLOAT32) {
-        IndexComputerInterface<float> *indexComputer =
+        IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float>(abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams, indexComputer);
 
     } else if (hnswParams->type == VecSimType_FLOAT64) {
-        IndexComputerInterface<double> *indexComputer =
+        IndexComputerAbstract<double> *indexComputer =
             CreateIndexComputer<double>(abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams, indexComputer);
 
     } else if (hnswParams->type == VecSimType_BFLOAT16) {
-        IndexComputerInterface<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
             abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(hnswParams, abstractInitParams,
                                                              indexComputer);
     } else if (hnswParams->type == VecSimType_FLOAT16) {
-        IndexComputerInterface<float> *indexComputer = CreateIndexComputer<float16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
             abstractInitParams.allocator, metric, hnswParams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(hnswParams, abstractInitParams,
                                                             indexComputer);
@@ -168,7 +168,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
-                                                 IndexComputerInterface<DistType> *indexComputer,
+                                                 IndexComputerAbstract<DistType> *indexComputer,
                                                  Serializer::EncodingVersion version) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
@@ -231,22 +231,22 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
 
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
-        IndexComputerInterface<float> *indexComputer =
+        IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
                                                    indexComputer, version);
     } else if (params.type == VecSimType_FLOAT64) {
-        IndexComputerInterface<double> *indexComputer =
+        IndexComputerAbstract<double> *indexComputer =
             CreateIndexComputer<double>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams,
                                                     indexComputer, version);
     } else if (params.type == VecSimType_BFLOAT16) {
-        IndexComputerInterface<float> *indexComputer =
+        IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<bfloat16, float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
                                                              indexComputer, version);
     } else if (params.type == VecSimType_FLOAT16) {
-        IndexComputerInterface<float> *indexComputer =
+        IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float16, float>(abstractInitParams.allocator, metric, params.dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
                                                             indexComputer, version);

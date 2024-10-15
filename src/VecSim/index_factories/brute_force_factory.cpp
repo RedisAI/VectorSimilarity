@@ -19,7 +19,7 @@ namespace BruteForceFactory {
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
-                                                 IndexComputerInterface<DistType> *indexComputer) {
+                                                 IndexComputerAbstract<DistType> *indexComputer) {
 
     // check if single and return new bf_index
     if (params->multi)
@@ -61,20 +61,20 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
         metric = bfparams->metric;
     }
     if (bfparams->type == VecSimType_FLOAT32) {
-        IndexComputerInterface<float> *indexComputer =
+        IndexComputerAbstract<float> *indexComputer =
             CreateIndexComputer<float>(abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComputer);
     } else if (bfparams->type == VecSimType_FLOAT64) {
-        IndexComputerInterface<double> *indexComputer =
+        IndexComputerAbstract<double> *indexComputer =
             CreateIndexComputer<double>(abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComputer);
     } else if (bfparams->type == VecSimType_BFLOAT16) {
-        IndexComputerInterface<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
             abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams,
                                                              indexComputer);
     } else if (bfparams->type == VecSimType_FLOAT16) {
-        IndexComputerInterface<float> *indexComputer = CreateIndexComputer<float16, float>(
+        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
             abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
                                                             indexComputer);
