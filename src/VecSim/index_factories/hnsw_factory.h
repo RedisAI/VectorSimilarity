@@ -15,9 +15,13 @@
 #include "VecSim/vec_sim_index.h"
 
 namespace HNSWFactory {
-
-VecSimIndex *NewIndex(const VecSimParams *params);
-VecSimIndex *NewIndex(const HNSWParams *params);
+/** @param is_normalized is used to determine the index's computer type. If the index metric is
+ * Cosine, and is_normalized == true, we will create the computer as if the metric is IP, assuming
+ * the blobs sent to the index are already normalized. For example, in case it's a tiered index,
+ * where the blobs are normalized by the frontend index.
+ */
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
+VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized = false);
 size_t EstimateInitialSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params);
 
@@ -26,7 +30,7 @@ size_t EstimateElementSize(const HNSWParams *params);
 // @params is only used for backward compatibility with V1. It won't be used if V2 and up is loaded.
 // Required fields: type, dim, metric and multi
 // Permission fields that *** must be initalized to zero ***: blockSize, epsilon *
-VecSimIndex *NewIndex(const std::string &location);
+VecSimIndex *NewIndex(const std::string &location, bool is_normalized = false);
 
 #endif
 

@@ -81,6 +81,7 @@ add_library(VectorSimilaritySpaces
 	IP_space.cpp
 	spaces.cpp
 	${OPTIMIZATIONS}
+	computer/preprocessor_container.cpp
 )
 
 target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features)

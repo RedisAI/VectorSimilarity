@@ -13,10 +13,10 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/computer/computer.h"
 #include "info_iterator_struct.h"
 #include <cassert>
-
-using spaces::dist_func_t;
+#include <functional>
 
 /**
  * @brief Struct for initializing an abstract index class.
@@ -52,9 +52,9 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    unsigned char alignment; // Alignment hint to allocate vectors with.
-    dist_func_t<DistType>
-        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
+    IndexComputerAbstract<DistType> *indexComputer; // Index's computer.
+    // TODO: remove alignment once datablock is implemented in HNSW
+    unsigned char alignment;        // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
@@ -82,11 +82,12 @@ public:
      * @brief Construct a new Vec Sim Index object
      *
      */
-    VecSimIndexAbstract(const AbstractIndexInitParams &params)
+    VecSimIndexAbstract(const AbstractIndexInitParams &params,
+                        IndexComputerAbstract<DistType> *indexComputer)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
-          distFunc(spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment)),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
+          indexComputer(indexComputer), alignment(indexComputer->getAlignment()),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
           normalize_func(spaces::GetNormalizeFunc<DataType>()) {
         assert(VecSimType_sizeof(vecType));
@@ -96,9 +97,51 @@ public:
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndexAbstract() = default;
+    virtual ~VecSimIndexAbstract() noexcept { delete indexComputer; }
 
-    inline dist_func_t<DistType> getDistFunc() const { return distFunc; }
+    /**
+     * @brief Add a vector blob and its id to the index.
+     *
+     * @param blob binary representation of the vector. Blob size should match the index data type
+     * and dimension. The blob will be copied and processed as needed.
+     * @param label the label of the added vector.
+     * @return the number of new vectors inserted (1 for new insertion, 0 for override).
+     */
+    virtual int addVector(const void *blob, labelType label) = 0;
+
+    /**
+     * @brief Calculate the distance between two vectors based on index parameters.
+     *
+     * @return the distance between the vectors.
+     */
+    DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
+        return indexComputer->calcDistance(vector_data1, vector_data2, this->dim);
+    }
+
+    /**
+     * @brief Preprocess a blob for both storage and query.
+     *
+     * @param blob will be copied.
+     * @return unique_ptr of the processed blobs.
+     */
+    ProcessedBlobs preprocess(const void *blob) const;
+
+    /**
+     * @brief Preprocess a blob for query.
+     *
+     * @param blob will be copied.
+     * @return unique_ptr of the processed blob.
+     */
+    MemoryUtils::unique_blob processQuery(const void *queryBlob) const;
+
+    /**
+     * @brief Preprocess a blob for storage.
+     *
+     * @param blob will be copied.
+     * @return unique_ptr of the processed blob.
+     */
+    MemoryUtils::unique_blob processForStorage(const void *original_blob) const;
+
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
     inline bool isMultiValue() const { return isMulti; }
@@ -170,25 +213,6 @@ public:
             .fieldType = INFOFIELD_STRING,
             .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.lastMode)}}});
     }
-    const void *processBlob(const void *original_blob, void *aligned_mem) const {
-        void *processed_blob;
-        // if the blob is not aligned, or we need to normalize, we copy it
-        if ((this->alignment && (uintptr_t)original_blob % this->alignment) ||
-            this->metric == VecSimMetric_Cosine) {
-            memcpy(aligned_mem, original_blob, this->dataSize);
-            processed_blob = aligned_mem;
-        } else {
-            processed_blob = (void *)original_blob;
-        }
-
-        // if the metric is cosine, we need to normalize
-        if (this->metric == VecSimMetric_Cosine) {
-            // normalize the copy in place
-            normalize_func(processed_blob, this->dim);
-        }
-
-        return processed_blob;
-    }
 
     /**
      * @brief Get the basic static info object
@@ -204,44 +228,31 @@ public:
         return info;
     }
 
+#ifdef BUILD_TESTS
+    void replacePPContainer(PreprocessorsContainerAbstract *newPPComputer) {
+        indexComputer->replacePPContainer(newPPComputer);
+    }
+#endif
+
 protected:
-    virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
-        const void *processed_blob = processBlob(blob, aligned_mem.get());
-
-        return this->addVector(processed_blob, label, auxiliaryCtx);
-    }
-
-    virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
-                                               VecSimQueryParams *queryParams) const override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
-        const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
-
-        return this->topKQuery(processed_blob, k, queryParams);
-    }
-
-    virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
-                                                VecSimQueryParams *queryParams,
-                                                VecSimQueryReply_Order order) const override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
-        const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
-
-        return this->rangeQuery(processed_blob, radius, queryParams, order);
-    }
-
-    virtual VecSimBatchIterator *
-    newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        auto aligned_mem =
-            this->getAllocator()->allocate_aligned_unique(this->dataSize, this->alignment);
-        const void *processed_blob = processBlob(queryBlob, aligned_mem.get());
-
-        return this->newBatchIterator(processed_blob, queryParams);
-    }
-
     void runGC() override {}              // Do nothing, relevant for tiered index only.
     void acquireSharedLocks() override {} // Do nothing, relevant for tiered index only.
     void releaseSharedLocks() override {} // Do nothing, relevant for tiered index only.
 };
+
+template <typename DataType, typename DistType>
+ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *blob) const {
+    return this->indexComputer->preprocess(blob, this->dataSize);
+}
+
+template <typename DataType, typename DistType>
+MemoryUtils::unique_blob
+VecSimIndexAbstract<DataType, DistType>::processQuery(const void *queryBlob) const {
+    return this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+}
+
+template <typename DataType, typename DistType>
+MemoryUtils::unique_blob
+VecSimIndexAbstract<DataType, DistType>::processForStorage(const void *original_blob) const {
+    return this->indexComputer->preprocessForStorage(original_blob, this->dataSize);
+}

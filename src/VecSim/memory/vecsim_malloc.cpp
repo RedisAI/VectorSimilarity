@@ -45,6 +45,7 @@ void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
     if (!alignment) {
         return allocate(size);
     }
+
     size += alignment; // Add enough space for alignment.
     auto ptr = static_cast<unsigned char *>(vecsim_malloc(size + allocation_header_size));
     if (ptr) {

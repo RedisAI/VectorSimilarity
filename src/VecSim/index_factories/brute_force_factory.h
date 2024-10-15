@@ -15,10 +15,16 @@
 #include "VecSim/vec_sim_index.h"
 
 namespace BruteForceFactory {
-// Overloading the NewIndex function to support different parameters
-VecSimIndex *NewIndex(const VecSimParams *params);
-VecSimIndex *NewIndex(const BFParams *bfparams);
-VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams);
+/** Overloading the NewIndex function to support different parameters
+ * @param is_normalized is used to determine the index's computer type. If the index metric is
+ * Cosine, and is_normalized == true, we will create the computer as if the metric is IP, assuming
+ * the blobs sent to the index are already normalized. For example, in case it's a tiered index,
+ * where the blobs are normalized by the frontend index.
+ */
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
+VecSimIndex *NewIndex(const BFParams *bfparams, bool is_normalized = false);
+VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
+                      bool is_normalized);
 size_t EstimateInitialSize(const BFParams *params);
 size_t EstimateElementSize(const BFParams *params);
 
