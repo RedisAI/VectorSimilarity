@@ -3,7 +3,7 @@ on: workflow_call
 jobs:
   start-runner:
     name: Start self-hosted EC2 runner
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
