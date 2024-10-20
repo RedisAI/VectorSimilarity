@@ -625,9 +625,9 @@ TEST(CommonAPITest, NormalizeFloat16) {
     ASSERT_NEAR(1.0, norm, 0.001);
 }
 
-class IndexComputerTest : public ::testing::Test {};
+class IndexCalculatorTest : public ::testing::Test {};
 
-namespace dummyComputer {
+namespace dummyCalcultor {
 
 using DummyType = int;
 using dummy_dist_func_t = DummyType (*)(int);
@@ -645,7 +645,25 @@ public:
     }
 };
 
-/* ================== Preprocessors tests utils ================== */
+} // namespace dummyCalcultor
+
+TEST(IndexCalculatorTest, TestIndexCalculator) {
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Test computer with a distance function signature different from dim(v1, v2, dim()).
+    using namespace dummyCalcultor;
+    auto distance_calculator = DistanceCalculatorDummy<DummyType>(allocator, dummyDistFunc);
+
+    ASSERT_EQ(distance_calculator.calcDistance(nullptr, nullptr, 0), 7);
+}
+
+class PreprocessorsTest : public ::testing::Test {};
+
+namespace dummyPreprocessors {
+
+using DummyType = int;
+
 enum pp_mode { STORAGE_ONLY, QUERY_ONLY, BOTH, EMPTY };
 
 // Dummy storage preprocessor
@@ -777,40 +795,19 @@ private:
     int value_to_add_storage;
     int value_to_add_query;
 };
+} // namespace dummyPreprocessors
 
-} // namespace dummyComputer
-
-TEST(IndexComputerTest, IndexComputerCalculatorTest) {
-
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
-    // Test computer with a distance function signature different from dim(v1, v2, dim()).
-    using namespace dummyComputer;
-    auto distance_calculator =
-        new (allocator) DistanceCalculatorDummy<DummyType>(allocator, dummyDistFunc);
-
-    ASSERT_EQ(distance_calculator->calcDistance(nullptr, nullptr, 0), 7);
-
-    // Call from the index computer.
-    auto indexComputer = IndexComputerBasic<DummyType, dummy_dist_func_t>(
-        allocator, static_cast<unsigned char>(0), distance_calculator);
-    ASSERT_EQ(indexComputer.calcDistance(nullptr, nullptr, 0), 7);
-
-    // The index computer is responsible for releasing the distance calculator.
-}
-
-TEST(IndexComputerTest, IndexComputerBasicAlignmentTest) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, PreprocessorsTestBasicAlignmentTest) {
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     unsigned char alignment = 5;
-    auto indexComputer =
-        IndexComputerBasic<DummyType, dummy_dist_func_t>(allocator, alignment, nullptr);
+    auto preprocessor = PreprocessorsContainerAbstract(allocator, alignment);
     const int original_blob[4] = {1, 1, 1, 1};
     size_t processed_bytes_count = sizeof(original_blob);
 
     {
-        auto aligned_query = indexComputer.preprocessQuery(original_blob, processed_bytes_count);
+        auto aligned_query = preprocessor.preprocessQuery(original_blob, processed_bytes_count);
         unsigned char address_alignment = (uintptr_t)(aligned_query.get()) % alignment;
         ASSERT_EQ(address_alignment, 0);
     }
@@ -820,7 +817,7 @@ TEST(IndexComputerTest, IndexComputerBasicAlignmentTest) {
 
 template <unsigned char alignment>
 void MultiPPContainerEmpty() {
-    using namespace dummyComputer;
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t dim = 4;
     const int original_blob[dim] = {1, 2, 3, 4};
@@ -855,19 +852,19 @@ void MultiPPContainerEmpty() {
     }
 }
 
-TEST(IndexComputerTest, MultiPPContainerEmptyNoAlignment) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, MultiPPContainerEmptyNoAlignment) {
+    using namespace dummyPreprocessors;
     MultiPPContainerEmpty<0>();
 }
 
-TEST(IndexComputerTest, MultiPPContainerEmptyAlignment) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, MultiPPContainerEmptyAlignment) {
+    using namespace dummyPreprocessors;
     MultiPPContainerEmpty<5>();
 }
 
 template <typename PreprocessorType>
-void MultiPreprocessorsContainerNoAlignment(dummyComputer::pp_mode MODE) {
-    using namespace dummyComputer;
+void MultiPreprocessorsContainerNoAlignment(dummyPreprocessors::pp_mode MODE) {
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 2;
@@ -917,20 +914,20 @@ void MultiPreprocessorsContainerNoAlignment(dummyComputer::pp_mode MODE) {
     ASSERT_NO_FATAL_FAILURE(verify_preprocess(initial_value + 2 * value_to_add));
 }
 
-TEST(IndexComputerTest, MultiPreprocessorsContainerStorageNoAlignment) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, MultiPreprocessorsContainerStorageNoAlignment) {
+    using namespace dummyPreprocessors;
     MultiPreprocessorsContainerNoAlignment<DummyStoragePreprocessor<DummyType>>(
         pp_mode::STORAGE_ONLY);
 }
 
-TEST(IndexComputerTest, MultiPreprocessorsContainerQueryNoAlignment) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, MultiPreprocessorsContainerQueryNoAlignment) {
+    using namespace dummyPreprocessors;
     MultiPreprocessorsContainerNoAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
 }
 
 template <typename FirstPreprocessorType, typename SecondPreprocessorType>
 void multiPPContainerMixedPreprocessorNoAlignment() {
-    using namespace dummyComputer;
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 3;
@@ -941,7 +938,7 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
     size_t processed_bytes_count = sizeof(original_blob);
 
-    // Test computer with multiple preprocessors of the same type.
+    // Test multiple preprocessors of the same type.
     auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
@@ -996,21 +993,21 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor2), -1);
 }
 
-TEST(IndexComputerTest, multiPPContainerMixedPreprocessorQueryFirst) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, multiPPContainerMixedPreprocessorQueryFirst) {
+    using namespace dummyPreprocessors;
     multiPPContainerMixedPreprocessorNoAlignment<DummyQueryPreprocessor<DummyType>,
                                                  DummyStoragePreprocessor<DummyType>>();
 }
 
-TEST(IndexComputerTest, multiPPContainerMixedPreprocessorStorageFirst) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, multiPPContainerMixedPreprocessorStorageFirst) {
+    using namespace dummyPreprocessors;
     multiPPContainerMixedPreprocessorNoAlignment<DummyStoragePreprocessor<DummyType>,
                                                  DummyQueryPreprocessor<DummyType>>();
 }
 
 template <typename PreprocessorType>
-void multiPPContainerAlignment(dummyComputer::pp_mode MODE) {
-    using namespace dummyComputer;
+void multiPPContainerAlignment(dummyPreprocessors::pp_mode MODE) {
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     unsigned char alignment = 5;
@@ -1055,18 +1052,18 @@ void multiPPContainerAlignment(dummyComputer::pp_mode MODE) {
     verify_preprocess(initial_value + value_to_add);
 }
 
-TEST(IndexComputerTest, IndexComputerStoragePreprocessorWithAlignment) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, StoragePreprocessorWithAlignment) {
+    using namespace dummyPreprocessors;
     multiPPContainerAlignment<DummyStoragePreprocessor<DummyType>>(pp_mode::STORAGE_ONLY);
 }
 
-TEST(IndexComputerTest, IndexComputerQueryPreprocessorWithAlignment) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, QueryPreprocessorWithAlignment) {
+    using namespace dummyPreprocessors;
     multiPPContainerAlignment<DummyQueryPreprocessor<DummyType>>(pp_mode::QUERY_ONLY);
 }
 
-TEST(IndexComputerTest, multiPPContainerCosineThenMixedPreprocess) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 2;
@@ -1130,8 +1127,8 @@ TEST(IndexComputerTest, multiPPContainerCosineThenMixedPreprocess) {
     // The preprocessors should be released by the preprocessors container.
 }
 
-TEST(IndexComputerTest, multiPPContainerMixedThenCosinePreprocess) {
-    using namespace dummyComputer;
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 2;

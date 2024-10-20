@@ -53,18 +53,18 @@ private:
 
 public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-                    IndexComputerAbstract<DistType> *indexComputer, size_t random_seed = 100,
+                    const IndexComponents<DataType, DistType> &components, size_t random_seed = 100,
                     size_t initial_pool_size = 1)
-        : HNSWIndex<DataType, DistType>(params, abstractInitParams, indexComputer, random_seed,
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed,
                                         initial_pool_size),
           labelLookup(this->maxElements, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
-                    IndexComputerAbstract<DistType> *indexComputer,
+                    const IndexComponents<DataType, DistType> &components,
                     Serializer::EncodingVersion version)
-        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, indexComputer, version),
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
@@ -202,9 +202,9 @@ VecSimBatchIterator *
 HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->indexComputer->getAlignment());
+        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->indexComputer->preprocessQueryInPlace(queryBlobCopy, this->dataSize);
+    this->preprocessQueryInPlace(queryBlobCopy);
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);

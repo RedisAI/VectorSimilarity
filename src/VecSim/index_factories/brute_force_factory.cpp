@@ -8,7 +8,7 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
-#include "VecSim/index_factories/computer_factory.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 
@@ -19,15 +19,15 @@ namespace BruteForceFactory {
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
-                                                 IndexComputerAbstract<DistType> *indexComputer) {
+                                                 IndexComponents<DataType, DistType> &components) {
 
     // check if single and return new bf_index
     if (params->multi)
         return new (abstractInitParams.allocator)
-            BruteForceIndex_Multi<DataType, DistType>(params, abstractInitParams, indexComputer);
+            BruteForceIndex_Multi<DataType, DistType>(params, abstractInitParams, components);
     else
         return new (abstractInitParams.allocator)
-            BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, indexComputer);
+            BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, components);
 }
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
@@ -61,23 +61,23 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
         metric = bfparams->metric;
     }
     if (bfparams->type == VecSimType_FLOAT32) {
-        IndexComputerAbstract<float> *indexComputer =
-            CreateIndexComputer<float>(abstractInitParams.allocator, metric, bfparams->dim);
-        return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComputer);
+        IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
+            abstractInitParams.allocator, metric, bfparams->dim);
+        return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComponents);
     } else if (bfparams->type == VecSimType_FLOAT64) {
-        IndexComputerAbstract<double> *indexComputer =
-            CreateIndexComputer<double>(abstractInitParams.allocator, metric, bfparams->dim);
-        return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComputer);
+        IndexComponents<double, double> indexComponents = CreateIndexComponents<double, double>(
+            abstractInitParams.allocator, metric, bfparams->dim);
+        return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComponents);
     } else if (bfparams->type == VecSimType_BFLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<bfloat16, float>(
+        IndexComponents<bfloat16, float> indexComponents = CreateIndexComponents<bfloat16, float>(
             abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams,
-                                                             indexComputer);
+                                                             indexComponents);
     } else if (bfparams->type == VecSimType_FLOAT16) {
-        IndexComputerAbstract<float> *indexComputer = CreateIndexComputer<float16, float>(
+        IndexComponents<float16, float> indexComponents = CreateIndexComponents<float16, float>(
             abstractInitParams.allocator, metric, bfparams->dim);
         return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
-                                                            indexComputer);
+                                                            indexComponents);
     }
 
     // If we got here something is wrong.
@@ -106,16 +106,16 @@ size_t EstimateInitialSize(const BFParams *params) {
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
     if (params->type == VecSimType_FLOAT32) {
-        est += EstimateComputerMemory<float>(params->metric);
+        est += EstimateComponentsMemory<float, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
-        est += EstimateComputerMemory<double>(params->metric);
+        est += EstimateComponentsMemory<double, double>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     } else if (params->type == VecSimType_BFLOAT16) {
-        est += EstimateComputerMemory<bfloat16, float>(params->metric);
+        est += EstimateComponentsMemory<bfloat16, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<bfloat16, float>(params->multi);
     } else if (params->type == VecSimType_FLOAT16) {
-        est += EstimateComputerMemory<float16, float>(params->metric);
+        est += EstimateComponentsMemory<float16, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
 

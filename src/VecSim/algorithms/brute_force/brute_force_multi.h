@@ -18,8 +18,8 @@ private:
 
 public:
     BruteForceIndex_Multi(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
-                          IndexComputerAbstract<DistType> *indexComputer)
-        : BruteForceIndex<DataType, DistType>(params, abstractInitParams, indexComputer),
+                          const IndexComponents<DataType, DistType> &components)
+        : BruteForceIndex<DataType, DistType>(params, abstractInitParams, components),
           labelToIdsLookup(this->allocator) {}
 
     ~BruteForceIndex_Multi() = default;

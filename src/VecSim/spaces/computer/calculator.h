@@ -10,18 +10,32 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 
+// We need this "wrapper" class to hold the DistanceCalculatorInterface in the index, that is not
+// templated according to the distance function signature.
+template <typename DistType>
+class IndexCalculatorInterface : public VecsimBaseObject {
+public:
+    explicit IndexCalculatorInterface(std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator) {}
+
+    virtual ~IndexCalculatorInterface() = default;
+
+    virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
+};
+
 /**
  * This object purpose is to calculate the distance between two vectors.
- * It holds the distance function of the abstract index and the parameters required for the
- * calculation. The distance calculation API of all DistanceCalculator classes is:
- * calc_dist(v1,v2,dim). Internally it calls the distance function according the template signature.
+ * It extends the IndexCalculatorInterface class' type to hold the distance function.
+ * Every specific implmentation of the distance claculater should hold by refrence or by value the
+ * parameters required for the calculation. The distance calculation API of all DistanceCalculator
+ * classes is: calc_dist(v1,v2,dim). Internally it calls the distance function according the
+ * template signature, allowing fexability in the distance function arguments.
  */
-
 template <typename DistType, typename DistFuncType>
-class DistanceCalculatorInterface : public VecsimBaseObject {
+class DistanceCalculatorInterface : public IndexCalculatorInterface<DistType> {
 public:
     DistanceCalculatorInterface(std::shared_ptr<VecSimAllocator> allocator, DistFuncType dist_func)
-        : VecsimBaseObject(allocator), dist_func(dist_func) {}
+        : IndexCalculatorInterface<DistType>(allocator), dist_func(dist_func) {}
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
 
 protected:

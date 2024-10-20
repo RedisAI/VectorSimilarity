@@ -13,7 +13,8 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/spaces/computer/computer.h"
+#include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/spaces/computer/preprocessor_container.h"
 #include "info_iterator_struct.h"
 #include <cassert>
 #include <functional>
@@ -40,6 +41,21 @@ struct AbstractIndexInitParams {
 };
 
 /**
+ * @brief Struct for initializing the components of the abstract index.
+ * The index takes ownership of the components allocations' and is responsible for freeing
+ * them when the index is destroyed.
+ *
+ * @param indexCalculator The distance calculator for the index.
+ * @param preprocessors The preprocessing pipeline for ingesting user data before storage and
+ * querying.
+ */
+template <typename DataType, typename DistType>
+struct IndexComponents {
+    IndexCalculatorInterface<DistType> *indexCalculator;
+    PreprocessorsContainerAbstract *preprocessors;
+};
+
+/**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
@@ -52,7 +68,8 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    IndexComputerAbstract<DistType> *indexComputer; // Index's computer.
+    IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
+    PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
     // TODO: remove alignment once datablock is implemented in HNSW
     unsigned char alignment;        // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
@@ -83,13 +100,13 @@ public:
      *
      */
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
-                        IndexComputerAbstract<DistType> *indexComputer)
+                        const IndexComponents<DataType, DistType> &components)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          indexComputer(indexComputer), alignment(indexComputer->getAlignment()),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
-          normalize_func(spaces::GetNormalizeFunc<DataType>()) {
+          indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
+          alignment(preprocessors->getAlignment()), lastMode(EMPTY_MODE), isMulti(params.multi),
+          logCallbackCtx(params.logCtx), normalize_func(spaces::GetNormalizeFunc<DataType>()) {
         assert(VecSimType_sizeof(vecType));
     }
 
@@ -97,7 +114,10 @@ public:
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndexAbstract() noexcept { delete indexComputer; }
+    virtual ~VecSimIndexAbstract() noexcept {
+        delete indexCalculator;
+        delete preprocessors;
+    }
 
     /**
      * @brief Add a vector blob and its id to the index.
@@ -115,32 +135,39 @@ public:
      * @return the distance between the vectors.
      */
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
-        return indexComputer->calcDistance(vector_data1, vector_data2, this->dim);
+        return indexCalculator->calcDistance(vector_data1, vector_data2, this->dim);
     }
 
     /**
      * @brief Preprocess a blob for both storage and query.
      *
-     * @param blob will be copied.
-     * @return unique_ptr of the processed blobs.
+     * @param original_blob will be copied.
+     * @return two unique_ptr of the processed blobs.
      */
-    ProcessedBlobs preprocess(const void *blob) const;
+    ProcessedBlobs preprocess(const void *original_blob) const;
 
     /**
      * @brief Preprocess a blob for query.
      *
-     * @param blob will be copied.
+     * @param queryBlob will be copied.
      * @return unique_ptr of the processed blob.
      */
-    MemoryUtils::unique_blob processQuery(const void *queryBlob) const;
+    MemoryUtils::unique_blob preprocessQuery(const void *queryBlob) const;
 
     /**
      * @brief Preprocess a blob for storage.
      *
-     * @param blob will be copied.
+     * @param original_blob will be copied.
      * @return unique_ptr of the processed blob.
      */
-    MemoryUtils::unique_blob processForStorage(const void *original_blob) const;
+    MemoryUtils::unique_blob preprocessForStorage(const void *original_blob) const;
+
+    /**
+     * @brief Preprocess a blob for query in place.
+     *
+     * @param blob will be directly modified, not copied.
+     */
+    void preprocessQueryInPlace(void *blob) const;
 
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
@@ -229,8 +256,9 @@ public:
     }
 
 #ifdef BUILD_TESTS
-    void replacePPContainer(PreprocessorsContainerAbstract *newPPComputer) {
-        indexComputer->replacePPContainer(newPPComputer);
+    void replacePPContainer(PreprocessorsContainerAbstract *newPPContainer) {
+        delete this->preprocessors;
+        this->preprocessors = newPPContainer;
     }
 #endif
 
@@ -242,17 +270,22 @@ protected:
 
 template <typename DataType, typename DistType>
 ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *blob) const {
-    return this->indexComputer->preprocess(blob, this->dataSize);
+    return this->preprocessors->preprocess(blob, this->dataSize);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
-VecSimIndexAbstract<DataType, DistType>::processQuery(const void *queryBlob) const {
-    return this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob) const {
+    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
-VecSimIndexAbstract<DataType, DistType>::processForStorage(const void *original_blob) const {
-    return this->indexComputer->preprocessForStorage(original_blob, this->dataSize);
+VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
+    return this->preprocessors->preprocessForStorage(original_blob, this->dataSize);
+}
+
+template <typename DataType, typename DistType>
+void VecSimIndexAbstract<DataType, DistType>::preprocessQueryInPlace(void *blob) const {
+    this->preprocessors->preprocessQueryInPlace(blob, this->dataSize);
 }

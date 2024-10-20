@@ -36,7 +36,7 @@ protected:
 
 public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
-                    IndexComputerAbstract<DistType> *indexComputer);
+                    const IndexComponents<DataType, DistType> &components);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -140,8 +140,8 @@ protected:
 template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
     const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
-    IndexComputerAbstract<DistType> *indexComputer)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
+    const IndexComponents<DataType, DistType> &components)
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
@@ -155,7 +155,7 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
-    auto processed_blob = this->indexComputer->preprocessForStorage(vector_data, this->dataSize);
+    auto processed_blob = this->preprocessForStorage(vector_data);
     // Give the vector new id and increase count.
     idType id = this->count++;
 
@@ -233,7 +233,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         return rep;
     }
 
-    auto processed_query_ptr = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+    auto processed_query_ptr = this->preprocessQuery(queryBlob);
     const void *processed_query = processed_query_ptr.get();
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
@@ -275,7 +275,7 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) const {
-    auto processed_query_ptr = this->indexComputer->preprocessQuery(queryBlob, this->dataSize);
+    auto processed_query_ptr = this->preprocessQuery(queryBlob);
     auto rep = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->lastMode = RANGE_QUERY;
@@ -350,9 +350,9 @@ VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->indexComputer->getAlignment());
+        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->indexComputer->preprocessQueryInPlace(queryBlobCopy, this->dataSize);
+    this->preprocessQueryInPlace(queryBlobCopy);
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }

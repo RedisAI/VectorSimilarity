@@ -223,7 +223,7 @@ protected:
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-              IndexComputerAbstract<DistType> *indexComputer, size_t random_seed = 100,
+              const IndexComponents<DataType, DistType> &components, size_t random_seed = 100,
               size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
 
@@ -1595,9 +1595,9 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
-                                         IndexComputerAbstract<DistType> *indexComputer,
+                                         const IndexComponents<DataType, DistType> &components,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, indexComputer),
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       VecSimIndexTombstone(),
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
       vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
@@ -1864,7 +1864,7 @@ void HNSWIndex<DataType, DistType>::indexVector(const void *vector_data, const l
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
 
-    ProcessedBlobs processedBlobs = this->indexComputer->preprocess(vector_data, this->dataSize);
+    ProcessedBlobs processedBlobs = this->preprocess(vector_data);
     HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
 
     this->indexVector(processedBlobs.getQueryBlob(), label, state);
@@ -1962,7 +1962,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         return rep;
     }
 
-    auto processed_query_ptr = this->indexComputer->preprocessQuery(query_data, this->dataSize);
+    auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
 
@@ -2076,7 +2076,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
     if (curElementCount == 0) {
         return rep;
     }
-    auto processed_query_ptr = this->indexComputer->preprocessQuery(query_data, this->dataSize);
+    auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
 
