@@ -49,7 +49,7 @@ jobs:
     secrets: inherit
 
   spellcheck:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,7 +67,7 @@ jobs:
       - coverage
       - codeql-analysis
       - spellcheck
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
