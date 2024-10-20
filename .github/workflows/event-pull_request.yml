@@ -10,7 +10,7 @@ jobs:
 
   basic-tests:
     name: basic tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: check-if-docs-only
     if: needs.check-if-docs-only.outputs.only-docs-changed == 'false'
     concurrency:
@@ -49,7 +49,7 @@ jobs:
     secrets: inherit
 
   spellcheck:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,7 +67,7 @@ jobs:
       - coverage
       - codeql-analysis
       - spellcheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ !cancelled() }}
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
