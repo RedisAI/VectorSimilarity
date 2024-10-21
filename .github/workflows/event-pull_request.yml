@@ -15,9 +15,7 @@ jobs:
     if: needs.check-if-docs-only.outputs.only-docs-changed == 'false'
     steps:
       - name: checkout
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
+        uses: actions/checkout@v4
       - name: setup python
         uses: actions/setup-python@v5
         with:
