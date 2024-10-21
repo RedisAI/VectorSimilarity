@@ -3992,7 +3992,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
     ASSERT_EQ(state.connections_to_repair, 0);
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerTest) {
+TYPED_TEST(HNSWTieredIndexTestBasic, CosineTest) {
     // Create TieredHNSW index with cosine metric
     size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -4012,8 +4012,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerTest) {
     auto hnsw_index = this->CastToHNSW(tiered_index);
     ASSERT_EQ(hnsw_index->getMetric(), VecSimMetric_Cosine);
 
-    // However, We assume that all the blobs are normalized before sent to the HNSW index.
-    // and the hnsw index should not normalize the vectors.
+    // However, We assume that all the blobs are normalized by the tiered index.
     TEST_DATA_T vector[dim];
     GenerateVector<TEST_DATA_T>(vector, dim, 1);
 
@@ -4023,16 +4022,23 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerTest) {
     ASSERT_NO_FATAL_FAILURE(CompareVectors(
         reinterpret_cast<const TEST_DATA_T *>(hnsw_index->getDataByInternalId(0)), vector, dim));
 
-    // Add the same vector to the flat index.
+    // Add a vector directly to the frontend index.
     VecSimIndex_AddVector(frontend_index, vector, 0);
-    // Verify that the stored vector is normalized.
-    VecSim_Normalize(vector, dim, TypeParam::get_index_type());
+    // Verify that the vector was not normalized.
     ASSERT_NO_FATAL_FAILURE(CompareVectors(
         reinterpret_cast<const TEST_DATA_T *>(frontend_index->getDataByInternalId(0)), vector,
         dim));
+
+    // Add the same vector to the tiered index.
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    // Verify that the stored vector is normalized.
+    VecSim_Normalize(vector, dim, TypeParam::get_index_type());
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(
+        reinterpret_cast<const TEST_DATA_T *>(frontend_index->getDataByInternalId(1)), vector,
+        dim));
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
+TYPED_TEST(HNSWTieredIndexTestBasic, AddVectorCosine) {
     // Create TieredHNSW index with cosine metric
     size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -4166,7 +4172,7 @@ public:
     }
 };
 
-TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
+TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
     // Create TieredHNSW index with cosine metric
     constexpr size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -4192,8 +4198,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
     TEST_DATA_T normalized_query[dim] = {0.1, 0.2, 0.3, 0.4};
     VecSim_Normalize(normalized_query, dim, TypeParam::get_index_type());
 
-    // the backend index was created with a basic PP container, so we need to replace it with a
-    // preprocessor container that is able to hold a preprocessor array.
+    // the backend index (HNSW) was created with a basic PP container, so we need to replace it with
+    // a preprocessor container that is able to hold a preprocessor array.
     constexpr size_t n_preprocessors = 1;
     auto multiPPContainer = new (allocator)
         MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getAlignment());

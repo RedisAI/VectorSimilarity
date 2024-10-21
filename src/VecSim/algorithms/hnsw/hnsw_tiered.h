@@ -181,7 +181,8 @@ public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                     BruteForceIndex<DataType, DistType> *bf_index,
                     const TieredIndexParams &tieredParams,
-                    std::shared_ptr<VecSimAllocator> allocator);
+                    std::shared_ptr<VecSimAllocator> allocator,
+                    PreprocessorsContainerAbstract *preprocessors_);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label) override;
@@ -200,6 +201,8 @@ public:
         size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
         void *queryBlobCopy = this->allocator->allocate(blobSize);
         memcpy(queryBlobCopy, queryBlob, blobSize);
+        this->preprocessors->preprocessQueryInPlace(queryBlobCopy, blobSize);
+
         return new (this->allocator)
             TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
     }
@@ -631,8 +634,10 @@ template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                                                      BruteForceIndex<DataType, DistType> *bf_index,
                                                      const TieredIndexParams &tiered_index_params,
-                                                     std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
+                                                     std::shared_ptr<VecSimAllocator> allocator,
+                                                     PreprocessorsContainerAbstract *preprocessors_)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator,
+                                            preprocessors_),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
       readySwapJobs(0) {
@@ -707,6 +712,10 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 // parameters.
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
+    // TODO: move to tiered index base class and rename this function to addVectorImpl
+    auto storage_blob =
+        this->preprocessors->preprocessForStorage(blob, this->frontendIndex->getDataSize());
+    blob = storage_blob.get();
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
     // writeMode is not protected since it is assumed to be called only from the "main thread"
@@ -717,13 +726,10 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             ret -= this->deleteVector(label);
         }
 
-        // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
-        // index.
-        auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
         // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
         // label since we already checked it outside.
         this->mainIndexGuard.lock();
-        hnsw_index->addVector(storage_blob.get(), label);
+        hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
         return ret;
     }
@@ -738,10 +744,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
             // directly to HNSW. Since flat buffer guard was not held, no need to release it
             // internally.
-            // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
-            // index.
-            auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-            this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
+            this->insertVectorToHNSW<false>(hnsw_index, label, blob);
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer
