@@ -48,8 +48,8 @@ py::object wrap_results(VecSimQueryReply **res, size_t num_res, size_t num_queri
         VecSimQueryReply_Free(res[i]);
     }
 
-    py::capsule free_when_done_l(data_numpy_l, [](void *labels) { delete[] (long *)labels; });
-    py::capsule free_when_done_d(data_numpy_d, [](void *dists) { delete[] (double *)dists; });
+    py::capsule free_when_done_l(data_numpy_l, [](void *labels) { delete[](long *) labels; });
+    py::capsule free_when_done_d(data_numpy_d, [](void *dists) { delete[](double *) dists; });
     return py::make_tuple(
         py::array_t<long>(
             {(size_t)num_queries, num_res},         // shape
@@ -132,7 +132,7 @@ private:
         }
 
         py::capsule free_when_done(data_numpy,
-                                   [](void *vector_data) { delete[] (NPArrayType *)vector_data; });
+                                   [](void *vector_data) { delete[](NPArrayType *) vector_data; });
         return py::array_t<NPArrayType>(
             {n_vectors, dim}, // shape
             {dim * sizeof(NPArrayType),
@@ -368,26 +368,30 @@ public:
         if (n_threads <= 0) {
             n_threads = (int)std::thread::hardware_concurrency();
         }
-
+        // Lock in every iteration to ensure we acquire the right lock (read/write) and
+        // to create a barriar so other threads won't call "add_vector" with the inappropriate lock.
+        std::mutex barriar;
         std::atomic<int> global_counter{};
         size_t block_size = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.blockSize;
         auto parallel_insert =
             [&](const py::array &data,
                 const py::array_t<labelType, py::array::c_style | py::array::forcecast> &labels) {
                 while (true) {
-                    // Lock exclusively unless we are not performing resizing due to a new block.
                     bool exclusive = true;
-                    indexGuard.lock();
+                    barriar.lock();
                     int ind = global_counter++;
                     if (ind >= n_vectors) {
-                        indexGuard.unlock();
+                        barriar.unlock();
                         break;
                     }
                     if (ind % block_size != 0) {
-                        indexGuard.unlock();
                         indexGuard.lock_shared();
                         exclusive = false;
+                    } else {
+                        // Lock exclusively if we are not performing resizing due to a new block.
+                        indexGuard.lock();
                     }
+                    barriar.unlock();
                     this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
                     exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
                 }
