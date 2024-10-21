@@ -11,7 +11,6 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
-#include "VecSim/index_factories/components/preprocessors_factory.h"
 
 namespace TieredFactory {
 
@@ -44,20 +43,13 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
                                                   .multi = bf_params.multi,
                                                   .logCtx = nullptr};
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
-        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, true));
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
     // Create new tiered hnsw index
     std::shared_ptr<VecSimAllocator> management_layer_allocator =
         VecSimAllocator::newVecsimAllocator();
-
-    // Create preprocessors container
-    auto preprocessors = CreatePreprocessorsContainer<DataType>(
-        management_layer_allocator, {.metric = bf_params.metric,
-                                     .dim = bf_params.dim,
-                                     .alignment = frontendIndex->getAlignment()});
-
     return new (management_layer_allocator) TieredHNSWIndex<DataType, DistType>(
-        hnsw_index, frontendIndex, *params, management_layer_allocator, preprocessors);
+        hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 } // namespace TieredHNSWFactory
 #endif

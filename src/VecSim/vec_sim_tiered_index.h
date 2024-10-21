@@ -43,8 +43,6 @@ protected:
 
     size_t flatBufferLimit;
 
-    PreprocessorsContainerAbstract *preprocessors; // stroage and query preprocessors.
-
     void submitSingleJob(AsyncJob *job) {
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, &job, &job->Execute, 1);
     }
@@ -61,17 +59,15 @@ protected:
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
-                      TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator,
-                      PreprocessorsContainerAbstract *preprocessors_)
+                      TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          flatBufferLimit(tieredParams.flatBufferLimit), preprocessors(preprocessors_) {}
+          flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {
         VecSimIndex_Free(backendIndex);
         VecSimIndex_Free(frontendIndex);
-        delete preprocessors;
     }
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
@@ -115,9 +111,6 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    auto processed_query_ptr =
-        this->preprocessors->preprocessQuery(queryBlob, this->frontendIndex->getDataSize());
-    queryBlob = processed_query_ptr.get();
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -126,8 +119,10 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         this->flatIndexGuard.unlock_shared();
 
         // Simply query the main index and return the results while holding the lock.
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+        const void *processed_query = processed_query_ptr.get();
         this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->topKQuery(queryBlob, k, queryParams);
+        auto res = this->backendIndex->topKQuery(processed_query, k, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         return res;
@@ -143,9 +138,11 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
             return flat_results;
         }
 
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+        const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
         this->mainIndexGuard.lock_shared();
-        auto main_results = this->backendIndex->topKQuery(queryBlob, k, queryParams);
+        auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
@@ -171,9 +168,6 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    auto processed_query_ptr =
-        this->preprocessors->preprocessQuery(queryBlob, this->frontendIndex->getDataSize());
-    queryBlob = processed_query_ptr.get();
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -181,9 +175,11 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         // Release the flat lock and acquire the main lock.
         this->flatIndexGuard.unlock_shared();
 
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+        const void *processed_query = processed_query_ptr.get();
         // Simply query the main index and return the results while holding the lock.
         this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
+        auto res = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         // We could have passed the order to the main index, but we can sort them here after
@@ -202,9 +198,11 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             return flat_results;
         }
 
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+        const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
         this->mainIndexGuard.lock_shared();
-        auto main_results = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
+        auto main_results = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         // Merge the results and return, avoiding duplicates.

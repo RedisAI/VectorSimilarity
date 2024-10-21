@@ -7,7 +7,6 @@
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/brute_force_factory.h"
-#include "VecSim/index_factories/components/preprocessors_factory.h"
 
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/types/bfloat16.h"
@@ -23,7 +22,7 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
     // initialize hnsw index
-    // Normalization is done by the tiered index.
+    // Normalization is done by the frontend index.
     auto *hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
         HNSWFactory::NewIndex(params->primaryIndexParams, true));
     // initialize brute force index
@@ -42,22 +41,15 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,
                                                   .logCtx = params->primaryIndexParams->logCtx};
-    // Normalization is done by the tiered index.
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
-        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, true));
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
     // Create new tiered hnsw index
     std::shared_ptr<VecSimAllocator> management_layer_allocator =
         VecSimAllocator::newVecsimAllocator();
 
-    // Create preprocessors container
-    auto preprocessors = CreatePreprocessorsContainer<DataType>(
-        management_layer_allocator, {.metric = bf_params.metric,
-                                     .dim = bf_params.dim,
-                                     .alignment = frontendIndex->getAlignment()});
-
     return new (management_layer_allocator) TieredHNSWIndex<DataType, DistType>(
-        hnsw_index, frontendIndex, *params, management_layer_allocator, preprocessors);
+        hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_params_output) {
@@ -119,18 +111,6 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
     }
 
     est += BruteForceFactory::EstimateInitialSize(&bf_params);
-    VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
-    VecSimMetric metric = params->primaryIndexParams->algoParams.hnswParams.metric;
-    if (type == VecSimType_FLOAT32) {
-        est += EstimatePreprocessorsContainerMemory<float>(metric);
-    } else if (type == VecSimType_FLOAT64) {
-        est += EstimatePreprocessorsContainerMemory<double>(metric);
-    } else if (type == VecSimType_BFLOAT16) {
-        est += EstimatePreprocessorsContainerMemory<bfloat16>(metric);
-    } else if (type == VecSimType_FLOAT16) {
-        est += EstimatePreprocessorsContainerMemory<float16>(metric);
-    }
-
     return est;
 }
 
