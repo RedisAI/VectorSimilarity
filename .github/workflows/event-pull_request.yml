@@ -1,7 +1,7 @@
 name: Pull Request CI
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review] # Defaults + ready_for_review
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
 
   basic-tests:
     name: basic tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: check-if-docs-only
     if: needs.check-if-docs-only.outputs.only-docs-changed == 'false'
     steps:
