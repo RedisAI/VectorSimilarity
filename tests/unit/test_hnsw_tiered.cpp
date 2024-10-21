@@ -3992,7 +3992,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
     ASSERT_EQ(state.connections_to_repair, 0);
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerTest) {
+TYPED_TEST(HNSWTieredIndexTestBasic, CosineTest) {
     // Create TieredHNSW index with cosine metric
     size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -4032,7 +4032,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerTest) {
         dim));
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerAddVector) {
+TYPED_TEST(HNSWTieredIndexTestBasic, AddVectorCosine) {
     // Create TieredHNSW index with cosine metric
     size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -4166,7 +4166,7 @@ public:
     }
 };
 
-TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
+TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
     // Create TieredHNSW index with cosine metric
     constexpr size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -4192,8 +4192,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, indexComputerHNSWPreprocessor) {
     TEST_DATA_T normalized_query[dim] = {0.1, 0.2, 0.3, 0.4};
     VecSim_Normalize(normalized_query, dim, TypeParam::get_index_type());
 
-    // the backend index was created with a basic PP container, so we need to replace it with a
-    // preprocessor container that is able to hold a preprocessor array.
+    // the backend index (HNSW) was created with a basic PP container, so we need to replace it with
+    // a preprocessor container that is able to hold a preprocessor array.
     constexpr size_t n_preprocessors = 1;
     auto multiPPContainer = new (allocator)
         MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getAlignment());
