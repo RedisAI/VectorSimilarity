@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs: check-if-docs-only
     if: needs.check-if-docs-only.outputs.only-docs-changed == 'false'
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
     steps:
       - name: checkout
         uses: actions/checkout@v3
