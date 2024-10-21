@@ -120,16 +120,6 @@ public:
     }
 
     /**
-     * @brief Add a vector blob and its id to the index.
-     *
-     * @param blob binary representation of the vector. Blob size should match the index data type
-     * and dimension. The blob will be copied and processed as needed.
-     * @param label the label of the added vector.
-     * @return the number of new vectors inserted (1 for new insertion, 0 for override).
-     */
-    virtual int addVector(const void *blob, labelType label) = 0;
-
-    /**
      * @brief Calculate the distance between two vectors based on index parameters.
      *
      * @return the distance between the vectors.
