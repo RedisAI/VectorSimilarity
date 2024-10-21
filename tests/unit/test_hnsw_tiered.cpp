@@ -3674,3 +3674,125 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceMultiSwapId) {
     ASSERT_EQ(tiered_index->deleteVector(0), 2);
     ASSERT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, 0);
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    // Insert three vector to HNSW, expect a full graph to be created
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
+
+    // Delete vector with id=0 asynchronously, expect to have a repair job for the other vectors.
+    ASSERT_EQ(tiered_index->deleteVector(0), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 2);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs.size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
+
+    // Execute the repair job for 1->0. Now, 0->1 is unidirectional edge
+    ASSERT_TRUE(mock_thread_pool.jobQ.front().job->isValid);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
+
+    // Insert another vector with id=3, that should be connected to both 1 and 2.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 3, -1);
+
+    // Delete in-place id=2, expect that upon repairing inplace 1 due to 1->2, there will *not* be
+    // a new edge 1->0 since 0 is deleted. Also the other repair job 2->0 should be invalidated.
+    // Also, expect that repairing 3 in-place will not create a new edge to marked deleted 0 and
+    // vice versa.
+    tiered_index->setWriteMode(VecSim_WriteInPlace);
+    ASSERT_EQ(tiered_index->deleteVector(2), 1);
+    ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
+    int **neighbours;
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getHNSWElementNeighbors(1, &neighbours),
+              VecSimDebugCommandCode_OK);
+    // Expect 1 neighbors at level 0 (id=3) and that 0 is NOT a new neighbor for 1.
+    ASSERT_EQ(neighbours[0][0], 1);
+    ASSERT_EQ(neighbours[0][1], 3);
+    VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbours);
+
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getHNSWElementNeighbors(3, &neighbours),
+              VecSimDebugCommandCode_OK);
+    ASSERT_EQ(neighbours[0][0], 1);
+    // Expect 1 neighbors at level 0 (id=1) and that 0 is NOT a new neighbor for 3.
+    ASSERT_EQ(neighbours[0][1], 1);
+    VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbours);
+
+    auto &level_data = tiered_index->getHNSWIndex()->getElementLevelData((idType)0, 0);
+    // Expect 1 neighbors at level 0 (id=1) and that 3 is NOT a new neighbor for 0.
+    ASSERT_EQ(level_data.getNumLinks(), 1);
+    ASSERT_EQ(level_data.getLinkAtPos(0), 1);
+
+    // Expect that id=0 is a ready swap job and execute it.
+    ASSERT_EQ(tiered_index->readySwapJobs, 1);
+    ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
+    tiered_index->runGC();
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 16;
+    size_t n = 1000;
+    size_t swap_job_threshold = 10;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .blockSize = 100,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index =
+        this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, swap_job_threshold);
+    auto allocator = tiered_index->getAllocator();
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    // Create and insert vectors one by one inplace.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i);
+    }
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
+
+    // Update vectors while changing the write mode.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        EXPECT_EQ(tiered_index->addVector(vector, i), 0);
+        if (i % 10 == 0) {
+            // Change mode every 10 vectors.
+            auto next_mode = tiered_index->getWriteMode() == VecSim_WriteInPlace
+                                 ? VecSim_WriteAsync
+                                 : VecSim_WriteInPlace;
+            VecSim_SetWriteMode(next_mode);
+        }
+    }
+
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), n);
+    auto state = tiered_index->getHNSWIndex()->checkIntegrity();
+    ASSERT_EQ(state.valid_state, 1);
+    ASSERT_EQ(state.connections_to_repair, 0);
+}
