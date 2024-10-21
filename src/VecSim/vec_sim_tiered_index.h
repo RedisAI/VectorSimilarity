@@ -119,7 +119,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         this->flatIndexGuard.unlock_shared();
 
         // Simply query the main index and return the results while holding the lock.
-        auto processed_query_ptr = this->frontendIndex->processQuery(queryBlob);
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         this->mainIndexGuard.lock_shared();
         auto res = this->backendIndex->topKQuery(processed_query, k, queryParams);
@@ -138,7 +138,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
             return flat_results;
         }
 
-        auto processed_query_ptr = this->frontendIndex->processQuery(queryBlob);
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
         this->mainIndexGuard.lock_shared();
@@ -175,7 +175,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         // Release the flat lock and acquire the main lock.
         this->flatIndexGuard.unlock_shared();
 
-        auto processed_query_ptr = this->frontendIndex->processQuery(queryBlob);
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Simply query the main index and return the results while holding the lock.
         this->mainIndexGuard.lock_shared();
@@ -198,7 +198,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             return flat_results;
         }
 
-        auto processed_query_ptr = this->frontendIndex->processQuery(queryBlob);
+        auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
         this->mainIndexGuard.lock_shared();

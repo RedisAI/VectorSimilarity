@@ -719,7 +719,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
         // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
         // index.
-        auto storage_blob = this->frontendIndex->processForStorage(blob);
+        auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
         // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
         // label since we already checked it outside.
         this->mainIndexGuard.lock();
@@ -740,7 +740,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // internally.
             // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
             // index.
-            auto storage_blob = this->frontendIndex->processForStorage(blob);
+            auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
             this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
             return ret;
         }
