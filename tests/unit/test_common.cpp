@@ -39,7 +39,7 @@ TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
 TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     size_t dim = 4;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = 5};
     VecSimIndex *index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
 
     VecSimQueryParams qparams, zero;
@@ -173,7 +173,7 @@ TYPED_TEST(CommonIndexTest, DumpHNSWNeighborsDebugEdgeCases) {
     size_t top_level;
     int **neighbors_data;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
     VecSimIndex *index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
 
     auto res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
@@ -181,7 +181,7 @@ TYPED_TEST(CommonIndexTest, DumpHNSWNeighborsDebugEdgeCases) {
     ASSERT_EQ(neighbors_data, nullptr);
     VecSimIndex_Free(index);
 
-    HNSWParams hnsw_params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    HNSWParams hnsw_params = {.dim = dim, .metric = VecSimMetric_L2};
     index = test_utils::CreateNewIndex(hnsw_params, TypeParam::get_index_type(), true);
 
     res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
@@ -189,7 +189,7 @@ TYPED_TEST(CommonIndexTest, DumpHNSWNeighborsDebugEdgeCases) {
     ASSERT_EQ(neighbors_data, nullptr);
     VecSimIndex_Free(index);
 
-    hnsw_params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    hnsw_params = {.dim = dim, .metric = VecSimMetric_L2};
     index = test_utils::CreateNewIndex(hnsw_params, TypeParam::get_index_type());
 
     res = VecSimDebug_GetElementNeighborsInHNSWGraph(index, 0, &neighbors_data);
@@ -522,7 +522,7 @@ TEST(CommonAPITest, testlogBasic) {
     logCtx log;
     log.prefix = "test log prefix: ";
 
-    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
+    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
     VecSimParams params = {
         .algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bfParams}}, .logCtx = &log};
     auto *index =

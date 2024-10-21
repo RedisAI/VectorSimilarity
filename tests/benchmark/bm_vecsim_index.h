@@ -95,7 +95,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                           .dim = dim,
                           .metric = VecSimMetric_Cosine,
                           .multi = is_multi,
-                          .initialCapacity = n_vectors,
                           .blockSize = block_size};
 
     indices.push_back(CreateNewIndex(bf_params));
