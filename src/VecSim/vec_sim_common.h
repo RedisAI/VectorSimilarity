@@ -17,6 +17,7 @@ extern "C" {
 // Common definitions
 #define INVALID_ID    UINT_MAX
 #define INVALID_LABEL SIZE_MAX
+#define UNUSED(x)     (void)(x)
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16

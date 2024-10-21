@@ -1579,12 +1579,12 @@ TYPED_TEST(BruteForceTest, rangeQueryCosine) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
-    for (size_t i = 0; i < dim; i++) {
-        query[i] = 1.0;
-    }
+    TEST_DATA_T normalized_query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n);
+    GenerateVector<TEST_DATA_T>(normalized_query, dim, n);
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, result_rank + 1);
-        double expected_score = index->getDistanceFrom_Unsafe(id, query);
+        double expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
         // Verify that abs difference between the actual and expected score is at most 1/10^5.
         ASSERT_EQ(score, expected_score);
     };
@@ -1592,8 +1592,8 @@ TYPED_TEST(BruteForceTest, rangeQueryCosine) {
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    VecSim_Normalize(query, dim, params.type);
-    double radius = index->getDistanceFrom_Unsafe(31, query);
+    VecSim_Normalize(normalized_query, dim, params.type);
+    double radius = index->getDistanceFrom_Unsafe(31, normalized_query);
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
     // Return results BY_ID should give the same results.
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);

@@ -18,10 +18,11 @@ protected:
 
 public:
     BruteForceIndex_Single(const BFParams *params,
-                           const AbstractIndexInitParams &abstractInitParams);
+                           const AbstractIndexInitParams &abstractInitParams,
+                           const IndexComponents<DataType, DistType> &components);
     ~BruteForceIndex_Single() = default;
 
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
@@ -97,13 +98,14 @@ protected:
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(
-    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
-    : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+    const IndexComponents<DataType, DistType> &components)
+    : BruteForceIndex<DataType, DistType>(params, abstractInitParams, components),
       labelToIdLookup(this->allocator) {}
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                          void *auxiliaryCtx) {
+int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
+                                                          labelType label) {
 
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
@@ -178,5 +180,5 @@ BruteForceIndex_Single<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
     }
     idType id = optionalId->second;
 
-    return this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
+    return this->calcDistance(this->getDataByInternalId(id), vector_data);
 }

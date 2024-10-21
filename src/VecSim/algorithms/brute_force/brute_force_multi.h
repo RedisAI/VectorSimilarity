@@ -17,13 +17,14 @@ private:
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> labelToIdsLookup;
 
 public:
-    BruteForceIndex_Multi(const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
-        : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
+    BruteForceIndex_Multi(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+                          const IndexComponents<DataType, DistType> &components)
+        : BruteForceIndex<DataType, DistType>(params, abstractInitParams, components),
           labelToIdsLookup(this->allocator) {}
 
     ~BruteForceIndex_Multi() = default;
 
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType labelType) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
@@ -93,8 +94,7 @@ private:
 /******************************* Implementation **********************************/
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                         void *auxiliaryCtx) {
+int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label) {
     this->appendVector(vector_data, label);
     return 1;
 }
@@ -203,7 +203,7 @@ BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom_Unsafe(labelType labe
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
+        DistType d = this->calcDistance(this->getDataByInternalId(id), vector_data);
         dist = (dist < d) ? dist : d;
     }
 

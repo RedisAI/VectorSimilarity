@@ -184,7 +184,7 @@ public:
                     std::shared_ptr<VecSimAllocator> allocator);
     virtual ~TieredHNSWIndex();
 
-    int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
@@ -197,7 +197,7 @@ public:
     VecSimInfoIterator *infoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
+        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
         void *queryBlobCopy = this->allocator->allocate(blobSize);
         memcpy(queryBlobCopy, queryBlob, blobSize);
         return new (this->allocator)
@@ -420,9 +420,14 @@ template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
+
+    // Preprocess for storage and indexing in the hnsw index
+    ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
+    const void *processed_storage_blob = processed_blobs.getStorageBlob();
+    const void *processed_for_index = processed_blobs.getQueryBlob();
+
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
-    AddVectorCtx state = {0};
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
@@ -438,8 +443,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
         // we hold the main index lock for exclusive access.
-        state = hnsw_index->storeNewElement(label, blob);
-        if (releaseFlatGuard) {
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
+        if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
 
@@ -451,7 +456,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
             hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->addVector(blob, label, &state);
+        hnsw_index->indexVector(processed_for_index, label, state);
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
@@ -463,8 +468,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // At this point we are certain that the index has enough capacity for the new element, and
         // this call will not resize the index.
-        state = hnsw_index->storeNewElement(label, blob);
-        if (releaseFlatGuard) {
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
+        if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
 
@@ -472,7 +477,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
             hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->addVector(blob, label, &state);
+        hnsw_index->indexVector(processed_for_index, label, state);
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
@@ -695,9 +700,13 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     return output.size();
 }
 
+// In the tiered index, we assume that the blobs are processed by the flat buffer
+// before being transferred to the HNSW index.
+// When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
+// the flat buffer is full, we must manually preprocess the blob according to the **frontend** index
+// parameters.
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
-                                                   void *auxiliaryCtx) {
+int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
     // writeMode is not protected since it is assumed to be called only from the "main thread"
@@ -707,10 +716,14 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         if (!this->backendIndex->isMultiValue()) {
             ret -= this->deleteVector(label);
         }
+
+        // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
+        // index.
+        auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
         // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
         // label since we already checked it outside.
         this->mainIndexGuard.lock();
-        hnsw_index->addVector(blob, label);
+        hnsw_index->addVector(storage_blob.get(), label);
         this->mainIndexGuard.unlock();
         return ret;
     }
@@ -725,7 +738,10 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
             // directly to HNSW. Since flat buffer guard was not held, no need to release it
             // internally.
-            this->insertVectorToHNSW<false>(hnsw_index, label, blob);
+            // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
+            // index.
+            auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+            this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer
@@ -953,8 +969,8 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->index->mainIndexGuard.lock_shared();
-        this->hnsw_iterator =
-            this->index->backendIndex->newBatchIterator(getQueryBlob(), queryParams);
+        this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
+            this->flat_iterator->getQueryBlob(), queryParams);
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         hnsw_code = cur_hnsw_results->code;
         this->hnsw_results.swap(cur_hnsw_results->results);

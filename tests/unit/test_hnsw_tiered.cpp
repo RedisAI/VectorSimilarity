@@ -24,6 +24,11 @@ protected:
         auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
         return tiered_index->getHNSWIndex();
     }
+
+    BruteForceIndex<data_t, dist_t> *GetFlatIndex(TieredHNSWIndex<data_t, dist_t> *tiered_index) {
+        return tiered_index->frontendIndex;
+    }
+
     TieredHNSWIndex<data_t, dist_t> *CreateTieredHNSWIndex(VecSimParams &hnsw_params,
                                                            tieredIndexMock &mock_thread_pool,
                                                            size_t swap_job_threshold = 0,
@@ -69,7 +74,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
 
     // Add a vector to the flat index.
     TEST_DATA_T vector[tiered_index->backendIndex->getDim()];
-    GenerateVector<TEST_DATA_T>(vector, tiered_index->backendIndex->getDim());
+    GenerateVector<TEST_DATA_T>(vector, tiered_index->backendIndex->getDim(), 0.5f);
     labelType vector_label = 1;
     VecSimIndex_AddVector(tiered_index->frontendIndex, vector, vector_label);
 
@@ -3090,6 +3095,192 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearchCosine) {
+    size_t n = 800;
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .initialCapacity = n / 2};
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = TEST_DATA_T(i + 1) / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        // Use as label := n - (internal id)
+        VecSimIndex_AddVector(tiered_index, f, n - i);
+    }
+
+    // Move some of the vectors to the hnsw index
+    for (size_t i = 0; i < 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(frontend_index->indexSize(), n - 10);
+    ASSERT_EQ(hnsw_index->indexSize(), 10);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+    TEST_DATA_T query[dim];
+    TEST_DATA_T normalized_query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0;
+        normalized_query[i] = 1.0;
+    }
+
+    VecSim_Normalize(normalized_query, dim, params.type);
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, result_rank + 1);
+        double expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+        ASSERT_EQ(score, expected_score);
+    };
+    uint expected_num_results = 31;
+    // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
+    // to get the radius.
+    double radius = tiered_index->getDistanceFrom_Unsafe(31, normalized_query);
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_SCORE);
+
+    // Return results BY_ID should give the same results.
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_ID);
+
+    // Index rest of the vectors and run the same test again.
+    for (size_t i = 0; i < n - 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_SCORE);
+
+    // Return results BY_ID should give the same results.
+    runRangeQueryTest(tiered_index, query, radius, verify_res, expected_num_results, BY_ID);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, TopKCosine) {
+    size_t n = 100;
+    size_t dim = 128;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+    };
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 1; i <= n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        VecSimIndex_AddVector(tiered_index, f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+
+    // Move some of the vectors to the hnsw index
+    for (size_t i = 0; i < 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(frontend_index->indexSize(), n - 10);
+    ASSERT_EQ(hnsw_index->indexSize(), 10);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, (n - result_rank));
+        TEST_DATA_T expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+        ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
+    };
+    runTopKSearchTest(tiered_index, query, 10, verify_res);
+
+    // Index rest of the vectors and run the same test again.
+    for (size_t i = 0; i < n - 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+    runTopKSearchTest(tiered_index, query, 10, verify_res);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorCosine) {
+    size_t n = 100;
+    size_t dim = 128;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+    };
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 1; i <= n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        VecSimIndex_AddVector(tiered_index, f, i);
+    }
+
+    // Move some of the vectors to the hnsw index
+    for (size_t i = 0; i < 10; i++) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+    ASSERT_EQ(frontend_index->indexSize(), n - 10);
+    ASSERT_EQ(hnsw_index->indexSize(), 10);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
+    // Test with batch iterator.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+    size_t iteration_num = 0;
+
+    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+    // in every iteration. The order should be from the largest to the lowest id.
+    size_t n_res = 10;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::vector<size_t> expected_ids(n_res);
+        auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            TEST_DATA_T expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+            ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, n / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     size_t dim = 4;
     size_t k = 11;
@@ -3799,4 +3990,299 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
     auto state = tiered_index->getHNSWIndex()->checkIntegrity();
     ASSERT_EQ(state.valid_state, 1);
     ASSERT_EQ(state.connections_to_repair, 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, CosineTest) {
+    // Create TieredHNSW index with cosine metric
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    // Both indices' metric should be Cosine
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    ASSERT_EQ(frontend_index->getMetric(), VecSimMetric_Cosine);
+
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_EQ(hnsw_index->getMetric(), VecSimMetric_Cosine);
+
+    // However, We assume that all the blobs are normalized before sent to the HNSW index.
+    // and the hnsw index should not normalize the vectors.
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 1);
+
+    // Add a vector directly to the hnsw index.
+    VecSimIndex_AddVector(hnsw_index, vector, 0);
+    // Verify that the vector was not normalized.
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(
+        reinterpret_cast<const TEST_DATA_T *>(hnsw_index->getDataByInternalId(0)), vector, dim));
+
+    // Add the same vector to the flat index.
+    VecSimIndex_AddVector(frontend_index, vector, 0);
+    // Verify that the stored vector is normalized.
+    VecSim_Normalize(vector, dim, TypeParam::get_index_type());
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(
+        reinterpret_cast<const TEST_DATA_T *>(frontend_index->getDataByInternalId(0)), vector,
+        dim));
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, AddVectorCosine) {
+    // Create TieredHNSW index with cosine metric
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+    // Create tiered index with buffer limit set to 1.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 0, 1);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    TEST_DATA_T value = 1;
+    TEST_DATA_T normalized_vec[dim];
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, value);
+    GenerateVector<TEST_DATA_T>(normalized_vec, dim, value);
+    VecSim_Normalize(normalized_vec, dim, TypeParam::get_index_type());
+
+    // Add a vector to the flat buffer
+    VecSimIndex_AddVector(tiered_index, vector, 0);
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 0);
+
+    // Verify the vector is normalized in the flat index.
+    {
+        SCOPED_TRACE("Store in the flat buffer");
+        // Verify that the vector stored in the flat buffer is normalized.
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        frontend_index->getDataByLabel(0, stored_vec);
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+
+    // Add another vector and exceed the flat buffer capacity.
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    // First vector was not yet moved to the hnsw index, so the new vector should be inserted
+    // directly to the hnsw, due to lack of space in the flat index.
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 1);
+    {
+        SCOPED_TRACE("Full buffer; add vector directly to hnsw");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(1, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+
+    // execute the first vector insertion job
+    mock_thread_pool.thread_iteration();
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 2);
+    {
+        SCOPED_TRACE("Execute insertion job");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(0, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+
+    // Change the mode to WriteInPlace
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    VecSimIndex_AddVector(tiered_index, vector, 2);
+    // Reset mode.
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 3);
+    {
+        SCOPED_TRACE("Add vector in WriteInPlace mode");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(2, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+    }
+}
+
+template <typename DataType>
+class PreprocessorDoubleValue : public PreprocessorInterface {
+private:
+    size_t dim;
+
+public:
+    PreprocessorDoubleValue(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        : PreprocessorInterface(allocator), dim(dim) {}
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
+
+        // One blob was already allocated by a previous preprocessor(s) that process both blobs the
+        // same. The blobs are pointing to the same memory, we need to allocate another memory slot
+        // to split them.
+        if ((storage_blob == query_blob) && (query_blob != nullptr)) {
+            storage_blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(storage_blob, query_blob, processed_bytes_count);
+        }
+
+        // Either both are nullptr or they are pointing to different memory slots. Both cases are
+        // handled by the designated functions.
+        this->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
+        this->preprocessQuery(original_blob, query_blob, processed_bytes_count, alignment);
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(processed_bytes_count);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
+                                unsigned char alignment) const override {
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
+        // If the blob was not allocated yet, allocate it.
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+};
+
+TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
+    // Create TieredHNSW index with cosine metric
+    constexpr size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+    // Create tiered index with buffer limit set to 1.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 0, 1);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    TEST_DATA_T value = 50;
+    TEST_DATA_T normalized_vec[dim];
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, value);
+    GenerateVector<TEST_DATA_T>(normalized_vec, dim, value);
+    VecSim_Normalize(normalized_vec, dim, TypeParam::get_index_type());
+    TEST_DATA_T query[dim] = {0.1, 0.2, 0.3, 0.4};
+    TEST_DATA_T normalized_query[dim] = {0.1, 0.2, 0.3, 0.4};
+    VecSim_Normalize(normalized_query, dim, TypeParam::get_index_type());
+
+    // the backend index (HNSW) was created with a basic PP container, so we need to replace it with
+    // a preprocessor container that is able to hold a preprocessor array.
+    constexpr size_t n_preprocessors = 1;
+    auto multiPPContainer = new (allocator)
+        MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getAlignment());
+    auto pp_double_value = new (allocator) PreprocessorDoubleValue<TEST_DATA_T>(allocator, dim);
+    ASSERT_EQ(multiPPContainer->addPreprocessor(pp_double_value), 0);
+
+    // replace the hnsw PP container
+    hnsw_index->replacePPContainer(multiPPContainer);
+
+    // Add a vector to the flat buffer.
+    VecSimIndex_AddVector(tiered_index, vector, 0);
+
+    {
+        SCOPED_TRACE("Store in the flat buffer");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        frontend_index->getDataByLabel(0, stored_vec);
+        // the vector should be normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), normalized_vec, dim));
+
+        // we search in the flat index, so the the query should be only normalized
+        auto verify_res = [&](size_t id, double score, size_t result_rank) {
+            double expected_score = tiered_index->getDistanceFrom_Unsafe(id, normalized_query);
+            ASSERT_EQ(score, expected_score);
+        };
+        runTopKSearchTest(tiered_index, query, 1, verify_res);
+        runRangeQueryTest(tiered_index, query, 0.5, verify_res, 1, BY_SCORE);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        runBatchIteratorSearchTest(batchIterator, 1, verify_res);
+        VecSimBatchIterator_Free(batchIterator);
+    }
+
+    // Add another vector and exceed the flat buffer capacity. The vector should be stored directly
+    // in the hnsw index
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 1);
+    TEST_DATA_T norm_double_vec[dim];
+    TEST_DATA_T norm_double_query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        norm_double_vec[i] = 2 * normalized_vec[i];
+        norm_double_query[i] = 2 * normalized_query[i];
+    }
+    {
+        SCOPED_TRACE("Full buffer; add vector directly to hnsw");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(1, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized *and doubled*.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), norm_double_vec, dim));
+        auto verify_res = [&](size_t label, double score, size_t result_rank) {
+            double expected_score = INVALID_SCORE;
+            if (label == 0) { // the result in the flat buffer
+                expected_score = frontend_index->calcDistance(normalized_query, normalized_vec);
+            }
+            if (label == 1) { // the result in the hnsw index
+                expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+            }
+            ASSERT_EQ(score, expected_score) << "label: " << label;
+        };
+
+        size_t k = 2;
+        runTopKSearchTest(tiered_index, query, k, verify_res);
+        runRangeQueryTest(tiered_index, query, 100, verify_res, k, BY_SCORE);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        runBatchIteratorSearchTest(batchIterator, k, verify_res);
+        VecSimBatchIterator_Free(batchIterator);
+    }
+
+    // Move the first vector to the hnsw index.
+    mock_thread_pool.thread_iteration();
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 2);
+    {
+        SCOPED_TRACE("Execute insertion job");
+        std::vector<std::vector<TEST_DATA_T>> stored_vec;
+        hnsw_index->getDataByLabel(0, stored_vec);
+        // Verify that the vector stored in the hnsw is normalized *and doubled*.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec[0].data(), norm_double_vec, dim));
+        // Both vector were processed by the hnsw preprocessor, as well as the query.
+        // The score should be the distance from the doubled query to the doubled vector.
+        auto verify_res = [&](size_t label, double score, size_t result_rank) {
+            double expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+            ASSERT_EQ(score, expected_score) << "label: " << label;
+        };
+
+        size_t k = 2;
+        runTopKSearchTest(tiered_index, query, k, verify_res);
+        runRangeQueryTest(tiered_index, query, 100, verify_res, k, BY_SCORE);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        runBatchIteratorSearchTest(batchIterator, k, verify_res);
+        VecSimBatchIterator_Free(batchIterator);
+    }
 }

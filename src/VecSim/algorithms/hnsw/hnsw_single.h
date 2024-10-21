@@ -29,15 +29,18 @@ private:
 
 public:
     HNSWIndex_Single(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
+                     const IndexComponents<DataType, DistType> &components,
                      size_t random_seed = 100, size_t initial_pool_size = 1)
-        : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed,
+                                        initial_pool_size),
           labelLookup(this->maxElements, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
                      const AbstractIndexInitParams &abstractInitParams,
+                     const IndexComponents<DataType, DistType> &components,
                      Serializer::EncodingVersion version)
-        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
@@ -66,7 +69,7 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         return getDistanceFromInternal(label, vector_data);
@@ -109,7 +112,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     }
     idType id = it->second;
 
-    return this->distFunc(vector_data, this->getDataByInternalId(id), this->dim);
+    return this->calcDistance(vector_data, this->getDataByInternalId(id));
 }
 
 template <typename DataType, typename DistType>
@@ -140,22 +143,16 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                    void *auxiliaryCtx) {
-
+int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
+                                                    const labelType label) {
     // Checking if an element with the given label already exists.
-    bool label_exists = false;
-    // Note that is it the caller responsibility to ensure that this label doesn't exist in the
-    // index and increase the element count before calling this, if auxiliaryCtx is *not* NULL.
-    if (auxiliaryCtx == nullptr) {
-        if (labelLookup.find(label) != labelLookup.end()) {
-            label_exists = true;
-            // Remove the vector in place if override allowed (in non-async scenario).
-            deleteVector(label);
-        }
+    bool label_exists = labelLookup.find(label) != labelLookup.end();
+    if (label_exists) {
+        // Remove the vector in place if override allowed (in non-async scenario).
+        deleteVector(label);
     }
-    this->appendVector(vector_data, label, (AddVectorCtx *)auxiliaryCtx);
-    // Return the delta in the index size due to the insertion.
+
+    this->appendVector(vector_data, label);
     return label_exists ? 0 : 1;
 }
 
@@ -163,9 +160,10 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) const {
-    auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    auto queryBlobCopy =
+        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-
+    this->preprocessQueryInPlace(queryBlobCopy);
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);
