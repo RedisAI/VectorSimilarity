@@ -388,7 +388,7 @@ public:
                         indexGuard.lock_shared();
                         exclusive = false;
                     } else {
-                        // Lock exclusively if we are not performing resizing due to a new block.
+                        // Lock exclusively if we are performing resizing due to a new block.
                         indexGuard.lock();
                     }
                     barriar.unlock();
