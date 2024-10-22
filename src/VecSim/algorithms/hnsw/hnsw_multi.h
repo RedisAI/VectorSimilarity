@@ -54,7 +54,7 @@ private:
 public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                     const IndexComponents<DataType, DistType> &components, size_t random_seed = 100,
-                    size_t initial_pool_size = 1)
+                    size_t initial_pool_size = 0)
         : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed,
                                         initial_pool_size),
           labelLookup(this->maxElements, this->allocator) {}

@@ -84,6 +84,9 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
     void fitMemory() override {
+        if (count == 0) {
+            return;
+        }
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
     }
@@ -144,9 +147,6 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
-    // Round up the initial capacity to the nearest multiple of the block size.
-    size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
-    this->idToLabelMapping.resize(initialCapacity);
     vectors = new (this->allocator)
         DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
 }

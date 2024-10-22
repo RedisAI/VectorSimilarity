@@ -49,7 +49,6 @@ def load_or_create_hnsw_index(dataset, index_file_name, is_multi, data_type, ef_
     hnswparams = HNSWParams()
     hnswparams.M = M
     hnswparams.efConstruction = ef_construction
-    hnswparams.initialCapacity = len(X_train)
     hnswparams.dim = dimension
     hnswparams.type = data_type
     hnswparams.metric = get_vecsim_metric(distance)
@@ -76,7 +75,6 @@ def measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_quer
 
     # Create BF index to compare hnsw results with
     bfparams = BFParams()
-    bfparams.initialCapacity = len(X_train)
     bfparams.dim = int(dataset.attrs['dimension']) if 'dimension' in dataset.attrs else len(X_train[0])
     bfparams.type = data_type
     bfparams.metric = get_vecsim_metric(dataset.attrs['distance'])
