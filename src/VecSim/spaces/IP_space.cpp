@@ -54,7 +54,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #endif
     case ARCH_OPT_NONE:
         break;
-    } // switch
+    }  // switch
 #endif // __x86_64__
     return ret_dist_func;
 }
@@ -116,7 +116,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 #endif
     case ARCH_OPT_NONE:
         break;
-    } // switch
+    }  // switch
 #endif // __x86_64__ */
     return ret_dist_func;
 }
