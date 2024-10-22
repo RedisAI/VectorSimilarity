@@ -513,9 +513,12 @@ def test_parallel_insert_batch_search():
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
     chunk_size = int(num_queries/2)
+    total_correct_prev_chunk = 0
     for i in range(0, num_queries, chunk_size):
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(total_results_parallel[j]))
+        assert total_correct_cur_chunk >= total_correct_prev_chunk
+        total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")
