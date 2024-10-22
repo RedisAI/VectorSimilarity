@@ -8,6 +8,7 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 
@@ -16,17 +17,17 @@ using float16 = vecsim_types::float16;
 
 namespace BruteForceFactory {
 template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *
-NewIndex_ChooseMultiOrSingle(const BFParams *params,
-                             const AbstractIndexInitParams &abstractInitParams) {
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
+                                                 const AbstractIndexInitParams &abstractInitParams,
+                                                 IndexComponents<DataType, DistType> &components) {
 
     // check if single and return new bf_index
     if (params->multi)
         return new (abstractInitParams.allocator)
-            BruteForceIndex_Multi<DataType, DistType>(params, abstractInitParams);
+            BruteForceIndex_Multi<DataType, DistType>(params, abstractInitParams, components);
     else
         return new (abstractInitParams.allocator)
-            BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams);
+            BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, components);
 }
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
@@ -43,30 +44,49 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params)
     return abstractInitParams;
 }
 
-VecSimIndex *NewIndex(const VecSimParams *params) {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const BFParams *bfParams = &params->algoParams.bfParams;
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
-    return NewIndex(bfParams, NewAbstractInitParams(params));
+    return NewIndex(bfParams, abstractInitParams, is_normalized);
 }
 
-VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams) {
+VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
+                      bool is_normalized) {
+    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
+    // and query blobs.
+    VecSimMetric metric;
+    if (is_normalized && bfparams->metric == VecSimMetric_Cosine) {
+        metric = VecSimMetric_IP;
+    } else {
+        metric = bfparams->metric;
+    }
     if (bfparams->type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams);
+        IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
+            abstractInitParams.allocator, metric, bfparams->dim);
+        return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComponents);
     } else if (bfparams->type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams);
+        IndexComponents<double, double> indexComponents = CreateIndexComponents<double, double>(
+            abstractInitParams.allocator, metric, bfparams->dim);
+        return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComponents);
     } else if (bfparams->type == VecSimType_BFLOAT16) {
-        return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams);
+        IndexComponents<bfloat16, float> indexComponents = CreateIndexComponents<bfloat16, float>(
+            abstractInitParams.allocator, metric, bfparams->dim);
+        return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams,
+                                                             indexComponents);
     } else if (bfparams->type == VecSimType_FLOAT16) {
-        return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams);
+        IndexComponents<float16, float> indexComponents = CreateIndexComponents<float16, float>(
+            abstractInitParams.allocator, metric, bfparams->dim);
+        return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
+                                                            indexComponents);
     }
 
     // If we got here something is wrong.
     return NULL;
 }
 
-VecSimIndex *NewIndex(const BFParams *bfparams) {
+VecSimIndex *NewIndex(const BFParams *bfparams, bool is_normalized) {
     VecSimParams params = {.algoParams{.bfParams = BFParams{*bfparams}}};
-    return NewIndex(&params);
+    return NewIndex(&params, is_normalized);
 }
 
 template <typename DataType, typename DistType = DataType>
@@ -86,14 +106,19 @@ size_t EstimateInitialSize(const BFParams *params) {
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
     if (params->type == VecSimType_FLOAT32) {
+        est += EstimateComponentsMemory<float, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
+        est += EstimateComponentsMemory<double, double>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     } else if (params->type == VecSimType_BFLOAT16) {
+        est += EstimateComponentsMemory<bfloat16, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<bfloat16, float>(params->multi);
     } else if (params->type == VecSimType_FLOAT16) {
+        est += EstimateComponentsMemory<float16, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
+
     est += sizeof(DataBlocksContainer) + allocations_overhead;
     return est;
 }

@@ -1372,12 +1372,14 @@ TYPED_TEST(HNSWTest, testCosine) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     TEST_DATA_T query[dim];
+    TEST_DATA_T normalized_query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
-    VecSim_Normalize(query, dim, params.type);
+    GenerateVector<TEST_DATA_T>(normalized_query, dim, 1.0);
+    VecSim_Normalize(normalized_query, dim, params.type);
 
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
-        TEST_DATA_T expected_score = index->getDistanceFrom_Unsafe(id, query);
+        TEST_DATA_T expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
         ASSERT_DOUBLE_EQ(score, expected_score);
     };
 
@@ -1394,7 +1396,7 @@ TYPED_TEST(HNSWTest, testCosine) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
             ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
-            double expected_score = index->getDistanceFrom_Unsafe(id, query);
+            double expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
             ASSERT_DOUBLE_EQ(score, expected_score);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
@@ -1638,20 +1640,22 @@ TYPED_TEST(HNSWTest, rangeQueryCosine) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
+    TEST_DATA_T normalized_query[dim];
     for (size_t i = 0; i < dim; i++) {
         query[i] = 1.0;
+        normalized_query[i] = 1.0;
     }
 
-    VecSim_Normalize(query, dim, params.type);
+    VecSim_Normalize(normalized_query, dim, params.type);
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, result_rank + 1);
-        double expected_score = index->getDistanceFrom_Unsafe(id, query);
+        double expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
         ASSERT_EQ(score, expected_score);
     };
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    double radius = index->getDistanceFrom_Unsafe(31, query);
+    double radius = index->getDistanceFrom_Unsafe(31, normalized_query);
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
 
     // Return results BY_ID should give the same results.

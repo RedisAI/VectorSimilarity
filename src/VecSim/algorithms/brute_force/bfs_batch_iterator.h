@@ -25,13 +25,12 @@ private:
 
         idType curr_id = 0;
         auto vectors_it = this->index->getVectorsIterator();
-        auto DistFunc = this->index->getDistFunc();
         while (auto *vector = vectors_it->next()) {
             // Compute the scores for every vector and extend the scores array.
             if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
                 return VecSim_QueryReply_TimedOut;
             }
-            auto score = DistFunc(vector, this->getQueryBlob(), this->index->getDim());
+            auto score = this->index->calcDistance(vector, this->getQueryBlob());
             this->scores.emplace_back(score, this->index->getVectorLabel(curr_id));
             ++curr_id;
         }
