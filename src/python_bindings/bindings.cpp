@@ -368,9 +368,14 @@ public:
         if (n_threads <= 0) {
             n_threads = (int)std::thread::hardware_concurrency();
         }
-        // Lock in every iteration to ensure we acquire the right lock (read/write) and
-        // to create a barriar so other threads won't call "add_vector" with the inappropriate lock.
-        std::mutex barriar;
+        // The decision as to when to allocate a new block is made by the index internally in the
+        // "addVector" function, where there is an internal counter that is incremented for each
+        // vector. To ensure that the thread which is taking the write lock is the one that performs
+        // the resizing, we make sure that no other thread is allowed to bypass the thread for which
+        // the global counter is a multiple of the block size. Hence, we use the barrier lock and
+        // lock in every iteration to ensure we acquire the right lock (read/write) based on the
+        // global counter, so threads won't call "addVector" with the inappropriate lock.
+        std::mutex barrier;
         std::atomic<int> global_counter{};
         size_t block_size = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.blockSize;
         auto parallel_insert =
@@ -378,10 +383,10 @@ public:
                 const py::array_t<labelType, py::array::c_style | py::array::forcecast> &labels) {
                 while (true) {
                     bool exclusive = true;
-                    barriar.lock();
+                    barrier.lock();
                     int ind = global_counter++;
                     if (ind >= n_vectors) {
-                        barriar.unlock();
+                        barrier.unlock();
                         break;
                     }
                     if (ind % block_size != 0) {
@@ -391,7 +396,7 @@ public:
                         // Lock exclusively if we are performing resizing due to a new block.
                         indexGuard.lock();
                     }
-                    barriar.unlock();
+                    barrier.unlock();
                     this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
                     exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
                 }

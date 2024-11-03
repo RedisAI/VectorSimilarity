@@ -41,13 +41,9 @@ VisitedNodesHandler::~VisitedNodesHandler() noexcept { allocator->free_allocatio
 /**
  * VisitedNodesHandlerPool methods to enable parallel graph scans.
  */
-VisitedNodesHandlerPool::VisitedNodesHandlerPool(size_t initial_pool_size, int cap,
+VisitedNodesHandlerPool::VisitedNodesHandlerPool(int cap,
                                                  const std::shared_ptr<VecSimAllocator> &allocator)
-    : VecsimBaseObject(allocator), pool(initial_pool_size, allocator), num_elements(cap),
-      total_handlers_in_use(0) {
-    for (size_t i = 0; i < initial_pool_size; i++)
-        pool[i] = new (allocator) VisitedNodesHandler(cap, allocator);
-}
+    : VecsimBaseObject(allocator), pool(allocator), num_elements(cap), total_handlers_in_use(0) {}
 
 VisitedNodesHandler *VisitedNodesHandlerPool::getAvailableVisitedNodesHandler() {
     VisitedNodesHandler *handler;

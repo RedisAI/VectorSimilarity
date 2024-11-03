@@ -223,8 +223,7 @@ protected:
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-              const IndexComponents<DataType, DistType> &components, size_t random_seed = 100,
-              size_t initial_pool_size = 1);
+              const IndexComponents<DataType, DistType> &components, size_t random_seed = 100);
     virtual ~HNSWIndex();
 
     void setEf(size_t ef);
@@ -1598,11 +1597,11 @@ template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          const IndexComponents<DataType, DistType> &components,
-                                         size_t random_seed, size_t pool_initial_size)
+                                         size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       VecSimIndexTombstone(), maxElements(0), vectorBlocks(this->allocator),
       graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
+      visitedNodesHandlerPool(maxElements, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;

@@ -276,6 +276,8 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     TEST_DATA_T vec1[] = {1.0, 0.0};
     int before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec1, 1);
+    // Since the memory before did not account for the visited nodes handler pool (it was created
+    // lazily), we need to clear it before calculating the delta.
     hnswIndex->visitedNodesHandlerPool.clearPool();
     int allocation_delta = allocator->getAllocationSize() - before;
     size_t vec_max_level = hnswIndex->getGraphDataByInternalId(1)->toplevel;
@@ -451,6 +453,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to
     // zero, while in others the entire capacity reduced to zero (including the header).
+    // Also, visitedNodesHandlerPool that was created lazily is not freed, but it should not be
+    // accounted when comparing to the initial memory size estimation of the index.
     hnswIndex->visitedNodesHandlerPool.clearPool();
     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
                                                   block_vectors_memory + hash_table_memory +

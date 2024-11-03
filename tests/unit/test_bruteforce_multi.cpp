@@ -419,7 +419,7 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     for (auto label_ids : bfm_index->labelToIdsLookup) {
         ASSERT_EQ(label_ids.second.size(), n / n_labels);
     }
-    // id2label size should remain the same since n is a multiplication of bs.
+    // id2label size should be equal to the index size.
     ASSERT_EQ(bfm_index->idToLabelMapping.size(), n);
 
     labelType id1_prev_label = bfm_index->getVectorLabel(1);

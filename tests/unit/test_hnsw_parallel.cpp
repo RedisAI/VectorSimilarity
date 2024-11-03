@@ -96,6 +96,30 @@ protected:
         VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
     }
 
+    void insertVectorParallelSafe(VecSimIndex *parallel_index, size_t dim, labelType label,
+                                  data_t val, std::shared_mutex &indexGuard,
+                                  std::atomic_int &counter, std::mutex &barrier) {
+        // The decision as to when to allocate a new block is made by the index internally in the
+        // "addVector" function, where there is an internal counter that is incremented for each
+        // vector. To ensure that the thread which is taking the write lock is the one that performs
+        // the resizing, we make sure that no other thread is allowed to bypass the thread for which
+        // the global counter is a multiple of the block size. Hence, we use the barrier lock and
+        // lock in every iteration to ensure we acquire the right lock (read/write) based on the
+        // global counter, so threads won't call "addVector" with the inappropriate lock.
+        bool exclusive = true;
+        barrier.lock();
+        if (counter++ % DEFAULT_BLOCK_SIZE != 0) {
+            indexGuard.lock_shared();
+            exclusive = false;
+        } else {
+            // Lock exclusively if we are performing resizing due to a new block.
+            indexGuard.lock();
+        }
+        barrier.unlock();
+        GenerateAndAddVector<data_t>(parallel_index, dim, label, val);
+        exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
+    }
+
     void parallelInsertSearch(bool is_multi);
 };
 
@@ -363,23 +387,17 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     VecSimIndex *parallel_index = this->CreateNewIndex(params);
     size_t n_threads = 10;
 
-    // Save the number fo tasks done by thread i in the i-th entry.
+    // Save the number of tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
     std::atomic<int> counter{0};
+    std::mutex barrier;
 
     auto parallel_insert = [&](int myID) {
         for (labelType label = myID; label < n; label += n_threads) {
             completed_tasks[myID]++;
-            // Lock exclusively unless we are not performing resizing due to a new block.
-            bool exclusive = true;
-            indexGuard.lock();
-            if (counter++ % DEFAULT_BLOCK_SIZE != 0) {
-                indexGuard.unlock();
-                indexGuard.lock_shared();
-                exclusive = false;
-            }
-            GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
-            exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
+            // Insert vector while acquire the guard lock exclusively if we are performing resizing.
+            this->insertVectorParallelSafe(parallel_index, dim, label, label, indexGuard, counter,
+                                           barrier);
         }
     };
     std::thread thread_objs[n_threads];
@@ -435,19 +453,14 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
     std::atomic<int> counter{0};
+    std::mutex barrier;
+
     auto parallel_insert = [&](int myID) {
         for (size_t i = myID; i < n; i += n_threads) {
             completed_tasks[myID]++;
-            // Lock exclusively unless we are not performing resizing due to a new block.
-            bool exclusive = true;
-            indexGuard.lock();
-            if (counter++ % DEFAULT_BLOCK_SIZE != 0) {
-                indexGuard.unlock();
-                indexGuard.lock_shared();
-                exclusive = false;
-            }
-            GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, i % n_labels, i);
-            exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
+            // Insert vector while acquire the guard lock exclusively if we are performing resizing.
+            this->insertVectorParallelSafe(parallel_index, dim, i % n_labels, i, indexGuard,
+                                           counter, barrier);
         }
     };
     std::thread thread_objs[n_threads];
@@ -797,22 +810,16 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         }
     };
 
-    std::atomic<int> counter{0};
+    std::atomic<int> counter{static_cast<int>(hnsw_index->indexSize())};
+    std::mutex barrier;
+
     auto parallel_insert = [&](int myID) {
         // Reinsert the even ids that were deleted, and n/4 more even ids.
         for (labelType label = 2 * myID; label < n; label += n_threads) {
-            // Lock exclusively unless we are not performing resizing due to a new block.
-            bool exclusive = true;
-            indexGuard.lock();
-            if (counter++ % DEFAULT_BLOCK_SIZE != 0) {
-                indexGuard.unlock();
-                indexGuard.lock_shared();
-                exclusive = false;
-            }
             completed_tasks[myID]++;
-            GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, label, label);
-            exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
-            completed_tasks[myID]++;
+            // Insert vector while acquire the guard lock exclusively if we are performing resizing.
+            this->insertVectorParallelSafe(hnsw_index, dim, label, label, indexGuard, counter,
+                                           barrier);
         }
     };
 

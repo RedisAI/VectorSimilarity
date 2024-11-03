@@ -53,10 +53,8 @@ private:
 
 public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-                    const IndexComponents<DataType, DistType> &components, size_t random_seed = 100,
-                    size_t initial_pool_size = 0)
-        : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed,
-                                        initial_pool_size),
+                    const IndexComponents<DataType, DistType> &components, size_t random_seed = 100)
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed),
           labelLookup(this->maxElements, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.

@@ -91,7 +91,6 @@ def test_parallel_search():
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
 
     # Sequential search as the baseline
     query_data = np.float32(np.random.random((num_queries, dim)))
@@ -127,7 +126,6 @@ def test_parallel_insert():
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
 
     print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took"
           f" {g_test_index.sequential_insert_time} seconds")
