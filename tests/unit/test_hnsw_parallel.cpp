@@ -98,7 +98,7 @@ protected:
 
     void insertVectorParallelSafe(VecSimIndex *parallel_index, size_t dim, labelType label,
                                   data_t val, std::shared_mutex &indexGuard,
-                                  std::atomic_int &counter, std::mutex &barrier) {
+                                  std::atomic<size_t> &counter, std::mutex &barrier) {
         // The decision as to when to allocate a new block is made by the index internally in the
         // "addVector" function, where there is an internal counter that is incremented for each
         // vector. To ensure that the thread which is taking the write lock is the one that performs
