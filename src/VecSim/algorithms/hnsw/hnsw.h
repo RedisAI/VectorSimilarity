@@ -1600,8 +1600,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       VecSimIndexTombstone(), maxElements(0), vectorBlocks(this->allocator),
-      graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(maxElements, this->allocator) {
+      graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;

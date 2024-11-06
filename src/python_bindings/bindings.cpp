@@ -376,7 +376,7 @@ public:
         // lock in every iteration to ensure we acquire the right lock (read/write) based on the
         // global counter, so threads won't call "addVector" with the inappropriate lock.
         std::mutex barrier;
-        std::atomic<int> global_counter{};
+        std::atomic<size_t> global_counter{};
         size_t block_size = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.blockSize;
         auto parallel_insert =
             [&](const py::array &data,

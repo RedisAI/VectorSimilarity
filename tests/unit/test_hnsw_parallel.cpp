@@ -389,7 +389,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
 
     // Save the number of tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
-    std::atomic<int> counter{0};
+    std::atomic<size_t> counter{0};
     std::mutex barrier;
 
     auto parallel_insert = [&](int myID) {
@@ -452,7 +452,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
 
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
-    std::atomic<int> counter{0};
+    std::atomic<size_t> counter{0};
     std::mutex barrier;
 
     auto parallel_insert = [&](int myID) {
@@ -810,7 +810,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         }
     };
 
-    std::atomic<int> counter{static_cast<int>(hnsw_index->indexSize())};
+    std::atomic<size_t> counter{hnsw_index->indexSize()};
     std::mutex barrier;
 
     auto parallel_insert = [&](int myID) {
