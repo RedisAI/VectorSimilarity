@@ -72,8 +72,8 @@ private:
 
 public:
     PyBatchIterator(const std::shared_ptr<VecSimIndex> &vecIndex,
-                    VecSimBatchIterator *batchIterator)
-        : vectorIndex(vecIndex), batchIterator(batchIterator, VecSimBatchIterator_Free) {}
+                    const std::shared_ptr<VecSimBatchIterator> &batchIterator)
+        : vectorIndex(vecIndex), batchIterator(batchIterator) {}
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
@@ -199,10 +199,13 @@ public:
 
     size_t indexMemory() { return this->index->getAllocationSize(); }
 
-    PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
+    virtual PyBatchIterator createBatchIterator(const py::object &input,
+                                                VecSimQueryParams *query_params) {
         py::array query(input);
-        return PyBatchIterator(
-            index, VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params));
+        auto py_batch_ptr = std::shared_ptr<VecSimBatchIterator>(
+            VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params),
+            VecSimBatchIterator_Free);
+        return PyBatchIterator(index, py_batch_ptr);
     }
 
     py::object getVector(labelType label) {
@@ -226,6 +229,7 @@ public:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
+    std::shared_mutex indexGuard;      // to protect parallel operations on the index.
     template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
         std::function<VecSimQueryReply *(const char *, search_param_t, VecSimQueryParams *)>;
@@ -247,7 +251,9 @@ private:
                 if (ind >= n_queries) {
                     break;
                 }
+                indexGuard.lock_shared();
                 results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
+                indexGuard.unlock_shared();
             }
         };
         std::thread thread_objs[n_threads];
@@ -362,17 +368,37 @@ public:
         if (n_threads <= 0) {
             n_threads = (int)std::thread::hardware_concurrency();
         }
-
-        std::atomic_int global_counter(0);
+        // The decision as to when to allocate a new block is made by the index internally in the
+        // "addVector" function, where there is an internal counter that is incremented for each
+        // vector. To ensure that the thread which is taking the write lock is the one that performs
+        // the resizing, we make sure that no other thread is allowed to bypass the thread for which
+        // the global counter is a multiple of the block size. Hence, we use the barrier lock and
+        // lock in every iteration to ensure we acquire the right lock (read/write) based on the
+        // global counter, so threads won't call "addVector" with the inappropriate lock.
+        std::mutex barrier;
+        std::atomic<size_t> global_counter{};
+        size_t block_size = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.blockSize;
         auto parallel_insert =
             [&](const py::array &data,
                 const py::array_t<labelType, py::array::c_style | py::array::forcecast> &labels) {
                 while (true) {
-                    int ind = global_counter.fetch_add(1);
+                    bool exclusive = true;
+                    barrier.lock();
+                    int ind = global_counter++;
                     if (ind >= n_vectors) {
+                        barrier.unlock();
                         break;
                     }
+                    if (ind % block_size != 0) {
+                        indexGuard.lock_shared();
+                        exclusive = false;
+                    } else {
+                        // Lock exclusively if we are performing resizing due to a new block.
+                        indexGuard.lock();
+                    }
+                    barrier.unlock();
                     this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
+                    exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
                 }
             };
         std::thread thread_objs[n_threads];
@@ -409,6 +435,18 @@ public:
         } else {
             throw std::runtime_error("Invalid index data type");
         }
+    }
+    PyBatchIterator createBatchIterator(const py::object &input,
+                                        VecSimQueryParams *query_params) override {
+        py::array query(input);
+        auto del = [&](VecSimBatchIterator *pyBatchIter) {
+            VecSimBatchIterator_Free(pyBatchIter);
+            this->indexGuard.unlock_shared();
+        };
+        indexGuard.lock_shared();
+        auto py_batch_ptr = std::shared_ptr<VecSimBatchIterator>(
+            VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params), del);
+        return PyBatchIterator(index, py_batch_ptr);
     }
 };
 
@@ -585,7 +623,9 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("labels"), py::arg("num_threads") = -1)
         .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
-             py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
+             py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1)
+        .def("create_batch_iterator", &PyHNSWLibIndex::createBatchIterator, py::arg("query_blob"),
+             py::arg("query_param") = nullptr);
 
     py::class_<PyTieredIndex, PyVecSimIndex>(m, "TieredIndex")
         .def("wait_for_index", &PyTieredIndex::WaitForIndex, py::arg("waiting_duration") = 10)

@@ -8,7 +8,6 @@ class Data:
     def __init__(self, data_type, metric, dist_func, np_fuc, dim=16, num_labels=10, num_per_label=1):
         bfparams = BFParams()
 
-        bfparams.initialCapacity = num_labels
         bfparams.blockSize = num_labels
         bfparams.dim = dim
         bfparams.type = data_type
@@ -63,7 +62,6 @@ def test_bf_cosine():
     k=10
 
     bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
     bfparams.dim = dim
     bfparams.type = VecSimType_FLOAT32
@@ -99,7 +97,6 @@ def test_bf_l2():
     k=10
 
     bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
     bfparams.dim = dim
     bfparams.type = VecSimType_FLOAT32
@@ -133,7 +130,6 @@ def test_batch_iterator():
 
     # Create a brute force index for vectors of 128 floats. Use 'Cosine' as the distance metric
     bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
     bfparams.dim = dim
     bfparams.type = VecSimType_FLOAT32
@@ -184,7 +180,6 @@ def test_range_query():
     num_elements = 1000000
 
     bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
     bfparams.dim = dim
     bfparams.type = VecSimType_FLOAT32
@@ -231,7 +226,6 @@ def test_bf_multivalue():
     num_elements = num_labels * num_per_label
 
     bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
     bfparams.dim = dim
     bfparams.type = VecSimType_FLOAT32
@@ -276,7 +270,6 @@ def test_multi_range_query():
     num_elements = num_labels * per_label
 
     bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
     bfparams.dim = dim
     bfparams.metric = VecSimMetric_L2
     bfparams.multi = True

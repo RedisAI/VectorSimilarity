@@ -223,8 +223,7 @@ protected:
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-              const IndexComponents<DataType, DistType> &components, size_t random_seed = 100,
-              size_t initial_pool_size = 1);
+              const IndexComponents<DataType, DistType> &components, size_t random_seed = 100);
     virtual ~HNSWIndex();
 
     void setEf(size_t ef);
@@ -311,8 +310,10 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
     void fitMemory() override {
-        idToMetaData.shrink_to_fit();
-        resizeLabelLookup(idToMetaData.size());
+        if (maxElements > 0) {
+            idToMetaData.shrink_to_fit();
+            resizeLabelLookup(idToMetaData.size());
+        }
     }
 #endif
 
@@ -1585,7 +1586,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
-    size_t initialCapacity;
+    size_t initialCapacity;  // Deprecated and not respected.
     size_t blockSize;
     size_t M;
     size_t efConstruction;
@@ -1596,13 +1597,11 @@ template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          const IndexComponents<DataType, DistType> &components,
-                                         size_t random_seed, size_t pool_initial_size)
+                                         size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      VecSimIndexTombstone(),
-      maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
-      vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
-      idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
+      VecSimIndexTombstone(), maxElements(0), vectorBlocks(this->allocator),
+      graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -1628,10 +1627,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M0;
     levelDataSize = sizeof(ElementLevelData) + sizeof(idType) * M;
-
-    size_t initial_vector_size = this->maxElements / this->blockSize;
-    vectorBlocks.reserve(initial_vector_size);
-    graphDataBlocks.reserve(initial_vector_size);
 }
 
 template <typename DataType, typename DistType>

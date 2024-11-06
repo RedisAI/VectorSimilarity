@@ -101,11 +101,11 @@ typedef int (*SubmitCB)(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCa
  */
 typedef struct VecSimParams VecSimParams;
 typedef struct {
-    VecSimType type;     // Datatype to index.
-    size_t dim;          // Vector's dimension.
-    VecSimMetric metric; // Distance metric to use in the index.
-    bool multi;          // Determines if the index should multi-index or not.
-    size_t initialCapacity;
+    VecSimType type;        // Datatype to index.
+    size_t dim;             // Vector's dimension.
+    VecSimMetric metric;    // Distance metric to use in the index.
+    bool multi;             // Determines if the index should multi-index or not.
+    size_t initialCapacity; // Deprecated
     size_t blockSize;
     size_t M;
     size_t efConstruction;
@@ -114,11 +114,11 @@ typedef struct {
 } HNSWParams;
 
 typedef struct {
-    VecSimType type;     // Datatype to index.
-    size_t dim;          // Vector's dimension.
-    VecSimMetric metric; // Distance metric to use in the index.
-    bool multi;          // Determines if the index should multi-index or not.
-    size_t initialCapacity;
+    VecSimType type;        // Datatype to index.
+    size_t dim;             // Vector's dimension.
+    VecSimMetric metric;    // Distance metric to use in the index.
+    bool multi;             // Determines if the index should multi-index or not.
+    size_t initialCapacity; // Deprecated.
     size_t blockSize;
 } BFParams;
 

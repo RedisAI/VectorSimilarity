@@ -120,12 +120,6 @@ size_t EstimateInitialSize(const BFParams *params) {
     }
 
     est += sizeof(DataBlocksContainer) + allocations_overhead;
-    // Parameters related part.
-
-    if (params->initialCapacity) {
-        size_t aligned_cap = RoundUpInitialCapacity(params->initialCapacity, params->blockSize);
-        est += aligned_cap * sizeof(labelType) + allocations_overhead;
-    }
     return est;
 }
 

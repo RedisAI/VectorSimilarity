@@ -6,10 +6,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          const IndexComponents<DataType, DistType> &components,
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components), Serializer(version),
-      maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
       epsilon(params->epsilon), vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
-      idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(1, maxElements, this->allocator) {
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -18,6 +16,11 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // We use seed = 200 and not the default value (100) to get different sequence of
     // levels value than the loaded index.
     levelGenerator.seed(200);
+
+    // Set the initial capacity based on the number of elements in the loaded index.
+    maxElements = RoundUpInitialCapacity(this->curElementCount, this->blockSize);
+    this->idToMetaData.resize(maxElements);
+    this->visitedNodesHandlerPool.resize(maxElements);
 
     size_t initial_vector_size = maxElements / this->blockSize;
     vectorBlocks.reserve(initial_vector_size);

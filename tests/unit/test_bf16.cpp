@@ -218,21 +218,21 @@ void BF16Test::create_index_test(params_t index_params) {
 }
 
 TEST_F(BF16HNSWTest, createIndex) {
-    HNSWParams params = {.dim = 40, .initialCapacity = 200, .M = 16, .efConstruction = 200};
+    HNSWParams params = {.dim = 40, .M = 16, .efConstruction = 200};
     create_index_test(params);
     ASSERT_EQ(index->basicInfo().type, VecSimType_BFLOAT16);
     ASSERT_EQ(index->basicInfo().algo, VecSimAlgo_HNSWLIB);
 }
 
 TEST_F(BF16BruteForceTest, createIndex) {
-    BFParams params = {.dim = 40, .initialCapacity = 200};
+    BFParams params = {.dim = 40};
     create_index_test(params);
     ASSERT_EQ(index->basicInfo().type, VecSimType_BFLOAT16);
     ASSERT_EQ(index->basicInfo().algo, VecSimAlgo_BF);
 }
 
 TEST_F(BF16TieredTest, createIndex) {
-    HNSWParams params = {.dim = 40, .initialCapacity = 200, .M = 16, .efConstruction = 200};
+    HNSWParams params = {.dim = 40, .M = 16, .efConstruction = 200};
     create_index_test(params);
     ASSERT_EQ(index->basicInfo().type, VecSimType_BFLOAT16);
     ASSERT_EQ(index->basicInfo().isTiered, true);
@@ -245,24 +245,13 @@ TEST_F(BF16HNSWTest, testSizeEstimation) {
     size_t bs = 256;
     size_t M = 64;
 
-    // Initial capacity is rounded up to the block size.
-    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
-
-    HNSWParams params = {.dim = 4, .initialCapacity = n, .blockSize = bs, .M = M};
+    HNSWParams params = {.dim = 4, .blockSize = bs, .M = M};
     SetUp(params);
 
     // EstimateInitialSize is called after CreateNewIndex because params struct is
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
-
     size_t actual = index->getAllocationSize();
-    // labels_lookup hash table has additional memory, since STL implementation chooses "an
-    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
-    // buckets are created)
-    estimation +=
-        (this->CastIndex<HNSWIndex_Single<bfloat16, float>>()->labelLookup.bucket_count() -
-         (n + extra_cap)) *
-        sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 
@@ -284,28 +273,6 @@ TEST_F(BF16HNSWTest, testSizeEstimation) {
     // We check that the actual size is within 1% of the estimation.
     ASSERT_GE(estimation, actual * 0.99);
     ASSERT_LE(estimation, actual * 1.01);
-}
-
-TEST_F(BF16HNSWTest, testSizeEstimation_No_InitialCapacity) {
-    size_t dim = 4;
-    size_t n = 0;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-
-    HNSWParams params = {.dim = dim, .initialCapacity = n, .blockSize = bs};
-    SetUp(params);
-
-    // EstimateInitialSize is called after CreateNewIndex because params struct is
-    // changed in CreateNewIndex.
-    size_t estimation = EstimateInitialSize(params);
-
-    size_t actual = index->getAllocationSize();
-
-    // labels_lookup and element_levels containers are not allocated at all in some platforms,
-    // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
-    // single bucket. This, we get the following range in which we expect the initial memory to be
-    // in.
-    ASSERT_GE(actual, estimation);
-    ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
 }
 
 TEST_F(BF16BruteForceTest, testSizeEstimation) {
@@ -332,23 +299,6 @@ TEST_F(BF16BruteForceTest, testSizeEstimation) {
     ASSERT_LE(estimation * 0.99, actual);
 }
 
-TEST_F(BF16BruteForceTest, testSizeEstimation_No_InitialCapacity) {
-    size_t dim = 4;
-    size_t n = 100;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
-    SetUp(params);
-
-    // EstimateInitialSize is called after CreateNewIndex because params struct is
-    // changed in CreateNewIndex.
-    size_t estimation = EstimateInitialSize(params);
-
-    size_t actual = index->getAllocationSize();
-    ASSERT_EQ(estimation, actual);
-}
-
 TEST_F(BF16TieredTest, testSizeEstimation) {
     size_t n = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
@@ -361,14 +311,7 @@ TEST_F(BF16TieredTest, testSizeEstimation) {
 
     // auto allocator = index->getAllocator();
     size_t initial_size_estimation = VecSimIndex_EstimateInitialSize(&params);
-
-    // labels_lookup hash table has additional memory, since STL implementation chooses "an
-    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
-    // buckets are created)
     auto hnsw_index = CastToHNSW();
-    auto hnsw = CastIndex<HNSWIndex_Single<bfloat16, float>>(hnsw_index);
-    initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
-
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
 
     // Add vectors up to initial capacity (initial capacity == block size).
