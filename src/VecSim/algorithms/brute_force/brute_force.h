@@ -34,7 +34,8 @@ protected:
     idType count;
 
 public:
-    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
+    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+                    const IndexComponents<DataType, DistType> &components);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -84,6 +85,9 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
     void fitMemory() override {
+        if (count == 0) {
+            return;
+        }
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
     }
@@ -139,13 +143,11 @@ protected:
 /******************** Ctor / Dtor **************/
 template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::BruteForceIndex(
-    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams),
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams,
+    const IndexComponents<DataType, DistType> &components)
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
-    // Round up the initial capacity to the nearest multiple of the block size.
-    size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
-    this->idToLabelMapping.resize(initialCapacity);
     this->vectors = new (this->allocator)
         DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
 }
@@ -154,6 +156,7 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
+    auto processed_blob = this->preprocessForStorage(vector_data);
     // Give the vector new id and increase count.
     idType id = this->count++;
 
@@ -162,7 +165,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         growByBlock();
     }
     // add vector data to vector raw data container
-    this->vectors->addElement(vector_data, id);
+    this->vectors->addElement(processed_blob.get(), id);
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);
@@ -231,6 +234,8 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         return rep;
     }
 
+    auto processed_query_ptr = this->preprocessQuery(queryBlob);
+    const void *processed_query = processed_query_ptr.get();
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
         getNewMaxPriorityQueue();
@@ -244,7 +249,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
             delete TopCandidates;
             return rep;
         }
-        auto score = this->distFunc(vector, queryBlob, this->dim);
+        auto score = this->calcDistance(vector, processed_query);
         // If we have less than k or a better score, insert it.
         if (score < upperBound || TopCandidates->size() < k) {
             TopCandidates->emplace(score, getVectorLabel(curr_id));
@@ -271,6 +276,7 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) const {
+    auto processed_query_ptr = this->preprocessQuery(queryBlob);
     auto rep = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->lastMode = RANGE_QUERY;
@@ -282,12 +288,13 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     DistType radius_ = DistType(radius);
     auto vectors_it = this->vectors->getIterator();
     idType curr_id = 0;
+    const void *processed_query = processed_query_ptr.get();
     while (vectors_it->hasNext()) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             rep->code = VecSim_QueryReply_TimedOut;
             break;
         }
-        auto score = this->distFunc(vectors_it->next(), queryBlob, this->dim);
+        auto score = this->calcDistance(vectors_it->next(), processed_query);
         if (score <= radius_) {
             res_container->emplace(getVectorLabel(curr_id), score);
         }
@@ -343,8 +350,10 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
-    auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    auto *queryBlobCopy =
+        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    this->preprocessQueryInPlace(queryBlobCopy);
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }

@@ -22,8 +22,9 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
     // initialize hnsw index
+    // Normalization is done by the frontend index.
     auto *hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
-        HNSWFactory::NewIndex(params->primaryIndexParams));
+        HNSWFactory::NewIndex(params->primaryIndexParams, true));
     // initialize brute force index
 
     BFParams bf_params = {.type = params->primaryIndexParams->algoParams.hnswParams.type,
@@ -41,7 +42,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                                                   .multi = bf_params.multi,
                                                   .logCtx = params->primaryIndexParams->logCtx};
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
-        BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
     // Create new tiered hnsw index
     std::shared_ptr<VecSimAllocator> management_layer_allocator =

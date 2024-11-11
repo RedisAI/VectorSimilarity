@@ -58,11 +58,8 @@ typedef enum {
     IN_PROCESS = 0x2,  // element is being inserted into the graph
 } Flags;
 
-// The state of the index and the newly inserted vector to be passed into addVector API in case that
-// the index global data structures are updated atomically from an external scope (such as in
-// tiered index),
-// TODO: this might need to be generalized for future usages of async indexing.
-struct AddVectorCtx {
+// The state of the index and the newly stored vector to be passed to indexVector.
+struct HNSWAddVectorState {
     idType newElementId;
     int elementMaxLevel;
     idType currEntryPoint;
@@ -133,29 +130,26 @@ protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     size_t getRandomLevel(double reverse_size);
-    template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
+    template <typename Identifier> // Either idType or labelType
     void processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
                           tag_t *elements_tags, tag_t visited_tag,
                           vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                           candidatesMaxHeap<DistType> &candidates_set, DistType &lowerBound) const;
-    template <bool has_marked_deleted>
     void processCandidate_RangeSearch(
         idType curNodeId, const void *data_point, size_t layer, double epsilon,
         tag_t *elements_tags, tag_t visited_tag,
         std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
         candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, DistType radius) const;
-    template <bool has_marked_deleted>
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
-    template <bool has_marked_deleted>
     candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
                                   void *timeoutCtx, VecSimQueryReply_Code *rc) const;
-    template <bool has_marked_deleted>
-    VecSimQueryResultContainer
-    searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point, double epsilon,
-                                       DistType radius, void *timeoutCtx,
-                                       VecSimQueryReply_Code *rc) const;
+    VecSimQueryResultContainer searchRangeBottomLayer_WithTimeout(idType ep_id,
+                                                                  const void *data_point,
+                                                                  double epsilon, DistType radius,
+                                                                  void *timeoutCtx,
+                                                                  VecSimQueryReply_Code *rc) const;
     idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M) const;
     void getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M,
                                   vecsim_stl::vector<idType> &not_chosen_candidates) const;
@@ -188,13 +182,15 @@ protected:
                                       vecsim_stl::vector<bool> &neighbours_bitmap);
     void replaceEntryPoint();
 
-    template <bool has_marked_deleted>
     void SwapLastIdWithDeletedId(idType element_internal_id, ElementGraphData *last_element,
-                                 void *last_element_data);
+                                 const void *last_element_data);
 
+    /** Add vector functions */
     // Protected internal function that implements generic single vector insertion.
-    void appendVector(const void *vector_data, labelType label,
-                      AddVectorCtx *auxiliaryCtx = nullptr);
+
+    void appendVector(const void *vector_data, labelType label);
+
+    HNSWAddVectorState storeVector(const void *vector_data, const labelType label);
 
     // Protected internal functions for index resizing.
     void growByBlock();
@@ -202,15 +198,10 @@ protected:
     // DO NOT USE DIRECTLY. Use `[grow|shrink]ByBlock` instead.
     void resizeIndexCommon(size_t new_max_elements);
 
-    // Protected internal function that implements generic single vector deletion.
-    void removeVectorInPlace(idType id);
-
     void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist,
                        idType id) const;
     void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
                        DistType dist, idType id) const;
-
-    template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
 
     size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
@@ -233,7 +224,7 @@ protected:
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
-              size_t random_seed = 100, size_t initial_pool_size = 1);
+              const IndexComponents<DataType, DistType> &components, size_t random_seed = 100);
     virtual ~HNSWIndex();
 
     void setEf(size_t ef);
@@ -247,11 +238,6 @@ public:
     size_t getMaxLevel() const;
     labelType getEntryPointLabel() const;
     labelType getExternalLabel(idType internal_id) const { return idToMetaData[internal_id].label; }
-    // Check if the given label exists in the labels lookup while holding the index data lock.
-    // Optionally validate that the associated vector(s) are not in process and done indexing
-    // (this option is used currently for tests).
-    virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
-                                                      bool also_done_processing = false) const = 0;
     auto safeGetEntryPointState() const;
     void lockIndexDataGuard() const;
     void unlockIndexDataGuard() const;
@@ -274,6 +260,8 @@ public:
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryReply_Code *rc) const;
 
+    void indexVector(const void *vector_data, const labelType label,
+                     const HNSWAddVectorState &state);
     VecSimQueryReply *topKQuery(const void *query_data, size_t k,
                                 VecSimQueryParams *queryParams) const override;
     VecSimQueryReply *rangeQuery(const void *query_data, double radius,
@@ -283,25 +271,33 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    AddVectorCtx storeNewElement(labelType label, const void *vector_data);
-    void removeAndSwapDeletedElement(idType internalId);
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
+    void removeAndSwapMarkDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
     const ElementMetaData *getMetaDataAddress(idType internal_id) const {
         return idToMetaData.data() + internal_id;
     }
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id) const;
+    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
+    void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
+                              size_t global_max_level, const void *vector_data);
+    void removeVectorInPlace(idType id);
+
+    /*************************** Labels lookup API ***************************/
+    /* Virtual functions that access the label lookup which is implemented in the derived classes */
     // Return all the labels in the index - this should be used for computing the number of distinct
     // labels in a tiered index, and caller should hold the index data guard.
-    virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
-    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
+    // Unsafe (assume index data guard is held in MT mode).
+    virtual vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 
-    void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
-                              size_t global_max_level, const void *vector_data);
+    // Remove label from the index.
+    virtual int removeLabel(labelType label) = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -315,8 +311,10 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
     void fitMemory() override {
-        idToMetaData.shrink_to_fit();
-        resizeLabelLookup(idToMetaData.size());
+        if (maxElements > 0) {
+            idToMetaData.shrink_to_fit();
+            resizeLabelLookup(idToMetaData.size());
+        }
     }
 #endif
 
@@ -327,8 +325,6 @@ protected:
     virtual void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual void setVectorId(labelType label, idType id) = 0;
     virtual void resizeLabelLookup(size_t new_max_elements) = 0;
-    // For debugging - unsafe (assume index data guard is held in MT mode).
-    virtual vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 };
 
 /**
@@ -523,7 +519,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
 // overloading to emplace correctly for both cases.
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted, typename Identifier>
+template <typename Identifier>
 void HNSWIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *query_data, size_t layer, size_t ef, tag_t *elements_tags,
     tag_t visited_tag, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
@@ -557,14 +553,14 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
 
                 candidate_set.emplace(-cur_dist, candidate_id);
 
                 // Insert the candidate to the top candidates heap only if it is not marked as
                 // deleted.
-                if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+                if (!isMarkedDeleted(candidate_id))
                     emplaceToHeap(top_candidates, cur_dist, candidate_id);
 
                 if (top_candidates.size() > ef)
@@ -572,7 +568,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
                 // If we have marked deleted elements, we need to verify that `top_candidates` is
                 // not empty (since we might have not added any non-deleted element yet).
-                if (!has_marked_deleted || !top_candidates.empty())
+                if (!top_candidates.empty())
                     lowerBound = top_candidates.top().first;
             }
         }
@@ -585,13 +581,13 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
                 // Insert the candidate to the top candidates heap only if it is not marked as
                 // deleted.
-                if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+                if (!isMarkedDeleted(candidate_id))
                     emplaceToHeap(top_candidates, cur_dist, candidate_id);
 
                 if (top_candidates.size() > ef)
@@ -599,7 +595,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
                 // If we have marked deleted elements, we need to verify that `top_candidates` is
                 // not empty (since we might have not added any non-deleted element yet).
-                if (!has_marked_deleted || !top_candidates.empty())
+                if (!top_candidates.empty())
                     lowerBound = top_candidates.top().first;
             }
         }
@@ -608,7 +604,6 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t *elements_tags,
     tag_t visited_tag, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
@@ -643,12 +638,12 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (cur_dist < dyn_range) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
                 // If the new candidate is in the requested radius, add it to the results set.
-                if (cur_dist <= radius && (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
+                if (cur_dist <= radius && !isMarkedDeleted(candidate_id)) {
                     results->emplace(getExternalLabel(candidate_id), cur_dist);
                 }
             }
@@ -661,12 +656,12 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
+            DistType cur_dist = this->calcDistance(query_data, cur_data);
             if (cur_dist < dyn_range) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
                 // If the new candidate is in the requested radius, add it to the results set.
-                if (cur_dist <= radius && (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
+                if (cur_dist <= radius && !isMarkedDeleted(candidate_id)) {
                     results->emplace(getExternalLabel(candidate_id), cur_dist);
                 }
             }
@@ -676,7 +671,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 candidatesMaxHeap<DistType>
 HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
@@ -688,8 +682,8 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType lowerBound;
-    if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
-        DistType dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
+    if (!isMarkedDeleted(ep_id)) {
+        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         lowerBound = dist;
         top_candidates.emplace(dist, ep_id);
         candidate_set.emplace(-dist, ep_id);
@@ -708,9 +702,9 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
-                                             visited_nodes_handler->getElementsTags(), visited_tag,
-                                             top_candidates, candidate_set, lowerBound);
+        processCandidate(curr_el_pair.second, data_point, layer, ef,
+                         visited_nodes_handler->getElementsTags(), visited_tag, top_candidates,
+                         candidate_set, lowerBound);
     }
 
     returnVisitedList(visited_nodes_handler);
@@ -769,7 +763,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
         // to both q and the candidate than the distance between the candidate and q.
         for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
-                this->distFunc(cached_vectors[i], curr_vector, this->dim);
+                this->calcDistance(cached_vectors[i], curr_vector);
             if (candidate_to_selected_dist < candidate_to_query_dist) {
                 if constexpr (record_removed) {
                     removed_candidates->push_back(current_pair->second);
@@ -808,9 +802,10 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     idType selected_neighbor = neighbor_data.second;
     const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
-        candidates.emplace_back(this->distFunc(getDataByInternalId(neighbor_level.getLinkAtPos(j)),
-                                               selected_neighbor_data, this->dim),
-                                neighbor_level.getLinkAtPos(j));
+        candidates.emplace_back(
+            this->calcDistance(getDataByInternalId(neighbor_level.getLinkAtPos(j)),
+                               selected_neighbor_data),
+            neighbor_level.getLinkAtPos(j));
     }
 
     // Candidates will store the newly selected neighbours (for the neighbor).
@@ -866,11 +861,9 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         !isMarkedDeleted(new_node_id) && !isMarkedDeleted(selected_neighbor)) {
         // update the connection between the new node and the neighbor.
         new_node_level.appendLink(selected_neighbor);
-        neighbor_level.increaseTotalIncomingEdgesNum();
         if (cur_node_chosen && neighbour_neighbours_idx < max_M_cur) {
             // connection is mutual - both new node and the selected neighbor in each other's list.
             neighbor_level.setLinkAtPos(neighbour_neighbours_idx++, new_node_id);
-            new_node_level.increaseTotalIncomingEdgesNum();
         } else {
             // unidirectional connection - put the new node in the neighbour's incoming edges.
             neighbor_level.newIncomingUnidirectionalEdge(new_node_id);
@@ -944,9 +937,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // and finish.
         if (neighbor_level_data.getNumLinks() < max_M_cur) {
             new_node_level_data.appendLink(selected_neighbor);
-            neighbor_level_data.increaseTotalIncomingEdgesNum();
             neighbor_level_data.appendLink(new_node_id);
-            new_node_level_data.increaseTotalIncomingEdgesNum();
             unlockNodeLinks(new_node_level);
             unlockNodeLinks(neighbor_graph_data);
             continue;
@@ -966,24 +957,34 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     idType element_internal_id, idType neighbour_id, ElementLevelData &node_level,
     ElementLevelData &neighbor_level, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
-    // put the deleted element's neighbours in the candidates.
+    if (isMarkedDeleted(neighbour_id)) {
+        // Just remove the deleted element from the neighbor's neighbors list. No need to repair as
+        // this change is temporary, this neighbor is about to be removed from the graph as well.
+        neighbor_level.removeLink(element_internal_id);
+        return;
+    }
+
+    // Add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<idType> candidate_ids(this->allocator);
     candidate_ids.reserve(node_level.getNumLinks() + neighbor_level.getNumLinks());
-    for (size_t j = 0; j < node_level.getNumLinks(); j++) {
-        // Don't put the neighbor itself in his own candidates
-        if (node_level.getLinkAtPos(j) != neighbour_id) {
-            candidate_ids.push_back(node_level.getLinkAtPos(j));
-        }
-    }
-    // add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<bool> neighbour_orig_neighbours_set(curElementCount, false, this->allocator);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
-        neighbour_orig_neighbours_set[neighbor_level.getLinkAtPos(j)] = true;
-        // Don't add the removed element to the candidates, nor nodes that are already in the
-        // candidates set.
-        if (neighbor_level.getLinkAtPos(j) != element_internal_id &&
-            !neighbours_bitmap[neighbor_level.getLinkAtPos(j)]) {
-            candidate_ids.push_back(neighbor_level.getLinkAtPos(j));
+        idType cand = neighbor_level.getLinkAtPos(j);
+        neighbour_orig_neighbours_set[cand] = true;
+        // Don't add the removed element to the candidates, nor nodes that are neighbors of the
+        // original deleted element and will also be added to the candidates set.
+        if (cand != element_internal_id && !neighbours_bitmap[cand]) {
+            candidate_ids.push_back(cand);
+        }
+    }
+    // Put the deleted element's neighbours in the candidates.
+    for (size_t j = 0; j < node_level.getNumLinks(); j++) {
+        // Don't put the neighbor itself in his own candidates and nor marked deleted elements that
+        // were not neighbors before.
+        idType cand = node_level.getLinkAtPos(j);
+        if (cand != neighbour_id &&
+            (!isMarkedDeleted(cand) || neighbour_orig_neighbours_set[cand])) {
+            candidate_ids.push_back(cand);
         }
     }
 
@@ -995,7 +996,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         auto neighbours_data = getDataByInternalId(neighbour_id);
         for (auto candidate_id : candidate_ids) {
             candidates.emplace_back(
-                this->distFunc(getDataByInternalId(candidate_id), neighbours_data, this->dim),
+                this->calcDistance(getDataByInternalId(candidate_id), neighbours_data),
                 candidate_id);
         }
 
@@ -1005,8 +1006,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
         neighbor_level.setLinks(candidates);
 
-        // remove neighbour id from the incoming list of nodes for his
-        // neighbours that were chosen to remove
+        // Update unidirectional incoming edges w.r.t. the edges that were removed.
         for (auto node_id : not_chosen_candidates) {
             if (neighbour_orig_neighbours_set[node_id]) {
                 // if the node id (the neighbour's neighbour to be removed)
@@ -1018,8 +1018,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 if (!node_level_data.removeIncomingUnidirectionalEdgeIfExists(neighbour_id)) {
                     neighbor_level.newIncomingUnidirectionalEdge(node_id);
                 }
-                // anyway update the incoming nodes counter.
-                node_level_data.decreaseTotalIncomingEdgesNum();
             }
         }
     } else {
@@ -1027,21 +1025,21 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         neighbor_level.setLinks(candidate_ids);
     }
 
-    // updates for the new edges created
+    // Updates for the new edges created
     for (size_t i = 0; i < neighbor_level.getNumLinks(); i++) {
         idType node_id = neighbor_level.getLinkAtPos(i);
         if (!neighbour_orig_neighbours_set[node_id]) {
             ElementLevelData &node_level = getElementLevelData(node_id, level);
-            // if the node has an edge to the neighbour as well, remove it
-            // from the incoming nodes of the neighbour
-            // otherwise, need to update the edge as incoming.
-
+            // If the node has an edge to the neighbour as well, remove it from the incoming nodes
+            // of the neighbour. Otherwise, we need to update the edge as unidirectional incoming.
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_level.getNumLinks(); j++) {
                 if (node_level.getLinkAtPos(j) == neighbour_id) {
                     // Swap the last element with the current one (equivalent to removing the
                     // neighbor from the list) - this should always succeed and return true.
-                    neighbor_level.removeIncomingUnidirectionalEdgeIfExists(node_id);
+                    bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(node_id);
+                    (void)res;
+                    assert(res && "The edge should be in the incoming unidirectional edges");
                     bidirectional_edge = true;
                     break;
                 }
@@ -1049,7 +1047,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             if (!bidirectional_edge) {
                 node_level.newIncomingUnidirectionalEdge(neighbour_id);
             }
-            node_level.increaseTotalIncomingEdgesNum();
         }
     }
 }
@@ -1132,13 +1129,12 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
                                                             ElementGraphData *last_element,
-                                                            void *last_element_data) {
+                                                            const void *last_element_data) {
     // Swap label - this is relevant when the last element's label exists (it is not marked as
-    // deleted). For inplace delete, this is always the case.
-    if (!has_marked_deleted || !isMarkedDeleted(curElementCount)) {
+    // deleted).
+    if (!isMarkedDeleted(curElementCount)) {
         replaceIdOfLabel(getExternalLabel(curElementCount), element_internal_id, curElementCount);
     }
 
@@ -1231,7 +1227,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             if (isInProcess(candidate)) {
                 continue;
             }
-            DistType d = this->distFunc(vector_data, getDataByInternalId(candidate), this->dim);
+            DistType d = this->calcDistance(vector_data, getDataByInternalId(candidate));
             if (d < curDist) {
                 curDist = d;
                 bestCand = candidate;
@@ -1396,7 +1392,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // we add it to the unidirectional edges set. Note: we assume that all updates occur
         // mutually and atomically, then can rely on this assumption.
         auto &chosen_node_level_data = getElementLevelData(chosen_id, level);
-        chosen_node_level_data.increaseTotalIncomingEdgesNum();
         if (!node_level.removeIncomingUnidirectionalEdgeIfExists(chosen_id)) {
             chosen_node_level_data.newIncomingUnidirectionalEdge(node_id);
         }
@@ -1485,7 +1480,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         const void *node_data = getDataByInternalId(node_id);
         for (idType candidate : neighbors_candidate_ids) {
             neighbors_candidates.emplace_back(
-                this->distFunc(getDataByInternalId(candidate), node_data, this->dim), candidate);
+                this->calcDistance(getDataByInternalId(candidate), node_data), candidate);
         }
         vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
         getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
@@ -1533,7 +1528,6 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
     if (!removed_node_level.removeIncomingUnidirectionalEdgeIfExists(node_id)) {
         node_level.newIncomingUnidirectionalEdge(removed_node);
     }
-    removed_node_level.decreaseTotalIncomingEdgesNum();
 }
 
 template <typename DataType, typename DistType>
@@ -1548,7 +1542,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     size_t max_common_level;
     if (element_max_level < global_max_level) {
         max_common_level = element_max_level;
-        cur_dist = this->distFunc(vector_data, getDataByInternalId(curr_element), this->dim);
+        cur_dist = this->calcDistance(vector_data, getDataByInternalId(curr_element));
         for (auto level = static_cast<int>(global_max_level);
              level > static_cast<int>(element_max_level); level--) {
             // this is done for the levels which are above the max level
@@ -1564,8 +1558,12 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
-            searchLayer<false>(curr_element, vector_data, level, efConstruction);
-        curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
+            searchLayer(curr_element, vector_data, level, efConstruction);
+        // If the entry point was marked deleted between iterations, we may recieve an empty
+        // candidates set.
+        if (!top_candidates.empty()) {
+            curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
+        }
     }
 }
 
@@ -1576,7 +1574,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
-    size_t initialCapacity;
+    size_t initialCapacity;  // Deprecated and not respected.
     size_t blockSize;
     size_t M;
     size_t efConstruction;
@@ -1586,12 +1584,11 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
-                                         size_t random_seed, size_t pool_initial_size)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), VecSimIndexTombstone(),
-      // maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
-        maxElements(this->blockSize),  // todo: in a different PR remove initial capacity, as this is a bug
-      graphDataBlocks(this->allocator), idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator) {
+                                         const IndexComponents<DataType, DistType> &components,
+                                         size_t random_seed)
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
+      VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
     this->vectors = new (this->allocator)
         DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
@@ -1619,9 +1616,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M0;
     levelDataSize = sizeof(ElementLevelData) + sizeof(idType) * M;
-
-    size_t initial_vector_size = this->maxElements / this->blockSize;
-    graphDataBlocks.reserve(initial_vector_size);
 }
 
 template <typename DataType, typename DistType>
@@ -1637,30 +1631,27 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
-
+    // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
+    // upon marking it as deleted.
+    assert(entrypointNode != internalId);
     auto element = getGraphDataByInternalId(internalId);
-
-    if (has_marked_deleted) {
-        // If the index allows marking vectors as deleted (as in tiered HNSW), the id to remove
-        // cannot be the entry point, as it should have been replaced upon marking it as deleted.
-        assert(entrypointNode != internalId);
-    } else if (entrypointNode == internalId) {
-        // For inplace delete, we replace entry point now.
-        assert(element->toplevel == maxLevel);
-        replaceEntryPoint();
-    }
 
     // Remove the deleted id form the relevant incoming edges sets in which it appears.
     for (size_t level = 0; level <= element->toplevel; level++) {
         ElementLevelData &cur_level = getElementLevelData(element, level);
         for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
             ElementLevelData &neighbour = getElementLevelData(cur_level.getLinkAtPos(i), level);
-            // This should always succeed, since every outgoing edge should be unidirectional at
-            // this point (after all the repair jobs are done).
-            neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
-            neighbour.decreaseTotalIncomingEdgesNum();
+            // Note that in case of in-place delete, we might have not accounted for this edge in
+            // in the unidirectional edges, since there is no point in keeping it there temporarily
+            // (we know we will get here and remove this deleted id permanently).
+            // However, upon asynchronous delete, this should always succeed since we do update
+            // the incoming edges in the mutual update even for deleted elements.
+            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
+            // Assert the logical condition of: is_marked_deleted(id) => res==True.
+            (void)res;
+            assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming "
+                                                            "unidirectional edges");
         }
     }
 
@@ -1669,9 +1660,6 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // We can say now that the element has removed completely from index.
     --curElementCount;
-    if (has_marked_deleted) {
-        --numMarkedDeleted;
-    }
 
     // Get the last element's metadata and data.
     // If we are deleting the last element, we already destroyed it's metadata.
@@ -1681,8 +1669,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // Swap the last id with the deleted one, and invalidate the last id data.
     if (curElementCount != internalId) {
-        SwapLastIdWithDeletedId<has_marked_deleted>(internalId, last_element,
-                                                    (void *)last_element_data);
+        SwapLastIdWithDeletedId(internalId, last_element, last_element_data);
     }
 
     // If we need to free a complete block and there is at least one block between the
@@ -1694,8 +1681,10 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwapDeletedElement(idType internalId) {
-    removeAndSwap<true>(internalId);
+void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType internalId) {
+    removeAndSwap(internalId);
+    // element is permanently removed from the index, it is no longer counted as marked deleted.
+    --numMarkedDeleted;
 }
 
 template <typename DataType, typename DistType>
@@ -1734,7 +1723,10 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
             // incoming edges.
             if (!bidirectional_edge) {
                 // This should always return true (remove should succeed).
-                neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
+                bool res =
+                    neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
+                (void)res;
+                assert(res && "The edge should be in the incoming unidirectional edges");
             }
         }
 
@@ -1746,17 +1738,22 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
                                          neighbours_bitmap);
         }
     }
+    if (entrypointNode == element_internal_id) {
+        // Replace entry point if needed.
+        assert(element->toplevel == maxLevel);
+        replaceEntryPoint();
+    }
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
-    removeAndSwap<false>(element_internal_id);
+    removeAndSwap(element_internal_id);
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
 // scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
-AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                            const void *vector_data) {
-    AddVectorCtx state{};
+HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
+                                                                  const void *vector_data) {
+    HNSWAddVectorState state{};
 
     // Choose randomly the maximum level in which the new element will be in the index.
     state.elementMaxLevel = getRandomLevel(mult);
@@ -1794,9 +1791,8 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     // Insert the new element to the data block
     this->vectors->addElement(vector_data, state.newElementId);
     this->graphDataBlocks.back().addElement(cur_egd);
-    // We mark id as in process *before* we set it in the label lookup, otherwise we might check
-    // that the label exist with safeCheckIfLabelExistsInIndex and see that IN_PROCESS flag is
-    // clear.
+    // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
+    // set when checking if label .
     this->idToMetaData[state.newElementId] = ElementMetaData(label);
     setVectorId(label, state.newElementId);
 
@@ -1816,22 +1812,22 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
-                                                 AddVectorCtx *auxiliaryCtx) {
+HNSWAddVectorState HNSWIndex<DataType, DistType>::storeVector(const void *vector_data,
+                                                              const labelType label) {
+    HNSWAddVectorState state{};
 
-    // If auxiliaryCtx is not NULL, the index state has already been updated from outside (such as
-    // in tiered index). Also, the synchronization responsibility in this case is on the caller,
-    // otherwise, this function should acquire and release the lock to ensure proper parallelism.
-    AddVectorCtx state{};
-    if (auxiliaryCtx == nullptr) {
-        this->lockIndexDataGuard();
-        state = storeNewElement(label, vector_data);
-        if (state.currMaxLevel >= state.elementMaxLevel) {
-            this->unlockIndexDataGuard();
-        }
-    } else {
-        state = *auxiliaryCtx;
+    this->lockIndexDataGuard();
+    state = storeNewElement(label, vector_data);
+    if (state.currMaxLevel >= state.elementMaxLevel) {
+        this->unlockIndexDataGuard();
     }
+
+    return state;
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::indexVector(const void *vector_data, const labelType label,
+                                                const HNSWAddVectorState &state) {
     // Deconstruct the state variables from the auxiliaryCtx. prev_entry_point and prev_max_level
     // are the entry point and index max level at the point of time when the element was stored, and
     // they may (or may not) have changed due to the insertion.
@@ -1845,7 +1841,17 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
                              vector_data);
     }
     unmarkInProcess(new_element_id);
-    if (auxiliaryCtx == nullptr && state.currMaxLevel < state.elementMaxLevel) {
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
+
+    ProcessedBlobs processedBlobs = this->preprocess(vector_data);
+    HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
+
+    this->indexVector(processedBlobs.getQueryBlob(), label, state);
+
+    if (state.currMaxLevel < state.elementMaxLevel) {
         // No external auxiliaryCtx, so it's this function responsibility to release the lock.
         this->unlockIndexDataGuard();
     }
@@ -1866,7 +1872,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
-    DistType cur_dist = this->distFunc(query_data, getDataByInternalId(curr_element), this->dim);
+    DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element));
     for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; --level) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
@@ -1874,7 +1880,6 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 candidatesLabelsMaxHeap<DistType> *
 HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                              size_t ef, size_t k, void *timeoutCtx,
@@ -1887,10 +1892,10 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType lowerBound;
-    if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
+    if (!isMarkedDeleted(ep_id)) {
         // If ep is not marked as deleted, get its distance and set lower bound and heaps
         // accordingly
-        DistType dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
+        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         lowerBound = dist;
         top_candidates->emplace(dist, getExternalLabel(ep_id));
         candidate_set.emplace(-dist, ep_id);
@@ -1916,9 +1921,9 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef,
-                                             visited_nodes_handler->getElementsTags(), visited_tag,
-                                             *top_candidates, candidate_set, lowerBound);
+        processCandidate(curr_el_pair.second, data_point, 0, ef,
+                         visited_nodes_handler->getElementsTags(), visited_tag, *top_candidates,
+                         candidate_set, lowerBound);
     }
     returnVisitedList(visited_nodes_handler);
     while (top_candidates->size() > k) {
@@ -1939,6 +1944,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         return rep;
     }
 
+    auto processed_query_ptr = this->preprocessQuery(query_data);
+    const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
 
     // Get original efRuntime and store it.
@@ -1951,7 +1958,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    idType bottom_layer_ep = searchBottomLayerEP(processed_query, timeoutCtx, &rep->code);
     if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
         // that another thread deleted all the elements or didn't finish inserting the first element
@@ -1961,13 +1968,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
 
     // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results;
-    if (this->numMarkedDeleted) {
-        results = searchBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
-    } else {
-        results = searchBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
-    }
+    results = searchBottomLayer_WithTimeout(bottom_layer_ep, processed_query, std::max(query_ef, k),
+                                            k, timeoutCtx, &rep->code);
 
     if (VecSim_OK == rep->code) {
         rep->results.resize(results->size());
@@ -1981,7 +1983,6 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
     idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
     VecSimQueryReply_Code *rc) const {
@@ -1996,13 +1997,13 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
 
     // Set the initial effective-range to be at least the distance from the entry-point.
     DistType ep_dist, dynamic_range, dynamic_range_search_boundaries;
-    if (has_marked_deleted && isMarkedDeleted(ep_id)) {
+    if (isMarkedDeleted(ep_id)) {
         // If ep is marked as deleted, set initial ranges to max
         ep_dist = std::numeric_limits<DistType>::max();
         dynamic_range_search_boundaries = dynamic_range = ep_dist;
     } else {
         // If ep is not marked as deleted, get its distance and set ranges accordingly
-        ep_dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
+        ep_dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         dynamic_range = ep_dist;
         if (ep_dist <= radius) {
             // Entry-point is within the radius - add it to the results.
@@ -2039,7 +2040,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
         // epsilon environment of the dynamic range, and add them to the results if they are in the
         // requested radius.
         // Here we send the radius as double to match the function arguments type.
-        processCandidate_RangeSearch<has_marked_deleted>(
+        processCandidate_RangeSearch(
             curr_el_pair.second, data_point, 0, epsilon, visited_nodes_handler->getElementsTags(),
             visited_tag, res_container, candidate_set, dynamic_range_search_boundaries, radius);
     }
@@ -2057,6 +2058,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
     if (curElementCount == 0) {
         return rep;
     }
+    auto processed_query_ptr = this->preprocessQuery(query_data);
+    const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
 
     double query_epsilon = epsilon;
@@ -2067,7 +2070,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    idType bottom_layer_ep = searchBottomLayerEP(processed_query, timeoutCtx, &rep->code);
     // Although we checked that the index is not empty (curElementCount == 0), it might be
     // that another thread deleted all the elements or didn't finish inserting the first element
     // yet. Anyway, we observed that the index is empty, so we return an empty result list.
@@ -2077,12 +2080,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
-    if (this->numMarkedDeleted)
-        rep->results = searchRangeBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
-    else
-        rep->results = searchRangeBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
+    rep->results = searchRangeBottomLayer_WithTimeout(
+        bottom_layer_ep, processed_query, query_epsilon, radius, timeoutCtx, &rep->code);
     return rep;
 }
 

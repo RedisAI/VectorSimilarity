@@ -90,11 +90,8 @@ TYPED_TEST_SUITE(IndexAllocatorTest, DataTypeSet);
 TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     // Create only the minimal struct.
     size_t dim = 128;
-    BFParams params = {.type = TypeParam::get_index_type(),
-                       .dim = dim,
-                       .metric = VecSimMetric_IP,
-                       .initialCapacity = 0,
-                       .blockSize = 1};
+    BFParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_IP, .blockSize = 1};
     auto *bfIndex = dynamic_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
         BruteForceFactory::NewIndex(&params));
     bfIndex->alignment = 0; // Disable alignment for testing purposes.
@@ -104,6 +101,9 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationSize +=
         sizeof(BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     expectedAllocationSize += sizeof(DataBlocksContainer) + vecsimAllocationOverhead;
+    expectedAllocationSize +=
+        sizeof(DistanceCalculatorCommon<TEST_DIST_T>) + vecsimAllocationOverhead;
+    expectedAllocationSize += sizeof(PreprocessorsContainerAbstract) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
@@ -204,10 +204,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     size_t d = 128;
 
     // Build with default args
-    HNSWParams params = {.type = TypeParam::get_index_type(),
-                         .dim = d,
-                         .metric = VecSimMetric_L2,
-                         .initialCapacity = 0};
+    HNSWParams params = {.type = TypeParam::get_index_type(), .dim = d, .metric = VecSimMetric_L2};
 
     TEST_DATA_T vec[128] = {};
     auto *hnswIndex =
@@ -266,11 +263,8 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     size_t d = 2;
 
     // Build index, use small M to simplify the scenario.
-    HNSWParams params = {.type = TypeParam::get_index_type(),
-                         .dim = d,
-                         .metric = VecSimMetric_L2,
-                         .initialCapacity = 10,
-                         .M = 2};
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = d, .metric = VecSimMetric_L2, .M = 2};
     auto *hnswIndex =
         dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
     auto allocator = hnswIndex->getAllocator();
@@ -282,6 +276,9 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     TEST_DATA_T vec1[] = {1.0, 0.0};
     int before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec1, 1);
+    // Since the memory before did not account for the visited nodes handler pool (it was created
+    // lazily), we need to clear it before calculating the delta.
+    hnswIndex->visitedNodesHandlerPool.clearPool();
     int allocation_delta = allocator->getAllocationSize() - before;
     size_t vec_max_level = hnswIndex->getGraphDataByInternalId(1)->toplevel;
 
@@ -357,7 +354,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     VecSimType type = TypeParam::get_index_type();
 
     // Build HNSW index with default args and initial capacity of zero.
-    HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
+    HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2};
     auto *hnswIndex =
         dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
     auto allocator = hnswIndex->getAllocator();
@@ -456,6 +453,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to
     // zero, while in others the entire capacity reduced to zero (including the header).
+    // Also, visitedNodesHandlerPool that was created lazily is not freed, but it should not be
+    // accounted when comparing to the initial memory size estimation of the index.
+    hnswIndex->visitedNodesHandlerPool.clearPool();
     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
                                                   block_vectors_memory + hash_table_memory +
                                                   2 * vecsimAllocationOverhead);

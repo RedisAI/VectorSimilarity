@@ -35,7 +35,7 @@ TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
     size_t dim = 4;
     size_t rep = 5;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_IP, .initialCapacity = 200};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_IP};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -72,8 +72,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     size_t blockSize = 10;
     size_t n_labels = 3;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = blockSize};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = blockSize};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -142,14 +141,12 @@ TYPED_TEST(BruteForceMultiTest, empty_index) {
     size_t n = 20;
     size_t bs = 6;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-    size_t expected_cap = n - n % bs + bs;
-    ASSERT_EQ(this->CastToBF_Multi(index)->idToLabelMapping.size(), expected_cap);
+    ASSERT_EQ(this->CastToBF_Multi(index)->idToLabelMapping.size(), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
     VecSimIndex_DeleteVector(index, 0);
@@ -160,10 +157,7 @@ TYPED_TEST(BruteForceMultiTest, empty_index) {
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
 
-    // The index capacity should decrease by one block as a result.
-    expected_cap -= bs;
-
-    ASSERT_EQ(this->CastToBF_Multi(index)->idToLabelMapping.size(), expected_cap);
+    ASSERT_EQ(this->CastToBF_Multi(index)->idToLabelMapping.size(), 0);
 
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -172,7 +166,7 @@ TYPED_TEST(BruteForceMultiTest, empty_index) {
     // The idToLabelMapping_size should remain unchanged, as we are trying to delete a label that
     // doesn't exist.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(this->CastToBF_Multi(index)->idToLabelMapping.size(), expected_cap);
+    ASSERT_EQ(this->CastToBF_Multi(index)->idToLabelMapping.size(), 0);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -224,7 +218,7 @@ TYPED_TEST(BruteForceMultiTest, indexing_same_vector) {
     size_t perLabel = 10;
     size_t dim = 4;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -259,9 +253,8 @@ TYPED_TEST(BruteForceMultiTest, find_better_score) {
     size_t k = 10;
     size_t n_labels = 10;
     size_t dim = 4;
-    size_t initial_capacity = 200;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = initial_capacity};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -308,7 +301,7 @@ TYPED_TEST(BruteForceMultiTest, find_better_score_after_pop) {
     size_t dim = 4;
     size_t initial_capacity = 200;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = initial_capacity};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -340,7 +333,7 @@ TYPED_TEST(BruteForceMultiTest, reindexing_same_vector_different_id) {
     size_t dim = 4;
     size_t perLabel = 3;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -395,7 +388,6 @@ TYPED_TEST(BruteForceMultiTest, reindexing_same_vector_different_id) {
 }
 
 TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
-    size_t initial_capacity = 5;
     size_t n = 6;
     size_t dim = 2;
     size_t n_labels = 3;
@@ -409,18 +401,14 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     // data of id 5 to vector block 0 at index 1. id2label[1] should hold the label of the vector
     // that was in id 5.
 
-    BFParams params = {.dim = dim,
-                       .metric = VecSimMetric_L2,
-                       .initialCapacity = initial_capacity,
-                       .blockSize = bs};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
     BruteForceIndex_Multi<TEST_DATA_T, TEST_DIST_T> *bfm_index = this->CastToBF_Multi(index);
 
     // idToLabelMapping initial size equals n.
-    size_t expected_cap = initial_capacity - initial_capacity % bs + bs;
-    ASSERT_EQ(bfm_index->idToLabelMapping.size(), expected_cap);
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), 0);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
@@ -431,8 +419,8 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     for (auto label_ids : bfm_index->labelToIdsLookup) {
         ASSERT_EQ(label_ids.second.size(), n / n_labels);
     }
-    // id2label size should remain the same since n equals the aligned cap.
-    ASSERT_EQ(bfm_index->idToLabelMapping.size(), expected_cap);
+    // id2label size should be equal to the index size.
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), n);
 
     labelType id1_prev_label = bfm_index->getVectorLabel(1);
     labelType id5_prev_label = bfm_index->getVectorLabel(5);
@@ -458,7 +446,7 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     ASSERT_EQ(bfm_index->getVectorLabel(2), 2);
     ASSERT_EQ(bfm_index->getVectorLabel(3), 0);
     // id2label size should remain unchanged..
-    ASSERT_EQ(bfm_index->idToLabelMapping.size(), expected_cap);
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), n);
 
     // id1 gets what was previously id5's label.
     ASSERT_EQ(bfm_index->getVectorLabel(1), id5_prev_label);
@@ -483,7 +471,7 @@ TYPED_TEST(BruteForceMultiTest, test_bf_info) {
 
     // Build with default args.
 
-    BFParams params = {.dim = d, .metric = VecSimMetric_L2, .initialCapacity = n};
+    BFParams params = {.dim = d, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -519,7 +507,7 @@ TYPED_TEST(BruteForceMultiTest, test_basic_bf_info_iterator) {
     for (size_t i = 0; i < 3; i++) {
         // Build with default args.
 
-        BFParams params = {.dim = d, .metric = metrics[i], .initialCapacity = n};
+        BFParams params = {.dim = d, .metric = metrics[i]};
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -628,8 +616,7 @@ TYPED_TEST(BruteForceMultiTest, vector_search_test_l2) {
 
     for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
 
-        BFParams params = {
-            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 55, .blockSize = blocksize};
+        BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = blocksize};
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -665,7 +652,7 @@ TYPED_TEST(BruteForceMultiTest, search_empty_index) {
     size_t n = 100;
     size_t k = 11;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -760,8 +747,7 @@ TYPED_TEST(BruteForceMultiTest, remove_vector_after_replacing_block) {
     size_t bs = 2;
     size_t n = 6;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = bs};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -819,8 +805,7 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator) {
     // select-based search.
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
-        BFParams params = {
-            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 7};
+        BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = 7};
         VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
@@ -868,8 +853,7 @@ TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     // select-based search.
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
-        BFParams params = {
-            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = m / 2};
+        BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = m / 2};
 
         VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
@@ -925,8 +909,7 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
 
     size_t init_n = n_labels * (perLabel - 1);
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = init_n, .blockSize = 5};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = 5};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -978,7 +961,7 @@ TYPED_TEST(BruteForceMultiTest, brute_get_distance) {
     TEST_DATA_T v3_1[] = {M_PI, M_E};
     TEST_DATA_T v4_1[] = {M_SQRT2, -M_SQRT2};
 
-    BFParams params = {.dim = dim, .initialCapacity = 4};
+    BFParams params = {.dim = dim};
 
     for (size_t i = 0; i < numIndex; i++) {
         params.metric = (VecSimMetric)i;
@@ -1040,7 +1023,7 @@ TYPED_TEST(BruteForceMultiTest, testCosine) {
     size_t dim = 128;
     size_t n = 100;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_Cosine};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -1108,8 +1091,7 @@ TYPED_TEST(BruteForceMultiTest, testSizeEstimation) {
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_Cosine, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -1130,30 +1112,11 @@ TYPED_TEST(BruteForceMultiTest, testSizeEstimation) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
-    size_t dim = 128;
-    size_t n = 100;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-    // EstimateInitialSize is called after CreateNewIndex because params struct is
-    // changed in CreateNewIndex.
-    size_t estimation = EstimateInitialSize(params);
-
-    size_t actual = index->getAllocationSize();
-    ASSERT_EQ(estimation, actual);
-
-    VecSimIndex_Free(index);
-}
-
 TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     size_t dim = 4;
     VecSimQueryReply *rep;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = 5};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
@@ -1184,7 +1147,7 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     size_t n = 10;
     VecSimQueryReply *rep;
 
-    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = 5};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 

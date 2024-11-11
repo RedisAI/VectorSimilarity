@@ -3,12 +3,11 @@
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
+                                         const IndexComponents<DataType, DistType> &components,
                                          Serializer::EncodingVersion version)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams), Serializer(version),
-      maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
-      epsilon(params->epsilon), graphDataBlocks(this->allocator),
-      idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(1, maxElements, this->allocator) {
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components), Serializer(version),
+      epsilon(params->epsilon), graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -17,6 +16,11 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // We use seed = 200 and not the default value (100) to get different sequence of
     // levels value than the loaded index.
     levelGenerator.seed(200);
+
+    // Set the initial capacity based on the number of elements in the loaded index.
+    maxElements = RoundUpInitialCapacity(this->curElementCount, this->blockSize);
+    this->idToMetaData.resize(maxElements);
+    this->visitedNodesHandlerPool.resize(maxElements);
 
     size_t initial_vector_size = maxElements / this->blockSize;
     this->vectors = new (this->allocator)
@@ -105,10 +109,6 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     // outgoing edges.
     for (size_t i = 0; i < this->curElementCount; i++) {
         for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            ElementLevelData &cur = this->getElementLevelData(i, l);
-            if (cur.totalIncomingLinks != inbound_connections_num[i][l]) {
-                return res;
-            }
             if (inbound_connections_num[i][l] > max_in_degree) {
                 max_in_degree = inbound_connections_num[i][l];
             }
@@ -204,46 +204,11 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
             }
         }
     }
-    if (version < EncodingVersion_V4) {
-        this->computeIndegreeForAll();
-    }
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::computeIndegreeForAll() {
-    size_t max_level_in_graph = 0; // including marked deleted elements
-    for (size_t i = 0; i < this->curElementCount; i++) {
-        if (getGraphDataByInternalId(i)->toplevel > max_level_in_graph) {
-            max_level_in_graph = getGraphDataByInternalId(i)->toplevel;
-        }
-    }
-    std::vector<std::vector<int>> inbound_connections_num(
-        this->curElementCount, std::vector<int>(max_level_in_graph + 1, 0));
-    for (size_t i = 0; i < this->curElementCount; i++) {
-        for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            ElementLevelData &cur = this->getElementLevelData(i, l);
-            std::set<idType> s;
-            for (unsigned int j = 0; j < cur.numLinks; j++) {
-                inbound_connections_num[cur.links[j]][l]++;
-            }
-        }
-    }
-    // Populate the total incoming links for each node.
-    for (size_t i = 0; i < this->curElementCount; i++) {
-        for (size_t l = 0; l <= getGraphDataByInternalId(i)->toplevel; l++) {
-            ElementLevelData &cur = this->getElementLevelData(i, l);
-            cur.totalIncomingLinks = inbound_connections_num[i][l];
-        }
-    }
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, ElementLevelData &data,
                                                  EncodingVersion version) {
-    // Restore the links of the current element
-    if (version >= EncodingVersion_V4) {
-        readBinaryPOD(input, data.totalIncomingLinks);
-    }
     readBinaryPOD(input, data.numLinks);
     for (size_t i = 0; i < data.numLinks; i++) {
         readBinaryPOD(input, data.links[i]);
@@ -325,7 +290,6 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, ElementLevelData &data) const {
     // Save the links of the current element
-    writeBinaryPOD(output, data.totalIncomingLinks);
     writeBinaryPOD(output, data.numLinks);
     for (size_t i = 0; i < data.numLinks; i++) {
         writeBinaryPOD(output, data.links[i]);

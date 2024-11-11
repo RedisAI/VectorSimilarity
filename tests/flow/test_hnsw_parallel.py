@@ -23,7 +23,6 @@ class TestIndex:
 
         bf_params = BFParams()
 
-        bf_params.initialCapacity = num_elements_
         bf_params.blockSize = num_elements_
         bf_params.dim = dim_
         bf_params.type = data_type_
@@ -92,7 +91,6 @@ def test_parallel_search():
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
 
     # Sequential search as the baseline
     query_data = np.float32(np.random.random((num_queries, dim)))
@@ -128,7 +126,6 @@ def test_parallel_insert():
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
 
     print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took"
           f" {g_test_index.sequential_insert_time} seconds")
@@ -191,11 +188,20 @@ def test_parallel_insert_search():
     def insert_vectors():
         parallel_index.add_vector_parallel(g_test_index.data, np.array(range(num_elements)), num_threads=int(n_threads/2))
 
-    res_labels_g = np.zeros((num_queries, dim))
+    num_runs = 2
+    res_labels_g = np.zeros((num_runs*num_queries, k))
 
     def run_queries():
         nonlocal res_labels_g
-        res_labels_g, _ = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        print(f"Running queries when index size is: {parallel_index.index_size()}")
+        res_labels_g[:num_queries], _ = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        print(f"Done running queries, index size: {parallel_index.index_size()}")
+        # Wait until 75% of the index is indexed, then run another batch of queries.
+        while parallel_index.index_size() < 0.75 * float(num_elements):
+            time.sleep(0.5)
+        print(f"Running queries again when index size is: {parallel_index.index_size()}")
+        res_labels_g[num_queries:], _ = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        print(f"Done running queries for the second time, index size: {parallel_index.index_size()}")
 
     t_insert = threading.Thread(target=insert_vectors)
     t_query = threading.Thread(target=run_queries)
@@ -208,19 +214,20 @@ def test_parallel_insert_search():
     t_query.start()
 
     [t.join() for t in [t_insert, t_query]]
+    assert parallel_index.index_size() == num_elements
+    assert parallel_index.check_integrity()
 
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
-    chunk_size = int(num_queries/5)
     total_correct_prev_chunk = 0
-    for i in range(0, num_queries, chunk_size):
+    for i in range(num_runs):
         total_correct_cur_chunk = 0
-        for j in range(i, i+chunk_size):
-            total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(set(res_labels_g[j])))
+        for j in range(num_queries):
+            res_ind = i*num_queries + j
+            total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(set(res_labels_g[res_ind])))
         assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
-              f" {total_correct_cur_chunk/(k*chunk_size)}")
+        print(f"Recall for run no. {i + 1} of queries is: {total_correct_cur_chunk/(k*num_queries)}")
 
 
 def test_parallel_with_range():
@@ -228,7 +235,6 @@ def test_parallel_with_range():
     radius = 3.0
     n_threads = min(os.cpu_count(), 8)
     PADDING_LABEL = -1  # used for padding empty labels entries in a single query results
-    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
 
     query_data = np.float32(np.random.random((num_queries, dim)))
     g_test_index.compute_ground_truth_range(query_data, radius)
@@ -274,7 +280,6 @@ def test_parallel_insert_multi():
     num_labels = int(g_test_index_multi.num_elements / g_test_index_multi.vectors_per_label)
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.85  # we expect that at least 85% of the insert/search time will be executed in parallel
 
     print(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW ({per_label} vectors per label) sequentially"
           f" took {g_test_index_multi.sequential_insert_time} seconds")
@@ -353,11 +358,20 @@ def test_parallel_multi_insert_search():
     def insert_vectors():
         parallel_multi_index.add_vector_parallel(data, labels, num_threads=int(n_threads/2))
 
-    res_labels_g = np.zeros((num_queries, dim))
+    num_runs = 2
+    res_labels_g = np.zeros((num_runs*num_queries, k))
 
     def run_queries():
         nonlocal res_labels_g
-        res_labels_g, _ = parallel_multi_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        print(f"Running queries when index size is: {parallel_multi_index.index_size()}")
+        res_labels_g[:num_queries], _ = parallel_multi_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        print(f"Done running queries, index size: {parallel_multi_index.index_size()}")
+        # Wait until 75% of the index is indexed, then run another batch of queries.
+        while parallel_multi_index.index_size() < 0.75 * float(num_elements):
+            time.sleep(0.5)
+        print(f"Running queries again when index size is: {parallel_multi_index.index_size()}")
+        res_labels_g[num_queries:], _ = parallel_multi_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        print(f"Done running queries for the second time, index size: {parallel_multi_index.index_size()}")
 
     t_insert = threading.Thread(target=insert_vectors)
     t_query = threading.Thread(target=run_queries)
@@ -370,19 +384,20 @@ def test_parallel_multi_insert_search():
     t_query.start()
 
     [t.join() for t in [t_insert, t_query]]
+    assert parallel_multi_index.index_size() == num_elements
+    assert parallel_multi_index.check_integrity()
 
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
-    chunk_size = int(num_queries/5)
     total_correct_prev_chunk = 0
-    for i in range(0, num_queries, chunk_size):
+    for i in range(num_runs):
         total_correct_cur_chunk = 0
-        for j in range(i, i+chunk_size):
-            total_correct_cur_chunk += len(set(g_test_index_multi.total_res_bf[j]).intersection(set(res_labels_g[j])))
+        for j in range(num_queries):
+            res_ind = i*num_queries + j
+            total_correct_cur_chunk += len(set(g_test_index_multi.total_res_bf[j]).intersection(set(res_labels_g[res_ind])))
         assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for queries' chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} is:"
-              f" {total_correct_cur_chunk/(k*chunk_size)}")
+        print(f"Recall for run no. {i + 1} of queries is: {total_correct_cur_chunk/(k*num_queries)}")
 
 
 def test_parallel_batch_search():
@@ -390,7 +405,6 @@ def test_parallel_batch_search():
     batch_size = 100
     n_batches = 5
     n_threads = min(os.cpu_count(), 8)
-    expected_parallel_rate = 0.85  # we expect that at least 85% of the insert/search time will be executed in parallel
 
     # Sequential batched search as the baseline
     query_data = np.float32(np.random.random((num_queries, dim)))
@@ -457,13 +471,13 @@ def test_parallel_insert_batch_search():
 
     total_results_parallel = {}
 
-    def run_batched_search(query_, query_ind):
+    def run_batched_search(query_, query_ind, res_offset=0):
         nonlocal total_results_parallel
         batch_iterator_ = parallel_index.create_batch_iterator(query_)
         res_labels_ = set()
         for _ in range(n_batches):
             res_labels_ = res_labels_.union(set(batch_iterator_.get_next_results(batch_size, BY_SCORE)[0][0]))
-        total_results_parallel[query_ind] = res_labels_
+        total_results_parallel[res_offset + query_ind] = res_labels_
 
     def insert_vectors():
         parallel_index.add_vector_parallel(g_test_index.data, range(num_elements), num_threads=int(n_threads/2))
@@ -481,19 +495,29 @@ def test_parallel_insert_batch_search():
         done, not_done = wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
     assert len(done) == num_queries and len(not_done) == 0
 
+    # Wait until 0.75% of the index is indexed, then start run another batch of queries
+    while parallel_index.index_size() < 0.75*num_elements:
+        time.sleep(0.5)
+    with ThreadPoolExecutor(max_workers=int(n_threads/2)) as executor:
+        futures = [executor.submit(run_batched_search, q, i, num_queries) for i, q in enumerate(query_data)]
+        done, not_done = wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+    assert len(done) == num_queries and len(not_done) == 0
+
     t_insert.join()
     assert parallel_index.index_size() == num_elements
     assert parallel_index.check_integrity()
 
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
     # are running, and the ground truth is measured compared to the index that contains all the elements.
-    chunk_size = int(num_queries/5)
+    num_runs = 2
+    chunk_size = int(num_queries/2)
     total_correct_prev_chunk = 0
-    for i in range(0, num_queries, chunk_size):
+    for i in range(num_runs):
         total_correct_cur_chunk = 0
-        for j in range(i, i+chunk_size):
-            total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(total_results_parallel[j]))
+        for j in range(num_queries):
+            res_ind = i*num_queries + j
+            total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(total_results_parallel[res_ind]))
         assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
+        print(f"Recall for run no. {num_runs+1} of queries is:"
               f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")

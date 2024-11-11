@@ -20,8 +20,6 @@ template <typename DataType, typename DistType>
 class HNSW_BatchIterator : public VecSimBatchIterator {
 protected:
     const HNSWIndex<DataType, DistType> *index;
-    dist_func_t<DistType> distFunc;
-    size_t dim;
     VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     tag_t visited_tag;                 // Used to mark nodes that were scanned.
     idType entry_point;                // Internal id of the node to begin the scan from.
@@ -36,7 +34,6 @@ protected:
     candidatesMinHeap<labelType> top_candidates_extras;
     candidatesMinHeap<idType> candidates;
 
-    template <bool has_marked_deleted>
     VecSimQueryReply_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
     candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryReply_Code *rc);
     virtual inline void prepareResults(VecSimQueryReply *rep,
@@ -77,8 +74,6 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
       index(index), depleted(false), top_candidates_extras(this->allocator),
       candidates(this->allocator) {
 
-    this->distFunc = index->getDistFunc();
-    this->dim = index->getDim();
     this->entry_point = INVALID_ID; // temporary until we store the entry point to level 0.
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = index->getVisitedList();
@@ -94,7 +89,6 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
 VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
     candidatesLabelsMaxHeap<DistType> *top_candidates) {
     while (!candidates.empty()) {
@@ -113,7 +107,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
         }
         // Checks if we need to add the current id to the top_candidates heap,
         // and updates the extras heap accordingly.
-        if (!has_marked_deleted || !index->isMarkedDeleted(curr_node_id))
+        if (!index->isMarkedDeleted(curr_node_id))
             updateHeaps(top_candidates, curr_node_dist, curr_node_id);
 
         // Take the current node out of the candidates queue and go over his neighbours.
@@ -143,7 +137,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
                 DistType candidate_dist =
-                    distFunc(this->getQueryBlob(), (const void *)candidate_data, dim);
+                    this->index->calcDistance(this->getQueryBlob(), (const void *)candidate_data);
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -155,7 +149,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
                 DistType candidate_dist =
-                    distFunc(this->getQueryBlob(), (const void *)candidate_data, dim);
+                    this->index->calcDistance(this->getQueryBlob(), (const void *)candidate_data);
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -179,8 +173,8 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
         if (!index->isMarkedDeleted(this->entry_point)) {
-            this->lower_bound = distFunc(this->getQueryBlob(),
-                                         this->index->getDataByInternalId(this->entry_point), dim);
+            this->lower_bound = this->index->calcDistance(
+                this->getQueryBlob(), this->index->getDataByInternalId(this->entry_point));
         } else {
             this->lower_bound = std::numeric_limits<DistType>::max();
         }
@@ -198,11 +192,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     if (top_candidates->size() == this->ef) {
         return top_candidates;
     }
-
-    if (index->getNumMarkedDeleted())
-        *rc = this->scanGraphInternal<true>(top_candidates);
-    else
-        *rc = this->scanGraphInternal<false>(top_candidates);
+    *rc = this->scanGraphInternal(top_candidates);
 
     // If we found fewer results than wanted, mark the search as depleted.
     if (top_candidates->size() < this->ef) {
