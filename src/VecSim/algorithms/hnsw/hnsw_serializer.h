@@ -23,8 +23,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     this->visitedNodesHandlerPool.resize(maxElements);
 
     size_t initial_vector_size = maxElements / this->blockSize;
-    this->vectors = new (this->allocator)
-        DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
     graphDataBlocks.reserve(initial_vector_size);
 }
 

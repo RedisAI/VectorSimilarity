@@ -1590,8 +1590,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
       idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
-    this->vectors = new (this->allocator)
-        DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
     if (M0 > UINT16_MAX)
@@ -1623,7 +1621,6 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
     for (idType id = 0; id < curElementCount; id++) {
         getGraphDataByInternalId(id)->destroy(this->levelDataSize, this->allocator);
     }
-    delete this->vectors;
 }
 
 /**

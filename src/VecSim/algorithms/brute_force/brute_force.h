@@ -72,7 +72,7 @@ public:
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
-    virtual ~BruteForceIndex() { delete this->vectors; }
+    virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
@@ -148,8 +148,6 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
-    this->vectors = new (this->allocator)
-        DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
 }
 
 /******************** Implementation **************/
