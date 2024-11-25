@@ -1,6 +1,9 @@
 #include "data_blocks_container.h"
 #include "VecSim/utils/serializer.h"
 
+#include <cmath>
+#include <bits/chrono.h>
+
 DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCount,
                                          std::shared_ptr<VecSimAllocator> allocator,
                                          unsigned char _alignment)
@@ -55,27 +58,28 @@ std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() c
 }
 
 #ifdef BUILD_TESTS
-void DataBlocksContainer::saveBlocks(std::ostream &output) const {
-    // Save number of blocks
-    unsigned int num_blocks = this->numBlocks();
-    Serializer::writeBinaryPOD(output, num_blocks);
-
+void DataBlocksContainer::saveVectorsData(std::ostream &output) const {
     // Save data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
+    for (size_t i = 0; i < this->numBlocks(); i++) {
         auto &block = this->blocks[i];
         unsigned int block_len = block.getLength();
-        Serializer::writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {
             output.write(block.getElement(j), this->element_bytes_count);
         }
     }
 }
 
-void DataBlocksContainer::restoreBlocks(std::istream &input) {
+void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
+                                        Serializer::EncodingVersion version) {
 
     // Get number of blocks
     unsigned int num_blocks = 0;
-    Serializer::readBinaryPOD(input, num_blocks);
+    if (version == Serializer::EncodingVersion_V3) {
+        // In V3, the number of blocks is serialized, so we need to read it from the file.
+        Serializer::readBinaryPOD(input, num_blocks);
+    } else {
+        num_blocks = std::ceil((float)num_vectors / this->block_size);
+    }
     this->blocks.reserve(num_blocks);
 
     // Get data blocks
@@ -83,7 +87,13 @@ void DataBlocksContainer::restoreBlocks(std::istream &input) {
         this->blocks.emplace_back(this->block_size, this->element_bytes_count, this->allocator,
                                   this->alignment);
         unsigned int block_len = 0;
-        Serializer::readBinaryPOD(input, block_len);
+        if (version == Serializer::EncodingVersion_V3) {
+            // In V3, the length of each block is serialized, so we need to read it from the file.
+            Serializer::readBinaryPOD(input, block_len);
+        } else {
+            size_t vectors_left = num_vectors - this->element_count;
+            block_len = vectors_left > this->block_size ? this->block_size : vectors_left;
+        }
         for (size_t j = 0; j < block_len; j++) {
             auto cur_vec = this->getAllocator()->allocate_unique(this->element_bytes_count);
             input.read(static_cast<char *>(cur_vec.get()),

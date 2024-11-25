@@ -3,6 +3,7 @@
 #include "data_block.h"
 #include "raw_data_container_interface.h"
 #include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/utils/serializer.h"
 #include "VecSim/utils/vecsim_stl.h"
 
 class DataBlocksContainer : public VecsimBaseObject, public RawDataContainer {
@@ -37,8 +38,8 @@ public:
     std::unique_ptr<RawDataContainer::Iterator> getIterator() const override;
 
 #ifdef BUILD_TESTS
-    void saveBlocks(std::ostream &output) const;
-    void restoreBlocks(std::istream &input);
+    void saveVectorsData(std::ostream &output) const;
+    void restoreBlocks(std::istream &input, size_t num_vectors, Serializer::EncodingVersion);
     void shrinkToFit();
     size_t numBlocks() const;
 #endif

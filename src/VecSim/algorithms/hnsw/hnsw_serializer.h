@@ -166,7 +166,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
         setVectorId(label, id);
     }
 
-    dynamic_cast<DataBlocksContainer *>(this->vectors)->restoreBlocks(input);
+    dynamic_cast<DataBlocksContainer *>(this->vectors)
+        ->restoreBlocks(input, this->curElementCount, m_version);
 
     // Get graph data blocks
     ElementGraphData *cur_egt;
@@ -266,7 +267,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         writeBinaryPOD(output, flags);
     }
 
-    dynamic_cast<DataBlocksContainer *>(this->vectors)->saveBlocks(output);
+    dynamic_cast<DataBlocksContainer *>(this->vectors)->saveVectorsData(output);
 
     // Save graph data blocks
     for (size_t i = 0; i < this->graphDataBlocks.size(); i++) {

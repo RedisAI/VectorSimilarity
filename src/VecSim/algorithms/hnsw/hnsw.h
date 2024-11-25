@@ -1660,7 +1660,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // Get the last element's metadata and data.
     // If we are deleting the last element, we already destroyed it's metadata.
-    auto *last_element_data = this->vectors->getElement(curElementCount);
+    auto *last_element_data = getDataByInternalId(curElementCount);
     DataBlock &last_gd_block = graphDataBlocks.back();
     auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
 

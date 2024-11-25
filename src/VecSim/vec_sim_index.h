@@ -112,7 +112,7 @@ public:
 
         assert(VecSimType_sizeof(vecType));
         this->vectors = new (this->allocator) DataBlocksContainer(
-            this->blockSize, this->dataSize, this->allocator, this->preprocessors->getAlignment());
+            this->blockSize, this->dataSize, this->allocator, this->getAlignment());
     }
 
     /**
