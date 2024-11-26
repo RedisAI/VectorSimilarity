@@ -18,6 +18,8 @@ public:
     // Persist index into a file in the specified location with V3 encoding routine.
     void saveIndex(const std::string &location);
 
+    EncodingVersion getVersion() const { return m_version; }
+
     static EncodingVersion ReadVersion(std::ifstream &input);
 
     // Helper functions for serializing the index.

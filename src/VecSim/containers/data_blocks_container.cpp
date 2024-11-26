@@ -1,8 +1,6 @@
 #include "data_blocks_container.h"
 #include "VecSim/utils/serializer.h"
-
 #include <cmath>
-#include <bits/chrono.h>
 
 DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCount,
                                          std::shared_ptr<VecSimAllocator> allocator,
@@ -78,6 +76,7 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
         // In V3, the number of blocks is serialized, so we need to read it from the file.
         Serializer::readBinaryPOD(input, num_blocks);
     } else {
+        // Otherwise, calculate the number of blocks based on the number of vectors.
         num_blocks = std::ceil((float)num_vectors / this->block_size);
     }
     this->blocks.reserve(num_blocks);

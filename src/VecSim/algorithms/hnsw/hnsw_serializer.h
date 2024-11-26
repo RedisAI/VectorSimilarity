@@ -166,6 +166,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
         setVectorId(label, id);
     }
 
+    // Todo: create vector data container and load the stored data based on the index storage params
+    // when other storage types will be available.
     dynamic_cast<DataBlocksContainer *>(this->vectors)
         ->restoreBlocks(input, this->curElementCount, m_version);
 
@@ -267,7 +269,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         writeBinaryPOD(output, flags);
     }
 
-    dynamic_cast<DataBlocksContainer *>(this->vectors)->saveVectorsData(output);
+    this->vectors->saveVectorsData(output);
 
     // Save graph data blocks
     for (size_t i = 0; i < this->graphDataBlocks.size(); i++) {

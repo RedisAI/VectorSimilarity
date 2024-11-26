@@ -56,4 +56,11 @@ struct RawDataContainer {
      * Create a new iterator. Should be freed by the iterator's destroctor.
      */
     virtual std::unique_ptr<Iterator> getIterator() const = 0;
+
+#ifdef BUILD_TESTS
+    /**
+     * Save the raw data of all elements in the container to the output stream.
+     */
+    virtual void saveVectorsData(std::ostream &output) const = 0;
+#endif
 };
