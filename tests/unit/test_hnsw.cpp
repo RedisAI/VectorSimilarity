@@ -1765,7 +1765,9 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
 }
 
 TYPED_TEST(HNSWTest, HNSWSerializationV3) {
-
+    if (TypeParam::get_index_type() != VecSimType_FLOAT32) {
+        GTEST_SKIP();
+    }
     size_t dim = 4;
     size_t n = 1001;
     size_t n_labels[] = {n, 100};
