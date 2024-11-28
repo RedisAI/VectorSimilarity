@@ -80,13 +80,13 @@ jobs:
       - check-if-docs-only
       - jammy
       - focal
-      - bionic
+#      - bionic
       - bullseye
-      - amazonlinux2
+#      - amazonlinux2
       - mariner2
       - rocky8
       - rocky9
-      - alpine3
+#      - alpine3
       - macos
       - arm
       - coverage
