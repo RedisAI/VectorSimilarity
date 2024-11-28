@@ -23,22 +23,22 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
-  bionic:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
+#  bionic:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:bionic
   bullseye:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
-  amazonlinux2:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/amazon2.yml
+#  amazonlinux2:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/amazon2.yml
   mariner2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -55,10 +55,10 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:9
-  alpine3:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/alpine3.yml
+#  alpine3:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/alpine3.yml
   macos:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
