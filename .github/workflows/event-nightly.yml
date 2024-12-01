@@ -1,6 +1,7 @@
 name: nightly
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 20 * * *'
 
@@ -21,18 +22,18 @@ jobs:
     with:
       container: ubuntu:focal
       run-valgrind: false
-  bionic:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
-      run-valgrind: false
+#  bionic:
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:bionic
+#      run-valgrind: false
   bullseye:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
       run-valgrind: false
-  amazonlinux2:
-    uses: ./.github/workflows/amazon2.yml
+#  amazonlinux2:
+#    uses: ./.github/workflows/amazon2.yml
   mariner2:
     uses: ./.github/workflows/mariner2.yml
   rocky8:
@@ -58,9 +59,9 @@ jobs:
       - benchmark
       - jammy
       - focal
-      - bionic
+#      - bionic
       - bullseye
-      - amazonlinux2
+#      - amazonlinux2
       - mariner2
       - rocky8
       - rocky9

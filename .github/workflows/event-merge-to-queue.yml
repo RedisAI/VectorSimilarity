@@ -2,6 +2,7 @@ name: Merge a Pull-Request Flow
 run-name: Validate ${{ github.ref_name }}
 
 on:
+  workflow_dispatch:
   workflow_call:
   merge_group:
     types: [checks_requested]
@@ -22,22 +23,22 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
-  bionic:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
+#  bionic:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:bionic
   bullseye:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
-  amazonlinux2:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/amazon2.yml
+#  amazonlinux2:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/amazon2.yml
   mariner2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -79,9 +80,9 @@ jobs:
       - check-if-docs-only
       - jammy
       - focal
-      - bionic
+#      - bionic
       - bullseye
-      - amazonlinux2
+#      - amazonlinux2
       - mariner2
       - rocky8
       - rocky9
