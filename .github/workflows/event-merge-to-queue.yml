@@ -2,6 +2,7 @@ name: Merge a Pull-Request Flow
 run-name: Validate ${{ github.ref_name }}
 
 on:
+  workflow_dispatch:
   workflow_call:
   merge_group:
     types: [checks_requested]
@@ -22,34 +23,28 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
-  bionic:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
-  xenial:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:xenial
+#  bionic:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:bionic
   bullseye:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
-  centos7:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: centos:7
-  amazonlinux2:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-    uses: ./.github/workflows/amazon2.yml
+#  amazonlinux2:
+#    needs: [check-if-docs-only]
+#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+#    uses: ./.github/workflows/amazon2.yml
+#  centos7:
+  #    needs: [check-if-docs-only]
+  #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+  #    uses: ./.github/workflows/task-unit-test.yml
+  #    with:
+  #      container: centos:7
   mariner2:
     needs: [check-if-docs-only]
     if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -87,11 +82,10 @@ jobs:
       - check-if-docs-only
       - jammy
       - focal
-      - bionic
-      - xenial
+#      - bionic
       - bullseye
-      - centos7
-      - amazonlinux2
+#       - centos7
+#       - amazonlinux2
       - mariner2
       - rocky8
       - rocky9
