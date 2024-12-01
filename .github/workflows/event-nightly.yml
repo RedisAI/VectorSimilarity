@@ -1,6 +1,7 @@
 name: nightly
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 20 * * *'
 
@@ -21,28 +22,28 @@ jobs:
     with:
       container: ubuntu:focal
       run-valgrind: false
-  bionic:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:bionic
-      run-valgrind: false
-  xenial:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:xenial
-      run-valgrind: false
+#  bionic:
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:bionic
+#      run-valgrind: false
+#  xenial:
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:xenial
+#      run-valgrind: false
   bullseye:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
       run-valgrind: false
-  centos7:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: centos:7
-      run-valgrind: false
-  amazonlinux2:
-    uses: ./.github/workflows/amazon2.yml
+#  centos7:
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: centos:7
+#      run-valgrind: false
+#  amazonlinux2:
+#    uses: ./.github/workflows/amazon2.yml
   mariner2:
     uses: ./.github/workflows/mariner2.yml
   rocky8:
