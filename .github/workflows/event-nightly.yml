@@ -46,8 +46,8 @@ jobs:
     with:
       container: rockylinux:9
       run-valgrind: false
-#  alpine3:
-#    uses: ./.github/workflows/alpine3.yml
+  alpine3:
+    uses: ./.github/workflows/alpine3.yml
   macos:
     uses: ./.github/workflows/macos.yml
   arm:
@@ -65,7 +65,7 @@ jobs:
       - mariner2
       - rocky8
       - rocky9
-#      - alpine3
+      - alpine3
       - macos
       - arm
     runs-on: ubuntu-latest
