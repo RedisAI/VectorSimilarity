@@ -7,6 +7,7 @@
 #include "L2.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/int8.h"
 #include <cstring>
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -69,4 +70,27 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {
         res += t * t;
     }
     return res;
+}
+
+template <bool is_little>
+float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    int8_t *pVect1 = (int8_t *)pVect1v;
+    int8_t *pVect2 = (int8_t *)pVect2v;
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        int16_t a = vecsim_types::int8_to_int16<is_little>(pVect1[i]);
+        int16_t b = vecsim_types::int8_to_int16<is_little>(pVect2[i]);
+        int16_t diff = a - b;
+        res += diff * diff;
+    }
+    return float(res);
+}
+
+float INT8_L2Sqr_LittleEndian(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return INT8_L2Sqr<true>(pVect1v, pVect2v, dimension);
+}
+
+float INT8_L2Sqr_BigEndian(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return INT8_L2Sqr<false>(pVect1v, pVect2v, dimension);
 }
