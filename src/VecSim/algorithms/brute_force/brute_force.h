@@ -243,7 +243,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     //create H1 from notebook algorithm
     //starting with container, reserving memory for speed
     //this is the container Omer is familiar with so should? be changes later
-    // Q - I see below assert curr_id == count, should I use count instead of size?
+    // Q - I see below (line 262) assert curr_id == count, should I use count instead of size?
     std::vector<std::tuple<DistType,labelType>> heap1(vectors->size());
     auto heap1_iter = heap1.begin();
     //Step 1 - make a container (c++ vector) of vector distance scores
@@ -262,13 +262,14 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     assert(curr_id == this->count);
 
     //Step 2 - min heapify H1
-    //The comperator should probably be written outsize
+    //The comparator should probably be written outsize
     std::make_heap(heap1.begin(), heap1.end(), [](const auto& a, const auto& b) {
         return std::get<0>(a) > std::get<0>(b); 
     });
 
     //Step 3 Create empty candidate heap - H2
     // It's size is not going to be bigger then 2k so it can be reserved
+    // Can probably reserve k+1 but need to make sure
     //We are going to save the index of the element in H1 hence size_t in the tuple
     std::vector<std::tuple<DistType,size_t>> heap2(2*k);
 
@@ -289,16 +290,17 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         std::tie(result_iter->score, result_iter->id) = heap1[selected_heap1_index];
         counter++;
         if(counter>=k) 
-        // maybe faulty loop logic or bad coding but works for no
+        // This check might be faulty loop logic or bad coding but works for now
         //but it is important to check to avoid redundant pop and 2 inserts
         {
             break;
         }
-        //Step 6 - i) pop the root of H2
+        //Step 6.1 pop the root of H2
         heap2->pop();
-        //Step 6 - ii) insert the childs of the root in respect to H1
+        //Step 6.2 insert the childs of the root in respect to H1
 
         size_t left_child = 2*selected_heap1_index +1;
+        //Insert to vector acting as heap is emplace back & push_heap
         heap2.emplace_back(std::get<0>(heap1[left_child]),left_child);
         std::push_heap(heap2.begin(),heap2.end(),[](const auto& a, const auto& b) {
         return std::get<0>(a) > std::get<0>(b); 
