@@ -245,7 +245,6 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     //this is the container Omer is familiar with so should? be changes later
     // Q - I see below (line 262) assert curr_id == count, should I use count instead of size?
     std::vector<std::tuple<DistType,labelType>> heap1(vectors->size());
-    auto heap1_iter = heap1.begin();
     //Step 1 - make a container (c++ vector) of vector distance scores
 
     while (auto *vector = vectors_it->next()) {
@@ -256,7 +255,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
             return rep;
         }
         auto score = this->calcDistance(vector, processed_query);
-        heap1.emplace(heap1_iter++,score,curr_id)
+        heap1.emplace_back(score,curr_id)
         ++curr_id;
     }
     assert(curr_id == this->count);
@@ -268,7 +267,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     });
 
     //Step 3 Create empty candidate heap - H2
-    // It's size is not going to be bigger then 2k so it can be reserved
+    // Its size is not going to be bigger then 2k so it can be reserved
     // Can probably reserve k+1 but need to make sure
     //We are going to save the index of the element in H1 hence size_t in the tuple
     std::vector<std::tuple<DistType,size_t>> heap2(2*k);
