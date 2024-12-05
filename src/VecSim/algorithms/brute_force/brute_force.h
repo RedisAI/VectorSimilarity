@@ -232,7 +232,6 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     if (0 == k) {
         return rep;
     }
-
     auto processed_query_ptr = this->preprocessQuery(queryBlob);
     const void *processed_query = processed_query_ptr.get();
 
@@ -254,10 +253,22 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
             return rep;
         }
         auto score = this->calcDistance(vector, processed_query);
-        heap1.emplace_back(score, curr_id);
-        ++ curr_id;
+        heap1.emplace_back(score, getVectorLabel(curr_id));
+        ++curr_id;
     }
     assert(curr_id == this->count);
+
+    if (this->count <= k) {
+        std::sort(heap1.begin(), heap1.end(),
+                  [](const auto &a, const auto &b) { return std::get<0>(a) < std::get<0>(b); });
+        rep->results.resize(this->count);
+        auto result_iter = rep->results.begin();
+        for (const auto &vect : heap1) {
+            std::tie(result_iter->score, result_iter->id) = vect;
+            ++result_iter;
+        }
+        return rep;
+    }
 
     // Step 2 - min heapify H1
     // The comparator should probably be written outsize
@@ -300,16 +311,22 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         // Step 6.2 insert the childs of the root in respect to H1
 
         size_t left_child = 2 * selected_heap1_index + 1;
+
+        if (left_child < heap1.size()) {
+            heap2.emplace_back(std::get<0>(heap1[left_child]), left_child);
+            std::push_heap(heap2.begin(), heap2.end(), [](const auto &a, const auto &b) {
+                return std::get<0>(a) > std::get<0>(b);
+            });
+        }
         // Insert to vector acting as heap is emplace back & push_heap
-        heap2.emplace_back(std::get<0>(heap1[left_child]), left_child);
-        std::push_heap(heap2.begin(), heap2.end(), [](const auto &a, const auto &b) {
-            return std::get<0>(a) > std::get<0>(b);
-        });
         size_t right_child = 2 * selected_heap1_index + 2;
-        heap2.emplace_back(std::get<0>(heap1[right_child]), right_child);
-        std::push_heap(heap2.begin(), heap2.end(), [](const auto &a, const auto &b) {
-            return std::get<0>(a) > std::get<0>(b);
-        });
+
+        if (left_child < heap1.size()) {
+            heap2.emplace_back(std::get<0>(heap1[right_child]), right_child);
+            std::push_heap(heap2.begin(), heap2.end(), [](const auto &a, const auto &b) {
+                return std::get<0>(a) > std::get<0>(b);
+            });
+        }
 
         ++result_iter;
     }

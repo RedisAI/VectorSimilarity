@@ -404,9 +404,10 @@ void FP16Test::search_by_score_test(params_t index_params) {
     GenerateVector(query, 50); // {50, 50, 50, 50}
     // Vectors values are equal to the id, so the 11 closest vectors are
     // 45, 46...50 (closest), 51...55
-    static size_t expected_res_order[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
+    // static size_t expected_index_diff_order[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
+    static size_t expected_index_diff_order[] = {0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5};
     auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, expected_res_order[index]);
+        ASSERT_EQ(id > 50 ? id - 50 : 50 - id, expected_index_diff_order[index]);
         ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
     };
 
