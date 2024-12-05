@@ -232,42 +232,105 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     if (0 == k) {
         return rep;
     }
-
     auto processed_query_ptr = this->preprocessQuery(queryBlob);
     const void *processed_query = processed_query_ptr.get();
-    DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
-        getNewMaxPriorityQueue();
 
-    // For vector, compute its scores and update the Top candidates max heap
     auto vectors_it = vectors->getIterator();
     idType curr_id = 0;
+
+    // create H1 from notebook algorithm
+    // starting with container, reserving memory for speed
+    // this is the container Omer is familiar with so should? be changes later
+    //  Q - I see below (line 262) assert curr_id == count, should I use count instead of size?
+    std::vector<std::tuple<DistType, labelType>> heap1;
+    heap1.reserve(vectors->size());
+    // Step 1 - make a container (c++ vector) of vector distance scores
+
     while (auto *vector = vectors_it->next()) {
+        // Omer - ask what this does exactly
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             rep->code = VecSim_QueryReply_TimedOut;
-            delete TopCandidates;
             return rep;
         }
         auto score = this->calcDistance(vector, processed_query);
-        // If we have less than k or a better score, insert it.
-        if (score < upperBound || TopCandidates->size() < k) {
-            TopCandidates->emplace(score, getVectorLabel(curr_id));
-            if (TopCandidates->size() > k) {
-                // If we now have more than k results, pop the worst one.
-                TopCandidates->pop();
-            }
-            upperBound = TopCandidates->top().first;
-        }
+        heap1.emplace_back(score, getVectorLabel(curr_id));
         ++curr_id;
     }
     assert(curr_id == this->count);
 
-    rep->results.resize(TopCandidates->size());
-    for (auto &result : std::ranges::reverse_view(rep->results)) {
-        std::tie(result.score, result.id) = TopCandidates->top();
-        TopCandidates->pop();
+    if (this->count <= k) {
+        std::sort(heap1.begin(), heap1.end(),
+                  [](const auto &a, const auto &b) { return std::get<0>(a) < std::get<0>(b); });
+        rep->results.resize(this->count);
+        auto result_iter = rep->results.begin();
+        for (const auto &vect : heap1) {
+            std::tie(result_iter->score, result_iter->id) = vect;
+            ++result_iter;
+        }
+        return rep;
     }
-    delete TopCandidates;
+
+    // Step 2 - min heapify H1
+    // The comparator should probably be written outsize
+    std::make_heap(heap1.begin(), heap1.end(),
+                   [](const auto &a, const auto &b) { return std::get<0>(a) > std::get<0>(b); });
+
+    // Step 3 Create empty candidate heap - H2
+    //  Its size is not going to be bigger then 2k so it can be reserved
+    //  Can probably reserve k+1 but need to make sure
+    // We are going to save the index of the element in H1 hence size_t in the tuple
+    std::vector<std::tuple<DistType, size_t>> heap2;
+    heap2.reserve(k + 1);
+
+    // Step4 - insert root of H1 into H2
+    // The root of H1 is in the front of the vector
+    heap2.emplace_back(std::get<0>(heap1.front()), 0);
+
+    // Steps 5 and 6 loop
+
+    rep->results.resize(k);
+    auto result_iter = rep->results.begin();
+    size_t counter = 0;
+    while (counter < k) {
+        // Step 5 insert root of H2 into result
+        auto selected = heap2.front();
+        size_t selected_heap1_index = std::get<1>(selected);
+        std::tie(result_iter->score, result_iter->id) = heap1[selected_heap1_index];
+        counter++;
+        if (counter >= k)
+        // This check might be faulty loop logic or bad coding but works for now
+        // but it is important to check to avoid redundant pop and 2 inserts
+        {
+            break;
+        }
+        // Step 6.1 pop the root of H2
+        //        To do so - std::pop_heap & v.pop_back()
+        std::pop_heap(heap2.begin(), heap2.end(),
+                      [](const auto &a, const auto &b) { return std::get<0>(a) > std::get<0>(b); });
+        heap2.pop_back();
+        // Step 6.2 insert the childs of the root in respect to H1
+
+        size_t left_child = 2 * selected_heap1_index + 1;
+
+        if (left_child < heap1.size()) {
+            heap2.emplace_back(std::get<0>(heap1[left_child]), left_child);
+            std::push_heap(heap2.begin(), heap2.end(), [](const auto &a, const auto &b) {
+                return std::get<0>(a) > std::get<0>(b);
+            });
+        }
+        // Insert to vector acting as heap is emplace back & push_heap
+        size_t right_child = 2 * selected_heap1_index + 2;
+
+        if (left_child < heap1.size()) {
+            heap2.emplace_back(std::get<0>(heap1[right_child]), right_child);
+            std::push_heap(heap2.begin(), heap2.end(), [](const auto &a, const auto &b) {
+                return std::get<0>(a) > std::get<0>(b);
+            });
+        }
+
+        ++result_iter;
+    }
+
     return rep;
 }
 

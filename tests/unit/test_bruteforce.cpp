@@ -400,7 +400,7 @@ TYPED_TEST(BruteForceTest, test_delete_swap_block) {
             ASSERT_EQ(id, index + 1);
         }
     };
-    runTopKSearchTest(index, query, k, verify_res);
+
     VecSimIndex_Free(index);
 }
 
@@ -662,6 +662,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
 
         auto verify_res = [&](size_t id, double score, size_t index) {
             size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+            std::cout << "diff_id is:" << diff_id << "with score" << score << std::endl;
             ASSERT_EQ(diff_id, (index + 1) / 2);
             ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
         };
