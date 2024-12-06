@@ -196,4 +196,17 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     return ret_dist_func;
 }
 
+dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = INT8_InnerProduct;
+    // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+    return ret_dist_func;
+}
 } // namespace spaces

@@ -66,3 +66,16 @@ float FP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension
     }
     return 1.0f - res;
 }
+
+float INT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    int8_t *pVect1 = (int8_t *)pVect1v;
+    int8_t *pVect2 = (int8_t *)pVect2v;
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        int16_t a = pVect1[i];
+        int16_t b = pVect2[i];
+        res += a * b;
+    }
+    return 1.0f - float(res);
+}
