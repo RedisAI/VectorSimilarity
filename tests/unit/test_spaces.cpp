@@ -12,10 +12,12 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
+#include "VecSim/spaces/Cosine/Cosine.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/Cosine_space.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/AVX.h"
@@ -101,6 +103,21 @@ TEST_F(SpacesTest, fp16_l2_no_optimization_func_test) {
     float dist = FP16_L2Sqr((const void *)a, (const void *)b, dim);
     ASSERT_EQ(dist, FP32_L2Sqr((const void *)sanity_a, (const void *)sanity_b, dim));
 }
+
+TEST_F(SpacesTest, int8_l2_no_optimization_func_test) {
+    size_t dim = 5;
+
+    int8_t a[dim], b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (i + 1);
+        b[i] = (i + 2);
+    }
+
+    float dist = INT8_L2Sqr((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, 5.0);
+}
+
+/* ======================== IP NO OPT ======================== */
 
 TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
     size_t dim = 5;
@@ -211,6 +228,34 @@ TEST_F(SpacesTest, fp16_ip_no_optimization_func_test) {
     ASSERT_EQ(dist, FP32_InnerProduct((const void *)sanity_a, (const void *)sanity_b, dim));
 }
 
+TEST_F(SpacesTest, int8_ip_no_optimization_func_test) {
+    size_t dim = 4;
+    int8_t a[] = {1, 0, 0, 0};
+    int8_t b[] = {1, 0, 0, 0};
+
+    float dist = INT8_InnerProduct((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, 0.0);
+}
+
+/* ======================== Cosine NO OPT ======================== */
+
+TEST_F(SpacesTest, int8_Cosine_no_optimization_func_test) {
+    size_t dim = 4;
+    // create normalized vector with extra space for the norm
+    std::vector<int8_t> vec1(dim + sizeof(float), 0);
+    std::vector<int8_t> vec2(dim + sizeof(float), 0);
+
+    vec1[0] = 1; // {1, 0, 0, 0}
+    vec2[1] = 1; // {1, 0, 0, 0}
+
+    // write the norm at the end of the vector
+    *(float *)(vec1.data() + dim) = 1.0;
+    *(float *)(vec2.data() + dim) = 1.0;
+
+    float dist = INT8_InnerProduct((const void *)vec1.data(), (const void *)vec2.data(), dim);
+    ASSERT_EQ(dist, 1.0);
+}
+
 TEST_F(SpacesTest, GetDistFuncInvalidMetricFP32) {
     EXPECT_THROW(
         (spaces::GetDistFunc<float, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
@@ -231,6 +276,11 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricFP16) {
         (spaces::GetDistFunc<float16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
         std::invalid_argument);
 }
+// TEST_F(SpacesTest, GetDistFuncInvalidMetricINT8) {
+//     EXPECT_THROW(
+//         (spaces::GetDistFunc<int8_t, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10,
+//         nullptr)), std::invalid_argument);
+// }
 
 using namespace spaces;
 

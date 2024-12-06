@@ -3,6 +3,7 @@ project(VectorSimilaritySpaces_no_optimization)
 add_library(VectorSimilaritySpaces_no_optimization
 	L2/L2.cpp
 	IP/IP.cpp
+	Cosine/Cosine.cpp
 )
 
 include(${root}/cmake/cpu_features.cmake)
@@ -79,6 +80,7 @@ endif()
 add_library(VectorSimilaritySpaces
 	L2_space.cpp
 	IP_space.cpp
+	Cosine_space.cpp
 	spaces.cpp
 	${OPTIMIZATIONS}
 	computer/preprocessor_container.cpp
