@@ -25,15 +25,14 @@ public:
         v2 = new int8_t[dim];
 
         // random for int8_t and uint8_t is not provided by the standard library
-        memcpy(v1, test_utils::create_int8_vec(dim).data(), dim);
-        memcpy(v2, test_utils::create_int8_vec(dim).data(), dim);
+        memcpy(v1, test_utils::create_int8_vec(dim, 123).data(), dim);
+        memcpy(v2, test_utils::create_int8_vec(dim, 1234).data(), dim);
     }
     void TearDown(const ::benchmark::State &state) {
         delete v1;
         delete v2;
     }
 };
-
 
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;

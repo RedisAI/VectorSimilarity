@@ -913,8 +913,8 @@ class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
-    auto v1 = test_utils::create_int8_vec(dim);
-    auto v2 = test_utils::create_int8_vec(dim);
+    auto v1 = test_utils::create_int8_vec(dim, 123);
+    auto v2 = test_utils::create_int8_vec(dim, 1234);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(int8_t) / 8;
@@ -931,7 +931,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim)) << "AVX512 with dim " << dim;
-        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
@@ -946,6 +946,6 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(INT8OptFuncs, INT8SpacesOptimizationTest,
-                         testing::Range(32UL, 32 * 2UL + 1));
+                         testing::Range(64UL, 64 * 2UL + 1));
 
 #endif // CPU_FEATURES_ARCH_X86_64
