@@ -928,7 +928,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
         optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_AVX512F_VW_CL_VNNI(dim))
+        ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
