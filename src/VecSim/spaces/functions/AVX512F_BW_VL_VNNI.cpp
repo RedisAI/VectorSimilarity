@@ -18,9 +18,16 @@ dist_func_t<float> Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) 
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, INT8_L2SqrSIMD32_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
+
 dist_func_t<float> Choose_INT8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, INT8_InnerProductSIMD32_AVX512F_BW_VL_VNNI);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, INT8_CosineSIMD32_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
 

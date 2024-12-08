@@ -12,12 +12,10 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/Cosine/Cosine.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/Cosine_space.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/AVX.h"
@@ -243,19 +241,19 @@ TEST_F(SpacesTest, int8_ip_no_optimization_func_test) {
 
 TEST_F(SpacesTest, int8_Cosine_no_optimization_func_test) {
     size_t dim = 4;
-    // create normalized vector with extra space for the norm
-    std::vector<int8_t> vec1(dim + sizeof(float), 0);
-    std::vector<int8_t> vec2(dim + sizeof(float), 0);
+    // create a vector with extra space for the norm
+    int8_t *v1 = new int8_t[dim + sizeof(float)];
+    int8_t *v2 = new int8_t[dim + sizeof(float)];
 
-    vec1[0] = 1; // {1, 0, 0, 0}
-    vec2[1] = 1; // {1, 0, 0, 0}
+    test_utils::populate_int8_vec(v1, dim, 123);
+    test_utils::populate_int8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(vec1.data() + dim) = 1.0;
-    *(float *)(vec2.data() + dim) = 1.0;
+    *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
+    *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
 
-    float dist = INT8_InnerProduct((const void *)vec1.data(), (const void *)vec2.data(), dim);
-    ASSERT_EQ(dist, 1.0);
+    float dist = INT8_Cosine((const void *)v1, (const void *)v2, dim);
+    ASSERT_NEAR(dist, 0.0, 0.000001);
 }
 
 /* ======================== Test Getters ======================== */
@@ -280,11 +278,11 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricFP16) {
         (spaces::GetDistFunc<float16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
         std::invalid_argument);
 }
-// TEST_F(SpacesTest, GetDistFuncInvalidMetricINT8) {
-//     EXPECT_THROW(
-//         (spaces::GetDistFunc<int8_t, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10,
-//         nullptr)), std::invalid_argument);
-// }
+TEST_F(SpacesTest, GetDistFuncInvalidMetricINT8) {
+    EXPECT_THROW(
+        (spaces::GetDistFunc<int8_t, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        std::invalid_argument);
+}
 
 using namespace spaces;
 
@@ -916,8 +914,10 @@ class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
-    auto v1 = test_utils::create_int8_vec(dim, 123);
-    auto v2 = test_utils::create_int8_vec(dim, 1234);
+    int8_t *v1 = new int8_t[dim];
+    int8_t *v2 = new int8_t[dim];
+    test_utils::populate_int8_vec(v1, dim, 123);
+    test_utils::populate_int8_vec(v2, dim, 1234);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(int8_t) / 8;
@@ -925,7 +925,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    float baseline = INT8_L2Sqr(v1.data(), v2.data(), dim);
+    float baseline = INT8_L2Sqr(v1, v2, dim);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
         optimization.avx512vnni) {
@@ -933,7 +933,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
         arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
@@ -943,16 +943,17 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
     unsigned char alignment = 0;
     arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, INT8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim))
-        << "No optimization with dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
 TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
-    auto v1 = test_utils::create_int8_vec(dim, 123);
-    auto v2 = test_utils::create_int8_vec(dim, 1234);
+    int8_t *v1 = new int8_t[dim];
+    int8_t *v2 = new int8_t[dim];
+    test_utils::populate_int8_vec(v1, dim, 123);
+    test_utils::populate_int8_vec(v2, dim, 1234);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(int8_t) / 8;
@@ -960,7 +961,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    float baseline = INT8_InnerProduct(v1.data(), v2.data(), dim);
+    float baseline = INT8_InnerProduct(v1, v2, dim);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
         optimization.avx512vnni) {
@@ -968,7 +969,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
         arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
@@ -979,8 +980,46 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
     arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, INT8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim))
-        << "No optimization with dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "No optimization with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
+    auto optimization = cpu_features::GetX86Info().features;
+    size_t dim = GetParam();
+    int8_t *v1 = new int8_t[dim + sizeof(float)];
+    int8_t *v2 = new int8_t[dim + sizeof(float)];
+    test_utils::populate_int8_vec(v1, dim, 123);
+    test_utils::populate_int8_vec(v2, dim, 1234);
+
+    // write the norm at the end of the vector
+    *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
+    *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
+    auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+        size_t elements_in_reg = reg_bit_size / sizeof(int8_t) / 8;
+        return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(int8_t) : 0;
+    };
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = INT8_Cosine(v1, v2, dim);
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
+            optimization.avx512vnni = 0;
+    }
+#endif
+    unsigned char alignment = 0;
+    arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, INT8_Cosine) << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 

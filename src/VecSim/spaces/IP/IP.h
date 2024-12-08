@@ -18,3 +18,4 @@ float BF16_InnerProduct_LittleEndian(const void *pVect1v, const void *pVect2v, s
 float BF16_InnerProduct_BigEndian(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float INT8_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
+float INT8_Cosine(const void *pVect1, const void *pVect2, size_t dimension);

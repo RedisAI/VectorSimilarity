@@ -21,12 +21,15 @@ public:
 
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
-        v1 = new int8_t[dim];
-        v2 = new int8_t[dim];
+        // Allocate vector with extra space for cosine calculations
+        v1 = new int8_t[dim + sizeof(float)];
+        v2 = new int8_t[dim + sizeof(float)];
+        test_utils::populate_int8_vec(v1, dim, 123);
+        test_utils::populate_int8_vec(v2, dim, 1234);
 
-        // random for int8_t and uint8_t is not provided by the standard library
-        memcpy(v1, test_utils::create_int8_vec(dim, 123).data(), dim);
-        memcpy(v2, test_utils::create_int8_vec(dim, 1234).data(), dim);
+        // Store the norm in the extra space for cosine calculations
+        *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
+        *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
     }
     void TearDown(const ::benchmark::State &state) {
         delete v1;
@@ -42,14 +45,12 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
                                 avx512_f_bw_vl_vnni_supported);
-// INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, AVX512_F_BW_VL_VNNI, 32,
-//                              avx512_f_bw_vl_vnni_supported);
-// INITIALIZE_BENCHMARKS_SET_COSINE(BM_VecSimSpaces_Integers_INT8, INT8, AVX512_F_BW_VL_VNNI, 32,
-//                              avx512_f_bw_vl_vnni_supported)
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
+                                 avx512_f_bw_vl_vnni_supported)
 #endif // AVX512_F_BW_VL_VNNI
 
 #endif // x86_64
 
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, InnerProduct, 32);
+    INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, InnerProduct, 32);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, L2Sqr, 32);
 BENCHMARK_MAIN();
