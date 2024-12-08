@@ -10,7 +10,7 @@
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
-#include "test_utils.h"
+#include "unit_test_utils.h"
 #include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
@@ -32,7 +32,7 @@ using float16 = vecsim_types::float16;
 template <typename index_type_t>
 class CommonIndexTest : public ::testing::Test {};
 
-// DataTypeSet are defined in test_utils.h
+// DataTypeSet are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
 
