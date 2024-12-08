@@ -300,6 +300,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(IP_FP64_GetDistFunc(dim), FP64_InnerProduct);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
+        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
     }
     for (size_t dim = 8; dim < 16; dim++) {
         ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
@@ -309,6 +310,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
+        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
     }
     for (size_t dim = 16; dim < 32; dim++) {
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
@@ -316,6 +318,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
+        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
     }
 }
 
@@ -931,7 +934,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim)) << "AVX512 with dim " << dim;
-        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
@@ -945,7 +948,43 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
+TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
+    auto optimization = cpu_features::GetX86Info().features;
+    size_t dim = GetParam();
+    auto v1 = test_utils::create_int8_vec(dim, 123);
+    auto v2 = test_utils::create_int8_vec(dim, 1234);
+
+    auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+        size_t elements_in_reg = reg_bit_size / sizeof(int8_t) / 8;
+        return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(int8_t) : 0;
+    };
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = INT8_InnerProduct(v1.data(), v2.data(), dim);
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX512 with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
+            optimization.avx512vnni = 0;
+    }
+#endif
+    unsigned char alignment = 0;
+    arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, INT8_InnerProduct)
+        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v1.data(), v2.data(), dim))
+        << "No optimization with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
 INSTANTIATE_TEST_SUITE_P(INT8OptFuncs, INT8SpacesOptimizationTest,
-                         testing::Range(64UL, 64 * 2UL + 1));
+                         testing::Range(32UL, 32 * 2UL + 1));
 
 #endif // CPU_FEATURES_ARCH_X86_64
