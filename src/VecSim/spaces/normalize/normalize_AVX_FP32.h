@@ -9,13 +9,13 @@
 #include <cmath>
 
 
-static inline void powerStep(float *&pVect1,__m256 &sumPowerReg) {
+static inline void powerStep(float *&pVect1,float &sumPower) {
 
     __m256 v1 = _mm256_loadu_ps(pVect1);
 
     pVect1 += 8; 
 
-    sumPowerReg = _mm256_add_ps(sumPowerReg,_mm256_mul_ps(v1, v1));
+    sumPower +=my_mm256_reduce_add_ps(_mm256_mul_ps(v1, v1));
 
 }
 
@@ -40,27 +40,27 @@ void FP32_normIMD16_AVX(const void *pVect1v,size_t dimension) {
     float *pVectOrig = pVect1;
     const float *pEnd1 = pVect1 + dimension;
 
-    __m256 sumPowerReg = _mm256_setzero_ps();
+    float sumPower = 0;
 
     // Deal with 1-7 floats with mask loading, if needed
     if constexpr (residual % 8) {
         __mmask8 constexpr mask8 = (1 << (residual % 8)) - 1;
         __m256 v1 = my_mm256_maskz_loadu_ps<mask8>(pVect1);
         pVect1 += residual % 8;
-        sumPowerReg = _mm256_mul_ps(v1, v1);
+        sumPower = my_mm256_reduce_add_ps(_mm256_mul_ps(v1, v1));
     }
 
     // If the reminder is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
-        powerStep(pVect1,sumPowerReg);
+        powerStep(pVect1,sumPower);
 
     }
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
     do {
-        powerStep(pVect1, sumPowerReg);
-        powerStep(pVect1, sumPowerReg);     
+        powerStep(pVect1, sumPower);
+        powerStep(pVect1, sumPower);     
      
         // can reduce now or in the end of the loop, check both benchmark   
     } while (pVect1 < pEnd1);
@@ -68,8 +68,7 @@ void FP32_normIMD16_AVX(const void *pVect1v,size_t dimension) {
 
     pVect1 = pVectOrig;
 
-    float sumOfPower = my_mm256_reduce_add_ps(sumPowerReg);
-    __m256 normFactor = _mm256_set1_ps(sqrt(sumOfPower));
+    __m256 normFactor = _mm256_set1_ps(sqrt(sumPower));
 
     // Deal with 1-7 floats with mask loading, if needed
     if constexpr (residual % 8) {
