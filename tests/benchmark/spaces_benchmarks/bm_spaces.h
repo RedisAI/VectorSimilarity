@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
+#include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
@@ -129,6 +130,6 @@ static constexpr size_t start = min_no_res_th_dim;
     INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, COSINE, dim_opt, arch_supported);      \
     INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, COSINE, dim_opt, arch_supported);
 
-#define INITIALIZE_BENCHMARKS_SET(bm_class, type_prefix, arch, dim_opt, arch_supported)            \
+#define INITIALIZE_BENCHMARKS_SET_L2_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)            \
     INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)             \
     INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)
