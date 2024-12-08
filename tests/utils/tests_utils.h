@@ -5,7 +5,8 @@
 
 namespace test_utils {
 
-static std::vector<int8_t> create_int8_vec(size_t dim, int seed = 1234) {
+// Assuming v is a memory allocation of size dim * sizeof(float)
+static void populate_int8_vec(int8_t *v, size_t dim, int seed = 1234) {
 
     std::mt19937 gen(seed); // Mersenne Twister engine initialized with the fixed seed
 
@@ -13,12 +14,18 @@ static std::vector<int8_t> create_int8_vec(size_t dim, int seed = 1234) {
     // Define a distribution range for int8_t
     std::uniform_int_distribution<int16_t> dis(-128, 127);
 
-    std::vector<int8_t> vec(dim);
-    for (auto &num : vec) {
-        num = static_cast<int8_t>(dis(gen));
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = static_cast<int8_t>(dis(gen));
     }
+}
 
-    return vec;
+// TODO: replace with normalize function from VecSim
+float compute_norm(const int8_t *vec, size_t dim) {
+    int norm = 0;
+    for (size_t i = 0; i < dim; i++) {
+        norm += vec[i] * vec[i];
+    }
+    return sqrt(norm);
 }
 
 } // namespace test_utils

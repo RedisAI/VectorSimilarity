@@ -67,7 +67,7 @@ float FP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension
     return 1.0f - res;
 }
 
-float INT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
@@ -77,5 +77,15 @@ float INT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensi
         int16_t b = pVect2[i];
         res += a * b;
     }
-    return 1.0f - float(res);
+    return res;
+}
+
+float INT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1 - INT8_InnerProductImp(pVect1v, pVect2v, dimension);
+}
+
+float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float norm_v1 = *(float *)((int8_t *)pVect1v + dimension);
+    float norm_v2 = *(float *)((int8_t *)pVect2v + dimension);
+    return 1.0f - float(INT8_InnerProductImp(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
 }

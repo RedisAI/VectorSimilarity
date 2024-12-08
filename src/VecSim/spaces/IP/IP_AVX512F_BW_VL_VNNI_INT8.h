@@ -23,8 +23,7 @@ static inline void InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &s
 }
 
 template <unsigned char residual> // 0..32
-float INT8_InnerProductSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
-                                                 size_t dimension) {
+static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
@@ -52,5 +51,20 @@ float INT8_InnerProductSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void
         InnerProductStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    return 1.0f - float(_mm512_reduce_add_epi32(sum));
+    return _mm512_reduce_add_epi32(sum);
+}
+
+template <unsigned char residual> // 0..32
+float INT8_InnerProductSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+                                                 size_t dimension) {
+
+    return 1 - INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+}
+template <unsigned char residual> // 0..32
+float INT8_CosineSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+                                           size_t dimension) {
+    float norm_v1 = *(float *)((int8_t *)pVect1v + dimension);
+    float norm_v2 = *(float *)((int8_t *)pVect2v + dimension);
+    return 1.0f -
+           float(INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
 }
