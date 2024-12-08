@@ -13,19 +13,19 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 // AVX512 functions
 #ifdef OPT_AVX512F
 bool avx512f_supported = opt.avx512f;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP64, FP64, AVX512F, 8, avx512f_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, AVX512F, 8, avx512f_supported);
 #endif // AVX512F
 
 // AVX functions
 #ifdef OPT_AVX
 bool avx_supported = opt.avx;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP64, FP64, AVX, 8, avx_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, AVX, 8, avx_supported);
 #endif // AVX
 
 // SSE functions
 #ifdef OPT_SSE
 bool sse_supported = opt.sse;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP64, FP64, SSE, 8, sse_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, SSE, 8, sse_supported);
 #endif // SSE
 
 #endif // x86_64

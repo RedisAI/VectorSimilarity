@@ -12,7 +12,7 @@ namespace spaces {
 
 #include "implementation_chooser.h"
 
-dist_func_t<float> Choose_INT8_L2_implementation_AVX512F_VW_CL_VNNI(size_t dim) {
+dist_func_t<float> Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, INT8_L2SqrSIMD32_AVX512F_BW_VL_VNNI);
     return ret_dist_func;

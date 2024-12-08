@@ -10,6 +10,6 @@
 
 namespace spaces {
 
-dist_func_t<float> Choose_INT8_L2_implementation_AVX512F_VW_CL_VNNI(size_t dim);
+dist_func_t<float> Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 
 } // namespace spaces
