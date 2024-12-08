@@ -29,7 +29,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
-#include "../utils/tests_utils.h"
+#include "tests_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;

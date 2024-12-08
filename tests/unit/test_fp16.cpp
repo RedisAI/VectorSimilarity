@@ -2,7 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/index_factories/hnsw_factory.h"
-#include "test_utils.h"
+#include "unit_test_utils.h"
 #include "VecSim/utils/serializer.h"
 #include "mock_thread_pool.h"
 #include "VecSim/query_result_definitions.h"

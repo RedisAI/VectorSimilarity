@@ -5,7 +5,8 @@
  */
 #include <benchmark/benchmark.h>
 #include <random>
-#include "../../utils/tests_utils.h"
+#include <cstring>
+#include "utils/tests_utils.h"
 #include "bm_spaces.h"
 
 class BM_VecSimSpaces_Integers_INT8 : public benchmark::Fixture {
