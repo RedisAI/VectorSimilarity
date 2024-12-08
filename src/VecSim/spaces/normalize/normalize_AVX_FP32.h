@@ -68,7 +68,8 @@ void FP32_normIMD16_AVX(const void *pVect1v,size_t dimension) {
 
     pVect1 = pVectOrig;
 
-    __m256 normFactor = _mm256_set1_ps(sqrt(sumPower));
+    __m256 normFactor = _mm256_sqrt_ps(_mm256_set1_ps(sumPower));
+
 
     // Deal with 1-7 floats with mask loading, if needed
     if constexpr (residual % 8) {
