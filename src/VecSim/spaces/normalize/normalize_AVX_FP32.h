@@ -74,8 +74,9 @@ void FP32_normIMD16_AVX(const void *pVect1v,size_t dimension) {
     // Deal with 1-7 floats with mask loading, if needed
     if constexpr (residual % 8) {
         __mmask8 constexpr mask8 = (1 << (residual % 8)) - 1;
-        __m256 v1 = my_mm256_maskz_loadu_ps<mask8>(pVect1);
-        _mm256_storeu_ps(pVect1,_mm256_mul_ps (v1,normFactor));
+        __m256 v1 = _mm256_loadu_ps(pVect1);
+        __m256 blend = _mm256_blend_ps(v1,_mm256_div_ps(v1,normFactor),mask8);
+        _mm256_storeu_ps(pVect1,blend);
 
         pVect1 += residual % 8;
     }
