@@ -37,15 +37,15 @@ float INT8_L2SqrSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect
     // so mask loading is guaranteed to be safe
     if constexpr (residual) {
         __mmask32 mask = (1LU << residual) - 1;
-        __m256i temp_a = _mm256_maskz_loadu_epi8(mask, pVect1);
+        __m256i temp_a = _mm256_loadu_epi8(pVect1);
         __m512i va = _mm512_cvtepi8_epi16(temp_a);
         pVect1 += residual;
 
-        __m256i temp_b = _mm256_maskz_loadu_epi8(mask, pVect2);
+        __m256i temp_b = _mm256_loadu_epi8(pVect2);
         __m512i vb = _mm512_cvtepi8_epi16(temp_b);
         pVect2 += residual;
 
-        __m512i diff = _mm512_sub_epi16(va, vb);
+        __m512i diff = _mm512_maskz_sub_epi16(mask, va, vb);
         sum = _mm512_dpwssd_epi32(sum, diff, diff);
     }
 
