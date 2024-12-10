@@ -23,7 +23,8 @@ static void populate_int8_vec(int8_t *v, size_t dim, int seed = 1234) {
 float compute_norm(const int8_t *vec, size_t dim) {
     int norm = 0;
     for (size_t i = 0; i < dim; i++) {
-        norm += vec[i] * vec[i];
+        int val = static_cast<int>(vec[i]);
+        norm += val * val;
     }
     return sqrt(norm);
 }
