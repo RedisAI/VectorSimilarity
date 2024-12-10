@@ -60,13 +60,13 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
 }
 
 template <unsigned char residual> // 0..32
-float INT8_InnerProductSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+float INT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                                  size_t dimension) {
 
     return 1 - INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
 }
 template <unsigned char residual> // 0..32
-float INT8_CosineSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+float INT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                            size_t dimension) {
     float norm_v1 = *(float *)((int8_t *)pVect1v + dimension);
     float norm_v2 = *(float *)((int8_t *)pVect2v + dimension);

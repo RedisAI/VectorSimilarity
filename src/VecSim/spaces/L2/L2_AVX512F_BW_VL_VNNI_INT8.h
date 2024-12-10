@@ -24,7 +24,7 @@ static inline void L2SqrStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &sum) {
 }
 
 template <unsigned char residual> // 0..64
-float INT8_L2SqrSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+float INT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                           size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
