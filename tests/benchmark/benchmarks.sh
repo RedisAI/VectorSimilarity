@@ -13,6 +13,7 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     echo spaces_fp64
     echo spaces_bf16
     echo spaces_fp16
+    echo spaces_int8
 elif [ "$BM_TYPE" = "benchmarks-default" ]; then
     echo basics_single_fp32
     echo basics_multi_fp32
@@ -20,6 +21,7 @@ elif [ "$BM_TYPE" = "benchmarks-default" ]; then
     echo spaces_fp64
     echo spaces_bf16
     echo spaces_fp16
+    echo spaces_int8
 # Basic benchmarks
 elif [ "$BM_TYPE" = "bm-basics-fp32-single" ] ; then
     echo basics_single_fp32
@@ -66,6 +68,7 @@ elif [ "$BM_TYPE" = "bm-spaces" ] ; then
     echo spaces_fp16
     echo spaces_fp64
     echo spaces_bf16
+    echo spaces_int8
 elif [ "$BM_TYPE" = "bm-spaces-fp32" ] ; then
     echo spaces_fp32
 elif [ "$BM_TYPE" = "bm-spaces-fp64" ] ; then
