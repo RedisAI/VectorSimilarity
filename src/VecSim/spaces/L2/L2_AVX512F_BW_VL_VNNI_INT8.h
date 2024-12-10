@@ -23,7 +23,7 @@ static inline void L2SqrStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &sum) {
     sum = _mm512_dpwssd_epi32(sum, diff, diff);
 }
 
-template <unsigned char residual> // 0..32
+template <unsigned char residual> // 0..64
 float INT8_L2SqrSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                           size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
@@ -35,24 +35,29 @@ float INT8_L2SqrSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect
 
     // Deal with remainder first. `dim` is more than 32, so we have at least one 32-int_8 block,
     // so mask loading is guaranteed to be safe
-    if constexpr (residual) {
-        __mmask32 mask = (1LU << residual) - 1;
+    if constexpr (residual % 32) {
+        __mmask32 mask = (1LU << (residual % 32)) - 1;
         __m256i temp_a = _mm256_loadu_epi8(pVect1);
         __m512i va = _mm512_cvtepi8_epi16(temp_a);
-        pVect1 += residual;
+        pVect1 += residual % 32;
 
         __m256i temp_b = _mm256_loadu_epi8(pVect2);
         __m512i vb = _mm512_cvtepi8_epi16(temp_b);
-        pVect2 += residual;
+        pVect2 += residual % 32;
 
         __m512i diff = _mm512_maskz_sub_epi16(mask, va, vb);
         sum = _mm512_dpwssd_epi32(sum, diff, diff);
     }
 
-    // We dealt with the residual part. We are left with some multiple of 32-int_8.
-    do {
+    if constexpr (residual >= 32) {
         L2SqrStep(pVect1, pVect2, sum);
-    } while (pVect1 < pEnd1);
+    }
+
+    // We dealt with the residual part. We are left with some multiple of 64-int_8.
+    while (pVect1 < pEnd1) {
+        L2SqrStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum);
+    }
 
     return _mm512_reduce_add_epi32(sum);
 }
