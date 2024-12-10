@@ -70,3 +70,17 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {
     }
     return res;
 }
+
+float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    int8_t *pVect1 = (int8_t *)pVect1v;
+    int8_t *pVect2 = (int8_t *)pVect2v;
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        int16_t a = pVect1[i];
+        int16_t b = pVect2[i];
+        int16_t diff = a - b;
+        res += diff * diff;
+    }
+    return float(res);
+}
