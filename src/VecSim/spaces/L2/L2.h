@@ -16,3 +16,5 @@ float BF16_L2Sqr_LittleEndian(const void *pVect1v, const void *pVect2v, size_t d
 float BF16_L2Sqr_BigEndian(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension);
+
+float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);

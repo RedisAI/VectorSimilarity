@@ -6,7 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
-#include "test_utils.h"
+#include "unit_test_utils.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "cpu_features_macros.h"
@@ -32,7 +32,7 @@ protected:
     }
 };
 
-// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
+// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(BruteForceTest, DataTypeSet);
 
