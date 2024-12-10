@@ -115,6 +115,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += EstimateComponentsMemory<float16, float>(params->metric);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
+    est += sizeof(DataBlocksContainer) + allocations_overhead;
+
     return est;
 }
 

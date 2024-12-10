@@ -12,6 +12,8 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/containers/data_block.h"
+#include "VecSim/containers/raw_data_container_interface.h"
+#include "VecSim/containers/data_blocks_container.h"
 #include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
@@ -110,7 +112,6 @@ protected:
     size_t maxLevel; // this is the top level of the entry point's element
 
     // Index data
-    vecsim_stl::vector<DataBlock> vectorBlocks;
     vecsim_stl::vector<DataBlock> graphDataBlocks;
     vecsim_stl::vector<ElementMetaData> idToMetaData;
 
@@ -182,7 +183,7 @@ protected:
     void replaceEntryPoint();
 
     void SwapLastIdWithDeletedId(idType element_internal_id, ElementGraphData *last_element,
-                                 void *last_element_data);
+                                 const void *last_element_data);
 
     /** Add vector functions */
     // Protected internal function that implements generic single vector insertion.
@@ -384,7 +385,7 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
 
 template <typename DataType, typename DistType>
 const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return vectorBlocks[internal_id / this->blockSize].getElement(internal_id % this->blockSize);
+    return this->vectors->getElement(internal_id);
 }
 
 template <typename DataType, typename DistType>
@@ -1130,7 +1131,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
                                                             ElementGraphData *last_element,
-                                                            void *last_element_data) {
+                                                            const void *last_element_data) {
     // Swap label - this is relevant when the last element's label exists (it is not marked as
     // deleted).
     if (!isMarkedDeleted(curElementCount)) {
@@ -1305,12 +1306,6 @@ void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::growByBlock() {
     size_t new_max_elements = maxElements + this->blockSize;
-
-    // Validations
-    assert(vectorBlocks.size() == graphDataBlocks.size());
-    assert(vectorBlocks.empty() || vectorBlocks.back().getLength() == this->blockSize);
-
-    vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator, this->alignment);
     graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
 
     resizeIndexCommon(new_max_elements);
@@ -1320,13 +1315,6 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::shrinkByBlock() {
     assert(maxElements >= this->blockSize);
     size_t new_max_elements = maxElements - this->blockSize;
-
-    // Validations
-    assert(vectorBlocks.size() == graphDataBlocks.size());
-    assert(!vectorBlocks.empty());
-    assert(vectorBlocks.back().getLength() == 0);
-
-    vectorBlocks.pop_back();
     graphDataBlocks.pop_back();
 
     resizeIndexCommon(new_max_elements);
@@ -1599,9 +1587,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const IndexComponents<DataType, DistType> &components,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      VecSimIndexTombstone(), maxElements(0), vectorBlocks(this->allocator),
-      graphDataBlocks(this->allocator), idToMetaData(this->allocator),
-      visitedNodesHandlerPool(0, this->allocator) {
+      VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -1673,8 +1660,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // Get the last element's metadata and data.
     // If we are deleting the last element, we already destroyed it's metadata.
-    DataBlock &last_vector_block = vectorBlocks.back();
-    auto last_element_data = last_vector_block.removeAndFetchLastElement();
+    auto *last_element_data = getDataByInternalId(curElementCount);
     DataBlock &last_gd_block = graphDataBlocks.back();
     auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
 
@@ -1685,6 +1671,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // If we need to free a complete block and there is at least one block between the
     // capacity and the size.
+    this->vectors->removeElement(curElementCount);
     if (curElementCount % this->blockSize == 0) {
         shrinkByBlock();
     }
@@ -1793,16 +1780,13 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
     if (indexSize() > indexCapacity()) {
         growByBlock();
     } else if (state.newElementId % this->blockSize == 0) {
-        // If we had an initial capacity, we might have to allocate new blocks for the data and
-        // meta-data.
-        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
-                                        this->alignment);
+        // If we had an initial capacity, we might have to allocate new blocks for the graph data.
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
                                            this->allocator);
     }
 
     // Insert the new element to the data block
-    this->vectorBlocks.back().addElement(vector_data);
+    this->vectors->addElement(vector_data, state.newElementId);
     this->graphDataBlocks.back().addElement(cur_egd);
     // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
     // set when checking if label .
