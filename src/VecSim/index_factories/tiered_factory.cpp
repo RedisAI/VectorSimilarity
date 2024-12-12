@@ -64,7 +64,8 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
     // Add size estimation of VecSimTieredIndex sub indexes.
-    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params);
+    // Normalization is done by the frontend index.
+    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true);
 
     // Management layer allocator overhead.
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
@@ -117,7 +118,7 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
         bf_params = TieredHNSWFactory::NewBFParams(params);
     }
 
-    est += BruteForceFactory::EstimateInitialSize(&bf_params);
+    est += BruteForceFactory::EstimateInitialSize(&bf_params, false);
     return est;
 }
 
