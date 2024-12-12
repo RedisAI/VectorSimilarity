@@ -250,6 +250,10 @@ public:
         delete this->preprocessors;
         this->preprocessors = newPPContainer;
     }
+
+    IndexComponents<DataType, DistType> get_components() const {
+        return {.indexCalculator = this->indexCalculator, .preprocessors = this->preprocessors};
+    }
 #endif
 
 protected:

@@ -87,6 +87,12 @@ public:
 
     void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const override;
 
+#ifdef BUILD_TESTS
+    std::array<PreprocessorInterface *, n_preprocessors> getPreprocessors() const {
+        return preprocessors;
+    }
+#endif
+
 private:
     using Base = PreprocessorsContainerAbstract;
 };
