@@ -129,7 +129,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
 
     HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
                               .dim = dim,
-                              .metric = VecSimMetric_L2,
+                              .metric = VecSimMetric_Cosine,
                               .multi = isMulti,
                               .M = M};
     VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
