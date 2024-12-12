@@ -34,9 +34,12 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                           .blockSize = params->primaryIndexParams->algoParams.hnswParams.blockSize};
 
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
+    size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+
     AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
                                                   .dim = bf_params.dim,
                                                   .vecType = bf_params.type,
+                                                  .dataSize = dataSize,
                                                   .metric = bf_params.metric,
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,

@@ -6,13 +6,7 @@
 
 #pragma once
 
-#include "VecSim/types/bfloat16.h"
-#include "VecSim/types/float16.h"
 #include <cmath>
-#include <vector>
-
-using bfloat16 = vecsim_types::bfloat16;
-using float16 = vecsim_types::float16;
 
 namespace spaces {
 
@@ -21,12 +15,11 @@ static inline float IntegralType_ComputeNorm(const DataType *vec, const size_t d
     int sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
-        int val = static_cast<int>(vec[i]);
-        sum += val * val;
+        // No need to cast to int because c++ integer promotion ensures vec[i] is promoted to int
+        // before multiplication.
+        sum += vec[i] * vec[i];
     }
-    float norm = sqrt(sum);
+    return sqrt(sum);
 }
-
-
 
 } // namespace spaces

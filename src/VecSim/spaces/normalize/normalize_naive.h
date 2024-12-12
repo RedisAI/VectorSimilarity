@@ -8,6 +8,7 @@
 
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "compute_norm.h"
 #include <cmath>
 #include <vector>
 
@@ -71,6 +72,15 @@ static inline void float16_normalizeVector(void *vec, const size_t dim) {
     for (size_t i = 0; i < dim; i++) {
         input_vector[i] = vecsim_types::FP32_to_FP16(f32_tmp[i] / norm);
     }
+}
+
+static inline void int8_normalizeVector(void *vec, const size_t dim) {
+    int8_t *input_vector = (int8_t *)vec;
+
+    float norm = IntegralType_ComputeNorm<int8_t>(input_vector, dim);
+
+    // Store norm at the end of the vector.
+    *(float *)(input_vector + dim) = norm;
 }
 
 } // namespace spaces
