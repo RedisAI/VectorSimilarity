@@ -16,7 +16,7 @@
 #include <atomic>
 
 // Helper macro to get the closest even number which is equal or lower than x.
-#define FLOOR_EVEN(x) ((x) - ((x)&1))
+#define FLOOR_EVEN(x) ((x) - ((x) & 1))
 
 template <typename index_type_t>
 class HNSWTestParallel : public ::testing::Test {
