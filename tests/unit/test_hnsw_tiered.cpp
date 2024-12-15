@@ -120,6 +120,59 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 }
 
+TYPED_TEST(HNSWTieredIndexTest, testIndexesAttributes) {
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnsw_index = this->CastToHNSW(tiered_index);
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->GetFlatIndex(tiered_index);
+
+    VecSimIndexBasicInfo hnsw_info = VecSimIndex_Info(hnsw_index).commonInfo.basicInfo;
+    VecSimIndexBasicInfo bf_info = VecSimIndex_Info(bf_index).commonInfo.basicInfo;
+
+    // assert metric
+    ASSERT_EQ(hnsw_info.metric, params.metric);
+    ASSERT_EQ(bf_info.metric, params.metric);
+    // assert type
+    ASSERT_EQ(hnsw_info.type, params.type);
+    ASSERT_EQ(bf_info.type, params.type);
+    // assert dim
+    ASSERT_EQ(hnsw_info.dim, params.dim);
+    ASSERT_EQ(bf_info.dim, params.dim);
+    // assert multi
+    ASSERT_EQ(hnsw_info.isMulti, params.multi);
+    ASSERT_EQ(bf_info.isMulti, params.multi);
+
+    // assert containers
+
+    // bf - multi with cosine
+    IndexComponents<TEST_DATA_T, TEST_DIST_T> bf_components = bf_index->get_components();
+    PreprocessorsContainerAbstract *bf_preprocessors = bf_components.preprocessors;
+    const std::type_info &bf_pp_container_expected_type =
+        typeid(MultiPreprocessorsContainer<TEST_DATA_T, 1>);
+    const std::type_info &bf_pp_container_actual_type = typeid(*bf_preprocessors);
+    ASSERT_EQ(bf_pp_container_actual_type, bf_pp_container_expected_type);
+
+    std::array<PreprocessorInterface *, 1> pp_arr =
+        dynamic_cast<MultiPreprocessorsContainer<TEST_DATA_T, 1> *>(bf_preprocessors)
+            ->getPreprocessors();
+    const std::type_info &bf_pp_expected_type = typeid(CosinePreprocessor<TEST_DATA_T>);
+    const std::type_info &bf_pp_actual_type = typeid(*pp_arr[0]);
+    ASSERT_EQ(bf_pp_actual_type, bf_pp_expected_type);
+
+    // hnsw - simple
+    IndexComponents<TEST_DATA_T, TEST_DIST_T> hnsw_components = hnsw_index->get_components();
+    const std::type_info &hnsw_pp_expected_type = typeid(PreprocessorsContainerAbstract);
+    const std::type_info &hnsw_pp_actual_type = typeid(*hnsw_components.preprocessors);
+    ASSERT_EQ(hnsw_pp_expected_type, hnsw_pp_actual_type);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     size_t dim = 128;
     size_t n = DEFAULT_BLOCK_SIZE;
@@ -129,7 +182,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
 
     HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
                               .dim = dim,
-                              .metric = VecSimMetric_L2,
+                              .metric = VecSimMetric_Cosine,
                               .multi = isMulti,
                               .M = M};
     VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
