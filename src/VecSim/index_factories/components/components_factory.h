@@ -38,13 +38,13 @@ CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric m
 }
 
 template <typename DataType, typename DistType>
-size_t EstimateComponentsMemory(VecSimMetric metric) {
+size_t EstimateComponentsMemory(VecSimMetric metric, bool is_normalized) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     // Currently we have only one distance calculator implementation
     size_t est = allocations_overhead + sizeof(DistanceCalculatorCommon<DistType>);
 
-    est += EstimatePreprocessorsContainerMemory<DataType>(metric);
+    est += EstimatePreprocessorsContainerMemory<DataType>(metric, is_normalized);
 
     return est;
 }

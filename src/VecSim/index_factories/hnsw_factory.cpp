@@ -93,21 +93,21 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
         return sizeof(HNSWIndex_Single<DataType, DistType>);
 }
 
-size_t EstimateInitialSize(const HNSWParams *params) {
+size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
     if (params->type == VecSimType_FLOAT32) {
-        est += EstimateComponentsMemory<float, float>(params->metric);
+        est += EstimateComponentsMemory<float, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
-        est += EstimateComponentsMemory<double, double>(params->metric);
+        est += EstimateComponentsMemory<double, double>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     } else if (params->type == VecSimType_BFLOAT16) {
-        est += EstimateComponentsMemory<bfloat16, float>(params->metric);
+        est += EstimateComponentsMemory<bfloat16, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<bfloat16, float>(params->multi);
     } else if (params->type == VecSimType_FLOAT16) {
-        est += EstimateComponentsMemory<float16, float>(params->metric);
+        est += EstimateComponentsMemory<float16, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
     }
     return est;

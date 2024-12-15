@@ -35,10 +35,16 @@ CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
 }
 
 template <typename DataType>
-size_t EstimatePreprocessorsContainerMemory(VecSimMetric metric) {
+size_t EstimatePreprocessorsContainerMemory(VecSimMetric metric, bool is_normalized = false) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+    VecSimMetric pp_metric;
+    if (is_normalized && metric == VecSimMetric_Cosine) {
+        pp_metric = VecSimMetric_IP;
+    } else {
+        pp_metric = metric;
+    }
 
-    if (metric == VecSimMetric_Cosine) {
+    if (pp_metric == VecSimMetric_Cosine) {
         constexpr size_t n_preprocessors = 1;
         // One entry in preprocessors array
         size_t est =

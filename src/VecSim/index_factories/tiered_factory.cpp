@@ -18,6 +18,18 @@ using float16 = vecsim_types::float16;
 namespace TieredFactory {
 
 namespace TieredHNSWFactory {
+
+static inline BFParams NewBFParams(const TieredIndexParams *params) {
+    auto hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
+    BFParams bf_params = {.type = hnsw_params.type,
+                          .dim = hnsw_params.dim,
+                          .metric = hnsw_params.metric,
+                          .multi = hnsw_params.multi,
+                          .blockSize = hnsw_params.blockSize};
+
+    return bf_params;
+}
+
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
@@ -27,11 +39,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
         HNSWFactory::NewIndex(params->primaryIndexParams, true));
     // initialize brute force index
 
-    BFParams bf_params = {.type = params->primaryIndexParams->algoParams.hnswParams.type,
-                          .dim = params->primaryIndexParams->algoParams.hnswParams.dim,
-                          .metric = params->primaryIndexParams->algoParams.hnswParams.metric,
-                          .multi = params->primaryIndexParams->algoParams.hnswParams.multi,
-                          .blockSize = params->primaryIndexParams->algoParams.hnswParams.blockSize};
+    BFParams bf_params = NewBFParams(params);
 
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
     size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
@@ -55,11 +63,12 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
         hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 
-inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_params_output) {
+inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
     // Add size estimation of VecSimTieredIndex sub indexes.
-    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params);
+    // Normalization is done by the frontend index.
+    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true);
 
     // Management layer allocator overhead.
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
@@ -75,8 +84,6 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
     } else if (hnsw_params.type == VecSimType_FLOAT16) {
         est += sizeof(TieredHNSWIndex<float16, float>);
     }
-    bf_params_output.type = hnsw_params.type;
-    bf_params_output.multi = hnsw_params.multi;
 
     return est;
 }
@@ -110,10 +117,11 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     BFParams bf_params{};
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);
+        est += TieredHNSWFactory::EstimateInitialSize(params);
+        bf_params = TieredHNSWFactory::NewBFParams(params);
     }
 
-    est += BruteForceFactory::EstimateInitialSize(&bf_params);
+    est += BruteForceFactory::EstimateInitialSize(&bf_params, false);
     return est;
 }
 
