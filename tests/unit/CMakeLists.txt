@@ -39,7 +39,7 @@ add_executable(test_types test_types.cpp)
 add_executable(test_common ../utils/mock_thread_pool.cpp unit_test_utils.cpp test_common.cpp)
 add_executable(test_bf16 ../utils/mock_thread_pool.cpp test_bf16.cpp unit_test_utils.cpp)
 add_executable(test_fp16 ../utils/mock_thread_pool.cpp test_fp16.cpp unit_test_utils.cpp)
-add_executable(test_int8 test_int8.cpp unit_test_utils.cpp)
+add_executable(test_int8 ../utils/mock_thread_pool.cpp test_int8.cpp unit_test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)

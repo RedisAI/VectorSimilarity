@@ -93,9 +93,6 @@ protected:
         return info;
     }
 
-    spaces::normalizeVector_f<DataType>
-        normalize_func; // A pointer to a normalization function of specific type.
-
 public:
     /**
      * @brief Construct a new Vec Sim Index object
@@ -108,7 +105,7 @@ public:
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
           alignment(preprocessors->getAlignment()), lastMode(EMPTY_MODE), isMulti(params.multi),
-          logCallbackCtx(params.logCtx), normalize_func(spaces::GetNormalizeFunc<DataType>()) {
+          logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         assert(dataSize);
     }

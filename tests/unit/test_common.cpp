@@ -625,6 +625,104 @@ TEST(CommonAPITest, NormalizeFloat16) {
     ASSERT_NEAR(1.0, norm, 0.001);
 }
 
+// test datasize
+class DataSizeTest : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
+protected:
+    template <typename algo_params>
+    void test_datasize() {
+        size_t dim = 4;
+        VecSimType type = std::get<0>(GetParam());
+        VecSimMetric metric = std::get<1>(GetParam());
+        algo_params params = {.dim = dim, .metric = metric};
+        VecSimIndex *index = test_utils::CreateNewIndex(params, type);
+        size_t actual = test_utils::CalcIndexDataSize(index, type);
+        size_t expected = dim * VecSimType_sizeof(type);
+        if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
+            expected += sizeof(float);
+        }
+        ASSERT_EQ(actual, expected);
+    }
+};
+
+TEST_P(DataSizeTest, TestBF) { this->test_datasize<BFParams>(); }
+TEST_P(DataSizeTest, TestHNSW) { this->test_datasize<HNSWParams>(); }
+TEST_P(DataSizeTest, TestTieredHNSW) {
+    size_t dim = 4;
+    VecSimType type = std::get<0>(GetParam());
+    VecSimMetric metric = std::get<1>(GetParam());
+
+    HNSWParams hnsw_params = {.type = type, .dim = 4, .metric = metric};
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = SIZE_MAX,
+                                       .primaryIndexParams = &params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+    VecSimIndex *index = TieredFactory::NewIndex(&tiered_params);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+    // TODO:move death test to a separate test
+    // ASSERT_DEBUG_DEATH(test_utils::CalcIndexDataSize(index, type), "dynamic_cast failed");
+
+    auto verify_data_size = [&](const auto &tiered_index) {
+        auto hnsw_index = tiered_index->getHNSWIndex();
+        auto bf_index = tiered_index->getFlatBufferIndex();
+        size_t expected = dim * VecSimType_sizeof(type);
+        if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
+            expected += sizeof(float);
+        }
+        size_t actual_hnsw = hnsw_index->getDataSize();
+        ASSERT_EQ(actual_hnsw, expected);
+        size_t actual_bf = bf_index->getDataSize();
+        ASSERT_EQ(actual_bf, expected);
+    };
+
+    switch (type) {
+    case VecSimType_FLOAT32: {
+        auto tiered_index = test_utils::cast_to_tiered_index<float, float>(index);
+        verify_data_size(tiered_index);
+        break;
+    }
+    case VecSimType_FLOAT64: {
+        auto tiered_index = test_utils::cast_to_tiered_index<double, double>(index);
+        verify_data_size(tiered_index);
+        break;
+    }
+    case VecSimType_BFLOAT16: {
+        auto tiered_index = test_utils::cast_to_tiered_index<vecsim_types::bfloat16, float>(index);
+        verify_data_size(tiered_index);
+        break;
+    }
+    case VecSimType_FLOAT16: {
+        auto tiered_index = test_utils::cast_to_tiered_index<vecsim_types::float16, float>(index);
+        verify_data_size(tiered_index);
+        break;
+    }
+    case VecSimType_INT8: {
+        auto tiered_index = test_utils::cast_to_tiered_index<int8_t, float>(index);
+        verify_data_size(tiered_index);
+        break;
+    }
+    default:
+        FAIL() << "Unsupported data type";
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CommonTest, DataSizeTest,
+    testing::Combine(testing::Values(VecSimType_FLOAT32, VecSimType_FLOAT64, VecSimType_INT8),
+                     testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine)),
+    [](const testing::TestParamInfo<DataSizeTest::ParamType> &info) {
+        const char *type = VecSimType_ToString(std::get<0>(info.param));
+        const char *metric = VecSimMetric_ToString(std::get<1>(info.param));
+        std::string test_name(type);
+        return test_name + "_" + metric;
+    });
+
+// for each index type- >test with all metric types
+// for each metric type -> test with all data types
 class IndexCalculatorTest : public ::testing::Test {};
 
 namespace dummyCalcultor {

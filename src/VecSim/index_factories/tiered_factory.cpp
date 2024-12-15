@@ -99,6 +99,8 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         return TieredHNSWFactory::NewIndex<bfloat16, float>(params);
     } else if (type == VecSimType_FLOAT16) {
         return TieredHNSWFactory::NewIndex<float16, float>(params);
+    } else if (type == VecSimType_INT8) {
+        return TieredHNSWFactory::NewIndex<int8_t, float>(params);
     }
     return nullptr; // Invalid type.
 }

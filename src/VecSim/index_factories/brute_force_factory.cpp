@@ -73,6 +73,11 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
             abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
                                                             indexComponents);
+    } else if (bfparams->type == VecSimType_INT8) {
+        IndexComponents<int8_t, float> indexComponents = CreateIndexComponents<int8_t, float>(
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<int8_t, float>(bfparams, abstractInitParams,
+                                                           indexComponents);
     }
 
     // If we got here something is wrong.
