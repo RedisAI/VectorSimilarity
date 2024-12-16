@@ -242,7 +242,7 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         // Align to vector memory size, including the norm at the end of the vector.
-        if (dim % 32 + 4 == 0) // no point in aligning if we have an offsetting residual
+        if (dim % 32 + sizeof(float) == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(int8_t); // align to 256 bits.
         return Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
