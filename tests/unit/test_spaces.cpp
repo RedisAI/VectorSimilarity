@@ -1017,8 +1017,9 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
+
+        ASSERT_EQ(alignment, 2141);
     }
-    ASSERT_EQ(1, 0);
 #endif
     unsigned char alignment = 0;
     arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
