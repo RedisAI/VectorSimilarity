@@ -13,6 +13,7 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "mock_thread_pool.h"
 #include "gtest/gtest.h"
 
 // IndexType is used to define indices unit tests
@@ -98,6 +99,11 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
     VecSimParams params = CreateParams(index_params);
     return VecSimIndex_New(&params);
 }
+
+TieredIndexParams CreateTieredParams(VecSimParams &primary_params,
+                                     tieredIndexMock &mock_thread_pool);
+VecSimIndex *CreateNewTieredHNSWIndex(const HNSWParams &hnsw_params,
+                                      tieredIndexMock &mock_thread_pool);
 
 extern VecsimQueryType query_types[4];
 

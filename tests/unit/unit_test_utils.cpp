@@ -418,4 +418,27 @@ size_t CalcIndexDataSize(VecSimIndex *index, VecSimType data_type) {
         return 0;
     }
 }
+
+TieredIndexParams CreateTieredParams(VecSimParams &primary_params,
+                                     tieredIndexMock &mock_thread_pool) {
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = SIZE_MAX,
+                                       .primaryIndexParams = &primary_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+
+    return tiered_params;
+}
+
+VecSimIndex *CreateNewTieredHNSWIndex(const HNSWParams &hnsw_params,
+                                      tieredIndexMock &mock_thread_pool) {
+    VecSimParams primary_params = CreateParams(hnsw_params);
+    auto tiered_params = CreateTieredParams(primary_params, mock_thread_pool);
+    VecSimParams params = CreateParams(tiered_params);
+    VecSimIndex *index = VecSimIndex_New(&params);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    return index;
+}
 } // namespace test_utils

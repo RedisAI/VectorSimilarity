@@ -625,44 +625,72 @@ TEST(CommonAPITest, NormalizeFloat16) {
     ASSERT_NEAR(1.0, norm, 0.001);
 }
 
-// test datasize
-class DataSizeTest : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
+class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
 protected:
     template <typename algo_params>
-    void test_datasize() {
-        size_t dim = 4;
-        VecSimType type = std::get<0>(GetParam());
-        VecSimMetric metric = std::get<1>(GetParam());
-        algo_params params = {.dim = dim, .metric = metric};
-        VecSimIndex *index = test_utils::CreateNewIndex(params, type);
-        size_t actual = test_utils::CalcIndexDataSize(index, type);
-        size_t expected = dim * VecSimType_sizeof(type);
-        if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
-            expected += sizeof(float);
-        }
-        ASSERT_EQ(actual, expected);
-    }
+    void test_datasize();
+
+    template <typename algo_params>
+    void test_initial_size_estimation();
+
+    virtual void TearDown() { VecSimIndex_Free(index); }
+
+    VecSimIndex *index;
 };
 
-TEST_P(DataSizeTest, TestBF) { this->test_datasize<BFParams>(); }
-TEST_P(DataSizeTest, TestHNSW) { this->test_datasize<HNSWParams>(); }
-TEST_P(DataSizeTest, TestTieredHNSW) {
+template <typename algo_params>
+void CommonTypeMetricTests::test_datasize() {
+    size_t dim = 4;
+    VecSimType type = std::get<0>(GetParam());
+    VecSimMetric metric = std::get<1>(GetParam());
+    algo_params params = {.dim = dim, .metric = metric};
+    this->index = test_utils::CreateNewIndex(params, type);
+    size_t actual = test_utils::CalcIndexDataSize(index, type);
+    size_t expected = dim * VecSimType_sizeof(type);
+    if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
+        expected += sizeof(float);
+    }
+    ASSERT_EQ(actual, expected);
+}
+
+TEST_P(CommonTypeMetricTests, TestDataSizeBF) { this->test_datasize<BFParams>(); }
+TEST_P(CommonTypeMetricTests, TestDataSizeHNSW) { this->test_datasize<HNSWParams>(); }
+
+template <typename algo_params>
+void CommonTypeMetricTests::test_initial_size_estimation() {
+    size_t dim = 4;
+    VecSimType type = std::get<0>(GetParam());
+    VecSimMetric metric = std::get<1>(GetParam());
+    algo_params params = {.dim = dim, .metric = metric};
+    this->index = test_utils::CreateNewIndex(params, type);
+
+    size_t estimation = EstimateInitialSize(params);
+    size_t actual = index->getAllocationSize();
+
+    ASSERT_EQ(estimation, actual);
+}
+
+TEST_P(CommonTypeMetricTests, TestInitialSizeEstimationBF) {
+    this->test_initial_size_estimation<BFParams>();
+}
+TEST_P(CommonTypeMetricTests, TestInitialSizeEstimationHNSW) {
+    this->test_initial_size_estimation<HNSWParams>();
+}
+
+class CommonTypeMetricTieredTests : public CommonTypeMetricTests {
+protected:
+    virtual void TearDown() override {}
+
+    tieredIndexMock mock_thread_pool;
+};
+
+TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
     size_t dim = 4;
     VecSimType type = std::get<0>(GetParam());
     VecSimMetric metric = std::get<1>(GetParam());
 
     HNSWParams hnsw_params = {.type = type, .dim = 4, .metric = metric};
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
-    auto mock_thread_pool = tieredIndexMock();
-    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
-                                       .jobQueueCtx = mock_thread_pool.ctx,
-                                       .submitCb = tieredIndexMock::submit_callback,
-                                       .flatBufferLimit = SIZE_MAX,
-                                       .primaryIndexParams = &params,
-                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
-    VecSimIndex *index = TieredFactory::NewIndex(&tiered_params);
-    mock_thread_pool.ctx->index_strong_ref.reset(index);
+    VecSimIndex *index = test_utils::CreateNewTieredHNSWIndex(hnsw_params, this->mock_thread_pool);
     // TODO:move death test to a separate test
     // ASSERT_DEBUG_DEATH(test_utils::CalcIndexDataSize(index, type), "dynamic_cast failed");
 
@@ -710,21 +738,51 @@ TEST_P(DataSizeTest, TestTieredHNSW) {
     }
 }
 
+TEST_P(CommonTypeMetricTieredTests, TestInitialSizeEstimationTieredHNSW) {
+    size_t dim = 4;
+    VecSimType type = std::get<0>(GetParam());
+    VecSimMetric metric = std::get<1>(GetParam());
+    HNSWParams hnsw_params = {.type = type, .dim = dim, .metric = metric};
+    VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
+    TieredIndexParams tiered_params =
+        test_utils::CreateTieredParams(vecsim_hnsw_params, this->mock_thread_pool);
+    VecSimParams params = CreateParams(tiered_params);
+    auto *index = VecSimIndex_New(&params);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+    size_t actual = index->getAllocationSize();
+
+    ASSERT_EQ(estimation, actual);
+}
+
+constexpr VecSimType vecsim_datatypes[] = {VecSimType_FLOAT32, VecSimType_FLOAT64,
+                                           VecSimType_BFLOAT16, VecSimType_FLOAT16,
+                                           VecSimType_INT8};
+
+INSTANTIATE_TEST_SUITE_P(CommonTest, CommonTypeMetricTests,
+                         testing::Combine(testing::ValuesIn(vecsim_datatypes),
+                                          testing::Values(VecSimMetric_L2, VecSimMetric_IP,
+                                                          VecSimMetric_Cosine)),
+                         [](const testing::TestParamInfo<CommonTypeMetricTests::ParamType> &info) {
+                             const char *type = VecSimType_ToString(std::get<0>(info.param));
+                             const char *metric = VecSimMetric_ToString(std::get<1>(info.param));
+                             std::string test_name(type);
+                             return test_name + "_" + metric;
+                         });
+
 INSTANTIATE_TEST_SUITE_P(
-    CommonTest, DataSizeTest,
-    testing::Combine(testing::Values(VecSimType_FLOAT32, VecSimType_FLOAT64, VecSimType_INT8),
+    CommonTieredTest, CommonTypeMetricTieredTests,
+    testing::Combine(testing::ValuesIn(vecsim_datatypes),
                      testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine)),
-    [](const testing::TestParamInfo<DataSizeTest::ParamType> &info) {
+    [](const testing::TestParamInfo<CommonTypeMetricTieredTests::ParamType> &info) {
         const char *type = VecSimType_ToString(std::get<0>(info.param));
         const char *metric = VecSimMetric_ToString(std::get<1>(info.param));
         std::string test_name(type);
         return test_name + "_" + metric;
     });
 
-// for each index type- >test with all metric types
-// for each metric type -> test with all data types
 class IndexCalculatorTest : public ::testing::Test {};
-
 namespace dummyCalcultor {
 
 using DummyType = int;

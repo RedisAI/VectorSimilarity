@@ -83,6 +83,10 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
         est += sizeof(TieredHNSWIndex<bfloat16, float>);
     } else if (hnsw_params.type == VecSimType_FLOAT16) {
         est += sizeof(TieredHNSWIndex<float16, float>);
+    } else if (hnsw_params.type == VecSimType_INT8) {
+        est += sizeof(TieredHNSWIndex<int8_t, float>);
+    } else {
+        throw std::invalid_argument("Invalid hnsw_params.type");
     }
 
     return est;

@@ -117,6 +117,11 @@ size_t EstimateInitialSize(const BFParams *params, bool is_normalized) {
     } else if (params->type == VecSimType_FLOAT16) {
         est += EstimateComponentsMemory<float16, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
+    } else if (params->type == VecSimType_INT8) {
+        est += EstimateComponentsMemory<int8_t, float>(params->metric, is_normalized);
+        est += EstimateInitialSize_ChooseMultiOrSingle<int8_t, float>(params->multi);
+    } else {
+        throw std::invalid_argument("Invalid params->type");
     }
 
     est += sizeof(DataBlocksContainer) + allocations_overhead;
