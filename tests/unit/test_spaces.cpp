@@ -1018,8 +1018,6 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
-
-        // ASSERT_EQ(alignment, 2141)<< "alignemt for dim = " << dim;
     }
 #endif
     unsigned char alignment = 0;
