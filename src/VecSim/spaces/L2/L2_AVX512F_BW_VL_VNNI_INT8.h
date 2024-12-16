@@ -36,7 +36,7 @@ float INT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect
     // Deal with remainder first. `dim` is more than 32, so we have at least one 32-int_8 block,
     // so mask loading is guaranteed to be safe
     if constexpr (residual % 32) {
-        __mmask32 mask = (1LU << (residual % 32)) - 1;
+        constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;
         __m256i temp_a = _mm256_loadu_epi8(pVect1);
         __m512i va = _mm512_cvtepi8_epi16(temp_a);
         pVect1 += residual % 32;

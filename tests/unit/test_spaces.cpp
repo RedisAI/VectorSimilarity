@@ -299,6 +299,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
         ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
+        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
     }
     for (size_t dim = 8; dim < 16; dim++) {
         ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
@@ -309,6 +310,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
         ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
+        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
     }
     for (size_t dim = 16; dim < 32; dim++) {
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
@@ -317,6 +319,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
         ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
+        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
     }
 }
 

@@ -69,6 +69,7 @@ dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
     }
     throw std::invalid_argument("Invalid metric");
 }
+
 template <>
 dist_func_t<float> GetDistFunc<int8_t, float>(VecSimMetric metric, size_t dim,
                                               unsigned char *alignment) {
