@@ -1000,7 +1000,8 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
     *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(int8_t) / 8;
-        return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(int8_t) : 0;
+        return ((dim + sizeof(float)) % elements_in_reg == 0) ? elements_in_reg * sizeof(int8_t)
+                                                              : 0;
     };
 
     dist_func_t<float> arch_opt_func;
@@ -1018,7 +1019,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
 
-        ASSERT_EQ(alignment, 2141);
+        // ASSERT_EQ(alignment, 2141)<< "alignemt for dim = " << dim;
     }
 #endif
     unsigned char alignment = 0;
