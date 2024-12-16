@@ -25,6 +25,10 @@
 #include <ranges>
 #include <sys/param.h>
 
+
+#include <chrono>
+#include <thread>
+
 using spaces::dist_func_t;
 
 template <typename DataType, typename DistType>
@@ -269,6 +273,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         }
         return rep;
     }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // Step 2 - min heapify H1
     // The comparator should probably be written outsize
