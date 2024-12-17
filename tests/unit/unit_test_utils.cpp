@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "test_utils.h"
+#include "unit_test_utils.h"
 #include "gtest/gtest.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/memory/vecsim_malloc.h"

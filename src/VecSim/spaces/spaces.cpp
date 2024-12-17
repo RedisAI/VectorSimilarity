@@ -71,6 +71,20 @@ dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
 }
 
 template <>
+dist_func_t<float> GetDistFunc<int8_t, float>(VecSimMetric metric, size_t dim,
+                                              unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+        return Cosine_INT8_GetDistFunc(dim, alignment);
+    case VecSimMetric_IP:
+        return IP_INT8_GetDistFunc(dim, alignment);
+    case VecSimMetric_L2:
+        return L2_INT8_GetDistFunc(dim, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
 normalizeVector_f<float> GetNormalizeFunc<float>(void) {
     return normalizeVector_imp<float>;
 }
