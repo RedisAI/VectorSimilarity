@@ -34,7 +34,7 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
     // Deal with remainder first. `dim` is more than 32, so we have at least one 32-int_8 block,
     // so mask loading is guaranteed to be safe
     if constexpr (residual % 32) {
-        __mmask32 mask = (1LU << (residual % 32)) - 1;
+        constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;
         __m256i temp_a = _mm256_maskz_loadu_epi8(mask, pVect1);
         __m512i va = _mm512_cvtepi8_epi16(temp_a);
         pVect1 += residual % 32;
@@ -59,17 +59,19 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
     return _mm512_reduce_add_epi32(sum);
 }
 
-template <unsigned char residual> // 0..32
+template <unsigned char residual> // 0..64
 float INT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                                  size_t dimension) {
 
     return 1 - INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
 }
-template <unsigned char residual> // 0..32
+template <unsigned char residual> // 0..64
 float INT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                            size_t dimension) {
-    float norm_v1 = *(float *)((int8_t *)pVect1v + dimension);
-    float norm_v2 = *(float *)((int8_t *)pVect2v + dimension);
-    return 1.0f -
-           float(INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
+    float ip = INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    float norm_v1 =
+        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);
+    float norm_v2 =
+        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
+    return 1.0f - ip / (norm_v1 * norm_v2);
 }

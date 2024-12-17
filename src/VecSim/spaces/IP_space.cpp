@@ -241,8 +241,11 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
                         : *static_cast<const cpu_features::X86Features *>(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(int8_t); // align to 256 bits.
+        // For int8 vectors with cosine distance, the extra float for the norm shifts alignment to
+        // `(dim + sizeof(float)) % 32`.
+        // Vectors satisfying this have a residual, causing offset loads during calculation.
+        // To avoid complexity, we skip alignment here, assuming the performance impact is
+        // negligible.
         return Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
