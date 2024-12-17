@@ -16,6 +16,9 @@
 #if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
 #if defined(__GNUC__)
 #include <x86intrin.h>
+// Override missing implementations in GCC < 11
+// Full list and suggested alternatives for each missing function can be found here:
+// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95483
 #if (__GNUC__ < 11)
 #define _mm256_loadu_epi8(ptr) _mm256_maskz_loadu_epi8(~0, ptr)
 #endif
