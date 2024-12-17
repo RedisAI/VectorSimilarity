@@ -66,3 +66,27 @@ float FP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension
     }
     return 1.0f - res;
 }
+
+static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    int8_t *pVect1 = (int8_t *)pVect1v;
+    int8_t *pVect2 = (int8_t *)pVect2v;
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        res += pVect1[i] * pVect2[i];
+    }
+    return res;
+}
+
+float INT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1 - INT8_InnerProductImp(pVect1v, pVect2v, dimension);
+}
+
+float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // We expect the vectors' norm to be stored at the end of the vector.
+    float norm_v1 =
+        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);
+    float norm_v2 =
+        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
+    return 1.0f - float(INT8_InnerProductImp(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
+}
