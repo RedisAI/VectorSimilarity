@@ -15,10 +15,12 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "mock_thread_pool.h"
+#include "tests_utils.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/spaces/normalize/compute_norm.h"
 
 #include <cstdlib>
 #include <limits>
@@ -623,6 +625,20 @@ TEST(CommonAPITest, NormalizeFloat16) {
     }
 
     ASSERT_NEAR(1.0, norm, 0.001);
+}
+
+TEST(CommonAPITest, NormalizeInt8) {
+    size_t dim = 20;
+    int8_t v[dim + sizeof(float)];
+
+    test_utils::populate_int8_vec(v, dim);
+
+    VecSim_Normalize(v, dim, VecSimType_INT8);
+
+    float res_norm = *(reinterpret_cast<float *>(v + dim));
+    float expected_norm = spaces::IntegralType_ComputeNorm<int8_t>(v, dim);
+
+    ASSERT_FLOAT_EQ(res_norm, expected_norm);
 }
 
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {

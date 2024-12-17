@@ -229,6 +229,11 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
                                                             indexComponents, version);
+    } else if (params.type == VecSimType_INT8) {
+        IndexComponents<int8_t, float> indexComponents = CreateIndexComponents<int8_t, float>(
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<int8_t, float>(input, &params, abstractInitParams,
+                                                           indexComponents, version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {

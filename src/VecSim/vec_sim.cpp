@@ -138,6 +138,9 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
         spaces::GetNormalizeFunc<vecsim_types::bfloat16>()(blob, dim);
     } else if (type == VecSimType_FLOAT16) {
         spaces::GetNormalizeFunc<vecsim_types::float16>()(blob, dim);
+    } else if (type == VecSimType_INT8) {
+        // assuming blob is large enough to store the norm at the end of the vector
+        spaces::GetNormalizeFunc<int8_t>()(blob, dim);
     }
 }
 
