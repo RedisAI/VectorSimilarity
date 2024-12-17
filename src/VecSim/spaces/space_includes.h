@@ -16,6 +16,9 @@
 #if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
 #if defined(__GNUC__)
 #include <x86intrin.h>
+#if (__GNUC__ < 11)
+#define _mm256_loadu_epi8(ptr) mm256_maskz_loadu_epi8(~0, ptr)
+#endif
 #elif defined(__clang__)
 #include <xmmintrin.h>
 #elif defined(_MSC_VER)
