@@ -636,9 +636,14 @@ TEST(CommonAPITest, NormalizeInt8) {
     VecSim_Normalize(v, dim, VecSimType_INT8);
 
     float res_norm = *(reinterpret_cast<float *>(v + dim));
-    float expected_norm = spaces::IntegralType_ComputeNorm<int8_t>(v, dim);
+    // Check that the normalized vector norm is 1.
+    float norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        float val = v[i] / res_norm;
+        norm += val * val;
+    }
 
-    ASSERT_FLOAT_EQ(res_norm, expected_norm);
+    ASSERT_FLOAT_EQ(norm, 1.0);
 }
 
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {

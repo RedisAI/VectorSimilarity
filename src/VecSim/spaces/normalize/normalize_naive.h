@@ -75,12 +75,12 @@ static inline void float16_normalizeVector(void *vec, const size_t dim) {
 }
 
 static inline void int8_normalizeVector(void *vec, const size_t dim) {
-    int8_t *input_vector = (int8_t *)vec;
+    int8_t *input_vector = static_cast<int8_t *>(vec);
 
     float norm = IntegralType_ComputeNorm<int8_t>(input_vector, dim);
 
     // Store norm at the end of the vector.
-    *(float *)(input_vector + dim) = norm;
+    *reinterpret_cast<float *>(input_vector + dim) = norm;
 }
 
 } // namespace spaces
