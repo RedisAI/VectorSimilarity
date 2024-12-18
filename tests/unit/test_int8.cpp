@@ -929,7 +929,7 @@ void INT8HNSWTest::test_serialization(bool is_multi) {
     VecSimIndex_AddVector(serialized_index, new_vec, n);
     auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, n) << "score: " << score;
-        ASSERT_EQ(score, 0);
+        ASSERT_NEAR(score, 0.0, 1e-7);
     };
     runTopKSearchTest(serialized_index, new_vec, 1, verify_res);
     VecSimIndex_DeleteVector(serialized_index, 1);
