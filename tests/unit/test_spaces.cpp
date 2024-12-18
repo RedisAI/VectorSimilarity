@@ -249,8 +249,8 @@ TEST_F(SpacesTest, int8_Cosine_no_optimization_func_test) {
     test_utils::populate_int8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
+    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
+    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
 
     float dist = INT8_Cosine((const void *)v1, (const void *)v2, dim);
     ASSERT_NEAR(dist, 0.0, 0.000001);
@@ -996,8 +996,8 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
     test_utils::populate_int8_vec(v2, dim, 1234);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
+    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
+    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
 
     dist_func_t<float> arch_opt_func;
     float baseline = INT8_Cosine(v1, v2, dim);

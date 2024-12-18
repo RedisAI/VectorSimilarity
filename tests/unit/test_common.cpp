@@ -20,7 +20,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include "VecSim/spaces/normalize/compute_norm.h"
 
 #include <cstdlib>
 #include <limits>

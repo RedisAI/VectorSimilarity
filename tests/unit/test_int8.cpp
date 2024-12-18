@@ -4,7 +4,6 @@
 #include "tests_utils.h"
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
-#include "VecSim/spaces/normalize/compute_norm.h"
 #include "VecSim/vec_sim_debug.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/IP/IP.h"
