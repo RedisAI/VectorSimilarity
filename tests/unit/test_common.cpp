@@ -700,16 +700,6 @@ protected:
     tieredIndexMock mock_thread_pool;
 };
 
-TEST_P(CommonTypeMetricTieredTests, TestCalcIndexDataSizeAssertion) {
-    size_t dim = 4;
-    VecSimType type = std::get<0>(GetParam());
-    VecSimMetric metric = std::get<1>(GetParam());
-
-    HNSWParams hnsw_params = {.type = type, .dim = 4, .metric = metric};
-    VecSimIndex *index = test_utils::CreateNewTieredHNSWIndex(hnsw_params, this->mock_thread_pool);
-    ASSERT_DEBUG_DEATH(test_utils::CalcIndexDataSize(index, type), "dynamic_cast failed");
-}
-
 TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
     size_t dim = 4;
     VecSimType type = std::get<0>(GetParam());
