@@ -6,8 +6,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          const IndexComponents<DataType, DistType> &components,
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components), Serializer(version),
-      epsilon(params->epsilon), vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      epsilon(params->epsilon), graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -23,7 +23,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     this->visitedNodesHandlerPool.resize(maxElements);
 
     size_t initial_vector_size = maxElements / this->blockSize;
-    vectorBlocks.reserve(initial_vector_size);
     graphDataBlocks.reserve(initial_vector_size);
 }
 
@@ -167,29 +166,16 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
         setVectorId(label, id);
     }
 
-    // Get number of blocks
-    unsigned int num_blocks = 0;
-    readBinaryPOD(input, num_blocks);
-    this->vectorBlocks.reserve(num_blocks);
-    this->graphDataBlocks.reserve(num_blocks);
-
-    // Get data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
-                                        this->alignment);
-        unsigned int block_len = 0;
-        readBinaryPOD(input, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            auto cur_vec = this->getAllocator()->allocate_unique(this->dataSize);
-            input.read(static_cast<char *>(cur_vec.get()), this->dataSize);
-            this->vectorBlocks.back().addElement(cur_vec.get());
-        }
-    }
+    // Todo: create vector data container and load the stored data based on the index storage params
+    // when other storage types will be available.
+    dynamic_cast<DataBlocksContainer *>(this->vectors)
+        ->restoreBlocks(input, this->curElementCount, m_version);
 
     // Get graph data blocks
     ElementGraphData *cur_egt;
     auto tmpData = this->getAllocator()->allocate_unique(this->elementGraphDataSize);
     size_t toplevel = 0;
+    size_t num_blocks = dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks();
     for (size_t i = 0; i < num_blocks; i++) {
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
                                            this->allocator);
@@ -283,22 +269,10 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         writeBinaryPOD(output, flags);
     }
 
-    // Save number of blocks
-    unsigned int num_blocks = this->vectorBlocks.size();
-    writeBinaryPOD(output, num_blocks);
-
-    // Save data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        auto &block = this->vectorBlocks[i];
-        unsigned int block_len = block.getLength();
-        writeBinaryPOD(output, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            output.write(block.getElement(j), this->dataSize);
-        }
-    }
+    this->vectors->saveVectorsData(output);
 
     // Save graph data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
+    for (size_t i = 0; i < this->graphDataBlocks.size(); i++) {
         auto &block = this->graphDataBlocks[i];
         unsigned int block_len = block.getLength();
         writeBinaryPOD(output, block_len);
