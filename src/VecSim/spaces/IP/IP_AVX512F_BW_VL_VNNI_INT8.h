@@ -34,7 +34,7 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
     // Deal with remainder first. `dim` is more than 32, so we have at least one 32-int_8 block,
     // so mask loading is guaranteed to be safe
     if constexpr (residual % 32) {
-        __mmask32 mask = (1LU << (residual % 32)) - 1;
+        constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;
         __m256i temp_a = _mm256_maskz_loadu_epi8(mask, pVect1);
         __m512i va = _mm512_cvtepi8_epi16(temp_a);
         pVect1 += residual % 32;

@@ -534,6 +534,7 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimType_FLOAT64", VecSimType_FLOAT64)
         .value("VecSimType_BFLOAT16", VecSimType_BFLOAT16)
         .value("VecSimType_FLOAT16", VecSimType_FLOAT16)
+        .value("VecSimType_INT8", VecSimType_INT8)
         .value("VecSimType_INT32", VecSimType_INT32)
         .value("VecSimType_INT64", VecSimType_INT64)
         .export_values();

@@ -33,10 +33,12 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
 
     const BFParams *bfParams = &params->algoParams.bfParams;
+    size_t dataSize = VecSimParams_GetDataSize(bfParams->type, bfParams->dim, bfParams->metric);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,
                                                   .vecType = bfParams->type,
+                                                  .dataSize = dataSize,
                                                   .metric = bfParams->metric,
                                                   .blockSize = bfParams->blockSize,
                                                   .multi = bfParams->multi,
@@ -52,32 +54,30 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
                       bool is_normalized) {
-    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
-    // and query blobs.
-    VecSimMetric metric;
-    if (is_normalized && bfparams->metric == VecSimMetric_Cosine) {
-        metric = VecSimMetric_IP;
-    } else {
-        metric = bfparams->metric;
-    }
+
     if (bfparams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
-            abstractInitParams.allocator, metric, bfparams->dim);
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams, indexComponents);
     } else if (bfparams->type == VecSimType_FLOAT64) {
         IndexComponents<double, double> indexComponents = CreateIndexComponents<double, double>(
-            abstractInitParams.allocator, metric, bfparams->dim);
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams, indexComponents);
     } else if (bfparams->type == VecSimType_BFLOAT16) {
         IndexComponents<bfloat16, float> indexComponents = CreateIndexComponents<bfloat16, float>(
-            abstractInitParams.allocator, metric, bfparams->dim);
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(bfparams, abstractInitParams,
                                                              indexComponents);
     } else if (bfparams->type == VecSimType_FLOAT16) {
         IndexComponents<float16, float> indexComponents = CreateIndexComponents<float16, float>(
-            abstractInitParams.allocator, metric, bfparams->dim);
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float16, float>(bfparams, abstractInitParams,
                                                             indexComponents);
+    } else if (bfparams->type == VecSimType_INT8) {
+        IndexComponents<int8_t, float> indexComponents = CreateIndexComponents<int8_t, float>(
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<int8_t, float>(bfparams, abstractInitParams,
+                                                           indexComponents);
     }
 
     // If we got here something is wrong.
@@ -117,6 +117,11 @@ size_t EstimateInitialSize(const BFParams *params, bool is_normalized) {
     } else if (params->type == VecSimType_FLOAT16) {
         est += EstimateComponentsMemory<float16, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
+    } else if (params->type == VecSimType_INT8) {
+        est += EstimateComponentsMemory<int8_t, float>(params->metric, is_normalized);
+        est += EstimateInitialSize_ChooseMultiOrSingle<int8_t, float>(params->multi);
+    } else {
+        throw std::invalid_argument("Invalid params->type");
     }
 
     est += sizeof(DataBlocksContainer) + allocations_overhead;

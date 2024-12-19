@@ -28,8 +28,8 @@ public:
         test_utils::populate_int8_vec(v2, dim, 1234);
 
         // Store the norm in the extra space for cosine calculations
-        *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
-        *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
+        *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
+        *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
     }
     void TearDown(const ::benchmark::State &state) {
         delete v1;

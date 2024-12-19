@@ -2,6 +2,7 @@
 
 #include <random>
 #include <vector>
+#include "VecSim/spaces/normalize/compute_norm.h"
 
 namespace test_utils {
 
@@ -19,13 +20,9 @@ static void populate_int8_vec(int8_t *v, size_t dim, int seed = 1234) {
     }
 }
 
-// TODO: replace with normalize function from VecSim
-float compute_norm(const int8_t *vec, size_t dim) {
-    int norm = 0;
-    for (size_t i = 0; i < dim; i++) {
-        norm += vec[i] * vec[i];
-    }
-    return sqrt(norm);
+template <typename datatype>
+float integral_compute_norm(const datatype *vec, size_t dim) {
+    return spaces::IntegralType_ComputeNorm<datatype>(vec, dim);
 }
 
 } // namespace test_utils

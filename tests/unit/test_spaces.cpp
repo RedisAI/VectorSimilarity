@@ -242,15 +242,15 @@ TEST_F(SpacesTest, int8_ip_no_optimization_func_test) {
 TEST_F(SpacesTest, int8_Cosine_no_optimization_func_test) {
     size_t dim = 4;
     // create a vector with extra space for the norm
-    int8_t *v1 = new int8_t[dim + sizeof(float)];
-    int8_t *v2 = new int8_t[dim + sizeof(float)];
+    int8_t v1[dim + sizeof(float)];
+    int8_t v2[dim + sizeof(float)];
 
     test_utils::populate_int8_vec(v1, dim, 123);
     test_utils::populate_int8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
+    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
+    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
 
     float dist = INT8_Cosine((const void *)v1, (const void *)v2, dim);
     ASSERT_NEAR(dist, 0.0, 0.000001);
@@ -917,8 +917,8 @@ class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
-    int8_t *v1 = new int8_t[dim];
-    int8_t *v2 = new int8_t[dim];
+    int8_t v1[dim];
+    int8_t v2[dim];
     test_utils::populate_int8_vec(v1, dim, 123);
     test_utils::populate_int8_vec(v2, dim, 1234);
 
@@ -953,8 +953,8 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
 TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
-    int8_t *v1 = new int8_t[dim];
-    int8_t *v2 = new int8_t[dim];
+    int8_t v1[dim];
+    int8_t v2[dim];
     test_utils::populate_int8_vec(v1, dim, 123);
     test_utils::populate_int8_vec(v2, dim, 1234);
 
@@ -990,14 +990,14 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
 TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
     auto optimization = cpu_features::GetX86Info().features;
     size_t dim = GetParam();
-    int8_t *v1 = new int8_t[dim + sizeof(float)];
-    int8_t *v2 = new int8_t[dim + sizeof(float)];
+    int8_t v1[dim + sizeof(float)];
+    int8_t v2[dim + sizeof(float)];
     test_utils::populate_int8_vec(v1, dim, 123);
     test_utils::populate_int8_vec(v2, dim, 1234);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::compute_norm(v2, dim);
+    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
+    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
 
     dist_func_t<float> arch_opt_func;
     float baseline = INT8_Cosine(v1, v2, dim);

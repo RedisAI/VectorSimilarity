@@ -33,10 +33,14 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
+
+    size_t dataSize =
+        VecSimParams_GetDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
                                                   .vecType = hnswParams->type,
+                                                  .dataSize = dataSize,
                                                   .metric = hnswParams->metric,
                                                   .blockSize = hnswParams->blockSize,
                                                   .multi = hnswParams->multi,
@@ -48,36 +52,32 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
 
-    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
-    // and query blobs.
-    VecSimMetric metric;
-    if (is_normalized && hnswParams->metric == VecSimMetric_Cosine) {
-        metric = VecSimMetric_IP;
-    } else {
-        metric = hnswParams->metric;
-    }
-
     if (hnswParams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
-            abstractInitParams.allocator, metric, hnswParams->dim);
+            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams, indexComponents);
 
     } else if (hnswParams->type == VecSimType_FLOAT64) {
         IndexComponents<double, double> indexComponents = CreateIndexComponents<double, double>(
-            abstractInitParams.allocator, metric, hnswParams->dim);
+            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams,
                                                     indexComponents);
 
     } else if (hnswParams->type == VecSimType_BFLOAT16) {
         IndexComponents<bfloat16, float> indexComponents = CreateIndexComponents<bfloat16, float>(
-            abstractInitParams.allocator, metric, hnswParams->dim);
+            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(hnswParams, abstractInitParams,
                                                              indexComponents);
     } else if (hnswParams->type == VecSimType_FLOAT16) {
         IndexComponents<float16, float> indexComponents = CreateIndexComponents<float16, float>(
-            abstractInitParams.allocator, metric, hnswParams->dim);
+            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float16, float>(hnswParams, abstractInitParams,
                                                             indexComponents);
+    } else if (hnswParams->type == VecSimType_INT8) {
+        IndexComponents<int8_t, float> indexComponents = CreateIndexComponents<int8_t, float>(
+            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<int8_t, float>(hnswParams, abstractInitParams,
+                                                           indexComponents);
     }
 
     // If we got here something is wrong.
@@ -114,6 +114,11 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
     } else if (params->type == VecSimType_FLOAT16) {
         est += EstimateComponentsMemory<float16, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<float16, float>(params->multi);
+    } else if (params->type == VecSimType_INT8) {
+        est += EstimateComponentsMemory<int8_t, float>(params->metric, is_normalized);
+        est += EstimateInitialSize_ChooseMultiOrSingle<int8_t, float>(params->multi);
+    } else {
+        throw std::invalid_argument("Invalid params->type");
     }
     return est;
 }
@@ -203,34 +208,32 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
                                  .algoParams = {.hnswParams = HNSWParams{params}}};
 
-    VecSimMetric metric;
-    if (is_normalized && params.metric == VecSimMetric_Cosine) {
-        metric = VecSimMetric_IP;
-    } else {
-        metric = params.metric;
-    }
-
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
-            abstractInitParams.allocator, metric, abstractInitParams.dim);
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
                                                    indexComponents, version);
     } else if (params.type == VecSimType_FLOAT64) {
         IndexComponents<double, double> indexComponents = CreateIndexComponents<double, double>(
-            abstractInitParams.allocator, metric, abstractInitParams.dim);
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams,
                                                     indexComponents, version);
     } else if (params.type == VecSimType_BFLOAT16) {
         IndexComponents<bfloat16, float> indexComponents = CreateIndexComponents<bfloat16, float>(
-            abstractInitParams.allocator, metric, abstractInitParams.dim);
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<bfloat16, float>(input, &params, abstractInitParams,
                                                              indexComponents, version);
     } else if (params.type == VecSimType_FLOAT16) {
         IndexComponents<float16, float> indexComponents = CreateIndexComponents<float16, float>(
-            abstractInitParams.allocator, metric, abstractInitParams.dim);
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<float16, float>(input, &params, abstractInitParams,
                                                             indexComponents, version);
+    } else if (params.type == VecSimType_INT8) {
+        IndexComponents<int8_t, float> indexComponents = CreateIndexComponents<int8_t, float>(
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<int8_t, float>(input, &params, abstractInitParams,
+                                                           indexComponents, version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {

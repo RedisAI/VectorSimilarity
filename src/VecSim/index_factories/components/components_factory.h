@@ -14,14 +14,24 @@
 
 template <typename DataType, typename DistType>
 IndexComponents<DataType, DistType>
-CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric, size_t dim) {
+CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric, size_t dim,
+                      bool is_normalized) {
     unsigned char alignment = 0;
     spaces::dist_func_t<DistType> distFunc =
         spaces::GetDistFunc<DataType, DistType>(metric, dim, &alignment);
     // Currently we have only one distance calculator implementation
     auto indexCalculator = new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
 
-    PreprocessorsContainerParams ppParams = {.metric = metric, .dim = dim, .alignment = alignment};
+    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
+    // and query blobs.
+    VecSimMetric pp_metric;
+    if (is_normalized && metric == VecSimMetric_Cosine) {
+        pp_metric = VecSimMetric_IP;
+    } else {
+        pp_metric = metric;
+    }
+    PreprocessorsContainerParams ppParams = {
+        .metric = pp_metric, .dim = dim, .alignment = alignment};
     auto preprocessors = CreatePreprocessorsContainer<DataType>(allocator, ppParams);
 
     return {indexCalculator, preprocessors};

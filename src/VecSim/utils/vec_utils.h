@@ -27,6 +27,7 @@ public:
     static const char *FLOAT64_STRING;
     static const char *BFLOAT16_STRING;
     static const char *FLOAT16_STRING;
+    static const char *INT8_STRING;
     static const char *INT32_STRING;
     static const char *INT64_STRING;
 
@@ -90,3 +91,6 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 
 size_t VecSimType_sizeof(VecSimType vecsimType);
+
+/** Returns the size in bytes of a stored or query vector */
+size_t VecSimParams_GetDataSize(VecSimType type, size_t dim, VecSimMetric metric);

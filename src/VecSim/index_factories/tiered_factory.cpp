@@ -42,9 +42,12 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     BFParams bf_params = NewBFParams(params);
 
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
+    size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+
     AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
                                                   .dim = bf_params.dim,
                                                   .vecType = bf_params.type,
+                                                  .dataSize = dataSize,
                                                   .metric = bf_params.metric,
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,
@@ -80,6 +83,10 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
         est += sizeof(TieredHNSWIndex<bfloat16, float>);
     } else if (hnsw_params.type == VecSimType_FLOAT16) {
         est += sizeof(TieredHNSWIndex<float16, float>);
+    } else if (hnsw_params.type == VecSimType_INT8) {
+        est += sizeof(TieredHNSWIndex<int8_t, float>);
+    } else {
+        throw std::invalid_argument("Invalid hnsw_params.type");
     }
 
     return est;
@@ -96,6 +103,8 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         return TieredHNSWFactory::NewIndex<bfloat16, float>(params);
     } else if (type == VecSimType_FLOAT16) {
         return TieredHNSWFactory::NewIndex<float16, float>(params);
+    } else if (type == VecSimType_INT8) {
+        return TieredHNSWFactory::NewIndex<int8_t, float>(params);
     }
     return nullptr; // Invalid type.
 }
