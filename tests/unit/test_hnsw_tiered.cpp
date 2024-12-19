@@ -1824,7 +1824,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->getHNSWIndex()->resizeLabelLookup(0);
 
     // Manually shrink the vectors so that memory would be as it was before we started inserting
-    tiered_index->getHNSWIndex()->vectorBlocks.shrink_to_fit();
+    dynamic_cast<DataBlocksContainer *>(tiered_index->getHNSWIndex()->vectors)->shrinkToFit();
     tiered_index->getHNSWIndex()->graphDataBlocks.shrink_to_fit();
     tiered_index->getHNSWIndex()->visitedNodesHandlerPool.clearPool();
 
