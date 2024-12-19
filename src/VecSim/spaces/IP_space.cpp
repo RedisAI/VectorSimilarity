@@ -16,6 +16,7 @@
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512FP16_VL.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
+#include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 
@@ -196,4 +197,59 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     return ret_dist_func;
 }
 
+dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = INT8_InnerProduct;
+    // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+#ifdef CPU_FEATURES_ARCH_X86_64
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 32 * sizeof(int8_t); // align to 256 bits.
+        return Choose_INT8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // __x86_64__
+    return ret_dist_func;
+}
+
+dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
+                                           const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = INT8_Cosine;
+    // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
+#ifdef CPU_FEATURES_ARCH_X86_64
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetX86Info().features
+                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        // For int8 vectors with cosine distance, the extra float for the norm shifts alignment to
+        // `(dim + sizeof(float)) % 32`.
+        // Vectors satisfying this have a residual, causing offset loads during calculation.
+        // To avoid complexity, we skip alignment here, assuming the performance impact is
+        // negligible.
+        return Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // __x86_64__
+    return ret_dist_func;
+}
 } // namespace spaces
