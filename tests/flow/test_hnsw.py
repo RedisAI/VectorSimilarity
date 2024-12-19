@@ -860,3 +860,51 @@ def test_hnsw_float16_multi_value():
     recall = float(correct) / (k * num_queries)
     print("\nrecall is: \n", recall)
     assert (recall > 0.9)
+
+class TestINT8():
+    dim = 50
+    num_elements = 10_000
+    M = 32
+    efConstruction = 200
+    efRuntime = 50
+    data_type = VecSimType_INT8
+
+    rng = np.random.default_rng(seed=42)
+
+    #### Create vectors
+    data = rng.integers(low=-128, high=127, size=(num_elements, dim), dtype=np.int8)
+
+    #### Create queries
+    num_queries = 10
+    query_data = rng.integers(low=-128, high=127, size=(num_queries, dim), dtype=np.int8)
+
+    def create_index(self, metric):
+        hnsw_index = create_hnsw_index(self.dim, 0, metric, VecSimType_INT8, self.efConstruction, self.M, self.efRuntime)
+        hnsw_index.set_ef(self.efRuntime)
+        return hnsw_index
+
+    def test_L2(self):
+        hnsw_index = self.create_index(VecSimMetric_L2)
+        k = 10
+
+        vectors = []
+        for i, vector in enumerate(self.data):
+            hnsw_index.add_vector(vector, i)
+            vectors.append((i, vector))
+
+        correct = 0
+        for target_vector in self.query_data:
+            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+
+            results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, target_vector, vectors, k)
+            for i, label in enumerate(hnswlib_labels[0]):
+                for j, correct_label in enumerate(keys):
+                    if label == correct_label:
+                        correct += 1
+                        assert math.isclose(hnswlib_distances[0][i], results[j]["dist"], rel_tol=1e-5)
+                        break
+
+        # Measure recall
+        recall = float(correct) / (k * self.num_queries)
+        print("\nrecall is: \n", recall)
+        assert (recall > 0.9)
