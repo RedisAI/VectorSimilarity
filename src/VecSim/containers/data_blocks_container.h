@@ -3,6 +3,7 @@
 #include "data_block.h"
 #include "raw_data_container_interface.h"
 #include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/utils/serializer.h"
 #include "VecSim/utils/vecsim_stl.h"
 
 class DataBlocksContainer : public VecsimBaseObject, public RawDataContainer {
@@ -20,6 +21,8 @@ public:
 
     size_t size() const override;
 
+    size_t capacity() const;
+
     size_t blockSize() const;
 
     size_t elementByteCount() const;
@@ -33,6 +36,15 @@ public:
     Status updateElement(size_t id, const void *element) override;
 
     std::unique_ptr<RawDataContainer::Iterator> getIterator() const override;
+
+#ifdef BUILD_TESTS
+    void saveVectorsData(std::ostream &output) const override;
+    // Use that in deserialization when file was created with old version (v3) that serialized
+    // the blocks themselves and not just thw raw vector data.
+    void restoreBlocks(std::istream &input, size_t num_vectors, Serializer::EncodingVersion);
+    void shrinkToFit();
+    size_t numBlocks() const;
+#endif
 
     class Iterator : public RawDataContainer::Iterator {
         size_t cur_id;

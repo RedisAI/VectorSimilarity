@@ -6,8 +6,8 @@
 // Persist index into a file in the specified location.
 void Serializer::saveIndex(const std::string &location) {
 
-    // Serializing with V3.
-    EncodingVersion version = EncodingVersion_V3;
+    // Serializing with the latest version.
+    EncodingVersion version = EncodingVersion_V4;
 
     std::ofstream output(location, std::ios::binary);
     writeBinaryPOD(output, version);
@@ -31,6 +31,5 @@ Serializer::EncodingVersion Serializer::ReadVersion(std::ifstream &input) {
         throw std::runtime_error("Cannot load index: bad encoding version: " +
                                  std::to_string(version));
     }
-
     return version;
 }
