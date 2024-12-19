@@ -170,7 +170,7 @@ inline double GetInfVal(VecSimType type) {
 }
 // TODO: Move all test_utils to this namespace
 namespace test_utils {
-size_t CalcIndexDataSize(VecSimIndex *index, VecSimType data_type);
+size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type);
 
 template <typename data_t, typename dist_t>
 TieredHNSWIndex<data_t, dist_t> *cast_to_tiered_index(VecSimIndex *index) {

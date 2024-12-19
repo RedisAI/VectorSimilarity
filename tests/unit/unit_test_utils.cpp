@@ -378,7 +378,7 @@ size_t getLabelsLookupNodeSize() {
     return memory_after - memory_before;
 }
 namespace test_utils {
-size_t CalcIndexDataSize(VecSimIndex *index, VecSimType data_type) {
+size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type) {
     switch (data_type) {
     case VecSimType_FLOAT32: {
         VecSimIndexAbstract<float, float> *abs_index =
