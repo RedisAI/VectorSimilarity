@@ -778,6 +778,7 @@ constexpr VecSimType vecsim_datatypes[] = {VecSimType_FLOAT32, VecSimType_FLOAT6
                                            VecSimType_BFLOAT16, VecSimType_FLOAT16,
                                            VecSimType_INT8};
 
+/** Run all CommonTypeMetricTests tests for each {VecSimType, VecSimMetric} combination */
 INSTANTIATE_TEST_SUITE_P(CommonTest, CommonTypeMetricTests,
                          testing::Combine(testing::ValuesIn(vecsim_datatypes),
                                           testing::Values(VecSimMetric_L2, VecSimMetric_IP,
@@ -789,6 +790,7 @@ INSTANTIATE_TEST_SUITE_P(CommonTest, CommonTypeMetricTests,
                              return test_name + "_" + metric;
                          });
 
+/** Run all CommonTypeMetricTieredTests tests for each {VecSimType, VecSimMetric} combination */
 INSTANTIATE_TEST_SUITE_P(
     CommonTieredTest, CommonTypeMetricTieredTests,
     testing::Combine(testing::ValuesIn(vecsim_datatypes),
