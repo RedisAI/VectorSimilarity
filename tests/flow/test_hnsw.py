@@ -903,11 +903,7 @@ class GeneralTest():
     @classmethod
     def create_add_vectors(cls, hnsw_index):
         assert cls.data is not None
-        label_to_vec_list = []
-        for i, vector in enumerate(cls.data):
-            hnsw_index.add_vector(vector, i)
-            label_to_vec_list.append((i, vector))
-        return label_to_vec_list
+        return create_add_vectors(hnsw_index, cls.data)
 
     @classmethod
     def get_cached_single_L2_index(cls):
@@ -1028,6 +1024,7 @@ class GeneralTest():
         hnsw_index.set_ef(self.efRuntime)
 
     ##### Should be explicitly called #####
+
     def range_query(self, dist_func):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
@@ -1119,22 +1116,14 @@ class TestINT8(GeneralTest):
     #### Create queries
     GeneralTest.query_data = create_int8_vectors(GeneralTest.num_queries, GeneralTest.dim, GeneralTest.rng)
 
-    @staticmethod
-    def fp32_expand_and_calc_cosine_dist(a, b):
-        # stupid numpy doesn't make any intermediate conversions when handling small types
-        # so we might get overflow. We need to convert to float32 ourselves.
-        a_float32 = a.astype(np.float32)
-        b_float32 = b.astype(np.float32)
-        return spatial.distance.cosine(a_float32, b_float32)
-
     def test_Cosine(self):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
 
-        self.knn(hnsw_index, label_to_vec_list, self.fp32_expand_and_calc_cosine_dist)
+        self.knn(hnsw_index, label_to_vec_list, fp32_expand_and_calc_cosine_dist)
 
     def test_range_query(self):
-        self.range_query(self.fp32_expand_and_calc_cosine_dist)
+        self.range_query(fp32_expand_and_calc_cosine_dist)
 
     def test_multi_value(self):
         self.multi_value(create_int8_vectors)

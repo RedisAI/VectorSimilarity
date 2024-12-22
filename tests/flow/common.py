@@ -24,6 +24,7 @@ def create_hnsw_params(dim, num_elements, metric, data_type, ef_construction=200
     hnsw_params.multi = is_multi
 
     return hnsw_params
+
 # Helper function for creating an index,uses the default HNSW parameters if not specified.
 def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
                       is_multi=False):
@@ -40,6 +41,23 @@ def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200,
 
     return HNSWIndex(hnsw_params)
 
+# Helper function for creating an index, uses the default flat parameters if not specified.
+def create_flat_index(dim, metric, data_type, is_multi=False):
+    bfparams = BFParams()
+
+    bfparams.dim = dim
+    bfparams.type = data_type
+    bfparams.metric = metric
+    bfparams.multi = is_multi
+
+    return BFIndex(bfparams)
+
+def create_add_vectors(index, vectors):
+    label_to_vec_list = []
+    for i, vector in enumerate(vectors):
+        index.add_vector(vector, i)
+        label_to_vec_list.append((i, vector))
+    return label_to_vec_list
 
 # Compute the expected speedup as a function of the expected parallel section rate of the code by Amdahl's law
 def expected_speedup(expected_parallel_rate, n_threads):
@@ -71,3 +89,10 @@ def get_ground_truth_results(dist_func, query, vectors, k):
     keys = [res["label"] for res in results[:k]]
 
     return results, keys
+
+def fp32_expand_and_calc_cosine_dist(a, b):
+    # stupid numpy doesn't make any intermediate conversions when handling small types
+    # so we might get overflow. We need to convert to float32 ourselves.
+    a_float32 = a.astype(np.float32)
+    b_float32 = b.astype(np.float32)
+    return spatial.distance.cosine(a_float32, b_float32)
