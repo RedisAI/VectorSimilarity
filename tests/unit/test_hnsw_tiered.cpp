@@ -163,7 +163,8 @@ TYPED_TEST(HNSWTieredIndexTest, testIndexesAttributes) {
         dynamic_cast<MultiPreprocessorsContainer<TEST_DATA_T, 1> *>(bf_preprocessors)
             ->getPreprocessors();
     const std::type_info &bf_pp_expected_type = typeid(CosinePreprocessor<TEST_DATA_T>);
-    const std::type_info &bf_pp_actual_type = typeid(*pp_arr[0]);
+    PreprocessorInterface *bf_pp = pp_arr[0];
+    const std::type_info &bf_pp_actual_type = typeid(*bf_pp);
     ASSERT_EQ(bf_pp_actual_type, bf_pp_expected_type);
 
     // hnsw - simple
