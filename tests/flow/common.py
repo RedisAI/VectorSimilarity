@@ -61,6 +61,10 @@ def vec_to_bfloat16(vec):
 def vec_to_float16(vec):
     return vec.astype(np.float16)
 
+def create_int8_vectors(num_elements, dim, rng: np.random.Generator = None):
+    rng = np.random.default_rng(seed=42) if rng is None else rng
+    return rng.integers(low=-128, high=127, size=(num_elements, dim), dtype=np.int8)
+
 def get_ground_truth_results(dist_func, query, vectors, k):
     results = [{"dist": dist_func(query, vec), "label": key} for key, vec in vectors]
     results = sorted(results, key=lambda x: x["dist"])

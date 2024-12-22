@@ -861,34 +861,48 @@ def test_hnsw_float16_multi_value():
     print("\nrecall is: \n", recall)
     assert (recall > 0.9)
 
-class TestINT8():
+'''
+A Class to run common tests for HNSW index
+
+The following tests will *automatically* run if the class is inherited:
+* test_serialization - single L2 index
+* test_L2 - single L2 index
+* test_batch_iterator - single L2 index
+
+The following tests should be *explicitly* called from a method prefixed with test_*
+# range_query(dist_func) - single cosine index
+
+@param create_data_func is a function expects num_elements, dim, [and optional np.random.Generator] as input and
+returns a (num_elements, dim) numpy array of vectors
+uses multi L2 index
+# multi_value(create_data_func, num_per_label) -
+'''
+class GeneralTest():
     dim = 50
     num_elements = 10_000
+    num_queries = 10
     M = 32
     efConstruction = 200
-    efRuntime = 100
-    data_type = VecSimType_INT8
+    efRuntime = 50
+    data_type = None
 
     rng = np.random.default_rng(seed=42)
+    data = None
+    query_data = None
 
-    #### Create vectors
-    data = rng.integers(low=-128, high=127, size=(num_elements, dim), dtype=np.int8)
-
-    #### Create queries
-    num_queries = 10
-    query_data = rng.integers(low=-128, high=127, size=(num_queries, dim), dtype=np.int8)
-
-    # single HNSW index with L2 metric populated with INT8 vectors
+    # single HNSW index with L2 metric
     cache_hnsw_index_L2_single = None
     cached_label_to_vec_list = None
 
     @classmethod
     def create_index(cls, metric = VecSimMetric_L2, is_multi=False):
-        hnsw_index = create_hnsw_index(cls.dim, 0, metric, VecSimType_INT8, cls.efConstruction, cls.M, cls.efRuntime, is_multi=is_multi)
+        assert cls.data_type is not None
+        hnsw_index = create_hnsw_index(cls.dim, 0, metric, cls.data_type, cls.efConstruction, cls.M, cls.efRuntime, is_multi=is_multi)
         return hnsw_index
 
     @classmethod
     def create_add_vectors(cls, hnsw_index):
+        assert cls.data is not None
         label_to_vec_list = []
         for i, vector in enumerate(cls.data):
             hnsw_index.add_vector(vector, i)
@@ -914,15 +928,24 @@ class TestINT8():
 
         return correct
 
-    @staticmethod
-    def fp32_expand_and_calc_cosine_dist(a, b):
-        # stupid numpy doesn't make any intermediate conversions when handling small types
-        # so we might get overflow. We need to convert to float32 ourselves.
-        a_float32 = a.astype(np.float32)
-        b_float32 = b.astype(np.float32)
-        return spatial.distance.cosine(a_float32, b_float32)
+    @classmethod
+    def knn(cls, hnsw_index, label_vec_list, dist_func):
+        k = 10
+
+        correct = 0
+        for target_vector in cls.query_data:
+            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, k)
+            results, keys = get_ground_truth_results(dist_func, target_vector, label_vec_list, k)
+
+            correct += cls.compute_correct(hnswlib_labels[0], hnswlib_distances[0], keys, results)
+
+        # Measure recall
+        recall = recall = float(correct) / (k * cls.num_queries)
+        print("\nrecall is: \n", recall)
+        assert (recall > 0.9)
 
     def test_serialization(self):
+        assert self.data_type is not None
         hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
         k = 10
 
@@ -946,7 +969,7 @@ class TestINT8():
         new_hnsw_index = HNSWIndex(file_name)
         os.remove(file_name)
         assert new_hnsw_index.index_size() == self.num_elements
-        assert new_hnsw_index.index_type() == VecSimType_INT8
+        assert new_hnsw_index.index_type() == self.data_type
         assert new_hnsw_index.check_integrity()
 
         # Check recall
@@ -965,31 +988,9 @@ class TestINT8():
         print("\nrecall after is: \n", recall_after)
         assert recall == recall_after
 
-    def knn(self, hnsw_index, label_vec_list, dist_func):
-        k = 10
-
-        correct = 0
-        for target_vector in self.query_data:
-            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, k)
-            results, keys = get_ground_truth_results(dist_func, target_vector, label_vec_list, k)
-
-            correct += self.compute_correct(hnswlib_labels[0], hnswlib_distances[0], keys, results)
-
-        # Measure recall
-        recall = recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
-        assert (recall > 0.9)
-
     def test_L2(self):
         hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
-
         self.knn(hnsw_index, label_to_vec_list, spatial.distance.sqeuclidean)
-
-    def test_Cosine(self):
-        hnsw_index = self.create_index(VecSimMetric_Cosine)
-        label_to_vec_list = self.create_add_vectors(hnsw_index)
-
-        self.knn(hnsw_index, label_to_vec_list, TestINT8.fp32_expand_and_calc_cosine_dist)
 
     def test_batch_iterator(self):
         hnsw_index, _ = self.get_cached_single_L2_index()
@@ -1026,7 +1027,8 @@ class TestINT8():
         # reset efRuntime
         hnsw_index.set_ef(self.efRuntime)
 
-    def test_range_query(self):
+    ##### Should be explicitly called #####
+    def range_query(self, dist_func):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
         radius = 0.7
@@ -1040,7 +1042,7 @@ class TestINT8():
             end = time.time()
             res_num = len(hnsw_labels[0])
 
-            dists = sorted([(key, TestINT8.fp32_expand_and_calc_cosine_dist(self.query_data[0], vec)) for key, vec in label_to_vec_list])
+            dists = sorted([(key, dist_func(self.query_data[0], vec)) for key, vec in label_to_vec_list])
             actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
             print(
@@ -1062,27 +1064,23 @@ class TestINT8():
         hnsw_labels, hnsw_distances = hnsw_index.range_query(self.query_data[0], radius=0)
         assert len(hnsw_labels[0]) == 0
 
-    def test_multi_value(self):
+    def multi_value(self, create_data_func, num_per_label = 5):
         num_per_label = 5
         num_labels = self.num_elements // num_per_label
-
-        # efConstruction = 100
-        num_queries = 10
         k = 10
 
-        hnsw_index = self.create_index(is_multi=True)
+        data = create_data_func(num_labels, self.dim, self.rng)
 
-        data = self.rng.integers(low=-128, high=127, size=(num_labels, self.dim), dtype=np.int8)
+        hnsw_index = self.create_index(is_multi=True)
 
         vectors = []
         for i, vector in enumerate(data):
             for _ in range(num_per_label):
                 hnsw_index.add_vector(vector, i)
                 vectors.append((i, vector))
-        query_data = self.rng.integers(low=-128, high=127, size=(num_queries, self.dim), dtype=np.int8)
 
         correct = 0
-        for target_vector in query_data:
+        for target_vector in self.query_data:
             hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, k)
             assert (len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
 
@@ -1107,6 +1105,36 @@ class TestINT8():
                         break
 
         # Measure recall
-        recall = float(correct) / (k * num_queries)
+        recall = float(correct) / (k * self.num_queries)
         print("\nrecall is: \n", recall)
         assert (recall > 0.9)
+
+class TestINT8(GeneralTest):
+
+    GeneralTest.data_type = VecSimType_INT8
+
+    #### Create vectors
+    GeneralTest.data = create_int8_vectors(GeneralTest.num_elements, GeneralTest.dim, GeneralTest.rng)
+
+    #### Create queries
+    GeneralTest.query_data = create_int8_vectors(GeneralTest.num_queries, GeneralTest.dim, GeneralTest.rng)
+
+    @staticmethod
+    def fp32_expand_and_calc_cosine_dist(a, b):
+        # stupid numpy doesn't make any intermediate conversions when handling small types
+        # so we might get overflow. We need to convert to float32 ourselves.
+        a_float32 = a.astype(np.float32)
+        b_float32 = b.astype(np.float32)
+        return spatial.distance.cosine(a_float32, b_float32)
+
+    def test_Cosine(self):
+        hnsw_index = self.create_index(VecSimMetric_Cosine)
+        label_to_vec_list = self.create_add_vectors(hnsw_index)
+
+        self.knn(hnsw_index, label_to_vec_list, self.fp32_expand_and_calc_cosine_dist)
+
+    def test_range_query(self):
+        self.range_query(self.fp32_expand_and_calc_cosine_dist)
+
+    def test_multi_value(self):
+        self.multi_value(create_int8_vectors)
