@@ -682,7 +682,7 @@ class GeneralTest():
         num_labels = self.num_elements // num_per_label
         k = 10
 
-        data = create_data_func(num_labels, self.dim, self.rng)
+        data = create_data_func((num_labels, self.dim), self.rng)
 
         index = self.create_index(is_multi=True)
 
@@ -719,10 +719,10 @@ class TestINT8(GeneralTest):
     GeneralTest.data_type = VecSimType_INT8
 
     #### Create vectors
-    GeneralTest.vectors_data = create_int8_vectors(GeneralTest.num_elements, GeneralTest.dim, GeneralTest.rng)
+    GeneralTest.vectors_data = create_int8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
 
     #### Create queries
-    GeneralTest.query_data = create_int8_vectors(GeneralTest.num_queries, GeneralTest.dim, GeneralTest.rng)
+    GeneralTest.query_data = create_int8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
 
     def test_Cosine(self):
 
