@@ -866,7 +866,7 @@ class TestINT8():
     num_elements = 10_000
     M = 32
     efConstruction = 200
-    efRuntime = 50
+    efRuntime = 100
     data_type = VecSimType_INT8
 
     rng = np.random.default_rng(seed=42)
@@ -878,33 +878,235 @@ class TestINT8():
     num_queries = 10
     query_data = rng.integers(low=-128, high=127, size=(num_queries, dim), dtype=np.int8)
 
-    def create_index(self, metric):
-        hnsw_index = create_hnsw_index(self.dim, 0, metric, VecSimType_INT8, self.efConstruction, self.M, self.efRuntime)
-        hnsw_index.set_ef(self.efRuntime)
+    # single HNSW index with L2 metric populated with INT8 vectors
+    cache_hnsw_index_L2_single = None
+    cached_label_to_vec_list = None
+
+    @classmethod
+    def create_index(cls, metric = VecSimMetric_L2, is_multi=False):
+        hnsw_index = create_hnsw_index(cls.dim, 0, metric, VecSimType_INT8, cls.efConstruction, cls.M, cls.efRuntime, is_multi=is_multi)
         return hnsw_index
 
-    def test_L2(self):
-        hnsw_index = self.create_index(VecSimMetric_L2)
+    @classmethod
+    def create_add_vectors(cls, hnsw_index):
+        label_to_vec_list = []
+        for i, vector in enumerate(cls.data):
+            hnsw_index.add_vector(vector, i)
+            label_to_vec_list.append((i, vector))
+        return label_to_vec_list
+
+    @classmethod
+    def get_cached_single_L2_index(cls):
+        if cls.cache_hnsw_index_L2_single is None:
+            cls.cache_hnsw_index_L2_single = cls.create_index()
+            cls.cached_label_to_vec_list = cls.create_add_vectors(cls.cache_hnsw_index_L2_single)
+        return cls.cache_hnsw_index_L2_single, cls.cached_label_to_vec_list
+
+    @staticmethod
+    def compute_correct(res_labels, res_dist, gt_labels, gt_dist_label_list):
+        correct = 0
+        for i, label in enumerate(res_labels):
+            for j, correct_label in enumerate(gt_labels):
+                if label == correct_label:
+                    correct += 1
+                    assert math.isclose(res_dist[i], gt_dist_label_list[j]["dist"], rel_tol=1e-5)
+                    break
+
+        return correct
+
+    @staticmethod
+    def fp32_expand_and_calc_cosine_dist(a, b):
+        # stupid numpy doesn't make any intermediate conversions when handling small types
+        # so we might get overflow. We need to convert to float32 ourselves.
+        a_float32 = a.astype(np.float32)
+        b_float32 = b.astype(np.float32)
+        return spatial.distance.cosine(a_float32, b_float32)
+
+    def test_serialization(self):
+        hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
         k = 10
 
-        vectors = []
-        for i, vector in enumerate(self.data):
-            hnsw_index.add_vector(vector, i)
-            vectors.append((i, vector))
+        correct = 0
+        correct_labels = []  # cache these
+        for target_vector in self.query_data:
+            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, k)
+            results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, target_vector, label_to_vec_list, k)
+
+            correct_labels.append(keys)
+            correct += self.compute_correct(hnswlib_labels[0], hnswlib_distances[0], keys, results)
+
+        # Measure recall
+        recall = float(correct) / (k * self.num_queries)
+        print("\nrecall is: \n", recall)
+
+        # Persist, delete and restore index.
+        file_name = os.getcwd() + "/dump"
+        hnsw_index.save_index(file_name)
+
+        new_hnsw_index = HNSWIndex(file_name)
+        os.remove(file_name)
+        assert new_hnsw_index.index_size() == self.num_elements
+        assert new_hnsw_index.index_type() == VecSimType_INT8
+        assert new_hnsw_index.check_integrity()
+
+        # Check recall
+        correct_after = 0
+        for i, target_vector in enumerate(self.query_data):
+            hnswlib_labels, _ = new_hnsw_index.knn_query(target_vector, k)
+            correct_labels_cur = correct_labels[i]
+            for label in hnswlib_labels[0]:
+                for correct_label in correct_labels_cur:
+                    if label == correct_label:
+                        correct_after += 1
+                        break
+
+        # Compare recall after reloading the index
+        recall_after = float(correct_after) / (k * self.num_queries)
+        print("\nrecall after is: \n", recall_after)
+        assert recall == recall_after
+
+    def knn(self, hnsw_index, label_vec_list, dist_func):
+        k = 10
 
         correct = 0
         for target_vector in self.query_data:
-            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, k)
+            results, keys = get_ground_truth_results(dist_func, target_vector, label_vec_list, k)
 
-            results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, target_vector, vectors, k)
+            correct += self.compute_correct(hnswlib_labels[0], hnswlib_distances[0], keys, results)
+
+        # Measure recall
+        recall = recall = float(correct) / (k * self.num_queries)
+        print("\nrecall is: \n", recall)
+        assert (recall > 0.9)
+
+    def test_L2(self):
+        hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
+
+        self.knn(hnsw_index, label_to_vec_list, spatial.distance.sqeuclidean)
+
+    def test_Cosine(self):
+        hnsw_index = self.create_index(VecSimMetric_Cosine)
+        label_to_vec_list = self.create_add_vectors(hnsw_index)
+
+        self.knn(hnsw_index, label_to_vec_list, TestINT8.fp32_expand_and_calc_cosine_dist)
+
+    def test_batch_iterator(self):
+        hnsw_index, _ = self.get_cached_single_L2_index()
+
+        batch_size = 10
+
+        efRuntime = 180
+        hnsw_index.set_ef(efRuntime)
+
+        batch_iterator = hnsw_index.create_batch_iterator(self.query_data)
+        labels_first_batch, distances_first_batch = batch_iterator.get_next_results(batch_size, BY_ID)
+        for i, _ in enumerate(labels_first_batch[0][:-1]):
+            # Assert sorting by id
+            assert (labels_first_batch[0][i] < labels_first_batch[0][i + 1])
+
+        _, distances_second_batch = batch_iterator.get_next_results(batch_size, BY_SCORE)
+        should_have_return_in_first_batch = []
+        for i, dist in enumerate(distances_second_batch[0][:-1]):
+            # Assert sorting by score
+            assert (distances_second_batch[0][i] < distances_second_batch[0][i + 1])
+            # Assert that every distance in the second batch is higher than any distance of the first batch
+            if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
+                should_have_return_in_first_batch.append(dist)
+        assert (len(should_have_return_in_first_batch) <= 2)
+
+        # Verify that runtime args are sent properly to the batch iterator.
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.efRuntime = 5
+        batch_iterator_new = hnsw_index.create_batch_iterator(self.query_data, query_params)
+        _, distances_first_batch_new = batch_iterator_new.get_next_results(batch_size, BY_ID)
+        # Verify that accuracy is worse with the new lower ef_runtime.
+        assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
+
+        # reset efRuntime
+        hnsw_index.set_ef(self.efRuntime)
+
+    def test_range_query(self):
+        hnsw_index = self.create_index(VecSimMetric_Cosine)
+        label_to_vec_list = self.create_add_vectors(hnsw_index)
+        radius = 0.7
+        recalls = {}
+
+        for epsilon_rt in [0.001, 0.01, 0.1]:
+            query_params = VecSimQueryParams()
+            query_params.hnswRuntimeParams.epsilon = epsilon_rt
+            start = time.time()
+            hnsw_labels, hnsw_distances = hnsw_index.range_query(self.query_data[0], radius=radius, query_param=query_params)
+            end = time.time()
+            res_num = len(hnsw_labels[0])
+
+            dists = sorted([(key, TestINT8.fp32_expand_and_calc_cosine_dist(self.query_data[0], vec)) for key, vec in label_to_vec_list])
+            actual_results = [(key, dist) for key, dist in dists if dist <= radius]
+
+            print(
+                f'\nlookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
+                f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
+
+            # Compare the number of vectors that are actually within the range to the returned results.
+            assert np.all(np.isin(hnsw_labels, np.array([label for label, _ in actual_results])))
+
+            assert max(hnsw_distances[0]) <= radius
+            recall = res_num / len(actual_results)
+            assert recall > 0.9
+            recalls[epsilon_rt] = res_num / len(actual_results)
+
+        # Expect higher recalls for higher epsilon values.
+        assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
+
+        # Expect zero results for radius==0
+        hnsw_labels, hnsw_distances = hnsw_index.range_query(self.query_data[0], radius=0)
+        assert len(hnsw_labels[0]) == 0
+
+    def test_multi_value(self):
+        num_per_label = 5
+        num_labels = self.num_elements // num_per_label
+
+        # efConstruction = 100
+        num_queries = 10
+        k = 10
+
+        hnsw_index = self.create_index(is_multi=True)
+
+        data = self.rng.integers(low=-128, high=127, size=(num_labels, self.dim), dtype=np.int8)
+
+        vectors = []
+        for i, vector in enumerate(data):
+            for _ in range(num_per_label):
+                hnsw_index.add_vector(vector, i)
+                vectors.append((i, vector))
+        query_data = self.rng.integers(low=-128, high=127, size=(num_queries, self.dim), dtype=np.int8)
+
+        correct = 0
+        for target_vector in query_data:
+            hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, k)
+            assert (len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
+
+            # sort distances of every vector from the target vector and get actual k nearest vectors
+            dists = {}
+            for key, vec in vectors:
+                # Setting or updating the score for each label.
+                # If it's the first time we calculate a score for a label dists.get(key, dist)
+                # will return dist so we will choose the actual score the first time.
+                dist = spatial.distance.sqeuclidean(target_vector, vec)
+                dists[key] = min(dist, dists.get(key, dist))
+
+            dists = list(dists.items())
+            dists = sorted(dists, key=lambda pair: pair[1])[:k]
+            keys = [key for key, _ in dists]
+
             for i, label in enumerate(hnswlib_labels[0]):
                 for j, correct_label in enumerate(keys):
                     if label == correct_label:
                         correct += 1
-                        assert math.isclose(hnswlib_distances[0][i], results[j]["dist"], rel_tol=1e-5)
+                        assert math.isclose(hnswlib_distances[0][i], dists[j][1], rel_tol=1e-5)
                         break
 
         # Measure recall
-        recall = float(correct) / (k * self.num_queries)
+        recall = float(correct) / (k * num_queries)
         print("\nrecall is: \n", recall)
         assert (recall > 0.9)
