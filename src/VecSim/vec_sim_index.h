@@ -106,8 +106,7 @@ public:
           dataSize(params.dataSize), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          alignment(preprocessors->getAlignment()), lastMode(EMPTY_MODE), isMulti(params.multi),
-          logCallbackCtx(params.logCtx) {
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         assert(dataSize);
         this->vectors = new (this->allocator) DataBlocksContainer(
