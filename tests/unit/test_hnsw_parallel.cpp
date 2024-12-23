@@ -80,10 +80,44 @@ protected:
         }
     }
 
+    /**
+     * Serialize the connections of the index for debugging purposes.
+     * Example output:
+     *  index connections: {
+     *      Entry Point Label: 3
+     *
+     *      Node 0:
+     *          Level 0 neighbors:
+     *              1, 2, 3, 4, 5,
+     *      Node 1:
+     *          Level 0 neighbors:
+     *              0, 2, 3,
+     *      Node 2:
+     *          Level 0 neighbors:
+     *              0, 1, 3,
+     *      Node 3:
+     *          Level 0 neighbors:
+     *              0, 1, 2, 4, 5,
+     *          Level 1 neighbors:
+     *              4,
+     *      Node 4:
+     *          Level 0 neighbors:
+     *              0, 3, 5,
+     *          Level 1 neighbors:
+     *              3,
+     *      Node 5:
+     *          Level 0 neighbors:
+     *              0, 3, 4,
+     *  }
+     */
     std::string serializeIndexConnections(VecSimIndex *index) const {
         std::string res("index connections: {");
         auto *hnsw_index = CastToHNSW(index);
 
+        if (index->indexSize() > 0) {
+            res += "\nEntry Point Label: ";
+            res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
+        }
         for (idType id = 0; id < index->indexSize(); id++) {
             labelType label = hnsw_index->getExternalLabel(id);
             if (label == SIZE_MAX)
@@ -96,14 +130,10 @@ protected:
                 auto &neighbours = neighbors_output[l];
                 auto neighbours_count = neighbours[0];
                 for (size_t j = 1; j <= neighbours_count; j++) {
-                    res += std::to_string(hnsw_index->getExternalLabel(neighbours[j])) + ", ";
+                    res += std::to_string(neighbours[j]) + ", ";
                 }
             }
             VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
-        }
-        if (index->indexSize() > 0) {
-            res += "\nEntry Point Label: ";
-            res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
         }
         return res + "}";
     }
@@ -421,7 +451,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
               ceil((double)n / n_threads));
 
     TEST_DATA_T query[dim];
-    size_t query_val = n / 2;
+    TEST_DATA_T query_val = (TEST_DATA_T)n / 2;
     GenerateVector<TEST_DATA_T>(query, dim, query_val);
     auto verify_res = [&](size_t id, double score, size_t res_index) {
         // We expect to get the results with increasing order of the distance between the res
@@ -697,7 +727,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
 
     bool run_queries = true;
     auto parallel_knn_search = [&](int myID) {
-        size_t query_val = n / 4 + 2 * myID;
+        TEST_DATA_T query_val = (TEST_DATA_T)n / 4 + 2 * myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
