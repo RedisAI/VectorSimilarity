@@ -300,6 +300,9 @@ public:
         } else if (type == VecSimType_FLOAT16) {
             auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
             hnsw->saveIndex(location);
+        } else if (type == VecSimType_INT8) {
+            auto *hnsw = dynamic_cast<HNSWIndex<int8_t, float> *>(index.get());
+            hnsw->saveIndex(location);
         } else {
             throw std::runtime_error("Invalid index data type");
         }
@@ -430,6 +433,10 @@ public:
                 .valid_state;
         } else if (type == VecSimType_FLOAT16) {
             return dynamic_cast<HNSWIndex<float16, float> *>(this->index.get())
+                ->checkIntegrity()
+                .valid_state;
+        } else if (type == VecSimType_INT8) {
+            return dynamic_cast<HNSWIndex<int8_t, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
         } else {
