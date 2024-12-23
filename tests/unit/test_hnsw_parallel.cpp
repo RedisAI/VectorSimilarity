@@ -332,20 +332,21 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 
     auto parallel_range_search = [&](int myID) {
         completed_tasks[myID]++;
-        TEST_DATA_T pivot_id = 100 + myID;
+        TEST_DATA_T pivot_id = 100.01 + myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, pivot_id);
         auto verify_res_by_score = [&](size_t id, double score, size_t res_index) {
             int sign = (res_index % 2 == 0) ? -1 : 1;
             size_t expected_id = pivot_id + (sign * int((res_index + 1) / 2));
-            double expected_score = dim * ((res_index + 1) / 2) * ((res_index + 1) / 2);
+            double factor = ((res_index + 1) / 2) - sign * 0.01;
+            double expected_score = dim * factor * factor;
             ASSERT_EQ(id, expected_id);
-            ASSERT_DOUBLE_EQ(score, expected_score);
+            ASSERT_NEAR(score, expected_score, 0.01);
         };
         uint expected_num_results = 11;
         // To get 11 results in the range [pivot_id-5, pivot_id+5], set the radius as the L2 score
         // in the boundaries.
-        double radius = (double)dim * pow((double)expected_num_results / 2, 2);
+        double radius = dim * expected_num_results * expected_num_results / 4.0;
         runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results,
                           BY_SCORE);
         successful_searches++;
@@ -371,7 +372,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
                 expected_ids[i] = (n - iteration_num * n_res - i - 1);
             }
             auto verify_res = [&](size_t id, double score, size_t res_index) {
-                ASSERT_TRUE(expected_ids[res_index] == id);
+                ASSERT_EQ(expected_ids[res_index], id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
             iteration_num++;
