@@ -495,7 +495,7 @@ class TestFloat16():
         print(f'\nlookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
 
         # Verify that we got exactly all vectors within the range
-        results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data.flat, self.data.vectors, res_num)
+        results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data[0], self.data.vectors, res_num)
 
         assert_allclose(max(bf_distances[0]), results[res_num-1]["dist"], rtol=1e-05)
         assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
