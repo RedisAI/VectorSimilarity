@@ -84,7 +84,7 @@ def create_int8_vectors(shape, rng: np.random.Generator = None):
     return rng.integers(low=-128, high=127, size=shape, dtype=np.int8)
 
 def get_ground_truth_results(dist_func, query, vectors, k):
-    results = [{"dist": dist_func(query, vec), "label": key} for key, vec in vectors]
+    results = [{"dist": dist_func(query.flat, vec), "label": key} for key, vec in vectors]
     results = sorted(results, key=lambda x: x["dist"])
     keys = [res["label"] for res in results[:k]]
 
@@ -93,6 +93,8 @@ def get_ground_truth_results(dist_func, query, vectors, k):
 def fp32_expand_and_calc_cosine_dist(a, b):
     # stupid numpy doesn't make any intermediate conversions when handling small types
     # so we might get overflow. We need to convert to float32 ourselves.
-    a_float32 = a.astype(np.float32)
-    b_float32 = b.astype(np.float32)
+    # a_float32 = a.astype(np.float32)
+    # b_float32 = b.astype(np.float32)
+    a_float32 = a
+    b_float32 = b
     return spatial.distance.cosine(a_float32, b_float32)

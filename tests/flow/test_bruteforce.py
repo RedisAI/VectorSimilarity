@@ -33,7 +33,7 @@ class Data:
 
     @staticmethod
     def calculate_dists(query, vectors, k, dist_func):
-        dists = [(dist_func(query, vec), key) for key, vec in vectors]
+        dists = [(dist_func(query.flat, vec), key) for key, vec in vectors]
         dists = sorted(dists)[:k]
         keys = [key for _, key in dists]
         dists = [dist for dist, _ in dists]
