@@ -11,11 +11,13 @@
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/computer/calculator.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "info_iterator_struct.h"
+#include "containers/data_blocks_container.h"
+#include "containers/raw_data_container_interface.h"
+
 #include <cassert>
 #include <functional>
 
@@ -72,11 +74,11 @@ protected:
                          // resizing)
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
     PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
-    // TODO: remove alignment once datablock is implemented in HNSW
-    unsigned char alignment;        // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
+
+    RawDataContainer *vectors; // The raw vectors data container.
 
     /**
      * @brief Get the common info object
@@ -108,6 +110,8 @@ public:
           logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         assert(dataSize);
+        this->vectors = new (this->allocator) DataBlocksContainer(
+            this->blockSize, this->dataSize, this->allocator, this->getAlignment());
     }
 
     /**
@@ -115,6 +119,7 @@ public:
      *
      */
     virtual ~VecSimIndexAbstract() noexcept {
+        delete this->vectors;
         delete indexCalculator;
         delete preprocessors;
     }
@@ -166,7 +171,7 @@ public:
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getDataSize() const { return dataSize; }
     inline size_t getBlockSize() const { return blockSize; }
-    inline auto getAlignment() const { return alignment; }
+    inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
 
     virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                          VecSimQueryParams *queryParams) const = 0;

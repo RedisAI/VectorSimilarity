@@ -31,7 +31,6 @@ template <typename DataType, typename DistType>
 class BruteForceIndex : public VecSimIndexAbstract<DataType, DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
-    RawDataContainer *vectors;
     idType count;
 
 public:
@@ -41,7 +40,9 @@ public:
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     std::unique_ptr<RawDataContainer::Iterator> getVectorsIterator() const;
-    DataType *getDataByInternalId(idType id) const { return (DataType *)vectors->getElement(id); }
+    DataType *getDataByInternalId(idType id) const {
+        return (DataType *)this->vectors->getElement(id);
+    }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
@@ -54,7 +55,7 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
-    const RawDataContainer *getVectorsContainer() const { return vectors; }
+    const RawDataContainer *getVectorsContainer() const { return this->vectors; }
 
     const labelType getLabelByInternalId(idType internal_id) const {
         return idToLabelMapping.at(internal_id);
@@ -71,7 +72,7 @@ public:
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
-    virtual ~BruteForceIndex() { delete vectors; }
+    virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
@@ -147,8 +148,6 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToLabelMapping(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
-    vectors = new (this->allocator)
-        DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, this->alignment);
 }
 
 /******************** Implementation **************/
@@ -164,7 +163,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         growByBlock();
     }
     // add vector data to vector raw data container
-    vectors->addElement(processed_blob.get(), id);
+    this->vectors->addElement(processed_blob.get(), id);
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);
@@ -193,10 +192,10 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         replaceIdOfLabel(last_idx_label, id_to_delete, last_idx);
 
         // Put data of last vector inplace of the deleted vector.
-        const char *last_vector_data = vectors->getElement(last_idx);
-        vectors->updateElement(id_to_delete, last_vector_data);
+        const char *last_vector_data = this->vectors->getElement(last_idx);
+        this->vectors->updateElement(id_to_delete, last_vector_data);
     }
-    vectors->removeElement(last_idx);
+    this->vectors->removeElement(last_idx);
 
     // If we reached to a multiply of a block size, we can reduce meta data structures size.
     if (this->count % this->blockSize == 0) {
@@ -217,7 +216,7 @@ size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
 template <typename DataType, typename DistType>
 std::unique_ptr<RawDataContainer::Iterator>
 BruteForceIndex<DataType, DistType>::getVectorsIterator() const {
-    return vectors->getIterator();
+    return this->vectors->getIterator();
 }
 
 template <typename DataType, typename DistType>
@@ -240,7 +239,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         getNewMaxPriorityQueue();
 
     // For vector, compute its scores and update the Top candidates max heap
-    auto vectors_it = vectors->getIterator();
+    auto vectors_it = this->vectors->getIterator();
     idType curr_id = 0;
     while (auto *vector = vectors_it->next()) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
@@ -285,7 +284,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
         getNewResultsContainer(10); // Use 10 as the initial capacity for the dynamic array.
 
     DistType radius_ = DistType(radius);
-    auto vectors_it = vectors->getIterator();
+    auto vectors_it = this->vectors->getIterator();
     idType curr_id = 0;
     const void *processed_query = processed_query_ptr.get();
     while (vectors_it->hasNext()) {
