@@ -31,16 +31,12 @@ class Data:
             self.index.add_vector(vector, i % num_labels)
             self.vectors.append((i % num_labels, vector))
 
-    @staticmethod
-    def calculate_dists(query, vectors, k, dist_func):
-        dists = [(dist_func(query.flat, vec), key) for key, vec in vectors]
+    def measure_dists(self, k):
+        dists = [(self.dist_func(self.query.flat, vec), key) for key, vec in self.vectors]
         dists = sorted(dists)[:k]
         keys = [key for _, key in dists]
         dists = [dist for dist, _ in dists]
         return (keys, dists)
-
-    def measure_dists(self, k):
-        return self.calculate_dists(self.query[0], self.vectors, k, self.dist_func)
 
 def test_sanity_bf():
     test_datas = []
@@ -495,7 +491,7 @@ class TestFloat16():
         print(f'\nlookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
 
         # Verify that we got exactly all vectors within the range
-        results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data[0], self.data.vectors, res_num)
+        results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data.flat, self.data.vectors, res_num)
 
         assert_allclose(max(bf_distances[0]), results[res_num-1]["dist"], rtol=1e-05)
         assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
@@ -604,10 +600,12 @@ class GeneralTest():
     @classmethod
     def knn(cls, index, label_vec_list, dist_func):
         k = 10
-        keys, dists = Data.calculate_dists(cls.query_data[0], label_vec_list, k, dist_func)
+
+        results, keys = get_ground_truth_results(dist_func, cls.query_data[0], label_vec_list, k)
+        dists = [res["dist"] for res in results]
         bf_labels, bf_distances = index.knn_query(cls.query_data, k=k)
         assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
-        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+        assert_allclose(bf_distances, [dists[:k]],  rtol=1e-5, atol=0)
         print(f"\nsanity test for L2 and {cls.data_type} pass")
 
     def test_L2(self):
