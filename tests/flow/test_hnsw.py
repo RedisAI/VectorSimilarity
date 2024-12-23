@@ -822,6 +822,7 @@ def test_hnsw_float16_multi_value():
                                    is_multi=True)
     k = 10
     hnsw_index.set_ef(50)
+    test = 1
 
     data = vec_to_float16(np.random.random((num_labels, dim)))
     vectors = []
