@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "test_utils.h"
+#include "unit_test_utils.h"
 #include "gtest/gtest.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/memory/vecsim_malloc.h"
@@ -46,6 +46,7 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
 
 static bool is_async_index(VecSimIndex *index) {
     return dynamic_cast<VecSimTieredIndex<float, float> *>(index) != nullptr ||
+           dynamic_cast<VecSimTieredIndex<int8_t, float> *>(index) != nullptr ||
            dynamic_cast<VecSimTieredIndex<double, double> *>(index) != nullptr;
 }
 
@@ -376,3 +377,69 @@ size_t getLabelsLookupNodeSize() {
     size_t memory_after = allocator->getAllocationSize();
     return memory_after - memory_before;
 }
+namespace test_utils {
+size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type) {
+    switch (data_type) {
+    case VecSimType_FLOAT32: {
+        VecSimIndexAbstract<float, float> *abs_index =
+            dynamic_cast<VecSimIndexAbstract<float, float> *>(index);
+        assert(abs_index &&
+               "dynamic_cast failed: can't convert index to VecSimIndexAbstract<float, float>");
+        return abs_index->getDataSize();
+    }
+    case VecSimType_FLOAT64: {
+        VecSimIndexAbstract<double, double> *abs_index =
+            dynamic_cast<VecSimIndexAbstract<double, double> *>(index);
+        assert(abs_index &&
+               "dynamic_cast failed: can't convert index to VecSimIndexAbstract<double, double>");
+        return abs_index->getDataSize();
+    }
+    case VecSimType_BFLOAT16: {
+        VecSimIndexAbstract<vecsim_types::bfloat16, float> *abs_index =
+            dynamic_cast<VecSimIndexAbstract<vecsim_types::bfloat16, float> *>(index);
+        assert(abs_index && "dynamic_cast failed: can't convert index to "
+                            "VecSimIndexAbstract<vecsim_types::bfloat16, float>");
+        return abs_index->getDataSize();
+    }
+    case VecSimType_FLOAT16: {
+        VecSimIndexAbstract<vecsim_types::float16, float> *abs_index =
+            dynamic_cast<VecSimIndexAbstract<vecsim_types::float16, float> *>(index);
+        assert(abs_index && "dynamic_cast failed: can't convert index to "
+                            "VecSimIndexAbstract<vecsim_types::float16, float>");
+        return abs_index->getDataSize();
+    }
+    case VecSimType_INT8: {
+        VecSimIndexAbstract<int8_t, float> *abs_index =
+            dynamic_cast<VecSimIndexAbstract<int8_t, float> *>(index);
+        assert(abs_index &&
+               "dynamic_cast failed: can't convert index to VecSimIndexAbstract<int8_t, float>");
+        return abs_index->getDataSize();
+    }
+    default:
+        return 0;
+    }
+}
+
+TieredIndexParams CreateTieredParams(VecSimParams &primary_params,
+                                     tieredIndexMock &mock_thread_pool) {
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = SIZE_MAX,
+                                       .primaryIndexParams = &primary_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+
+    return tiered_params;
+}
+
+VecSimIndex *CreateNewTieredHNSWIndex(const HNSWParams &hnsw_params,
+                                      tieredIndexMock &mock_thread_pool) {
+    VecSimParams primary_params = CreateParams(hnsw_params);
+    auto tiered_params = CreateTieredParams(primary_params, mock_thread_pool);
+    VecSimParams params = CreateParams(tiered_params);
+    VecSimIndex *index = VecSimIndex_New(&params);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    return index;
+}
+} // namespace test_utils

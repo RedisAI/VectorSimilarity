@@ -27,6 +27,7 @@
  * @param allocator The allocator to use for the index.
  * @param dim The dimension of the vectors in the index.
  * @param vecType The type of the vectors in the index.
+ * @param dataSize The size of stored vectors in bytes.
  * @param metric The metric to use in the index.
  * @param blockSize The block size to use in the index.
  * @param multi Determines if the index should multi-index or not.
@@ -36,6 +37,7 @@ struct AbstractIndexInitParams {
     std::shared_ptr<VecSimAllocator> allocator;
     size_t dim;
     VecSimType vecType;
+    size_t dataSize;
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
@@ -93,9 +95,6 @@ protected:
         return info;
     }
 
-    spaces::normalizeVector_f<DataType>
-        normalize_func; // A pointer to a normalization function of specific type.
-
 public:
     /**
      * @brief Construct a new Vec Sim Index object
@@ -104,13 +103,12 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
                         const IndexComponents<DataType, DistType> &components)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
+          dataSize(params.dataSize), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
-          normalize_func(spaces::GetNormalizeFunc<DataType>()) {
-
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
+        assert(dataSize);
         this->vectors = new (this->allocator) DataBlocksContainer(
             this->blockSize, this->dataSize, this->allocator, this->getAlignment());
     }

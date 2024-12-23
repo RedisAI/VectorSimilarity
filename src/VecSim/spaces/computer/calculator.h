@@ -26,10 +26,10 @@ public:
 /**
  * This object purpose is to calculate the distance between two vectors.
  * It extends the IndexCalculatorInterface class' type to hold the distance function.
- * Every specific implmentation of the distance claculater should hold by refrence or by value the
+ * Every specific implementation of the distance calculator should hold by reference or by value the
  * parameters required for the calculation. The distance calculation API of all DistanceCalculator
  * classes is: calc_dist(v1,v2,dim). Internally it calls the distance function according the
- * template signature, allowing fexability in the distance function arguments.
+ * template signature, allowing flexibility in the distance function arguments.
  */
 template <typename DistType, typename DistFuncType>
 class DistanceCalculatorInterface : public IndexCalculatorInterface<DistType> {
