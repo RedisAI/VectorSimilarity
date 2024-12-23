@@ -26,20 +26,20 @@ INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_BF16, BF16, AVX512BF16_VL, 32,
 // AVX512 functions
 #ifdef OPT_AVX512_BW_VBMI2
 bool avx512_bw_vbmi2_supported = opt.avx512bw && opt.avx512vbmi2;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_BF16, BF16, AVX512BW_VBMI2, 32,
-                          avx512_bw_vbmi2_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_BF16, BF16, AVX512BW_VBMI2, 32,
+                                avx512_bw_vbmi2_supported);
 #endif // AVX512F
 
 // AVX functions
 #ifdef OPT_AVX2
 bool avx2_supported = opt.avx2;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_BF16, BF16, AVX2, 32, avx2_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_BF16, BF16, AVX2, 32, avx2_supported);
 #endif // AVX
 
 // SSE functions
 #ifdef OPT_SSE3
 bool sse3_supported = opt.sse3;
-INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_BF16, BF16, SSE3, 32, sse3_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_BF16, BF16, SSE3, 32, sse3_supported);
 #endif // SSE
 
 #endif // x86_64

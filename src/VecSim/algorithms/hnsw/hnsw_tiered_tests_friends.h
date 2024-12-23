@@ -57,6 +57,8 @@ INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTestBasic_switchDeleteModes_Test)
 
 friend class BF16TieredTest;
 friend class FP16TieredTest;
+friend class INT8TieredTest;
+friend class CommonTypeMetricTieredTests_TestDataSizeTieredHNSW_Test;
 
 INDEX_TEST_FRIEND_CLASS(BM_VecSimBasics)
 INDEX_TEST_FRIEND_CLASS(BM_VecSimCommon)
