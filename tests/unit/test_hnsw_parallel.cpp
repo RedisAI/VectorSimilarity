@@ -86,7 +86,8 @@ protected:
 
         for (idType id = 0; id < index->indexSize(); id++) {
             labelType label = hnsw_index->getExternalLabel(id);
-            if (label == SIZE_MAX) continue; // The ID is not in the index
+            if (label == SIZE_MAX)
+                continue; // The ID is not in the index
             int **neighbors_output;
             VecSimDebug_GetElementNeighborsInHNSWGraph(index, label, &neighbors_output);
             res += "\nNode " + std::to_string(label) + ":";
@@ -101,7 +102,8 @@ protected:
             VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
         }
         if (index->indexSize() > 0) {
-            res += "\nEntry Point Label: " + std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
+            res += "\nEntry Point Label: ";
+            res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
         }
         return res + "}";
     }
@@ -390,7 +392,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
 
-    VecSimIndex *parallel_index = this->CreateNewIndex(params);
+    VecSimIndex *index = this->CreateNewIndex(params);
     size_t n_threads = 10;
 
     // Save the number of tasks done by thread i in the i-th entry.
@@ -402,8 +404,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         for (labelType label = myID; label < n; label += n_threads) {
             completed_tasks[myID]++;
             // Insert vector while acquire the guard lock exclusively if we are performing resizing.
-            this->insertVectorParallelSafe(parallel_index, dim, label, label, indexGuard, counter,
-                                           barrier);
+            this->insertVectorParallelSafe(index, dim, label, label, indexGuard, counter, barrier);
         }
     };
     std::thread thread_objs[n_threads];
@@ -413,7 +414,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     // Validate that every thread executed n/n_threads jobs.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), n / n_threads);
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
@@ -432,8 +433,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         ASSERT_EQ(id, expected_id);
         ASSERT_DOUBLE_EQ(score, expected_score);
     };
-    runTopKSearchTest(parallel_index, query, k, verify_res);
-    ASSERT_FALSE(testing::Test::HasFatalFailure()) << this->serializeIndexConnections(parallel_index);
+    runTopKSearchTest(index, query, k, verify_res);
+    ASSERT_FALSE(testing::Test::HasFatalFailure()) << this->serializeIndexConnections(index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
@@ -449,7 +450,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
 
-    VecSimIndex *parallel_index = this->CreateNewIndex(params, true);
+    VecSimIndex *index = this->CreateNewIndex(params, true);
     size_t n_threads = 10;
 
     // Save the number fo tasks done by thread i in the i-th entry.
@@ -461,8 +462,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         for (size_t i = myID; i < n; i += n_threads) {
             completed_tasks[myID]++;
             // Insert vector while acquire the guard lock exclusively if we are performing resizing.
-            this->insertVectorParallelSafe(parallel_index, dim, i % n_labels, i, indexGuard,
-                                           counter, barrier);
+            this->insertVectorParallelSafe(index, dim, i % n_labels, i, indexGuard, counter,
+                                           barrier);
         }
     };
     std::thread thread_objs[n_threads];
@@ -472,7 +473,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     // Validate that every thread executed n/n_threads jobs.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), n / n_threads);
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
@@ -492,7 +493,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         ASSERT_EQ(id, expected_id);
         ASSERT_DOUBLE_EQ(score, expected_score);
     };
-    runTopKSearchTest(parallel_index, query, k, verify_res);
+    runTopKSearchTest(index, query, k, verify_res);
+    ASSERT_FALSE(testing::Test::HasFatalFailure()) << this->serializeIndexConnections(index);
 }
 
 template <class index_type_t>
@@ -577,7 +579,7 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
         thread_objs[i].join();
     }
 
-    ASSERT_FALSE(testing::Test::HasFatalFailure()) << this->serializeIndexConnections(index);
+    ASSERT_FALSE(testing::Test::HasFatalFailure()) << this->serializeIndexConnections(hnsw_index);
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
     // Validate that every insertion thread executed n/(n_threads/2) jobs.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
