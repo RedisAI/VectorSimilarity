@@ -13,6 +13,7 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "mock_thread_pool.h"
 #include "gtest/gtest.h"
 
 // IndexType is used to define indices unit tests
@@ -99,6 +100,11 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
     return VecSimIndex_New(&params);
 }
 
+TieredIndexParams CreateTieredParams(VecSimParams &primary_params,
+                                     tieredIndexMock &mock_thread_pool);
+VecSimIndex *CreateNewTieredHNSWIndex(const HNSWParams &hnsw_params,
+                                      tieredIndexMock &mock_thread_pool);
+
 extern VecsimQueryType query_types[4];
 
 } // namespace test_utils
@@ -162,6 +168,16 @@ inline double GetInfVal(VecSimType type) {
         throw std::invalid_argument("This type is not supported");
     }
 }
+// TODO: Move all test_utils to this namespace
+namespace test_utils {
+size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type);
+
+template <typename data_t, typename dist_t>
+TieredHNSWIndex<data_t, dist_t> *cast_to_tiered_index(VecSimIndex *index) {
+    return dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
+}
+
+} // namespace test_utils
 
 // Test a specific exception type is thrown and prints the right message.
 #define ASSERT_EXCEPTION_MESSAGE(VALUE, EXCEPTION_TYPE, MESSAGE)                                   \

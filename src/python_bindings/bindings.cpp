@@ -300,6 +300,9 @@ public:
         } else if (type == VecSimType_FLOAT16) {
             auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
             hnsw->saveIndex(location);
+        } else if (type == VecSimType_INT8) {
+            auto *hnsw = dynamic_cast<HNSWIndex<int8_t, float> *>(index.get());
+            hnsw->saveIndex(location);
         } else {
             throw std::runtime_error("Invalid index data type");
         }
@@ -432,6 +435,10 @@ public:
             return dynamic_cast<HNSWIndex<float16, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
+        } else if (type == VecSimType_INT8) {
+            return dynamic_cast<HNSWIndex<int8_t, float> *>(this->index.get())
+                ->checkIntegrity()
+                .valid_state;
         } else {
             throw std::runtime_error("Invalid index data type");
         }
@@ -534,6 +541,7 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimType_FLOAT64", VecSimType_FLOAT64)
         .value("VecSimType_BFLOAT16", VecSimType_BFLOAT16)
         .value("VecSimType_FLOAT16", VecSimType_FLOAT16)
+        .value("VecSimType_INT8", VecSimType_INT8)
         .value("VecSimType_INT32", VecSimType_INT32)
         .value("VecSimType_INT64", VecSimType_INT64)
         .export_values();

@@ -7,7 +7,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
-#include "test_utils.h"
+#include "unit_test_utils.h"
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_debug.h"
 #include <unistd.h>
@@ -124,7 +124,7 @@ protected:
     void parallelInsertSearch(bool is_multi);
 };
 
-// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
+// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(HNSWTestParallel, DataTypeSet);
 
