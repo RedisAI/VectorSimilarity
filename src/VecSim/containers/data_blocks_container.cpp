@@ -1,4 +1,6 @@
 #include "data_blocks_container.h"
+#include "VecSim/utils/serializer.h"
+#include <cmath>
 
 DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCount,
                                          std::shared_ptr<VecSimAllocator> allocator,
@@ -9,6 +11,8 @@ DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCo
 DataBlocksContainer::~DataBlocksContainer() = default;
 
 size_t DataBlocksContainer::size() const { return element_count; }
+
+size_t DataBlocksContainer::capacity() const { return blocks.capacity(); }
 
 size_t DataBlocksContainer::blockSize() const { return block_size; }
 
@@ -51,6 +55,59 @@ std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() c
     return std::make_unique<DataBlocksContainer::Iterator>(*this);
 }
 
+#ifdef BUILD_TESTS
+void DataBlocksContainer::saveVectorsData(std::ostream &output) const {
+    // Save data blocks
+    for (size_t i = 0; i < this->numBlocks(); i++) {
+        auto &block = this->blocks[i];
+        unsigned int block_len = block.getLength();
+        for (size_t j = 0; j < block_len; j++) {
+            output.write(block.getElement(j), this->element_bytes_count);
+        }
+    }
+}
+
+void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
+                                        Serializer::EncodingVersion version) {
+
+    // Get number of blocks
+    unsigned int num_blocks = 0;
+    if (version == Serializer::EncodingVersion_V3) {
+        // In V3, the number of blocks is serialized, so we need to read it from the file.
+        Serializer::readBinaryPOD(input, num_blocks);
+    } else {
+        // Otherwise, calculate the number of blocks based on the number of vectors.
+        num_blocks = std::ceil((float)num_vectors / this->block_size);
+    }
+    this->blocks.reserve(num_blocks);
+
+    // Get data blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+        this->blocks.emplace_back(this->block_size, this->element_bytes_count, this->allocator,
+                                  this->alignment);
+        unsigned int block_len = 0;
+        if (version == Serializer::EncodingVersion_V3) {
+            // In V3, the length of each block is serialized, so we need to read it from the file.
+            Serializer::readBinaryPOD(input, block_len);
+        } else {
+            size_t vectors_left = num_vectors - this->element_count;
+            block_len = vectors_left > this->block_size ? this->block_size : vectors_left;
+        }
+        for (size_t j = 0; j < block_len; j++) {
+            auto cur_vec = this->getAllocator()->allocate_unique(this->element_bytes_count);
+            input.read(static_cast<char *>(cur_vec.get()),
+                       (std::streamsize)this->element_bytes_count);
+            this->blocks.back().addElement(cur_vec.get());
+            this->element_count++;
+        }
+    }
+}
+
+void DataBlocksContainer::shrinkToFit() { this->blocks.shrink_to_fit(); }
+
+size_t DataBlocksContainer::numBlocks() const { return this->blocks.size(); }
+
+#endif
 /********************************** Iterator API ************************************************/
 
 DataBlocksContainer::Iterator::Iterator(const DataBlocksContainer &container_)

@@ -12,7 +12,20 @@ def create_tiered_hnsw_params(swap_job_threshold = 0):
     return tiered_hnsw_params
 
 class IndexCtx:
-    array_conversion_func = {VecSimType_FLOAT32: np.float32, VecSimType_BFLOAT16: vec_to_bfloat16, VecSimType_FLOAT16: vec_to_float16}
+    array_conversion_func = {
+        VecSimType_FLOAT32: np.float32,
+        VecSimType_BFLOAT16: vec_to_bfloat16,
+        VecSimType_FLOAT16: vec_to_float16,
+    }
+
+    type_to_dtype = {
+        VecSimType_FLOAT32: np.float32,
+        VecSimType_FLOAT64: np.float64,
+        VecSimType_BFLOAT16: bfloat16,
+        VecSimType_FLOAT16: np.float16,
+        VecSimType_INT8: np.int8
+    }
+
     def __init__(self, data_size=10000,
                  dim=16,
                  M=16,
@@ -23,7 +36,8 @@ class IndexCtx:
                  is_multi=False,
                  num_per_label=1,
                  swap_job_threshold=0,
-                 flat_buffer_size=1024):
+                 flat_buffer_size=1024,
+                 create_data_func = None):
         self.num_vectors = data_size
         self.dim = dim
         self.M = M
@@ -38,12 +52,17 @@ class IndexCtx:
         self.num_labels = int(self.num_vectors/num_per_label)
 
         self.rng = np.random.default_rng(seed=47)
+        self.create_data_func = self.rng.random if create_data_func is None else create_data_func
 
         data_shape = (self.num_labels, num_per_label, self.dim) if is_multi else (self.num_labels, self.dim)
-        data = self.rng.random(data_shape)
-        if self.data_type != VecSimType_FLOAT64:
-            self.data = self.array_conversion_func[self.data_type](data)
-            print("data type = ", self.data.dtype)
+
+
+        self.data = self.create_data_func(data_shape)
+        if self.data_type in self.array_conversion_func.keys():
+            self.data = self.array_conversion_func[self.data_type](self.data)
+        print("data type = ", self.data.dtype)
+        assert self.data.dtype == self.type_to_dtype[self.data_type]
+
         self.hnsw_params = create_hnsw_params(dim = self.dim,
                                               num_elements = self.num_vectors,
                                               metric = self.metric,
@@ -102,18 +121,23 @@ class IndexCtx:
         return hnsw_index
 
     def generate_queries(self, num_queries):
-        queries = self.rng.random((num_queries, self.dim))
-        if self.data_type != VecSimType_FLOAT64:
+        queries = self.create_data_func((num_queries, self.dim))
+        if self.data_type in self.array_conversion_func.keys():
             queries = self.array_conversion_func[self.data_type](queries)
         return queries
 
     def get_vectors_memory_size(self):
-        memory_size = {VecSimType_FLOAT32:4, VecSimType_FLOAT64:8, VecSimType_BFLOAT16:2, VecSimType_FLOAT16:2}
+        memory_size = {
+            VecSimType_FLOAT32: 4,
+            VecSimType_FLOAT64: 8,
+            VecSimType_BFLOAT16: 2,
+            VecSimType_FLOAT16: 2,
+            VecSimType_INT8: 1
+        }
         return bytes_to_mega(self.num_vectors * self.dim * memory_size[self.data_type])
 
-
-def create_tiered_index(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32):
-    indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label, data_type=data_type)
+def create_tiered_index(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
+    indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label, data_type=data_type, create_data_func=create_data_func)
     num_elements = indices_ctx.num_labels
 
     index = indices_ctx.tiered_index
@@ -152,10 +176,10 @@ def create_tiered_index(is_multi: bool, num_per_label=1, data_type=VecSimType_FL
     print(f"with {threads_num} threads, insertion runtime is {round_(execution_time_ratio)} times better \n")
 
 
-def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32):
+def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
     data_size = 100000
     indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
-                           flat_buffer_size=data_size, M=64, data_type=data_type)
+                           flat_buffer_size=data_size, M=64, data_type=data_type, create_data_func=create_data_func)
     index = indices_ctx.tiered_index
 
     num_labels = indices_ctx.num_labels
@@ -226,12 +250,16 @@ def test_create_multi():
     create_tiered_index(is_multi=True, num_per_label=5)
 
 def test_create_bf16():
-    print("Test create multi label tiered hnsw index")
+    print("Test create BFLOAT16 tiered hnsw index")
     create_tiered_index(is_multi=False, data_type=VecSimType_BFLOAT16)
 
 def test_create_fp16():
-    print("Test create multi label tiered hnsw index")
+    print("Test create FLOAT16 tiered hnsw index")
     create_tiered_index(is_multi=False, data_type=VecSimType_FLOAT16)
+
+def test_create_int8():
+    print("Test create INT8 tiered hnsw index")
+    create_tiered_index(is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
 
 def test_search_insert():
     print(f"\nStart insert & search test")
@@ -244,6 +272,10 @@ def test_search_insert_bf16():
 def test_search_insert_fp16():
     print(f"\nStart insert & search test")
     search_insert(is_multi=False, data_type=VecSimType_FLOAT16)
+
+def test_search_insert_int8():
+    print(f"\nStart insert & search test")
+    search_insert(is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
 
 def test_search_insert_multi_index():
     print(f"\nStart insert & search test for multi index")

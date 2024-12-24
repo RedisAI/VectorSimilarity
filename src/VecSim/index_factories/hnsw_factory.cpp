@@ -120,6 +120,8 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
     } else {
         throw std::invalid_argument("Invalid params->type");
     }
+    est += sizeof(DataBlocksContainer) + allocations_overhead;
+
     return est;
 }
 
