@@ -129,7 +129,6 @@ protected:
         }
         return res + "}";
     }
-
 };
 
 // DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -590,7 +589,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                   1);
         ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
                   1);
-        ASSERT_FALSE(testing::Test::HasFatalFailure()) << this->serializeIndexConnections(hnsw_index);
+        ASSERT_FALSE(testing::Test::HasFatalFailure())
+            << this->serializeIndexConnections(hnsw_index);
         VecSimIndex_Free(parallel_index);
     }
 }
