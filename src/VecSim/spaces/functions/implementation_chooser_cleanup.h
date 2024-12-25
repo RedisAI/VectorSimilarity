@@ -11,7 +11,17 @@
  */
 
 #undef X
+
+#undef C2
 #undef C4
+#undef C8
+#undef C16
+#undef C32
+#undef C64
+
 #undef CASES8
 #undef CASES16
+#undef CASES32
+#undef CASES64
+
 #undef CHOOSE_IMPLEMENTATION

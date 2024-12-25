@@ -21,23 +21,21 @@
         __ret_dist_func = func<(N)>;                                                               \
         break;
 
-// Macro for 4 cases. Used to collapse the switch statement. For a given N, expands to 4 X macros
-// of 4N, 4N+1, 4N+2, 4N+3.
-#define C4(X, func, N) X(4 * N, func) X(4 * N + 1, func) X(4 * N + 2, func) X(4 * N + 3, func)
+// Macros for folding cases of a switch statement, for easier readability.
+// Each macro expands into a sequence of cases, from 0 to N-1, doubling the previous macro.
+#define C2(X, func, N)  X(2 * (N), func) X(2 * (N) + 1, func)
+#define C4(X, func, N)  C2(X, func, 2 * (N)) C2(X, func, 2 * (N) + 1)
+#define C8(X, func, N)  C4(X, func, 2 * (N)) C4(X, func, 2 * (N) + 1)
+#define C16(X, func, N) C8(X, func, 2 * (N)) C8(X, func, 2 * (N) + 1)
+#define C32(X, func, N) C16(X, func, 2 * (N)) C16(X, func, 2 * (N) + 1)
+#define C64(X, func, N) C32(X, func, 2 * (N)) C32(X, func, 2 * (N) + 1)
 
-// Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement. Expands into 0-63,
-// 0-31, 0-15 or 0-7 cases.
-#define CASES32(X, func)                                                                           \
-    C4(X, func, 0)                                                                                 \
-    C4(X, func, 1)                                                                                 \
-    C4(X, func, 2) C4(X, func, 3) C4(X, func, 4) C4(X, func, 5) C4(X, func, 6) C4(X, func, 7)
-#define CASES16(X, func) C4(X, func, 0) C4(X, func, 1) C4(X, func, 2) C4(X, func, 3)
-#define CASES8(X, func)  C4(X, func, 0) C4(X, func, 1)
-#define CASES64(X, func)                                                                           \
-    CASES32(X, func)                                                                               \
-    C4(X, func, 8)                                                                                 \
-    C4(X, func, 9)                                                                                 \
-    C4(X, func, 10) C4(X, func, 11) C4(X, func, 12) C4(X, func, 13) C4(X, func, 14) C4(X, func, 15)
+// Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
+// Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
+#define CASES8(X, func)  C8(X, func, 0)
+#define CASES16(X, func) C16(X, func, 0)
+#define CASES32(X, func) C32(X, func, 0)
+#define CASES64(X, func) C64(X, func, 0)
 
 // Main macro. Expands into a switch statement that chooses the implementation based on the
 // dimension's remainder.
