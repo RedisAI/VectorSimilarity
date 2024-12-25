@@ -90,3 +90,28 @@ float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
         *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
     return 1.0f - float(INT8_InnerProductImp(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
 }
+
+static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
+                                        size_t dimension) {
+    uint8_t *pVect1 = (uint8_t *)pVect1v;
+    uint8_t *pVect2 = (uint8_t *)pVect2v;
+
+    int res = 0; // signed int is used to avoid overflow and unsigned arithmetic
+    for (size_t i = 0; i < dimension; i++) {
+        res += pVect1[i] * pVect2[i];
+    }
+    return res;
+}
+
+float UINT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1 - UINT8_InnerProductImp(pVect1v, pVect2v, dimension);
+}
+
+float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // We expect the vectors' norm to be stored at the end of the vector.
+    float norm_v1 =
+        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    float norm_v2 =
+        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    return 1.0f - float(UINT8_InnerProductImp(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
+}
