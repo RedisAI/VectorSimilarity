@@ -25,11 +25,11 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_ADD_LABEL_ASYNC          AddLabel_Async_Single
 #define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Single
 
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), int8_index_t, BruteForceIndex_Single,
-                    int8_t, float, VecSimAlgo_BF)
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), int8_index_t, HNSWIndex_Single,
-                    int8_t, float, VecSimAlgo_HNSWLIB)
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), int8_index_t, TieredHNSWIndex,
-                    int8_t, float, VecSimAlgo_TIERED)
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), int8_index_t, BruteForceIndex_Single, int8_t,
+                    float, VecSimAlgo_BF)
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), int8_index_t, HNSWIndex_Single, int8_t, float,
+                    VecSimAlgo_HNSWLIB)
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), int8_index_t, TieredHNSWIndex, int8_t, float,
+                    VecSimAlgo_TIERED)
 #include "benchmark/bm_initialization/bm_basics_initialize_int8.h"
 BENCHMARK_MAIN();

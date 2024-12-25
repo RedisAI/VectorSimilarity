@@ -4,7 +4,7 @@
   NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
 the file.
 ***************************************/
-#define REGISTER_Range_INT8_HNSW(BM_FUNC)                                                               \
+#define REGISTER_Range_INT8_HNSW(BM_FUNC)                                                          \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->Args({50, 1})                                                                            \
         ->Args({50, 10})                                                                           \
@@ -17,7 +17,7 @@ the file.
         ->Args({80, 100})                                                                          \
         ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
         ->Iterations(10)                                                                           \
-        ->Unit(benchmark::kMillisecond) 
+        ->Unit(benchmark::kMillisecond)
 // Memory BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), int8_index_t)
 (benchmark::State &st) { Memory_FLAT(st); }
@@ -80,8 +80,3 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC, int8_index_t)
 (benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
-BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC)
-    ->UNIT_AND_ITERATIONS->Arg(1)
-    ->Arg(100)
-    ->Arg(BM_VecSimGeneral::block_size)
-    ->ArgName("SwapJobsThreshold");
