@@ -566,13 +566,13 @@ void UINT8Test::test_range_query(params_t params) {
     size_t n = 100;
     SetUp(params);
 
-    uint8_t pivot_value = 1;
+    uint8_t pivot_value = 46;
     uint8_t pivot_vec[dim];
     this->GenerateVector(pivot_vec, pivot_value);
 
     uint8_t radius = 20;
     std::mt19937 gen(42);
-    std::uniform_int_distribution<int16_t> dis(pivot_value - radius, pivot_value + radius);
+    std::uniform_int_distribution<uint16_t> dis(pivot_value - radius, pivot_value + radius);
 
     // insert 20 vectors near a pivot vector.
     size_t n_close = 20;
@@ -588,7 +588,7 @@ void UINT8Test::test_range_query(params_t params) {
     // Add more vectors far from the pivot vector
     for (size_t i = n_close; i < n; i++) {
         uint8_t random_number = static_cast<uint8_t>(dis(gen));
-        GenerateAndAddVector(i, 50 + random_number);
+        GenerateAndAddVector(i, pivot_value + (2 * radius) + random_number);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
