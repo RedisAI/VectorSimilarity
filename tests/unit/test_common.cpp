@@ -645,6 +645,25 @@ TEST(CommonAPITest, NormalizeInt8) {
     ASSERT_FLOAT_EQ(norm, 1.0);
 }
 
+TEST(CommonAPITest, NormalizeUint8) {
+    size_t dim = 20;
+    uint8_t v[dim + sizeof(float)];
+
+    test_utils::populate_uint8_vec(v, dim);
+
+    VecSim_Normalize(v, dim, VecSimType_UINT8);
+
+    float res_norm = *(reinterpret_cast<float *>(v + dim));
+    // Check that the normalized vector norm is 1.
+    float norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        float val = v[i] / res_norm;
+        norm += val * val;
+    }
+
+    ASSERT_FLOAT_EQ(norm, 1.0);
+}
+
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
 protected:
     template <typename algo_params>
@@ -667,7 +686,7 @@ void CommonTypeMetricTests::test_datasize() {
     this->index = test_utils::CreateNewIndex(params, type);
     size_t actual = test_utils::CalcVectorDataSize(index, type);
     size_t expected = dim * VecSimType_sizeof(type);
-    if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
+    if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
         expected += sizeof(float);
     }
     ASSERT_EQ(actual, expected);
@@ -716,7 +735,7 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
         auto hnsw_index = tiered_index->getHNSWIndex();
         auto bf_index = tiered_index->getFlatBufferIndex();
         size_t expected = dim * VecSimType_sizeof(type);
-        if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
+        if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
             expected += sizeof(float);
         }
         size_t actual_hnsw = hnsw_index->getDataSize();
@@ -751,6 +770,11 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
         verify_data_size(tiered_index);
         break;
     }
+    case VecSimType_UINT8: {
+        auto tiered_index = test_utils::cast_to_tiered_index<uint8_t, float>(index);
+        verify_data_size(tiered_index);
+        break;
+    }
     default:
         FAIL() << "Unsupported data type";
     }
@@ -776,7 +800,7 @@ TEST_P(CommonTypeMetricTieredTests, TestInitialSizeEstimationTieredHNSW) {
 
 constexpr VecSimType vecsim_datatypes[] = {VecSimType_FLOAT32, VecSimType_FLOAT64,
                                            VecSimType_BFLOAT16, VecSimType_FLOAT16,
-                                           VecSimType_INT8};
+                                           VecSimType_INT8, VecSimType_UINT8};
 
 /** Run all CommonTypeMetricTests tests for each {VecSimType, VecSimMetric} combination */
 INSTANTIATE_TEST_SUITE_P(CommonTest, CommonTypeMetricTests,
