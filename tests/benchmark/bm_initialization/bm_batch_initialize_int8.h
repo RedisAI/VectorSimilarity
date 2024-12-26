@@ -34,4 +34,5 @@ REGISTER_VariableBatchSize(BM_FUNC_NAME(HNSW, VariableBatchSize));
 // Batches to hadoc HSNW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, BatchesToAdhocBF), int8_index_t)
 (benchmark::State &st) { HNSW_BatchesToAdhocBF(st); }
+
 REGISTER_HNSW_BatchesToAdhocBF(BM_FUNC_NAME(HNSW, BatchesToAdhocBF));
