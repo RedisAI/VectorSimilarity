@@ -39,7 +39,6 @@ static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v
 
     // Deal with remainder first. `dim` is more than 32, so we have at least one 32-int_8 block,
     // so mask loading is guaranteed to be safe
-    // TODO: unify the two steps for dim>64 with a single mask loading?
     if constexpr (residual % 32) {
         constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;
         __m256i temp_a = _mm256_maskz_loadu_epi8(mask, pVect1);
@@ -53,6 +52,7 @@ static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v
         sum = _mm512_dpwssd_epi32(sum, va, vb);
     }
 
+    // TODO: unify this and the above steps for dim>64 with a single mask loading?
     if constexpr (residual >= 32) {
         __m256i temp_a = _mm256_loadu_epi8(pVect1);
         __m512i va = _mm512_cvtepu8_epi16(temp_a);
