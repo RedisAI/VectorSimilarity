@@ -82,7 +82,7 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
         IndexComponents<uint8_t, float> indexComponents = CreateIndexComponents<uint8_t, float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<uint8_t, float>(bfparams, abstractInitParams,
-                                                           indexComponents);
+                                                            indexComponents);
     }
 
     // If we got here something is wrong.

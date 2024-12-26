@@ -253,7 +253,8 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
-dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
+dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
+                                        const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
@@ -280,7 +281,7 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment, co
 }
 
 dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
-                                           const void *arch_opt) {
+                                            const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;

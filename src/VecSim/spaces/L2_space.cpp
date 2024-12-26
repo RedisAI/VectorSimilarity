@@ -216,7 +216,8 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     return ret_dist_func;
 }
 
-dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
+dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
+                                        const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;

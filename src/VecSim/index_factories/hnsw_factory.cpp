@@ -82,7 +82,7 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
         IndexComponents<uint8_t, float> indexComponents = CreateIndexComponents<uint8_t, float>(
             abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<uint8_t, float>(hnswParams, abstractInitParams,
-                                                           indexComponents);
+                                                            indexComponents);
     }
 
     // If we got here something is wrong.
@@ -248,7 +248,7 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
         IndexComponents<uint8_t, float> indexComponents = CreateIndexComponents<uint8_t, float>(
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<uint8_t, float>(input, &params, abstractInitParams,
-                                                           indexComponents, version);
+                                                            indexComponents, version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {
