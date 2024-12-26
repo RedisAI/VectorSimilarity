@@ -37,6 +37,7 @@ typedef enum {
     VecSimType_BFLOAT16,
     VecSimType_FLOAT16,
     VecSimType_INT8,
+    VecSimType_UINT8,
     VecSimType_INT32,
     VecSimType_INT64
 } VecSimType;
