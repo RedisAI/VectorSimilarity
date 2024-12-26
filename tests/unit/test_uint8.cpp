@@ -36,7 +36,9 @@ protected:
         return dynamic_cast<algo_t *>(vecsim_index);
     }
 
-    virtual HNSWIndex<uint8_t, float> *CastToHNSW() { return CastIndex<HNSWIndex<uint8_t, float>>(); }
+    virtual HNSWIndex<uint8_t, float> *CastToHNSW() {
+        return CastIndex<HNSWIndex<uint8_t, float>>();
+    }
 
     void PopulateRandomVector(uint8_t *out_vec) { test_utils::populate_uint8_vec(out_vec, dim); }
     int PopulateRandomAndAddVector(size_t id, uint8_t *out_vec) {
@@ -393,7 +395,7 @@ void UINT8Test::metrics_test(params_t index_params) {
 
         if (metric == VecSimMetric_Cosine) {
             // compare with the norm stored in the index vector
-            const uint8_t *index_vector = static_cast<const uint8_t *>(this->GetDataByInternalId(i));
+            auto *index_vector = static_cast<const uint8_t *>(this->GetDataByInternalId(i));
             float index_vector_norm = *(reinterpret_cast<const float *>(index_vector + dim));
             float vector_norm = spaces::IntegralType_ComputeNorm<uint8_t>(vector, dim);
             ASSERT_EQ(index_vector_norm, vector_norm) << "wrong vector norm for vector id:" << i;

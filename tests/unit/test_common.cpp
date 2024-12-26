@@ -735,7 +735,8 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
         auto hnsw_index = tiered_index->getHNSWIndex();
         auto bf_index = tiered_index->getFlatBufferIndex();
         size_t expected = dim * VecSimType_sizeof(type);
-        if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
+        if (metric == VecSimMetric_Cosine &&
+            (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
             expected += sizeof(float);
         }
         size_t actual_hnsw = hnsw_index->getDataSize();
@@ -798,9 +799,9 @@ TEST_P(CommonTypeMetricTieredTests, TestInitialSizeEstimationTieredHNSW) {
     ASSERT_EQ(estimation, actual);
 }
 
-constexpr VecSimType vecsim_datatypes[] = {VecSimType_FLOAT32, VecSimType_FLOAT64,
+constexpr VecSimType vecsim_datatypes[] = {VecSimType_FLOAT32,  VecSimType_FLOAT64,
                                            VecSimType_BFLOAT16, VecSimType_FLOAT16,
-                                           VecSimType_INT8, VecSimType_UINT8};
+                                           VecSimType_INT8,     VecSimType_UINT8};
 
 /** Run all CommonTypeMetricTests tests for each {VecSimType, VecSimMetric} combination */
 INSTANTIATE_TEST_SUITE_P(CommonTest, CommonTypeMetricTests,
