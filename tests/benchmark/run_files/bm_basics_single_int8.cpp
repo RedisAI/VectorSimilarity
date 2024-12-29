@@ -25,6 +25,9 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_ADD_LABEL_ASYNC          AddLabel_Async_Single
 #define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Single
 
+
+//Larger Range query value are required for wikipedia dataset
+//current values in bm_vecsim_basics.h gives 0 results
 #define REGISTER_Range_INT8_HNSW(BM_FUNC)                                                          \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->Args({50, 1})                                                                            \
