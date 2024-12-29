@@ -734,3 +734,26 @@ class TestINT8(GeneralTest):
 
     def test_multi_value(self):
         self.multi_value(create_int8_vectors)
+
+class TestUINT8(GeneralTest):
+
+    GeneralTest.data_type = VecSimType_UINT8
+
+    #### Create vectors
+    GeneralTest.vectors_data = create_uint8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
+
+    #### Create queries
+    GeneralTest.query_data = create_uint8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
+
+    def test_Cosine(self):
+
+        index = self.create_index(VecSimMetric_Cosine)
+        label_to_vec_list = self.create_add_vectors(index)
+
+        self.knn(index, label_to_vec_list, fp32_expand_and_calc_cosine_dist)
+
+    def test_range_query(self):
+        self.range_query(fp32_expand_and_calc_cosine_dist)
+
+    def test_multi_value(self):
+        self.multi_value(create_uint8_vectors)

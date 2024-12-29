@@ -83,6 +83,10 @@ def create_int8_vectors(shape, rng: np.random.Generator = None):
     rng = np.random.default_rng(seed=42) if rng is None else rng
     return rng.integers(low=-128, high=127, size=shape, dtype=np.int8)
 
+def create_uint8_vectors(shape, rng: np.random.Generator = None):
+    rng = np.random.default_rng(seed=42) if rng is None else rng
+    return rng.integers(low=0, high=255, size=shape, dtype=np.uint8)
+
 def get_ground_truth_results(dist_func, query, vectors, k):
     results = [{"dist": dist_func(query, vec), "label": key} for key, vec in vectors]
     results = sorted(results, key=lambda x: x["dist"])
