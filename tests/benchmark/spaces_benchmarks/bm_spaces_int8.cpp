@@ -52,5 +52,6 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW
 #endif // x86_64
 
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, InnerProduct, 32);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, Cosine, 32);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, L2Sqr, 32);
 BENCHMARK_MAIN();
