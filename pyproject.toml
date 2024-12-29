@@ -32,7 +32,7 @@ python = "^3.8"
 numpy = "^1.21"
 hnswlib = "^0.6.2"
 pytest = "^8.3"
-scipy = "^1.14.1"
+scipy = "^1.10.1"
 h5py = "^3.7.0"
 
 
