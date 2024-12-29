@@ -4,20 +4,7 @@
   NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
 the file.
 ***************************************/
-#define REGISTER_Range_INT8_HNSW(BM_FUNC)                                                          \
-    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
-        ->Args({50, 1})                                                                            \
-        ->Args({50, 10})                                                                           \
-        ->Args({50, 100})                                                                          \
-        ->Args({65, 1})                                                                            \
-        ->Args({65, 10})                                                                           \
-        ->Args({65, 100})                                                                          \
-        ->Args({80, 1})                                                                            \
-        ->Args({80, 10})                                                                           \
-        ->Args({80, 100})                                                                          \
-        ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
-        ->Iterations(10)                                                                           \
-        ->Unit(benchmark::kMillisecond)
+
 // Memory BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), int8_index_t)
 (benchmark::State &st) { Memory_FLAT(st); }
@@ -61,7 +48,7 @@ REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered));
 // Range BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), int8_index_t)
 (benchmark::State &st) { Range_BF(st); }
-REGISTER_Range_BF(BM_FUNC_NAME(Range, BF));
+REGISTER_Range_INT8_BF(BM_FUNC_NAME(Range, BF));
 
 // Range HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), int8_index_t)

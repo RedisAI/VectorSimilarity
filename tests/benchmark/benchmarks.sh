@@ -3,7 +3,7 @@ BM_TYPE=$1;
 if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     for bm_class in basics batch_iterator; do
         for type in single multi; do
-            for data_type in fp32 fp64 bf16 fp16 ; do
+            for data_type in fp32 fp64 bf16 fp16; do
                 echo ${bm_class}_${type}_${data_type};
             done
         done

@@ -25,6 +25,30 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_ADD_LABEL_ASYNC          AddLabel_Async_Single
 #define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Single
 
+#define REGISTER_Range_INT8_HNSW(BM_FUNC)                                                          \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
+        ->Args({50, 1})                                                                            \
+        ->Args({50, 10})                                                                           \
+        ->Args({50, 100})                                                                          \
+        ->Args({65, 1})                                                                            \
+        ->Args({65, 10})                                                                           \
+        ->Args({65, 100})                                                                          \
+        ->Args({80, 1})                                                                            \
+        ->Args({80, 10})                                                                           \
+        ->Args({80, 100})                                                                          \
+        ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
+        ->Iterations(10)                                                                           \
+        ->Unit(benchmark::kMillisecond)
+
+#define REGISTER_Range_INT8_BF(BM_FUNC)                                                            \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
+        ->Arg(50)                                                                                  \
+        ->Arg(65)                                                                                  \
+        ->Arg(80)                                                                                  \
+        ->ArgName("radiusX100")                                                                    \
+        ->Iterations(10)                                                                           \
+        ->Unit(benchmark::kMillisecond)
+
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), int8_index_t, BruteForceIndex_Single, int8_t,
                     float, VecSimAlgo_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), int8_index_t, HNSWIndex_Single, int8_t, float,
