@@ -10,8 +10,7 @@
  * Include this file after done using the implementation chooser.
  */
 
-#undef X
-
+#undef C1
 #undef C2
 #undef C4
 #undef C8
