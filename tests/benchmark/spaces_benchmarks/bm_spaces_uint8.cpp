@@ -46,11 +46,11 @@ bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_UINT8, UINT8, AVX512F_BW_VL_VNNI, 32,
                                 avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_UINT8, UINT8, AVX512F_BW_VL_VNNI, 32,
-                                 avx512_f_bw_vl_vnni_supported)
+                                 avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI
 
 #endif // x86_64
 
-    INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_UINT8, UINT8, InnerProduct, 32);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_UINT8, UINT8, InnerProduct, 32);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_UINT8, UINT8, L2Sqr, 32);
 BENCHMARK_MAIN();
