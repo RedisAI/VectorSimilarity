@@ -18,6 +18,9 @@ classifiers = [
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
     'License :: OSI Approved :: BSD License',
     'Development Status :: 3 - Alpha',
 ]
@@ -28,8 +31,8 @@ python = "^3.8"
 [tool.poetry.dev-dependencies]
 numpy = "^1.21"
 hnswlib = "^0.6.2"
-pytest = "^6.2.4"
-scipy = "^1.9.1"
+pytest = "^8.3"
+scipy = "^1.14.1"
 h5py = "^3.7.0"
 
 
@@ -37,6 +40,6 @@ h5py = "^3.7.0"
 requires = ["poetry-core>=1.0.0", "setuptools"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.build] 
+[tool.poetry.build]
 script  = "setup.py"
-generate-setup-file = true 
+generate-setup-file = true
