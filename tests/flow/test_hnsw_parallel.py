@@ -10,7 +10,7 @@ from common import *
 
 # Helper class for creating a "baseline" HNSW index that was built by inserting vectors one by one and a corresponding
 # flat index for given params, to compare the parallel operation against it
-class TestIndex:
+class IndexTest:
     def __init__(self, dim_, num_elements_, metric_, data_type_, multi_=False, ef_runtime=200):
 
         self.dim = dim_
@@ -82,10 +82,10 @@ data_type = VecSimType_FLOAT32
 per_label = 5  # for multi value index
 
 print("Creating test indexes...")
-g_test_index = TestIndex(dim, num_elements, metric, data_type)
+g_test_index = IndexTest(dim, num_elements, metric, data_type)
 g_test_index.insert_random_vectors()
 
-g_test_index_multi = TestIndex(dim, num_elements, metric, data_type, multi_=True)
+g_test_index_multi = IndexTest(dim, num_elements, metric, data_type, multi_=True)
 g_test_index_multi.insert_random_vectors_multi(per_label)
 
 def test_parallel_search():
