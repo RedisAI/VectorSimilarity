@@ -13,15 +13,15 @@ static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     __m512i vb = _mm512_loadu_epi8(pVect2); // AVX512BW
     pVect2 += 64;
 
-    __m512i va_hi = _mm512_unpackhi_epi8(va, _mm512_setzero_si512()); // AVX512BW
-    __m512i vb_hi = _mm512_unpackhi_epi8(vb, _mm512_setzero_si512());
-    __m512i diff_hi = _mm512_sub_epi16(va_hi, vb_hi);
-    sum = _mm512_dpwssd_epi32(sum, diff_hi, diff_hi);
-
     __m512i va_lo = _mm512_unpacklo_epi8(va, _mm512_setzero_si512()); // AVX512BW
     __m512i vb_lo = _mm512_unpacklo_epi8(vb, _mm512_setzero_si512());
     __m512i diff_lo = _mm512_sub_epi16(va_lo, vb_lo);
     sum = _mm512_dpwssd_epi32(sum, diff_lo, diff_lo);
+
+    __m512i va_hi = _mm512_unpackhi_epi8(va, _mm512_setzero_si512()); // AVX512BW
+    __m512i vb_hi = _mm512_unpackhi_epi8(vb, _mm512_setzero_si512());
+    __m512i diff_hi = _mm512_sub_epi16(va_hi, vb_hi);
+    sum = _mm512_dpwssd_epi32(sum, diff_hi, diff_hi);
 
     // _mm512_dpwssd_epi32(src, a, b)
     // Multiply groups of 2 adjacent pairs of signed 16-bit integers in `a` with corresponding
