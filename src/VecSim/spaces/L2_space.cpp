@@ -225,7 +225,7 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = UINT8_L2Sqr;
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
-    if (dim < 32) { // TODO: revalidate the optimization threshold
+    if (dim < 32) {
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64

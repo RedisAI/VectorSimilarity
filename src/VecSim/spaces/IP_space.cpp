@@ -262,7 +262,7 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = UINT8_InnerProduct;
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
-    if (dim < 32) { // TODO: revalidate the optimization threshold
+    if (dim < 32) {
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -289,7 +289,7 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
 
     dist_func_t<float> ret_dist_func = UINT8_Cosine;
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
-    if (dim < 32) { // TODO: revalidate the optimization threshold
+    if (dim < 32) {
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
