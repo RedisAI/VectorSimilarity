@@ -6,7 +6,7 @@
 
 #include "VecSim/spaces/space_includes.h"
 
-static inline void InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &sum) {
+static inline void InnerProductHalfStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &sum) {
     __m256i temp_a = _mm256_loadu_epi8(pVect1);
     __m512i va = _mm512_cvtepi8_epi16(temp_a);
     pVect1 += 32;
@@ -20,6 +20,26 @@ static inline void InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &s
     // 16-bit integers in `b`, producing 2 intermediate signed 32-bit results. Sum these 2 results
     // with the corresponding 32-bit integer in src, and store the packed 32-bit results in dst.
     sum = _mm512_dpwssd_epi32(sum, va, vb);
+}
+
+static inline void InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &sum) {
+    __m512i zeros = _mm512_setzero_si512();
+
+    __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
+    pVect1 += 64;
+    __m512i va_ext = _mm512_movm_epi8(_mm512_cmplt_epi8_mask(va, zeros)); // AVX512BW
+
+    __m512i vb = _mm512_loadu_epi8(pVect2); // AVX512BW
+    pVect2 += 64;
+    __m512i vb_ext = _mm512_movm_epi8(_mm512_cmplt_epi8_mask(vb, zeros)); // AVX512BW
+
+    __m512i va_lo = _mm512_unpacklo_epi8(va, va_ext); // AVX512BW
+    __m512i vb_lo = _mm512_unpacklo_epi8(vb, vb_ext);
+    sum = _mm512_dpwssd_epi32(sum, va_lo, vb_lo);
+
+    __m512i va_hi = _mm512_unpackhi_epi8(va, va_ext); // AVX512BW
+    __m512i vb_hi = _mm512_unpackhi_epi8(vb, vb_ext);
+    sum = _mm512_dpwssd_epi32(sum, va_hi, vb_hi);
 }
 
 template <unsigned char residual> // 0..63
@@ -47,12 +67,11 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
     }
 
     if constexpr (residual >= 32) {
-        InnerProductStep(pVect1, pVect2, sum);
+        InnerProductHalfStep(pVect1, pVect2, sum);
     }
 
     // We dealt with the residual part. We are left with some multiple of 64-int_8.
     while (pVect1 < pEnd1) {
-        InnerProductStep(pVect1, pVect2, sum);
         InnerProductStep(pVect1, pVect2, sum);
     }
 

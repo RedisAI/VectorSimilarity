@@ -7,17 +7,19 @@
 #include "VecSim/spaces/space_includes.h"
 
 static inline void InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
-    for (int i = 0; i < 2; i++) {
-        __m256i temp_a = _mm256_loadu_epi8(pVect1); // AVX512BW
-        __m512i va = _mm512_cvtepu8_epi16(temp_a);
-        pVect1 += 32;
+    __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
+    pVect1 += 64;
 
-        __m256i temp_b = _mm256_loadu_epi8(pVect2); // AVX512BW
-        __m512i vb = _mm512_cvtepu8_epi16(temp_b);
-        pVect2 += 32;
+    __m512i vb = _mm512_loadu_epi8(pVect2); // AVX512BW
+    pVect2 += 64;
 
-        sum = _mm512_dpwssd_epi32(sum, va, vb);
-    }
+    __m512i va_lo = _mm512_unpacklo_epi8(va, _mm512_setzero_si512()); // AVX512BW
+    __m512i vb_lo = _mm512_unpacklo_epi8(vb, _mm512_setzero_si512());
+    sum = _mm512_dpwssd_epi32(sum, va_lo, vb_lo);
+
+    __m512i va_hi = _mm512_unpackhi_epi8(va, _mm512_setzero_si512()); // AVX512BW
+    __m512i vb_hi = _mm512_unpackhi_epi8(vb, _mm512_setzero_si512());
+    sum = _mm512_dpwssd_epi32(sum, va_hi, vb_hi);
 
     // _mm512_dpwssd_epi32(src, a, b)
     // Multiply groups of 2 adjacent pairs of signed 16-bit integers in `a` with corresponding
