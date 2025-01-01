@@ -52,6 +52,9 @@ template <>
 std::vector<std::vector<vecsim_types::float16>> BM_VecSimIndex<fp16_index_t>::queries{};
 
 template <>
+std::vector<std::vector<int8_t>> BM_VecSimIndex<int8_index_t>::queries{};
+
+template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
 
 template <>
@@ -62,6 +65,9 @@ std::vector<VecSimIndex *> BM_VecSimIndex<bf16_index_t>::indices{};
 
 template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp16_index_t>::indices{};
+
+template <>
+std::vector<VecSimIndex *> BM_VecSimIndex<int8_index_t>::indices{};
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
