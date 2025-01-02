@@ -125,11 +125,11 @@ normalizeVector_f<vecsim_types::float16> GetNormalizeFunc<vecsim_types::float16>
 /** The returned function computes the norm and stores it at the end of the given vector */
 template <>
 normalizeVector_f<int8_t> GetNormalizeFunc<int8_t>(void) {
-    return int_normalizeVector<int8_t>;
+    return integer_normalizeVector<int8_t>;
 }
 template <>
 normalizeVector_f<uint8_t> GetNormalizeFunc<uint8_t>(void) {
-    return int_normalizeVector<uint8_t>;
+    return integer_normalizeVector<uint8_t>;
 }
 
 } // namespace spaces

@@ -37,7 +37,7 @@ static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v
 
     __m512i sum = _mm512_setzero_epi32();
 
-    // Deal with remainder first. `dim` is more than 32, so we have at least one 32-int_8 block,
+    // Deal with remainder first. `dim` is more than 32, so we have at least one 32-uint_8 block,
     // so mask loading is guaranteed to be safe
     if constexpr (residual % 32) {
         constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;

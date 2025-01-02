@@ -75,7 +75,7 @@ static inline void float16_normalizeVector(void *vec, const size_t dim) {
 }
 
 template <typename DataType>
-static inline void int_normalizeVector(void *vec, const size_t dim) {
+static inline void integer_normalizeVector(void *vec, const size_t dim) {
     DataType *input_vector = static_cast<DataType *>(vec);
 
     float norm = IntegralType_ComputeNorm<DataType>(input_vector, dim);
