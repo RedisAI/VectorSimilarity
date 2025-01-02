@@ -219,6 +219,8 @@ public:
             return rawVectorsAsNumpy<bfloat16, float, float>(label, dim);
         } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT16) {
             return rawVectorsAsNumpy<float16, float, float>(label, dim);
+        } else if (info.commonInfo.basicInfo.type == VecSimType_INT8) {
+            return rawVectorsAsNumpy<int8_t, float>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
         }
@@ -439,6 +441,7 @@ public:
             return dynamic_cast<HNSWIndex<int8_t, float> *>(this->index.get())
                 ->checkIntegrity()
                 .valid_state;
+
         } else {
             throw std::runtime_error("Invalid index data type");
         }
