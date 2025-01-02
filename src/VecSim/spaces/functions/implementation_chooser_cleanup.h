@@ -10,8 +10,17 @@
  * Include this file after done using the implementation chooser.
  */
 
-#undef X
+#undef C1
+#undef C2
 #undef C4
+#undef C8
+#undef C16
+#undef C32
+#undef C64
+
 #undef CASES8
 #undef CASES16
+#undef CASES32
+#undef CASES64
+
 #undef CHOOSE_IMPLEMENTATION

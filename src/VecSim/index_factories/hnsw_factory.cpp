@@ -78,6 +78,11 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
             abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<int8_t, float>(hnswParams, abstractInitParams,
                                                            indexComponents);
+    } else if (hnswParams->type == VecSimType_UINT8) {
+        IndexComponents<uint8_t, float> indexComponents = CreateIndexComponents<uint8_t, float>(
+            abstractInitParams.allocator, hnswParams->metric, hnswParams->dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<uint8_t, float>(hnswParams, abstractInitParams,
+                                                            indexComponents);
     }
 
     // If we got here something is wrong.
@@ -117,6 +122,9 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
     } else if (params->type == VecSimType_INT8) {
         est += EstimateComponentsMemory<int8_t, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<int8_t, float>(params->multi);
+    } else if (params->type == VecSimType_UINT8) {
+        est += EstimateComponentsMemory<uint8_t, float>(params->metric, is_normalized);
+        est += EstimateInitialSize_ChooseMultiOrSingle<uint8_t, float>(params->multi);
     } else {
         throw std::invalid_argument("Invalid params->type");
     }
@@ -236,6 +244,11 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<int8_t, float>(input, &params, abstractInitParams,
                                                            indexComponents, version);
+    } else if (params.type == VecSimType_UINT8) {
+        IndexComponents<uint8_t, float> indexComponents = CreateIndexComponents<uint8_t, float>(
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<uint8_t, float>(input, &params, abstractInitParams,
+                                                            indexComponents, version);
     } else {
         auto bad_name = VecSimType_ToString(params.type);
         if (bad_name == nullptr) {

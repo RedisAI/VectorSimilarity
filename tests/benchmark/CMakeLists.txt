@@ -31,7 +31,7 @@ endforeach()
 
 include(${root}/cmake/x86_64InstructionFlags.cmake)
 
-set(DATA_TYPE fp32 fp64 bf16 fp16 int8)
+set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8)
 foreach(data_type IN LISTS DATA_TYPE)
 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
 	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark)

@@ -35,6 +35,9 @@ extern "C" int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, si
         } else if (info.type == VecSimType_INT8) {
             return dynamic_cast<HNSWIndex<int8_t, float> *>(index)->getHNSWElementNeighbors(
                 label, neighborsData);
+        } else if (info.type == VecSimType_UINT8) {
+            return dynamic_cast<HNSWIndex<uint8_t, float> *>(index)->getHNSWElementNeighbors(
+                label, neighborsData);
         } else {
             assert(false && "Invalid data type");
         }
@@ -53,6 +56,9 @@ extern "C" int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, si
                 ->getHNSWElementNeighbors(label, neighborsData);
         } else if (info.type == VecSimType_INT8) {
             return dynamic_cast<TieredHNSWIndex<int8_t, float> *>(index)->getHNSWElementNeighbors(
+                label, neighborsData);
+        } else if (info.type == VecSimType_UINT8) {
+            return dynamic_cast<TieredHNSWIndex<uint8_t, float> *>(index)->getHNSWElementNeighbors(
                 label, neighborsData);
         } else {
             assert(false && "Invalid data type");

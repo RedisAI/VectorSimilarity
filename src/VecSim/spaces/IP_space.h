@@ -20,4 +20,8 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment = nu
                                        const void *arch_opt = nullptr);
 dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                            const void *arch_opt = nullptr);
+dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
+                                        const void *arch_opt = nullptr);
+dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
+                                            const void *arch_opt = nullptr);
 } // namespace spaces

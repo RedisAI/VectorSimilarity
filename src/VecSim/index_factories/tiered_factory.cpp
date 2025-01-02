@@ -85,6 +85,8 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
         est += sizeof(TieredHNSWIndex<float16, float>);
     } else if (hnsw_params.type == VecSimType_INT8) {
         est += sizeof(TieredHNSWIndex<int8_t, float>);
+    } else if (hnsw_params.type == VecSimType_UINT8) {
+        est += sizeof(TieredHNSWIndex<uint8_t, float>);
     } else {
         throw std::invalid_argument("Invalid hnsw_params.type");
     }
@@ -105,6 +107,8 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         return TieredHNSWFactory::NewIndex<float16, float>(params);
     } else if (type == VecSimType_INT8) {
         return TieredHNSWFactory::NewIndex<int8_t, float>(params);
+    } else if (type == VecSimType_UINT8) {
+        return TieredHNSWFactory::NewIndex<uint8_t, float>(params);
     }
     return nullptr; // Invalid type.
 }
