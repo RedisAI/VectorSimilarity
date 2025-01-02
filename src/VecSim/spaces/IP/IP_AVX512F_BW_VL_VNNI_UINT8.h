@@ -37,37 +37,51 @@ static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v
 
     __m512i sum = _mm512_setzero_epi32();
 
-    // Deal with remainder first. `dim` is more than 32, so we have at least one 32-uint_8 block,
-    // so mask loading is guaranteed to be safe
-    if constexpr (residual % 32) {
-        constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;
-        __m256i temp_a = _mm256_maskz_loadu_epi8(mask, pVect1);
-        __m512i va = _mm512_cvtepu8_epi16(temp_a);
-        pVect1 += residual % 32;
+    // Deal with remainder first.
+    if constexpr (residual) {
+        if constexpr (residual < 32) {
+            constexpr __mmask32 mask = (1LU << residual) - 1;
+            __m256i temp_a = _mm256_maskz_loadu_epi8(mask, pVect1);
+            __m512i va = _mm512_cvtepu8_epi16(temp_a);
 
-        __m256i temp_b = _mm256_maskz_loadu_epi8(mask, pVect2);
-        __m512i vb = _mm512_cvtepu8_epi16(temp_b);
-        pVect2 += residual % 32;
+            __m256i temp_b = _mm256_maskz_loadu_epi8(mask, pVect2);
+            __m512i vb = _mm512_cvtepu8_epi16(temp_b);
 
-        sum = _mm512_dpwssd_epi32(sum, va, vb);
-    }
+            sum = _mm512_dpwssd_epi32(sum, va, vb);
+        } else if constexpr (residual == 32) {
+            __m256i temp_a = _mm256_loadu_epi8(pVect1);
+            __m512i va = _mm512_cvtepu8_epi16(temp_a);
 
-    // TODO: unify this and the above steps for dim>64 with a single mask loading?
-    if constexpr (residual >= 32) {
-        __m256i temp_a = _mm256_loadu_epi8(pVect1);
-        __m512i va = _mm512_cvtepu8_epi16(temp_a);
-        pVect1 += 32;
+            __m256i temp_b = _mm256_loadu_epi8(pVect2);
+            __m512i vb = _mm512_cvtepu8_epi16(temp_b);
 
-        __m256i temp_b = _mm256_loadu_epi8(pVect2);
-        __m512i vb = _mm512_cvtepu8_epi16(temp_b);
-        pVect2 += 32;
+            sum = _mm512_dpwssd_epi32(sum, va, vb);
+        } else {
+            constexpr __mmask64 mask = (1LU << residual) - 1;
+            __m512i va = _mm512_maskz_loadu_epi8(mask, pVect1);
+            __m512i vb = _mm512_maskz_loadu_epi8(mask, pVect2);
 
-        sum = _mm512_dpwssd_epi32(sum, va, vb);
-    }
+            __m512i va_lo = _mm512_unpacklo_epi8(va, _mm512_setzero_si512());
+            __m512i vb_lo = _mm512_unpacklo_epi8(vb, _mm512_setzero_si512());
+            sum = _mm512_dpwssd_epi32(sum, va_lo, vb_lo);
 
-    // We dealt with the residual part. We are left with some multiple of 64-int_8.
-    while (pVect1 < pEnd1) {
-        InnerProductStep(pVect1, pVect2, sum);
+            __m512i va_hi = _mm512_unpackhi_epi8(va, _mm512_setzero_si512());
+            __m512i vb_hi = _mm512_unpackhi_epi8(vb, _mm512_setzero_si512());
+            sum = _mm512_dpwssd_epi32(sum, va_hi, vb_hi);
+        }
+        pVect1 += residual;
+        pVect2 += residual;
+
+        // We dealt with the residual part.
+        // We are left with some multiple of 64-uint_8 (might be 0).
+        while (pVect1 < pEnd1) {
+            InnerProductStep(pVect1, pVect2, sum);
+        }
+    } else {
+        // We have no residual, we have some non-zero multiple of 64-uint_8.
+        do {
+            InnerProductStep(pVect1, pVect2, sum);
+        } while (pVect1 < pEnd1);
     }
 
     return _mm512_reduce_add_epi32(sum);
