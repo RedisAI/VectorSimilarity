@@ -1191,6 +1191,6 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
-                         testing::Range(32UL, 32 * 2UL + 1));
+                         testing::Range(32UL, 64 * 2UL + 1));
 
 #endif // CPU_FEATURES_ARCH_X86_64
