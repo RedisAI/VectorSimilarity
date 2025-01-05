@@ -20,7 +20,7 @@ on:
 
 jobs:
   test:
-    name: Test ${{ inputs.container || inputs.env }}${{ inputs.container && format(' (on {0})', inputs.env) || '' }}
+    name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}
     runs-on: ${{ inputs.env }}
     container: ${{ inputs.container || null }}
     defaults:
