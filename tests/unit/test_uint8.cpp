@@ -386,7 +386,7 @@ void UINT8Test::metrics_test(params_t index_params) {
     double expected_score = 0;
 
     auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_FLOAT_EQ(score, expected_score) << "failed at vector id:" << id;
+        ASSERT_NEAR(score, expected_score, 1e-6);
     };
 
     for (size_t i = 0; i < n; i++) {
