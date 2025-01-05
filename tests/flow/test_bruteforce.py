@@ -652,7 +652,7 @@ class GeneralTest():
     def range_query(self, dist_func):
         bfindex = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(bfindex)
-        radius = 0.7
+        radius = bfindex.knn_query(self.query_data[0], k=100)[1][0][-1] # get the distance of the 100th closest vector as the radius
 
         start = time.time()
         bf_labels, bf_distances = bfindex.range_query(self.query_data[0], radius=radius)
@@ -663,8 +663,8 @@ class GeneralTest():
         # Verify that we got exactly all vectors within the range
         results, keys = get_ground_truth_results(dist_func, self.query_data[0], label_to_vec_list, res_num)
 
-        assert_allclose(max(bf_distances[0]), results[res_num-1]["dist"], rtol=1e-05)
-        assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
+        assert_allclose(bf_distances[0], [results[i]["dist"] for i in range(res_num)], rtol=1e-05)
+        assert self.compute_correct(bf_labels[0], bf_distances[0], keys, results) == res_num
         assert max(bf_distances[0]) <= radius
         # Verify that the next closest vector that hasn't returned is not within the range
         assert results[res_num]["dist"] > radius
@@ -680,13 +680,13 @@ class GeneralTest():
         num_labels = self.num_elements // num_per_label
         k = 10
 
-        data = create_data_func((num_labels, self.dim), self.rng)
+        data = create_data_func((num_labels, num_per_label, self.dim), self.rng)
 
         index = self.create_index(is_multi=True)
 
         vectors = []
-        for i, vector in enumerate(data):
-            for _ in range(num_per_label):
+        for i, cur_vectors in enumerate(data):
+            for vector in cur_vectors:
                 index.add_vector(vector, i)
                 vectors.append((i, vector))
 
@@ -704,23 +704,23 @@ class GeneralTest():
         dists = [dist for _, dist in dists[:k]]
 
         start = time.time()
-        bf_labels, bf_distances = index.knn_query(self.query_data[0], k=10)
+        bf_labels, bf_distances = index.knn_query(self.query_data[0], k=k)
         end = time.time()
 
         print(f'\nlookup time for {self.num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={self.dim} took {end - start} seconds')
 
-        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
-        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+        assert_allclose(bf_labels, [keys],  rtol=1e-5)
+        assert_allclose(bf_distances, [dists],  rtol=1e-5)
 
 class TestINT8(GeneralTest):
 
-    GeneralTest.data_type = VecSimType_INT8
+    data_type = VecSimType_INT8
 
     #### Create vectors
-    GeneralTest.vectors_data = create_int8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
+    vectors_data = create_int8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
 
     #### Create queries
-    GeneralTest.query_data = create_int8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
+    query_data = create_int8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
 
     def test_Cosine(self):
 
@@ -734,3 +734,26 @@ class TestINT8(GeneralTest):
 
     def test_multi_value(self):
         self.multi_value(create_int8_vectors)
+
+class TestUINT8(GeneralTest):
+
+    data_type = VecSimType_UINT8
+
+    #### Create vectors
+    vectors_data = create_uint8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
+
+    #### Create queries
+    query_data = create_uint8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
+
+    def test_Cosine(self):
+
+        index = self.create_index(VecSimMetric_Cosine)
+        label_to_vec_list = self.create_add_vectors(index)
+
+        self.knn(index, label_to_vec_list, fp32_expand_and_calc_cosine_dist)
+
+    def test_range_query(self):
+        self.range_query(fp32_expand_and_calc_cosine_dist)
+
+    def test_multi_value(self):
+        self.multi_value(create_uint8_vectors)

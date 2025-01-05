@@ -22,7 +22,7 @@ static inline void InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &s
     sum = _mm512_dpwssd_epi32(sum, va, vb);
 }
 
-template <unsigned char residual> // 0..64
+template <unsigned char residual> // 0..63
 static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
@@ -59,13 +59,13 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
     return _mm512_reduce_add_epi32(sum);
 }
 
-template <unsigned char residual> // 0..64
+template <unsigned char residual> // 0..63
 float INT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                                  size_t dimension) {
 
     return 1 - INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
 }
-template <unsigned char residual> // 0..64
+template <unsigned char residual> // 0..63
 float INT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                            size_t dimension) {
     float ip = INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);

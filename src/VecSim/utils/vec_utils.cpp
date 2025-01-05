@@ -28,6 +28,7 @@ const char *VecSimCommonStrings::FLOAT64_STRING = "FLOAT64";
 const char *VecSimCommonStrings::BFLOAT16_STRING = "BFLOAT16";
 const char *VecSimCommonStrings::FLOAT16_STRING = "FLOAT16";
 const char *VecSimCommonStrings::INT8_STRING = "INT8";
+const char *VecSimCommonStrings::UINT8_STRING = "UINT8";
 const char *VecSimCommonStrings::INT32_STRING = "INT32";
 const char *VecSimCommonStrings::INT64_STRING = "INT64";
 
@@ -150,6 +151,8 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::FLOAT16_STRING;
     case VecSimType_INT8:
         return VecSimCommonStrings::INT8_STRING;
+    case VecSimType_UINT8:
+        return VecSimCommonStrings::UINT8_STRING;
     case VecSimType_INT32:
         return VecSimCommonStrings::INT32_STRING;
     case VecSimType_INT64:
@@ -200,6 +203,8 @@ size_t VecSimType_sizeof(VecSimType type) {
         return sizeof(float16);
     case VecSimType_INT8:
         return sizeof(int8_t);
+    case VecSimType_UINT8:
+        return sizeof(uint8_t);
     case VecSimType_INT32:
         return sizeof(int32_t);
     case VecSimType_INT64:
@@ -210,7 +215,7 @@ size_t VecSimType_sizeof(VecSimType type) {
 
 size_t VecSimParams_GetDataSize(VecSimType type, size_t dim, VecSimMetric metric) {
     size_t dataSize = VecSimType_sizeof(type) * dim;
-    if (type == VecSimType_INT8 && metric == VecSimMetric_Cosine) {
+    if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
         dataSize += sizeof(float); // For the norm
     }
     return dataSize;

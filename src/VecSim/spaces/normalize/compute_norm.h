@@ -7,11 +7,14 @@
 #pragma once
 
 #include <cmath>
+#include <type_traits>
 
 namespace spaces {
 
 template <typename DataType>
 static inline float IntegralType_ComputeNorm(const DataType *vec, const size_t dim) {
+    static_assert(std::is_integral_v<DataType>, "DataType must be an integral type");
+
     int sum = 0;
 
     for (size_t i = 0; i < dim; i++) {

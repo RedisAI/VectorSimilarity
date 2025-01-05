@@ -85,6 +85,20 @@ dist_func_t<float> GetDistFunc<int8_t, float>(VecSimMetric metric, size_t dim,
 }
 
 template <>
+dist_func_t<float> GetDistFunc<uint8_t, float>(VecSimMetric metric, size_t dim,
+                                               unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+        return Cosine_UINT8_GetDistFunc(dim, alignment);
+    case VecSimMetric_IP:
+        return IP_UINT8_GetDistFunc(dim, alignment);
+    case VecSimMetric_L2:
+        return L2_UINT8_GetDistFunc(dim, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
 normalizeVector_f<float> GetNormalizeFunc<float>(void) {
     return normalizeVector_imp<float>;
 }
@@ -111,7 +125,11 @@ normalizeVector_f<vecsim_types::float16> GetNormalizeFunc<vecsim_types::float16>
 /** The returned function computes the norm and stores it at the end of the given vector */
 template <>
 normalizeVector_f<int8_t> GetNormalizeFunc<int8_t>(void) {
-    return int8_normalizeVector;
+    return integer_normalizeVector<int8_t>;
+}
+template <>
+normalizeVector_f<uint8_t> GetNormalizeFunc<uint8_t>(void) {
+    return integer_normalizeVector<uint8_t>;
 }
 
 } // namespace spaces

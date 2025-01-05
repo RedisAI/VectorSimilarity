@@ -21,6 +21,7 @@
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95483
 #if (__GNUC__ < 11)
 #define _mm256_loadu_epi8(ptr) _mm256_maskz_loadu_epi8(~0, ptr)
+#define _mm512_loadu_epi8(ptr) _mm512_maskz_loadu_epi8(~0, ptr)
 #endif
 #elif defined(__clang__)
 #include <xmmintrin.h>
