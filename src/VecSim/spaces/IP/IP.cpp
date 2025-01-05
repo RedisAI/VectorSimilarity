@@ -67,11 +67,18 @@ float FP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension
     return 1.0f - res;
 }
 
-static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    int8_t *pVect1 = (int8_t *)pVect1v;
-    int8_t *pVect2 = (int8_t *)pVect2v;
+// Return type for the inner product functions.
+// The type should be able to hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`.
+// To support dimension up to 2^16, we need the difference between the type and int_elem_t to be at
+// least 2 bytes. We assert that in the implementation.
+template <typename int_elem_t>
+using ret_t = std::conditional_t<sizeof(int_elem_t) == 1, int, long long>;
 
-    int res = 0;
+template <typename int_elem_t>
+static inline ret_t<int_elem_t>
+INTEGER_InnerProductImp(const int_elem_t *pVect1, const int_elem_t *pVect2, size_t dimension) {
+    static_assert(sizeof(ret_t<int_elem_t>) - sizeof(int_elem_t) * 2 >= sizeof(uint16_t));
+    ret_t<int_elem_t> res = 0;
     for (size_t i = 0; i < dimension; i++) {
         res += pVect1[i] * pVect2[i];
     }
@@ -79,14 +86,31 @@ static inline int INT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
 }
 
 float INT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1 - INT8_InnerProductImp(pVect1v, pVect2v, dimension);
+    const auto *pVect1 = static_cast<const int8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const int8_t *>(pVect2v);
+    return 1 - INTEGER_InnerProductImp(pVect1, pVect2, dimension);
 }
 
 float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const int8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const int8_t *>(pVect2v);
     // We expect the vectors' norm to be stored at the end of the vector.
-    float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);
-    float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
-    return 1.0f - float(INT8_InnerProductImp(pVect1v, pVect2v, dimension)) / (norm_v1 * norm_v2);
+    float norm_v1 = *reinterpret_cast<const float *>(pVect1 + dimension);
+    float norm_v2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    return 1.0f - float(INTEGER_InnerProductImp(pVect1, pVect2, dimension)) / (norm_v1 * norm_v2);
+}
+
+float UINT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+    return 1 - INTEGER_InnerProductImp(pVect1, pVect2, dimension);
+}
+
+float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+    // We expect the vectors' norm to be stored at the end of the vector.
+    float norm_v1 = *reinterpret_cast<const float *>(pVect1 + dimension);
+    float norm_v2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    return 1.0f - float(INTEGER_InnerProductImp(pVect1, pVect2, dimension)) / (norm_v1 * norm_v2);
 }

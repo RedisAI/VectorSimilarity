@@ -141,6 +141,9 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     } else if (type == VecSimType_INT8) {
         // assuming blob is large enough to store the norm at the end of the vector
         spaces::GetNormalizeFunc<int8_t>()(blob, dim);
+    } else if (type == VecSimType_UINT8) {
+        // assuming blob is large enough to store the norm at the end of the vector
+        spaces::GetNormalizeFunc<uint8_t>()(blob, dim);
     }
 }
 

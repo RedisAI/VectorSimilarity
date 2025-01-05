@@ -1028,7 +1028,7 @@ class GeneralTest():
     def range_query(self, dist_func):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
-        radius = 0.7
+        radius = hnsw_index.knn_query(self.query_data[0], k=100)[1][0][-1] # get the distance of the 100th closest vector as the radius
         recalls = {}
 
         for epsilon_rt in [0.001, 0.01, 0.1]:
@@ -1066,13 +1066,13 @@ class GeneralTest():
         num_labels = self.num_elements // num_per_label
         k = 10
 
-        data = create_data_func((num_labels, self.dim), self.rng)
+        data = create_data_func((num_labels, num_per_label, self.dim), self.rng)
 
         hnsw_index = self.create_index(is_multi=True)
 
         vectors = []
-        for i, vector in enumerate(data):
-            for _ in range(num_per_label):
+        for i, cur_vectors in enumerate(data):
+            for vector in cur_vectors:
                 hnsw_index.add_vector(vector, i)
                 vectors.append((i, vector))
 
@@ -1108,13 +1108,13 @@ class GeneralTest():
 
 class TestINT8(GeneralTest):
 
-    GeneralTest.data_type = VecSimType_INT8
+    data_type = VecSimType_INT8
 
     #### Create vectors
-    GeneralTest.data = create_int8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
+    data = create_int8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
 
     #### Create queries
-    GeneralTest.query_data = create_int8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
+    query_data = create_int8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
 
     def test_Cosine(self):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
@@ -1127,3 +1127,25 @@ class TestINT8(GeneralTest):
 
     def test_multi_value(self):
         self.multi_value(create_int8_vectors)
+
+class TestUINT8(GeneralTest):
+
+    data_type = VecSimType_UINT8
+
+    #### Create vectors
+    data = create_uint8_vectors((GeneralTest.num_elements, GeneralTest.dim), GeneralTest.rng)
+
+    #### Create queries
+    query_data = create_uint8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
+
+    def test_Cosine(self):
+        hnsw_index = self.create_index(VecSimMetric_Cosine)
+        label_to_vec_list = self.create_add_vectors(hnsw_index)
+
+        self.knn(hnsw_index, label_to_vec_list, fp32_expand_and_calc_cosine_dist)
+
+    def test_range_query(self):
+        self.range_query(fp32_expand_and_calc_cosine_dist)
+
+    def test_multi_value(self):
+        self.multi_value(create_uint8_vectors)

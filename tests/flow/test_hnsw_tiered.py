@@ -23,7 +23,8 @@ class IndexCtx:
         VecSimType_FLOAT64: np.float64,
         VecSimType_BFLOAT16: bfloat16,
         VecSimType_FLOAT16: np.float16,
-        VecSimType_INT8: np.int8
+        VecSimType_INT8: np.int8,
+        VecSimType_UINT8: np.uint8,
     }
 
     def __init__(self, data_size=10000,
@@ -132,7 +133,8 @@ class IndexCtx:
             VecSimType_FLOAT64: 8,
             VecSimType_BFLOAT16: 2,
             VecSimType_FLOAT16: 2,
-            VecSimType_INT8: 1
+            VecSimType_INT8: 1,
+            VecSimType_UINT8: 1,
         }
         return bytes_to_mega(self.num_vectors * self.dim * memory_size[self.data_type])
 
@@ -261,6 +263,10 @@ def test_create_int8():
     print("Test create INT8 tiered hnsw index")
     create_tiered_index(is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
 
+def test_create_uint8():
+    print("Test create UINT8 tiered hnsw index")
+    create_tiered_index(is_multi=False, data_type=VecSimType_UINT8, create_data_func=create_uint8_vectors)
+
 def test_search_insert():
     print(f"\nStart insert & search test")
     search_insert(is_multi=False)
@@ -276,6 +282,10 @@ def test_search_insert_fp16():
 def test_search_insert_int8():
     print(f"\nStart insert & search test")
     search_insert(is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
+
+def test_search_insert_uint8():
+    print(f"\nStart insert & search test")
+    search_insert(is_multi=False, data_type=VecSimType_UINT8, create_data_func=create_uint8_vectors)
 
 def test_search_insert_multi_index():
     print(f"\nStart insert & search test for multi index")
