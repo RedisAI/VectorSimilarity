@@ -498,6 +498,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     Serializer::writeBinaryPOD(output, size_t(128));
 
     Serializer::writeBinaryPOD(output, 42);
+    Serializer::writeBinaryPOD(output, VecSimMetric_Cosine);
     output.flush();
 
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
