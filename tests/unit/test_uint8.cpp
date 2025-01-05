@@ -228,7 +228,7 @@ void UINT8Test::create_index_test(params_t index_params) {
     VecSimIndex_AddVector(index, vector, 0);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-    ASSERT_EQ(index->getDistanceFrom_Unsafe(0, vector), 0);
+    ASSERT_FLOAT_EQ(index->getDistanceFrom_Unsafe(0, vector), 0);
 
     ASSERT_NO_FATAL_FAILURE(
         CompareVectors(static_cast<const uint8_t *>(this->GetDataByInternalId(0)), vector, dim));
@@ -314,8 +314,8 @@ void UINT8Test::search_by_id_test(params_t index_params) {
     // (closest), 51...55
     static size_t expected_res_order[] = {45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55};
     auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, expected_res_order[index]);    // results are sorted by ID
-        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
+        ASSERT_EQ(id, expected_res_order[index]);          // results are sorted by ID
+        ASSERT_FLOAT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
     };
 
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
@@ -356,7 +356,7 @@ void UINT8Test::search_by_score_test(params_t index_params) {
     static size_t expected_res_order[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
     auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, expected_res_order[index]);
-        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
+        ASSERT_FLOAT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
     };
 
     // Search by score
@@ -386,7 +386,7 @@ void UINT8Test::metrics_test(params_t index_params) {
     double expected_score = 0;
 
     auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(score, expected_score) << "failed at vector id:" << id;
+        ASSERT_DOUBLE_EQ(score, expected_score) << "failed at vector id:" << id;
     };
 
     for (size_t i = 0; i < n; i++) {
@@ -398,7 +398,7 @@ void UINT8Test::metrics_test(params_t index_params) {
             auto *index_vector = static_cast<const uint8_t *>(this->GetDataByInternalId(i));
             float index_vector_norm = *(reinterpret_cast<const float *>(index_vector + dim));
             float vector_norm = spaces::IntegralType_ComputeNorm<uint8_t>(vector, dim);
-            ASSERT_EQ(index_vector_norm, vector_norm) << "wrong vector norm for vector id:" << i;
+            ASSERT_FLOAT_EQ(index_vector_norm, vector_norm) << "wrong norm for vector id:" << i;
         } else if (metric == VecSimMetric_IP) {
             expected_score = UINT8_InnerProduct(vector, vector, dim);
         }
@@ -541,7 +541,7 @@ void UINT8Test::test_override(params_t params) {
         ASSERT_EQ(id, new_n - 1 - index) << "id: " << id << " score: " << score;
         float diff = new_n - id;
         float exp_score = 4 * diff * diff;
-        ASSERT_EQ(score, exp_score) << "id: " << id << " score: " << score;
+        ASSERT_FLOAT_EQ(score, exp_score) << "id: " << id << " score: " << score;
     };
     runTopKSearchTest(index, query, 300, verify_res);
 }
