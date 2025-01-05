@@ -28,6 +28,7 @@ public:
     static const char *BFLOAT16_STRING;
     static const char *FLOAT16_STRING;
     static const char *INT8_STRING;
+    static const char *UINT8_STRING;
     static const char *INT32_STRING;
     static const char *INT64_STRING;
 

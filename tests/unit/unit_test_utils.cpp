@@ -9,7 +9,12 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+
+using bfloat16 = vecsim_types::bfloat16;
+using float16 = vecsim_types::float16;
 
 VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
                                               QUERY_TYPE_RANGE};
@@ -46,6 +51,9 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
 
 static bool is_async_index(VecSimIndex *index) {
     return dynamic_cast<VecSimTieredIndex<float, float> *>(index) != nullptr ||
+           dynamic_cast<VecSimTieredIndex<bfloat16, float> *>(index) != nullptr ||
+           dynamic_cast<VecSimTieredIndex<float16, float> *>(index) != nullptr ||
+           dynamic_cast<VecSimTieredIndex<uint8_t, float> *>(index) != nullptr ||
            dynamic_cast<VecSimTieredIndex<int8_t, float> *>(index) != nullptr ||
            dynamic_cast<VecSimTieredIndex<double, double> *>(index) != nullptr;
 }
@@ -413,6 +421,13 @@ size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type) {
             dynamic_cast<VecSimIndexAbstract<int8_t, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<int8_t, float>");
+        return abs_index->getDataSize();
+    }
+    case VecSimType_UINT8: {
+        VecSimIndexAbstract<uint8_t, float> *abs_index =
+            dynamic_cast<VecSimIndexAbstract<uint8_t, float> *>(index);
+        assert(abs_index &&
+               "dynamic_cast failed: can't convert index to VecSimIndexAbstract<uint8_t, float>");
         return abs_index->getDataSize();
     }
     default:

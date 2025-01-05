@@ -78,6 +78,11 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
             abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
         return NewIndex_ChooseMultiOrSingle<int8_t, float>(bfparams, abstractInitParams,
                                                            indexComponents);
+    } else if (bfparams->type == VecSimType_UINT8) {
+        IndexComponents<uint8_t, float> indexComponents = CreateIndexComponents<uint8_t, float>(
+            abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
+        return NewIndex_ChooseMultiOrSingle<uint8_t, float>(bfparams, abstractInitParams,
+                                                            indexComponents);
     }
 
     // If we got here something is wrong.
@@ -120,6 +125,9 @@ size_t EstimateInitialSize(const BFParams *params, bool is_normalized) {
     } else if (params->type == VecSimType_INT8) {
         est += EstimateComponentsMemory<int8_t, float>(params->metric, is_normalized);
         est += EstimateInitialSize_ChooseMultiOrSingle<int8_t, float>(params->multi);
+    } else if (params->type == VecSimType_UINT8) {
+        est += EstimateComponentsMemory<uint8_t, float>(params->metric, is_normalized);
+        est += EstimateInitialSize_ChooseMultiOrSingle<uint8_t, float>(params->multi);
     } else {
         throw std::invalid_argument("Invalid params->type");
     }

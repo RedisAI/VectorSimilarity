@@ -23,7 +23,7 @@ static inline void L2SqrStep(int8_t *&pVect1, int8_t *&pVect2, __m512i &sum) {
     sum = _mm512_dpwssd_epi32(sum, diff, diff);
 }
 
-template <unsigned char residual> // 0..64
+template <unsigned char residual> // 0..63
 float INT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                           size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;

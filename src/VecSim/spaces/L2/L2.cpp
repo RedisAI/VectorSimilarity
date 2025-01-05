@@ -71,16 +71,43 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {
     return res;
 }
 
-float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    int8_t *pVect1 = (int8_t *)pVect1v;
-    int8_t *pVect2 = (int8_t *)pVect2v;
+// Return type for the L2 functions.
+// The type should be able to hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`.
+// To support dimension up to 2^16, we need the difference between the type and int_elem_t to be at
+// least 2 bytes. We assert that in the implementation.
+template <typename int_elem_t>
+using ret_t = std::conditional_t<sizeof(int_elem_t) == 1, int, long long>;
 
-    int res = 0;
+// Difference type for the L2 functions.
+// The type should be able to hold `MIN_VAL(int_elem_t)-MAX_VAL(int_elem_t)`, and should be signed
+// to avoid unsigned arithmetic. This means that the difference type should be bigger than the
+// size of the element type. We assert that in the implementation.
+template <typename int_elem_t>
+using diff_t = std::conditional_t<sizeof(int_elem_t) == 1, int16_t, int>;
+
+template <typename int_elem_t>
+static inline ret_t<int_elem_t> INTEGER_L2Sqr(const int_elem_t *pVect1, const int_elem_t *pVect2,
+                                              size_t dimension) {
+    static_assert(sizeof(ret_t<int_elem_t>) - sizeof(int_elem_t) * 2 >= sizeof(uint16_t));
+    static_assert(std::is_signed_v<diff_t<int_elem_t>>);
+    static_assert(sizeof(diff_t<int_elem_t>) >= 2 * sizeof(int_elem_t));
+
+    ret_t<int_elem_t> res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        int16_t a = pVect1[i];
-        int16_t b = pVect2[i];
-        int16_t diff = a - b;
+        diff_t<int_elem_t> diff = pVect1[i] - pVect2[i];
         res += diff * diff;
     }
-    return float(res);
+    return res;
+}
+
+float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const int8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const int8_t *>(pVect2v);
+    return float(INTEGER_L2Sqr(pVect1, pVect2, dimension));
+}
+
+float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+    return float(INTEGER_L2Sqr(pVect1, pVect2, dimension));
 }

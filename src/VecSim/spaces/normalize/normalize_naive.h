@@ -74,10 +74,11 @@ static inline void float16_normalizeVector(void *vec, const size_t dim) {
     }
 }
 
-static inline void int8_normalizeVector(void *vec, const size_t dim) {
-    int8_t *input_vector = static_cast<int8_t *>(vec);
+template <typename DataType>
+static inline void integer_normalizeVector(void *vec, const size_t dim) {
+    DataType *input_vector = static_cast<DataType *>(vec);
 
-    float norm = IntegralType_ComputeNorm<int8_t>(input_vector, dim);
+    float norm = IntegralType_ComputeNorm<DataType>(input_vector, dim);
 
     // Store norm at the end of the vector.
     *reinterpret_cast<float *>(input_vector + dim) = norm;
