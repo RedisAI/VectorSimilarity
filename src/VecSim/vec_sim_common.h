@@ -165,6 +165,11 @@ typedef struct {
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 
+// A struct that contains SVS tiered index specific params.
+typedef struct {
+    size_t updateJobThreshold; // The flat index size threshold to trigger the update job.
+} TieredSVSParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;         // External queue that holds the jobs.
@@ -175,6 +180,7 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
+        TieredSVSParams tieredSVSParams;
     } specificParams;
 } TieredIndexParams;
 

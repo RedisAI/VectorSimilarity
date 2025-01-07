@@ -28,6 +28,7 @@ struct SVSIndexBase {
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual bool isLabelExists(const labelType label) const = 0;
 };
 
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
@@ -252,6 +253,10 @@ public:
           epsilon{getOrDefault(params.epsilon, 0.01)}, impl_{nullptr} {}
 
     ~SVSIndex() = default;
+
+    bool isLabelExists(const labelType label) const override {
+        return impl_ ? impl_->has_id(label) : false;
+    }
 
     size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
 
@@ -478,6 +483,14 @@ public:
         this->lastMode =
             res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
         return res;
+    }
+
+    void runGC() override {
+        if (impl_) {
+            impl_->consolidate();
+            impl_->compact();
+        }
+        changes_num = 0;
     }
 
 #ifdef BUILD_TESTS
