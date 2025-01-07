@@ -29,6 +29,7 @@ struct SVSIndexBase {
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual bool isLabelExists(const labelType label) const = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -298,6 +299,10 @@ public:
 
     ~SVSIndex() = default;
 
+    bool isLabelExists(const labelType label) const override {
+        return impl_ ? impl_->has_id(label) : false;
+    }
+
     size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
 
     size_t indexCapacity() const override {
@@ -519,6 +524,14 @@ public:
         this->lastMode =
             res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
         return res;
+    }
+
+    void runGC() override {
+        if (impl_) {
+            impl_->consolidate();
+            impl_->compact();
+        }
+        changes_num = 0;
     }
 
 #ifdef BUILD_TESTS
