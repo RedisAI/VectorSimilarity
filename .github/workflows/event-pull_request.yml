@@ -1,7 +1,14 @@
 name: Pull Request CI
 
+# Added these to use JWT token to connect with AWS
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  actions: read
+  contents: read
+  security-events: write
+
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review] # Defaults + ready_for_review
 
 jobs:
@@ -37,7 +44,7 @@ jobs:
         run: make flow_test VERBOSE=1
 
   coverage:
-    needs: [basic-tests, check-if-docs-only]
+    needs: [check-if-docs-only]
     if: ${{ !github.event.pull_request.draft && needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
