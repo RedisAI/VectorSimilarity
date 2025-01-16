@@ -3,6 +3,9 @@ name: Pull Request CI
 # Added these to use JWT token to connect with AWS
 permissions:
   id-token: write   # This is required for requesting the JWT
+  actions: read
+  contents: read
+  security-events: write
 
 on:
   pull_request:
