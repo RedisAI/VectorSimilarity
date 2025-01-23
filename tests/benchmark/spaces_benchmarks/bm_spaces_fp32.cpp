@@ -32,7 +32,7 @@ INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, SSE, 16, sse_support
 
 // Naive algorithms
 
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_FP32, FP32, InnerProduct, 16);
+// INITIALIZE_NAIVE_BM(BM_VecSimSpaces_FP32, FP32, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_FP32, FP32, L2Sqr, 16);
 
 // Naive

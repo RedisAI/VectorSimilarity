@@ -79,6 +79,11 @@ static constexpr size_t start = min_no_res_th_dim;
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, residual, arch_supported)                   \
         ->DenseRange(start + 1, start + dim_opt - 1, 1)
 
+
+#define INITIALIZE_EXHAUSTIVE_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)       \
+INITIALIZE_BM(bm_class, type_prefix, arch, metric, residual, arch_supported)                   \
+->DenseRange(1, 1000, 1)
+
 /** Test high dim
  * This range satisfies at least one full 512 bits iteration in all types.
  */
@@ -106,17 +111,16 @@ static constexpr size_t start = min_no_res_th_dim;
     BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                          \
     BENCHMARK_REGISTER_F(bm_class, type_prefix##_NAIVE_##metric)                                   \
         ->ArgName("Dimension")                                                                     \
-        ->Unit(benchmark::kNanosecond)                                                             \
-        ->Arg(100)                                                                                 \
-        ->Arg(dim_opt)                                                                             \
-        ->Arg(dim_opt + dim_opt / 4)                                                               \
-        ->Arg(dim_opt - 1)
+        ->Unit(benchmark::kNanosecond)                                                              \
+        ->DenseRange(1, 1000, 1)                                                                      \
+        // ->Arg(100)                                                                                 \
+        // ->Arg(dim_opt)                                                                             \
+        // ->Arg(dim_opt + dim_opt / 4)                                                               \
+        // ->Arg(dim_opt - 1)
 
 #define INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)         \
-    INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, L2, arch_supported);                          \
-    INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, L2, arch_supported);                           \
-    INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);          \
-    INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported);
+    INITIALIZE_EXHAUSTIVE_BM(bm_class, type_prefix, arch, L2, dim_opt, arch_supported)
+
 
 #define INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)         \
     INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, IP, arch_supported);                          \
@@ -132,4 +136,4 @@ static constexpr size_t start = min_no_res_th_dim;
 
 #define INITIALIZE_BENCHMARKS_SET_L2_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)      \
     INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)             \
-    INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)
+    // INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)

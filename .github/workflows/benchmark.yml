@@ -30,6 +30,7 @@ on:
           - bm-batch-iter-fp16-multi
           - bm-updated-fp32-single
           - bm-spaces
+          - bm-spaces-fp32
         description: 'Benchmarks set to run'
         default: benchmarks-all
 
@@ -101,19 +102,26 @@ jobs:
         timeout-minutes: 120
         run: make benchmark BM_FILTER=${{ inputs.setup }}
 
-      - name: Collect results
-        run: |
-          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export     \
-          --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
-          --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
-          --redistimeseries_user      default                                       \
-          --redistimeseries_pass      '${{ secrets.PERFORMANCE_RTS_AUTH }}'         \
-          --github_repo               ${{ github.event.repository.name }}           \
-          --github_org                ${{ github.repository_owner }}                \
-          --github_branch             ${{ github.head_ref || github.ref_name }}     \
-          --github_actor              ${{ github.triggering_actor }}                \
-          --results-format            google.benchmark                              \
-          --benchmark-result-file     {}_results.json
+      - name: Upload Artifacts (node20)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Upload res file
+          path: basics_single_fp32_results.json
+          if-no-files-found: ignore
+
+#      - name: Collect results
+#        run: |
+#          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export     \
+#          --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
+#          --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
+#          --redistimeseries_user      default                                       \
+#          --redistimeseries_pass      '${{ secrets.PERFORMANCE_RTS_AUTH }}'         \
+#          --github_repo               ${{ github.event.repository.name }}           \
+#          --github_org                ${{ github.repository_owner }}                \
+#          --github_branch             ${{ github.head_ref || github.ref_name }}     \
+#          --github_actor              ${{ github.triggering_actor }}                \
+#          --results-format            google.benchmark                              \
+#          --benchmark-result-file     {}_results.json
 
   stop-runner:
     name: Stop self-hosted EC2 runner
