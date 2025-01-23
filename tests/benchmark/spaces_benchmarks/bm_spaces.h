@@ -81,7 +81,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 
 #define INITIALIZE_EXHAUSTIVE_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)       \
-INITIALIZE_BM(bm_class, type_prefix, arch, metric, residual, arch_supported)                   \
+INITIALIZE_BM(bm_class, type_prefix, arch, metric, exhustive, arch_supported)                   \
 ->DenseRange(1, 10, 1)
 
 /** Test high dim
