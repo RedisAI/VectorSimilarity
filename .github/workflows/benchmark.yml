@@ -106,7 +106,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Upload res file
-          path: basics_single_fp32_results.json
+          path: spaces_fp32_results.json
           if-no-files-found: ignore
 
 #      - name: Collect results
