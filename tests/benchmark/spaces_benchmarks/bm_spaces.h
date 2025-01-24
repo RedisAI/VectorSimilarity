@@ -82,7 +82,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 #define INITIALIZE_EXHAUSTIVE_BM(bm_class, type_prefix, arch, metric, dim_opt, arch_supported)       \
 INITIALIZE_BM(bm_class, type_prefix, arch, metric, exhustive, arch_supported)                   \
-->DenseRange(1, 10, 1)
+->DenseRange(1, 1000, 1)
 
 /** Test high dim
  * This range satisfies at least one full 512 bits iteration in all types.
@@ -112,7 +112,7 @@ INITIALIZE_BM(bm_class, type_prefix, arch, metric, exhustive, arch_supported)   
     BENCHMARK_REGISTER_F(bm_class, type_prefix##_NAIVE_##metric)                                   \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)                                                              \
-        ->DenseRange(1, 10, 1)                                                                      \
+        ->DenseRange(1, 1000, 1)                                                                      \
         // ->Arg(100)                                                                                 \
         // ->Arg(dim_opt)                                                                             \
         // ->Arg(dim_opt + dim_opt / 4)                                                               \
