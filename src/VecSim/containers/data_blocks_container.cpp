@@ -21,7 +21,10 @@ size_t DataBlocksContainer::elementByteCount() const { return element_bytes_coun
 RawDataContainer::Status DataBlocksContainer::addElement(const void *element, size_t id) {
     assert(id == element_count); // we can only append new elements
     if (element_count % block_size == 0) {
-        blocks.emplace_back(this->block_size, this->element_bytes_count, this->allocator,
+        // TODO: need a unique name here...
+
+        std::string block_file_name = "blk_" + std::to_string(blocks.size());
+        blocks.emplace_back(block_file_name.c_str(), this->block_size, this->element_bytes_count, this->allocator,
                             this->alignment);
     }
     blocks.back().addElement(element);
