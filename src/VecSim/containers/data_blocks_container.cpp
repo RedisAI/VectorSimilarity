@@ -5,51 +5,73 @@
 DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCount,
                                          std::shared_ptr<VecSimAllocator> allocator,
                                          unsigned char _alignment)
-    : VecsimBaseObject(allocator), RawDataContainer(), element_bytes_count(elementBytesCount),
-      element_count(0), blocks(allocator), block_size(blockSize), alignment(_alignment) {}
+    : RawDataContainer(), vecsim_stl::vector<DataBlock>(allocator), element_bytes_count(elementBytesCount),
+      element_count(0), block_size(blockSize), alignment(_alignment), is_set(true) {}
 
+DataBlocksContainer::DataBlocksContainer(std::shared_ptr<VecSimAllocator> allocator):
+RawDataContainer(), vecsim_stl::vector<DataBlock>(allocator),element_bytes_count(0),
+      element_count(0), block_size(0), alignment(0), is_set(false) {}
 DataBlocksContainer::~DataBlocksContainer() = default;
+
+void DataBlocksContainer::operator delete(DataBlocksContainer *ptr, std::destroying_delete_t) noexcept {
+  using alloc_type = std::shared_ptr<VecSimAllocator>;
+  auto alloc = alloc_type{ptr->getAllocator()};
+  ptr->~DataBlocksContainer();
+  alloc->free_allocation(ptr);
+}
 
 size_t DataBlocksContainer::size() const { return element_count; }
 
-size_t DataBlocksContainer::capacity() const { return blocks.capacity(); }
+// size_t DataBlocksContainer::capacity() const { return blocks.capacity(); }
 
 size_t DataBlocksContainer::blockSize() const { return block_size; }
 
 size_t DataBlocksContainer::elementByteCount() const { return element_bytes_count; }
 
-RawDataContainer::Status DataBlocksContainer::addElement(const void *element, size_t id) {
-    assert(id == element_count); // we can only append new elements
+RawDataContainer::Status DataBlocksContainer::addElement(const void *element) {
     if (element_count % block_size == 0) {
         // TODO: need a unique name here...
 
-        std::string block_file_name = "blk_" + std::to_string(blocks.size());
-        blocks.emplace_back(block_file_name.c_str(), this->block_size, this->element_bytes_count, this->allocator,
-                            this->alignment);
+        this->emplace_back();
     }
-    blocks.back().addElement(element);
+    this->back().addElement(element);
     element_count++;
     return Status::OK;
 }
 
-const char *DataBlocksContainer::getElement(size_t id) const {
-    assert(id < element_count);
-    return blocks.at(id / this->block_size).getElement(id % this->block_size);
+void DataBlocksContainer::emplace_back() {
+    std::string block_file_name = "blk_" + std::to_string(vecsim_stl::vector<DataBlock>::size());
+    vecsim_stl::vector<DataBlock>::emplace_back(block_file_name.c_str(), this->block_size, this->element_bytes_count, this->allocator,
+                        this->alignment);
 }
 
-RawDataContainer::Status DataBlocksContainer::removeElement(size_t id) {
-    assert(id == element_count - 1); // only the last element can be removed
-    blocks.back().popLastElement();
-    if (blocks.back().getLength() == 0) {
-        blocks.pop_back();
+RawDataContainer::Status DataBlocksContainer::addElement(const void *element, size_t id) {
+    assert(id == element_count); // we can only append new elements
+    return addElement(element);
+}
+
+const char *DataBlocksContainer::getElement(size_t id) const {
+    assert(id < element_count);
+    return at(id / this->block_size).getElement(id % this->block_size);
+}
+
+RawDataContainer::Status DataBlocksContainer::removeElement() {
+    this->back().popLastElement();
+    if (this->back().getLength() == 0) {
+        this->pop_back();
     }
     element_count--;
     return Status::OK;
 }
 
+RawDataContainer::Status DataBlocksContainer::removeElement(size_t id) {
+    assert(id == element_count - 1); // only the last element can be removed
+    return removeElement();
+}
+
 RawDataContainer::Status DataBlocksContainer::updateElement(size_t id, const void *element) {
     assert(id < element_count);
-    auto &block = blocks.at(id / this->block_size);
+    auto &block = at(id / this->block_size);
     block.updateElement(id % block_size, element); // update the relative index in the block
     return Status::OK;
 }
@@ -62,7 +84,7 @@ std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() c
 void DataBlocksContainer::saveVectorsData(std::ostream &output) const {
     // Save data blocks
     for (size_t i = 0; i < this->numBlocks(); i++) {
-        auto &block = this->blocks[i];
+        auto &block = this->at(i);
         unsigned int block_len = block.getLength();
         for (size_t j = 0; j < block_len; j++) {
             output.write(block.getElement(j), this->element_bytes_count);
@@ -82,12 +104,11 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
         // Otherwise, calculate the number of blocks based on the number of vectors.
         num_blocks = std::ceil((float)num_vectors / this->block_size);
     }
-    this->blocks.reserve(num_blocks);
+    this->reserve(num_blocks);
 
     // Get data blocks
     for (size_t i = 0; i < num_blocks; i++) {
-        this->blocks.emplace_back(this->block_size, this->element_bytes_count, this->allocator,
-                                  this->alignment);
+        this->emplace_back();
         unsigned int block_len = 0;
         if (version == Serializer::EncodingVersion_V3) {
             // In V3, the length of each block is serialized, so we need to read it from the file.
@@ -100,15 +121,15 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
             auto cur_vec = this->getAllocator()->allocate_unique(this->element_bytes_count);
             input.read(static_cast<char *>(cur_vec.get()),
                        (std::streamsize)this->element_bytes_count);
-            this->blocks.back().addElement(cur_vec.get());
+            this->back().addElement(cur_vec.get());
             this->element_count++;
         }
     }
 }
 
-void DataBlocksContainer::shrinkToFit() { this->blocks.shrink_to_fit(); }
+void DataBlocksContainer::shrinkToFit() { this->shrink_to_fit(); }
 
-size_t DataBlocksContainer::numBlocks() const { return this->blocks.size(); }
+size_t DataBlocksContainer::numBlocks() const { return this->size(); }
 
 #endif
 /********************************** Iterator API ************************************************/

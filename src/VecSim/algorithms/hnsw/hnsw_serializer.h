@@ -177,8 +177,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
     size_t toplevel = 0;
     size_t num_blocks = dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks();
     for (size_t i = 0; i < num_blocks; i++) {
-        this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
-                                           this->allocator);
+        this->graphDataBlocks.emplace_back();
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {

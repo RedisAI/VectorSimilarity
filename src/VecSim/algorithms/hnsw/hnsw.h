@@ -112,7 +112,7 @@ protected:
     size_t maxLevel; // this is the top level of the entry point's element
 
     // Index data
-    vecsim_stl::vector<DataBlock> graphDataBlocks;
+    DataBlocksContainer graphDataBlocks;
     vecsim_stl::vector<ElementMetaData> idToMetaData;
 
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
@@ -1306,7 +1306,7 @@ void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::growByBlock() {
     size_t new_max_elements = maxElements + this->blockSize;
-    graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+    graphDataBlocks.emplace_back();
 
     resizeIndexCommon(new_max_elements);
 }
@@ -1587,8 +1587,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const IndexComponents<DataType, DistType> &components,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -1614,7 +1614,10 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M0;
     levelDataSize = sizeof(ElementLevelData) + sizeof(idType) * M;
+
+    graphDataBlocks.setParams(this->blockSize, this->elementGraphDataSize, this->getAlignment());
 }
+
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::~HNSWIndex() {
@@ -1781,8 +1784,7 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
         growByBlock();
     } else if (state.newElementId % this->blockSize == 0) {
         // If we had an initial capacity, we might have to allocate new blocks for the graph data.
-        this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
-                                           this->allocator);
+        this->graphDataBlocks.emplace_back();
     }
 
     // Insert the new element to the data block

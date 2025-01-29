@@ -25,7 +25,7 @@ DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,
 
 DataBlock::DataBlock(const char *file_name, size_t blockSize, size_t elementBytesCount,
               std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment)
-    : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0) {
+    : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0), offset(0) {
 
       // Create a file for the data block
       int fd = open(".", O_TMPFILE | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
@@ -44,17 +44,17 @@ DataBlock::DataBlock(const char *file_name, size_t blockSize, size_t elementByte
       // Map the file to memory
       int mmap_flags = MAP_PRIVATE;
 
-      // Adjust the block size to be a multiple of the page size
-      size_t pageSize = static_cast<size_t>(sysconf(_SC_PAGE_SIZE));
-      if (element_bytes_count > pageSize) {
-        // use HUGE_PAGES
-        mmap_flags |= MAP_HUGETLB;
-        if (element_bytes_count > TWO_MB) {
-          mmap_flags |= MAP_HUGE_1GB;
-        } else {
-          mmap_flags |= MAP_HUGE_2MB;
-        }
-      }
+      // // Adjust the block size to be a multiple of the page size
+      // size_t pageSize = static_cast<size_t>(sysconf(_SC_PAGE_SIZE));
+      // if (element_bytes_count > pageSize) {
+      //   // use HUGE_PAGES
+      //   mmap_flags |= MAP_HUGETLB;
+      //   if (element_bytes_count > TWO_MB) {
+      //     mmap_flags |= MAP_HUGE_1GB;
+      //   } else {
+      //     mmap_flags |= MAP_HUGE_2MB;
+      //   }
+      // }
 
       void *mapped_mem = mmap(NULL, blockSizeBytes, PROT_READ | PROT_WRITE, mmap_flags, fd, 0);
 
@@ -63,16 +63,18 @@ DataBlock::DataBlock(const char *file_name, size_t blockSize, size_t elementByte
       }
       close(fd);
 
-      size_t remainder = ((uintptr_t)mapped_mem) % alignment;
-      unsigned char offset = alignment - remainder;
-      data = static_cast<char *>(mapped_mem) + offset;
-
       // Give advise about sequential access to ensure the entire element is loaded into memory
       // TODO: benchmark different madvise options
-      if (madvise(data, blockSizeBytes, MADV_SEQUENTIAL) == -1) {
-          throw std::runtime_error("madvise failed");
+      if (madvise(mapped_mem, blockSizeBytes, MADV_SEQUENTIAL) == -1) {
+        perror("madvise");
+        throw std::runtime_error("madvise failed");
       }
 
+      if (alignment) {
+        size_t remainder = ((uintptr_t)mapped_mem) % alignment;
+        offset = alignment - remainder;
+      }
+      data = static_cast<char *>(mapped_mem) + offset;
 }
 
 DataBlock::DataBlock(DataBlock &&other) noexcept
