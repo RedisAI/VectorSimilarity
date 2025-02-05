@@ -67,7 +67,6 @@ TYPED_TEST(HNSWTest, hnsw_vector_add_search_test) {
     k = num_vec;
     runTopKSearchTest(index, query, k, verify_res);
 
-
     ASSERT_EQ(VecSimIndex_IndexSize(index), num_vec);
     VecSimIndex_Free(index);
 }
@@ -815,7 +814,8 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
 
 //     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-//     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
+//     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet,
+//     in
 //     // every iteration. Run this flow for 3 times, and reset the iterator.
 //     size_t n_res = 100;
 //     size_t re_runs = 3;
@@ -865,7 +865,8 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
 //     size_t n_res = 1, expected_n_res = 1;
 //     while (VecSimBatchIterator_HasNext(batchIterator)) {
 //         iteration_num++;
-//         // Expect to get results in the reverse order of labels - which is the order of the distance
+//         // Expect to get results in the reverse order of labels - which is the order of the
+//         distance
 //         // from the query vector. Get one result in every iteration.
 //         auto verify_res = [&](size_t id, double score, size_t index) {
 //             ASSERT_TRUE(id == iteration_num);
@@ -941,8 +942,8 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
 //             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
 //         } else {
 //             // In the last iteration there are n%n_res results left to return.
-//             // remove the first ids that aren't going to be returned since we pass the index size.
-//             for (size_t i = 0; i < n_res - n % n_res; i++) {
+//             // remove the first ids that aren't going to be returned since we pass the index
+//             size. for (size_t i = 0; i < n_res - n % n_res; i++) {
 //                 expected_ids.erase(expected_ids.begin());
 //             }
 //             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n % n_res);
@@ -1473,7 +1474,8 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 //         ASSERT_EQ(score, dim * pow((index + 1) / 2, 2));
 //     };
 //     uint expected_num_results = 11;
-//     // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2 score
+//     // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2
+//     score
 //     // in the boundaries.
 //     double radius = dim * pow(expected_num_results / 2, 2);
 //     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
@@ -1530,7 +1532,8 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 //         ASSERT_EQ(score, expected_score);
 //     };
 //     uint expected_num_results = 31;
-//     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
+//     // Calculate the score of the 31st distant vector from the query vector (whose id should be
+//     30)
 //     // to get the radius.
 //     double radius = index->getDistanceFrom_Unsafe(31, normalized_query);
 //     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
@@ -1582,7 +1585,8 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 //         }
 
 //         auto file_name = std::string(getenv("ROOT")) + "/tests/unit/1k-d4-L2-M8-ef_c10_" +
-//                          VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
+//                          VecSimType_ToString(TypeParam::get_index_type()) + "_" +
+//                          multiToString[i] +
 //                          ".hnsw_current_version";
 
 //         // Save the index with the default version (V4).
@@ -1670,7 +1674,8 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 //         // Set index type.
 //         params.multi = is_multi[i];
 //         auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
-//                          VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
+//                          VecSimType_ToString(TypeParam::get_index_type()) + "_" +
+//                          multiToString[i] +
 //                          ".v3";
 
 //         // Load the index from the file.
@@ -1769,7 +1774,8 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 
 //     // Add a new vector, make sure it has no link to a deleted vector
 //     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
-//     for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
+//     for (size_t level = 0; level <=
+//     this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
 //          level++) {
 //         ElementLevelData &cur = this->CastToHNSW(index)->getElementLevelData(n, level);
 //         for (size_t idx = 0; idx < cur.numLinks; idx++) {
@@ -1833,7 +1839,8 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 //         GenerateAndAddVector<TEST_DATA_T>(index, dim, max_id, max_id);
 //     } while (this->CastToHNSW(index)->getGraphDataByInternalId(max_id)->toplevel < max_level);
 
-//     // If we passed the previous loop, it means that we successfully added a vector without invalid
+//     // If we passed the previous loop, it means that we successfully added a vector without
+//     invalid
 //     // memory access.
 
 //     // For completeness, we also check index integrity.
@@ -1918,7 +1925,7 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
             auto &neighbours = neighbors_output[l];
             ASSERT_EQ(neighbours[0], level_data.getNumLinks());
             for (size_t j = 1; j <= neighbours[0]; j++) {
-                ASSERT_EQ(neighbours[j], level_data.getLinkAtPos(j-1));
+                ASSERT_EQ(neighbours[j], level_data.getLinkAtPos(j - 1));
             }
         }
         VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);

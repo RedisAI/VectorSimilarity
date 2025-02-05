@@ -3,16 +3,18 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 struct MappedMem {
-    MappedMem(): mapped_addr(nullptr), curr_size(0) {
+    MappedMem() : mapped_addr(nullptr), curr_size(0) {
         // create a temporary file
         fd = open(".", O_TMPFILE | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
         if (fd == -1) {
-            throw std::runtime_error("Failed to open file " + std::string("with error: ") + std::strerror(errno));
+            throw std::runtime_error("Failed to open file " + std::string("with error: ") +
+                                     std::strerror(errno));
         }
     }
 
     void destroy(size_t element_size_bytes, size_t block_size_bytes) {
-        if (!curr_size) return;
+        if (!curr_size)
+            return;
         // unmap memory
         size_t total_bytes = curr_size * element_size_bytes;
         size_t num_blocks = (total_bytes + block_size_bytes - 1) / block_size_bytes;
@@ -50,28 +52,35 @@ struct MappedMem {
             size_t curr_file_size_bytes = element_size_bytes * curr_size;
             size_t new_file_size = curr_file_size_bytes + block_size_bytes;
             if (posix_fallocate(fd, 0, new_file_size) < 0) {
-                throw std::runtime_error("Failed to resize file " + std::string("with error: ") + std::strerror(errno));
+                throw std::runtime_error("Failed to resize file " + std::string("with error: ") +
+                                         std::strerror(errno));
             }
 
             if (curr_size) {
-                char *remmapd_addr = (char *)mremap(mapped_addr, curr_file_size_bytes, new_file_size, MREMAP_MAYMOVE);
+                char *remmapd_addr = (char *)mremap(mapped_addr, curr_file_size_bytes,
+                                                    new_file_size, MREMAP_MAYMOVE);
                 if (remmapd_addr == MAP_FAILED) {
-                    throw std::runtime_error("Failed to remmap memory " + std::string("with error: ") + std::strerror(errno));
+                    throw std::runtime_error("Failed to remmap memory " +
+                                             std::string("with error: ") + std::strerror(errno));
                 }
                 mapped_addr = remmapd_addr;
             } else { // first initialization
                 int mmap_flags = MAP_PRIVATE;
 
                 // map memory
-                mapped_addr = static_cast<char *>(mmap(NULL, new_file_size, PROT_READ | PROT_WRITE, mmap_flags, fd, 0));
+                mapped_addr = static_cast<char *>(
+                    mmap(NULL, new_file_size, PROT_READ | PROT_WRITE, mmap_flags, fd, 0));
                 if (mapped_addr == MAP_FAILED) {
-                    throw std::runtime_error("Failed to map file " + std::string("with error: ") + std::strerror(errno));
+                    throw std::runtime_error("Failed to map file " + std::string("with error: ") +
+                                             std::strerror(errno));
                 }
             }
-            // Give advise about sequential access to ensure the entire element is loaded into memory
+            // Give advise about sequential access to ensure the entire element is loaded into
+            // memory
             // TODO: benchmark different madvise options
             if (madvise(mapped_addr, new_file_size, MADV_SEQUENTIAL) == -1) {
-                throw std::runtime_error("madvise failed " + std::string("with error: ") + std::strerror(errno));
+                throw std::runtime_error("madvise failed " + std::string("with error: ") +
+                                         std::strerror(errno));
             }
             return true;
         }
@@ -86,13 +95,12 @@ struct MappedMem {
 
 struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
 
-    VectorsMappedMemContainer(size_t block_size_bytes, size_t element_size_bytes, std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), MappedMem(), element_bytes_count(element_size_bytes), block_size_bytes(block_size_bytes) {
-    }
+    VectorsMappedMemContainer(size_t block_size_bytes, size_t element_size_bytes,
+                              std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator), MappedMem(), element_bytes_count(element_size_bytes),
+          block_size_bytes(block_size_bytes) {}
 
-    const char *getElement(size_t id) {
-        return MappedMem::getElement(id, element_bytes_count);
-    }
+    const char *getElement(size_t id) { return MappedMem::getElement(id, element_bytes_count); }
 
     void addElement(const void *elem, size_t id) {
         assert(id == curr_size);
@@ -106,7 +114,7 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
 
     /************************ No op functions to enable compilation *******************/
     void removeElement(size_t id) {}
-    void updateElement(size_t id, const void *element){}
+    void updateElement(size_t id, const void *element) {}
 
     struct Iterator {
         /**
@@ -119,8 +127,8 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
         /**
          * The basic iterator operations API
          */
-        virtual bool hasNext() const {return true;};
-        virtual const char *next() {return nullptr;};
+        virtual bool hasNext() const { return true; };
+        virtual const char *next() { return nullptr; };
         virtual void reset() {};
     };
 

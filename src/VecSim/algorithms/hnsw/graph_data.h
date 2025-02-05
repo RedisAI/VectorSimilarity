@@ -15,26 +15,28 @@ typedef uint16_t linkListSize;
 
 namespace graphDataUtils {
 static size_t levelIdx(size_t level) {
-  return level - 1; // no need to store id's offset for level 0, it's sequential.
+    return level - 1; // no need to store id's offset for level 0, it's sequential.
 }
-}
+} // namespace graphDataUtils
 struct ElementInMemoryData {
-    ElementInMemoryData(vecsim_stl::vector<idType> offsets, std::shared_ptr<VecSimAllocator> allocator) :
-    offsetIdxAtLevel(offsets, allocator), incomingUnidirectionalEdges(offsetIdxAtLevel.size() + 1, allocator)
+    ElementInMemoryData(vecsim_stl::vector<idType> offsets,
+                        std::shared_ptr<VecSimAllocator> allocator)
+        : offsetIdxAtLevel(offsets, allocator),
+          incomingUnidirectionalEdges(offsetIdxAtLevel.size() + 1, allocator)
     // ,offsetIdxAtLevel(new(allocator) vecsim_stl::vector<idType>(offsets.size(), allocator))
     {
         for (auto &inc_edges_ptr : incomingUnidirectionalEdges) {
-            inc_edges_ptr = new(allocator) vecsim_stl::vector<idType>(allocator);
+            inc_edges_ptr = new (allocator) vecsim_stl::vector<idType>(allocator);
         }
         // (*offsetIdxAtLevel) = offsets;
     }
-    ElementInMemoryData(ElementInMemoryData&& other) noexcept
-        :offsetIdxAtLevel(std::move(other.offsetIdxAtLevel))  ,
-          incomingUnidirectionalEdges(std::move(other.incomingUnidirectionalEdges))
-          {}
+    ElementInMemoryData(ElementInMemoryData &&other) noexcept
+        : offsetIdxAtLevel(std::move(other.offsetIdxAtLevel)),
+          incomingUnidirectionalEdges(std::move(other.incomingUnidirectionalEdges)) {}
 
     mutable std::mutex neighborsGuard;
-    // offsetAtLevel[i] = relative offset of the element data in i = graphDataUtils::levelIdx(level).
+    // offsetAtLevel[i] = relative offset of the element data in i =
+    // graphDataUtils::levelIdx(level).
     vecsim_stl::vector<idType> offsetIdxAtLevel; // offsets of the element at each level > 0.
     vecsim_stl::vector<vecsim_stl::vector<idType> *> incomingUnidirectionalEdges;
 
@@ -53,8 +55,9 @@ struct ElementInMemoryData {
 /******* Disk structs *******/
 
 struct LevelsMappedMemContainer { // TODO: separate struct for level 0
-    LevelsMappedMemContainer(size_t elementDataSize, std::shared_ptr<VecSimAllocator> allocator, size_t cap = 0, bool is_level0 = false)
-        : mappedMems(cap, allocator), DataSize(elementDataSize)  {
+    LevelsMappedMemContainer(size_t elementDataSize, std::shared_ptr<VecSimAllocator> allocator,
+                             size_t cap = 0, bool is_level0 = false)
+        : mappedMems(cap, allocator), DataSize(elementDataSize) {
         is_level0 ? offsetLevel = 0 : offsetLevel = 1;
     }
 
@@ -71,7 +74,8 @@ struct LevelsMappedMemContainer { // TODO: separate struct for level 0
 
     // Append element to the end of 0, 1, 2...elem_max_level mappedMems
     // Returns the offset index of the new element
-    void appendElementUpToLevel(const void *element, size_t element_size_bytes, size_t elem_max_level = 0) {
+    void appendElementUpToLevel(const void *element, size_t element_size_bytes,
+                                size_t elem_max_level = 0) {
         for (size_t level = offsetLevel; level <= elem_max_level; level++) {
             mappedMems[level - offsetLevel].appendElement(element, element_size_bytes);
         }
@@ -102,8 +106,7 @@ struct LevelsMappedMemContainer { // TODO: separate struct for level 0
 };
 
 struct DiskElementMetaData {
-    DiskElementMetaData(size_t toplevel)
-        : toplevel(toplevel) {}
+    DiskElementMetaData(size_t toplevel) : toplevel(toplevel) {}
     const size_t toplevel;
 };
 
@@ -123,10 +126,10 @@ struct ElementLevelData {
     //     : incomingUnidirectionalEdges(new(allocator) vecsim_stl::vector<idType>(allocator)),
     //       numLinks(0) {}
 
-
     ElementLevelData() = default;
     explicit ElementLevelData(vecsim_stl::vector<idType> *incEdgesPtr, char *linksMappedMem)
-        : incomingUnidirectionalEdges(incEdgesPtr), currLinks(*((linkListSize *)linksMappedMem)), linksData(linksMappedMem) {}
+        : incomingUnidirectionalEdges(incEdgesPtr), currLinks(*((linkListSize *)linksMappedMem)),
+          linksData(linksMappedMem) {}
 
     linkListSize getNumLinks() const { return this->currLinks; }
 
@@ -163,8 +166,14 @@ struct ElementLevelData {
             links++;
         }
     }
-    void popLink() { this->currLinks--; *(linkListSize *)linksData = currLinks;}
-    void setNumLinks(linkListSize num) { this->currLinks = num; *(linkListSize *)linksData = currLinks;}
+    void popLink() {
+        this->currLinks--;
+        *(linkListSize *)linksData = currLinks;
+    }
+    void setNumLinks(linkListSize num) {
+        this->currLinks = num;
+        *(linkListSize *)linksData = currLinks;
+    }
     void setLinkAtPos(size_t pos, idType node_id) { this->getLinksArray()[pos] = node_id; }
     void appendLink(idType node_id) {
         this->getLinksArray()[this->currLinks++] = node_id;
@@ -200,11 +209,11 @@ struct ElementLevelData {
 struct DiskElementGraphDataCopy {
     size_t toplevel; // TODO: redundant ?
     vecsim_stl::vector<ElementLevelData> levelsData;
-    mutable std::mutex* neighborsGuard;
+    mutable std::mutex *neighborsGuard;
 
     DiskElementGraphDataCopy(size_t toplevel,
-                         const vecsim_stl::vector<ElementLevelData>& levelsData,
-                         std::mutex& neighborsGuard)
+                             const vecsim_stl::vector<ElementLevelData> &levelsData,
+                             std::mutex &neighborsGuard)
         : toplevel(toplevel), levelsData(levelsData), neighborsGuard(&neighborsGuard) {}
 
     const ElementLevelData &getElementLevelData(size_t level) const {
@@ -217,13 +226,9 @@ struct DiskElementGraphDataCopy {
         return levelsData[level];
     }
 
-    void lockNodeLinks() const {
-        (neighborsGuard)->lock();
-    }
+    void lockNodeLinks() const { (neighborsGuard)->lock(); }
 
-    void unlockNodeLinks() const {
-        (neighborsGuard)->unlock();
-    }
+    void unlockNodeLinks() const { (neighborsGuard)->unlock(); }
 
     void destroy() {
         for (size_t i = 0; i < levelsData.size(); i++) {
@@ -232,23 +237,24 @@ struct DiskElementGraphDataCopy {
     }
 };
 struct GraphData : public VecsimBaseObject {
-   //LevelsMappedMemContainer(size_t elementDataSize, std::shared_ptr<VecSimAllocator> allocator, size_t cap = 0, bool is_level0 = false)
-    size_t level0DataSize; // size of each element in level0
-    size_t levelDataSize; // size of each element in levels > 0
+    // LevelsMappedMemContainer(size_t elementDataSize, std::shared_ptr<VecSimAllocator> allocator,
+    // size_t cap = 0, bool is_level0 = false)
+    size_t level0DataSize;                       // size of each element in level0
+    size_t levelDataSize;                        // size of each element in levels > 0
     LevelsMappedMemContainer MetaDatasAndLevel0; // A file for all elements' meta data + level0
-    LevelsMappedMemContainer levelsData; // File for each level
+    LevelsMappedMemContainer levelsData;         // File for each level
     vecsim_stl::vector<ElementInMemoryData> InMemoryElementsData; // ElementInMemoryData elements
-    size_t level0DatablockSizeBytes; // page size of the system
-    size_t levelsDatablockSizeBytes; // page size of the system
+    size_t level0DatablockSizeBytes;                              // page size of the system
+    size_t levelsDatablockSizeBytes;                              // page size of the system
 
-    GraphData(size_t M0, size_t M, std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator),
-        // each element contains: DiskElementMetaData, numLinks, link0, link1, ... link(M0-1)
-     level0DataSize(sizeof(DiskElementMetaData) + sizeof(linkListSize) + M0 * sizeof(idType)),
-        // each element contains: numLinks, link0, link1, ... link(M-1)
-     levelDataSize(sizeof(linkListSize) + M * sizeof(idType)),
-     MetaDatasAndLevel0(level0DataSize, allocator, 1, true),
-     levelsData(levelDataSize, allocator),
-     InMemoryElementsData(allocator) {
+    GraphData(size_t M0, size_t M, std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator),
+          // each element contains: DiskElementMetaData, numLinks, link0, link1, ... link(M0-1)
+          level0DataSize(sizeof(DiskElementMetaData) + sizeof(linkListSize) + M0 * sizeof(idType)),
+          // each element contains: numLinks, link0, link1, ... link(M-1)
+          levelDataSize(sizeof(linkListSize) + M * sizeof(idType)),
+          MetaDatasAndLevel0(level0DataSize, allocator, 1, true),
+          levelsData(levelDataSize, allocator), InMemoryElementsData(allocator) {
 
         size_t pageSize = static_cast<size_t>(sysconf(_SC_PAGE_SIZE));
 
@@ -267,7 +273,8 @@ struct GraphData : public VecsimBaseObject {
         vecsim_stl::vector<idType> *inc_edges = inMemoryData.incomingUnidirectionalEdges[level];
         char *linksData = nullptr;
         if (level == 0) {
-            linksData = MetaDatasAndLevel0.getOffsetIdDataByLevel(internal_id, level) + sizeof(DiskElementMetaData);
+            linksData = MetaDatasAndLevel0.getOffsetIdDataByLevel(internal_id, level) +
+                        sizeof(DiskElementMetaData);
         } else {
             size_t offsetAtlevel = inMemoryData.getOffsetAtLevel(level);
             linksData = levelsData.getOffsetIdDataByLevel(offsetAtlevel, level);
@@ -275,9 +282,7 @@ struct GraphData : public VecsimBaseObject {
         return ElementLevelData(inc_edges, linksData);
     }
 
-    void UpdateMaxLevel(size_t newMaxLevel) {
-        levelsData.UpdateMaxLevel(newMaxLevel);
-    }
+    void UpdateMaxLevel(size_t newMaxLevel) { levelsData.UpdateMaxLevel(newMaxLevel); }
 
     void appendElement(size_t toplevel, labelType label, size_t id) {
         // emplace space in levels data if needed for the new element
@@ -292,7 +297,6 @@ struct GraphData : public VecsimBaseObject {
 
         InMemoryElementsData.emplace_back(offsets, this->allocator);
 
-
         // create ElementLevel0Data
         char level0Data[this->level0DataSize] = {0};
 
@@ -305,28 +309,25 @@ struct GraphData : public VecsimBaseObject {
         levelsData.appendElementUpToLevel(levelData, this->levelDataSize, toplevel);
     }
 
-    size_t getElemMaxLevel(idType id) {
-        return InMemoryElementsData[id].getMaxlevel();
-    }
+    size_t getElemMaxLevel(idType id) { return InMemoryElementsData[id].getMaxlevel(); }
 
     void removeElement(size_t id) {
         // TODO: make sure we freed the element memory before overriding it
         // TODO: make sure inMemoryData is handled properly in hnsw.h
-
 
         // override the element data with the last element data
         // Do the same for the rest of the levels'
         // size_t elem_max_level = getElemMaxLevel(id);
         // for (size_t i = 0; i < elem_max_level; i++) {
         //     idType last_element_internal_id = levelsData[i]->last_elem_id;
-        //     char *last_elem_level_file_ptr = getLevelDataByInternalId(i, last_element_internal_id);
-        //     char *elem_level_file_ptr = getLevelDataByInternalId(element_internal_id);
-        //     memcpy(elem_level_file_ptr, last_elem_level_file_ptr, this->elementlevelDataSize);
+        //     char *last_elem_level_file_ptr = getLevelDataByInternalId(i,
+        //     last_element_internal_id); char *elem_level_file_ptr =
+        //     getLevelDataByInternalId(element_internal_id); memcpy(elem_level_file_ptr,
+        //     last_elem_level_file_ptr, this->elementlevelDataSize);
         // }
 
         // // create ElementInMemoryData
         // InMemoryElementsData.addElement(inMemoryData, id);
-
     }
 
     void growByBlock(size_t maxLevel) {
@@ -345,7 +346,7 @@ struct GraphData : public VecsimBaseObject {
         size_t toplevel = elemInMemData.getMaxlevel();
         vecsim_stl::vector<ElementLevelData> levelsData(toplevel + 1, this->allocator);
         for (size_t level = 0; level <= toplevel; level++) {
-            levelsData[level]= getElementLevelData(internal_id, level);
+            levelsData[level] = getElementLevelData(internal_id, level);
         }
 
         return DiskElementGraphDataCopy(toplevel, levelsData, elemInMemData.neighborsGuard);
@@ -359,9 +360,6 @@ struct GraphData : public VecsimBaseObject {
         InMemoryElementsData[internal_id].neighborsGuard.unlock();
     }
 };
-
-
-
 
 // struct ElementGraphData {
 //     size_t toplevel;

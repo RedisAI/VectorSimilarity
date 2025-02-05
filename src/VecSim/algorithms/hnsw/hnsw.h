@@ -265,8 +265,10 @@ public:
     const char *getDataByInternalId(idType internal_id) const;
     DiskElementGraphDataCopy getGraphDataByInternalId(idType internal_id) const;
     const ElementLevelData &getElementLevelData(idType internal_id, size_t level) const;
-    const ElementLevelData &getElementLevelData(const DiskElementGraphDataCopy &element, size_t level) const;
-    ElementLevelData getElementLevelDataForWrite(const DiskElementGraphDataCopy &element, size_t level);
+    const ElementLevelData &getElementLevelData(const DiskElementGraphDataCopy &element,
+                                                size_t level) const;
+    ElementLevelData getElementLevelDataForWrite(const DiskElementGraphDataCopy &element,
+                                                 size_t level);
     ElementLevelData getElementLevelDataForWrite(idType internal_id, size_t level) {
         return getElementLevelDataForWrite(getGraphDataByInternalId(internal_id), level);
     }
@@ -416,19 +418,20 @@ size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
 
 template <typename DataType, typename DistType>
 const ElementLevelData &HNSWIndex<DataType, DistType>::getElementLevelData(idType internal_id,
-                                                                     size_t level) const {
+                                                                           size_t level) const {
     return getGraphDataByInternalId(internal_id).getElementLevelData(level);
 }
 
 template <typename DataType, typename DistType>
-const ElementLevelData &HNSWIndex<DataType, DistType>::getElementLevelData(const DiskElementGraphDataCopy &elem_graph_data,
-                                                                     size_t level) const {
+const ElementLevelData &
+HNSWIndex<DataType, DistType>::getElementLevelData(const DiskElementGraphDataCopy &elem_graph_data,
+                                                   size_t level) const {
     return elem_graph_data.getElementLevelData(level);
 }
 
 template <typename DataType, typename DistType>
-ElementLevelData HNSWIndex<DataType, DistType>::getElementLevelDataForWrite(const DiskElementGraphDataCopy &elem_graph_data,
-                                                                     size_t level) {
+ElementLevelData HNSWIndex<DataType, DistType>::getElementLevelDataForWrite(
+    const DiskElementGraphDataCopy &elem_graph_data, size_t level) {
     return elem_graph_data.getElementLevelData(level);
 }
 
@@ -500,12 +503,14 @@ void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
 }
 
 // template <typename DataType, typename DistType>
-// void HNSWIndex<DataType, DistType>::lockNodeLinks(const DiskElementGraphDataCopy &node_data) const {
+// void HNSWIndex<DataType, DistType>::lockNodeLinks(const DiskElementGraphDataCopy &node_data)
+// const {
 //     graphData.lock();
 // }
 
 // template <typename DataType, typename DistType>
-// void HNSWIndex<DataType, DistType>::unlockNodeLinks(const DiskElementGraphDataCopy &node_data) const {
+// void HNSWIndex<DataType, DistType>::unlockNodeLinks(const DiskElementGraphDataCopy &node_data)
+// const {
 //     node_data.neighborsGuard.unlock();
 // }
 
@@ -520,12 +525,12 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::lockNodeLinks(const DiskElementGraphDataCopy& data) const {
+void HNSWIndex<DataType, DistType>::lockNodeLinks(const DiskElementGraphDataCopy &data) const {
     data.lockNodeLinks();
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unlockNodeLinks(const DiskElementGraphDataCopy& data) const {
+void HNSWIndex<DataType, DistType>::unlockNodeLinks(const DiskElementGraphDataCopy &data) const {
     data.unlockNodeLinks();
 }
 /**
@@ -960,7 +965,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             continue;
         }
 
-        ElementLevelData neighbor_level_data = getElementLevelDataForWrite(neighbor_graph_data, level);
+        ElementLevelData neighbor_level_data =
+            getElementLevelDataForWrite(neighbor_graph_data, level);
 
         // if the neighbor's neighbors list has the capacity to add the new node, make the update
         // and finish.
@@ -1130,7 +1136,8 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
                 //         entrypointNode = cur_id;
                 //         return;
                 //     } else if (candidate_in_process == INVALID_ID) {
-                //         // This element is still in process, and there hasn't been another candidate
+                //         // This element is still in process, and there hasn't been another
+                //         candidate
                 //         // in process that has found in this level.
                 //         candidate_in_process = cur_id;
                 //     }
@@ -1490,7 +1497,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
         auto neighbor = getGraphDataByInternalId(deleted_neighbor_id);
         lockNodeLinks(neighbor);
-        const ElementLevelData& neighbor_level_data = getElementLevelData(neighbor, level);
+        const ElementLevelData &neighbor_level_data = getElementLevelData(neighbor, level);
 
         for (size_t j = 0; j < neighbor_level_data.getNumLinks(); j++) {
             // Don't add removed elements to the candidates, nor nodes that are already in the
@@ -1623,9 +1630,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const IndexComponents<DataType, DistType> &components,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-          VecSimIndexTombstone(), maxElements(0), M(params->M ? params->M : HNSW_DEFAULT_M), M0(this->M * 2),
-      graphDataBlocks(this->allocator), idToMetaData(this->allocator), graphData(this->M0, this->M, this->allocator),
-    visitedNodesHandlerPool(0, this->allocator) {
+      VecSimIndexTombstone(), maxElements(0), M(params->M ? params->M : HNSW_DEFAULT_M),
+      M0(this->M * 2), graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      graphData(this->M0, this->M, this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
     if (M0 > UINT16_MAX)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
@@ -1670,9 +1677,10 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // Remove the deleted id form the relevant incoming edges sets in which it appears.
     for (size_t level = 0; level <= element.toplevel; level++) {
-        const ElementLevelData & cur_level = getElementLevelData(element, level);
+        const ElementLevelData &cur_level = getElementLevelData(element, level);
         for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
-            ElementLevelData neighbour = getElementLevelDataForWrite(cur_level.getLinkAtPos(i), level);
+            ElementLevelData neighbour =
+                getElementLevelDataForWrite(cur_level.getLinkAtPos(i), level);
             // Note that in case of in-place delete, we might have not accounted for this edge in
             // in the unidirectional edges, since there is no point in keeping it there temporarily
             // (we know we will get here and remove this deleted id permanently).
