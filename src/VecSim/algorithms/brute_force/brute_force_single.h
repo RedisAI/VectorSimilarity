@@ -82,11 +82,11 @@ protected:
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
 
-    BF_BatchIterator<DataType, DistType> *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
-        return new (this->allocator)
-            BFS_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
-    }
+    // BF_BatchIterator<DataType, DistType> *
+    // newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
+    //     return new (this->allocator)
+    //         BFS_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
+    // }
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"

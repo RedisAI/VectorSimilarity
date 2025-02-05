@@ -245,7 +245,8 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
-    return index->newBatchIterator(queryBlob, queryParams);
+    return NULL;
+    // return index->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {

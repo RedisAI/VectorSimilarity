@@ -7,7 +7,7 @@
 #pragma once
 
 #include "hnsw.h"
-#include "hnsw_multi_batch_iterator.h"
+// #include "hnsw_multi_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
 
 template <typename DataType, typename DistType>
@@ -90,8 +90,8 @@ public:
     }
 
     inline size_t indexLabelCount() const override;
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) const override;
+    // VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+    //                                       VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
@@ -195,18 +195,18 @@ int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, cons
     return 1; // We always add the vector, no overrides in multi.
 }
 
-template <typename DataType, typename DistType>
-VecSimBatchIterator *
-HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) const {
-    auto queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->preprocessQueryInPlace(queryBlobCopy);
-    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
-    return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
-        queryBlobCopy, this, queryParams, this->allocator);
-}
+// template <typename DataType, typename DistType>
+// VecSimBatchIterator *
+// HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
+//                                                       VecSimQueryParams *queryParams) const {
+//     auto queryBlobCopy =
+//         this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
+//     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+//     this->preprocessQueryInPlace(queryBlobCopy);
+//     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
+//     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
+//         queryBlobCopy, this, queryParams, this->allocator);
+// }
 
 /**
  * Marks an element with the given label deleted, does NOT really change the current graph.

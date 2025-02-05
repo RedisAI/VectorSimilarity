@@ -141,8 +141,8 @@ public:
      * @param queryBlob binary representation of the query vector. Blob size should match the index
      * data type and dimension. The index is responsible to process the query vector.
      */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                                  VecSimQueryParams *queryParams) const = 0;
+    // virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+    //                                               VecSimQueryParams *queryParams) const = 0;
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
      * search over the index instead of using batch iterator.
