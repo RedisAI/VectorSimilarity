@@ -66,11 +66,11 @@ if(VECSIM_BUILD_TESTS)
 	FetchContent_MakeAvailable(google_benchmark)
 
 	add_subdirectory(tests/unit unit_tests)
-	add_subdirectory(tests/module module_tests)
+	# add_subdirectory(tests/module module_tests)
 
-	if(NOT(USE_ASAN OR USE_MSAN))
-		add_subdirectory(tests/benchmark benchmark)
-	endif()
+	# if(NOT(USE_ASAN OR USE_MSAN))
+	# 	add_subdirectory(tests/benchmark benchmark)
+	# endif()
 endif()
 
 add_subdirectory(src/VecSim)

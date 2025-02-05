@@ -136,10 +136,11 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
 size_t EstimateElementSize(const HNSWParams *params) {
 
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
+    (void)M;
+    // size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
-    size_t size_total_data_per_element =
-        elementGraphDataSize + params->dim * VecSimType_sizeof(params->type);
+    // size_t size_total_data_per_element =
+    //     elementGraphDataSize + params->dim * VecSimType_sizeof(params->type);
 
     // when reserving space for new labels in the lookup hash table, each entry is a pointer to a
     // label node (bucket).
@@ -156,7 +157,8 @@ size_t EstimateElementSize(const HNSWParams *params) {
      * 2. The incoming edges that aren't bidirectional are stored in a dynamic array
      * (vecsim_stl::vector) Those edges' memory *is omitted completely* from this estimation.
      */
-    return size_meta_data + size_total_data_per_element;
+    // return size_meta_data + size_total_data_per_element;
+    return size_meta_data;
 }
 
 #ifdef BUILD_TESTS
