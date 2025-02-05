@@ -160,6 +160,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
 }
 
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
 
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
@@ -258,6 +259,7 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
                                  bad_name);
     }
 }
+#endif
 #endif
 
 }; // namespace HNSWFactory

@@ -57,6 +57,8 @@ public:
         : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed),
           labelLookup(this->allocator) {}
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
@@ -65,6 +67,7 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
+#endif
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
 
