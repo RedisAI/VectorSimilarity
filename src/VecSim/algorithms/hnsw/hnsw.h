@@ -21,8 +21,11 @@
 #include "VecSim/tombstone_interface.h"
 
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
 #include "hnsw_serialization_utils.h"
 #include "VecSim/utils/serializer.h"
+#endif
 #endif
 
 #include <deque>
@@ -82,8 +85,11 @@ template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public VecSimIndexTombstone
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
     ,
                   public Serializer
+#endif
 #endif
 {
 protected:
@@ -123,7 +129,9 @@ protected:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
+#ifdef SERIALIZE
 #include "hnsw_serializer_declarations.h"
+#endif
 #endif
 
 protected:
@@ -2335,5 +2343,8 @@ HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neig
 }
 
 #ifdef BUILD_TESTS
-#include "hnsw_serializer.h"
+#ifdef SERIALIZE
+
+// #include "hnsw_serializer.h"
+#endif
 #endif
