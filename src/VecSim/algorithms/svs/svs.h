@@ -445,6 +445,7 @@ public:
             impl_->consolidate();
             impl_->compact();
         }
+        changes_num = 0;
     }
 
 #ifdef BUILD_TESTS
