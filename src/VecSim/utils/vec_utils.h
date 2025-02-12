@@ -21,6 +21,7 @@ public:
     static const char *FLAT_STRING;
     static const char *HNSW_STRING;
     static const char *TIERED_STRING;
+    static const char *SVS_STRING;
 
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;
@@ -52,6 +53,9 @@ public:
     static const char *HNSW_NUM_MARKED_DELETED;
     // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
+    static const char *SVS_WS_SEARCH_STRING;
+    static const char *SVS_USE_SEARCH_HISTORY_STRING;
+
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
     static const char *HYBRID_POLICY_STRING;
@@ -82,6 +86,8 @@ void sort_results(VecSimQueryReply *results, VecSimQueryReply_Order order);
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 
 VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
+
+VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionBool *val);
 
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 

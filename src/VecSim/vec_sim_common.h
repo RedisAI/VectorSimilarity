@@ -43,7 +43,18 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo;
+typedef enum {
+	VecSimAlgo_BF,
+	VecSimAlgo_HNSWLIB,
+	VecSimAlgo_TIERED,
+	VecSimAlgo_SVS
+} VecSimAlgo;
+
+typedef enum {
+    VecSimOption_DEFAULT = 0,
+    VecSimOption_ENABLE  = 1,
+    VecSimOption_DISABLE = 2,
+} VecSimOptionBool;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -124,6 +135,38 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+typedef enum {
+    VecSimQuant_0 = 0,
+    VecSimQuant_NONE = VecSimQuant_0,
+    VecSimQuant_8 = 8,
+    VecSimQuant_4 = 4,
+    VecSimQuant_4x4 = 4 | (4 << 10),
+    VecSimQuant_4x8 = 4 | (8 << 10)
+} VecSimQuantBits;
+
+typedef struct {
+    /* We need this because all indexes inher from an abstract index class
+     * that looks after these.
+     * This is also why HNSW had to define them too
+     */
+    VecSimType type;     // Datatype to index.
+    size_t dim;          // Vector's dimension.
+    VecSimMetric metric; // Distance metric to use in the index.
+    size_t blockSize;
+
+    /* SVS-Vamana specifics */
+    VecSimQuantBits quantBits;
+    float alpha;
+    size_t graph_max_degree;
+    size_t construction_window_size;
+    size_t max_candidate_pool_size;
+    size_t prune_to;
+    VecSimOptionBool use_search_history;
+    size_t num_threads;
+    size_t search_window_size;
+    double epsilon;
+} SVSParams;
+
 // A struct that contains HNSW tiered index specific params.
 typedef struct {
     size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
@@ -147,6 +190,7 @@ typedef union {
     HNSWParams hnswParams;
     BFParams bfParams;
     TieredIndexParams tieredParams;
+    SVSParams svsParams;
 } AlgoParams;
 
 struct VecSimParams {
@@ -170,6 +214,12 @@ typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
     double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
 } HNSWRuntimeParams;
+
+typedef struct {
+    size_t windowSize; // Search window size for Vamana graph accuracy/latency tune.
+    VecSimOptionBool searchHistory; // Enabling of the visited set for search.
+    double epsilon;   // Epsilon parameter for SVS graph accuracy/latency for range search.
+} SVSRuntimeParams;
 
 /**
  * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
@@ -201,6 +251,7 @@ typedef enum {
 typedef struct {
     union {
         HNSWRuntimeParams hnswRuntimeParams;
+        SVSRuntimeParams svsRuntimeParams;
     };
     size_t batchSize;
     VecSearchMode searchMode;
