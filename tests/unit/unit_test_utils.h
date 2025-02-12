@@ -90,6 +90,12 @@ inline VecSimParams CreateParams(const TieredIndexParams &tiered_params) {
     return params;
 }
 
+inline VecSimParams CreateParams(const SVSParams &tiered_params) {
+    VecSimParams params{.algo = VecSimAlgo_SVS,
+                        .algoParams = {.svsParams = tiered_params}};
+    return params;
+}
+
 namespace test_utils {
 template <typename IndexParams>
 inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,

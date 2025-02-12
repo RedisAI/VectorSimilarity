@@ -5,10 +5,34 @@ set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_CXX_STANDARD 20)
 
 project(VecsimLib)
+
 file(GLOB_RECURSE headers ./**.h)
 set(HEADER_LIST "${headers}")
 
 include_directories(../)
+
+set(SVS_CXX_STANDARD 20)
+set(CMAKE_CXX_FLAGS "-std=gnu++20 -march=native -mtune=native")
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
+
+# option(SVS_EXPERIMENTAL_LEANVEC "Enable experimental LeanVec in SVS" YES)
+# if(SVS_EXPERIMENTAL_LEANVEC)
+#     add_definitions(-DSVS_EXPERIMENTAL_LEANVEC)
+# endif()
+
+set(SVS_REPOSITORY "https://github.com/intel/ScalableVectorSearch.git" CACHE STRING "SVS repository")
+
+include(FetchContent)
+FetchContent_Declare(
+    svs
+    GIT_REPOSITORY "${SVS_REPOSITORY}"
+    GIT_TAG main
+)
+
+FetchContent_MakeAvailable(svs)
+set(LVQ_IMPL_HEADER "${svs_SOURCE_DIR}/include/svs/quantization/lvq/impl/lvq_impl.h")
 
 add_subdirectory(spaces)
 
@@ -18,6 +42,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/brute_force_factory.cpp
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
+    index_factories/svs_factory.cpp
     index_factories/index_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp
@@ -33,7 +58,15 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     ${HEADER_LIST}
 )
 
-target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
+target_link_libraries(VectorSimilarity VectorSimilaritySpaces svs::svs)
+
+if(EXISTS ${LVQ_IMPL_HEADER})
+    message("SVS LVQ implementation found")
+    target_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=1")
+else()
+    message("SVS LVQ implementation not found")
+    target_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=0")
+endif()
 
 if(VECSIM_BUILD_TESTS)
     add_library(VectorSimilaritySerializer utils/serializer.cpp)
