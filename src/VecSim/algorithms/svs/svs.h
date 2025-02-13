@@ -97,8 +97,7 @@ protected:
                                                   std::shared_ptr<VecSimAllocator> allocator) {
         assert(params && params->algo == VecSimAlgo_SVS);
         auto &svsParams = params->algoParams.svsParams;
-        size_t dataSize =
-            VecSimParams_GetDataSize(svsParams.type, svsParams.dim, svsParams.metric);
+        size_t dataSize = VecSimParams_GetDataSize(svsParams.type, svsParams.dim, svsParams.metric);
         return {.allocator = std::move(allocator),
                 .dim = svsParams.dim,
                 .vecType = svsParams.type,
@@ -217,7 +216,8 @@ protected:
     }
 
 public:
-    SVSIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator, const index_component_t& components)
+    SVSIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator,
+             const index_component_t &components)
         : Base{initBaseParams(params, std::move(allocator)), components}, changes_num{0},
           params_{initParams(params->algoParams.svsParams)}, impl_{nullptr} {}
 
