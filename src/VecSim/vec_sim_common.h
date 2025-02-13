@@ -43,16 +43,11 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum {
-	VecSimAlgo_BF,
-	VecSimAlgo_HNSWLIB,
-	VecSimAlgo_TIERED,
-	VecSimAlgo_SVS
-} VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
 
 typedef enum {
     VecSimOption_DEFAULT = 0,
-    VecSimOption_ENABLE  = 1,
+    VecSimOption_ENABLE = 1,
     VecSimOption_DISABLE = 2,
 } VecSimOptionBool;
 
@@ -216,9 +211,9 @@ typedef struct {
 } HNSWRuntimeParams;
 
 typedef struct {
-    size_t windowSize; // Search window size for Vamana graph accuracy/latency tune.
+    size_t windowSize;              // Search window size for Vamana graph accuracy/latency tune.
     VecSimOptionBool searchHistory; // Enabling of the visited set for search.
-    double epsilon;   // Epsilon parameter for SVS graph accuracy/latency for range search.
+    double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSRuntimeParams;
 
 /**
