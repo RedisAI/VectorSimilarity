@@ -12,7 +12,7 @@ set(HEADER_LIST "${headers}")
 include_directories(../)
 
 set(SVS_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "-std=gnu++20 -march=native -mtune=native")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -march=native -mtune=native")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
