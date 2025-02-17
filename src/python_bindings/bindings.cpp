@@ -279,39 +279,39 @@ public:
     }
 
     // @params is required only in V1.
-    explicit PyHNSWLibIndex(const std::string &location) {
-        this->index =
-            std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
-    }
+    // explicit PyHNSWLibIndex(const std::string &location) {
+    //     this->index =
+    //         std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
+    // }
 
     void setDefaultEf(size_t ef) {
         auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index.get());
         hnsw->setEf(ef);
     }
-    void saveIndex(const std::string &location) {
-        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
-        if (type == VecSimType_FLOAT32) {
-            auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
-            hnsw->saveIndex(location);
-        } else if (type == VecSimType_FLOAT64) {
-            auto *hnsw = dynamic_cast<HNSWIndex<double, double> *>(index.get());
-            hnsw->saveIndex(location);
-        } else if (type == VecSimType_BFLOAT16) {
-            auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
-            hnsw->saveIndex(location);
-        } else if (type == VecSimType_FLOAT16) {
-            auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
-            hnsw->saveIndex(location);
-        } else if (type == VecSimType_INT8) {
-            auto *hnsw = dynamic_cast<HNSWIndex<int8_t, float> *>(index.get());
-            hnsw->saveIndex(location);
-        } else if (type == VecSimType_UINT8) {
-            auto *hnsw = dynamic_cast<HNSWIndex<uint8_t, float> *>(index.get());
-            hnsw->saveIndex(location);
-        } else {
-            throw std::runtime_error("Invalid index data type");
-        }
-    }
+    // void saveIndex(const std::string &location) {
+    //     auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+    //     if (type == VecSimType_FLOAT32) {
+    //         auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
+    //         hnsw->saveIndex(location);
+    //     } else if (type == VecSimType_FLOAT64) {
+    //         auto *hnsw = dynamic_cast<HNSWIndex<double, double> *>(index.get());
+    //         hnsw->saveIndex(location);
+    //     } else if (type == VecSimType_BFLOAT16) {
+    //         auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
+    //         hnsw->saveIndex(location);
+    //     } else if (type == VecSimType_FLOAT16) {
+    //         auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
+    //         hnsw->saveIndex(location);
+    //     } else if (type == VecSimType_INT8) {
+    //         auto *hnsw = dynamic_cast<HNSWIndex<int8_t, float> *>(index.get());
+    //         hnsw->saveIndex(location);
+    //     } else if (type == VecSimType_UINT8) {
+    //         auto *hnsw = dynamic_cast<HNSWIndex<uint8_t, float> *>(index.get());
+    //         hnsw->saveIndex(location);
+    //     } else {
+    //         throw std::runtime_error("Invalid index data type");
+    //     }
+    // }
     py::object searchKnnParallel(const py::object &input, size_t k, VecSimQueryParams *query_params,
                                  int n_threads) {
 
@@ -422,36 +422,36 @@ public:
         }
     }
 
-    bool checkIntegrity() {
-        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
-        if (type == VecSimType_FLOAT32) {
-            return dynamic_cast<HNSWIndex<float, float> *>(this->index.get())
-                ->checkIntegrity()
-                .valid_state;
-        } else if (type == VecSimType_FLOAT64) {
-            return dynamic_cast<HNSWIndex<double, double> *>(this->index.get())
-                ->checkIntegrity()
-                .valid_state;
-        } else if (type == VecSimType_BFLOAT16) {
-            return dynamic_cast<HNSWIndex<bfloat16, float> *>(this->index.get())
-                ->checkIntegrity()
-                .valid_state;
-        } else if (type == VecSimType_FLOAT16) {
-            return dynamic_cast<HNSWIndex<float16, float> *>(this->index.get())
-                ->checkIntegrity()
-                .valid_state;
-        } else if (type == VecSimType_INT8) {
-            return dynamic_cast<HNSWIndex<int8_t, float> *>(this->index.get())
-                ->checkIntegrity()
-                .valid_state;
-        } else if (type == VecSimType_UINT8) {
-            return dynamic_cast<HNSWIndex<uint8_t, float> *>(this->index.get())
-                ->checkIntegrity()
-                .valid_state;
-        } else {
-            throw std::runtime_error("Invalid index data type");
-        }
-    }
+    // bool checkIntegrity() {
+    //     auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+    //     if (type == VecSimType_FLOAT32) {
+    //         return dynamic_cast<HNSWIndex<float, float> *>(this->index.get())
+    //             ->checkIntegrity()
+    //             .valid_state;
+    //     } else if (type == VecSimType_FLOAT64) {
+    //         return dynamic_cast<HNSWIndex<double, double> *>(this->index.get())
+    //             ->checkIntegrity()
+    //             .valid_state;
+    //     } else if (type == VecSimType_BFLOAT16) {
+    //         return dynamic_cast<HNSWIndex<bfloat16, float> *>(this->index.get())
+    //             ->checkIntegrity()
+    //             .valid_state;
+    //     } else if (type == VecSimType_FLOAT16) {
+    //         return dynamic_cast<HNSWIndex<float16, float> *>(this->index.get())
+    //             ->checkIntegrity()
+    //             .valid_state;
+    //     } else if (type == VecSimType_INT8) {
+    //         return dynamic_cast<HNSWIndex<int8_t, float> *>(this->index.get())
+    //             ->checkIntegrity()
+    //             .valid_state;
+    //     } else if (type == VecSimType_UINT8) {
+    //         return dynamic_cast<HNSWIndex<uint8_t, float> *>(this->index.get())
+    //             ->checkIntegrity()
+    //             .valid_state;
+    //     } else {
+    //         throw std::runtime_error("Invalid index data type");
+    //     }
+    // }
     PyBatchIterator createBatchIterator(const py::object &input,
                                         VecSimQueryParams *query_params) override {
         py::array query(input);
@@ -631,15 +631,15 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
-             py::arg("location"))
+        // .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
+        //      py::arg("location"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
-        .def("save_index", &PyHNSWLibIndex::saveIndex)
+        // .def("save_index", &PyHNSWLibIndex::saveIndex)
         .def("knn_parallel", &PyHNSWLibIndex::searchKnnParallel, py::arg("queries"), py::arg("k"),
              py::arg("query_param") = nullptr, py::arg("num_threads") = -1)
         .def("add_vector_parallel", &PyHNSWLibIndex::addVectorsParallel, py::arg("vectors"),
              py::arg("labels"), py::arg("num_threads") = -1)
-        .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
+        // .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1)
         .def("create_batch_iterator", &PyHNSWLibIndex::createBatchIterator, py::arg("query_blob"),

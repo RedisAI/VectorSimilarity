@@ -27,14 +27,14 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.10"
-
-[tool.poetry.dev-dependencies]
+datasets = "^3.3.0"
 numpy = "*"
 hnswlib = "^0.6.2"
 pytest = "^8.3"
 scipy = "^1.14.1"
 h5py = "^3.7.0"
 ml_dtypes = "*"
+
 
 
 [build-system]
