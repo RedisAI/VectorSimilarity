@@ -194,6 +194,8 @@ public:
         VecSimIndexInterface::logCallback = callback;
     }
 
+    static void resetLogCallbackFunction();
+
     /**
      * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
      * background jobs, or insert/delete inplace.

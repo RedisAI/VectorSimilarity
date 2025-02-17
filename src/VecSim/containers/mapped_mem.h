@@ -100,7 +100,9 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
         : VecsimBaseObject(allocator), MappedMem(), element_bytes_count(element_size_bytes),
           block_size_bytes(block_size_bytes) {}
 
-    const char *getElement(size_t id) const { return MappedMem::getElement(id, element_bytes_count); }
+    const char *getElement(size_t id) const {
+        return MappedMem::getElement(id, element_bytes_count);
+    }
 
     void addElement(const void *elem, size_t id) {
         assert(id == curr_size);
@@ -121,7 +123,8 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
          * This is an abstract interface, constructor/destructor should be implemented by the
          * derived classes
          */
-        explicit Iterator(const VectorsMappedMemContainer& container_): container(container_), cur_id(0){};
+        explicit Iterator(const VectorsMappedMemContainer &container_)
+            : container(container_), cur_id(0) {};
         virtual ~Iterator() = default;
 
         /**
@@ -133,9 +136,8 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
                 return this->container.getElement(this->cur_id++);
             }
             return nullptr;
-
         }
-        virtual void reset() {cur_id = 0;};
+        virtual void reset() { cur_id = 0; };
 
         const VectorsMappedMemContainer &container;
         size_t cur_id;

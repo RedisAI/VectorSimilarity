@@ -226,7 +226,13 @@ public:
         }
     }
 
-    virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
+    void disableLogCallback() { VecSim_SetLogCallbackFunction(nullptr); }
+
+    void resetLogCallback() { VecSim_ResetLogCallbackFunction(); }
+
+    virtual ~PyVecSimIndex() {
+        resetLogCallback();
+    }; // Delete function was given to the shared pointer object
 };
 
 class PyHNSWLibIndex : public PyVecSimIndex {
@@ -626,7 +632,9 @@ PYBIND11_MODULE(VecSim, m) {
         .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
-        .def("get_vector", &PyVecSimIndex::getVector);
+        .def("get_vector", &PyVecSimIndex::getVector)
+        .def("disable_logs", &PyVecSimIndex::disableLogCallback)
+        .def("reset_logs", &PyVecSimIndex::resetLogCallback);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),

@@ -3,12 +3,26 @@ import numpy as np
 import pickle
 import time
 import os
-# from tqdm import tqdm
+
+DOWNLOAD_DATASET = False
+VERIFY_DATASET = False
+env_var = os.environ.get('DOWNLOAD_MULTILANG_DATASET')
+if env_var == 'false':
+    DOWNLOAD_DATASET = False
+if env_var == 'true':
+    DOWNLOAD_DATASET = True
+
+env_var = os.environ.get('VERIFY_MULTILANG_DATASET')
+if env_var == 'false':
+    VERIFY_DATASET = False
+if env_var == 'true':
+    VERIFY_DATASET = True
+
 lang = "en" #Use the Simple English Wikipedia subset
 num_vectors_train = 2000
 # num_vectors_train = 10_000_000
 # num_vectors_test = 10_000
-num_vectors_test = 1
+num_vectors_test = 10
 num_vectors = num_vectors_train + num_vectors_test
 
 dim = 1024
@@ -87,7 +101,10 @@ def verify_downloaded_dataset():
                     assert len(unpickled_array) == num_vectors
                 print(f"{field} - ok")
 
-# download_dataset()
+if DOWNLOAD_DATASET == True:
+    download_dataset()
+if VERIFY_DATASET == True:
+    verify_downloaded_dataset()
 verify_downloaded_dataset()
 # load_dataset_from_disk()
 #
