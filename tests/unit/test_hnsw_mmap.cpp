@@ -27,6 +27,9 @@ protected:
     VecSimIndex *CreateNewIndex(HNSWParams &params, bool is_multi = false) {
         return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
     }
+    VecSimIndex *CreateNewIndex(BFParams &params, bool is_multi = false) {
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
+    }
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
@@ -39,6 +42,27 @@ protected:
 // DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(HNSWTest, DataTypeSet);
+
+TYPED_TEST(HNSWTest, brute_force_vector_add_test) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    TEST_DATA_T query[] = {50, 50, 50, 50};
+    auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, (index + 45)); };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    VecSimIndex_Free(index);
+}
 
 TYPED_TEST(HNSWTest, hnsw_vector_add_search_test) {
     size_t dim = 4;

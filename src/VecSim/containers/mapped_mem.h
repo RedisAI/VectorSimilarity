@@ -100,7 +100,7 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
         : VecsimBaseObject(allocator), MappedMem(), element_bytes_count(element_size_bytes),
           block_size_bytes(block_size_bytes) {}
 
-    const char *getElement(size_t id) { return MappedMem::getElement(id, element_bytes_count); }
+    const char *getElement(size_t id) const { return MappedMem::getElement(id, element_bytes_count); }
 
     void addElement(const void *elem, size_t id) {
         assert(id == curr_size);
@@ -121,21 +121,30 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
          * This is an abstract interface, constructor/destructor should be implemented by the
          * derived classes
          */
-        Iterator() = default;
+        explicit Iterator(const VectorsMappedMemContainer& container_): container(container_), cur_id(0){};
         virtual ~Iterator() = default;
 
         /**
          * The basic iterator operations API
          */
-        virtual bool hasNext() const { return true; };
-        virtual const char *next() { return nullptr; };
-        virtual void reset() {};
+        virtual bool hasNext() const { return this->cur_id != this->container.curr_size; };
+        virtual const char *next() {
+            if (this->hasNext()) {
+                return this->container.getElement(this->cur_id++);
+            }
+            return nullptr;
+
+        }
+        virtual void reset() {cur_id = 0;};
+
+        const VectorsMappedMemContainer &container;
+        size_t cur_id;
     };
 
     /**
      * Create a new iterator. Should be freed by the iterator's destroctor.
      */
     std::unique_ptr<Iterator> getIterator() const {
-        return std::make_unique<VectorsMappedMemContainer::Iterator>();
+        return std::make_unique<VectorsMappedMemContainer::Iterator>(*this);
     }
 };
