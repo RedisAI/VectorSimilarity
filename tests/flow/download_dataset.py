@@ -19,10 +19,10 @@ if env_var == 'true':
     VERIFY_DATASET = True
 
 lang = "en" #Use the Simple English Wikipedia subset
-num_vectors_train = 2000
-# num_vectors_train = 10_000_000
-# num_vectors_test = 10_000
-num_vectors_test = 10
+# num_vectors_train = 2000
+# num_vectors_test = 1
+num_vectors_train = 10_000_000
+num_vectors_test = 10_000
 num_vectors = num_vectors_train + num_vectors_test
 
 dim = 1024
@@ -86,11 +86,13 @@ def load_dataset_from_disk():
 def verify_downloaded_dataset():
     for field in fields:
         file = f"{file_base_name}_{field}.pik"
+        print(f"Verifying {file}")
         if os.path.exists(file):
             with open(file,'rb') as f:
                 unpickled_array = pickle.load(f)
                 if field == 'emb':
                     assert unpickled_array.shape == (num_vectors, dim)
+                    print("Ensure no zero vectors in the array")
                     for i in range(num_vectors):
                         assert np.any(unpickled_array[i]), f"Array at index {i} is all zeros"
                 elif field == '_id':
@@ -105,6 +107,5 @@ if DOWNLOAD_DATASET == True:
     download_dataset()
 if VERIFY_DATASET == True:
     verify_downloaded_dataset()
-verify_downloaded_dataset()
 # load_dataset_from_disk()
 #

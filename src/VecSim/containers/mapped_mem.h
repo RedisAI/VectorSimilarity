@@ -12,6 +12,37 @@ struct MappedMem {
         }
     }
 
+    // Transfer ownership of the file descriptor and the mapped memory and invalidate the current
+    // object
+    MappedMem(MappedMem &&other) noexcept
+        : mapped_addr(other.mapped_addr), curr_size(other.curr_size), fd(other.fd) {
+        other.mapped_addr = nullptr;
+        other.curr_size = 0;
+        other.fd = -1;
+    }
+
+    // Move assignment operator
+    MappedMem &operator=(MappedMem &&other) {
+        if (this != &other) {
+            // Clean up current resources
+            if (fd != -1) {
+                throw std::runtime_error(
+                    "overrding a mapped mem object with another mapped mem object is not allowed!");
+            }
+
+            // Transfer ownership
+            mapped_addr = other.mapped_addr;
+            curr_size = other.curr_size;
+            fd = other.fd;
+
+            // Invalidate the moved-from object
+            other.mapped_addr = nullptr;
+            other.curr_size = 0;
+            other.fd = -1;
+        }
+        return *this;
+    }
+
     void destroy(size_t element_size_bytes, size_t block_size_bytes) {
         if (!curr_size)
             return;
@@ -23,8 +54,8 @@ struct MappedMem {
     }
 
     ~MappedMem() {
-        // close file
-        close(fd);
+        if (fd != -1)
+            close(fd);
     }
 
     void appendElement(const void *element, size_t element_size_bytes) {
@@ -51,9 +82,34 @@ struct MappedMem {
             // Resize the file to the required size
             size_t curr_file_size_bytes = element_size_bytes * curr_size;
             size_t new_file_size = curr_file_size_bytes + block_size_bytes;
-            if (posix_fallocate(fd, 0, new_file_size) < 0) {
-                throw std::runtime_error("Failed to resize file " + std::string("with error: ") +
-                                         std::strerror(errno));
+            int status = posix_fallocate(fd, 0, new_file_size);
+            if (status != 0) {
+                switch (status) {
+                case EBADF:
+                    throw std::runtime_error("EBADF: Invalid file descriptor");
+                case EFBIG:
+                    throw std::runtime_error("EFBIG: offset+size exceeds the maximum file size");
+                case EINVAL:
+                    throw std::runtime_error(
+                        "EINVAL: offset was less than 0, or size was less than or equal to \
+                            0, or the underlying filesystem does not support the operation.");
+                case ENODEV:
+                    throw std::runtime_error("ENODEV: fd does not refer to a regular file..");
+                case ENOSPC:
+                    throw std::runtime_error(
+                        "ENOSPC: There is not enough space left on the device containing \
+                            the file referred to by fd");
+                case EOPNOTSUPP:
+                    throw std::runtime_error(
+                        "EOPNOTSUPP: The filesystem containing the file referred to by fd does \
+                                                    not support this operation.  This error code can be returned by C \
+                                                    libraries that don't perform the emulation shown in CAVEATS, \
+                                                    such as musl libc.");
+                case ESPIPE:
+                    throw std::runtime_error("ESPIPE: fd refers to a pipe.");
+                default:
+                    throw std::runtime_error("posix_fallocate failed");
+                }
             }
 
             if (curr_size) {
@@ -124,7 +180,7 @@ struct VectorsMappedMemContainer : public VecsimBaseObject, public MappedMem {
          * derived classes
          */
         explicit Iterator(const VectorsMappedMemContainer &container_)
-            : container(container_), cur_id(0) {};
+            : container(container_), cur_id(0){};
         virtual ~Iterator() = default;
 
         /**

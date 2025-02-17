@@ -14,12 +14,12 @@ import numpy as np
 import time
 
 # Globals
-RUN_SANITY = False
+RUN_SANITY = True
 RUN_BM = False
 
 vectors_file_name = f"{file_base_name}_emb.pik"
 with open(vectors_file_name,'rb') as f:
-    print(f"loading vertors files from {vectors_file_name}")
+    print(f"loading vectors files from {vectors_file_name}")
     unpickled_array = pickle.load(f)
     dim = unpickled_array.shape[1]
     print('Array shape: ' + str(unpickled_array.shape))
@@ -35,7 +35,7 @@ def bm_build(M, efC):
         ef_construction=efC,
     )
 
-    index.disable_logs()
+    # index.disable_logs()
     print("\nBuilding index with params: ", f"M: {M}, efC{efC}\n")
     start_time = time.time()  # Start timing
     for i, vector in enumerate(unpickled_array[:num_vectors_train]):
@@ -75,6 +75,9 @@ def sanity_vecsim_mmap():
     efRuntime = 10
     M = 16
     efConstruction = 100
+
+    num_vectors = min(1000, num_vectors_train - 1)
+
     index = create_hnsw_index(
         dim,
         num_vectors_train,
@@ -91,7 +94,7 @@ def sanity_vecsim_mmap():
     p.init_index(max_elements=num_vectors_train, ef_construction=efConstruction, M=M)
     p.set_ef(efRuntime)
 
-    for i, vector in enumerate(unpickled_array[:num_vectors_train]):
+    for i, vector in enumerate(unpickled_array[:num_vectors]):
         index.add_vector(vector, i)
         p.add_items(vector, i)
 
@@ -99,7 +102,7 @@ def sanity_vecsim_mmap():
     print(f"hnswlib index containts {p.get_current_count()} vectors")
 
     print("Testing knn")
-    query_data = unpickled_array[-1]
+    query_data = unpickled_array[num_vectors]
     hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
     redis_labels, redis_distances = index.knn_query(query_data, 10)
     assert_allclose(hnswlib_labels, redis_labels, rtol=1e-5, atol=0)
@@ -109,7 +112,7 @@ def sanity_vecsim_mmap():
     print("Testing knn ok")
 
 def gt_vecsim_mmap():
-    num_vectors = min(1000, num_vectors_train)
+    num_vectors = min(1000, num_vectors_train - 1)
     efRuntime = 10
     M = 16
     efConstruction = 100
@@ -129,7 +132,7 @@ def gt_vecsim_mmap():
     bf_index = create_flat_index(dim = dim, metric=metric, data_type=data_type)
     print("\ndisk bf_index index created")
 
-    for i, vector in enumerate(unpickled_array[:num_vectors_train]):
+    for i, vector in enumerate(unpickled_array[:num_vectors]):
         index.add_vector(vector, i)
         bf_index.add_vector(vector, i)
 
@@ -137,7 +140,7 @@ def gt_vecsim_mmap():
     print(f"disk bf index contains {bf_index.index_size()} vectors")
 
     print("Testing knn")
-    query_data = unpickled_array[-1]
+    query_data = unpickled_array[num_vectors]
     flat_labels, flat_distances = bf_index.knn_query(query_data, k=10)
     hnsw_labels, hnsw_distances = index.knn_query(query_data, 10)
 

@@ -53,7 +53,6 @@ struct ElementInMemoryData {
 };
 
 /******* Disk structs *******/
-
 struct LevelsMappedMemContainer { // TODO: separate struct for level 0
     LevelsMappedMemContainer(size_t elementDataSize, std::shared_ptr<VecSimAllocator> allocator,
                              size_t cap = 0, bool is_level0 = false)
@@ -95,11 +94,13 @@ struct LevelsMappedMemContainer { // TODO: separate struct for level 0
 
     bool growByBlockUpTolevel(size_t elementDataSize, size_t block_size_bytes, size_t maxLevel) {
         bool is_resized = false;
-        for (size_t i = 0; i < mappedMems.size(); i++) {
-            is_resized |= mappedMems[i].growByBlock(elementDataSize, block_size_bytes);
+        for (size_t level = offsetLevel; level <= maxLevel; level++) {
+            is_resized |=
+                mappedMems[level - offsetLevel].growByBlock(elementDataSize, block_size_bytes);
         }
         return is_resized;
     }
+
     vecsim_stl::vector<MappedMem> mappedMems;
     size_t DataSize;
     size_t offsetLevel;
