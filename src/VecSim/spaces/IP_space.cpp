@@ -35,6 +35,13 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (dim < 16) {
         return ret_dist_func;
     }
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    if (dim % 4){
+        return Choose_FP32_IP_implementation_NEONF(dim);
+    }
+#endif
+
 #ifdef CPU_FEATURES_ARCH_X86_64
     auto features = (arch_opt == nullptr)
                         ? cpu_features::GetX86Info().features
