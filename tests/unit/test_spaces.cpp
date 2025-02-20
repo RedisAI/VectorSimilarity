@@ -407,29 +407,30 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
          << "Unexpected distance function chosen for dim " << dim;
  }
  
-//  TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
-//      auto optimization = cpu_features::GetAarch64Info().features;
-//      size_t dim = GetParam();
-//      float v[dim];
-//      float v2[dim];
-//      for (size_t i = 0; i < dim; i++) {
-//          v[i] = (float)i;
-//          v2[i] = (float)(i + 1.5);
-//      }
+ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
+     auto optimization = cpu_features::GetAarch64Info().features;
+     size_t dim = GetParam();
+     float v[dim];
+     float v2[dim];
+     for (size_t i = 0; i < dim; i++) {
+         v[i] = (float)i;
+         v2[i] = (float)(i + 1.5);
+     }
  
-//      auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
-//          size_t elements_in_reg = reg_bit_size / sizeof(float) / 8;
-//          return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float) : 0;
-//      };
+     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+         size_t elements_in_reg = reg_bit_size / sizeof(float) / 8;
+         return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float) : 0;
+     };
  
-//      dist_func_t<float> arch_opt_func;
-//      float baseline = FP32_InnerProduct(v, v2, dim);
-//      unsigned char alignment = 0;
-//      arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
-//      ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_NEONF(dim))
-//          << "Unexpected distance function chosen for dim " << dim;
-//  }
- 
+     dist_func_t<float> arch_opt_func;
+     float baseline = FP32_InnerProduct(v, v2, dim);
+     unsigned char alignment = 0;
+     arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+     ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_NEONF(dim))
+         << "Unexpected distance function chosen for dim " << dim;
+ }
+ INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
+    testing::Range(16UL, 16 * 2UL + 1));
  #endif
  
  
