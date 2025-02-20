@@ -7,6 +7,12 @@
 
 class BM_VecSimSpaces_FP32 : public BM_VecSimSpaces<float> {};
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+cpu_features::ArmFeatures opt = cpu_features::GetArmInfo().features;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, NEONF, 16, opt.neon);
+#endif // AARCH64
+
+
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 

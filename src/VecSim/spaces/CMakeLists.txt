@@ -80,13 +80,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		list(APPEND OPTIMIZATIONS functions/SSE.cpp)
 	endif()
 elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
-    # aarch64-specific optimizations.
     message("Building with NEON support for aarch64")
-    # Optionally include an ARM-specific cmake file for additional checks.
-    # include(${root}/cmake/aarch64NeonFlags.cmake)
-    # Add your NEON-specific source file and compile flags.
-    set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-mfpu=neon")
-    list(APPEND OPTIMIZATIONS functions/NEON.cpp)
+    list(APPEND OPTIMIZATIONS functions/NEONF.cpp)
 endif()
 
 # Here we are compiling the space selectors with the relevant optimization flag.
