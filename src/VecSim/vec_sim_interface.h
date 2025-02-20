@@ -20,6 +20,22 @@
 struct VecSimIndexInterface : public VecsimBaseObject {
 
 public:
+    static void log_external(const char *level, const char *fmt, ...) {
+        if (VecSimIndexInterface::logCallback) {
+            // Format the message and call the callback
+            va_list args;
+            va_start(args, fmt);
+            int len = vsnprintf(NULL, 0, fmt, args);
+            va_end(args);
+            char *buf = new char[len + 1];
+            va_start(args, fmt);
+            vsnprintf(buf, len + 1, fmt, args);
+            va_end(args);
+            logCallback(nullptr, level, buf);
+            delete[] buf;
+        }
+    }
+
     /**
      * @brief Construct a new Vec Sim Index object
      *

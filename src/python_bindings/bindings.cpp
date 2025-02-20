@@ -199,6 +199,8 @@ public:
 
     size_t indexMemory() { return this->index->getAllocationSize(); }
 
+    size_t getBlockSize() const { return index->info().commonInfo.basicInfo.blockSize; }
+
     virtual PyBatchIterator createBatchIterator(const py::object &input,
                                                 VecSimQueryParams *query_params) {
         py::array query(input);
@@ -282,6 +284,31 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                                .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+    }
+
+    size_t getMaxLevel() const {
+        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+        if (type == VecSimType_FLOAT32) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_FLOAT64) {
+            auto *hnsw = dynamic_cast<HNSWIndex<double, double> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_BFLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_FLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_INT8) {
+            auto *hnsw = dynamic_cast<HNSWIndex<int8_t, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_UINT8) {
+            auto *hnsw = dynamic_cast<HNSWIndex<uint8_t, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else {
+            throw std::runtime_error("Invalid index data type");
+        }
     }
 
     // @params is required only in V1.
@@ -630,6 +657,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("index_size", &PyVecSimIndex::indexSize)
         .def("index_type", &PyVecSimIndex::indexType)
         .def("index_memory", &PyVecSimIndex::indexMemory)
+        .def("index_block_size", &PyVecSimIndex::getBlockSize)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
         .def("get_vector", &PyVecSimIndex::getVector)
@@ -651,7 +679,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1)
         .def("create_batch_iterator", &PyHNSWLibIndex::createBatchIterator, py::arg("query_blob"),
-             py::arg("query_param") = nullptr);
+             py::arg("query_param") = nullptr)
+        .def("index_max_level", &PyHNSWLibIndex::getMaxLevel);
 
     py::class_<PyTieredIndex, PyVecSimIndex>(m, "TieredIndex")
         .def("wait_for_index", &PyTieredIndex::WaitForIndex, py::arg("waiting_duration") = 10)

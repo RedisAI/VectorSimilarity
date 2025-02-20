@@ -1659,7 +1659,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 }
 
 template <typename DataType, typename DistType>
-HNSWIndex<DataType, DistType>::~HNSWIndex() {}
+HNSWIndex<DataType, DistType>::~HNSWIndex() {
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "HNSWIndex destructor");
+}
 
 /**
  * Index API functions

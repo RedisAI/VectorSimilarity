@@ -7,6 +7,7 @@
 
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/containers/mapped_mem.h"
+#include "VecSim/vec_sim_interface.h"
 
 template <typename DistType>
 using candidatesList = vecsim_stl::vector<std::pair<DistType, idType>>;
@@ -88,6 +89,7 @@ struct LevelsMappedMemContainer { // TODO: separate struct for level 0
 
     void UpdateMaxLevel(size_t maxLevel) {
         if (getLevelsCount() < maxLevel) {
+            VecSimIndexInterface::log_external("debug", "Updateing max level to %zu", maxLevel);
             mappedMems.resize(maxLevel);
         }
     }

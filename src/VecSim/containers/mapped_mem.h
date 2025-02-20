@@ -2,6 +2,8 @@
 #include <sys/param.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include "VecSim/vec_sim_interface.h"
+
 struct MappedMem {
     MappedMem() : mapped_addr(nullptr), curr_size(0) {
         // create a temporary file
@@ -134,10 +136,15 @@ struct MappedMem {
             // Give advise about sequential access to ensure the entire element is loaded into
             // memory
             // TODO: benchmark different madvise options
-            if (madvise(mapped_addr, new_file_size, MADV_SEQUENTIAL) == -1) {
+
+            //
+            if (madvise(mapped_addr, curr_file_size_bytes, MADV_DONTNEED) == -1) {
                 throw std::runtime_error("madvise failed " + std::string("with error: ") +
                                          std::strerror(errno));
             }
+            VecSimIndexInterface::log_external(
+                "debug", "madvise was called with MADV_DONTNEED on %zu bytes mapped from fd: %d.",
+                curr_file_size_bytes, fd);
             return true;
         }
 
