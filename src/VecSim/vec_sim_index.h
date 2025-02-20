@@ -17,7 +17,6 @@
 #include "info_iterator_struct.h"
 #include "containers/data_blocks_container.h"
 #include "containers/raw_data_container_interface.h"
-#include "containers/mapped_mem.h"
 
 #include <cassert>
 #include <functional>
@@ -79,7 +78,7 @@ protected:
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
 
-    VectorsMappedMemContainer *vectors; // The raw vectors data container.
+    RawDataContainer *vectors; // The raw vectors data container.
 
     /**
      * @brief Get the common info object
@@ -110,8 +109,8 @@ public:
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         assert(dataSize);
-        this->vectors = new (this->allocator) VectorsMappedMemContainer(
-            this->blockSize * this->dataSize, this->dataSize, this->allocator);
+        this->vectors = new (this->allocator)
+            DataBlocksContainer(this->blockSize, this->dataSize, this->allocator, 0);
     }
 
     /**

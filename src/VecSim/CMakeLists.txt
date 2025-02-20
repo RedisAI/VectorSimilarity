@@ -39,3 +39,13 @@ if(VECSIM_BUILD_TESTS)
     add_library(VectorSimilaritySerializer utils/serializer.cpp)
     target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()
+
+# Use pkg-config to find RocksDB
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ROCKSDB REQUIRED rocksdb)
+
+include_directories(${ROCKSDB_INCLUDE_DIRS})
+link_directories(${ROCKSDB_LIBRARY_DIRS})
+add_definitions(${ROCKSDB_CFLAGS_OTHER})
+
+target_link_libraries(VectorSimilarity ${ROCKSDB_LIBRARIES})

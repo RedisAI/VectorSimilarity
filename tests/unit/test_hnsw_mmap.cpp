@@ -1933,7 +1933,7 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
     size_t vectors_in_higher_levels = 0;
     while (vectors_in_higher_levels < 2) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
-        if (hnsw_index->getGraphDataByInternalId(n).toplevel > 0) {
+        if (hnsw_index->getElementMaxLevel(n) > 0) {
             vectors_in_higher_levels++;
         }
         n++;
@@ -1943,9 +1943,8 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
     for (size_t id = 0; id < n; id++) {
         int **neighbors_output;
         VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output);
-        auto graph_data = hnsw_index->getGraphDataByInternalId(id);
-        for (size_t l = 0; l <= graph_data.toplevel; l++) {
-            ElementLevelData level_data = hnsw_index->getElementLevelData(graph_data, l);
+        for (size_t l = 0; l <= hnsw_index->getElementMaxLevel(id); l++) {
+            ElementLevelData level_data = hnsw_index->getElementLevelData(id, l);
             auto &neighbours = neighbors_output[l];
             ASSERT_EQ(neighbours[0], level_data.getNumLinks());
             for (size_t j = 1; j <= neighbours[0]; j++) {
