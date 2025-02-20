@@ -7,7 +7,6 @@
 #include "NEONF.h"
 
 #include "VecSim/spaces/L2/L2_NEONF_FP32.h"
-
 #include "VecSim/spaces/IP/IP_NEONF_FP32.h"
 
 
