@@ -39,15 +39,18 @@ struct GraphData; // Forward declaration
 
 // Used to read data from disk
 struct ElementLevelData {
+private:
     const GraphData *graph;
     std::string key; // key for the element (id:level)
     linkListSize numLinks;
     linkListSize cap;
+    bool dirty;
     idType *links;
 
+public:
     ElementLevelData(const GraphData *graph, std::string &&key, std::string &&value,
                      linkListSize cap)
-        : graph(graph), key(std::move(key)), cap(cap), links(new idType[cap]) {
+        : graph(graph), key(key), cap(cap), dirty(false), links(new idType[cap]) {
         memcpy(links, value.data(), value.size());
         numLinks = value.size() / sizeof(idType);
         assert(numLinks <= cap);
@@ -64,28 +67,39 @@ struct ElementLevelData {
     // Sets the outgoing links of the current element.
     // Assumes that the object has the capacity to hold all the links.
     void setLinks(vecsim_stl::vector<idType> &newLinks) {
+        dirty = true;
         numLinks = newLinks.size();
         memcpy(links, newLinks.data(), numLinks * sizeof(idType));
     }
     template <typename DistType>
     void setLinks(candidatesList<DistType> &cand_links) {
+        dirty = true;
         numLinks = cand_links.size();
         size_t i = 0;
         for (auto &link : cand_links) {
             links[i++] = link.second;
         }
     }
-    void popLink() { this->numLinks--; }
-    void setNumLinks(linkListSize num) { this->numLinks = num; }
+    void popLink() {
+        dirty = true;
+        this->numLinks--;
+    }
+    void setNumLinks(linkListSize num) {
+        dirty = true;
+        this->numLinks = num;
+    }
     void setLinkAtPos(size_t pos, idType node_id) {
         assert(pos < numLinks);
+        dirty = true;
         this->links[pos] = node_id;
     }
     void appendLink(idType node_id) {
+        dirty = true;
         assert(numLinks < cap);
         this->links[numLinks++] = node_id;
     }
     void removeLink(idType node_id) {
+        dirty = true;
         size_t i = 0;
         for (; i < numLinks; i++) {
             if (links[i] == node_id) {
@@ -177,7 +191,9 @@ struct GraphData : public VecsimBaseObject {
 };
 
 inline ElementLevelData::~ElementLevelData() {
-    rocksdb::Slice value((char *)links, numLinks * sizeof(idType));
-    graph->db->Put(rocksdb::WriteOptions(), graph->cf.get(), key, value);
+    if (dirty) {
+        rocksdb::Slice value((char *)links, numLinks * sizeof(idType));
+        graph->db->Put(rocksdb::WriteOptions(), graph->cf.get(), key, value);
+    }
     delete[] links;
 }
