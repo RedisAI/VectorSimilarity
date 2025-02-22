@@ -75,7 +75,7 @@ public:
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
-            memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
+            memcpy(vec.data(), this->getDataByInternalId(id).get(), this->dataSize);
             vectors_output.push_back(vec);
         }
     }
@@ -135,7 +135,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
-        DistType d = this->calcDistance(this->getDataByInternalId(id), vector_data);
+        DistType d = this->calcDistance(this->getDataByInternalId(id).get(), vector_data);
         dist = std::fmin(dist, d);
     }
 

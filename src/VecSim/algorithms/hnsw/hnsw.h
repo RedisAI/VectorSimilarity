@@ -265,7 +265,7 @@ public:
     VecSimIndexBasicInfo basicInfo() const override;
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
-    const char *getDataByInternalId(idType internal_id) const;
+    std::unique_ptr<const char[]> getDataByInternalId(idType internal_id) const;
     const ElementLevelData getElementLevelData(idType internal_id, size_t level) const;
     ElementLevelData getElementLevelDataForWrite(idType internal_id, size_t level) const;
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
@@ -395,8 +395,10 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
 }
 
 template <typename DataType, typename DistType>
-const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return this->vectors->getElement(internal_id);
+std::unique_ptr<const char[]>
+HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
+    const char *data = this->vectors->getElement(internal_id);
+    return std::unique_ptr<const char[]>(data);
 }
 
 template <typename DataType, typename DistType>
@@ -541,75 +543,35 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     lockNodeLinks(curNodeId);
     const ElementLevelData node_level = getElementLevelData(curNodeId, layer);
     linkListSize num_links = node_level.getNumLinks();
-    if (num_links > 0) {
 
-        const char *cur_data, *next_data;
-        // Pre-fetch first candidate tag address.
-        __builtin_prefetch(elements_tags + node_level.getLinkAtPos(0));
-        // Pre-fetch first candidate data block address.
-        next_data = getDataByInternalId(node_level.getLinkAtPos(0));
-        __builtin_prefetch(next_data); // TODO: check if this is needed
+    for (linkListSize j = 0; j < num_links; j++) {
+        // Pre-fetch candidate tag address.
+        __builtin_prefetch(elements_tags + node_level.getLinkAtPos(j));
+        idType candidate_id = node_level.getLinkAtPos(j);
 
-        for (linkListSize j = 0; j < num_links - 1; j++) {
-            idType candidate_id = node_level.getLinkAtPos(j);
-            cur_data = next_data;
+        if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
+            continue;
 
-            // Pre-fetch next candidate tag address.
-            __builtin_prefetch(elements_tags + node_level.getLinkAtPos(j + 1));
-            // Pre-fetch next candidate data block address.
-            next_data = getDataByInternalId(node_level.getLinkAtPos(j + 1));
-            __builtin_prefetch(next_data);
+        auto cur_data = getDataByInternalId(candidate_id);
+        elements_tags[candidate_id] = visited_tag;
 
-            if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
-                continue;
+        DistType cur_dist = this->calcDistance(query_data, cur_data.get());
+        if (lowerBound > cur_dist || top_candidates.size() < ef) {
 
-            elements_tags[candidate_id] = visited_tag;
+            candidate_set.emplace(-cur_dist, candidate_id);
 
-            DistType cur_dist = this->calcDistance(query_data, cur_data);
-            if (lowerBound > cur_dist || top_candidates.size() < ef) {
+            // Insert the candidate to the top candidates heap only if it is not marked as
+            // deleted.
+            if (!isMarkedDeleted(candidate_id))
+                emplaceToHeap(top_candidates, cur_dist, candidate_id);
 
-                candidate_set.emplace(-cur_dist, candidate_id);
+            if (top_candidates.size() > ef)
+                top_candidates.pop();
 
-                // Insert the candidate to the top candidates heap only if it is not marked as
-                // deleted.
-                if (!isMarkedDeleted(candidate_id))
-                    emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-                if (top_candidates.size() > ef)
-                    top_candidates.pop();
-
-                // If we have marked deleted elements, we need to verify that `top_candidates` is
-                // not empty (since we might have not added any non-deleted element yet).
-                if (!top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
-        }
-
-        // Running the last neighbor outside the loop to avoid prefetching invalid neighbor
-        idType candidate_id = node_level.getLinkAtPos(num_links - 1);
-        cur_data = next_data;
-
-        if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
-
-            elements_tags[candidate_id] = visited_tag;
-
-            DistType cur_dist = this->calcDistance(query_data, cur_data);
-            if (lowerBound > cur_dist || top_candidates.size() < ef) {
-                candidate_set.emplace(-cur_dist, candidate_id);
-
-                // Insert the candidate to the top candidates heap only if it is not marked as
-                // deleted.
-                if (!isMarkedDeleted(candidate_id))
-                    emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-                if (top_candidates.size() > ef)
-                    top_candidates.pop();
-
-                // If we have marked deleted elements, we need to verify that `top_candidates` is
-                // not empty (since we might have not added any non-deleted element yet).
-                if (!top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
+            // If we have marked deleted elements, we need to verify that `top_candidates` is
+            // not empty (since we might have not added any non-deleted element yet).
+            if (!top_candidates.empty())
+                lowerBound = top_candidates.top().first;
         }
     }
     unlockNodeLinks(curNodeId);
@@ -621,64 +583,64 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     tag_t visited_tag, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
 
-    lockNodeLinks(curNodeId);
-    const ElementLevelData node_level = getElementLevelData(curNodeId, layer);
-    linkListSize num_links = node_level.getNumLinks();
+    // lockNodeLinks(curNodeId);
+    // const ElementLevelData node_level = getElementLevelData(curNodeId, layer);
+    // linkListSize num_links = node_level.getNumLinks();
 
-    if (num_links > 0) {
+    // if (num_links > 0) {
 
-        const char *cur_data, *next_data;
-        // Pre-fetch first candidate tag address.
-        __builtin_prefetch(elements_tags + node_level.getLinkAtPos(0));
-        // Pre-fetch first candidate data block address.
-        next_data = getDataByInternalId(node_level.getLinkAtPos(0));
-        __builtin_prefetch(next_data);
+    //     const char *cur_data, *next_data;
+    //     // Pre-fetch first candidate tag address.
+    //     __builtin_prefetch(elements_tags + node_level.getLinkAtPos(0));
+    //     // Pre-fetch first candidate data block address.
+    //     next_data = getDataByInternalId(node_level.getLinkAtPos(0));
+    //     __builtin_prefetch(next_data);
 
-        for (linkListSize j = 0; j < num_links - 1; j++) {
-            idType candidate_id = node_level.getLinkAtPos(j);
-            cur_data = next_data;
+    //     for (linkListSize j = 0; j < num_links - 1; j++) {
+    //         idType candidate_id = node_level.getLinkAtPos(j);
+    //         cur_data = next_data;
 
-            // Pre-fetch next candidate tag address.
-            __builtin_prefetch(elements_tags + node_level.getLinkAtPos(j + 1));
-            // Pre-fetch next candidate data block address.
-            next_data = getDataByInternalId(node_level.getLinkAtPos(j + 1));
-            __builtin_prefetch(next_data);
+    //         // Pre-fetch next candidate tag address.
+    //         __builtin_prefetch(elements_tags + node_level.getLinkAtPos(j + 1));
+    //         // Pre-fetch next candidate data block address.
+    //         next_data = getDataByInternalId(node_level.getLinkAtPos(j + 1));
+    //         __builtin_prefetch(next_data);
 
-            if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
-                continue;
+    //         if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
+    //             continue;
 
-            elements_tags[candidate_id] = visited_tag;
+    //         elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->calcDistance(query_data, cur_data);
-            if (cur_dist < dyn_range) {
-                candidate_set.emplace(-cur_dist, candidate_id);
+    //         DistType cur_dist = this->calcDistance(query_data, cur_data);
+    //         if (cur_dist < dyn_range) {
+    //             candidate_set.emplace(-cur_dist, candidate_id);
 
-                // If the new candidate is in the requested radius, add it to the results set.
-                if (cur_dist <= radius && !isMarkedDeleted(candidate_id)) {
-                    results->emplace(getExternalLabel(candidate_id), cur_dist);
-                }
-            }
-        }
-        // Running the last candidate outside the loop to avoid prefetching invalid candidate
-        idType candidate_id = node_level.getLinkAtPos(num_links - 1);
-        cur_data = next_data;
+    //             // If the new candidate is in the requested radius, add it to the results set.
+    //             if (cur_dist <= radius && !isMarkedDeleted(candidate_id)) {
+    //                 results->emplace(getExternalLabel(candidate_id), cur_dist);
+    //             }
+    //         }
+    //     }
+    //     // Running the last candidate outside the loop to avoid prefetching invalid candidate
+    //     idType candidate_id = node_level.getLinkAtPos(num_links - 1);
+    //     cur_data = next_data;
 
-        if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
+    //     if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
 
-            elements_tags[candidate_id] = visited_tag;
+    //         elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->calcDistance(query_data, cur_data);
-            if (cur_dist < dyn_range) {
-                candidate_set.emplace(-cur_dist, candidate_id);
+    //         DistType cur_dist = this->calcDistance(query_data, cur_data);
+    //         if (cur_dist < dyn_range) {
+    //             candidate_set.emplace(-cur_dist, candidate_id);
 
-                // If the new candidate is in the requested radius, add it to the results set.
-                if (cur_dist <= radius && !isMarkedDeleted(candidate_id)) {
-                    results->emplace(getExternalLabel(candidate_id), cur_dist);
-                }
-            }
-        }
-    }
-    unlockNodeLinks(curNodeId);
+    //             // If the new candidate is in the requested radius, add it to the results set.
+    //             if (cur_dist <= radius && !isMarkedDeleted(candidate_id)) {
+    //                 results->emplace(getExternalLabel(candidate_id), cur_dist);
+    //             }
+    //         }
+    //     }
+    // }
+    // unlockNodeLinks(curNodeId);
 }
 
 template <typename DataType, typename DistType>
@@ -694,7 +656,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     DistType lowerBound;
     if (!isMarkedDeleted(ep_id)) {
-        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
+        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id).get());
         lowerBound = dist;
         top_candidates.emplace(dist, ep_id);
         candidate_set.emplace(-dist, ep_id);
@@ -752,7 +714,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
     }
 
     candidatesList<DistType> return_list(this->allocator);
-    vecsim_stl::vector<const void *> cached_vectors(this->allocator);
+    vecsim_stl::vector<std::unique_ptr<const char[]>> cached_vectors(this->allocator);
     return_list.reserve(M);
     cached_vectors.reserve(M);
     if constexpr (record_removed) {
@@ -767,14 +729,14 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
     for (; current_pair != top_candidates.end() && return_list.size() < M; ++current_pair) {
         DistType candidate_to_query_dist = current_pair->first;
         bool good = true;
-        const void *curr_vector = getDataByInternalId(current_pair->second);
+        auto curr_vector = getDataByInternalId(current_pair->second);
 
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
         for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
-                this->calcDistance(cached_vectors[i], curr_vector);
+                this->calcDistance(cached_vectors[i].get(), curr_vector.get());
             if (candidate_to_selected_dist < candidate_to_query_dist) {
                 if constexpr (record_removed) {
                     removed_candidates->push_back(current_pair->second);
@@ -784,7 +746,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
             }
         }
         if (good) {
-            cached_vectors.push_back(curr_vector);
+            cached_vectors.emplace_back(std::move(curr_vector));
             return_list.push_back(*current_pair);
         }
     }
@@ -811,11 +773,11 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     candidates.emplace_back(neighbor_data.first, new_node_id);
 
     idType selected_neighbor = neighbor_data.second;
-    const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
+    auto selected_neighbor_data = getDataByInternalId(selected_neighbor);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
         candidates.emplace_back(
-            this->calcDistance(getDataByInternalId(neighbor_level.getLinkAtPos(j)),
-                               selected_neighbor_data),
+            this->calcDistance(getDataByInternalId(neighbor_level.getLinkAtPos(j)).get(),
+                               selected_neighbor_data.get()),
             neighbor_level.getLinkAtPos(j));
     }
 
@@ -1006,7 +968,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         auto neighbours_data = getDataByInternalId(neighbour_id);
         for (auto candidate_id : candidate_ids) {
             candidates.emplace_back(
-                this->calcDistance(getDataByInternalId(candidate_id), neighbours_data),
+                this->calcDistance(getDataByInternalId(candidate_id).get(), neighbours_data.get()),
                 candidate_id);
         }
 
@@ -1244,7 +1206,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
         changed = false;
         auto origCand = bestCand;
         lockNodeLinks(bestCand);
-        const ElementLevelData &node_level_data = getElementLevelData(bestCand, level);
+        const ElementLevelData node_level_data = getElementLevelData(bestCand, level);
 
         for (int i = 0; i < node_level_data.getNumLinks(); i++) {
             idType candidate = node_level_data.getLinkAtPos(i);
@@ -1252,7 +1214,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             if (isInProcess(candidate)) {
                 continue;
             }
-            DistType d = this->calcDistance(vector_data, getDataByInternalId(candidate));
+            DistType d = this->calcDistance(vector_data, getDataByInternalId(candidate).get());
             if (d < curDist) {
                 curDist = d;
                 bestCand = candidate;
@@ -1500,10 +1462,11 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         // were not originally neighbors.
         candidatesList<DistType> neighbors_candidates(this->allocator);
         neighbors_candidates.reserve(neighbors_candidate_ids.size());
-        const void *node_data = getDataByInternalId(node_id);
+        auto node_data = getDataByInternalId(node_id);
         for (idType candidate : neighbors_candidate_ids) {
             neighbors_candidates.emplace_back(
-                this->calcDistance(getDataByInternalId(candidate), node_data), candidate);
+                this->calcDistance(getDataByInternalId(candidate).get(), node_data.get()),
+                candidate);
         }
         vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
         getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
@@ -1565,7 +1528,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     size_t max_common_level;
     if (element_max_level < global_max_level) {
         max_common_level = element_max_level;
-        cur_dist = this->calcDistance(vector_data, getDataByInternalId(curr_element));
+        cur_dist = this->calcDistance(vector_data, getDataByInternalId(curr_element).get());
         for (auto level = static_cast<int>(global_max_level);
              level > static_cast<int>(element_max_level); level--) {
             // this is done for the levels which are above the max level
@@ -1644,12 +1607,12 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     rocksdb::Options options;
     options.create_if_missing = true;
     options.error_if_exists = true;
-    std::string db_path = "/tmp/rocksHNSW." + std::to_string(std::rand());
-    rocksdb::Status status = rocksdb::DB::Open(options, db_path, &db_);
-    if (!status.ok()) {
-        throw std::runtime_error("Failed to open rocks db");
-    }
-    db = std::shared_ptr<rocksdb::DB>(db_, [](rocksdb::DB *db) { delete db; });
+    rocksdb::Status status;
+    do {
+        status = rocksdb::DB::Open(options, "/tmp/rocksHNSW." + std::to_string(std::rand()), &db_);
+    } while (!status.ok());
+    db = std::shared_ptr<rocksdb::DB>(db_, [](rocksdb::DB *db) { db->Close(); delete db; });
+    delete this->vectors; // delete the default vectors container
     this->vectors = new RocksDataContainer(db, this->dataSize, this->allocator);
     graphData.setDB(db);
 }
@@ -1889,7 +1852,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
-    DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element));
+    DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element).get());
     for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; --level) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
@@ -1912,7 +1875,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     if (!isMarkedDeleted(ep_id)) {
         // If ep is not marked as deleted, get its distance and set lower bound and heaps
         // accordingly
-        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
+        DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id).get());
         lowerBound = dist;
         top_candidates->emplace(dist, getExternalLabel(ep_id));
         candidate_set.emplace(-dist, ep_id);
@@ -2020,7 +1983,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
         dynamic_range_search_boundaries = dynamic_range = ep_dist;
     } else {
         // If ep is not marked as deleted, get its distance and set ranges accordingly
-        ep_dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
+        ep_dist = this->calcDistance(data_point, getDataByInternalId(ep_id).get());
         dynamic_range = ep_dist;
         if (ep_dist <= radius) {
             // Entry-point is within the radius - add it to the results.

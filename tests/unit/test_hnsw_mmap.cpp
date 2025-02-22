@@ -100,8 +100,8 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     size_t bs = 1;
 #define ASSERT_HNSW_BLOB_EQ(id, blob)                                                              \
     do {                                                                                           \
-        const void *v = hnsw_index->getDataByInternalId(id);                                       \
-        ASSERT_FALSE(memcmp(v, blob, sizeof(blob)));                                               \
+        auto v = hnsw_index->getDataByInternalId(id);                                              \
+        ASSERT_FALSE(memcmp(v.get(), blob, sizeof(blob)));                                         \
     } while (0)
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
@@ -166,7 +166,8 @@ TYPED_TEST(HNSWTest, emptyIndex) {
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
-    VecSimIndex *index = this->CreateNewIndex(params);
+    VecSimIndex *index;
+    ASSERT_NO_THROW(index = this->CreateNewIndex(params));
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     size_t curr_capacity = index->indexCapacity();

@@ -51,7 +51,7 @@ public:
         auto id = labelLookup.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
+        memcpy(vec.data(), this->getDataByInternalId(id).get(), this->dataSize);
         vectors_output.push_back(vec);
     }
 #endif
@@ -114,7 +114,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     }
     idType id = it->second;
 
-    return this->calcDistance(vector_data, this->getDataByInternalId(id));
+    return this->calcDistance(vector_data, this->getDataByInternalId(id).get());
 }
 
 template <typename DataType, typename DistType>
