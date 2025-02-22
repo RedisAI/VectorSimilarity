@@ -28,7 +28,8 @@ public:
     size_t size() const override { return count; }
 
     Status addElement(const void *element, size_t id) override {
-        auto key = as_slice(id);
+        idType id_ = id;
+        auto key = as_slice(id_);
         rocksdb::Slice value(static_cast<const char *>(element), element_bytes_count);
         auto status = db->Put(rocksdb::WriteOptions(), cf.get(), key, value);
         if (status.ok()) {
@@ -39,7 +40,8 @@ public:
     }
 
     const char *getElement(size_t id) const override {
-        auto key = as_slice(id);
+        idType id_ = id;
+        auto key = as_slice(id_);
         std::string value;
         auto status = db->Get(rocksdb::ReadOptions(), cf.get(), key, &value);
         if (status.ok()) {
@@ -53,13 +55,14 @@ public:
     }
 
     Status removeElement(size_t id) override {
-        auto key = as_slice(id);
+        idType id_ = id;
+        auto key = as_slice(id_);
         rocksdb::Status status = db->Delete(rocksdb::WriteOptions{}, cf.get(), key);
         if (status.ok()) {
             count--;
             return Status::OK;
         }
-        return Status::ERR;
+        return status.IsNotFound() ? Status::ID_NOT_EXIST : Status::ERR;
     }
 
     Status updateElement(size_t id, const void *element) override {
