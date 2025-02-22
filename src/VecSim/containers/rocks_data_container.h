@@ -29,8 +29,7 @@ public:
 
     Status addElement(const void *element, size_t id) override {
         rocksdb::Slice value(static_cast<const char *>(element), element_bytes_count);
-        auto status =
-            db->Put(rocksdb::WriteOptions(), cf.get(), std::to_string(id), value);
+        auto status = db->Put(rocksdb::WriteOptions(), cf.get(), std::to_string(id), value);
         if (status.ok()) {
             count++;
             return Status::OK;
@@ -40,8 +39,7 @@ public:
 
     const char *getElement(size_t id) const override {
         std::string value;
-        auto status =
-            db->Get(rocksdb::ReadOptions(), cf.get(), std::to_string(id), &value);
+        auto status = db->Get(rocksdb::ReadOptions(), cf.get(), std::to_string(id), &value);
         if (status.ok()) {
             // Copy and return the value
             assert(value.size() == element_bytes_count);

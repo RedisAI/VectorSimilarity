@@ -1609,9 +1609,14 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     options.error_if_exists = true;
     rocksdb::Status status;
     do {
+        // For parallel construction, retry until we get a unique name
         status = rocksdb::DB::Open(options, "/tmp/rocksHNSW." + std::to_string(std::rand()), &db_);
     } while (!status.ok());
-    db = std::shared_ptr<rocksdb::DB>(db_, [](rocksdb::DB *db) { db->Close(); delete db; });
+    // Set the db_ to be managed by a shared pointer, and close it upon destruction.
+    db = std::shared_ptr<rocksdb::DB>(db_, [](rocksdb::DB *db) {
+        db->Close();
+        delete db;
+    });
     delete this->vectors; // delete the default vectors container
     this->vectors = new RocksDataContainer(db, this->dataSize, this->allocator);
     graphData.setDB(db);
