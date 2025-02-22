@@ -48,7 +48,7 @@ public:
             // Copy and return the value
             assert(value.size() == element_bytes_count);
             auto result = new char[element_bytes_count];
-            memcpy(result, value.c_str(), element_bytes_count);
+            memcpy(result, value.data(), element_bytes_count);
             return result;
         }
         return nullptr;
