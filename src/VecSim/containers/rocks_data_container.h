@@ -3,7 +3,7 @@
 #include "VecSim/containers/raw_data_container_interface.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
-#include "rocksdb/slice.h"
+#include "VecSim/utils/slice.h"
 
 class RocksDataContainer : public RawDataContainer {
     std::shared_ptr<rocksdb::DB> db;
@@ -28,8 +28,9 @@ public:
     size_t size() const override { return count; }
 
     Status addElement(const void *element, size_t id) override {
+        auto key = as_slice(id);
         rocksdb::Slice value(static_cast<const char *>(element), element_bytes_count);
-        auto status = db->Put(rocksdb::WriteOptions(), cf.get(), std::to_string(id), value);
+        auto status = db->Put(rocksdb::WriteOptions(), cf.get(), key, value);
         if (status.ok()) {
             count++;
             return Status::OK;
@@ -38,8 +39,9 @@ public:
     }
 
     const char *getElement(size_t id) const override {
+        auto key = as_slice(id);
         std::string value;
-        auto status = db->Get(rocksdb::ReadOptions(), cf.get(), std::to_string(id), &value);
+        auto status = db->Get(rocksdb::ReadOptions(), cf.get(), key, &value);
         if (status.ok()) {
             // Copy and return the value
             assert(value.size() == element_bytes_count);
@@ -51,7 +53,7 @@ public:
     }
 
     Status removeElement(size_t id) override {
-        rocksdb::Slice key(std::to_string(id));
+        auto key = as_slice(id);
         rocksdb::Status status = db->Delete(rocksdb::WriteOptions{}, cf.get(), key);
         if (status.ok()) {
             count--;
