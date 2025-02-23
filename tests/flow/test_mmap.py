@@ -17,6 +17,7 @@ from numpy.testing import assert_allclose
 import numpy as np
 import time
 import json
+import psutil
 
 # To check file size at runtime look for the smallest fd that is marked as deleted
 # this is level 0 vectors file.
@@ -36,12 +37,20 @@ RUN_BM = True
 RUN_GT = False
 
 MAX_K = 100
-MMAP_ADVISE = "DONTNEED"
-ENABLE_LOGS = True
+MMAP_ADVISE = "MADV_DONTNEED"
+ENABLE_LOGS = False
+LOAD_ALL_VECTORS = True
+file_name_prefix = "multilang"
 all_vectors_file_name = f"{file_base_name}_emb.pik"
 only_vecs_file_name = f"multilang_n_{num_vectors_train}_emb"
 queries_file_name = f"multilang_q_{num_vectors_test}_emb.pik"
-ground_truth_file_name = f"{file_base_name}_gt.npy"
+
+def get_rss_memory_usage_bytes():
+    process = psutil.Process()
+    return process.memory_info().rss  # RSS in bytes
+
+def create_ground_truth_file_name(num_vectors, num_queries):
+    return f"{file_name_prefix}_n_{num_vectors}_q_{num_queries}_gt.npy"
 
 def open_pickled_file(filename, mode='rb'):
     with open(filename, 'rb') as f:
@@ -54,6 +63,8 @@ def open_pickled_file(filename, mode='rb'):
 
 queries_data = open_pickled_file(queries_file_name)
 dim = queries_data.shape[1]
+if LOAD_ALL_VECTORS:
+    vectors_data = open_pickled_file(all_vectors_file_name)
 
 def get_vector_file_count():
     splits = 0
@@ -107,24 +118,32 @@ def timed_populate_index(index, num_vectors, check_memory_interval=0):
 def build_grount_truth(num_vectors=num_vectors_train, num_queries=num_vectors_test, dim=1024):
     index = create_flat_index(dim, VecSimMetric_L2, VecSimType_FLOAT32)
     print("\nBuilding Flat index")
-    build_time = timed_populate_index(index, num_vectors)
+    # build_time = timed_populate_index(index, num_vectors)
+    start_time = time.time()  # Start timing
+    for i, vector in enumerate(vectors_data[:num_vectors]):
+        index.add_vector(vector, i)
+
+    end_time = time.time()
+    build_time = end_time - start_time
     print('Building time: ',f"T{build_time:.4f} seconds")
 
     print(f"Get {MAX_K} ground truth vectors for each query vector")
 
     knn_results = {}
     for i, query_vector in enumerate(queries_data[:num_queries]):
-        start_time = time.time()  # Start timing
         labels, distances = index.knn_query(query_vector, k=MAX_K)
-        end_time = time.time()  # End timing
-        print(f'query_{i} time: ',f"T{end_time - start_time:.4f} seconds")
         knn_results[i] = (labels, distances)
 
+    ground_truth_file_name = create_ground_truth_file_name(num_vectors, num_queries)
     np.save(ground_truth_file_name, knn_results, allow_pickle=True)
 
 if RUN_GT:
-    build_grount_truth()
-loaded_results = np.load(ground_truth_file_name, allow_pickle=True).item()
+    build_grount_truth(num_vectors=1_000_000)
+
+def load_gt(num_vectors, num_queries):
+    ground_truth_file_name = create_ground_truth_file_name(num_vectors, num_queries)
+    print(f"loading {ground_truth_file_name}")
+    return np.load(ground_truth_file_name, allow_pickle=True).item()
 
 def write_result_to_file(result, filename="results.json", override=False):
     print(f"writing results to file {filename}")
@@ -136,7 +155,7 @@ def write_result_to_file(result, filename="results.json", override=False):
     except Exception as e:
         print(f"Failed to write result to file: {e}")
 
-def bm_query(index, k, efR, num_queries=num_vectors_test):
+def bm_query(index, k, efR, gt_results, num_queries=num_vectors_test):
     print(f"\nRunning {num_queries} queries benchmark with params: efR: {efR}, k: {k}")
     index.set_ef(efR)
     total_query_time = 0
@@ -149,7 +168,7 @@ def bm_query(index, k, efR, num_queries=num_vectors_test):
         total_query_time += end_time - start_time
 
         # compute recall
-        gt_labels, gt_distances = loaded_results[i]
+        gt_labels, gt_distances = gt_results[i]
         recall = set(hnsw_labels.flatten()).intersection(set(gt_labels.flatten()))
         # print(f"hnsw_labels.flatten(): {hnsw_labels.flatten()}")
         # print(f"gt_labels.flatten(): {gt_labels.flatten()}")
@@ -186,10 +205,26 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
     if ENABLE_LOGS == False: index.disable_logs()
 
     index_block_size = index.index_block_size()
-    print(f"\nBuilding index of size {num_vectors:,} with params: ", f"M: {M}, efC: {efC}, index_block_size: {index_block_size}\n", flush=True)
+    print(f"\nBuilding index of size {num_vectors:,} with params: ", f"M: {M}, efC: {efC}, index_block_size: {index_block_size}, madvise: {MMAP_ADVISE} \n", flush=True)
 
-    check_memory_interval = num_vectors // 10
-    build_time = timed_populate_index(index, num_vectors, check_memory_interval=check_memory_interval)
+    check_memory_interval = num_vectors // 50
+
+    if LOAD_ALL_VECTORS == False: open_pickled_file(all_vectors_file_name)
+    build_time = 0
+    start_time = time.time()  # Start timing
+    for i, vector in enumerate(vectors_data[:num_vectors]):
+        index.add_vector(vector, i)
+
+        if i % check_memory_interval == 0:
+            end_time = time.time()
+            build_time += end_time - start_time
+            print(f"Building {i} vectors time: ",f"T{build_time:.4f} seconds")
+            curr_mem = index.index_memory()
+            print(f"Current index memory usage: {curr_mem} bytes, {(curr_mem / 1024 / 1024):.4f} MB, {(index.index_memory() / 1024 / 1024 / 1024):.4f} GB")
+
+            proc_rss = get_rss_memory_usage_bytes()
+            print(f"Current process RSS memory usage: {proc_rss} bytes, {(proc_rss / 1024 / 1024):.4f} MB, {(proc_rss / 1024 / 1024 / 1024):.4f} GB")
+            start_time = time.time()
 
     print('\nBuilding time: ',f"T{build_time:.4f} seconds, {(build_time / 60):.4f} m, {(build_time / 60 / 60):.4f} h\n")
     index_max_level = index.index_max_level()
@@ -201,11 +236,14 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
     random_query_index = np.random.randint(0, num_vectors)
 
     # query with a vector from the dataset
-    query_data = index.get_vector(random_query_index)[0]
-    print("sanity query: ", query_data)
+    index_query_data = index.get_vector(random_query_index)[0]
+    query_data = vectors_data[random_query_index]
+    assert np.array_equal(query_data, index_query_data)
+    print("query_data is equal to index_query_data")
 
     # expect to get the same vector back with distance of 0
     labels, distances = index.knn_query(query_data, k=1)
+    print(f"testing vector: {random_query_index}")
     print("labels: ", labels)
     print("distances: ", distances)
     sanity_checks = {
@@ -248,9 +286,10 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
         "failure_info": failure_info,
     }
 
+    gt_results = load_gt(num_vectors, num_queries)
     knn_bm_results = []
     for k, efR in Ks_efR:
-        queries_reslts = bm_query(index, k=k, efR=efR)
+        queries_reslts = bm_query(index, k=k, efR=efR, gt_results=gt_results)
         knn_bm_results.append(queries_reslts)
 
     result = {
@@ -278,7 +317,7 @@ def bm():
             if k * factor <= max_efR:
                 Ks_efR.append((k, k * factor))
 
-    for M, efC in Ms_efC:
+    for M, efC in Ms_efC[:1]:
         bm_test_case(M=M, efC=efC, Ks_efR=Ks_efR)
 
 def sanity_vecsim_mmap():
