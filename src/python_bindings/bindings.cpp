@@ -226,6 +226,31 @@ public:
         }
     }
 
+    size_t getMaxLevel() const {
+        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+        if (type == VecSimType_FLOAT32) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_FLOAT64) {
+            auto *hnsw = dynamic_cast<HNSWIndex<double, double> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_BFLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<bfloat16, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_FLOAT16) {
+            auto *hnsw = dynamic_cast<HNSWIndex<float16, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_INT8) {
+            auto *hnsw = dynamic_cast<HNSWIndex<int8_t, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else if (type == VecSimType_UINT8) {
+            auto *hnsw = dynamic_cast<HNSWIndex<uint8_t, float> *>(index.get());
+            return hnsw->getMaxLevel();
+        } else {
+            throw std::runtime_error("Invalid index data type");
+        }
+    }
+
     void disableLogCallback() { VecSim_SetLogCallbackFunction(nullptr); }
 
     void resetLogCallback() { VecSim_ResetLogCallbackFunction(); }
@@ -632,6 +657,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
+        .def("index_max_level", &PyVecSimIndex::getMaxLevel)
         .def("get_vector", &PyVecSimIndex::getVector)
         .def("disable_logs", &PyVecSimIndex::disableLogCallback)
         .def("reset_logs", &PyVecSimIndex::resetLogCallback);

@@ -204,7 +204,7 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
 
     if ENABLE_LOGS == False: index.disable_logs()
 
-    index_block_size = index.index_block_size()
+    index_block_size = 'None'
     print(f"\nBuilding index of size {num_vectors:,} with params: ", f"M: {M}, efC: {efC}, index_block_size: {index_block_size}, madvise: {MMAP_ADVISE} \n", flush=True)
 
     check_memory_interval = num_vectors // 50
