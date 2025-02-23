@@ -166,8 +166,7 @@ TYPED_TEST(HNSWTest, emptyIndex) {
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
-    VecSimIndex *index;
-    ASSERT_NO_THROW(index = this->CreateNewIndex(params));
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     size_t curr_capacity = index->indexCapacity();
@@ -1945,7 +1944,7 @@ TYPED_TEST(HNSWTest, getElementNeighbors) {
         int **neighbors_output;
         VecSimDebug_GetElementNeighborsInHNSWGraph(index, id, &neighbors_output);
         for (size_t l = 0; l <= hnsw_index->getElementMaxLevel(id); l++) {
-            ElementLevelData level_data = hnsw_index->getElementLevelData(id, l);
+            const ElementLevelData level_data = hnsw_index->getElementLevelData(id, l);
             auto &neighbours = neighbors_output[l];
             ASSERT_EQ(neighbours[0], level_data.getNumLinks());
             for (size_t j = 1; j <= neighbours[0]; j++) {
