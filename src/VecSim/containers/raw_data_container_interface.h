@@ -58,9 +58,12 @@ struct RawDataContainer {
     virtual std::unique_ptr<Iterator> getIterator() const = 0;
 
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
     /**
      * Save the raw data of all elements in the container to the output stream.
      */
     virtual void saveVectorsData(std::ostream &output) const = 0;
+#endif
 #endif
 };
