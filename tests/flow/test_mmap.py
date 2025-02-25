@@ -47,7 +47,8 @@ queries_file_name = f"multilang_q_{num_vectors_test}_emb.pik"
 
 classic_print = print
 def print(*args, **kwargs):
-    classic_print(f'[{time.time()}]', *args, **kwargs, flush=True)
+    kwargs['flush'] = True
+    classic_print(f'[{time.time()}]', *args, **kwargs)
 
 def get_rss_memory_usage_bytes():
     process = psutil.Process()
