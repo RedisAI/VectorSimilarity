@@ -37,12 +37,12 @@
          return ret_dist_func;
      }
  
- #ifdef CPU_FEATURES_ARCH_AARCH64
-     if (dim % 4){
-         *alignment = 4 * sizeof(float); // handles 16 floats
-     }
-     return Choose_FP32_IP_implementation_NEONF(dim);
- #endif
+//  #ifdef CPU_FEATURES_ARCH_AARCH64
+//      if (dim % 4){
+//          *alignment = 4 * sizeof(float); // handles 16 floats
+//      }
+//      return Choose_FP32_IP_implementation_NEONF(dim);
+//  #endif
  
  #ifdef CPU_FEATURES_ARCH_X86_64
      auto features = (arch_opt == nullptr)
