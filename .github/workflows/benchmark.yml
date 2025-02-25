@@ -44,12 +44,17 @@ jobs:
           # - architecture: x86_64
           #   instance-type: r7i.xlarge
           #   ami-id: ami-0e777a15668a7e527
+          #   region: eu-west-1
           - architecture: arm64
             instance-type: t4g.xlarge     # Graviton2
             ami-id: ami-0fe825d0b661d4950
+            region: eu-west-1
           # - architecture: arm64
           #   instance-type: i8g.xlarge     # Graviton4
           #   ami-id: ami-0485c8c0dadf51233
+          #   region: eu-central-1
+
+
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
@@ -59,7 +64,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ matrix.region }}
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2
