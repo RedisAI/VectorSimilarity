@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        architecture: [x86_64, arm64]
+        architecture: [arm64]
         include:
           # - architecture: x86_64
           #   instance-type: r7i.xlarge
