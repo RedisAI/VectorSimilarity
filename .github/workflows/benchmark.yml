@@ -52,6 +52,7 @@ jobs:
             instance-type: i8g.xlarge     # Graviton4
             ami-id: ami-0db49c82192a20925
             region: us-west-2
+            subnet-id: ubnet-c928cb94
 
 
     outputs:
@@ -67,13 +68,15 @@ jobs:
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2
+        env:
+          SUBNET_ID: ${{ matrix.subnet-id != '' && matrix.subnet-id || secrets.AWS_EC2_SUBNET_ID }}
         with:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
-          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
+          subnet-id: ${{ env.SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
