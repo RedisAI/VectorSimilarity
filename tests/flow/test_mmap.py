@@ -108,12 +108,12 @@ def timed_populate_index(index, num_vectors, check_memory_interval=0):
                 if total_vectors % check_memory_interval == 0:
                     end_time = time.time()
                     build_time += end_time - start_time
-                    print(f"Building {total_vectors} vectors time: ",f"T{build_time:.4f} seconds")
+                    print(f"Building {total_vectors} vectors time: ", f"{build_time:.4f} seconds")
                     curr_mem = index.index_memory()
                     print(f"Current memory usage: {curr_mem} bytes, {(curr_mem / 1024 / 1024):.4f} MB, {(index.index_memory() / 1024 / 1024 / 1024):.4f} GB")
             end_time = time.time()  # End timing
             build_time += end_time - start_time
-            print(f"Batch {i}: vectors: {len_vectors_data} took: T{end_time - start_time:.4f} seconds")
+            print(f"Batch {i}: vectors: {len_vectors_data} took: {(end_time - start_time):.4f} seconds")
 
             print(f"printing a vec: {vectors_data[0]}")
 
@@ -130,7 +130,7 @@ def build_grount_truth(num_vectors=num_vectors_train, num_queries=num_vectors_te
 
     end_time = time.time()
     build_time = end_time - start_time
-    print('Building time: ',f"T{build_time:.4f} seconds")
+    print('Building time: ',f"{build_time:.4f} seconds")
 
     print(f"Get {MAX_K} ground truth vectors for each query vector")
 
@@ -223,7 +223,7 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
         if i % check_memory_interval == 0:
             end_time = time.time()
             build_time += end_time - start_time
-            print(f"Building {i} vectors time: ",f"T{build_time:.4f} seconds")
+            print(f"Building {i} vectors time: ", f"{build_time:.4f} seconds")
             curr_mem = index.index_memory()
             print(f"Current index memory usage: {curr_mem} bytes, {(curr_mem / 1024 / 1024):.4f} MB, {(index.index_memory() / 1024 / 1024 / 1024):.4f} GB")
 
@@ -231,7 +231,7 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
             print(f"Current process RSS memory usage: {proc_rss} bytes, {(proc_rss / 1024 / 1024):.4f} MB, {(proc_rss / 1024 / 1024 / 1024):.4f} GB")
             start_time = time.time()
 
-    print('\nBuilding time: ',f"T{build_time:.4f} seconds, {(build_time / 60):.4f} m, {(build_time / 60 / 60):.4f} h\n")
+    print('\nBuilding time: ', f"{build_time:.4f} seconds, {(build_time / 60):.4f} m, {(build_time / 60 / 60):.4f} h\n")
     index_max_level = index.index_max_level()
     print(f"index_max_level: {index_max_level}")
 
