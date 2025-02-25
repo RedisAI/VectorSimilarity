@@ -52,7 +52,7 @@ jobs:
             instance-type: i8g.xlarge     # Graviton4
             ami-id: ami-0db49c82192a20925
             region: us-west-2
-            subnet-id: subnet-c928cb94 
+            subnet-id: subnet-1b647462
 
 
     outputs:
@@ -76,7 +76,7 @@ jobs:
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
-          subnet-id: ${{ env.SUBNET_ID }}
+          subnet-id: 
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
