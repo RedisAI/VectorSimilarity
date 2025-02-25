@@ -118,6 +118,7 @@ struct GraphData : public VecsimBaseObject {
     vecsim_stl::vector<ElementInMemoryData> InMemoryElementsData; // ElementInMemoryData elements
     size_t M0;                                                    // size of each element in level0
     size_t M;
+    rocksdb::WriteOptions write_options;
 
     GraphData(size_t M0, size_t M, std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), InMemoryElementsData(allocator), M0(M0), M(M) {}
@@ -130,6 +131,7 @@ struct GraphData : public VecsimBaseObject {
             throw std::runtime_error("VecSim create column family 'graph' error");
         }
         cf.reset(cf_);
+        write_options.disableWAL = true;
     };
 
     ~GraphData() = default;
@@ -170,7 +172,7 @@ inline ElementLevelData::~ElementLevelData() {
     if (dirty) {
         rocksdb::Slice key = as_slice(this->key);
         rocksdb::Slice value = as_slice(links, numLinks);
-        graph->db->Put(rocksdb::WriteOptions(), graph->cf.get(), key, value);
+        graph->db->Put(graph->write_options, graph->cf.get(), key, value);
     }
     delete[] links;
 }

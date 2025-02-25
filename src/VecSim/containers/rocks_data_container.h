@@ -10,6 +10,7 @@ class RocksDataContainer : public RawDataContainer {
     std::unique_ptr<rocksdb::ColumnFamilyHandle> cf;
     size_t element_bytes_count;
     size_t count;
+    rocksdb::WriteOptions write_options;
 
 public:
     RocksDataContainer(std::shared_ptr<rocksdb::DB> db_, size_t elementBytesCount,
@@ -22,6 +23,7 @@ public:
             throw std::runtime_error("VecSim create column family 'vectors' error");
         }
         cf.reset(cf_);
+        write_options.disableWAL = true;
     }
     ~RocksDataContainer() override = default;
 
@@ -31,7 +33,7 @@ public:
         idType id_ = id;
         auto key = as_slice(id_);
         rocksdb::Slice value(static_cast<const char *>(element), element_bytes_count);
-        auto status = db->Put(rocksdb::WriteOptions(), cf.get(), key, value);
+        auto status = db->Put(write_options, cf.get(), key, value);
         if (status.ok()) {
             count++;
             return Status::OK;
@@ -57,7 +59,7 @@ public:
     Status removeElement(size_t id) override {
         idType id_ = id;
         auto key = as_slice(id_);
-        rocksdb::Status status = db->Delete(rocksdb::WriteOptions{}, cf.get(), key);
+        rocksdb::Status status = db->Delete(write_options, cf.get(), key);
         if (status.ok()) {
             count--;
             return Status::OK;

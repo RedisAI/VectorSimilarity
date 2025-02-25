@@ -1607,6 +1607,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     rocksdb::Options options;
     options.create_if_missing = true;
     options.error_if_exists = true;
+    options.use_direct_reads = true;
+    // options.use_direct_io_for_flush_and_compaction = true;
     rocksdb::Status status;
     do {
         // For parallel construction, retry until we get a unique name
