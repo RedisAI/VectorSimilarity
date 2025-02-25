@@ -28,7 +28,12 @@ if(FP64_TESTS)
 	add_definitions(-DFP64_TESTS)
 endif()
 
-include(${root}/cmake/x86_64InstructionFlags.cmake)
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
+	message(STATUS "Enabling Arm Performance Libraries integration")
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
+else()
+	include(${root}/cmake/x86_64InstructionFlags.cmake)
+endif()
 
 add_executable(test_hnsw ../utils/mock_thread_pool.cpp test_hnsw.cpp test_hnsw_multi.cpp test_hnsw_tiered.cpp unit_test_utils.cpp)
 add_executable(test_hnsw_parallel test_hnsw_parallel.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)

@@ -7,11 +7,10 @@
 
 class BM_VecSimSpaces_FP32 : public BM_VecSimSpaces<float> {};
 
-#ifdef CPU_FEATURES_ARCH_AARCH64
-
-bool neon_supported = true;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, NEONF, 16, neon_supported);
-
+#ifdef OPT_NEON
+cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
+bool is_supported = opt.fphp;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, NEONF, 16, is_supported);
 #endif // AARCH64
 
 #ifdef CPU_FEATURES_ARCH_X86_64

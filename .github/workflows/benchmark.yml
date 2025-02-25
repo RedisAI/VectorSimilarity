@@ -37,6 +37,19 @@ jobs:
   start-runner:
     name: Start self-hosted EC2 runner
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, arm64]
+        include:
+          # - architecture: x86_64
+          #   instance-type: r7i.xlarge
+          #   ami-id: ami-0ba430d4b7b64de57  
+          - architecture: arm64
+            instance-type: c7g.xlarge      # Graviton2
+            ami-id: ami-0485c8c0dadf51233  
+          - architecture: arm64
+            instance-type: i8g.xlarge     # Graviton4
+            ami-id: ami-0485c8c0dadf51233
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
@@ -54,10 +67,11 @@ jobs:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 128GB Storage AMI
-          ec2-image-id: ami-0ba430d4b7b64de57
-          ec2-instance-type: r7i.xlarge
+          ec2-image-id: ${{ matrix.ami-id }}
+          ec2-instance-type: ${{ matrix.instance-type }}
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
+          label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
   benchmark:
     name: Run the benchmarks on the runner
@@ -74,6 +88,7 @@ jobs:
           printf "Runner lsmem:\n$(lsmem)\n"
           printf "Runner nproc:\n$(nproc)\n"
           printf "Runner uname:\n$(uname -a)\n"
+          printf "Runner arch:\n$(arch)\n"
 
       - name: Install benchmark dependencies
         run: |
@@ -82,24 +97,22 @@ jobs:
              pip3 install --upgrade pip PyYAML setuptools redisbench-admin
              pip3 install -r requirements.txt
 
-      # - name: stress test
-      #   run: |
-      #     sudo apt install stress-ng -qqy
-      #     uptime
-      #     stress-ng -c 1 --timeout 60s --metrics-brief
-      #     uptime
-      #     stress-ng --stream 1 -t 60 --metrics-brief
-      #     uptime
-      #     stress-ng --ipsec-mb=1 -t 60 --metrics-brief
-      #     uptime
-
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
         run: ./tests/benchmark/bm_files.sh ${{ inputs.setup }}
+
       - name: Benchmark
+        env:
+          ARCH: ${{ matrix.architecture }}
         timeout-minutes: 120
-        run: make benchmark BM_FILTER=${{ inputs.setup }}
+        run: |
+          if [[ $ARCH == "aarch64" ]]; then
+            source /usr/share/modules/init/bash
+            export MODULEPATH=$MODULEPATH:/opt/arm/modulefiles
+            module load armpl/24.10.0_gcc
+          fi
+          make benchmark BM_FILTER=${{ inputs.setup }}
 
       - name: Collect results
         run: |
