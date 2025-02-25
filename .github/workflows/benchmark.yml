@@ -76,7 +76,7 @@ jobs:
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
-          subnet-id: 
+          subnet-id: ${{ env.SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
