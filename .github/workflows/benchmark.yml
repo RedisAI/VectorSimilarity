@@ -43,7 +43,7 @@ jobs:
         include:
           # - architecture: x86_64
           #   instance-type: r7i.xlarge
-          #   ami-id: ami-0ba430d4b7b64de57  
+          #   ami-id: ami-062b37d89f25c958f
           - architecture: arm64
             instance-type: c7g.xlarge      # Graviton2
             ami-id: ami-0485c8c0dadf51233  
