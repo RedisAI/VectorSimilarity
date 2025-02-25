@@ -46,7 +46,7 @@ jobs:
           #   ami-id: ami-0e777a15668a7e527
           - architecture: arm64
             instance-type: c7g.xlarge      # Graviton2
-            ami-id: ami-0fe825d0b661d4950
+            ami-id: ami-062b37d89f25c958f
           # - architecture: arm64
           #   instance-type: i8g.xlarge     # Graviton4
           #   ami-id: ami-0485c8c0dadf51233
