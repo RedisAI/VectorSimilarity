@@ -45,7 +45,7 @@ jobs:
           #   ami-id: ami-0ba430d4b7b64de57
           #   region: eu-west-1
           - architecture: arm64
-            instance-type: t4g.xlarge     # Graviton2
+            instance-type: c6g.xlarge     # Graviton2
             ami-id: ami-0d8e10b4bd5d65c57
             region: eu-west-1
           # - architecture: arm64
