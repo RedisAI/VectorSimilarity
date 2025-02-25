@@ -24,7 +24,8 @@ then
     wget https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_24.10/arm-performance-libraries_24.10_deb_gcc.tar
     tar -xf arm-performance-libraries_24.10_deb_gcc.tar
     sudo ./arm-performance-libraries_24.10_deb/arm-performance-libraries_24.10_deb.sh --accept
-    sudo apt install environment-modules
+    sudo apt update
+    sudo apt-get install -y environment-modules
 fi
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
