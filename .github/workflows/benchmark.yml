@@ -50,8 +50,8 @@ jobs:
           #   region: us-west-1
           - architecture: arm64
             instance-type: i8g.xlarge     # Graviton4
-            ami-id: ami-0d8e10b4bd5d65c57
-            region: us-west-1
+            ami-id: ami-0db49c82192a20925
+            region: us-west-2
 
 
     outputs:
