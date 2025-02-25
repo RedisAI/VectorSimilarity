@@ -45,6 +45,10 @@ all_vectors_file_name = f"{file_base_name}_emb.pik"
 only_vecs_file_name = f"multilang_n_{num_vectors_train}_emb"
 queries_file_name = f"multilang_q_{num_vectors_test}_emb.pik"
 
+classic_print = print
+def print(*args, **kwargs):
+    classic_print(f'[{time.time()}]', *args, **kwargs, flush=True)
+
 def get_rss_memory_usage_bytes():
     process = psutil.Process()
     return process.memory_info().rss  # RSS in bytes
