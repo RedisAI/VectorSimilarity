@@ -62,9 +62,7 @@ jobs:
     steps:
       - name: to a file
         run: |
-          echo "${{ secrets.AWS_EC2_SUBNET_ID  }}" > region_file
-          echo "${{ secrets.AWS_EC2_SECURITY_GROUP_ID  }}" >> region_file
-          cat region_file
+          echo  ${{secrets.AWS_EC2_SUBNET_ID}} | sed 's/./& /g'
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
