@@ -50,7 +50,7 @@ jobs:
             region: us-west-2
             subnet-id: subnet-880013ed
             security-group-id: sg-8693a7fe
-    uses: ./.github/workflows/runner-bench-stop.yml
+    uses: ./.github/workflows/benchmark-runner.yml
     with:
       setup: ${{ inputs.setup }}
       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
