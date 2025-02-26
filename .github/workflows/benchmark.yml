@@ -44,16 +44,18 @@ jobs:
           #   instance-type: r7i.xlarge
           #   ami-id: ami-0ba430d4b7b64de57
           #   region: eu-west-1
-          # - architecture: arm64
-          #   instance-type: c6g.xlarge     # Graviton2
-          #   ami-id: ami-0d8e10b4bd5d65c57
-          #   region: us-west-1
           - architecture: arm64
-            instance-type: i8g.xlarge     # Graviton4
-            ami-id: ami-0375de6ea0af17f87
-            region: us-west-2
-            subnet-id: subnet-029ef25b16ac5f3f5
-            security-group-id: sg-049413187d9166b67
+            instance-type: c6g.xlarge     # Graviton2
+            ami-id: ami-0d8e10b4bd5d65c57
+            region: us-west-1
+            subnet-id: subnet-3060a556
+            security-group-id: sg-0d2e7a6c2a71acfac
+          # - architecture: arm64
+          #   instance-type: i8g.xlarge     # Graviton4
+          #   ami-id: ami-0375de6ea0af17f87
+          #   region: us-west-2
+          #   subnet-id: subnet-029ef25b16ac5f3f5
+          #   security-group-id: sg-049413187d9166b67
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
