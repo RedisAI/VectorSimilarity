@@ -35,31 +35,37 @@ on:
 
 jobs:
   run-all:
+    name: Start self-hosted EC2 runner
+    uses: ./.github/workflows/benchmark-runner.yml
+    secrets: inherit
     strategy:
       matrix:
         include:
-          # - architecture: arm64
-          #   instance-type: c6g.xlarge
-          #   ami-id: ami-0375de6ea0af17f87
-          #   region: us-west-2
-          #   subnet-id: subnet-880013ed
-          #   security-group-id: sg-8693a7fe
+          # - architecture: x86_64
+          #   instance-type: r7i.xlarge
+          #   ami-id: ami-0ba430d4b7b64de57
+          #   region: eu-west-1
           - architecture: arm64
-            instance-type: i8g.xlarge
+            instance-type: c6g.xlarge     # Graviton2
             ami-id: ami-0375de6ea0af17f87
             region: us-west-2
             subnet-id: subnet-880013ed
             security-group-id: sg-8693a7fe
-    uses: ./.github/workflows/benchmark-runner.yml
+          - architecture: arm64
+            instance-type: i8g.xlarge     # Graviton4
+            ami-id: ami-0375de6ea0af17f87
+            region: us-west-2
+            subnet-id: subnet-880013ed
+            security-group-id: sg-8693a7fe
     with:
       setup: ${{ inputs.setup }}
       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       aws-region: ${{ matrix.region }}
       architecture: ${{ matrix.architecture }}
-      instance-type: ${{ matrix.instance-type }}
-      ami-id: ${{ matrix.ami-id }}
-      subnet-id: ${{ matrix.subnet-id }}
-      security-group-id: ${{ matrix.security-group-id }}
-      github-runner-label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
+      instance-type: ${{ matrix['instance-type'] }}
+      ami-id: ${{ matrix['ami-id'] }}
+      subnet-id: ${{ matrix['subnet-id'] }}
+      security-group-id: ${{ matrix['security-group-id'] }}
+      github-runner-label: ${{ matrix.architecture }}-${{ matrix['instance-type'] }}-${{ github.run_id }}
       github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
