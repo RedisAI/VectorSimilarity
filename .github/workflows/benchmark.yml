@@ -53,7 +53,7 @@ jobs:
             ami-id: ami-0375de6ea0af17f87
             region: us-west-2
             subnet-id: subnet-05d1e8e3bb0cd17fc
-            security-group-id: sgr-09bbfe34e1b783bac
+            security-group-id: sg-049413187d9166b67
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
@@ -77,7 +77,7 @@ jobs:
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
           subnet-id: ${{ env.SUBNET_ID }}
-          security-group-ids: ${{ env.SECURITY_GROUP_ID}}
+          security-group-id: ${{ env.SECURITY_GROUP_ID}}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
   benchmark:
