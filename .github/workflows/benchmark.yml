@@ -52,7 +52,7 @@ jobs:
             instance-type: i8g.xlarge     # Graviton4
             ami-id: ami-0db49c82192a20925
             region: us-west-2
-            subnet-id: vpc-3ebb3c46
+            subnet-id: subnet-c928cb94
 
 
     outputs:
