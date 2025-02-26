@@ -52,7 +52,7 @@ jobs:
             instance-type: i8g.xlarge     # Graviton4
             ami-id: ami-0375de6ea0af17f87
             region: us-west-2
-            subnet-id: subnet-05d1e8e3bb0cd17fc
+            subnet-id: subnet-029ef25b16ac5f3f5
             security-group-id: sg-049413187d9166b67
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
