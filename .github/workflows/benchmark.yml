@@ -77,7 +77,7 @@ jobs:
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
           subnet-id: ${{ env.SUBNET_ID }}
-          security-group-id: ${{ env.SECURITY_GROUP_ID}}
+          security-group-ids: ${{ env.SECURITY_GROUP_ID}}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
   benchmark:
