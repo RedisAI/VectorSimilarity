@@ -54,8 +54,8 @@ jobs:
             instance-type: i8g.xlarge     # Graviton4
             ami-id: ami-0375de6ea0af17f87
             region: us-west-2
-            subnet-id: ""
-            security-group-id: ""
+            subnet-id: subnet-880013ed
+            security-group-id: sg-8693a7fe
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
@@ -78,8 +78,8 @@ jobs:
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
-          subnet-id: ""
-          security-group-id: ""
+          subnet-id: ${{ env.SUBNET_ID }}
+          security-group-id: ${{ env.SECURITY_GROUP_ID}}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
   benchmark:
