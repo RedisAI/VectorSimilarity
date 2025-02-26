@@ -53,6 +53,7 @@ jobs:
             ami-id: ami-0375de6ea0af17f87
             region: us-west-2
             subnet-id: subnet-c928cb94
+            security-group-id: sg-0d50d7cfc24b4e8b6
 
 
     outputs:
@@ -70,12 +71,15 @@ jobs:
         uses: machulav/ec2-github-runner@v2
         env:
           SUBNET_ID: ${{ matrix.subnet-id != '' && matrix.subnet-id || secrets.AWS_EC2_SUBNET_ID }}
+          SECURITY_GROUP_ID: ${{ matrix.security-group-id != '' && matrix.security-group-id || secrets.AWS_EC2_SECURITY_GROUP_ID }}
         with:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ${{ matrix.ami-id }}
           ec2-instance-type: ${{ matrix.instance-type }}
+          subnet-id: ${{ env.SUBNET_ID }}
+          security-group-id: ${{ env.SECURITY_GROUP_ID}}
           label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
 
   benchmark:
