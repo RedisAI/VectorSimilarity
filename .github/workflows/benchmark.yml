@@ -47,7 +47,7 @@ jobs:
           - architecture: arm64
             instance-type: c6g.xlarge     # Graviton2
             ami-id: ami-0375de6ea0af17f87
-            region: us-west-1
+            region: us-west-2
             subnet-id: subnet-880013ed
             security-group-id: sg-8693a7fe
           - architecture: arm64
