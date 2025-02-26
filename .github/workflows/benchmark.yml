@@ -50,7 +50,7 @@ jobs:
           #   region: us-west-1
           - architecture: arm64
             instance-type: i8g.xlarge     # Graviton4
-            ami-id: ami-0db49c82192a20925
+            ami-id: ami-0375de6ea0af17f87
             region: us-west-2
             subnet-id: subnet-c928cb94
 
