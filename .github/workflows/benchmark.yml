@@ -47,7 +47,7 @@ on:
           default: 'all'
 
 jobs:
-  generate_matrix:
+  prepare_runner_configurations:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -61,7 +61,7 @@ jobs:
             "include": [
               {
                 "architecture": "arm64",
-                "instance-type": "c6g.xlarge",
+                "instance-type": "t4g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
               {
