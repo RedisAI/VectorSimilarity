@@ -8,6 +8,7 @@ on:
         type: string
         required: false
         default: 'all'
+        description: 'Run only on specific architecture'
   workflow_dispatch:
     inputs:
       setup:
@@ -44,7 +45,6 @@ on:
             - x86_64
           description: 'Run only on specific architecture'
           default: 'all'
-      
 
 jobs:
   run-all:
@@ -54,10 +54,12 @@ jobs:
     strategy:
       matrix:
         include:
-          # - architecture: x86_64
-          #   instance-type: r7i.xlarge
-          #   ami-id: ami-0ba430d4b7b64de57
-          #   region: eu-west-1
+          - architecture: x86_64
+            instance-type: r7i.xlarge
+            ami-id: ""
+            region: ${{ secrets.AWS_REGION }}
+            subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
+            security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
           - architecture: arm64
             instance-type: c6g.xlarge     # Graviton2
             ami-id: ami-0375de6ea0af17f87
@@ -80,4 +82,3 @@ jobs:
       subnet-id: ${{ matrix.subnet-id }}
       security-group-id: ${{ matrix.security-group-id }}
       github-runner-label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
-
