@@ -4,6 +4,10 @@ on:
       setup:
         type: string
         required: true
+      architecture:
+        type: string
+        required: false
+        default: 'all'
   workflow_dispatch:
     inputs:
       setup:
@@ -32,6 +36,15 @@ on:
           - bm-spaces
         description: 'Benchmarks set to run'
         default: benchmarks-all
+      architecture:
+          type: choice
+          options:
+            - all
+            - arm64
+            - x86_64
+          description: 'Run only on specific architecture'
+          default: 'all'
+      
 
 jobs:
   run-all:
@@ -57,6 +70,7 @@ jobs:
             region: us-west-2
             subnet-id: subnet-880013ed
             security-group-id: sg-8693a7fe
+    if: ${{ inputs.architecture == 'all' || inputs.architecture == github.event.inputs.architecture }}
     with:
       setup: ${{ inputs.setup }}
       aws-region: ${{ matrix.region }}
