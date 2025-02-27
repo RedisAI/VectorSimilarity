@@ -59,13 +59,11 @@ jobs:
             security-group-id: sg-8693a7fe
     with:
       setup: ${{ inputs.setup }}
-      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       aws-region: ${{ matrix.region }}
       architecture: ${{ matrix.architecture }}
-      instance-type: ${{ matrix['instance-type'] }}
-      ami-id: ${{ matrix['ami-id'] }}
-      subnet-id: ${{ matrix['subnet-id'] }}
-      security-group-id: ${{ matrix['security-group-id'] }}
-      github-runner-label: ${{ matrix.architecture }}-${{ matrix['instance-type'] }}-${{ github.run_id }}
-      github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+      instance-type: ${{ matrix.instance-type }}
+      ami-id: ${{ matrix.ami-id }}
+      subnet-id: ${{ matrix.subnet-id }}
+      security-group-id: ${{ matrix.security-group-id }}
+      github-runner-label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
+
