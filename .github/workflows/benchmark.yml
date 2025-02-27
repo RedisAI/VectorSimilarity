@@ -94,11 +94,11 @@ jobs:
 
   run_benchmarks:
     name: Run ${{ matrix.architecture }} benchmarks
-    needs: generate_matrix
+    needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
     secrets: inherit
     strategy:
-      matrix: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
     with:
       setup: ${{ inputs.setup }}
       aws-region: "us-west-2"
