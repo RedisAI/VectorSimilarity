@@ -61,7 +61,7 @@ jobs:
             "include": [
               {
                 "architecture": "arm64",
-                "instance-type": "t4g.xlarge",
+                "instance-type": "r6g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
               {
