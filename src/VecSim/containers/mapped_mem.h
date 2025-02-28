@@ -2,6 +2,7 @@
 #include <sys/param.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <cassert>
 #include "VecSim/vec_sim_interface.h"
 
 struct MappedMem {
@@ -9,6 +10,8 @@ struct MappedMem {
         // create a temporary file
         fd = open(".", O_TMPFILE | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
         if (fd == -1) {
+            VecSimIndexInterface::log_external("debug", "Failed to open file with error: %s", std::strerror(errno));
+
             throw std::runtime_error("Failed to open file " + std::string("with error: ") +
                                      std::strerror(errno));
         }
@@ -45,6 +48,11 @@ struct MappedMem {
         return *this;
     }
 
+    ~MappedMem() {
+        if (fd != -1) {
+            close(fd);
+        }
+    }
     void destroy(size_t element_size_bytes, size_t block_size_bytes) {
         if (!curr_size)
             return;
@@ -55,10 +63,6 @@ struct MappedMem {
         munmap(mapped_addr, fileSize);
     }
 
-    ~MappedMem() {
-        if (fd != -1)
-            close(fd);
-    }
 
     void appendElement(const void *element, size_t element_size_bytes) {
         // write element to the end of the file
@@ -123,7 +127,7 @@ struct MappedMem {
                 }
                 mapped_addr = remmapd_addr;
             } else { // first initialization
-                int mmap_flags = MAP_PRIVATE;
+                int mmap_flags = MAP_SHARED;
 
                 // map memory
                 mapped_addr = static_cast<char *>(
@@ -137,14 +141,22 @@ struct MappedMem {
             // memory
             // TODO: benchmark different madvise options
 
-            //
-            if (madvise(mapped_addr, curr_file_size_bytes, MADV_DONTNEED) == -1) {
-                throw std::runtime_error("madvise failed " + std::string("with error: ") +
-                                         std::strerror(errno));
-            }
-            VecSimIndexInterface::log_external(
-                "debug", "madvise was called with MADV_DONTNEED on %zu bytes mapped from fd: %d.",
-                curr_file_size_bytes, fd);
+            // flush changes to disk
+            // if (curr_file_size_bytes != 0) {
+            //     if (msync(mapped_addr, curr_file_size_bytes, MS_SYNC) == -1) {
+            //         throw std::runtime_error("msync failed " + std::string("with error: ") +
+            //                                  std::strerror(errno));
+            //     }
+
+            //     if (madvise(mapped_addr, curr_file_size_bytes, MADV_DONTNEED) == -1) {
+            //         throw std::runtime_error("madvise failed " + std::string("with error: ") +
+            //                                  std::strerror(errno));
+            //     }
+            //     VecSimIndexInterface::log_external(
+            //         "debug", "madvise was called with MADV_DONTNEED on %zu bytes mapped from fd: %d.",
+            //         curr_file_size_bytes, fd);
+            // }
+            VecSimIndexInterface::log_external("debug", "madvise was not set");
             return true;
         }
 

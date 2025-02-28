@@ -37,13 +37,28 @@ RUN_BM = True
 RUN_GT = False
 
 MAX_K = 100
-MMAP_ADVISE = "MADV_DONTNEED"
+MMAP_ADVISE = "None"
 ENABLE_LOGS = False
 LOAD_ALL_VECTORS = True
+
+PROCESS_LIMIT_HIGH = "1M"
+PROCESS_LIMIT_MAX = "None"
+
+TIMESTAMP_PRINT = True
+
 file_name_prefix = "multilang"
 all_vectors_file_name = f"{file_base_name}_emb.pik"
 only_vecs_file_name = f"multilang_n_{num_vectors_train}_emb"
 queries_file_name = f"multilang_q_{num_vectors_test}_emb.pik"
+
+default_print = print
+def timestamped_print(*args, **kwargs):
+    """ Custom print function that prepends a timestamp to each message. """
+    timestamp = time.time()  # Unix timestamp
+    default_print(f"[{timestamp}]", *args, **kwargs)
+
+# Override the built-in print function globally
+if TIMESTAMP_PRINT: print = timestamped_print
 
 def get_rss_memory_usage_bytes():
     process = psutil.Process()
@@ -205,7 +220,9 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
     if ENABLE_LOGS == False: index.disable_logs()
 
     index_block_size = index.index_block_size()
-    print(f"\nBuilding index of size {num_vectors:,} with params: ", f"M: {M}, efC: {efC}, index_block_size: {index_block_size}, madvise: {MMAP_ADVISE} \n", flush=True)
+    print(f'''\nBuilding index of size {num_vectors:,} with params: ", f"M: {M}, efC: {efC}, index_block_size: {index_block_size}, madvise: {MMAP_ADVISE},
+          process high limit: {PROCESS_LIMIT_HIGH}, process max limit: {PROCESS_LIMIT_MAX}\n
+          ''', flush=True)
 
     check_memory_interval = num_vectors // 50
 
@@ -218,15 +235,15 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
         if i % check_memory_interval == 0:
             end_time = time.time()
             build_time += end_time - start_time
-            print(f"Building {i} vectors time: ",f"T{build_time:.4f} seconds")
+            print(f"Building {i} vectors time: ",f"T{build_time:.4f} seconds", flush=True)
             curr_mem = index.index_memory()
             print(f"Current index memory usage: {curr_mem} bytes, {(curr_mem / 1024 / 1024):.4f} MB, {(index.index_memory() / 1024 / 1024 / 1024):.4f} GB")
 
-            proc_rss = get_rss_memory_usage_bytes()
-            print(f"Current process RSS memory usage: {proc_rss} bytes, {(proc_rss / 1024 / 1024):.4f} MB, {(proc_rss / 1024 / 1024 / 1024):.4f} GB")
+            # proc_rss = get_rss_memory_usage_bytes()
+            # print(f"Current process RSS memory usage: {proc_rss} bytes, {(proc_rss / 1024 / 1024):.4f} MB, {(proc_rss / 1024 / 1024 / 1024):.4f} GB")
             start_time = time.time()
 
-    print('\nBuilding time: ',f"T{build_time:.4f} seconds, {(build_time / 60):.4f} m, {(build_time / 60 / 60):.4f} h\n")
+    print('\nBuilding time: ',f"{build_time:.4f} seconds, {(build_time / 60):.4f} m, {(build_time / 60 / 60):.4f} h\n")
     index_max_level = index.index_max_level()
     print(f"index_max_level: {index_max_level}")
 
@@ -298,11 +315,13 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
         "knn_bm_results": knn_bm_results,
     }
 
-    results_file_name = f"results_M_{M}_efC_{efC}_vec_{num_vectors}_q_{num_queries}_madvise_{MMAP_ADVISE}_bs_{index_block_size}.json"
+    results_file_name = f"results_M_{M}_efC_{efC}_vec_{num_vectors}_q_{num_queries}_madvise_{MMAP_ADVISE}_bs_{index_block_size}_mem_limit_{PROCESS_LIMIT_HIGH}.json"
     write_result_to_file(result, filename=results_file_name, override=True)
 
 def bm():
     input(f"PID: {os.getpid()} Press Enter to continue...")
+    # print(f"PID: {os.getpid()}", flush=True)
+    # time.sleep(20)
     # Build params
     Ms_efC = [(60, 75), (120, 150), (150, 150), (200, 120), (200, 150)]
 

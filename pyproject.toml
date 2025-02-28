@@ -35,6 +35,8 @@ scipy = "^1.14.1"
 h5py = "^3.7.0"
 ml_dtypes = "*"
 psutil = "*"
+matplotlib = "*"
+pandas = "*"
 
 
 
