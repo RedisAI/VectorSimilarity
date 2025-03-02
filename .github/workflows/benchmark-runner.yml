@@ -16,12 +16,6 @@ on:
       ami-id:
         required: true
         type: string
-      subnet-id:
-        required: true
-        type: string
-      security-group-id:
-        required: true
-        type: string
       github-runner-label:
         required: true
         type: string
@@ -29,6 +23,12 @@ on:
       AWS_ACCESS_KEY_ID:
         required: true
       AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_REGION_BENCHMARK:
+        required: true
+      AWS_EC2_SG_ID_BENCHMARK:
+        required: true
+      AWS_EC2_SUBNET_ID_BENCHMARK:
         required: true
       GH_PERSONAL_ACCESS_TOKEN:
         required: true
@@ -56,16 +56,13 @@ jobs:
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2
-        env:
-          SUBNET_ID: ${{ inputs.subnet-id }}
-          SECURITY_GROUP_ID: ${{ inputs.security-group-id }}
         with:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           ec2-image-id: ${{ inputs.ami-id }}
           ec2-instance-type: ${{ inputs.instance-type }}
-          subnet-id: ${{ inputs.subnet-id }}
-          security-group-id: ${{ inputs.security-group-id }}
+          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID_BENCHMARK }}
+          security-group-id: ${{ secrets.AWS_EC2_SG_ID_BENCHMARK }}
           label: ${{ inputs.github-runner-label }}
 
   benchmark:
@@ -131,7 +128,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
       - name: Stop EC2 runner
         uses: machulav/ec2-github-runner@v2
         with:

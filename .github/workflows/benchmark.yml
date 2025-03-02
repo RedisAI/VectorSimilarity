@@ -101,10 +101,7 @@ jobs:
       matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
     with:
       setup: ${{ inputs.setup }}
-      aws-region: "us-west-2"
       architecture: ${{ matrix.architecture }}
       instance-type: ${{ matrix.instance-type }}
       ami-id: ${{ matrix.ami-id }}
-      subnet-id: "subnet-880013ed"
-      security-group-id: "sg-8693a7fe"
       github-runner-label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
