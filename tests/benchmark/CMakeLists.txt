@@ -29,12 +29,7 @@ endforeach()
 # Spaces benchmarks								                                          #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
-	message(STATUS "Enabling Arm Performance Libraries integration")
-	include(${root}/cmake/aarch64InstructionFlags.cmake)
-else()
-	include(${root}/cmake/x86_64InstructionFlags.cmake)
-endif()
+include(${root}/cmake/x86_64InstructionFlags.cmake)
 
 set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8)
 foreach(data_type IN LISTS DATA_TYPE)

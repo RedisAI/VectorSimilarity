@@ -24,7 +24,6 @@
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE.h"
-#include "VecSim/spaces/functions/NEONF.h"
 
 #include "bm_spaces_class.h"
 
