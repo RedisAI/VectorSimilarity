@@ -90,7 +90,7 @@ jobs:
       - name: Run Benchmark
         env:
           ARCH: ${{ inputs.architecture }}
-        timeout-minutes: 120
+        timeout-minutes: 300
         run: |
           if [[ $ARCH == "aarch64" ]]; then
             source /usr/share/modules/init/bash
