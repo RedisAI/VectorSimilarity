@@ -9,7 +9,7 @@
 bool BM_VecSimGeneral::is_multi = false;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
-size_t BM_VecSimGeneral::n_vectors = 999424;
+size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 1024;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
