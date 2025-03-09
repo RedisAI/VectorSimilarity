@@ -1,4 +1,3 @@
-
 message("# VectorSimilarity_Benchmark root: " ${root})
 message("# VectorSimilarity_Benchmark binroot: " ${binroot})
 
@@ -32,10 +31,14 @@ endforeach()
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
-	if (CXX_ARMV9)
-		add_compile_definitions(BENCHMARK_ARCH=armv9)
+	
+	# Check for ARMv9 architecture with any of the supported detection methods
+	if (CXX_ARMV9 OR CXX_ARMV9_ALT)
+		message(STATUS "Using ARMv9 architecture for benchmarks")
+		add_compile_definitions(BENCHMARK_ARCH=arm_v9)
 	else()
-		add_compile_definitions(BENCHMARK_ARCH=armv8)
+		message(STATUS "Using ARMv8 architecture for benchmarks")
+		add_compile_definitions(BENCHMARK_ARCH=arm_v8)
 	endif()
 
 else()
