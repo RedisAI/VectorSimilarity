@@ -52,9 +52,9 @@
 // Main macro that selects the appropriate helper based on argument count
 #define CONCAT_WITH_UNDERSCORE(...) EXPAND2(CONCAT(BM_FUNC_NAME_HELPER, EXPAND2(COUNT_ARGS(__VA_ARGS__)))(__VA_ARGS__))
 
-#if defined(__x86_64__) || defined(_M_X64)
+#ifdef CPU_FEATURES_ARCH_X86_64
     #define BENCHMARK_ARCH x86_64
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
     #if (__ARM_ARCH >= 9)
         #define BENCHMARK_ARCH arm_v9
     #else
