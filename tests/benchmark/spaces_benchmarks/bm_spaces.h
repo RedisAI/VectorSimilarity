@@ -45,6 +45,17 @@
 // Main macro that selects the appropriate helper based on argument count
 #define CONCAT_WITH_UNDERSCORE(...) CONCAT(BM_FUNC_NAME_HELPER, COUNT_ARGS(__VA_ARGS__))(__VA_ARGS__)
 // Modify this macro to account for the extra BENCHMARK_ARCH parameter
+
+#if defined(__x86_64__) || defined(_M_X64)
+    #define BENCHMARK_ARCH x86_64
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    #ifdef __ARM_FEATURE_SVE2
+        #define BENCHMARK_ARCH armv9
+    #else
+        #define BENCHMARK_ARCH armv8
+    #endif
+#endif
+
 #define CONCAT_WITH_ARCH(...) CONCAT_WITH_UNDERSCORE(__VA_ARGS__, BENCHMARK_ARCH)
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the

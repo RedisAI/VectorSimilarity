@@ -1,3 +1,4 @@
+
 message("# VectorSimilarity_Benchmark root: " ${root})
 message("# VectorSimilarity_Benchmark binroot: " ${binroot})
 
@@ -30,16 +31,10 @@ endforeach()
 
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
-	include(${root}/cmake/aarch64InstructionFlags.cmake)
-	
-	# Use the ARM_ARCH variable set in aarch64InstructionFlags.cmake
-	message(STATUS "Using ARMv${ARM_ARCH} architecture for benchmarks")
-	add_compile_definitions(BENCHMARK_ARCH=arm_v${ARM_ARCH})
+
 
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)
-	# set BENCHMARK_ARCH def to x86_64
-	add_compile_definitions(BENCHMARK_ARCH=x86_64)
 endif()
 
 set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8)
