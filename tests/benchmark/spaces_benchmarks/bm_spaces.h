@@ -27,10 +27,30 @@
 
 #include "bm_spaces_class.h"
 
+#define BM_FUNC_NAME_HELPER1_4(a, b, c, d) a ## _ ## b ## _ ## c ## _ ## d
+#define BM_FUNC_NAME_HELPER1_5(a, b, c, d, e) a ## _ ## b ## _ ## c ## _ ## d ## _ ## e
+
+// Force expansion of macro arguments
+#define BM_FUNC_NAME_HELPER_4(a, b, c, d) BM_FUNC_NAME_HELPER1_4(a, b, c, d)
+#define BM_FUNC_NAME_HELPER_5(a, b, c, d, e) BM_FUNC_NAME_HELPER1_5(a, b, c, d, e)
+
+// Determine the number of arguments and select the appropriate helper
+#define COUNT_ARGS(...) COUNT_ARGS_(__VA_ARGS__, 6, 5, 4, 3, 2, 1)
+#define COUNT_ARGS_(_1, _2, _3, _4, _5, _6, N, ...) N
+
+// Concatenate BM_FUNC_NAME_HELPER with the number of arguments
+#define CONCAT_HELPER(a, b) a ## _ ## b
+#define CONCAT(a, b) CONCAT_HELPER(a, b)
+
+// Main macro that selects the appropriate helper based on argument count
+#define CONCAT_WITH_UNDERSCORE(...) CONCAT(BM_FUNC_NAME_HELPER, COUNT_ARGS(__VA_ARGS__))(__VA_ARGS__)
+// Modify this macro to account for the extra BENCHMARK_ARCH parameter
+#define CONCAT_WITH_ARCH(...) CONCAT_WITH_UNDERSCORE(__VA_ARGS__, BENCHMARK_ARCH)
+
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)         \
-    BENCHMARK_DEFINE_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                      \
+    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_ARCH(type_prefix, arch, metric, bm_name)) \
     (benchmark::State & st) {                                                                      \
         if (!arch_supported) {                                                                     \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -44,7 +64,7 @@
 
 #define INITIALIZE_BM(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                \
     BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)             \
-    BENCHMARK_REGISTER_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                    \
+    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_ARCH(type_prefix, arch, metric, bm_name)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
@@ -95,7 +115,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 /* Naive algorithms */
 #define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
-    BENCHMARK_DEFINE_F(bm_class, type_prefix##_NAIVE_##metric)                                     \
+    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_ARCH(type_prefix, NAIVE, metric))                                     \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
@@ -104,7 +124,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 #define INITIALIZE_NAIVE_BM(bm_class, type_prefix, metric, dim_opt)                                \
     BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                          \
-    BENCHMARK_REGISTER_F(bm_class, type_prefix##_NAIVE_##metric)                                   \
+    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_ARCH(type_prefix, NAIVE, metric)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)                                                             \
         ->Arg(100)                                                                                 \

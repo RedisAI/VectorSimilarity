@@ -60,12 +60,12 @@ jobs:
           {
             "include": [
               {
-                "architecture": "arm64",
+                "architecture": "arm64-ARMv8.2", # Graviton2
                 "instance-type": "r6g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
               {
-                "architecture": "arm64",
+                "architecture": "arm64-ARMv9.0", # Graviton4
                 "instance-type": "i8g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
@@ -84,7 +84,7 @@ jobs:
             FILTERED_MATRIX="$FULL_MATRIX"
           else
             # Filter to only the selected architecture
-            FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq -c '{include: [.include[] | select(.architecture == "${{ inputs.architecture }}") ]}')
+            FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq -c '{include: [.include[] | select(.architecture | contains("${{ inputs.architecture }}"))]}')
           fi
           
           # Use multiline output delimiter syntax for GitHub Actions
