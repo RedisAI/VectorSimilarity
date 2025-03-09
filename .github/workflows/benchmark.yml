@@ -60,12 +60,12 @@ jobs:
           {
             "include": [
               {
-                "architecture": "arm64-ARMv8.2", # Graviton2
+                "architecture": "arm64-ARMv8.2",
                 "instance-type": "r6g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
               {
-                "architecture": "arm64-ARMv9.0", # Graviton4
+                "architecture": "arm64-ARMv9.0",
                 "instance-type": "i8g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
