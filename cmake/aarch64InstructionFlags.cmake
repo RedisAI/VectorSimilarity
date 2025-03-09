@@ -7,7 +7,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
   CHECK_CXX_COMPILER_FLAG("-march=armv8-a" CXX_ARMV8A)
   CHECK_CXX_COMPILER_FLAG("-march=armv8-a+sve" CXX_SVE)
   CHECK_CXX_COMPILER_FLAG("-march=armv8.2-a+sve2" CXX_SVE2)
-  CHECK_CXX_COMPILER_FLAG("-march=armv9.2-a+sve2" CXX_ARMV9)
+  CHECK_CXX_COMPILER_FLAG("-march=armv9.0-a+sve2" CXX_ARMV9)
   
   if(CXX_ARMV8A)
     message(STATUS "Compiler supports -march=armv8-a (NEON baseline)")
@@ -27,7 +27,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
   endif()
 
   if(CXX_ARMV9)
-    message(STATUS "Compiler supports -march=armv9.2-a+sve2")
+    message(STATUS "Compiler supports -march=armv9.0-a+sve2")
     add_compile_definitions(OPT_ARMV9)
   endif()
 
