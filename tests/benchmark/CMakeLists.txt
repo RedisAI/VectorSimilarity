@@ -1,4 +1,3 @@
-
 message("# VectorSimilarity_Benchmark root: " ${root})
 message("# VectorSimilarity_Benchmark binroot: " ${binroot})
 
@@ -25,17 +24,17 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# Spaces benchmarks								                                          #
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
-
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
 
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)
 endif()
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Spaces benchmarks								                                          #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8)
 foreach(data_type IN LISTS DATA_TYPE)

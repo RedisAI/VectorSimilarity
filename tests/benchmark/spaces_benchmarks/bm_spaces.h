@@ -27,10 +27,17 @@
 
 #include "bm_spaces_class.h"
 
+#define EXPAND(x) x
+#define EXPAND2(x) EXPAND(x)
+// Helper for raw concatenation with varying arguments
+#define BM_FUNC_NAME_HELPER1_2(a, b) a ## _ ## b
+#define BM_FUNC_NAME_HELPER1_3(a, b, c) a ## _ ## b ## _ ## c
 #define BM_FUNC_NAME_HELPER1_4(a, b, c, d) a ## _ ## b ## _ ## c ## _ ## d
 #define BM_FUNC_NAME_HELPER1_5(a, b, c, d, e) a ## _ ## b ## _ ## c ## _ ## d ## _ ## e
 
 // Force expansion of macro arguments
+#define BM_FUNC_NAME_HELPER_2(a, b) BM_FUNC_NAME_HELPER1_2(a, b)
+#define BM_FUNC_NAME_HELPER_3(a, b, c) BM_FUNC_NAME_HELPER1_3(a, b, c)
 #define BM_FUNC_NAME_HELPER_4(a, b, c, d) BM_FUNC_NAME_HELPER1_4(a, b, c, d)
 #define BM_FUNC_NAME_HELPER_5(a, b, c, d, e) BM_FUNC_NAME_HELPER1_5(a, b, c, d, e)
 
@@ -43,20 +50,21 @@
 #define CONCAT(a, b) CONCAT_HELPER(a, b)
 
 // Main macro that selects the appropriate helper based on argument count
-#define CONCAT_WITH_UNDERSCORE(...) CONCAT(BM_FUNC_NAME_HELPER, COUNT_ARGS(__VA_ARGS__))(__VA_ARGS__)
-// Modify this macro to account for the extra BENCHMARK_ARCH parameter
+#define CONCAT_WITH_UNDERSCORE(...) EXPAND2(CONCAT(BM_FUNC_NAME_HELPER, EXPAND2(COUNT_ARGS(__VA_ARGS__)))(__VA_ARGS__))
 
 #if defined(__x86_64__) || defined(_M_X64)
     #define BENCHMARK_ARCH x86_64
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #ifdef __ARM_FEATURE_SVE2
-        #define BENCHMARK_ARCH armv9
+    #if (__ARM_ARCH >= 9)
+        #define BENCHMARK_ARCH arm_v9
     #else
-        #define BENCHMARK_ARCH armv8
+        #define BENCHMARK_ARCH arm_v8
     #endif
 #endif
+        
+// Modify this macro to account for the extra BENCHMARK_ARCH parameter
+#define CONCAT_WITH_UNDERSCORE_ARCH(...) CONCAT_WITH_UNDERSCORE(__VA_ARGS__, BENCHMARK_ARCH)
 
-#define CONCAT_WITH_ARCH(...) CONCAT_WITH_UNDERSCORE(__VA_ARGS__, BENCHMARK_ARCH)
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
