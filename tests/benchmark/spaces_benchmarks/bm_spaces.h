@@ -69,7 +69,7 @@
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)         \
-    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_ARCH(type_prefix, arch, metric, bm_name)) \
+    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, bm_name)) \
     (benchmark::State & st) {                                                                      \
         if (!arch_supported) {                                                                     \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -83,7 +83,7 @@
 
 #define INITIALIZE_BM(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                \
     BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)             \
-    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_ARCH(type_prefix, arch, metric, bm_name)) \
+    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, bm_name)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
@@ -134,7 +134,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 /* Naive algorithms */
 #define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
-    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_ARCH(type_prefix, NAIVE, metric))                                     \
+    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))                                     \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
@@ -143,7 +143,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 #define INITIALIZE_NAIVE_BM(bm_class, type_prefix, metric, dim_opt)                                \
     BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                          \
-    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_ARCH(type_prefix, NAIVE, metric)) \
+    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)                                                             \
         ->Arg(100)                                                                                 \
