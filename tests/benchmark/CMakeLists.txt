@@ -32,14 +32,9 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 	
-	# Check for ARMv9 architecture with any of the supported detection methods
-	if (CXX_ARMV9 OR CXX_ARMV9_ALT)
-		message(STATUS "Using ARMv9 architecture for benchmarks")
-		add_compile_definitions(BENCHMARK_ARCH=arm_v9)
-	else()
-		message(STATUS "Using ARMv8 architecture for benchmarks")
-		add_compile_definitions(BENCHMARK_ARCH=arm_v8)
-	endif()
+	# Use the ARM_ARCH variable set in aarch64InstructionFlags.cmake
+	message(STATUS "Using ARMv${ARM_ARCH} architecture for benchmarks")
+	add_compile_definitions(BENCHMARK_ARCH=arm_v${ARM_ARCH})
 
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)
