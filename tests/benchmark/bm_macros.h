@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cpu_features_macros.h"
+
 #define EXPAND(x) x
 #define EXPAND2(x) EXPAND(x)
 // Helper for raw concatenation with varying arguments
@@ -25,10 +27,10 @@
 // Main macro that selects the appropriate helper based on argument count
 #define CONCAT_WITH_UNDERSCORE(...) EXPAND2(CONCAT(BM_FUNC_NAME_HELPER, EXPAND2(COUNT_ARGS(__VA_ARGS__)))(__VA_ARGS__))
 
-#ifdef CPU_FEATURES_ARCH_X86_64
+#if defined(CPU_FEATURES_ARCH_X86_64)
     #define BENCHMARK_ARCH x86_64
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
-    #if (__ARM_ARCH >= 9)
+    #if defined(OPT_ARMV9)
         #define BENCHMARK_ARCH arm_v9
     #else
         #define BENCHMARK_ARCH arm_v8
