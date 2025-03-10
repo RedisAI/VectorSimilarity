@@ -92,11 +92,6 @@ jobs:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 300
         run: |
-          if [[ $ARCH == "aarch64" ]]; then
-            source /usr/share/modules/init/bash
-            export MODULEPATH=$MODULEPATH:/opt/arm/modulefiles
-            module load armpl/24.10.0_gcc
-          fi
           make benchmark BM_FILTER=${{ inputs.setup }}
       - name: Collect results
         run: |
