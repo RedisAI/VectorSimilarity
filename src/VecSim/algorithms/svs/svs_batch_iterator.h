@@ -27,12 +27,12 @@ class SVS_BatchIterator : public VecSimBatchIterator {
 private:
     using impl_type = svs::index::vamana::BatchIterator<Index, DataType>;
     using dist_type = typename Index::distance_type;
-    std::shared_ptr<Index> index_;
+    size_t dim;
     std::unique_ptr<impl_type> impl_;
     decltype(impl_->begin()) curr_it;
 
-    static std::unique_ptr<impl_type> makeImpl(const std::shared_ptr<Index> &index,
-                                               void *query_vector, VecSimQueryParams *queryParams) {
+    static std::unique_ptr<impl_type> makeImpl(const Index *index, void *query_vector,
+                                               VecSimQueryParams *queryParams) {
         auto sp = details::joinSearchParams(index->get_search_parameters(), queryParams);
         const size_t batch_size = queryParams && queryParams->batchSize
                                       ? queryParams->batchSize
@@ -79,11 +79,11 @@ private:
     }
 
 public:
-    SVS_BatchIterator(void *query_vector, const std::shared_ptr<Index> &index,
-                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
+    SVS_BatchIterator(void *query_vector, const Index *index, VecSimQueryParams *queryParams,
+                      std::shared_ptr<VecSimAllocator> allocator)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
-          index_{index}, impl_{makeImpl(index, query_vector, queryParams)} {
+          dim{index->dimensions()}, impl_{makeImpl(index, query_vector, queryParams)} {
         curr_it = impl_->begin();
     }
 
@@ -98,7 +98,7 @@ public:
 
     void reset() override {
         std::span<const DataType> query{reinterpret_cast<const DataType *>(this->getQueryBlob()),
-                                        index_->dimensions()};
+                                        dim};
         auto timeoutCtx = this->getTimeoutCtx();
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
         impl_->update(query, cancel);

@@ -1,28 +1,38 @@
 /* TODO: what kind of copyrght should we add here */
 
 #include "VecSim/index_factories/svs_factory.h"
+#include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/index_factories/components/components_factory.h"
 
 namespace SVSFactory {
 
 namespace {
-bool FactoryLog(void *ctx, const char *lvl, const char *msg) {
-    if (!VecSimIndexInterface::logCallback) {
-        return false;
-    }
-    VecSimIndexInterface::logCallback(ctx, lvl, msg);
-    return true;
+AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+    auto &svsParams = params->algoParams.svsParams;
+    size_t dataSize = VecSimParams_GetDataSize(svsParams.type, svsParams.dim, svsParams.metric);
+    return {.allocator = VecSimAllocator::newVecsimAllocator(),
+            .dim = svsParams.dim,
+            .vecType = svsParams.type,
+            .dataSize = dataSize,
+            .metric = svsParams.metric,
+            .blockSize = svsParams.blockSize,
+            .multi = false,
+            .logCtx = params->logCtx};
 }
 
+// NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
-    auto &svs_params = params->algoParams.svsParams;
+    auto abstractInitParams = NewAbstractInitParams(params);
+    auto &svsParams = params->algoParams.svsParams;
     auto components = CreateIndexComponents<details::vecsim_dt<DataType>, float>(
-        allocator, svs_params.metric, svs_params.dim, is_normalized);
-    return new (allocator)
-        SVSIndex<MetricType, DataType, QuantBits, ResidualBits>(params, allocator, components);
+        abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized);
+    bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
+    return new (abstractInitParams.allocator)
+        SVSIndex<MetricType, DataType, QuantBits, ResidualBits>(svsParams, abstractInitParams,
+                                                                components, forcePreprocessing);
 }
 
 template <typename MetricType, typename DataType>
@@ -40,14 +50,13 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
         return NewIndexImpl<MetricType, DataType, 4, 8>(params, is_normalized);
     default:
         // If we got here something is wrong.
-        FactoryLog(params->logCtx, VecSimCommonStrings::LOG_WARNING_STRING,
-                   "SVSIndex: Unsupported quantization mode");
+        assert(false && "Unsupported quantization mode");
         return NULL;
     }
 }
 
 template <typename MetricType>
-VecSimIndex *NewIndexDType(const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     assert(params && params->algo == VecSimAlgo_SVS);
     switch (params->algoParams.svsParams.type) {
     case VecSimType_FLOAT32:
@@ -56,31 +65,27 @@ VecSimIndex *NewIndexDType(const VecSimParams *params, bool is_normalized) {
         return NewIndexImpl<MetricType, svs::Float16>(params, is_normalized);
     default:
         // If we got here something is wrong.
-        FactoryLog(params->logCtx, VecSimCommonStrings::LOG_WARNING_STRING,
-                   "SVSIndex: Unsupported data type");
+        assert(false && "Unsupported data type");
         return NULL;
     }
 }
 
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
+    assert(params && params->algo == VecSimAlgo_SVS);
     switch (params->algoParams.svsParams.metric) {
     case VecSimMetric_L2:
-        return NewIndexDType<svs::distance::DistanceL2>(params, is_normalized);
+        return NewIndexImpl<svs::distance::DistanceL2>(params, is_normalized);
     case VecSimMetric_IP:
-        return NewIndexDType<svs::distance::DistanceIP>(params, is_normalized);
     case VecSimMetric_Cosine:
-        // FIXME(rfsaliev) To be fixed in SVS:
-        // is not defined in svs/include/svs/quantization/lvq/vectors.h :
-        // template <> struct BiasedDistance<distance::DistanceCosineSimilarity>
-        return NewIndexDType<svs::distance::DistanceIP>(params, is_normalized);
+        return NewIndexImpl<svs::distance::DistanceIP>(params, is_normalized);
     default:
         // If we got here something is wrong.
-        FactoryLog(params->logCtx, VecSimCommonStrings::LOG_WARNING_STRING,
-                   "SVSIndex: Unknown distance metric type");
+        assert(false && "Unknown distance metric type");
         return NULL;
     }
 }
 
+// SVSIndexVectorSize() is the chain of template functions to estimate vector DataSize.
 template <typename DataType, size_t QuantBits, size_t ResidualBits = 0>
 constexpr size_t SVSIndexVectorSize(size_t dims, size_t alignment = 0) {
     return SVSStorageTraits<DataType, QuantBits, ResidualBits>::element_size(dims, alignment);
@@ -140,7 +145,6 @@ size_t EstimateComponentsMemorySVS(VecSimType type, VecSimMetric metric, bool is
 } // namespace
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
-    FactoryLog(params->logCtx, VecSimCommonStrings::LOG_NOTICE_STRING, "Creating index: SVS");
     return NewIndexImpl(params, is_normalized);
 }
 

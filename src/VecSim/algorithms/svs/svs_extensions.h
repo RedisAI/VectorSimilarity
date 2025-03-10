@@ -52,6 +52,11 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(Qua
         const auto layout_dims = layout_dims_type{dims};
         return primary_type::compute_data_dimensions(layout_type{layout_dims}, alignment);
     }
+
+    static size_t storage_capacity(const index_storage_type &storage) {
+        // LVQDataset does not provide a capacity method
+        return storage.size() + 1;
+    }
 };
 #else
 #pragma message "SVS LVQ is not available"
