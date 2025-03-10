@@ -96,7 +96,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
   # Try alternative ARMv9 flag
   elseif(CPU_HAS_SVE2 AND CXX_ARMV9_ALT)
     message(STATUS "Using ARMv9-a with SVE2 (supported by CPU)")
-    add_compile_definitions(OPT_ARMV9_ALT)
+    add_compile_definitions(OPT_ARMV9)
     add_compile_options(-march=armv9-a+sve2 -msve-vector-bits=scalable)
   
   # Try ARMv8.5 with SVE2

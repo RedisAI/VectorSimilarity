@@ -28,9 +28,15 @@ endforeach()
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
+	if (OPT_ARMV9)
+		add_compile_definitions(BENCHMARK_ARCH=armv9)
+	else()
+		add_compile_definitions(BENCHMARK_ARCH=armv8)
+	endif()
 
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)
+	add_compile_definition(BENCHMARK_ARCH=x86_64)
 endif()
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
