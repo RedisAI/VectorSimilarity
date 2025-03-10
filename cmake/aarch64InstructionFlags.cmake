@@ -74,10 +74,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
   CHECK_CXX_COMPILER_FLAG("-march=armv8-a" CXX_ARMV8A)
   CHECK_CXX_COMPILER_FLAG("-march=armv8-a+sve" CXX_SVE)
   CHECK_CXX_COMPILER_FLAG("-march=armv8.2-a+sve2" CXX_SVE2)
-  CHECK_CXX_COMPILER_FLAG("-march=armv8.5-a+sve2" CXX_ARMV85A)
   CHECK_CXX_COMPILER_FLAG("-march=armv9-a" CXX_ARMV9_ALT)
   CHECK_CXX_COMPILER_FLAG("-march=armv9.0-a" CXX_ARMV9)
-  CHECK_CXX_COMPILER_FLAG("-msve2" CXX_SVE2_SUPPORTED)
 
   # Define ARM architecture option
   option(FORCE_BASELINE "Force baseline ARMv8-A without extensions" OFF)
