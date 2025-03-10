@@ -136,6 +136,13 @@ DEFAULT_FILES = [
         'metric': VecSimMetric_L2,
         'skipRaw': True,
     },
+    {
+        'filename': 'wikipedia_single-1024_eng_v3',
+        'nickname': 'wipedia_single',
+        'dim': 1024,
+        'type': VecSimType_INT8,
+        'metric': VecSimMetric_Cosine,
+    },
 ]
 
 TYPES_ATTR = {
@@ -143,6 +150,7 @@ TYPES_ATTR = {
     VecSimType_FLOAT64: {"size_in_bytes": 8, "vector_type": np.float64},
     VecSimType_BFLOAT16: {"size_in_bytes": 2, "vector_type": bfloat16},
     VecSimType_FLOAT16: {"size_in_bytes": 2, "vector_type": np.float16},
+    VecSimType_INT8: {"size_in_bytes": 1, "vector_type": np.int8}
 }
 
 
@@ -190,7 +198,9 @@ def serialize(files=DEFAULT_FILES):
             elif hnswparams.type == VecSimType_FLOAT16:
                 serialized_file_name = serialized_file_name + '-fp16'
                 serialized_raw_name = serialized_raw_name + '-fp16'
-
+            elif hnswparams.type == VecSimType_INT8:
+                serialized_file_name = serialized_file_name + '-int8'
+                serialized_raw_name = serialized_raw_name + '-int8'
             print('first, exporting test set to binary')
             if not file.get('skipRaw', False):
                 test = f['test']
@@ -201,6 +211,8 @@ def serialize(files=DEFAULT_FILES):
                     test = np.array(test_set, dtype=bfloat16)
                 elif hnswparams.type == VecSimType_FLOAT16:
                     test = test.astype(np.float16)
+                elif hnswparams.type == VecSimType_INT8:
+                    test = test.astype(np.int8)
                 print(f"creating test set of {len(test)} vectors")
                 with open(os.path.join(location, serialized_raw_name + '-test_vectors.raw'), 'wb') as testfile:
                     for vec in test:
@@ -222,6 +234,8 @@ def serialize(files=DEFAULT_FILES):
                 data = np.array(data_set, dtype=bfloat16)
             elif hnswparams.type == VecSimType_FLOAT16:
                 data = data.astype(np.float16)
+            elif hnswparams.type == VecSimType_INT8:
+                data = data.astype(np.int8)
             print(f"creating index with {hnswparams.initialCapacity} vectors")
             for label, cur in enumerate(data):
                 for vec in cur if hnswparams.multi else [cur]:
