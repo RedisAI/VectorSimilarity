@@ -142,7 +142,6 @@ static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
 }
 
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
-    // TODO: temper here to trigger SVS
     return VecSimFactory::NewIndex(params);
 }
 

@@ -140,26 +140,23 @@ typedef enum {
 } VecSimQuantBits;
 
 typedef struct {
-    /* We need this because all indexes inher from an abstract index class
-     * that looks after these.
-     * This is also why HNSW had to define them too
-     */
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;
 
-    /* SVS-Vamana specifics */
-    VecSimQuantBits quantBits;
-    float alpha;
-    size_t graph_max_degree;
-    size_t construction_window_size;
-    size_t max_candidate_pool_size;
-    size_t prune_to;
-    VecSimOptionBool use_search_history;
-    size_t num_threads;
-    size_t search_window_size;
-    double epsilon;
+    /* SVS-Vamana specifics. See Intel ScalableVectorSearch documentation */
+    VecSimQuantBits quantBits;       // Quantization level.
+    float alpha;                     // The pruning parameter.
+    size_t graph_max_degree;         // Maximum degree in the graph.
+    size_t construction_window_size; // Search window size to use during graph construction.
+    size_t max_candidate_pool_size;  // Limit on the number of neighbors considered during pruning.
+    size_t prune_to;                 // Amount that candidates will be pruned.
+    VecSimOptionBool use_search_history; // Either the contents of the search buffer can be used or
+                                         // the entire search history.
+    size_t num_threads;                  // Maximum number of threads in threadpool.
+    size_t search_window_size;           // Search window size to use during search.
+    double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSParams;
 
 // A struct that contains HNSW tiered index specific params.
