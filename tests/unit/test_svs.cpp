@@ -44,8 +44,10 @@ struct SVSIndexType {
 
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_NONE>
-                                    //    ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_8>
-                                    //    ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_4>
+#if HAVE_SVS_LVQ
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_8>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_4>
+#endif
                                         >;
 // clang-format on
 

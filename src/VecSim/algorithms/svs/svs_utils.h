@@ -165,22 +165,24 @@ struct SVSStorageTraits {
     static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0) {
         return dims * sizeof(DataType);
     }
+
+    static size_t storage_capacity(const index_storage_type &storage) { return storage.capacity(); }
 };
 
-template <typename Idx>
+template <typename SVSIdType>
 struct SVSGraphBuilder {
-    using allocator_type = details::SVSAllocator<Idx>;
+    using allocator_type = details::SVSAllocator<SVSIdType>;
     using blocked_type = svs::data::Blocked<allocator_type>;
-    using graph_data_type = svs::data::BlockedData<Idx, svs::Dynamic, allocator_type>;
-    using graph_type = svs::graphs::SimpleGraphBase<Idx, graph_data_type>;
+    using graph_data_type = svs::data::BlockedData<SVSIdType, svs::Dynamic, allocator_type>;
+    using graph_type = svs::graphs::SimpleGraphBase<SVSIdType, graph_data_type>;
 
     template <class Data, class DistType, class Pool>
     static graph_type build_graph(const svs::index::vamana::VamanaBuildParameters &parameters,
                                   const Data &data, DistType distance, Pool &threadpool,
-                                  Idx entry_point, size_t block_size,
+                                  SVSIdType entry_point, size_t block_size,
                                   std::shared_ptr<VecSimAllocator> allocator) {
-        auto svs_bs =
-            details::SVSBlockSize(block_size, (parameters.graph_max_degree + 1) * sizeof(Idx));
+        auto svs_bs = details::SVSBlockSize(block_size,
+                                            (parameters.graph_max_degree + 1) * sizeof(SVSIdType));
         // Perform graph construction.
         allocator_type data_allocator{std::move(allocator)};
         blocked_type blocked_alloc{{svs_bs}, data_allocator};
@@ -196,6 +198,6 @@ struct SVSGraphBuilder {
     }
 
     static constexpr size_t element_size(size_t graph_max_degree, size_t alignment = 0) {
-        return sizeof(Idx) * (graph_max_degree + 1);
+        return sizeof(SVSIdType) * (graph_max_degree + 1);
     }
 };

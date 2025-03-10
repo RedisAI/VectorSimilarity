@@ -271,7 +271,7 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
         break;
     case VecSimAlgo_BF:
     case VecSimAlgo_TIERED:
-    case VecSimAlgo_SVS: // TODO: clarify what this means?
+    case VecSimAlgo_SVS:
         assert(false && "Invalid backend algorithm");
     }
 
