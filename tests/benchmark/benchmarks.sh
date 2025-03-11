@@ -26,6 +26,14 @@ elif [ "$BM_TYPE" = "benchmarks-default" ]; then
     echo spaces_int8
     echo spaces_uint8
 
+elif [ "$BM_TYPE" = "benchmarks-uint8" ]; then
+    for bm_class in basics batch_iterator; do
+        for type in single multi; do
+            for data_type in uint8; do
+                echo ${bm_class}_${type}_${data_type};
+            done
+
+
 # Basic benchmarks
 elif [ "$BM_TYPE" = "bm-basics-fp32-single" ] ; then
     echo basics_single_fp32
