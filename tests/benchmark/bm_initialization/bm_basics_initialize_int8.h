@@ -5,11 +5,6 @@
 the file.
 ***************************************/
 
-// Larger Range query values are required for wikipedia dataset.
-// Current values in bm_vecsim_basics.h gives 0 results
-#define INT8_RANGE_RADII {50,65,80}
-#define INT8_RANGE_EPSILON {1,10,100}
-
 // Memory BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), int8_index_t)
 (benchmark::State &st) { Memory_FLAT(st); }
@@ -53,12 +48,12 @@ REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered));
 // Range BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), int8_index_t)
 (benchmark::State &st) { Range_BF(st); }
-REGISTER_Range_BF(BM_FUNC_NAME(Range, BF),INT8_RANGE_RADII);
+REGISTER_Range_BF(BM_FUNC_NAME(Range, BF),INT8_RANGE_RADII, int8_index_t);
 
 // Range HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), int8_index_t)
 (benchmark::State &st) { Range_HNSW(st); }
-REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW),INT8_RANGE_RADII,INT8_RANGE_EPSILON);
+REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW),INT8_RANGE_RADII,INT8_RANGE_EPSILON, int8_index_t);
 
 // Tiered HNSW add/delete benchmarks
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
