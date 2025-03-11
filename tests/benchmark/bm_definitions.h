@@ -19,7 +19,6 @@ using fp16_index_t = IndexType<VecSimType_FLOAT16, vecsim_types::float16, float>
 using int8_index_t = IndexType<VecSimType_INT8, int8_t, float>;
 using uint8_index_t = IndexType<VecSimType_UINT8, uint8_t, float>;
 
-
 #define INDICES   BM_VecSimIndex<index_type_t>::indices
 #define QUERIES   BM_VecSimIndex<index_type_t>::queries
 #define N_QUERIES BM_VecSimGeneral::n_queries
