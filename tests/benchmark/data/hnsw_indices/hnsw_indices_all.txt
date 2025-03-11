@@ -31,8 +31,8 @@ https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_single-cosine-di
 https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_multi-cosine-dim1024-M64-efc512-int8.hnsw_v3
 https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_multi-cosine-dim1024-int8-test_vectors.raw
 
-https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_single-cosine-dim1024-M64-efc512-uint8.hnsw_v3
-https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_single-cosine-dim1024-uint8-test_vectors.raw
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_single_uint8-cosine-dim1024-M64-efc512-uint8.hnsw_v3
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_single_uint8-cosine-dim1024-uint8-test_vectors.raw
 
-https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_multi-cosine-dim1024-M64-efc512-uint8.hnsw_v3
-https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_multi-cosine-dim1024-uint8-test_vectors.raw
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_multi_uint8-cosine-dim1024-M64-efc512-uint8.hnsw_v3
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/wipedia_multi_uint8-cosine-dim1024-uint8-test_vectors.raw
