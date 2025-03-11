@@ -294,9 +294,9 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 #define MACRO_CONCATENATE(a, b) MACRO_EXPAND_AND_CONCATENATE(a, b)
 
 // The actual radius will be the given arg divided by 100, since arg must be an integer.
-#define REGISTER_Range_BF(BM_FUNC, RADII, TYPENAME)                                                          \
+#define REGISTER_Range_BF(BM_FUNC, TYPENAME)                                                       \
     static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark* b) {             \
-        for (int radius : benchmark_range<TYPENAME>::get_radii()) {                                                                 \
+        for (int radius : benchmark_range<TYPENAME>::get_radii()) {                                \
             b->Args({radius});                                                                     \
         }                                                                                          \
     }                                                                                              \
@@ -309,10 +309,10 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 // {radius*100, epsilon*1000}
 // The actual radius will be the given arg divided by 100, and the actual epsilon values
 // will be the given arg divided by 1000.
-#define REGISTER_Range_HNSW(BM_FUNC, RADII, EPSILONS, TYPENAME)                                              \
+#define REGISTER_Range_HNSW(BM_FUNC, TYPENAME)                                                     \
     static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark* b) {             \
-        for (int radius : benchmark_range<TYPENAME>::get_radii() ) {                                                                 \
-            for (int epsilon : benchmark_range<TYPENAME>::get_epsilons() ) {                                                         \
+        for (int radius : benchmark_range<TYPENAME>::get_radii() ) {                               \
+            for (int epsilon : benchmark_range<TYPENAME>::get_epsilons() ) {                       \
                 b->Args({radius, epsilon});                                                        \
             }                                                                                      \
         }                                                                                          \

@@ -48,12 +48,12 @@ REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered));
 // Range BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), fp64_index_t)
 (benchmark::State &st) { Range_BF(st); }
-REGISTER_Range_BF(BM_FUNC_NAME(Range, BF),DEFAULT_RANGE_RADII, fp64_index_t);
+REGISTER_Range_BF(BM_FUNC_NAME(Range, BF), fp64_index_t);
 
 // Range HSNW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), fp64_index_t)
 (benchmark::State &st) { Range_HNSW(st); }
-REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW),DEFAULT_RANGE_RADII,DEFAULT_RANGE_EPSILONS, fp64_index_t);
+REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW), fp64_index_t);
 
 // Tiered HNSW add/delete benchmarks
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
