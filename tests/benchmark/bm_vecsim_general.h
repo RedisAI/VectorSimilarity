@@ -23,8 +23,6 @@
 #include "bm_macros.h"
 #include "utils/mock_thread_pool.h"
 
-
-
 // This class includes every static data member that is:
 // 1. Common for all data type data sets.
 // or
