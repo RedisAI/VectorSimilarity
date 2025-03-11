@@ -84,45 +84,38 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
     message(STATUS "Forcing baseline ARMv8-A as requested")
     if(CXX_ARMV8A)
       add_compile_definitions(OPT_NEON)
-      add_compile_options(-march=armv8-a)
     endif()
   
   # Only use ARMv9 if both compiler and CPU support it
   elseif(CPU_HAS_SVE2 AND CXX_ARMV9)
     message(STATUS "Using ARMv9.0-a with SVE2 (supported by CPU)")
     add_compile_definitions(OPT_ARMV9)
-    add_compile_options(-march=armv9.0-a+sve2 -msve-vector-bits=scalable)
   
   # Try alternative ARMv9 flag
   elseif(CPU_HAS_SVE2 AND CXX_ARMV9_ALT)
     message(STATUS "Using ARMv9-a with SVE2 (supported by CPU)")
     add_compile_definitions(OPT_ARMV9)
-    add_compile_options(-march=armv9-a+sve2 -msve-vector-bits=scalable)
   
   # Try ARMv8.5 with SVE2
   elseif(CPU_HAS_SVE2 AND CXX_ARMV85A)
     message(STATUS "Using ARMv8.5-a with SVE2 (supported by CPU)")
     add_compile_definitions(OPT_ARMV85A)
-    add_compile_options(-march=armv8.5-a+sve2)
   
   # Try ARMv8.2 with SVE2
   elseif(CPU_HAS_SVE2 AND CXX_SVE2)
     message(STATUS "Using ARMv8.2-a with SVE2 (supported by CPU)")
     add_compile_definitions(OPT_SVE2)
-    add_compile_options(-march=armv8.2-a+sve2)
   
   # Try basic SVE support
   elseif(CPU_HAS_SVE AND CXX_SVE)
     message(STATUS "Using ARMv8-a with SVE (supported by CPU)")
     add_compile_definitions(OPT_SVE)
-    add_compile_options(-march=armv8-a+sve)
   
   # Fallback to baseline
   else()
     message(STATUS "Using baseline ARMv8-a (no SVE/SVE2 CPU support)")
     if(CXX_ARMV8A)
       add_compile_definitions(OPT_NEON)
-      add_compile_options(-march=armv8-a)
     endif()
   endif()
 endif()
