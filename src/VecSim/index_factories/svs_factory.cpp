@@ -27,7 +27,7 @@ template <typename MetricType, typename DataType, size_t QuantBits, size_t Resid
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     auto abstractInitParams = NewAbstractInitParams(params);
     auto &svsParams = params->algoParams.svsParams;
-    auto components = CreateIndexComponents<details::vecsim_dt<DataType>, float>(
+    auto components = CreateIndexComponents<svs_details::vecsim_dt<DataType>, float>(
         abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized);
     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
     return new (abstractInitParams.allocator)
@@ -38,7 +38,7 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 template <typename MetricType, typename DataType>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     switch (params->algoParams.svsParams.quantBits) {
-    case VecSimQuant_0:
+    case VecSimQuant_NONE:
         return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
     case VecSimQuant_8:
         return NewIndexImpl<MetricType, DataType, 8>(params, is_normalized);
@@ -94,7 +94,7 @@ constexpr size_t SVSIndexVectorSize(size_t dims, size_t alignment = 0) {
 template <typename DataType>
 size_t SVSIndexVectorSize(VecSimQuantBits quant_bits, size_t dims, size_t alignment = 0) {
     switch (quant_bits) {
-    case VecSimQuant_0:
+    case VecSimQuant_NONE:
         return SVSIndexVectorSize<DataType, 0>(dims, alignment);
     case VecSimQuant_8:
         return SVSIndexVectorSize<DataType, 8>(dims, alignment);
@@ -127,7 +127,7 @@ size_t SVSIndexVectorSize(VecSimType data_type, VecSimQuantBits quant_bits, size
 
 template <typename DataType>
 size_t EstimateComponentsMemorySVS(VecSimMetric metric, bool is_normalized) {
-    return EstimateComponentsMemory<details::vecsim_dt<DataType>, float>(metric, is_normalized);
+    return EstimateComponentsMemory<svs_details::vecsim_dt<DataType>, float>(metric, is_normalized);
 }
 
 size_t EstimateComponentsMemorySVS(VecSimType type, VecSimMetric metric, bool is_normalized) {
