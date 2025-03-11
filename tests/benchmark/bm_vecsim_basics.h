@@ -291,11 +291,11 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 
 // These macros are used to make sure the expansion of other macros happens when needed
 #define MACRO_EXPAND_AND_CONCATENATE(a, b) a##b
-#define MACRO_CONCATENATE(a, b) MACRO_EXPAND_AND_CONCATENATE(a, b)
+#define MACRO_CONCATENATE(a, b)            MACRO_EXPAND_AND_CONCATENATE(a, b)
 
 // The actual radius will be the given arg divided by 100, since arg must be an integer.
 #define REGISTER_Range_BF(BM_FUNC, TYPENAME)                                                       \
-    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark* b) {             \
+    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark * b) {            \
         for (int radius : benchmark_range<TYPENAME>::get_radii()) {                                \
             b->Args({radius});                                                                     \
         }                                                                                          \
@@ -310,9 +310,9 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 // The actual radius will be the given arg divided by 100, and the actual epsilon values
 // will be the given arg divided by 1000.
 #define REGISTER_Range_HNSW(BM_FUNC, TYPENAME)                                                     \
-    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark* b) {             \
-        for (int radius : benchmark_range<TYPENAME>::get_radii() ) {                               \
-            for (int epsilon : benchmark_range<TYPENAME>::get_epsilons() ) {                       \
+    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark * b) {            \
+        for (int radius : benchmark_range<TYPENAME>::get_radii()) {                                \
+            for (int epsilon : benchmark_range<TYPENAME>::get_epsilons()) {                        \
                 b->Args({radius, epsilon});                                                        \
             }                                                                                      \
         }                                                                                          \
