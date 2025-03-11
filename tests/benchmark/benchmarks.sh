@@ -32,6 +32,8 @@ elif [ "$BM_TYPE" = "benchmarks-uint8" ]; then
             for data_type in uint8; do
                 echo ${bm_class}_${type}_${data_type};
             done
+        done
+    done
 
 
 # Basic benchmarks
