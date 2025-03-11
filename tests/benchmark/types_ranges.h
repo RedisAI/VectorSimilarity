@@ -2,9 +2,9 @@
 #include <array>
 #include "bm_definitions.h"
 
-#define DEFAULT_RANGE_RADII                                                                        
+#define DEFAULT_RANGE_RADII                                                                        \
     { 20, 35, 50 }
-#define DEFAULT_RANGE_EPSILONS                                                                     
+#define DEFAULT_RANGE_EPSILONS                                                                     \
     { 1, 10, 11 }
 
 // This template struct methods returns the default values for radii and epsilons
@@ -17,7 +17,7 @@ struct benchmark_range {
 
 // Larger Range query values are required for int8 wikipedia dataset.
 // Default values gives 0 results
-#define INT8_RANGE_RADII                                                                           
+#define INT8_RANGE_RADII                                                                           \
     { 50, 65, 80 }
 
 template <>
