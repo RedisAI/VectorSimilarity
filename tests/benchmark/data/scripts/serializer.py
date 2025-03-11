@@ -143,6 +143,21 @@ DEFAULT_FILES = [
         'type': VecSimType_INT8,
         'metric': VecSimMetric_Cosine,
     },
+    {
+        'filename': 'wikipedia_single-1024_eng_v3_uint8',
+        'nickname': 'wipedia_single_uint8',
+        'dim': 1024,
+        'type': VecSimType_UINT8,
+        'metric': VecSimMetric_Cosine,
+    },
+    {
+        'filename': 'wikipedia_multi-1024_eng_v3_uint8',
+        'nickname': 'wipedia_multi_uint8',
+        'dim': 1024,
+        'type': VecSimType_UINT8,
+        'metric': VecSimMetric_Cosine,
+        'multi': True
+    },
 ]
 
 TYPES_ATTR = {
