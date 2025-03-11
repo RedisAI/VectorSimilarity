@@ -1,21 +1,12 @@
-/* TODO: change the copyright here */
-
-/*
- *Copyright Redis Ltd. 2021 - present
- *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
- *the Server Side Public License v1 (SSPLv1).
- */
-
-/* TODO clean the includes */
 #pragma once
 #include "VecSim/query_results.h"
+#include "VecSim/types/float16.h"
 
 #include "svs/core/distance.h"
-#include "svs/core/query_result.h"
-#include "svs/core/logging.h"
-#include "spdlog/sinks/callback_sink.h"
+#include "svs/lib/float16.h"
+#include "svs/index/vamana/dynamic_index.h"
 
-namespace details {
+namespace svs_details {
 // VecSim->SVS data type conversion
 template <typename T>
 struct vecsim_dtype;
@@ -80,9 +71,6 @@ private:
 public:
     // Type Aliases
     using value_type = T;
-    using size_type = std::size_t;
-    using difference_type = std::ptrdiff_t;
-    using propagate_on_container_move_assignment = std::true_type;
 
     // Constructor
     SVSAllocator(std::shared_ptr<VecSimAllocator> vs_allocator)
@@ -98,14 +86,9 @@ public:
     constexpr void deallocate(value_type *ptr, size_t count) noexcept {
         allocator_->deallocate(ptr, count * sizeof(T));
     }
-
-    // Intercept zero-argument construction to do default initialization.
-    // template <typename U>
-    // void construct(U* p) noexcept(std::is_nothrow_default_constructible_v<U>) {
-    //     ::new (static_cast<void*>(p)) U;
-    // }
 };
 
+// Join default SVS search parameters with VecSim query runtime parameters
 inline svs::index::vamana::VamanaSearchParameters
 joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
                  const VecSimQueryParams *queryParams) {
@@ -130,6 +113,10 @@ joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
     return std::move(sp);
 }
 
+// @brief Block size for SVS storage required to be a power-of-two
+// @param bs VecSim block size
+// @param elem_size SVS storage element size
+// @return block size in type of SVS `PowerOfTwo`
 inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
     auto svs_bs = svs::lib::prevpow2(bs * elem_size);
     // block size should not be less than element size
@@ -139,12 +126,18 @@ inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
     return svs_bs;
 }
 
-} // namespace details
+} // namespace svs_details
 
 template <typename DataType, size_t QuantBits, size_t ResidualBits, class Enable = void>
 struct SVSStorageTraits {
-    using allocator_type = details::SVSAllocator<DataType>;
-    using blocked_type = svs::data::Blocked<allocator_type>;
+    using allocator_type = svs_details::SVSAllocator<DataType>;
+    // In SVS, the default allocator is designed for static indices,
+    // where the size of the data or graph is known in advance,
+    // allowing all structures to be allocated at once. In contrast,
+    // the Blocked allocator supports dynamic allocations,
+    // enabling memory to be allocated in blocks as needed when the index size grows.
+    using blocked_type = svs::data::Blocked<allocator_type>; // Used in creating storage
+    // svs::Dynamic means runtime dimensionality in opposite to compile-time dimensionality
     using index_storage_type = svs::data::BlockedData<DataType, svs::Dynamic, allocator_type>;
 
     template <svs::data::ImmutableMemoryDataset Dataset>
@@ -152,16 +145,20 @@ struct SVSStorageTraits {
                                              std::shared_ptr<VecSimAllocator> allocator) {
         const auto dim = data.dimensions();
         const auto size = data.size();
-        auto svs_bs = details::SVSBlockSize(block_size, element_size(dim));
+        // SVS storage element size and block size can be differ than VecSim
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        // Allocate initial SVS storage for index
         allocator_type data_allocator{std::move(allocator)};
         blocked_type blocked_alloc{{svs_bs}, data_allocator};
         index_storage_type init_data{size, dim, blocked_alloc};
+        // Copy data to allocated storage
         for (const auto &i : data.eachindex()) {
             init_data.set_datum(i, data.get_datum(i));
         }
         return init_data;
     }
 
+    // SVS storage element size can be differ than VecSim DataSize
     static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0) {
         return dims * sizeof(DataType);
     }
@@ -171,33 +168,47 @@ struct SVSStorageTraits {
 
 template <typename SVSIdType>
 struct SVSGraphBuilder {
-    using allocator_type = details::SVSAllocator<SVSIdType>;
+    using allocator_type = svs_details::SVSAllocator<SVSIdType>;
     using blocked_type = svs::data::Blocked<allocator_type>;
     using graph_data_type = svs::data::BlockedData<SVSIdType, svs::Dynamic, allocator_type>;
     using graph_type = svs::graphs::SimpleGraphBase<SVSIdType, graph_data_type>;
 
+    // Build SVS Graph using custom allocator
+    // The logic has been taken from one of `MutableVamanaIndex` constructors
+    // See:
+    // https://github.com/intel/ScalableVectorSearch/blob/main/include/svs/index/vamana/dynamic_index.h#L189
     template <class Data, class DistType, class Pool>
     static graph_type build_graph(const svs::index::vamana::VamanaBuildParameters &parameters,
                                   const Data &data, DistType distance, Pool &threadpool,
                                   SVSIdType entry_point, size_t block_size,
                                   std::shared_ptr<VecSimAllocator> allocator) {
-        auto svs_bs = details::SVSBlockSize(block_size,
-                                            (parameters.graph_max_degree + 1) * sizeof(SVSIdType));
+        auto svs_bs =
+            svs_details::SVSBlockSize(block_size, element_size(parameters.graph_max_degree));
         // Perform graph construction.
         allocator_type data_allocator{std::move(allocator)};
         blocked_type blocked_alloc{{svs_bs}, data_allocator};
         auto graph = graph_type{data.size(), parameters.graph_max_degree, blocked_alloc};
+        // SVS incorporates an advanced software prefetching scheme with two parameters: step and
+        // lookahead. These parameters determine how far ahead to prefetch data vectors
+        // and how many items to prefetch at a time. We have set default values for these parameters
+        // based on the data types, which we found to perform better through heuristic analysis.
         auto prefetch_parameters =
             svs::index::vamana::extensions::estimate_prefetch_parameters(data);
         auto builder = svs::index::vamana::VamanaBuilder(
             graph, data, std::move(distance), parameters, threadpool, prefetch_parameters);
 
+        // Specific to the Vamana algorithm:
+        // It builds in two rounds, one with alpha=1 and the second time with the user/config
+        // provided alpha value.
         builder.construct(1.0f, entry_point);
         builder.construct(parameters.alpha, entry_point);
         return graph;
     }
 
+    // SVS Vamana graph element size
     static constexpr size_t element_size(size_t graph_max_degree, size_t alignment = 0) {
+        // For every Vamana graph node SVS allocates a record with current node ID and
+        // graph_max_degree neighbors
         return sizeof(SVSIdType) * (graph_max_degree + 1);
     }
 };

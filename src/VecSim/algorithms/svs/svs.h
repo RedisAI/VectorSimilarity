@@ -1,11 +1,3 @@
-/* TODO: change the copyright here */
-
-/*
- *Copyright Redis Ltd. 2021 - present
- *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
- *the Server Side Public License v1 (SSPLv1).
- */
-
 #pragma once
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/query_result_definitions.h"
@@ -30,13 +22,13 @@ struct SVSIndexBase {
 };
 
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
-class SVSIndex : public VecSimIndexAbstract<details::vecsim_dt<DataType>, float>,
+class SVSIndex : public VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>,
                  public SVSIndexBase {
 protected:
     using data_type = DataType;
     using distance_f = MetricType;
-    using Base = VecSimIndexAbstract<details::vecsim_dt<DataType>, float>;
-    using index_component_t = IndexComponents<details::vecsim_dt<DataType>, float>;
+    using Base = VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>;
+    using index_component_t = IndexComponents<svs_details::vecsim_dt<DataType>, float>;
 
     using storage_traits_t = SVSStorageTraits<DataType, QuantBits, ResidualBits>;
     using index_storage_type = typename storage_traits_t::index_storage_type;
@@ -64,7 +56,7 @@ protected:
     // SVS Index implementation instance
     std::unique_ptr<impl_type> impl_;
 
-    static float toVecSimDistance(float v) { return details::toVecSimDistance<distance_f>(v); }
+    static float toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
 
     template <typename T, typename U>
     static T getOrDefault(T v, U def) {
@@ -76,16 +68,28 @@ protected:
         // clang-format off
         // evaluate optimal default parameters; current assumption:
         // * alpha (1.2 or 0.9) depends on metric: L2: > 1.0, IP, Cosine: < 1.0
-        // * construction_window_size (250): =~ HNSW_EF_CONSTRUCTION
-        // * graph_max_degree (64): =~ HNSW_M * 2
+        //      In the Vamana algorithm implementation in SVS, the choice of alpha value
+        //      depends on the type of similarity measure used. For L2, which minimizes distance,
+        //      an alpha value greater than 1 is needed, typically around 1.2.
+        //      For Inner Product and Cosine, which maximize similarity or distance,
+        //      the alpha value should be less than 1, usually 0.9 or 0.95 works.
+        // * construction_window_size (250): similar to HNSW_EF_CONSTRUCTION
+        // * graph_max_degree (64): similar to HNSW_M * 2
         // * max_candiate_pool_size (750): =~ construction_window_size * 3
         // * prune_to (60): < graph_max_degree, optimal = graph_max_degree - 4
+        //      The prune_to parameter is a performance feature designed to enhance build time
+        //      by setting a small difference between this value and the maximum graph degree.
+        //      This acts as a threshold for how much pruning can reduce the number of neighbors.
+        //      Typically, a small gap of 4 or 8 is sufficient to improve build time
+        //      without compromising the quality of the graph.
         // * use_search_history (true): now: is enabled if not disabled explicitly
         //                              future: default value based on other index parameters
         const auto construction_window_size = getOrDefault(params.construction_window_size, 250);
         const auto graph_max_degree = getOrDefault(params.graph_max_degree, 64);
 
-        return svs::index::vamana::VamanaBuildParameters {
+        // More info about VamanaBuildParameters can be found there:
+        // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
+        return svs::index::vamana::VamanaBuildParameters{
             getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.9f)), // alpha_,
             graph_max_degree,                                                           // graph_max_degree_,
             construction_window_size,                                                   // window_size_,
@@ -96,6 +100,8 @@ protected:
         // clang-format on
     }
 
+    // Create SVS index instance with initial data
+    // Data should not be empty
     void initImpl(impl_type::data_type data, std::span<const labelType> ids) {
         svs::threads::SwitchNativeThreadPool threadpool{this->num_threads};
         // Compute the entry point.
@@ -105,14 +111,16 @@ protected:
         auto distance = distance_f{};
         const auto &parameters = this->buildParams;
 
+        // Construct initial Vamana Graph
         auto graph =
             graph_builder_t::build_graph(parameters, data, distance, threadpool, entry_point,
                                          this->blockSize, this->getAllocator());
 
+        // Create SVS MutableIndex instance
         impl_ = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
                                             std::move(distance), ids, std::move(threadpool));
 
-        // Set MutableIndex build parameters
+        // Set SVS MutableIndex build parameters to be used in future updates
         impl_->set_construction_window_size(parameters.window_size);
         impl_->set_max_candidates(parameters.max_candidate_pool_size);
         impl_->set_prune_to(parameters.prune_to);
@@ -159,16 +167,19 @@ protected:
         std::span<const labelType> ids(labels, n);
         auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
         auto typed_vectors_data = static_cast<DataType *>(processed_blob.get());
+        // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
-        // construct SVS index for first rows
+        // SVS index instance cannot be empty, so we have to construct it at first rows
         if (!impl_) {
+            // Construct SVS index initial storage with compression if needed
             auto init_data =
                 storage_traits_t::create_storage(points, this->blockSize, this->getAllocator());
             initImpl(std::move(init_data), ids);
             return n;
         }
 
+        // Add new points to existing SVS index
         impl_->add_points(points, ids);
         return n - deleted_num;
     }
@@ -323,7 +334,7 @@ public:
         auto queries = svs::data::ConstSimpleDataView<DataType>{
             static_cast<const DataType *>(processed_query), 1, this->dim};
         auto result = svs::QueryResult<size_t>{queries.size(), k};
-        auto sp = details::joinSearchParams(impl_->get_search_parameters(), queryParams);
+        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams);
 
         auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
@@ -355,7 +366,7 @@ public:
         auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
 
-        auto sp = details::joinSearchParams(impl_->get_search_parameters(), queryParams);
+        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams);
         const size_t batch_size = queryParams && queryParams->batchSize
                                       ? queryParams->batchSize
                                       : sp.buffer_config_.get_search_window_size();

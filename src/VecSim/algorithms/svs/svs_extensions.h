@@ -12,7 +12,7 @@
 #if HAVE_SVS_LVQ
 #include "svs/quantization/lvq/impl/lvq_impl.h"
 
-namespace details {
+namespace svs_details {
 template <size_t Primary>
 struct LVQSelector {
     using strategy = svs::quantization::lvq::Sequential;
@@ -22,13 +22,13 @@ template <>
 struct LVQSelector<4> {
     using strategy = svs::quantization::lvq::Turbo<16, 8>;
 };
-} // namespace details
+} // namespace svs_details
 
 template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(QuantBits > 0)>> {
-    using allocator_type = details::SVSAllocator<std::byte>;
+    using allocator_type = svs_details::SVSAllocator<std::byte>;
     using blocked_type = svs::data::Blocked<allocator_type>;
-    using strategy_type = typename details::LVQSelector<QuantBits>::strategy;
+    using strategy_type = typename svs_details::LVQSelector<QuantBits>::strategy;
     using index_storage_type =
         svs::quantization::lvq::LVQDataset<QuantBits, ResidualBits, svs::Dynamic, strategy_type,
                                            blocked_type>;
@@ -37,7 +37,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(Qua
     static index_storage_type create_storage(const Dataset &data, size_t block_size,
                                              std::shared_ptr<VecSimAllocator> allocator) {
         const auto dim = data.dimensions();
-        auto svs_bs = details::SVSBlockSize(block_size, element_size(dim));
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
         allocator_type data_allocator{std::move(allocator)};
         blocked_type blocked_alloc{{svs_bs}, data_allocator};
