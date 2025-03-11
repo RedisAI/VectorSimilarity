@@ -288,30 +288,39 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
 
+// These macros are used to make sure the expansion of other macros happens when needed
+#define MACRO_EXPAND_AND_CONCATENATE(a, b) a##b
+#define MACRO_CONCATENATE(a, b) MACRO_EXPAND_AND_CONCATENATE(a, b)
+
+#define DEFAULT_RANGE_RADII {20,35,50}
+#define DEFAULT_RANGE_EPSILONS {1,10,11}
+
 // The actual radius will be the given arg divided by 100, since arg must be an integer.
-#define REGISTER_Range_BF(BM_FUNC)                                                                 \
+#define REGISTER_Range_BF(BM_FUNC, RADII)                                                          \
+    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark* b) {             \
+        for (int radius : RADII) {                                                                 \
+            b->Args({radius});                                                                     \
+        }                                                                                          \
+    }                                                                                              \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
-        ->Arg(20)                                                                                  \
-        ->Arg(35)                                                                                  \
-        ->Arg(50)                                                                                  \
-        ->ArgName("radiusX100")                                                                    \
+        ->Apply(MACRO_CONCATENATE(BM_FUNC, _Args))                                                 \
+        ->ArgNames({"radiusX100"})                                                                 \
         ->Iterations(10)                                                                           \
-        ->Unit(benchmark::kMillisecond)
+        ->Unit(benchmark::kMillisecond);
 
 // {radius*100, epsilon*1000}
 // The actual radius will be the given arg divided by 100, and the actual epsilon values
 // will be the given arg divided by 1000.
-#define REGISTER_Range_HNSW(BM_FUNC)                                                               \
+#define REGISTER_Range_HNSW(BM_FUNC, RADII, EPSILONS)                                              \
+    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark* b) {             \
+        for (int radius : RADII) {                                                                 \
+            for (int epsilon : EPSILONS) {                                                         \
+                b->Args({radius, epsilon});                                                        \
+            }                                                                                      \
+        }                                                                                          \
+    }                                                                                              \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
-        ->Args({20, 1})                                                                            \
-        ->Args({20, 10})                                                                           \
-        ->Args({20, 100})                                                                          \
-        ->Args({35, 1})                                                                            \
-        ->Args({35, 10})                                                                           \
-        ->Args({35, 100})                                                                          \
-        ->Args({50, 1})                                                                            \
-        ->Args({50, 10})                                                                           \
-        ->Args({50, 100})                                                                          \
+        ->Apply(MACRO_CONCATENATE(BM_FUNC, _Args))                                                 \
         ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
