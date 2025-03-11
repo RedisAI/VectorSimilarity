@@ -16,9 +16,9 @@ size_t BM_VecSimGeneral::EF_C = 512;
 tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/wipedia_single-cosine-dim1024-M64-efc512-uint8.hnsw_v3";
+    "tests/benchmark/data/wipedia_single_uint8-cosine-dim1024-M64-efc512-uint8.hnsw_v3";
 const char *BM_VecSimGeneral::test_queries_file =
-    "tests/benchmark/data/wipedia_single-cosine-dim1024-uint8-test_vectors.raw";
+    "tests/benchmark/data/wipedia_single_uint8-cosine-dim1024-uint8-test_vectors.raw";
 
 #define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Single
 #define BM_ADD_LABEL                AddLabel_Single
