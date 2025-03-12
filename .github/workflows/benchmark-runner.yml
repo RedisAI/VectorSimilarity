@@ -16,26 +16,7 @@ on:
       github-runner-label:
         required: true
         type: string
-    secrets:
-      AWS_ACCESS_KEY_ID:
-        required: true
-      AWS_SECRET_ACCESS_KEY:
-        required: true
-      AWS_REGION_BENCHMARK:
-        required: true
-      AWS_EC2_SG_ID_BENCHMARK:
-        required: true
-      AWS_EC2_SUBNET_ID_BENCHMARK:
-        required: true
-      GH_PERSONAL_ACCESS_TOKEN:
-        required: true
-      PERFORMANCE_RTS_HOST:
-        required: true
-      PERFORMANCE_RTS_PORT:
-        required: true
-      PERFORMANCE_RTS_AUTH:
-        required: true
-    
+
 jobs:
   start-runner:
     name: Start self-hosted EC2 runner
