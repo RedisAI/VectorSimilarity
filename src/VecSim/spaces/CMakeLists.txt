@@ -81,6 +81,44 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
+	message(STATUS "Enabling Arm Performance Libraries integration")
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
+	set(ARMPL_DIR "/opt/arm/armpl_24.10_gcc")
+
+	include_directories(${ARMPL_DIR}/include)
+	message(STATUS "$ENV{ARMPL_LIBRARIES} and ${ARMPL_DIR}/lib")
+	# Find and set up ARM Performance Libraries
+	find_library(ARMPL_LIB armpl_lp64 PATHS $ENV{ARMPL_LIBRARIES} ${ARMPL_DIR}/lib)
+	if(NOT ARMPL_LIB)
+		message(STATUS "Could not find ARM Performance Libraries, trying to use -larmpl_lp64")
+		set(ARMPL_LIB "armpl_lp64")
+	else()
+		message(STATUS "Found ARM Performance Libraries: ${ARMPL_LIB}")
+	endif()
+
+	# Create different optimization implementations for ARM architecture
+	# ArmPL used for standard ARMv8-A with NEON
+	if (CXX_ARMV8A)
+		message("Building with ARMV8A and ArmPL")
+		set_source_files_properties(functions/ARMPL_NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
+		list(APPEND OPTIMIZATIONS functions/ARMPL_NEON.cpp)
+	endif()
+
+	# # ArmPL with SVE2 support
+	# if (CXX_SVE)
+	# 	message("Building with SVE2 and ArmPL")
+	# 	set_source_files_properties(functions/ARMPL_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
+	# 	list(APPEND OPTIMIZATIONS functions/ARMPL_SVE2.cpp)
+	# endif()
+
+	if (CXX_SVE2)
+		message("Building with ARMV9 and ArmPL")
+		set_source_files_properties(functions/ARMPL_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
+		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE2.cpp)
+	endif()
+endif()
+
 # Here we are compiling the space selectors with the relevant optimization flag.
 add_library(VectorSimilaritySpaces
 	L2_space.cpp
@@ -90,4 +128,4 @@ add_library(VectorSimilaritySpaces
 	computer/preprocessor_container.cpp
 )
 
-target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features)
+target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features ${ARMPL_LIB})

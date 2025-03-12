@@ -7,6 +7,22 @@
 
 class BM_VecSimSpaces_FP32 : public BM_VecSimSpaces<float> {};
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
+
+// ARMPL NEON implementation for ARMv8-a
+#ifdef OPT_NEON
+bool neon_supported = true; // ARMv8-a always supports NEON
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_NEON, 16, neon_supported);
+#endif
+
+// ARMPL SVE2 implementation 
+#ifdef OPT_SVE
+bool sve2_supported = opt.sve; // Check for SVE2 support
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_SVE2, 16, sve2_supported);
+#endif
+#endif // AARCH64
+
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
