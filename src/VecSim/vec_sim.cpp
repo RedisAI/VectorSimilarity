@@ -105,20 +105,22 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
                                                 VecSimQueryParams *qparams,
                                                 VecsimQueryType query_type) {
     double num_val;
-    // EPSILON is a valid parameter only in HNSW algorithm.
-    if (index_type != VecSimAlgo_HNSWLIB) {
+    // EPSILON is a valid parameter only in HNSW or SVS algorithms.
+    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_SVS) {
         return VecSimParamResolverErr_UnknownParam;
     }
     if (query_type != QUERY_TYPE_RANGE) {
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
-    if (qparams->hnswRuntimeParams.epsilon != 0) {
+    auto &epsilon_ref = index_type == VecSimAlgo_HNSWLIB ? qparams->hnswRuntimeParams.epsilon
+                                                         : qparams->svsRuntimeParams.epsilon;
+    if (epsilon_ref != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
     if (validate_positive_double_param(rparam, &num_val) != VecSimParamResolver_OK) {
         return VecSimParamResolverErr_BadValue;
     }
-    qparams->hnswRuntimeParams.epsilon = num_val;
+    epsilon_ref = num_val;
     return VecSimParamResolver_OK;
 }
 
