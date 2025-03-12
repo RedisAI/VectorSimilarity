@@ -4,11 +4,11 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/spaces/space_includes.h"
-#include <armpl.h>
-
+ #include "VecSim/spaces/space_includes.h"
+ #include <armpl.h>
+ 
 template <unsigned char residual> // 0..15
-float FP32_InnerProductSIMD16_ARMPL_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP32_InnerProductSIMD16_ARMPL_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *vec1 = (float *)pVect1v;
     auto *vec2 = (float *)pVect2v;
 

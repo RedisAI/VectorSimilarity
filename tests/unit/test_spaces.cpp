@@ -390,7 +390,7 @@
 #if defined(CPU_FEATURES_ARCH_X86_64)
      auto optimization = cpu_features::GetX86Info().features;
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
-     auto optimization = cpu_features::GetARMInfo().features;
+     auto optimization = cpu_features::GetAarch64Info().features;
 #endif
      size_t dim = GetParam();
      float v[dim];
@@ -444,6 +444,7 @@
          optimization.sse = 0;
      }
  #endif
+ #endif //CPU_FEATURES_ARCH_X86_64
 
  #if defined(CPU_FEATURES_ARCH_AARCH64)
     #ifdef OPT_SVE2
@@ -457,12 +458,18 @@
          // Unset sve2 flag as well, so we'll choose the next option (default).
          optimization.sve2 = 0;
      }
-     arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
-     ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_NEON(dim))
-     << "Unexpected distance function chosen for dim " << dim;
+     #endif
+     #ifdef OPT_NEON
+     if (optimization.asimd){
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_ARMPL_NEON(dim))
+        << "Unexpected distance function chosen for dim " << dim;
+        optimization.asimd = 0;
+    }
      #endif
 
- #endif
+ #endif // CPU_FEATURES_ARCH_AARCH64
      unsigned char alignment = 0;
      arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
      ASSERT_EQ(arch_opt_func, FP32_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -470,8 +477,13 @@
      ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
  }
  
+ 
  TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
-     auto optimization = cpu_features::GetX86Info().features;
+#if defined(CPU_FEATURES_ARCH_X86_64)
+    auto optimization = cpu_features::GetX86Info().features;
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    auto optimization = cpu_features::GetAarch64Info().features;
+#endif
      size_t dim = GetParam();
      float v[dim];
      float v2[dim];
@@ -487,6 +499,7 @@
  
      dist_func_t<float> arch_opt_func;
      float baseline = FP32_InnerProduct(v, v2, dim);
+#if defined(CPU_FEATURES_ARCH_X86_64)
  #ifdef OPT_AVX512F
      if (optimization.avx512f) {
          unsigned char alignment = 0;
@@ -520,6 +533,31 @@
          optimization.sse = 0;
      }
  #endif
+ #endif //CPU_FEATURES_ARCH_X86_64
+ #if defined(CPU_FEATURES_ARCH_AARCH64)
+    #ifdef OPT_SVE2
+     if (optimization.sve2) {
+         unsigned char alignment = 0;
+         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_SVE2(dim))
+             << "Unexpected distance function chosen for dim " << dim;
+         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "SVE2 with dim " << dim;
+         // Unset sve2 flag as well, so we'll choose the next option (default).
+         optimization.sve2 = 0;
+     }
+     #endif
+     #ifdef OPT_NEON
+     if (optimization.asimd){
+         unsigned char alignment = 0;
+         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_NEON(dim))
+         << "Unexpected distance function chosen for dim " << dim;
+         optimization.asimd = 0;
+     }
+     #endif
+ #endif // CPU_FEATURES_ARCH_AARCH64
+
      unsigned char alignment = 0;
      arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
      ASSERT_EQ(arch_opt_func, FP32_InnerProduct)
@@ -528,9 +566,11 @@
      ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
  }
  
- INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
-                          testing::Range(16UL, 16 * 2UL + 1));
  
+ INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
+    testing::Range(16UL, 16 * 2UL + 1));
+    
+#if defined(CPU_FEATURES_ARCH_X86_64)
  class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
  
  TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
