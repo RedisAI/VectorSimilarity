@@ -454,7 +454,29 @@ public:
     }
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
-        bool res = true;
+        size_t index_size = this->indexSize();
+
+        // Calculate the ratio of the subset size to the total index size.
+        double subsetRatio = (index_size == 0) ? 0.f : static_cast<double>(subsetSize) / index_size;
+
+        // Heuristic thresholds
+        const double smallSubsetThreshold = 0.07;  // Subset is small if less than 7% of index.
+        const double largeSubsetThreshold = 0.21;  // Subset is large If more than 21% of index.
+        const double smallIndexThreshold = 75000;  // Index is small if size is less than 75k.
+        const double largeIndexThreshold = 750000; // Index is large if size is more than 750k.
+
+        bool res = false;
+        if (subsetRatio < smallSubsetThreshold) {
+            // For small subsets, ad-hoc if index is not large.
+            res = (index_size < largeIndexThreshold);
+        } else if (subsetRatio < largeSubsetThreshold) {
+            // For medium subsets, ad-hoc if index is small or k is big.
+            res = (index_size < smallIndexThreshold) || (k > 12);
+        } else {
+            // For large subsets, ad-hoc only if index is small.
+            res = (index_size < smallIndexThreshold);
+        }
+
         this->lastMode =
             res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
         return res;
