@@ -1,6 +1,6 @@
 # This file is a template file for generating multi datasets from single
 # Using HNSW-knn for labeling
-# In this version, it create a multi dataset from the "wipedia_single" dataset used for int8
+# In this version, it creates a multi dataset from the "wipedia_single" dataset used for int8
 # Refrain from pushing changes unless necessary
 import h5py
 import numpy as np
@@ -63,17 +63,17 @@ for vct,lbl in groups.items():
 
 for i in range(n_vectors):
     if i not in groups:
-        print("Error: Some vectors appear are missing!")
+        print("Error: Some vectors appear to be missing!")
         sys.exit(1)
 for i in range(n_labels):
     if i not in inverse_groups:
-        print("Error: Some labels appear are missing!")
+        print("Error: Some labels appear to be missing!")
         sys.exit(1)
     if len(inverse_groups[i]) <label_size:
         print("Error: Not all labels are full")
         sys.exit(1)
     if len(inverse_groups[i]) > label_size:
-        print(f"Error: some labels bigger then {label_size}")
+        print(f"Error: Some labels are bigger then {label_size}")
         sys.exit(1)
 
 

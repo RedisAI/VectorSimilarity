@@ -16,7 +16,7 @@ struct benchmark_range {
 };
 
 // Larger Range query values are required for int8 wikipedia dataset.
-// Default values gives 0 results
+// Default values give 0 results
 #define INT8_RANGE_RADII                                                                           \
     { 50, 65, 80 }
 
