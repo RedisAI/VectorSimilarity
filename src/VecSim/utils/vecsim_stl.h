@@ -29,6 +29,12 @@ public:
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, alloc) {}
     explicit vector(size_t cap, T val, const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, val, alloc) {}
+    explicit vector(const vector &other, const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(alloc) {
+        this->assign(other.begin(), other.end());
+    }
+    explicit vector(const vector &&other, const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(std::move(other)) {}
 
     bool remove(T element) {
         auto it = std::find(this->begin(), this->end(), element);

@@ -231,6 +231,7 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
  * @param callback logCallbackFunction function. should get void* and return void.
  */
 void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
+void VecSim_ResetLogCallbackFunction();
 
 /**
  * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using

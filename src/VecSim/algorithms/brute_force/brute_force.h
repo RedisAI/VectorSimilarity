@@ -50,8 +50,8 @@ public:
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
     VecSimIndexBasicInfo basicInfo() const override;
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) const override;
+    // VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+    //                                       VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
@@ -130,8 +130,8 @@ protected:
     virtual void setVectorId(labelType label, idType id) = 0;
     virtual void resizeLabelLookup(size_t new_max_elements) = 0;
 
-    virtual VecSimBatchIterator *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
+    // virtual VecSimBatchIterator *
+    // newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
@@ -344,17 +344,17 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     return infoIterator;
 }
 
-template <typename DataType, typename DistType>
-VecSimBatchIterator *
-BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) const {
-    auto *queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->preprocessQueryInPlace(queryBlobCopy);
-    // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return newBatchIterator_Instance(queryBlobCopy, queryParams);
-}
+// template <typename DataType, typename DistType>
+// VecSimBatchIterator *
+// BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
+//                                                       VecSimQueryParams *queryParams) const {
+//     auto *queryBlobCopy =
+//         this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
+//     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+//     this->preprocessQueryInPlace(queryBlobCopy);
+//     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
+//     return newBatchIterator_Instance(queryBlobCopy, queryParams);
+// }
 
 template <typename DataType, typename DistType>
 bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,

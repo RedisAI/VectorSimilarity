@@ -20,6 +20,22 @@
 struct VecSimIndexInterface : public VecsimBaseObject {
 
 public:
+    static void log_external(const char *level, const char *fmt, ...) {
+        if (VecSimIndexInterface::logCallback) {
+            // Format the message and call the callback
+            va_list args;
+            va_start(args, fmt);
+            int len = vsnprintf(NULL, 0, fmt, args);
+            va_end(args);
+            char *buf = new char[len + 1];
+            va_start(args, fmt);
+            vsnprintf(buf, len + 1, fmt, args);
+            va_end(args);
+            logCallback(nullptr, level, buf);
+            delete[] buf;
+        }
+    }
+
     /**
      * @brief Construct a new Vec Sim Index object
      *
@@ -141,8 +157,8 @@ public:
      * @param queryBlob binary representation of the query vector. Blob size should match the index
      * data type and dimension. The index is responsible to process the query vector.
      */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                                  VecSimQueryParams *queryParams) const = 0;
+    // virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+    //                                               VecSimQueryParams *queryParams) const = 0;
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
      * search over the index instead of using batch iterator.
@@ -193,6 +209,8 @@ public:
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
     }
+
+    static void resetLogCallbackFunction();
 
     /**
      * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
