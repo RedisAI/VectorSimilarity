@@ -84,7 +84,7 @@ endif()
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
-	set(ARMPL_DIR "/opt/arm/armpl_24.10_gcc")
+	set(ARMPL_DIR "${root}/armpl_24.10_gcc")
 
 	include_directories(${ARMPL_DIR}/include)
 	message(STATUS "$ENV{ARMPL_LIBRARIES} and ${ARMPL_DIR}/lib")
