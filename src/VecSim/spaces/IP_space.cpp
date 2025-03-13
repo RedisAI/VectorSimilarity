@@ -56,6 +56,7 @@
      if (features.sve) {
         return Choose_FP32_IP_implementation_ARMPL_SVE(dim);
      }
+#endif
  #ifdef OPT_NEON
      if (features.asimd){
          return Choose_FP32_L2_implementation_ARMPL_NEON(dim);
