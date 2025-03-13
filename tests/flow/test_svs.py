@@ -12,7 +12,7 @@ import hnswlib
 
 def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
                      alpha = 1.2, graph_max_degree = 64, window_size = 128,
-                     max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_DEFAULT, num_threads = 4):
+                     max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_DEFAULT):
     svs_params = SVSParams()
 
     svs_params.dim = dim
@@ -24,7 +24,6 @@ def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
     svs_params.max_candidate_pool_size = max_candidate_pool_size
     svs_params.prune_to = prune_to
     svs_params.use_search_history = full_search_history
-    svs_params.num_threads = num_threads
     svs_params.search_window_size = window_size
 
     return SVSIndex(svs_params)
@@ -244,7 +243,7 @@ def test_topk_query():
     dim = 128
     num_elements = 100000
 
-    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, num_threads = 0)
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
 
     np.random.seed(47)
     start = time.time()
@@ -296,7 +295,7 @@ def test_range_query():
     dim = 100
     num_elements = 100000
 
-    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, num_threads = 0)
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
 
     np.random.seed(47)
     start = time.time()

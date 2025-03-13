@@ -212,3 +212,6 @@ struct SVSGraphBuilder {
         return sizeof(SVSIdType) * (graph_max_degree + 1);
     }
 };
+
+// The sequential thread pool is used for single-threaded execution
+using VecSimSVSThreadPool = svs::threads::SequentialThreadPool;
