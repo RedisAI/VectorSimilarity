@@ -22,9 +22,7 @@ then
     # install libarmpl
     wget https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_24.10/arm-performance-libraries_24.10_deb_gcc.tar
     tar -xf arm-performance-libraries_24.10_deb_gcc.tar
-    sudo ./arm-performance-libraries_24.10_deb/arm-performance-libraries_24.10_deb.sh --accept --install-to ../armpl
-    sudo apt update
-    sudo apt-get install -y environment-modules
+    sudo ./arm-performance-libraries_24.10_deb/arm-performance-libraries_24.10_deb.sh --accept --install-to armpl
     sudo rm -rf arm-performance-libraries_24.10_deb_gcc.tar
 fi
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
