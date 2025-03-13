@@ -4,23 +4,24 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
- #include "VecSim/spaces/space_includes.h"
- #include "VecSim/spaces/IP_space.h"
- #include "VecSim/spaces/IP/IP.h"
- #include "VecSim/types/bfloat16.h"
- #include "VecSim/types/float16.h"
- #include "VecSim/spaces/functions/AVX512F.h"
- #include "VecSim/spaces/functions/F16C.h"
- #include "VecSim/spaces/functions/AVX.h"
- #include "VecSim/spaces/functions/SSE.h"
- #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
- #include "VecSim/spaces/functions/AVX512FP16_VL.h"
- #include "VecSim/spaces/functions/AVX512BF16_VL.h"
- #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
- #include "VecSim/spaces/functions/AVX2.h"
- #include "VecSim/spaces/functions/SSE3.h"
- #include "VecSim/spaces/functions/ARMPL_NEON.h"
- #include "VecSim/spaces/functions/ARMPL_SVE2.h"
+#include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/IP/IP.h"
+#include "VecSim/types/bfloat16.h"
+#include "VecSim/types/float16.h"
+#include "VecSim/spaces/functions/AVX512F.h"
+#include "VecSim/spaces/functions/F16C.h"
+#include "VecSim/spaces/functions/AVX.h"
+#include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
+#include "VecSim/spaces/functions/AVX512FP16_VL.h"
+#include "VecSim/spaces/functions/AVX512BF16_VL.h"
+#include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
+#include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/SSE3.h"
+#include "VecSim/spaces/functions/ARMPL_NEON.h"
+#include "VecSim/spaces/functions/ARMPL_SVE.h"
+#include "VecSim/spaces/functions/ARMPL_SVE2.h"
  
  using bfloat16 = vecsim_types::bfloat16;
  using float16 = vecsim_types::float16;
@@ -46,11 +47,15 @@
                          ? cpu_features::GetAarch64Info().features
                          : *static_cast<const cpu_features::Aarch64Features *>(arch_opt);
  
- #if defined(OPT_SVE2)
+ #ifdef OPT_SVE2
      if (features.sve2) {
-         return Choose_FP32_IP_implementation_ARMPL_SVE2(dim);
+        return Choose_FP32_IP_implementation_ARMPL_SVE2(dim);
      }
  #endif
+ #ifdef OPT_SVE
+     if (features.sve) {
+        return Choose_FP32_IP_implementation_ARMPL_SVE(dim);
+     }
  #ifdef OPT_NEON
      if (features.asimd){
          return Choose_FP32_L2_implementation_ARMPL_NEON(dim);

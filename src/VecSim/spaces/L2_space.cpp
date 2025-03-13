@@ -19,6 +19,7 @@
  #include "VecSim/spaces/functions/AVX2.h"
  #include "VecSim/spaces/functions/SSE3.h"
  #include "VecSim/spaces/functions/ARMPL_NEON.h"
+ #include "VecSim/spaces/functions/ARMPL_SVE.h"
  #include "VecSim/spaces/functions/ARMPL_SVE2.h"
  
  using bfloat16 = vecsim_types::bfloat16;
@@ -50,6 +51,11 @@
          return Choose_FP32_L2_implementation_ARMPL_SVE2(dim);
      }
  #endif
+ #ifdef OPT_SVE
+ if (features.sve) {
+    return Choose_FP32_L2_implementation_ARMPL_SVE(dim);
+ }
+#endif
  #ifdef OPT_NEON
      if (features.asimd){
          return Choose_FP32_L2_implementation_ARMPL_NEON(dim);
