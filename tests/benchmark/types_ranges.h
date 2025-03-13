@@ -25,3 +25,12 @@ struct benchmark_range<int8_index_t> {
     static std::array<unsigned int, 3> get_radii() { return INT8_RANGE_RADII; }
     static std::array<unsigned int, 3> get_epsilons() { return DEFAULT_RANGE_EPSILONS; }
 };
+
+// UINT8 ranges
+#define UINT8_RANGE_RADII                                                                          \
+    { 4, 5, 7 }
+template <>
+struct benchmark_range<uint8_index_t> {
+    static std::array<unsigned int, 3> get_radii() { return UINT8_RANGE_RADII; }
+    static std::array<unsigned int, 3> get_epsilons() { return DEFAULT_RANGE_EPSILONS; }
+};
