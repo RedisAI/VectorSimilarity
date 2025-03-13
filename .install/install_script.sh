@@ -1,6 +1,7 @@
 #!/bin/bash
 
 OS_TYPE=$(uname -s)
+ARCH=$(uname -m)
 
 if [[ $OS_TYPE = 'Darwin' ]]
 then
