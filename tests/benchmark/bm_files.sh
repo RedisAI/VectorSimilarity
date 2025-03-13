@@ -27,7 +27,9 @@ elif [ "$BM_TYPE" = "bm-basics-fp16-single" ] \
 then
     file_name="basic_fp16"
 elif [ "$BM_TYPE" = "bm-basics-int8-single" ] \
-|| [ "$BM_TYPE" = "bm-batch-iter-int8-single" ] 
+|| [ "$BM_TYPE" = "bm-basics-int8-multi" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-int8-single" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-int8-multi" ]
 then
     file_name="basic_int8"
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then

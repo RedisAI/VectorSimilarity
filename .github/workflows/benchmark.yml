@@ -20,6 +20,7 @@ on:
           - bm-basics-fp16-single
           - bm-basics-fp16-multi
           - bm-basics-int8-single
+          - bm-basics-int8-multi
           - bm-batch-iter-fp32-single
           - bm-batch-iter-fp32-multi
           - bm-batch-iter-fp64-single
@@ -29,6 +30,7 @@ on:
           - bm-batch-iter-fp16-single
           - bm-batch-iter-fp16-multi
           - bm-batch-iter-int8-single
+          - bm-batch-iter-int8-multi
           - bm-updated-fp32-single
           - bm-spaces
         description: 'Benchmarks set to run'
