@@ -480,14 +480,6 @@ public:
         return res;
     }
 
-    void runGC() override {
-        if (impl_) {
-            impl_->consolidate();
-            impl_->compact();
-        }
-        changes_num = 0;
-    }
-
 #ifdef BUILD_TESTS
     virtual void fitMemory() {};
 #endif
