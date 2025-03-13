@@ -1,0 +1,112 @@
+on:
+  workflow_call:
+    inputs:
+      setup:
+        required: true
+        type: string
+      architecture:
+        required: true
+        type: string
+      instance-type:
+        required: true
+        type: string
+      ami-id:
+        required: true
+        type: string
+      github-runner-label:
+        required: true
+        type: string
+
+jobs:
+  start-runner:
+    name: Start self-hosted EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner_label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2_instance_id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          ec2-image-id: ${{ inputs.ami-id }}
+          ec2-instance-type: ${{ inputs.instance-type }}
+          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID_BENCHMARK }}
+          security-group-id: ${{ secrets.AWS_EC2_SG_ID_BENCHMARK }}
+          label: ${{ inputs.github-runner-label }}
+
+  benchmark:
+    name: Run benchmarks on runner
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.runner_label }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
+      - name: Print runner info
+        run: |
+          printf "Runner lscpu:\n$(lscpu)\n"
+          printf "Runner lsmem:\n$(lsmem)\n"
+          printf "Runner nproc:\n$(nproc)\n"
+          printf "Runner uname:\n$(uname -a)\n"
+          printf "Runner arch:\n$(arch)\n"
+      - name: Install benchmark dependencies
+        run: |
+          sudo .install/install_script.sh
+          sudo apt install python3-pip -y
+          pip3 install --upgrade pip PyYAML setuptools redisbench-admin
+          pip3 install -r requirements.txt
+      - name: Download pre-generated indices
+        timeout-minutes: 20
+        run: ./tests/benchmark/bm_files.sh ${{ inputs.setup }}
+      - name: Run Benchmark
+        env:
+          ARCH: ${{ inputs.architecture }}
+        timeout-minutes: 300
+        run: |
+          make benchmark BM_FILTER=${{ inputs.setup }}
+      - name: Collect results
+        run: |
+          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export \
+          --redistimeseries_host ${{ secrets.PERFORMANCE_RTS_HOST }} \
+          --redistimeseries_port ${{ secrets.PERFORMANCE_RTS_PORT }} \
+          --redistimeseries_user default \
+          --redistimeseries_pass '${{ secrets.PERFORMANCE_RTS_AUTH }}' \
+          --github_repo ${{ github.event.repository.name }} \
+          --github_org ${{ github.repository_owner }} \
+          --github_branch ${{ github.head_ref || github.ref_name }} \
+          --github_actor ${{ github.triggering_actor }} \
+          --results-format google.benchmark \
+          --benchmark-result-file {}_results.json
+
+  stop-runner:
+    name: Stop self-hosted EC2 runner
+    needs:
+      - start-runner # required to get output from the start-runner job
+      - benchmark # required to wait when the main job is done
+    runs-on: ubuntu-latest
+    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          label: ${{ inputs.github-runner-label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2_instance_id }}
+

@@ -21,10 +21,10 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-bf16-test_vectors.raw";
 
-#define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Single
-#define BM_ADD_LABEL                AddLabel_Single
-#define BM_ADD_LABEL_ASYNC          AddLabel_Async_Single
-#define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Single
+#define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Single)
+#define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Single)
+#define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Async, Single)
+#define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel, Async, Single)
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), bf16_index_t, BruteForceIndex_Single,
                     vecsim_types::bfloat16, float, VecSimAlgo_BF)

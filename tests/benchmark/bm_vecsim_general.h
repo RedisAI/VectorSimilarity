@@ -20,6 +20,7 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "bm_definitions.h"
+#include "bm_macros.h"
 #include "utils/mock_thread_pool.h"
 
 // This class includes every static data member that is:

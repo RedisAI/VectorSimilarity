@@ -16,7 +16,7 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-fp16-test_vectors.raw";
 
-#define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Single
+#define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(algo, bm_func, Single)
 
 #include "benchmark/bm_initialization/bm_batch_initialize_fp16.h"
 
