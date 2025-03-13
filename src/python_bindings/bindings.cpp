@@ -650,7 +650,6 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("max_candidate_pool_size", &SVSParams::max_candidate_pool_size)
         .def_readwrite("prune_to", &SVSParams::prune_to)
         .def_readwrite("use_search_history", &SVSParams::use_search_history)
-        .def_readwrite("num_threads", &SVSParams::num_threads)
         .def_readwrite("search_window_size", &SVSParams::search_window_size)
         .def_readwrite("epsilon", &SVSParams::epsilon);
 
