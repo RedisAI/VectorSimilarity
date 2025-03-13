@@ -84,12 +84,13 @@ endif()
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
-	set(ARMPL_DIR "/opt/arm/armpl_24.10_gcc")
+	set(ARMPL_DIR "${root}/armpl/armpl_24.10_gcc")
 
 	include_directories(${ARMPL_DIR}/include)
 	message(STATUS "$ENV{ARMPL_LIBRARIES} and ${ARMPL_DIR}/lib")
-	# Find and set up ARM Performance Libraries
-	find_library(ARMPL_LIB armpl_lp64 PATHS $ENV{ARMPL_LIBRARIES} ${ARMPL_DIR}/lib)
+	# Find and set up ARM Performance Libraries with no default path
+	find_library(ARMPL_LIB armpl_lp64 PATHS ${ARMPL_DIR}/lib)
+
 	if(NOT ARMPL_LIB)
 		message(STATUS "Could not find ARM Performance Libraries, trying to use -larmpl_lp64")
 		set(ARMPL_LIB "armpl_lp64")
