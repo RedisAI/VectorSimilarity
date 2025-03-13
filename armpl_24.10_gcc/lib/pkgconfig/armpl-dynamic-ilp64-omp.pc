@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../../
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${prefix}/lib
+
+Name: ArmPL
+Description: Arm Performance Libraries
+Version: 24.10.0
+Cflags: -DINTEGER64 -fopenmp -I${includedir}
+Libs: -DINTEGER64 -fopenmp -L${libdir} -larmpl_ilp64_mp -lastring -lamath -lm

@@ -1,0 +1,20 @@
+ARMPL example: FFT of a real sequence using fftw_plan_dft_r2c_1d
+----------------------------------------------------------------
+
+Components of discrete Fourier transform:
+
+   1   ( 2.4838 0.0000)
+   2   (-0.2661 0.5310)
+   3   (-0.2577 0.2029)
+   4   (-0.2563 0.0581)
+
+Original sequence as restored by inverse transform:
+
+       Original  Restored
+   1    0.3491    0.3491
+   2    0.5489    0.5489
+   3    0.7478    0.7478
+   4    0.9446    0.9446
+   5    1.1387    1.1387
+   6    1.3287    1.3287
+   7    1.5137    1.5137

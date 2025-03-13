@@ -1,0 +1,39 @@
+ARMPL example: FFT of many complex sequences using fftw_plan_many_dft
+---------------------------------------------------------------------
+
+Components of discrete Fourier transform for sequence 1:
+
+          Real    Imag
+   0   ( 3.9058,-0.8624)
+   3   (-1.1798,-2.2513)
+   6   ( 0.6363, 2.7988)
+   9   ( 1.4502, 0.9137)
+  12   (-1.8932,-0.5988)
+Components of discrete Fourier transform for sequence 2:
+
+          Real    Imag
+  15   ( 4.1409, 0.1608)
+  18   (-1.5958,-1.5274)
+  21   (-0.3339, 3.7259)
+  24   (-2.2094, 0.8871)
+  27   ( 0.0483, 0.9611)
+
+Original sequence 1 as restored by inverse transform:
+
+            Original            Restored
+          Real    Imag        Real    Imag
+   0   ( 0.5839, 0.0000)   ( 0.5839, 0.0000)
+   2   ( 0.3464,-0.9093)   ( 0.3464,-0.9093)
+   4   ( 1.9602, 0.7568)   ( 1.9602, 0.7568)
+   6   ( 0.8545, 0.2794)   ( 0.8545, 0.2794)
+   8   ( 0.1609,-0.9894)   ( 0.1609,-0.9894)
+
+Original sequence 2 as restored by inverse transform:
+
+            Original            Restored
+          Real    Imag        Real    Imag
+  10   ( 0.0100, 0.8415)   ( 0.0100, 0.8415)
+  12   ( 1.2837,-0.8415)   ( 1.2837,-0.8415)
+  14   ( 1.7539,-0.1411)   ( 1.7539,-0.1411)
+  16   ( 0.0889, 0.9589)   ( 0.0889, 0.9589)
+  18   ( 1.0044,-0.6570)   ( 1.0044,-0.6570)

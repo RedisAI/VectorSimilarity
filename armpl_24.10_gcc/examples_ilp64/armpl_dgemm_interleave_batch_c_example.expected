@@ -1,0 +1,6 @@
+ARMPL example: interleave-batch matrix multiplication
+-----------------------------------------------------
+
+blas_sum = 3.955600e+06
+  ib_sum = 3.955600e+06
+
