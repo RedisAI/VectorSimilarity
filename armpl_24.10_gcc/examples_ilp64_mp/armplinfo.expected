@@ -1,8 +1,0 @@
-Arm PL (Arm Performance Libraries)
-Version 23.10.0-release (Thu Oct 12 11:02:36 BST 2023)
-Copyright ARM,NAG 2023
-Build system: Linux 4.18.0-348.2.1.el8_5.aarch64 aarch64 localhost
-Built using Fortran compiler: GNU Fortran (GCC) 12.2.0
-   with flags: -fasynchronous-unwind-tables -Wuninitialized  -mtune=neoverse-n1 -ffixed-line-length-132 -Wall -W -Wno-unused -Wno-unused-parameter -Wno-unused-dummy-argument -Wno-compare-reals -Wno-conversion -Wno-uninitialized -Wno-function-elimination -fPIC -fno-second-underscore -fimplicit-none -Waliasing -Wsurprising -DUSE_OMP -fopenmp   -O3
- and C compiler: gcc (GCC) 12.2.0
-   with flags: -fasynchronous-unwind-tables -Wuninitialized -DFORTRAN_COMPLEX_RETTYPE=2  -mtune=neoverse-n1 -DFORTRAN_COMPLEX_RETTYPE=2 -W -Wno-unused-parameter -Wstrict-prototypes -Wwrite-strings -D_GNU_SOURCE -D_ISOC99_SOURCE -fPIC -Werror -DUSE_OMP -fopenmp  -O3

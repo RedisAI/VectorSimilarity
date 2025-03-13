@@ -1,1 +1,0 @@
-armpl-static-lp64-seq.pc

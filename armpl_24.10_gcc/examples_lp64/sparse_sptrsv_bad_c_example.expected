@@ -1,6 +1,0 @@
- ** Parameter error: parameter 1 caused an error.
-    The matrix passed to armpl_spsv_optimize is not triangular. The matrix used
-    to perform a triangular solve must be either upper or lower triangular.
-    Upper triangular matrices must have no non-zero values below the diagonal,
-    and lower triangular matrices must have no non-zero values above the
-    diagonal.
