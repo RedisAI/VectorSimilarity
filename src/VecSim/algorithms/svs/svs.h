@@ -49,7 +49,6 @@ protected:
     svs::index::vamana::VamanaBuildParameters buildParams;
 
     // Index search parameters
-    size_t num_threads;
     size_t search_window_size;
     double epsilon;
 
@@ -103,7 +102,7 @@ protected:
     // Create SVS index instance with initial data
     // Data should not be empty
     void initImpl(impl_type::data_type data, std::span<const labelType> ids) {
-        svs::threads::SwitchNativeThreadPool threadpool{this->num_threads};
+        VecSimSVSThreadPool threadpool;
         // Compute the entry point.
         auto entry_point = svs::index::vamana::extensions::compute_entry_point(data, threadpool);
 
@@ -235,7 +234,6 @@ public:
              const index_component_t &components, bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{makeVamanaBuildParameters(params)},
-          num_threads{getOrDefault(params.num_threads, std::thread::hardware_concurrency())},
           search_window_size{getOrDefault(params.search_window_size, 10)},
           epsilon{params.epsilon > 0 ? params.epsilon : 0.01}, impl_{nullptr} {}
 
