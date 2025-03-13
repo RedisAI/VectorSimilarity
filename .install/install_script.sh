@@ -16,7 +16,15 @@ else
     OS=$(echo $OS | sed 's/[/ ]/_/g') # replace spaces and slashes with underscores
 fi
 echo $OS
-
+if [[ $ARCH == 'aarch64' ]]
+then
+    # install libarmpl
+    wget https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_24.10/arm-performance-libraries_24.10_deb_gcc.tar
+    tar -xf arm-performance-libraries_24.10_deb_gcc.tar
+    sudo ./arm-performance-libraries_24.10_deb/arm-performance-libraries_24.10_deb.sh --accept
+    sudo apt update
+    sudo apt-get install -y environment-modules
+fi
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 cd $SCRIPT_DIR
