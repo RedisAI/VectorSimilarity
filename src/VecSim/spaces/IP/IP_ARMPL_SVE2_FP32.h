@@ -8,10 +8,11 @@
 #include <armpl.h>
 
 template <unsigned char residual> // 0..15
-float FP32_InnerProductSIMD16_ARMPL_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP32_InnerProductSIMD16_ARMPL_SVE2(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
     auto *vec1 = (float *)pVect1v;
     auto *vec2 = (float *)pVect2v;
 
     float res = cblas_sdot(static_cast<int>(dimension), vec1, 1, vec2, 1);
-    return 1.0f - res; 
+    return 1.0f - res;
 }
