@@ -4,18 +4,30 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
- #include "VecSim/spaces/space_includes.h"
- #include "armpl.h"
- 
- template <unsigned char residual> // 0..15
- float FP32_L2SqrSIMD16_ARMPL_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
-     const float *vec1 = static_cast<const float*>(pVect1v);
-     const float *vec2 = static_cast<const float*>(pVect2v);
- 
-     float dot_xx = cblas_sdot(static_cast<int>(dimension), vec1, 1, vec1, 1);
-     float dot_yy = cblas_sdot(static_cast<int>(dimension), vec2, 1, vec2, 1);
-     float dot_xy = cblas_sdot(static_cast<int>(dimension), vec1, 1, vec2, 1);
- 
-     return dot_xx + dot_yy - 2.0f * dot_xy;
- }
- 
+#include "VecSim/spaces/space_includes.h"
+#include "armpl.h"
+
+template <unsigned char residual> // 0..15
+float FP32_L2SqrSIMD16_ARMPL_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const float *vec1 = static_cast<const float *>(pVect1v);
+    const float *vec2 = static_cast<const float *>(pVect2v);
+
+    float result = 0.0f;
+    const size_t blockSize = 512; // Changed from int to size_t
+    float buffer[blockSize];
+
+    for (size_t i = 0; i < dimension; i += blockSize) {
+        // Process in smaller chunks to improve cache behavior
+        size_t currentBlock = std::min(blockSize, dimension - i);
+
+        // Calculate difference vector in chunks
+        for (size_t j = 0; j < currentBlock; j++) {
+            buffer[j] = vec1[i + j] - vec2[i + j];
+        }
+
+        // Use ArmPL to compute dot product of difference with itself
+        result += cblas_sdot(currentBlock, buffer, 1, buffer, 1);
+    }
+
+    return result;
+}
