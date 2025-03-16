@@ -414,7 +414,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_L2Sqr(v, v2, dim);
-#if defined(CPU_FEATURES_ARCH_X86_64)
+// CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -448,9 +448,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         optimization.sse = 0;
     }
 #endif
-#endif // CPU_FEATURES_ARCH_X86_64
 
-#if defined(CPU_FEATURES_ARCH_AARCH64)
+// CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_SVE2
     if (optimization.sve2) {
         unsigned char alignment = 0;
@@ -485,7 +484,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     }
 #endif
 
-#endif // CPU_FEATURES_ARCH_AARCH64
     unsigned char alignment = 0;
     arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP32_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -510,7 +508,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_InnerProduct(v, v2, dim);
-#if defined(CPU_FEATURES_ARCH_X86_64)
+
+// CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -544,8 +543,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         optimization.sse = 0;
     }
 #endif
-#endif // CPU_FEATURES_ARCH_X86_64
-#if defined(CPU_FEATURES_ARCH_AARCH64)
+
+// CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_SVE2
     if (optimization.sve2) {
         unsigned char alignment = 0;
@@ -580,7 +579,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         optimization.asimd = 0;
     }
 #endif
-#endif // CPU_FEATURES_ARCH_AARCH64
 
     unsigned char alignment = 0;
     arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
