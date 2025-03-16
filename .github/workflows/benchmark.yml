@@ -4,6 +4,11 @@ on:
       setup:
         type: string
         required: true
+      architecture:
+        type: string
+        required: false
+        default: 'all'
+        description: 'Run only on specific architecture'
   workflow_dispatch:
     inputs:
       setup:
@@ -39,107 +44,66 @@ on:
           - bm-spaces
         description: 'Benchmarks set to run'
         default: benchmarks-all
+      architecture:
+          type: choice
+          options:
+            - all
+            - arm64
+            - x86_64
+          description: 'Run only on specific architecture'
+          default: 'all'
 
 jobs:
-  start-runner:
-    name: Start self-hosted EC2 runner
+  prepare_runner_configurations:
     runs-on: ubuntu-latest
     outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: start
-          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-          # Ubuntu 22.04 128GB Storage AMI
-          ec2-image-id: ami-0ba430d4b7b64de57
-          ec2-instance-type: r7i.xlarge
-          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
-
-  benchmark:
-    name: Run the benchmarks on the runner
-    needs: start-runner # required to start the main job when the runner is ready
-    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
-    steps:
-      - name: checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
-      - name: Print runner info
+      - name: Set matrix
+        id: set-matrix
         run: |
-          printf "Runner lscpu:\n$(lscpu)\n"
-          printf "Runner lsmem:\n$(lsmem)\n"
-          printf "Runner nproc:\n$(nproc)\n"
-          printf "Runner uname:\n$(uname -a)\n"
+          # Define the full matrix as a JSON string
+          FULL_MATRIX='
+          {
+            "include": [
+              {
+                "architecture": "arm64",
+                "instance-type": "i8g.xlarge",
+                "ami-id": "ami-0d6c92b636b74f843"
+              },
+              {
+                "architecture": "x86_64",
+                "instance-type": "r7i.xlarge",
+                "ami-id": "ami-09fabd03bb09b3704"
+              }
+            ]
+          }
+          '
+          
+          # Filter the matrix based on architecture
+          if [ "${{ inputs.architecture }}" = "all" ]; then
+            # Use the full matrix
+            FILTERED_MATRIX="$FULL_MATRIX"
+          else
+            # Filter to only the selected architecture
+            FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq -c '{include: [.include[] | select(.architecture | contains("${{ inputs.architecture }}"))]}')
+          fi
+          
+          # Use multiline output delimiter syntax for GitHub Actions
+          echo "matrix<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILTERED_MATRIX" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Install benchmark dependencies
-        run: |
-             sudo .install/install_script.sh
-             sudo apt install python3-pip -y
-             pip3 install --upgrade pip PyYAML setuptools redisbench-admin
-             pip3 install -r requirements.txt
-
-      # - name: stress test
-      #   run: |
-      #     sudo apt install stress-ng -qqy
-      #     uptime
-      #     stress-ng -c 1 --timeout 60s --metrics-brief
-      #     uptime
-      #     stress-ng --stream 1 -t 60 --metrics-brief
-      #     uptime
-      #     stress-ng --ipsec-mb=1 -t 60 --metrics-brief
-      #     uptime
-
-      # TODO: remove "--no-check-certificate" when possible
-      - name: Download pre-generated indices
-        timeout-minutes: 20
-        run: ./tests/benchmark/bm_files.sh ${{ inputs.setup }}
-      - name: Benchmark
-        timeout-minutes: 120
-        run: make benchmark BM_FILTER=${{ inputs.setup }}
-
-      - name: Collect results
-        run: |
-          ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export     \
-          --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
-          --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
-          --redistimeseries_user      default                                       \
-          --redistimeseries_pass      '${{ secrets.PERFORMANCE_RTS_AUTH }}'         \
-          --github_repo               ${{ github.event.repository.name }}           \
-          --github_org                ${{ github.repository_owner }}                \
-          --github_branch             ${{ github.head_ref || github.ref_name }}     \
-          --github_actor              ${{ github.triggering_actor }}                \
-          --results-format            google.benchmark                              \
-          --benchmark-result-file     {}_results.json
-
-  stop-runner:
-    name: Stop self-hosted EC2 runner
-    needs:
-      - start-runner # required to get output from the start-runner job
-      - benchmark # required to wait when the main job is done
-    runs-on: ubuntu-latest
-    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: stop
-          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
+  run_benchmarks:
+    name: Run ${{ matrix.architecture }} benchmarks
+    needs: prepare_runner_configurations
+    uses: ./.github/workflows/benchmark-runner.yml
+    secrets: inherit
+    strategy:
+      matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
+    with:
+      setup: ${{ inputs.setup }}
+      architecture: ${{ matrix.architecture }}
+      instance-type: ${{ matrix.instance-type }}
+      ami-id: ${{ matrix.ami-id }}
+      github-runner-label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
