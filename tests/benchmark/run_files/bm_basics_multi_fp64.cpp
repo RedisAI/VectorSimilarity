@@ -20,10 +20,10 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/fashion_images_multi_value-cosine-dim512-fp64-test_vectors.raw";
 
-#define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Multi
-#define BM_ADD_LABEL                AddLabel_Multi
-#define BM_ADD_LABEL_ASYNC          AddLabel_Async_Multi
-#define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Multi
+#define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Multi)
+#define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Multi)
+#define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel_Async, Multi)
+#define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, Multi)
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp64_index_t, BruteForceIndex_Multi, double,
                     double, VecSimAlgo_BF)
