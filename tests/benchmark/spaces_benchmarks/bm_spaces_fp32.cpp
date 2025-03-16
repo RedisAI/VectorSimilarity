@@ -19,7 +19,7 @@ INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_NEON, 16, neon
 bool sve_supported = opt.sve; // Check for SVE support
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_SVE, 16, sve_supported);
 #endif
-// ARMPL SVE2 implementation 
+// ARMPL SVE2 implementation
 #ifdef OPT_SVE2
 bool sve2_supported = opt.sve2; // Check for SVE2 support
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_SVE2, 16, sve2_supported);
