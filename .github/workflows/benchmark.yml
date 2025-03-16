@@ -16,7 +16,6 @@ on:
         options:
           - benchmarks-all
           - benchmarks-default
-          - bm-basics-int8-single
           - bm-basics-fp32-single
           - bm-basics-fp32-multi
           - bm-basics-fp64-single
@@ -25,6 +24,10 @@ on:
           - bm-basics-bf16-multi
           - bm-basics-fp16-single
           - bm-basics-fp16-multi
+          - bm-basics-int8-single
+          - bm-basics-int8-multi
+          - bm-basics-uint8-single
+          - bm-basics-uint8-multi
           - bm-batch-iter-fp32-single
           - bm-batch-iter-fp32-multi
           - bm-batch-iter-fp64-single
@@ -33,6 +36,10 @@ on:
           - bm-batch-iter-bf16-multi
           - bm-batch-iter-fp16-single
           - bm-batch-iter-fp16-multi
+          - bm-batch-iter-int8-single
+          - bm-batch-iter-int8-multi
+          - bm-batch-iter-uint8-single
+          - bm-batch-iter-uint8-multi
           - bm-updated-fp32-single
           - bm-spaces
         description: 'Benchmarks set to run'
