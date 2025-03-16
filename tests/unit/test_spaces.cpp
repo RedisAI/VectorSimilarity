@@ -458,7 +458,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_ARMPL_SVE2(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment ARMPL_SVE2 with dim " << dim;
         // Unset sve2 flag as well, so we'll choose the next option (default).
         optimization.sve2 = 0;
     }
@@ -470,7 +470,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_ARMPL_SVE(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim  " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment ARMPL_SVE with dim " << dim;
         // Unset sve flag as well, so we'll choose the next option (default).
         optimization.sve = 0;
     }
@@ -481,7 +481,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_ARMPL_NEON(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim NEON " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment ARMPL_NEON with dim " << dim;
         optimization.asimd = 0;
     }
 #endif
@@ -554,7 +554,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_SVE2(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment ARMPL_SVE2 with dim " << dim;
         // Unset sve2 flag as well, so we'll choose the next option (default).
         optimization.sve2 = 0;
     }
@@ -566,7 +566,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_SVE(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment ARMPL_SVE with dim " << dim;
         // Unset sve2 flag as well, so we'll choose the next option (default).
         optimization.sve = 0;
     }
@@ -577,6 +577,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_NEON(dim))
             << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment ARMPL_NEON with dim " << dim;
         optimization.asimd = 0;
     }
 #endif
