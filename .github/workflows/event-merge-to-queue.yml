@@ -7,18 +7,12 @@ on:
     types: [checks_requested]
 
 jobs:
-  check-if-docs-only:
-    uses: ./.github/workflows/task-check-docs.yml
 
   jammy:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:jammy
   focal:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
@@ -35,8 +29,6 @@ jobs:
 #    with:
 #      container: ubuntu:xenial
   bullseye:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: debian:bullseye
@@ -51,40 +43,27 @@ jobs:
   #    with:
   #      container: centos:7
   mariner2:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/mariner2.yml
   rocky8:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:8
   rocky9:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:9
   macos:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/macos.yml
   arm:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/arm.yml
     secrets: inherit
 
   coverage:
-    needs: [check-if-docs-only]
-    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
 
   pr-validation:
     needs:
-      - check-if-docs-only
       - jammy
       - focal
 #      - bionic
