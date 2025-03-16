@@ -28,6 +28,7 @@
  #include "VecSim/spaces/functions/SSE3.h"
  #include "VecSim/spaces/functions/F16C.h"
  #include "VecSim/spaces/functions/ARMPL_SVE2.h"
+ #include "VecSim/spaces/functions/ARMPL_SVE.h"
  #include "VecSim/spaces/functions/ARMPL_NEON.h"
  #include "tests_utils.h"
  
@@ -460,6 +461,18 @@
          optimization.sve2 = 0;
      }
      #endif
+     #ifdef OPT_SVE
+     if (optimization.sve) {
+         unsigned char alignment = 0;
+         arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_ARMPL_SVE(dim))
+             << "Unexpected distance function chosen for dim " << dim;
+         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "SVE with dim " << dim;
+         // Unset sve2 flag as well, so we'll choose the next option (default).
+         optimization.sve = 0;
+     }
+     #endif
      #ifdef OPT_NEON
      if (optimization.asimd){
         unsigned char alignment = 0;
@@ -546,6 +559,18 @@
          ASSERT_EQ(alignment, expected_alignment(256, dim)) << "SVE2 with dim " << dim;
          // Unset sve2 flag as well, so we'll choose the next option (default).
          optimization.sve2 = 0;
+     }
+     #endif
+     #ifdef OPT_SVE
+     if (optimization.sve) {
+         unsigned char alignment = 0;
+         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_SVE(dim))
+             << "Unexpected distance function chosen for dim " << dim;
+         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "SVE with dim " << dim;
+         // Unset sve2 flag as well, so we'll choose the next option (default).
+         optimization.sve = 0;
      }
      #endif
      #ifdef OPT_NEON
