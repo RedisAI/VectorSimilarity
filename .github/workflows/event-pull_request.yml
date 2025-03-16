@@ -5,14 +5,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review] # Defaults + ready_for_review
 
 jobs:
-  check-if-docs-only:
-    uses: ./.github/workflows/task-check-docs.yml
 
   basic-tests:
     name: basic tests
     runs-on: ubuntu-latest
-    needs: check-if-docs-only
-    if: needs.check-if-docs-only.outputs.only-docs-changed == 'false'
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
@@ -35,14 +31,13 @@ jobs:
         run: make flow_test
 
   coverage:
-    needs: [basic-tests, check-if-docs-only]
-    if: ${{ !github.event.pull_request.draft && needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    needs: [basic-tests]
+    if: ${{ !github.event.pull_request.draft}}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
 
   codeql-analysis:
-    needs: [check-if-docs-only]
-    if: ${{ !github.event.pull_request.draft && needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+    if: ${{ !github.event.pull_request.draft}}
     uses: ./.github/workflows/codeql-analysis.yml
     secrets: inherit
 
@@ -58,7 +53,6 @@ jobs:
 
   pr-validation:
     needs:
-      - check-if-docs-only
       - basic-tests
       - coverage
       - codeql-analysis
