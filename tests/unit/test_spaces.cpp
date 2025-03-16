@@ -42,8 +42,7 @@ inline auto getCpuOptimizationFeatures() {
     return cpu_features::GetAarch64Info().features;
 #else
     // Return empty/default features if on an unsupported architecture
-    return cpu_features::X86Info()
-        .features; // This will need to be adjusted if other architectures are supported
+    return cpu_features::X86Info().features;
 #endif
 }
 
