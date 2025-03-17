@@ -8,7 +8,7 @@
 #include "armpl.h"
 
 template <unsigned char residual> // 0..15
-float FP32_L2SqrSIMD16_ARMPL_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP32_L2Sqr_ARMPL_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float *vec1 = static_cast<const float *>(pVect1v);
     const float *vec2 = static_cast<const float *>(pVect2v);
 
