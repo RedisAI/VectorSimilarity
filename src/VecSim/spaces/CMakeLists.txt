@@ -104,6 +104,8 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 		message("Building with ARMV8A and ArmPL")
 		set_source_files_properties(functions/ARMPL_NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
 		list(APPEND OPTIMIZATIONS functions/ARMPL_NEON.cpp)
+		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
+		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
 	endif()
 
 	# ArmPL with SVE support
