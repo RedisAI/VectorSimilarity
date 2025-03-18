@@ -13,7 +13,8 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 // ARMPL NEON implementation for ARMv8-a
 #ifdef OPT_NEON
 bool neon_supported = opt.asimd; // ARMv8-a always supports NEON
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP32, FP32, ARMPL_NEON, 4, neon_supported);
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_FP32, FP32, NEON, 4, neon_supported);
 #endif
 #ifdef OPT_SVE
 bool sve_supported = opt.sve; // Check for SVE support
