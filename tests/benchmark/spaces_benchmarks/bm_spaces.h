@@ -27,6 +27,8 @@
 #include "VecSim/spaces/functions/ARMPL_NEON.h"
 #include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_SVE2.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
 #include "bm_macros.h"
 #include "bm_spaces_class.h"
 

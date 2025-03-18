@@ -21,7 +21,7 @@ static inline void L2SquareStep(float *&pVect1, float *&pVect2, float32x4_t &sum
 }
 
 template <unsigned char residual> // 0..15
-float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP32_L2SqrSIMD64_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 

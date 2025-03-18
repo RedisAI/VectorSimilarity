@@ -30,6 +30,8 @@
 #include "VecSim/spaces/functions/ARMPL_SVE2.h"
 #include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_NEON.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
 #include "tests_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -573,8 +575,13 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
     if (optimization.asimd) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_NEON(dim))
-            << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        if (dim < 150) {
+            ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_NEON(dim))
+                << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        } else {
+            ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_ARMPL_NEON(dim))
+                << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        }
         ASSERT_EQ(alignment, 0) << "No alignment ARMPL_NEON with dim " << dim;
         optimization.asimd = 0;
     }

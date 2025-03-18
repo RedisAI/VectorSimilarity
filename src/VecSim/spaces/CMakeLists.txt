@@ -113,6 +113,8 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64")
 		message("Building with SVE and ArmPL")
 		set_source_files_properties(functions/ARMPL_SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE.cpp)
+		set_source_files_properties(functions/SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
 	endif()
 
 	# ArmPL with SVE2 support

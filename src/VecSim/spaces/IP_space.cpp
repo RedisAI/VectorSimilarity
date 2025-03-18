@@ -22,6 +22,7 @@
 #include "VecSim/spaces/functions/ARMPL_NEON.h"
 #include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_SVE2.h"
+#include "VecSim/spaces/functions/NEON.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -56,6 +57,9 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif
 #ifdef OPT_NEON
     if (features.asimd) {
+        if (dim < 150) {
+            return Choose_FP32_IP_implementation_NEON(dim);
+        }
         return Choose_FP32_IP_implementation_ARMPL_NEON(dim);
     }
 #endif
