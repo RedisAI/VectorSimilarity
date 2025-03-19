@@ -12,6 +12,7 @@ float FP32_InnerProduct_ARMPL_NEON(const void *pVect1v, const void *pVect2v, siz
     auto *vec1 = (float *)pVect1v;
     auto *vec2 = (float *)pVect2v;
 
+    // Notice: Armpl can choose different implementation based on cpu features.
     float res = cblas_sdot(static_cast<int>(dimension), vec1, 1, vec2, 1);
     return 1.0f - res;
 }

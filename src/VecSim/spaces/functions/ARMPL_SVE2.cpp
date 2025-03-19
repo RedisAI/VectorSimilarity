@@ -16,13 +16,13 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP32_IP_implementation_ARMPL_SVE2(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProduct_ARMPL_SVE2);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 1, FP32_InnerProduct_ARMPL_SVE2);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_FP32_L2_implementation_ARMPL_SVE2(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2Sqr_ARMPL_SVE2);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 1, FP32_L2Sqr_ARMPL_SVE2);
     return ret_dist_func;
 }
 

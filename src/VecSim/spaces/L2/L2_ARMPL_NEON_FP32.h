@@ -12,22 +12,38 @@ float FP32_L2Sqr_ARMPL_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     const float *vec1 = static_cast<const float *>(pVect1v);
     const float *vec2 = static_cast<const float *>(pVect2v);
 
-    // Option 1: More direct calculation with improved numerical stability
     float result = 0.0f;
-    const size_t blockSize = 128; // Changed from int to size_t
+    constexpr const size_t blockSize = 1024;
     float buffer[blockSize];
 
-    for (size_t i = 0; i < dimension; i += blockSize) {
-        // Process in smaller chunks to improve cache behavior
-        size_t currentBlock = std::min(blockSize, dimension - i);
+    // Pre-calculate number of full blocks and the size of the last partial block
+    const size_t fullBlockCount = dimension / blockSize;
+    const size_t lastBlockSize = dimension % blockSize;
 
-        // Calculate difference vector in chunks
-        for (size_t j = 0; j < currentBlock; j++) {
-            buffer[j] = vec1[i + j] - vec2[i + j];
+    // Process full blocks
+    for (size_t i = 0; i < fullBlockCount; i++) {
+        size_t offset = i * blockSize;
+
+        // Calculate difference vector for full block
+        for (size_t j = 0; j < blockSize; j++) {
+            buffer[j] = vec1[offset + j] - vec2[offset + j];
         }
 
-        // Use ArmPL to compute dot product of difference with itself
-        result += cblas_sdot(currentBlock, buffer, 1, buffer, 1);
+        // Use ARMPL to compute dot product
+        result += cblas_sdot(blockSize, buffer, 1, buffer, 1);
+    }
+
+    // Handle remaining elements (if any)
+    if (lastBlockSize > 0) {
+        size_t offset = fullBlockCount * blockSize;
+
+        // Calculate difference vector for remaining elements
+        for (size_t j = 0; j < lastBlockSize; j++) {
+            buffer[j] = vec1[offset + j] - vec2[offset + j];
+        }
+
+        // Use ARMPL to compute dot product
+        result += cblas_sdot(lastBlockSize, buffer, 1, buffer, 1);
     }
 
     return result;
