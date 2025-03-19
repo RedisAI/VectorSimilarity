@@ -7,13 +7,12 @@
 #include "VecSim/spaces/space_includes.h"
 #include "armpl.h"
 
-template <unsigned char residual> // 0..15
 float FP32_L2Sqr_ARMPL_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float *vec1 = static_cast<const float *>(pVect1v);
     const float *vec2 = static_cast<const float *>(pVect2v);
 
     float result = 0.0f;
-    const size_t blockSize = 512; // Changed from int to size_t
+    constexpr const size_t blockSize = 1024;
     float buffer[blockSize];
 
     for (size_t i = 0; i < dimension; i += blockSize) {
@@ -25,7 +24,7 @@ float FP32_L2Sqr_ARMPL_SVE2(const void *pVect1v, const void *pVect2v, size_t dim
             buffer[j] = vec1[i + j] - vec2[i + j];
         }
 
-        // Use ArmPL to compute dot product of difference with itself
+        // Notice: Armpl can choose different implementation based on cpu features.
         result += cblas_sdot(currentBlock, buffer, 1, buffer, 1);
     }
 
