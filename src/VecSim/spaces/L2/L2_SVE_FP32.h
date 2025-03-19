@@ -5,81 +5,67 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
-#include <arm_neon.h>
+#include <arm_sve.h>
 
-static inline void L2SquareStep(float *&pVect1, float *&pVect2, float32x4_t &sum) {
-    float32x4_t v1 = vld1q_f32(pVect1);
-    pVect1 += 4;
-    float32x4_t v2 = vld1q_f32(pVect2);
-    pVect2 += 4;
+static inline void L2SquareStep_SVE(float *&pVect1, float *&pVect2, svfloat32_t &sum, svbool_t pg) {
+    svfloat32_t v1 = svld1_f32(pg, pVect1);
+    svfloat32_t v2 = svld1_f32(pg, pVect2);
 
     // Calculate difference between vectors
-    float32x4_t diff = vsubq_f32(v1, v2);
+    svfloat32_t diff = svsub_f32_x(pg, v1, v2);
 
-    // Square and accumulate
-    sum = vmlaq_f32(sum, diff, diff);
+    // Square and accumulate: sum += diff * diff
+    sum = svmla_f32_x(pg, sum, diff, diff);
+
+    // Advance pointers by vector length
+    size_t vl = svcntw();
+    pVect1 += vl;
+    pVect2 += vl;
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..63 (assuming max SVE vector length of 2048 bits = 64 floats)
 float FP32_L2SqrSIMD64_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
-    const float *pEnd1 = pVect1 + dimension;
+    // Get SVE vector length at runtime
+    size_t vl = svcntw();
 
-    float32x4_t sum_squares = vdupq_n_f32(0.0f);
+    // Create predicates for full vectors and residual elements
+    svbool_t pg_all = svptrue_b32();
+    svbool_t pg_residual = svwhilelt_b32_u32(0, residual);
 
-    // Deal with %4 remainder first
-    if constexpr (residual % 4) {
-        float32x4_t v1 = vdupq_n_f32(0.0f);
-        float32x4_t v2 = vdupq_n_f32(0.0f);
+    // Initialize accumulator
+    svfloat32_t sum_squares = svdup_n_f32(0.0f);
 
-        if constexpr (residual % 4 == 3) {
-            // Load 3 floats
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            v2 = vld1q_lane_f32(pVect2, v2, 0);
-            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
-            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
-            v1 = vld1q_lane_f32(pVect1 + 2, v1, 2);
-            v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
-        } else if constexpr (residual % 4 == 2) {
-            // Load 2 floats
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            v2 = vld1q_lane_f32(pVect2, v2, 0);
-            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
-            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
-        } else if constexpr (residual % 4 == 1) {
-            // Load 1 float
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            v2 = vld1q_lane_f32(pVect2, v2, 0);
-        }
-        pVect1 += residual % 4;
-        pVect2 += residual % 4;
-
-        // Calculate difference and square
-        float32x4_t diff = vsubq_f32(v1, v2);
-        sum_squares = vmlaq_f32(sum_squares, diff, diff);
+    // Handle residual elements first (if any)
+    if constexpr (residual > 0) {
+        svfloat32_t v1 = svld1_f32(pg_residual, pVect1);
+        svfloat32_t v2 = svld1_f32(pg_residual, pVect2);
+        svfloat32_t diff = svsub_f32_x(pg_residual, v1, v2);
+        sum_squares = svmla_f32_x(pg_residual, sum_squares, diff, diff);
+        pVect1 += residual;
+        pVect2 += residual;
     }
 
-    // Have another 1, 2 or 3 4-float steps according to residual
-    if constexpr (residual >= 12)
-        L2SquareStep(pVect1, pVect2, sum_squares);
-    if constexpr (residual >= 8)
-        L2SquareStep(pVect1, pVect2, sum_squares);
-    if constexpr (residual >= 4)
-        L2SquareStep(pVect1, pVect2, sum_squares);
-
-    // Process remaining 16-float blocks (4 vectors at a time)
-    while (pVect1 < pEnd1) {
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
+    // Process main loop with full vectors
+    size_t main_iterations = (dimension - residual) / vl;
+    for (size_t i = 0; i < main_iterations; i++) {
+        L2SquareStep_SVE(pVect1, pVect2, sum_squares, pg_all);
     }
 
-    // Horizontal sum of the 4 elements in the NEON register
-    float32x2_t sum_halves = vadd_f32(vget_low_f32(sum_squares), vget_high_f32(sum_squares));
-    float32x2_t summed = vpadd_f32(sum_halves, sum_halves); // contains duplicate values
+    // Handle any remaining elements not covered by residual or main loop
+    size_t remaining = (dimension - residual) % vl;
+    if (remaining > 0) {
+        svbool_t pg_remain = svwhilelt_b32_u32(0, remaining);
+        svfloat32_t v1 = svld1_f32(pg_remain, pVect1);
+        svfloat32_t v2 = svld1_f32(pg_remain, pVect2);
+        svfloat32_t diff = svsub_f32_x(pg_remain, v1, v2);
+        sum_squares = svmla_f32_x(pg_remain, sum_squares, diff, diff);
+    }
 
-    return vget_lane_f32(summed, 0);
+    // Horizontal sum of all elements in the SVE register
+    float result = svaddv_f32(pg_all, sum_squares);
+
+    return result;
 }
