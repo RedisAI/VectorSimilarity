@@ -12,6 +12,9 @@
 #ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"
 #endif // CPU_FEATURES_ARCH_X86_64
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#include "cpuinfo_aarch64.h"
+#endif // CPU_FEATURES_ARCH_AARCH64
 
 #if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
 #if defined(__GNUC__)
