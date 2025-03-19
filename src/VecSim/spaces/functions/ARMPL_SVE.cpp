@@ -8,6 +8,8 @@
 
 #include "VecSim/spaces/L2/L2_ARMPL_SVE_FP32.h"
 #include "VecSim/spaces/IP/IP_ARMPL_SVE_FP32.h"
+#include "VecSim/spaces/IP/IP_ARMPL_SVE_FP64.h"
+#include "VecSim/spaces/L2/L2_ARMPL_SVE_FP64.h"
 
 namespace spaces {
 
@@ -22,6 +24,18 @@ dist_func_t<float> Choose_FP32_IP_implementation_ARMPL_SVE(size_t dim) {
 dist_func_t<float> Choose_FP32_L2_implementation_ARMPL_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2Sqr_ARMPL_SVE);
+    return ret_dist_func;
+}
+
+dist_func_t<double> Choose_FP64_IP_implementation_ARMPL_SVE(size_t dim) {
+    dist_func_t<double> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProduct_ARMPL_SVE);
+    return ret_dist_func;
+}
+
+dist_func_t<double> Choose_FP64_L2_implementation_ARMPL_SVE(size_t dim) {
+    dist_func_t<double> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2Sqr_ARMPL_SVE);
     return ret_dist_func;
 }
 
