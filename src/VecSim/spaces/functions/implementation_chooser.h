@@ -23,16 +23,12 @@
 
 // Macros for folding cases of a switch statement, for easier readability.
 // Each macro expands into a sequence of cases, from 0 to N-1, doubling the previous macro.
-#define C2(func, N)    C1(func, 2 * (N)) C1(func, 2 * (N) + 1)
-#define C4(func, N)    C2(func, 2 * (N)) C2(func, 2 * (N) + 1)
-#define C8(func, N)    C4(func, 2 * (N)) C4(func, 2 * (N) + 1)
-#define C16(func, N)   C8(func, 2 * (N)) C8(func, 2 * (N) + 1)
-#define C32(func, N)   C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
-#define C64(func, N)   C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
-#define C128(func, N)  C64(func, 2 * (N)) C64(func, 2 * (N) + 1)
-#define C256(func, N)  C128(func, 2 * (N)) C128(func, 2 * (N) + 1)
-#define C512(func, N)  C256(func, 2 * (N)) C256(func, 2 * (N) + 1)
-#define C1024(func, N) C512(func, 2 * (N)) C512(func, 2 * (N) + 1)
+#define C2(func, N)  C1(func, 2 * (N)) C1(func, 2 * (N) + 1)
+#define C4(func, N)  C2(func, 2 * (N)) C2(func, 2 * (N) + 1)
+#define C8(func, N)  C4(func, 2 * (N)) C4(func, 2 * (N) + 1)
+#define C16(func, N) C8(func, 2 * (N)) C8(func, 2 * (N) + 1)
+#define C32(func, N) C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
+#define C64(func, N) C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
 
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
@@ -50,6 +46,8 @@
 // func:    The templated function that we want to choose the implementation for.
 // chunk:   The chunk size. Can be 64, 32, 16 or 8. Should be the number of elements of the expected
 //          type fitting in the expected register size.
+//          chunk == 1 means that there's no use of the residual, and we can use the function
+//          directly.
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \
