@@ -9,11 +9,10 @@
 
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, float32x4_t &sum) {
     float32x4_t v1 = vld1q_f32(pVect1);
-    pVect1 += 4;
     float32x4_t v2 = vld1q_f32(pVect2);
-    pVect2 += 4;
-
     sum = vmlaq_f32(sum, v1, v2);
+    pVect1 += 4;
+    pVect2 += 4;
 }
 
 template <unsigned char residual> // 0..15
@@ -21,59 +20,63 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
-    const float *pEnd1 = pVect1 + dimension;
-
     float32x4_t sum_prod = vdupq_n_f32(0.0f);
 
-    // Deal with %4 remainder first
-    if constexpr (residual % 4) {
+    // These are compile-time constants derived from the template parameter
+
+    // Calculate how many full 16-element blocks to process (each block = 4 NEON vectors)
+    // This ensures we process dimension-residual elements in the main loop
+    const size_t main_blocks = (dimension - residual) / 16;
+
+    // Process all complete 16-float blocks (4 vectors at a time)
+    for (size_t i = 0; i < main_blocks; i++) {
+        // Prefetch next data block (64 bytes ahead = 16 floats)
+        __builtin_prefetch(pVect1 + 64, 0, 0);
+        __builtin_prefetch(pVect2 + 64, 0, 0);
+
+        // Process 4 NEON vectors (16 floats) per iteration
+        InnerProductStep(pVect1, pVect2, sum_prod);
+        InnerProductStep(pVect1, pVect2, sum_prod);
+        InnerProductStep(pVect1, pVect2, sum_prod);
+        InnerProductStep(pVect1, pVect2, sum_prod);
+    }
+
+    // Handle remaining complete 4-float blocks within residual
+    // This code generates specialized paths at compile time based on residual
+    constexpr size_t remaining_quads = residual / 4; // Complete 4-element vectors in residual
+    if constexpr (remaining_quads > 0) {
+        for (size_t i = 0; i < remaining_quads; i++) {
+            InnerProductStep(pVect1, pVect2, sum_prod);
+        }
+    }
+
+    // Handle final residual elements (0-3 elements)
+    // This entire block is eliminated at compile time if final_residual is 0
+    constexpr size_t final_residual = residual % 4; // Final 0-3 elements
+    if constexpr (final_residual > 0) {
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);
 
-        if constexpr (residual % 4 == 3) {
-            // Load 3 floats
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            v2 = vld1q_lane_f32(pVect2, v2, 0);
-            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
-            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
-            v1 = vld1q_lane_f32(pVect1 + 2, v1, 2);
-            v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
-        } else if constexpr (residual % 4 == 2) {
-            // Load 2 floats
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            v2 = vld1q_lane_f32(pVect2, v2, 0);
-            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
-            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
-        } else if constexpr (residual % 4 == 1) {
-            // Load 1 float
+        if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f32(pVect1, v1, 0);
             v2 = vld1q_lane_f32(pVect2, v2, 0);
         }
-        pVect1 += residual % 4;
-        pVect2 += residual % 4;
+        if constexpr (final_residual >= 2) {
+            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
+            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
+        }
+        if constexpr (final_residual >= 3) {
+            v1 = vld1q_lane_f32(pVect1 + 2, v1, 2);
+            v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
+        }
+
         sum_prod = vmlaq_f32(sum_prod, v1, v2);
     }
 
-    // Have another 1, 2 or 3 4-float steps according to residual
-    if constexpr (residual >= 12)
-        InnerProductStep(pVect1, pVect2, sum_prod);
-    if constexpr (residual >= 8)
-        InnerProductStep(pVect1, pVect2, sum_prod);
-    if constexpr (residual >= 4)
-        InnerProductStep(pVect1, pVect2, sum_prod);
-
-    // Process remaining 16-float blocks (4 vectors at a time)
-    do {
-        InnerProductStep(pVect1, pVect2, sum_prod);
-        InnerProductStep(pVect1, pVect2, sum_prod);
-        InnerProductStep(pVect1, pVect2, sum_prod);
-        InnerProductStep(pVect1, pVect2, sum_prod);
-    } while (pVect1 < pEnd1);
-
     // Horizontal sum of the 4 elements in the NEON register
     float32x2_t sum_halves = vadd_f32(vget_low_f32(sum_prod), vget_high_f32(sum_prod));
-    float32x2_t summed = vpadd_f32(sum_halves, sum_halves); // contains duplicate values
+    float32x2_t summed = vpadd_f32(sum_halves, sum_halves);
     float sum = vget_lane_f32(summed, 0);
 
-    return 1.0f - sum; // Match SSE implementation return value
+    return 1.0f - sum;
 }

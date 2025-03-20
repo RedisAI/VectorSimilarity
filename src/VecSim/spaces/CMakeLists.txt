@@ -121,6 +121,8 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with ARMV9 and ArmPL")
 		set_source_files_properties(functions/ARMPL_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
 		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE2.cpp)
+		set_source_files_properties(functions/SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
+		list(APPEND OPTIMIZATIONS functions/SVE2.cpp)
 	endif()
 endif()
 

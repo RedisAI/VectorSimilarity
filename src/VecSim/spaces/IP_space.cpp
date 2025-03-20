@@ -23,6 +23,8 @@
 #include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_SVE2.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -47,12 +49,12 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
 
 #ifdef OPT_SVE2
     if (features.sve2) {
-        return Choose_FP32_IP_implementation_ARMPL_SVE2(dim);
+        return Choose_FP32_IP_implementation_SVE2(dim);
     }
 #endif
 #ifdef OPT_SVE
     if (features.sve) {
-        return Choose_FP32_IP_implementation_ARMPL_SVE(dim);
+        return Choose_FP32_IP_implementation_SVE(dim);
     }
 #endif
 #ifdef OPT_NEON

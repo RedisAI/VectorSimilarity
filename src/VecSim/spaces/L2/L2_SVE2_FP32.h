@@ -5,24 +5,26 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
-
 #include <arm_sve.h>
 
-static void InnerProductStep_SVE2(float *&pVect1, float *&pVect2, svfloat32_t &sum) {
+static void L2SquareStep_SVE2(float *&pVect1, float *&pVect2, svfloat32_t &sum) {
     // Load vectors
     svfloat32_t v1 = svld1_f32(svptrue_b32(), pVect1);
     svfloat32_t v2 = svld1_f32(svptrue_b32(), pVect2);
 
-    // Multiply-accumulate
-    sum = svmla_f32_z(svptrue_b32(), sum, v1, v2);
+    // Calculate difference between vectors (using SVE2's fused operations)
+    svfloat32_t diff = svsub_f32_z(svptrue_b32(), v1, v2);
 
-    // Advance pointers
+    // Square the difference and accumulate: sum += diff * diff
+    sum = svmla_f32_z(svptrue_b32(), sum, diff, diff);
+
+    // Advance pointers by the vector length
     pVect1 += svcntw();
     pVect2 += svcntw();
 }
 
 template <unsigned char residual>
-float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP32_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float *pVect1 = static_cast<const float *>(pVect1v);
     const float *pVect2 = static_cast<const float *>(pVect2v);
 
@@ -52,18 +54,25 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
         float *vec1_3 = const_cast<float *>(pVect1 + i + 3 * vl);
         float *vec2_3 = const_cast<float *>(pVect2 + i + 3 * vl);
 
-        InnerProductStep_SVE2(vec1_0, vec2_0, sum0);
-        InnerProductStep_SVE2(vec1_1, vec2_1, sum1);
-        InnerProductStep_SVE2(vec1_2, vec2_2, sum2);
-        InnerProductStep_SVE2(vec1_3, vec2_3, sum3);
+        L2SquareStep_SVE2(vec1_0, vec2_0, sum0);
+        L2SquareStep_SVE2(vec1_1, vec2_1, sum1);
+        L2SquareStep_SVE2(vec1_2, vec2_2, sum2);
+        L2SquareStep_SVE2(vec1_3, vec2_3, sum3);
     }
 
     // Handle remaining elements (less than 4*vl)
     for (; i < dimension; i += vl) {
         svbool_t pg = svwhilelt_b32(i, dimension);
+
+        // Load vectors with predication
         svfloat32_t v1 = svld1_f32(pg, pVect1 + i);
         svfloat32_t v2 = svld1_f32(pg, pVect2 + i);
-        sum0 = svmla_f32_m(pg, sum0, v1, v2);
+
+        // Calculate difference with predication
+        svfloat32_t diff = svsub_f32_m(pg, v1, v2);
+
+        // Square the difference and accumulate with predication
+        sum0 = svmla_f32_m(pg, sum0, diff, diff);
     }
 
     // Combine the partial sums
@@ -71,7 +80,7 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
     sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);
     sum0 = svadd_f32_z(svptrue_b32(), sum0, sum2);
 
-    // Horizontal sum and apply sign correction to match baseline
+    // Horizontal sum and convert to similarity score
     float result = svaddv_f32(svptrue_b32(), sum0);
-    return 1.0f - result; // Apply sign correction to match baseline
+    return result; // Convert distance to similarity score
 }
