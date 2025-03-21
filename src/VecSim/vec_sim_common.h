@@ -155,6 +155,7 @@ typedef struct {
     size_t prune_to;                 // Amount that candidates will be pruned.
     VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
+    size_t num_threads;                  // Maximum number of threads in threadpool.
     size_t search_window_size;           // Search window size to use during search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSParams;
@@ -168,6 +169,8 @@ typedef struct {
 // A struct that contains SVS tiered index specific params.
 typedef struct {
     size_t updateJobThreshold; // The flat index size threshold to trigger the update job.
+    size_t updateJobWaitTime;  // The time (microseconds) to wait for threads reservation before
+                               // executing the update job.
 } TieredSVSParams;
 
 // A struct that contains the common tiered index params.

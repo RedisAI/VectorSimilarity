@@ -692,7 +692,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("prune_to", &SVSParams::prune_to)
         .def_readwrite("use_search_history", &SVSParams::use_search_history)
         .def_readwrite("search_window_size", &SVSParams::search_window_size)
-        .def_readwrite("epsilon", &SVSParams::epsilon);
+        .def_readwrite("epsilon", &SVSParams::epsilon)
+        .def_readwrite("num_threads", &SVSParams::num_threads);
 
     py::class_<TieredHNSWParams>(m, "TieredHNSWParams")
         .def(py::init())
@@ -700,7 +701,8 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<TieredSVSParams>(m, "TieredSVSParams")
         .def(py::init())
-        .def_readwrite("updateJobThreshold", &TieredSVSParams::updateJobThreshold);
+        .def_readwrite("updateJobThreshold", &TieredSVSParams::updateJobThreshold)
+        .def_readwrite("updateJobWaitTime", &TieredSVSParams::updateJobWaitTime);
 
     py::class_<AlgoParams>(m, "AlgoParams")
         .def(py::init())

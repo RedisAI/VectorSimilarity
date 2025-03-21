@@ -27,6 +27,9 @@ protected:
                                             size_t update_job_threshold = 1024,
                                             size_t flat_buffer_limit = SIZE_MAX) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
+        if (svs_params.algoParams.svsParams.num_threads == 0) {
+            svs_params.algoParams.svsParams.num_threads = mock_thread_pool.thread_pool_size;
+        }
         return TieredIndexParams{
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
@@ -83,6 +86,69 @@ template <typename index_type_t>
 class SVSTieredIndexTestBasic : public SVSTieredIndexTest<index_type_t> {};
 TYPED_TEST_SUITE(SVSTieredIndexTestBasic, DataTypeSet);
 
+TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
+    std::chrono::milliseconds timeout{1};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+
+    // Get the allocator from the tiered index.
+    auto allocator = tiered_index->getAllocator();
+
+    size_t num_reserved_threads = 0;
+
+    auto update_job_mock = [&num_reserved_threads](VecSimIndex * /*unused*/, size_t num_threads) {
+        num_reserved_threads = num_threads;
+    };
+
+    // Request 4 threads but just 1 thread is available
+    auto jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+                                              tiered_index, 4, timeout);
+    ASSERT_EQ(jobs.size(), 4);
+    tiered_index->submitJobs(jobs);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 4);
+    // emulate 1 thread availability
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 3);
+    ASSERT_EQ(num_reserved_threads, 1);
+
+    auto num_threads = mock_thread_pool.thread_pool_size;
+    ASSERT_GE(num_threads, 4);
+    mock_thread_pool.init_threads();
+
+    // Request and run exact number of available threads
+    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+                                         tiered_index, num_threads, timeout);
+    tiered_index->submitJobs(jobs);
+    mock_thread_pool.thread_pool_wait();
+    ASSERT_EQ(num_reserved_threads, num_threads);
+
+    // Request and run 1 thread
+    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+                                         tiered_index, 1, timeout);
+    tiered_index->submitJobs(jobs);
+    mock_thread_pool.thread_pool_wait();
+    ASSERT_EQ(num_reserved_threads, 1);
+
+    // Request and run less threads than available
+    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+                                         tiered_index, num_threads - 2, timeout);
+    tiered_index->submitJobs(jobs);
+    mock_thread_pool.thread_pool_wait();
+    // The number of reserved threads should be equal to requested
+    ASSERT_EQ(num_reserved_threads, num_threads - 2);
+
+    // Request and more threads than available
+    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+                                         tiered_index, num_threads + 2, timeout);
+    tiered_index->submitJobs(jobs);
+    mock_thread_pool.thread_pool_wait();
+    // The number of reserved threads should be equal to the number of available threads
+    ASSERT_EQ(num_reserved_threads, num_threads);
+    mock_thread_pool.thread_pool_join();
+}
+
 TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     // Create TieredSVS index instance with a mock queue.
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2};
@@ -103,7 +169,7 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
 
     // Submit the index update job.
     tiered_index->scheduleSVSIndexUpdate();
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
     // Execute the job from the queue and validate that the index was updated properly.
     mock_thread_pool.thread_iteration();
@@ -150,7 +216,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE + 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(vec_label, vector), 0);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
     // Validate that the job was created properly
     // ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
     // ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
@@ -162,7 +228,8 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     expected_mem += sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
                     sizeof(void *) + sizeof(size_t);
     // Account for the insert job that was created.
-    expected_mem += sizeof(SVSIndexUpdateJob) + sizeof(size_t);
+    expected_mem +=
+        SVSMultiThreadJob::estimateSize(mock_thread_pool.thread_pool_size) + sizeof(size_t);
     auto actual_mem = tiered_index->getAllocationSize();
     ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
@@ -187,8 +254,8 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
     // Execute the insert job manually (in a synchronous manner).
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
-    auto *insertion_job = reinterpret_cast<SVSIndexUpdateJob *>(mock_thread_pool.jobQ.front().job);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
+    auto *insertion_job = mock_thread_pool.jobQ.front().job;
     ASSERT_EQ(insertion_job->jobType, HNSW_INSERT_VECTOR_JOB);
 
     mock_thread_pool.thread_iteration();
@@ -197,7 +264,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // SVS index should have allocated a single record, while flat index should remove the
     // block.
-    ASSERT_EQ(tiered_index->indexCapacity(), 1 + 1);
+    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, vector), 0);
 }
@@ -462,7 +529,10 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
 TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = 1};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
@@ -753,15 +823,14 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
-    mock_thread_pool.thread_pool_join();
+    mock_thread_pool.thread_pool_wait();
 
     // Estimate memory delta for filling up the first block and adding another block.
     size_t estimation = VecSimIndex_EstimateElementSize(&params) * bs;
 
     size_t before = index->getAllocationSize();
     GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + n, bs + n);
-    // Run the GC to move last vector to the SVS index.
-    index->runGC();
+    mock_thread_pool.thread_pool_join();
     size_t actual = index->getAllocationSize() - before;
 
     auto tiered_index = this->CastToTieredSVS(index);

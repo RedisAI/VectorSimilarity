@@ -29,6 +29,8 @@ struct SVSIndexBase {
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual bool isLabelExists(const labelType label) const = 0;
+    virtual void setNumThreads(size_t numThreads) = 0;
+    virtual size_t getThreadPoolCapacity() const = 0;
 };
 
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
@@ -62,6 +64,8 @@ protected:
     size_t search_window_size;
     double epsilon;
 
+    // SVS thread pool
+    VecSimSVSThreadPool threadpool_;
     // SVS Index implementation instance
     std::unique_ptr<impl_type> impl_;
 
@@ -113,8 +117,7 @@ protected:
     // Data should not be empty
     template <svs::data::ImmutableMemoryDataset Dataset>
     void initImpl(const Dataset &points, std::span<const labelType> ids) {
-        VecSimSVSThreadPool threadpool;
-        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool}};
+        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
         // Construct SVS index initial storage with compression if needed
         auto data = storage_traits_t::create_storage(points, this->blockSize, threadpool_handle,
                                                      this->getAllocator());
@@ -128,12 +131,12 @@ protected:
 
         // Construct initial Vamana Graph
         auto graph =
-            graph_builder_t::build_graph(parameters, data, distance, threadpool, entry_point,
+            graph_builder_t::build_graph(parameters, data, distance, threadpool_, entry_point,
                                          this->blockSize, this->getAllocator());
 
         // Create SVS MutableIndex instance
         impl_ = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
-                                            std::move(distance), ids, std::move(threadpool));
+                                            std::move(distance), ids, threadpool_);
 
         // Set SVS MutableIndex build parameters to be used in future updates
         impl_->set_construction_window_size(parameters.window_size);
@@ -250,7 +253,8 @@ public:
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{makeVamanaBuildParameters(params)},
           search_window_size{getOrDefault(params.search_window_size, 10)},
-          epsilon{getOrDefault(params.epsilon, 0.01)}, impl_{nullptr} {}
+          epsilon{getOrDefault(params.epsilon, 0.01)},
+          threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{nullptr} {}
 
     ~SVSIndex() = default;
 
@@ -314,6 +318,10 @@ public:
     int deleteVectors(const labelType *labels, size_t n) override {
         return deleteVectorsImpl(labels, n);
     }
+
+    void setNumThreads(size_t numThreads) override { threadpool_.resize(numThreads); }
+
+    size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         if (!impl_ || !impl_->has_id(label)) {

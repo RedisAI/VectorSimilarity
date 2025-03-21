@@ -13,10 +13,138 @@
 #include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/index_factories/svs_factory.h"
 
-struct SVSIndexUpdateJob : public AsyncJob {
-    SVSIndexUpdateJob(std::shared_ptr<VecSimAllocator> allocator, JobCallback insertCb,
-                      VecSimIndex *index)
-        : AsyncJob(std::move(allocator), HNSW_INSERT_VECTOR_JOB, insertCb, index) {}
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+
+class SVSMultiThreadJob : public AsyncJob {
+
+    // Thread reservation control block shared between all threads
+    // to reserve threads and wait for the job to be done
+    // actual reserved threads can be less than requested if timeout is reached
+    class ControlBlock {
+        const size_t requestedThreads;           // number of threads requested to reserve
+        const std::chrono::microseconds timeout; // timeout for threads reservation
+        size_t reservedThreads;                  // number of threads reserved
+        bool jobDone;
+        std::mutex mutex;
+        std::condition_variable cv;
+
+    public:
+        template <typename Rep, typename Period>
+        ControlBlock(size_t requested_threads,
+                     std::chrono::duration<Rep, Period> threads_wait_timeout)
+            : requestedThreads{requested_threads}, timeout{threads_wait_timeout},
+              reservedThreads{0}, jobDone{false} {}
+
+        // reserve a thread and wait for the job to be done
+        void reserveThreadAndWait() {
+            // count current thread
+            {
+                std::lock_guard lock{mutex};
+                ++reservedThreads;
+            }
+            cv.notify_one();
+            // wait for the job to be done
+            {
+                std::unique_lock lock{mutex};
+                cv.wait(lock, [&] { return jobDone; });
+            }
+        }
+
+        // wait for threads to be reserved
+        // return actual number of reserved threads
+        size_t waitForThreads() {
+            std::unique_lock lock{mutex};
+            ++reservedThreads; // count current thread
+            cv.wait_for(lock, timeout, [&] { return reservedThreads >= requestedThreads; });
+            return reservedThreads;
+        }
+
+        // mark the whole job as done
+        void markJobDone() {
+            {
+                std::lock_guard lock{mutex};
+                jobDone = true;
+            }
+            cv.notify_all();
+        }
+    };
+
+    // Job to reserve a thread and wait for the job to be done
+    class ReserveThreadJob : public AsyncJob {
+        std::weak_ptr<ControlBlock> controlBlock; // control block is owned by the main job and can
+                                                  // be destroyed before this job is started
+
+        static void Execute_impl(AsyncJob *job) {
+            auto *jobPtr = static_cast<ReserveThreadJob *>(job);
+            // if control block is already destroyed by the update job, just delete the job
+            auto controlBlock = jobPtr->controlBlock.lock();
+            if (controlBlock) {
+                controlBlock->reserveThreadAndWait();
+            }
+            delete job;
+        }
+
+    public:
+        ReserveThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
+                         VecSimIndex *index, std::weak_ptr<ControlBlock> controlBlock)
+            : AsyncJob(std::move(allocator), jobType, Execute_impl, index),
+              controlBlock(std::move(controlBlock)) {}
+    };
+
+    using task_type = std::function<void(VecSimIndex *, size_t)>;
+    task_type task;
+    std::shared_ptr<ControlBlock> controlBlock;
+
+    static void Execute_impl(AsyncJob *job) {
+        auto *jobPtr = static_cast<SVSMultiThreadJob *>(job);
+        auto controlBlock = jobPtr->controlBlock;
+        size_t num_threads = 1;
+        if (controlBlock) {
+            num_threads = controlBlock->waitForThreads();
+        }
+        assert(num_threads > 0);
+        jobPtr->task(jobPtr->index, num_threads);
+        if (controlBlock) {
+            jobPtr->controlBlock->markJobDone();
+        }
+        delete job;
+    }
+
+    SVSMultiThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
+                      task_type callback, VecSimIndex *index,
+                      std::shared_ptr<ControlBlock> controlBlock)
+        : AsyncJob(std::move(allocator), jobType, Execute_impl, index), task(std::move(callback)),
+          controlBlock(std::move(controlBlock)) {}
+
+public:
+    template <typename Rep, typename Period>
+    static vecsim_stl::vector<AsyncJob *>
+    createJobs(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
+               std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
+               size_t num_threads, std::chrono::duration<Rep, Period> threads_wait_timeout) {
+        assert(num_threads > 0);
+        std::shared_ptr<ControlBlock> controlBlock =
+            num_threads == 1 ? nullptr
+                             : std::make_shared<ControlBlock>(num_threads, threads_wait_timeout);
+
+        vecsim_stl::vector<AsyncJob *> jobs(num_threads, allocator);
+        jobs[0] =
+            new (allocator) SVSMultiThreadJob(allocator, jobType, callback, index, controlBlock);
+        for (size_t i = 1; i < num_threads; ++i) {
+            jobs[i] = new (allocator) ReserveThreadJob(allocator, jobType, index, controlBlock);
+        }
+        return jobs;
+    }
+
+#ifdef BUILD_TESTS
+public:
+    static constexpr size_t estimateSize(size_t num_threads) {
+        return sizeof(SVSMultiThreadJob) + (num_threads - 1) * sizeof(ReserveThreadJob);
+    }
+#endif
 };
 
 template <typename DataType>
@@ -30,6 +158,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // Add: true, Delete: false
     using journal_record = std::pair<labelType, bool>;
     size_t updateJobThreshold;
+    size_t updateJobWaitTime;
     std::vector<journal_record> journal;
     std::shared_mutex journal_mutex;
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
@@ -130,22 +259,30 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         }
 
     public:
-        TieredSVS_BatchIterator(void *query_vector, const Index *index, VecSimQueryParams *params,
+        TieredSVS_BatchIterator(void *query_vector, const Index *index,
+                                VecSimQueryParams *queryParams,
                                 std::shared_ptr<VecSimAllocator> allocator)
             : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                                   std::move(allocator)),
-              index(index), queryParams(params ? new VecSimQueryParams{*params} : nullptr),
-              flat_results(this->allocator), svs_results(this->allocator),
+              index(index), flat_results(this->allocator), svs_results(this->allocator),
               flat_iterator(index->frontendIndex->newBatchIterator(query_vector, queryParams)),
               svs_iterator(nullptr), svs_lock(index->mainIndexGuard, std::defer_lock),
-              returned_results_set(this->allocator) {}
+              returned_results_set(this->allocator) {
+            if (queryParams) {
+                this->queryParams =
+                    (VecSimQueryParams *)this->allocator->allocate(sizeof(VecSimQueryParams));
+                *this->queryParams = *queryParams;
+            } else {
+                this->queryParams = nullptr;
+            }
+        }
 
         ~TieredSVS_BatchIterator() {
             release_svs_iterator();
-            delete flat_iterator;
             if (queryParams) {
                 this->allocator->free_allocation(queryParams);
             }
+            delete flat_iterator;
         }
 
         VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override {
@@ -260,6 +397,7 @@ public:
 public:
     backend_index_t *GetBackendIndex() { return this->backendIndex; }
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
+    void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
 #endif
 
 private:
@@ -285,14 +423,14 @@ private:
         }
     }
 
-    static void updateSVSIndexWrapper(AsyncJob *job) {
-        auto index = dynamic_cast<TieredSVSIndex<DataType> *>(job->index);
+    static void updateSVSIndexWrapper(VecSimIndex *idx, size_t availableThreads) {
+        auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
         // prevent parallel updates
         std::lock_guard<std::mutex> lock(index->updateJobMutex);
-        index->indexUpdateScheduled.clear();
+        index->GetSVSIndex()->setNumThreads(availableThreads);
         index->updateSVSIndex();
-        delete job;
+        index->indexUpdateScheduled.clear();
     }
 
 #ifdef BUILD_TESTS
@@ -304,9 +442,11 @@ public:
             return;
         }
 
-        auto job =
-            new (this->allocator) SVSIndexUpdateJob{this->allocator, updateSVSIndexWrapper, this};
-        this->submitSingleJob(job);
+        auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
+        auto jobs = SVSMultiThreadJob::createJobs(this->allocator, HNSW_INSERT_VECTOR_JOB,
+                                                  updateSVSIndexWrapper, this, total_threads,
+                                                  std::chrono::microseconds(updateJobWaitTime));
+        this->submitJobs(jobs);
     }
 
 private:
@@ -382,9 +522,12 @@ public:
               tiered_index_params.specificParams.tieredSVSParams.updateJobThreshold == 0
                   ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
                   : std::min(tiered_index_params.specificParams.tieredSVSParams.updateJobThreshold,
-                             MAX_PENDING_SWAP_JOBS_THRESHOLD)) {
+                             MAX_PENDING_SWAP_JOBS_THRESHOLD)),
+          updateJobWaitTime(
+              tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
+                  ? 1000 // default wait time: 1ms
+                  : tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime) {
         this->journal.reserve(this->updateJobThreshold * 2);
-        TIERED_LOG(VecSimCommonStrings::LOG_NOTICE_STRING, "TieredSVSIndex created");
     }
 
     int addVector(const void *blob, labelType label) override {
@@ -406,7 +549,8 @@ public:
             // elsewhere search queries may return wrong result.
             assert(ret >= 0 && "addVector: vector duplication in both indices");
             journal.emplace_back(label, true);
-            index_update_needed = this->journal.size() >= this->updateJobThreshold;
+            index_update_needed = this->backendIndex->indexSize() > 0 ||
+                                  this->journal.size() >= this->updateJobThreshold;
         }
 
         if (index_update_needed) {
@@ -524,11 +668,10 @@ public:
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered SVS index");
         if (!indexUpdateScheduled.test_and_set()) {
-            auto job = new (this->allocator)
-                SVSIndexUpdateJob{this->allocator, updateSVSIndexWrapper, this};
-            updateSVSIndexWrapper(job);
+            updateSVSIndexWrapper(this, 1);
         }
         std::unique_lock<std::shared_mutex> backend_lock{this->mainIndexGuard};
+        // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
     }
 

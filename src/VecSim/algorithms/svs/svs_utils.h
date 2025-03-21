@@ -275,5 +275,102 @@ struct SVSGraphBuilder {
     }
 };
 
-// The sequential thread pool is used for single-threaded execution
-using VecSimSVSThreadPool = svs::threads::SequentialThreadPool;
+// Custom thread pool for SVS index
+// Based on svs::threads::NativeThreadPoolBase with changes:
+// * Number of threads is fixed on construction time
+// * Pool is resizable in bounds of pre-allocated threads
+class VecSimSVSThreadPoolImpl {
+public:
+    // Allocate `num_threads - 1` threads since the main thread participates in the work
+    // as well.
+    explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1)
+        : size_{num_threads}, threads_(num_threads - 1) {}
+
+    size_t capacity() const { return threads_.size() + 1; }
+    size_t size() const { return size_; }
+
+    // Support resize - do not modify threads container just limit the size
+    void resize(size_t new_size) {
+        std::lock_guard lock{use_mutex_};
+        size_ = std::clamp(new_size, size_t{1}, threads_.size() + 1);
+    }
+
+    void parallel_for(std::function<void(size_t)> f, size_t n) {
+        if (n == 0) {
+            return;
+        } else if (n == 1) {
+            f(0);
+            return;
+        } else {
+            std::lock_guard lock{use_mutex_};
+            for (size_t i = 0; i < n - 1; ++i) {
+                threads_[i % (size_)].assign({&f, i + 1});
+            }
+            // Run on the main function.
+            try {
+                f(0);
+            } catch (const std::exception &error) {
+                manage_exception_during_run(error.what());
+            }
+
+            // Wait until all threads are done.
+            // If any thread fails, then we're throwing.
+            for (size_t i = 0; i < size_ - 1; ++i) {
+                auto &thread = threads_[i];
+                thread.wait();
+                if (!thread.is_okay()) {
+                    manage_exception_during_run();
+                }
+            }
+        }
+    }
+
+    void manage_exception_during_run(const std::string &thread_0_message = {}) {
+        auto message = std::string{};
+        auto inserter = std::back_inserter(message);
+        if (!thread_0_message.empty()) {
+            fmt::format_to(inserter, "Thread 0: {}\n", thread_0_message);
+        }
+
+        // Manage all other exceptions thrown, restarting crashed threads.
+        for (size_t i = 0; i < size_ - 1; ++i) {
+            auto &thread = threads_[i];
+            thread.wait();
+            if (!thread.is_okay()) {
+                try {
+                    thread.unsafe_get_exception();
+                } catch (const std::exception &error) {
+                    fmt::format_to(inserter, "Thread {}: {}\n", i + 1, error.what());
+                }
+                // Restart the thread.
+                threads_[i].shutdown();
+                threads_[i] = svs::threads::Thread{};
+            }
+        }
+        throw svs::threads::ThreadingException{std::move(message)};
+    }
+
+private:
+    std::mutex use_mutex_;
+    size_t size_;
+    std::vector<svs::threads::Thread> threads_;
+};
+
+// Copy-movable wrapper for VecSimSVSThreadPoolImpl
+class VecSimSVSThreadPool {
+private:
+    std::shared_ptr<VecSimSVSThreadPoolImpl> pool_;
+
+public:
+    explicit VecSimSVSThreadPool(size_t num_threads = 1)
+        : pool_{std::make_shared<VecSimSVSThreadPoolImpl>(num_threads)} {}
+
+    size_t capacity() const { return pool_->capacity(); }
+    size_t size() const { return pool_->size(); }
+
+    void parallel_for(std::function<void(size_t)> f, size_t n) {
+        pool_->parallel_for(std::move(f), n);
+    }
+
+    void resize(size_t new_size) { pool_->resize(new_size); }
+};
