@@ -33,7 +33,7 @@
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
 #define CASES1(func)  C1(func, 1)
-#define CASES4(func)  C1(func, 1)
+#define CASES4(func)  C4(func, 1)
 #define CASES8(func)  C8(func, 0)
 #define CASES16(func) C16(func, 0)
 #define CASES32(func) C32(func, 0)
@@ -60,3 +60,23 @@
         }                                                                                          \
         out = __ret_dist_func;                                                                     \
     } while (0)
+
+#define CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, reg_size, func_template) \
+switch (reg_size) {                                             \
+    case 4:                                                    \
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 4, func_template); \
+        break;                                                  \
+    case 8:                                                     \
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, func_template); \
+        break;                                                  \
+    case 16:                                                    \
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, func_template); \
+        break;                                                  \
+    case 32:                                                    \
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, func_template); \
+        break;                                                  \
+    case 64:                                                    \
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, func_template); \
+        break;                                                  \
+}
+

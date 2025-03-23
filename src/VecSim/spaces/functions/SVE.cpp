@@ -12,48 +12,16 @@ namespace spaces {
 
 #include "implementation_chooser.h"
 
-
-
 dist_func_t<float> Choose_FP32_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    switch (svcntw()) {
-        case 8:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP32_InnerProductSIMD_SVE2);
-            break;
-        case 16:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD_SVE2);
-            break;        
-        case 32:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP32_InnerProductSIMD_SVE2);
-            break;        
-        case 64:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, FP32_InnerProductSIMD_SVE2);
-            break;
-        default:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 4, FP32_InnerProductSIMD_SVE2);
-    }
+    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, svcntw(), FP32_InnerProductSIMD_SVE)
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    switch (svcntw()) {
-        case 8:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP32_L2SqrSIMD_SVE);
-            break;
-        case 16:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD_SVE);
-            break;        
-        case 32:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP32_L2SqrSIMD_SVE);
-            break;        
-        case 64:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, FP32_L2SqrSIMD_SVE);
-            break;
-        default:
-            CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 4, FP32_L2SqrSIMD_SVE);
-    }
-    
+    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, svcntw(), FP32_L2SqrSIMD_SVE)
+
     return ret_dist_func;
 }
 
