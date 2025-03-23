@@ -21,9 +21,6 @@
 #include "VecSim/spaces/functions/ARMPL_NEON.h"
 #include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_SVE2.h"
-#include "VecSim/spaces/functions/ARMPL_NEON.h"
-#include "VecSim/spaces/functions/ARMPL_SVE.h"
-#include "VecSim/spaces/functions/ARMPL_SVE2.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;

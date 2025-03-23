@@ -27,9 +27,9 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
-#include "VecSim/spaces/functions/ARMPL_SVE2.h"
-#include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_NEON.h"
+#include "VecSim/spaces/functions/ARMPL_SVE.h"
+#include "VecSim/spaces/functions/ARMPL_SVE2.h"
 #include "tests_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
