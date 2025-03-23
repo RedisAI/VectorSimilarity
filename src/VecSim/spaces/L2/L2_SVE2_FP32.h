@@ -25,8 +25,8 @@ static void L2SquareStep_SVE2(float *&pVect1, float *&pVect2, svfloat32_t &sum) 
 
 template <unsigned char residual>
 float FP32_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float*)pVect1v;
-    float *pVect2 = (float*)pVect2v;
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
 
     // Get the number of 32-bit elements per vector at runtime
     uint64_t vl = svcntw();
@@ -51,7 +51,6 @@ float FP32_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
         L2SquareStep_SVE2(vec1_0, vec2_0, sum1);
         L2SquareStep_SVE2(vec1_0, vec2_0, sum2);
         L2SquareStep_SVE2(vec1_0, vec2_0, sum3);
-
     }
     if (constexpr residual > 0) {
         // Handle remaining elements (less than 4*vl)
