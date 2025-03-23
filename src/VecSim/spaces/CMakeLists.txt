@@ -92,6 +92,7 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	find_library(ARMPL_LIB armpl_lp64 PATHS ${ARMPL_DIR}/lib)
 
 	if(NOT ARMPL_LIB)
+	
 		message(STATUS "Could not find ARM Performance Libraries")
 	else()
 		message(STATUS "Found ARM Performance Libraries: ${ARMPL_LIB}")
@@ -103,26 +104,20 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with ARMV8A and ArmPL")
 		set_source_files_properties(functions/ARMPL_NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
 		list(APPEND OPTIMIZATIONS functions/ARMPL_NEON.cpp)
-		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
-		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
 	endif()
 
-	# SVE support
+	# ArmPL with SVE support
 	if (CXX_SVE)
 		message("Building with SVE and ArmPL")
 		set_source_files_properties(functions/ARMPL_SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE.cpp)
-		set_source_files_properties(functions/SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
-		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
 	endif()
 
-	# SVE2 support
+	# ArmPL with SVE2 support
 	if (CXX_SVE2)
 		message("Building with ARMV9 and ArmPL")
 		set_source_files_properties(functions/ARMPL_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
 		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE2.cpp)
-		set_source_files_properties(functions/SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
-		list(APPEND OPTIMIZATIONS functions/SVE2.cpp)
 	endif()
 endif()
 
