@@ -46,17 +46,23 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
 
 #ifdef OPT_SVE2
     if (features.sve2) {
+        #ifdef OPT_ARMPL
         return Choose_FP32_IP_implementation_ARMPL_SVE2(dim);
+        #endif
     }
 #endif
 #ifdef OPT_SVE
     if (features.sve) {
+        #ifdef OPT_ARMPL
         return Choose_FP32_IP_implementation_ARMPL_SVE(dim);
+        #endif
     }
 #endif
 #ifdef OPT_NEON
     if (features.asimd) {
+        #ifdef OPT_ARMPL
         return Choose_FP32_IP_implementation_ARMPL_NEON(dim);
+        #endif
     }
 #endif
 
