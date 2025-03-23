@@ -27,6 +27,9 @@
 #include "VecSim/spaces/functions/ARMPL_NEON.h"
 #include "VecSim/spaces/functions/ARMPL_SVE.h"
 #include "VecSim/spaces/functions/ARMPL_SVE2.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
 #include "bm_macros.h"
 #include "bm_spaces_class.h"
 
@@ -88,14 +91,14 @@ static constexpr size_t start = min_no_res_th_dim;
  */
 #define INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, metric, arch_supported)                   \
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, high_dim, arch_supported)                   \
-        ->DenseRange(900, 1000, 15)
+        ->DenseRange(900, 2000, 15)
 
 /** Test low dim
  * This range satisfies at least one full 512-bit iteration in all types (160).
  */
 #define INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, metric, arch_supported)                    \
     INITIALIZE_BM(bm_class, type_prefix, arch, metric, low_dim, arch_supported)                    \
-        ->DenseRange(55, 200, 15)
+        ->DenseRange(20, 500, 15)
 
 /* Naive algorithms */
 #define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
