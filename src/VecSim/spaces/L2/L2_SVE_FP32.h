@@ -53,7 +53,7 @@ float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
         L2SquareStep(vec1_0, vec2_0, sum3);
     }
 
-    if (constexpr residual > 0) {
+    if constexpr (residual > 0) {
         for (; i < dimension; i += vl) {
             svbool_t pg = svwhilelt_b32(i, dimension);
 

@@ -49,7 +49,7 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
         InnerProductStep(vec1_0, vec2_0, sum3);
     }
 
-    if (constexpr residual > 0) {
+    if constexpr (residual > 0) {
         for (; i < dimension; i += vl) {
             svbool_t pg = svwhilelt_b32(i, dimension);
             svfloat32_t v1 = svld1_f32(pg, pVect1 + i);
