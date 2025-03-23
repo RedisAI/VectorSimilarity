@@ -107,7 +107,7 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
 	endif()
 
-	# ArmPL with SVE support
+	# SVE support
 	if (CXX_SVE)
 		message("Building with SVE and ArmPL")
 		set_source_files_properties(functions/ARMPL_SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
@@ -116,7 +116,7 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
 	endif()
 
-	# ArmPL with SVE2 support
+	# SVE2 support
 	if (CXX_SVE2)
 		message("Building with ARMV9 and ArmPL")
 		set_source_files_properties(functions/ARMPL_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")

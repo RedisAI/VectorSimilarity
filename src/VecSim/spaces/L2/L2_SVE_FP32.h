@@ -25,7 +25,7 @@ static void L2SquareStep(float *&pVect1, float *&pVect2, svfloat32_t &sum) {
 
 template <unsigned char residual>
 float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const float *pVect1 = static_cast<const float *>(pVect1v);
+    const float *pVect1 = (float*) pVect1v;
     const float *pVect2 = static_cast<const float *>(pVect2v);
 
     // Get the number of 32-bit elements per vector at runtime
@@ -45,19 +45,22 @@ float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
         svprfw(svptrue_b32(), pVect2 + i + 16 * vl, SV_PLDL1KEEP);
 
         // Process 4 chunks with separate accumulators
-        float *vec1_0 = const_cast<float *>(pVect1 + i);
-        float *vec2_0 = const_cast<float *>(pVect2 + i);
-        float *vec1_1 = const_cast<float *>(pVect1 + i + vl);
-        float *vec2_1 = const_cast<float *>(pVect2 + i + vl);
-        float *vec1_2 = const_cast<float *>(pVect1 + i + 2 * vl);
-        float *vec2_2 = const_cast<float *>(pVect2 + i + 2 * vl);
-        float *vec1_3 = const_cast<float *>(pVect1 + i + 3 * vl);
-        float *vec2_3 = const_cast<float *>(pVect2 + i + 3 * vl);
-
+        float *vec1_0 = pVect1 + i;
+        float *vec2_0 = pVect2 + i;
         L2SquareStep(vec1_0, vec2_0, sum0);
+        
+        float *vec1_1 = pVect1 + i + vl;
+        float *vec2_1 = pVect2 + i + vl;
         L2SquareStep(vec1_1, vec2_1, sum1);
+        
+        float *vec1_2 = pVect1 + i + 2 * vl;
+        float *vec2_2 = pVect2 + i + 2 * vl;
         L2SquareStep(vec1_2, vec2_2, sum2);
+        
+        float *vec1_3 = pVect1 + i + 3 * vl;
+        float *vec2_3 = pVect2 + i + 3 * vl;
         L2SquareStep(vec1_3, vec2_3, sum3);
+
     }
 
     // Handle remaining elements (less than 4*vl)
