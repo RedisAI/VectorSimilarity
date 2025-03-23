@@ -37,6 +37,7 @@
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
 #define CASES1(func)  C1(func, 1)
+#define CASES4(func)  C1(func, 1)
 #define CASES8(func)  C8(func, 0)
 #define CASES16(func) C16(func, 0)
 #define CASES32(func) C32(func, 0)
