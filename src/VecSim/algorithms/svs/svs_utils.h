@@ -107,7 +107,7 @@ joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
     case VecSimOption_DISABLE:
         sp.search_buffer_visited_set(false);
         break;
-    default:
+    default: // AUTO mode, let the algorithm decide
         break;
     }
     return std::move(sp);

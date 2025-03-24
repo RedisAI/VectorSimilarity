@@ -46,12 +46,13 @@ private:
             rep->code = VecSim_QueryReply_TimedOut;
             return rep;
         }
-        // TODO(rfsaliev) verify iteration logic:
+
         for (size_t i = 0; i < n_res; i++) {
             if (curr_it == impl_->end()) {
                 impl_->next(cancel);
                 if (cancel()) {
                     rep->code = VecSim_QueryReply_TimedOut;
+                    rep->results.clear();
                     return rep;
                 }
                 curr_it = impl_->begin();

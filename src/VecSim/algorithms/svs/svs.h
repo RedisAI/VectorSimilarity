@@ -74,7 +74,7 @@ protected:
         //      the alpha value should be less than 1, usually 0.9 or 0.95 works.
         // * construction_window_size (250): similar to HNSW_EF_CONSTRUCTION
         // * graph_max_degree (64): similar to HNSW_M * 2
-        // * max_candiate_pool_size (750): =~ construction_window_size * 3
+        // * max_candidate_pool_size (750): =~ construction_window_size * 3
         // * prune_to (60): < graph_max_degree, optimal = graph_max_degree - 4
         //      The prune_to parameter is a performance feature designed to enhance build time
         //      by setting a small difference between this value and the maximum graph degree.
@@ -89,12 +89,12 @@ protected:
         // More info about VamanaBuildParameters can be found there:
         // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
         return svs::index::vamana::VamanaBuildParameters{
-            getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.9f)), // alpha_,
-            graph_max_degree,                                                           // graph_max_degree_,
-            construction_window_size,                                                   // window_size_,
-            getOrDefault(params.max_candidate_pool_size, construction_window_size * 3), // max_candidate_pool_size_,
-            getOrDefault(params.prune_to, graph_max_degree - 4),                        // prune_to_,
-            params.use_search_history != VecSimOption_DISABLE                           // use_full_search_history_
+            getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.9f)),
+            graph_max_degree,
+            construction_window_size,
+            getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
+            getOrDefault(params.prune_to, graph_max_degree - 4),
+            params.use_search_history != VecSimOption_DISABLE
         };
         // clang-format on
     }
@@ -135,7 +135,7 @@ protected:
 
     // Preprocess batch of vectors
     MemoryUtils::unique_blob preprocessForBatchStorage(const void *original_data, size_t n) const {
-        // Buffer is not needed to be aligned for storage because SVS index will copy data
+        // Buffer alignment isn't necessary for storage since SVS index will copy the data
         if (!this->forcePreprocessing) {
             return MemoryUtils::unique_blob{const_cast<void *>(original_data), [](void *) {}};
         }
@@ -329,15 +329,15 @@ public:
         auto processed_query_ptr = this->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
 
-        auto queries = svs::data::ConstSimpleDataView<DataType>{
+        auto query = svs::data::ConstSimpleDataView<DataType>{
             static_cast<const DataType *>(processed_query), 1, this->dim};
-        auto result = svs::QueryResult<size_t>{queries.size(), k};
+        auto result = svs::QueryResult<size_t>{query.size(), k};
         auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams);
 
         auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
 
-        impl_->search(result.view(), queries, sp, cancel);
+        impl_->search(result.view(), query, sp, cancel);
         if (cancel()) {
             rep->code = VecSim_QueryReply_TimedOut;
             return rep;
@@ -345,9 +345,10 @@ public:
 
         assert(result.n_queries() == 1);
 
-        rep->results.reserve(result.n_neighbors());
+        const auto n_neighbors = result.n_neighbors();
+        rep->results.reserve(n_neighbors);
 
-        for (size_t i = 0; i < result.n_neighbors(); i++) {
+        for (size_t i = 0; i < n_neighbors; i++) {
             rep->results.emplace_back(result.index(0, i), toVecSimDistance(result.distance(0, i)));
         }
         return rep;
