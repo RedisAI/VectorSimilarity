@@ -23,21 +23,31 @@
 
 // Macros for folding cases of a switch statement, for easier readability.
 // Each macro expands into a sequence of cases, from 0 to N-1, doubling the previous macro.
-#define C2(func, N)  C1(func, 2 * (N)) C1(func, 2 * (N) + 1)
-#define C4(func, N)  C2(func, 2 * (N)) C2(func, 2 * (N) + 1)
-#define C8(func, N)  C4(func, 2 * (N)) C4(func, 2 * (N) + 1)
-#define C16(func, N) C8(func, 2 * (N)) C8(func, 2 * (N) + 1)
-#define C32(func, N) C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
-#define C64(func, N) C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
+#define C2(func, N)    C1(func, 2 * (N)) C1(func, 2 * (N) + 1)
+#define C4(func, N)    C2(func, 2 * (N)) C2(func, 2 * (N) + 1)
+#define C8(func, N)    C4(func, 2 * (N)) C4(func, 2 * (N) + 1)
+#define C16(func, N)   C8(func, 2 * (N)) C8(func, 2 * (N) + 1)
+#define C32(func, N)   C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
+#define C64(func, N)   C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
+#define C128(func, N)  C64(func, 2 * (N)) C64(func, 2 * (N) + 1)
+#define C256(func, N)  C128(func, 2 * (N)) C128(func, 2 * (N) + 1)
+#define C512(func, N)  C256(func, 2 * (N)) C256(func, 2 * (N) + 1)
+#define C1024(func, N) C512(func, 2 * (N)) C512(func, 2 * (N) + 1)
+#define C2048(func, N) C1024(func, 2 * (N)) C1024(func, 2 * (N) + 1)
 
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
-#define CASES1(func)  C1(func, 0)
-#define CASES4(func)  C4(func, 0)
-#define CASES8(func)  C8(func, 0)
-#define CASES16(func) C16(func, 0)
-#define CASES32(func) C32(func, 0)
-#define CASES64(func) C64(func, 0)
+#define CASES1(func)    C1(func, 0)
+#define CASES4(func)    C4(func, 0)
+#define CASES8(func)    C8(func, 0)
+#define CASES16(func)   C16(func, 0)
+#define CASES32(func)   C32(func, 0)
+#define CASES64(func)   C64(func, 0)
+#define CASES128(func)  C128(func, 0)
+#define CASES256(func)  C256(func, 0)
+#define CASES512(func)  C512(func, 0)
+#define CASES1024(func) C1024(func, 0)
+#define CASES2048(func) C2048(func, 0)
 
 // Main macro. Expands into a switch statement that chooses the implementation based on the
 // dimension's remainder.
@@ -52,39 +62,25 @@
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \
-        if ((chunk) == 1) {                                                                        \
-            /* Handle the case where chunk is 0 */                                                 \
-            __ret_dist_func = func<1>;                                                             \
-        } else {                                                                                   \
-            switch ((dim) % (chunk)) { CASES##chunk(func) }                                        \
-        }                                                                                          \
+        switch ((dim) % (chunk)) { CASES##chunk(func) }                                            \
         out = __ret_dist_func;                                                                     \
     } while (0)
 
-#define CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, div, func_template)                 \
-    switch (div) {                                                                            \
-    case 4:                                                                                        \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 4, func_template);                               \
-        break;                                                                                     \
-    case 8:                                                                                        \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, func_template);                               \
-        break;                                                                                     \
-    case 16:                                                                                       \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, func_template);                              \
-        break;                                                                                     \
-    case 32:                                                                                       \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, func_template);                              \
-        break;                                                                                     \
-    case 64:                                                                                       \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, func_template);                              \
-        break;                                                                                     \
-    case 128:                                                                                      \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 128, func_template);                             \
-        break;                                                                                     \
-    case 256:                                                                                      \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 256, func_template);                             \
-        break;                                                                                     \
-    case 512:                                                                                      \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 512, func_template);                             \
-        break;                                                                                     \
-    }
+#define DIV_VALUES(X, func)                                                                        \
+    X(4, func)                                                                                     \
+    X(8, func)                                                                                     \
+    X(16, func)                                                                                    \
+    X(32, func)                                                                                    \
+    X(64, func)                                                                                    \
+    X(128, func)                                                                                   \
+    X(256, func)                                                                                   \
+    X(512, func)                                                                                   \
+    X(1024, func)
+
+#define GENERATE_CASE(val, func)                                                                   \
+    case val:                                                                                      \
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, val, func);                                      \
+        break;
+
+#define CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, div, func)                               \
+    switch (div) { DIV_VALUES(GENERATE_CASE, func) }

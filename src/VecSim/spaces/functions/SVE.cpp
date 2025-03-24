@@ -14,13 +14,13 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP32_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, 4*svcntw(), FP32_InnerProductSIMD_SVE);
+    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, 4 * svcntw(), FP32_InnerProductSIMD_SVE);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, 4*svcntw(), FP32_L2SqrSIMD_SVE);
+    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, 4 * svcntw(), FP32_L2SqrSIMD_SVE);
     return ret_dist_func;
 }
 
