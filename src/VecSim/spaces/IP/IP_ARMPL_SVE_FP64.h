@@ -7,7 +7,6 @@
 #include "VecSim/spaces/space_includes.h"
 #include <armpl.h>
 
-template <unsigned char residual>
 double FP64_InnerProduct_ARMPL_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *vec1 = (double *)pVect1v;
     auto *vec2 = (double *)pVect2v;

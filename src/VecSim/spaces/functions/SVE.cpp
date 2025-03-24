@@ -7,7 +7,8 @@
 #include "SVE.h"
 #include "VecSim/spaces/L2/L2_SVE_FP32.h"
 #include "VecSim/spaces/IP/IP_SVE_FP32.h"
-
+#include "VecSim/spaces/IP/IP_SVE_FP64.h"
+#include "VecSim/spaces/L2/L2_SVE_FP64.h"
 namespace spaces {
 
 #include "implementation_chooser.h"

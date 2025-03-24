@@ -23,15 +23,11 @@ dist_func_t<float> Choose_FP32_L2_implementation_ARMPL_SVE2(size_t dim) {
 }
 
 dist_func_t<double> Choose_FP64_IP_implementation_ARMPL_SVE2(size_t dim) {
-    dist_func_t<double> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProduct_ARMPL_SVE2);
-    return ret_dist_func;
+    return FP64_InnerProduct_ARMPL_SVE2;
 }
 
 dist_func_t<double> Choose_FP64_L2_implementation_ARMPL_SVE2(size_t dim) {
-    dist_func_t<double> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2Sqr_ARMPL_SVE2);
-    return ret_dist_func;
+    return FP64_L2Sqr_ARMPL_SVE2;
 }
 
 #include "implementation_chooser_cleanup.h"
