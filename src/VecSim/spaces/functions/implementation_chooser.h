@@ -45,9 +45,6 @@
 #define CASES64(func)   C64(func, 0)
 #define CASES128(func)  C128(func, 0)
 #define CASES256(func)  C256(func, 0)
-#define CASES512(func)  C512(func, 0)
-#define CASES1024(func) C1024(func, 0)
-#define CASES2048(func) C2048(func, 0)
 
 // Main macro. Expands into a switch statement that chooses the implementation based on the
 // dimension's remainder.
@@ -74,8 +71,6 @@
     X(64, func)                                                                                    \
     X(128, func)                                                                                   \
     X(256, func)                                                                                   \
-    X(512, func)                                                                                   \
-    X(1024, func)
 
 #define GENERATE_CASE(val, func)                                                                   \
     case val:                                                                                      \

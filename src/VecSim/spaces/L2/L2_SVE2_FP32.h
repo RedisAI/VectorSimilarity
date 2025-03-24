@@ -23,7 +23,7 @@ static void L2SquareStep_SVE2(float *&pVect1, float *&pVect2, svfloat32_t &sum) 
     pVect2 += svcntw();
 }
 
-template <unsigned short residual>
+template <unsigned char residual>
 float FP32_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
