@@ -92,6 +92,7 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	find_library(ARMPL_LIB armpl_lp64 PATHS ${ARMPL_DIR}/lib)
 
 	if(NOT ARMPL_LIB)
+	
 		message(STATUS "Could not find ARM Performance Libraries")
 	else()
 		message(STATUS "Found ARM Performance Libraries: ${ARMPL_LIB}")

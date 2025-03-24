@@ -23,8 +23,8 @@ static void InnerProductStep_SVE2(float *&pVect1, float *&pVect2, svfloat32_t &s
 
 template <unsigned char residual>
 float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const float *pVect1 = (float *)pVect1v;
-    const float *pVect2 = (float *)pVect2v;
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
 
     // Get the number of 32-bit elements per vector at runtime
     uint64_t vl = svcntw();
@@ -45,29 +45,22 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
         // Process 4 chunks with separate accumulators and properly separated pointers
         float *vec1_0 = pVect1 + i;
         float *vec2_0 = pVect2 + i;
+
         InnerProductStep_SVE2(vec1_0, vec2_0, sum0);
-        
-        float *vec1_1 = pVect1 + i + vl;
-        float *vec2_1 = pVect2 + i + vl;
-        InnerProductStep_SVE2(vec1_1, vec2_1, sum1);
-        
-        float *vec1_2 = pVect1 + i + 2 * vl;
-        float *vec2_2 = pVect2 + i + 2 * vl;
-        InnerProductStep_SVE2(vec1_2, vec2_2, sum2);
-        
-        float *vec1_3 = pVect1 + i + 3 * vl;
-        float *vec2_3 = pVect2 + i + 3 * vl;
-        InnerProductStep_SVE2(vec1_3, vec2_3, sum3);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum1);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum2);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum3);
     }
 
     // Handle remaining elements (less than 4*vl)
-    for (; i < dimension; i += vl) {
-        svbool_t pg = svwhilelt_b32(i, dimension);
-        svfloat32_t v1 = svld1_f32(pg, pVect1 + i);
-        svfloat32_t v2 = svld1_f32(pg, pVect2 + i);
-        sum0 = svmla_f32_m(pg, sum0, v1, v2);
+    if constexpr (residual > 0) {
+        for (; i < dimension; i += vl) {
+            svbool_t pg = svwhilelt_b32(i, dimension);
+            svfloat32_t v1 = svld1_f32(pg, pVect1 + i);
+            svfloat32_t v2 = svld1_f32(pg, pVect2 + i);
+            sum0 = svmla_f32_m(pg, sum0, v1, v2);
+        }
     }
-
     // Combine the partial sums
     sum0 = svadd_f32_z(svptrue_b32(), sum0, sum1);
     sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);

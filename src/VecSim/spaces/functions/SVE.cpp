@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "NEON.h"
+#include "SVE.h"
 #include "VecSim/spaces/L2/L2_SVE_FP32.h"
 #include "VecSim/spaces/IP/IP_SVE_FP32.h"
 
@@ -14,13 +14,13 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP32_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD_SVE2);
+    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, 4 * svcntw(), FP32_InnerProductSIMD_SVE);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD_SVE);
+    CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, 4 * svcntw(), FP32_L2SqrSIMD_SVE);
     return ret_dist_func;
 }
 
