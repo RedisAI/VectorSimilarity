@@ -25,8 +25,8 @@ static void L2SquareStep(double *&pVect1, double *&pVect2, svfloat64_t &sum) {
 
 template <unsigned char residual>
 double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const double *pVect1 = (double*) pVect1v;
-    const double *pVect2 = static_cast<const double *>(pVect2v);
+    double *pVect1 = (double*) pVect1v;
+    double *pVect2 = static_cast<const double *>(pVect2v);
 
     // Get the number of 64-bit elements per vector at runtime
     uint64_t vl = svcntd();
