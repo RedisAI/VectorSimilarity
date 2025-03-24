@@ -23,7 +23,7 @@ static void InnerProductStep(float *&pVect1, float *&pVect2, svfloat32_t &sum) {
 
 template <unsigned char residual>
 float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float*)pVect1v;
+    float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
     uint64_t vl = svcntw();

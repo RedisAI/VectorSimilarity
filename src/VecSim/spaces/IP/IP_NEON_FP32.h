@@ -23,6 +23,7 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     float32x4_t sum_prod = vdupq_n_f32(0.0f);
 
     // Calculate how many full 16-element blocks to process (each block = 4 NEON vectors)
+    // This ensures we process dimension-residual elements in the main loop
     const size_t main_blocks = (dimension - residual) / 16;
 
     // Process all complete 16-float blocks (4 vectors at a time)
