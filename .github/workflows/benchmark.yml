@@ -106,4 +106,4 @@ jobs:
       architecture: ${{ matrix.architecture }}
       instance-type: ${{ matrix.instance-type }}
       ami-id: ${{ matrix.ami-id }}
-      github-runner-label: ${{ matrix.architecture }}-${{ matrix.instance-type }}-${{ github.run_id }}
+
