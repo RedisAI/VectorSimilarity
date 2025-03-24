@@ -17,8 +17,8 @@ static void InnerProductStep_SVE2(double *&pVect1, double *&pVect2, svfloat64_t 
     sum = svmla_f64_z(svptrue_b64(), sum, v1, v2);
 
     // Advance pointers
-    pVect1 += svcntw();
-    pVect2 += svcntw();
+    pVect1 += svcntd();
+    pVect2 += svcntd();
 }
 
 template <unsigned char residual>

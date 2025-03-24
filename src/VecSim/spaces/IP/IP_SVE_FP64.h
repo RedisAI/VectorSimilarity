@@ -17,8 +17,8 @@ static void InnerProductStep(double *&pVect1, double *&pVect2, svfloat64_t &sum)
     sum = svmla_f64_z(svptrue_b64(), sum, v1, v2);
 
     // Advance pointers
-    pVect1 += svcntw();
-    pVect2 += svcntw();
+    pVect1 += svcntd();
+    pVect2 += svcntd();
 }
 
 template <unsigned char residual>
@@ -26,7 +26,7 @@ double FP64_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size
     const double *pVect1 = (double*)pVect1v;
     const double *pVect2 = (double *)pVect2v;
 
-    uint64_t vl = svcntw();
+    uint64_t vl = svcntd();
 
     // Multiple accumulators to increase instruction-level parallelism
     svfloat64_t sum0 = svdup_f64(0.0f);

@@ -29,7 +29,7 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     const double *pVect2 = static_cast<const double *>(pVect2v);
 
     // Get the number of 64-bit elements per vector at runtime
-    uint64_t vl = svcntw();
+    uint64_t vl = svcntd();
 
     // Multiple accumulators to increase instruction-level parallelism
     svfloat64_t sum0 = svdup_f64(0.0f);

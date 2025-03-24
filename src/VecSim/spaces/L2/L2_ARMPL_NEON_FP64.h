@@ -7,27 +7,42 @@
 #include "VecSim/spaces/space_includes.h"
 #include <armpl.h>
 
-template <unsigned char residual>
 double FP64_L2Sqr_ARMPL_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const double *vec1 = static_cast<const double *>(pVect1v);
     const double *vec2 = static_cast<const double *>(pVect2v);
 
-    // Option 1: More direct calculation with improved numerical stability
     double result = 0.0f;
-    const size_t blockSize = 128; // Changed from int to size_t
+    constexpr const size_t blockSize = 1024;
     double buffer[blockSize];
 
-    for (size_t i = 0; i < dimension; i += blockSize) {
-        // Process in smaller chunks to improve cache behavior
-        size_t currentBlock = std::min(blockSize, dimension - i);
+    // Pre-calculate number of full blocks and the size of the last partial block
+    const size_t fullBlockCount = dimension / blockSize;
+    const size_t lastBlockSize = dimension % blockSize;
 
-        // Calculate difference vector in chunks
-        for (size_t j = 0; j < currentBlock; j++) {
-            buffer[j] = vec1[i + j] - vec2[i + j];
+    // Process full blocks
+    for (size_t i = 0; i < fullBlockCount; i++) {
+        size_t offset = i * blockSize;
+
+        // Calculate difference vector for full block
+        for (size_t j = 0; j < blockSize; j++) {
+            buffer[j] = vec1[offset + j] - vec2[offset + j];
         }
 
-        // Use ArmPL to compute dot product of difference with itself
-        result += cblas_ddot(currentBlock, buffer, 1, buffer, 1);
+        // Use ARMPL to compute dot product
+        result += cblas_ddot(blockSize, buffer, 1, buffer, 1);
+    }
+
+    // Handle remaining elements (if any)
+    if (lastBlockSize > 0) {
+        size_t offset = fullBlockCount * blockSize;
+
+        // Calculate difference vector for remaining elements
+        for (size_t j = 0; j < lastBlockSize; j++) {
+            buffer[j] = vec1[offset + j] - vec2[offset + j];
+        }
+
+        // Use ARMPL to compute dot product
+        result += cblas_ddot(lastBlockSize, buffer, 1, buffer, 1);
     }
 
     return result;
