@@ -42,10 +42,8 @@ dist_func_t<float> Choose_FP16_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
     if (dim % svcnth()) {
         ret_dist_func = FP16_L2Sqr_SVE<true>;
-        // ret_dist_func = FP16_L2Sqr_SVE_direct<true>;
     } else {
         ret_dist_func = FP16_L2Sqr_SVE<false>;
-        // ret_dist_func = FP16_L2Sqr_SVE_direct<false>;
     }
     return ret_dist_func;
 }
