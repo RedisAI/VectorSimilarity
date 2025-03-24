@@ -28,9 +28,6 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
 
     // Process all complete 16-float blocks (4 vectors at a time)
     for (size_t i = 0; i < main_blocks; i++) {
-        // Prefetch next data block (64 bytes ahead = 16 floats)
-        __builtin_prefetch(pVect1 + 64, 0, 0);
-        __builtin_prefetch(pVect2 + 64, 0, 0);
 
         // Process 4 NEON vectors (16 floats) per iteration
         InnerProductStep(pVect1, pVect2, sum_prod);
