@@ -9,7 +9,7 @@
 #include <arm_sve.h>
 
 template <bool has_residual>
-float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_L2Sqr_SVE_with_cast(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const float16_t *>(pVect1v);
     const auto *pVect2 = static_cast<const float16_t *>(pVect2v);
     const size_t chunk = svcnth(); // number of 16-bit elements in a register
@@ -51,9 +51,9 @@ float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension)
         // Use `z` suffix to zero-out the irrelevant part before casting
         svfloat16_t diffSq = svmul_f16_z(pg, diff, diff);
         // Convert to single-precision for accumulation.
-        svfloat32_t diffSqF32_1 = svcvt_f32_f16(all32, diffSq);
+        svfloat32_t diffSqF32_1 = svcvt_f32_f16_x(all32, diffSq);
         acc = svadd_f32_x(all32, acc, diffSqF32_1);
-        svfloat32_t diffSqF32_2 = svcvtlt_f32_f16(all32, diffSq);
+        svfloat32_t diffSqF32_2 = svcvtlt_f32_f16_x(all32, diffSq);
         acc = svadd_f32_x(all32, acc, diffSqF32_2);
     }
 
@@ -63,7 +63,7 @@ float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension)
 }
 
 template <bool has_residual>
-float FP16_L2Sqr_SVE_direct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const float16_t *>(pVect1v);
     const auto *pVect2 = static_cast<const float16_t *>(pVect2v);
     const size_t chunk = svcnth(); // number of 16-bit elements in a register
