@@ -170,14 +170,30 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
+    auto features = getCpuOptimizationFeatures(arch_opt);
 
     dist_func_t<float> ret_dist_func = FP16_L2Sqr;
     // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = getCpuOptimizationFeatures(arch_opt);
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_FP16_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_FP16_L2_implementation_SVE(dim);
+    }
+#endif
+// #ifdef OPT_NEON
+//     if (features.asimd) {
+//         return Choose_FP16_L2_implementation_NEON(dim);
+//     }
+// #endif
+#elif defined(CPU_FEATURES_ARCH_X86_64)
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
