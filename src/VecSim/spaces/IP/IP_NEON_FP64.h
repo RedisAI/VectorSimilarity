@@ -7,9 +7,9 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void InnerProductStep(double *&pVect1, double *&pVect2, float64x4_t &sum) {
-    float64x4_t v1 = vld1q_f64(pVect1);
-    float64x4_t v2 = vld1q_f64(pVect2);
+static inline void InnerProductStep(double *&pVect1, double *&pVect2, float64x2_t &sum) {
+    float64x2_t v1 = vld1q_f64(pVect1);
+    float64x2_t v2 = vld1q_f64(pVect2);
     sum = vmlaq_f64(sum, v1, v2);
     pVect1 += 4;
     pVect2 += 4;
@@ -20,7 +20,7 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    float64x4_t sum_prod = vdupq_n_f64(0.0f);
+    float64x2_t sum_prod = vdupq_n_f64(0.0f);
 
     // These are compile-time constants derived from the template parameter
 
@@ -54,8 +54,8 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
     // This entire block is eliminated at compile time if final_residual is 0
     constexpr size_t final_residual = residual % 4; // Final 0-3 elements
     if constexpr (final_residual > 0) {
-        float64x4_t v1 = vdupq_n_f64(0.0f);
-        float64x4_t v2 = vdupq_n_f64(0.0f);
+        float64x2_t v1 = vdupq_n_f64(0.0f);
+        float64x2_t v2 = vdupq_n_f64(0.0f);
 
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f64(pVect1, v1, 0);
@@ -75,7 +75,7 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
 
     // Horizontal sum of the 4 elements in the NEON register
     float64x2_t sum_halves = vadd_f64(vget_low_f64(sum_prod), vget_high_f64(sum_prod));
-    float64x2_t summed = vpadd_f64(sum_halves, sum_halves);
+    float64x2_t summed = vpaddq_f64(sum_halves, sum_halves);
     double sum = vget_lane_f64(summed, 0);
 
     return 1.0f - sum;

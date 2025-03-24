@@ -7,12 +7,12 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void L2SquareStep(double *&pVect1, double *&pVect2, float64x4_t &sum) {
-    float64x4_t v1 = vld1q_f64(pVect1);
-    float64x4_t v2 = vld1q_f64(pVect2);
+static inline void L2SquareStep(double *&pVect1, double *&pVect2, float64x2_t &sum) {
+    float64x2_t v1 = vld1q_f64(pVect1);
+    float64x2_t v2 = vld1q_f64(pVect2);
 
     // Calculate difference between vectors
-    float64x4_t diff = vsubq_f64(v1, v2);
+    float64x2_t diff = vsubq_f64(v1, v2);
 
     // Square and accumulate
     sum = vmlaq_f64(sum, diff, diff);
@@ -26,7 +26,7 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    float64x4_t sum_squares = vdupq_n_f64(0.0f);
+    float64x2_t sum_squares = vdupq_n_f64(0.0f);
 
     // These are compile-time constants derived from the template parameter
     constexpr size_t remaining_quads = residual / 4; // Complete 4-element vectors in residual
@@ -57,8 +57,8 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
 
     // Handle final residual elements (0-3 elements)
     if constexpr (final_residual > 0) {
-        float64x4_t v1 = vdupq_n_f64(0.0f);
-        float64x4_t v2 = vdupq_n_f64(0.0f);
+        float64x2_t v1 = vdupq_n_f64(0.0f);
+        float64x2_t v2 = vdupq_n_f64(0.0f);
 
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f64(pVect1, v1, 0);
@@ -74,13 +74,13 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
         }
 
         // Calculate difference and square
-        float64x4_t diff = vsubq_f64(v1, v2);
+        float64x2_t diff = vsubq_f64(v1, v2);
         sum_squares = vmlaq_f64(sum_squares, diff, diff);
     }
 
     // Horizontal sum of the 4 elements in the NEON register
     float64x2_t sum_halves = vadd_f64(vget_low_f64(sum_squares), vget_high_f64(sum_squares));
-    float64x2_t summed = vpadd_f64(sum_halves, sum_halves);
+    float64x2_t summed = vpaddq_f64(sum_halves, sum_halves);
 
     return vget_lane_f64(summed, 0);
 }
