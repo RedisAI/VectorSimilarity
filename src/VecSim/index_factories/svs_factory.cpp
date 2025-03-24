@@ -149,9 +149,6 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 }
 
 size_t EstimateElementSize(const SVSParams *params) {
-    // FIXME(rfsaliev): custom allocator for svs::index::MutableVamanaIndex::translator_
-    // + sizeof(svs::IDTranslator::external_id_type)
-    // + sizeof(svs::IDTranslator::internal_id_type)
     using graph_idx_type = uint32_t;
     const auto graph_node_size =
         SVSGraphBuilder<graph_idx_type>::element_size(params->graph_max_degree);
