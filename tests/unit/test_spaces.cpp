@@ -434,6 +434,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         // Unset avx flag as well, so we'll choose the next optimization (SSE).
         optimization.avx = 0;
     }
@@ -445,6 +446,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_SSE(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         // Unset sse flag as well, so we'll choose the next option (default).
         optimization.sse = 0;
     }
