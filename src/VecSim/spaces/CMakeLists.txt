@@ -84,44 +84,24 @@ endif()
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
-	set(ARMPL_DIR "${root}/armpl/armpl_24.10_gcc")
-
-	include_directories(${ARMPL_DIR}/include)
-	message(STATUS "$ENV{ARMPL_LIBRARIES} and ${ARMPL_DIR}/lib")
-	# Find and set up ARM Performance Libraries with no default path
-	find_library(ARMPL_LIB armpl_lp64 PATHS ${ARMPL_DIR}/lib)
-
-	if(NOT ARMPL_LIB)
-	
-		message(STATUS "Could not find ARM Performance Libraries")
-	else()
-		message(STATUS "Found ARM Performance Libraries: ${ARMPL_LIB}")
-	endif()
 
 	# Create different optimization implementations for ARM architecture
-	# ArmPL used for standard ARMv8-A with NEON
 	if (CXX_ARMV8A)
-		message("Building with ARMV8A and ArmPL")
-		set_source_files_properties(functions/ARMPL_NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
-		list(APPEND OPTIMIZATIONS functions/ARMPL_NEON.cpp)
+		message("Building with ARMV8A")
 		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
 		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
 	endif()
 
 	# SVE support
 	if (CXX_SVE)
-		message("Building with SVE and ArmPL")
-		set_source_files_properties(functions/ARMPL_SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
-		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE.cpp)
+		message("Building with SVE")
 		set_source_files_properties(functions/SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
 	endif()
 
 	# SVE2 support
 	if (CXX_SVE2)
-		message("Building with ARMV9 and ArmPL")
-		set_source_files_properties(functions/ARMPL_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
-		list(APPEND OPTIMIZATIONS functions/ARMPL_SVE2.cpp)
+		message("Building with ARMV9A and SVE2")
 		set_source_files_properties(functions/SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
 		list(APPEND OPTIMIZATIONS functions/SVE2.cpp)
 	endif()
@@ -136,4 +116,4 @@ add_library(VectorSimilaritySpaces
 	computer/preprocessor_container.cpp
 )
 
-target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features ${ARMPL_LIB})
+target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features)
