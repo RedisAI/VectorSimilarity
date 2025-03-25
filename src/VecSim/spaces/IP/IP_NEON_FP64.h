@@ -62,7 +62,7 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
     }
 
     // Horizontal sum of the 4 elements in the NEON register
-    float64x2_t sum = vpadd_f64(sum_prod, sum_prod);
+    float64x1_t sum = vpaddq_f64(sum_prod, sum_prod);
 
     return 1.0f - sum;
 }
