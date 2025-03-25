@@ -30,21 +30,13 @@ dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
 
 dist_func_t<float> Choose_FP16_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    if (dim % svcnth()) {
-        ret_dist_func = FP16_InnerProduct_SVE<true>;
-    } else {
-        ret_dist_func = FP16_InnerProduct_SVE<false>;
-    }
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP16_InnerProduct_SVE, dim, svcnth);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_FP16_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    if (dim % svcnth()) {
-        ret_dist_func = FP16_L2Sqr_SVE<true>;
-    } else {
-        ret_dist_func = FP16_L2Sqr_SVE<false>;
-    }
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP16_L2Sqr_SVE, dim, svcnth);
     return ret_dist_func;
 }
 

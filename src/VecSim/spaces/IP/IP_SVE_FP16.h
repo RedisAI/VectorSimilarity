@@ -4,45 +4,60 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-// #include "VecSim/spaces/space_includes.h"
-
 #include <arm_sve.h>
 
-template <bool has_residual>
-float FP16_InnerProduct_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const auto *pVect1 = static_cast<const float16_t *>(pVect1v);
-    const auto *pVect2 = static_cast<const float16_t *>(pVect2v);
-    const size_t chunk = svcnth(); // number of 16-bit elements in a register
+static inline void InnerProduct_step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
+                                     size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
+
+    // Load half-precision vectors.
+    svfloat16_t v1 = svld1_f16(all, vec1 + offset);
+    svfloat16_t v2 = svld1_f16(all, vec2 + offset);
+    // Compute multiplications and add to the accumulator
+    acc = svmla_f16_x(all, acc, v1, v2);
+
+    // Move to next chunk
+    offset += chunk;
+}
+
+template <bool partial_chunk, unsigned char additional_steps> // [t/f, 0..3]
+float FP16_InnerProduct_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *vec1 = static_cast<const float16_t *>(pVect1v);
+    const auto *vec2 = static_cast<const float16_t *>(pVect2v);
+    const size_t chunk = svcnth(); // number of 16-bit elements in a register
     svfloat16_t acc = svdup_f16(0.0f);
-    size_t i = 0;
+    size_t offset = 0;
 
     // Process all full vectors
-    const size_t full_iterations = dimension / chunk;
+    const size_t full_iterations = dimension / chunk / 4;
     for (size_t iter = 0; iter < full_iterations; iter++) {
-        // Load half-precision vectors.
-        svfloat16_t v1 = svld1_f16(all, pVect1 + i);
-        svfloat16_t v2 = svld1_f16(all, pVect2 + i);
-        // Compute multiplications and add to the accumulator
-        acc = svmla_f16_x(all, acc, v1, v2);
-
-        // Move to next chunk
-        i += chunk;
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
     }
 
+    // Perform between 0 and 3 additional steps, according to `additional_steps` value
+    if constexpr (additional_steps >= 3)
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
+    if constexpr (additional_steps >= 2)
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
+    if constexpr (additional_steps >= 1)
+        InnerProduct_step(vec1, vec2, acc, offset, chunk);
+
     // Handle the tail with the residual predicate
-    if constexpr (has_residual) {
-        svbool_t pg = svwhilelt_b16(i, dimension);
+    if constexpr (partial_chunk) {
+        svbool_t pg = svwhilelt_b16(offset, dimension);
 
         // Load half-precision vectors.
-        svfloat16_t v1 = svld1_f16(pg, pVect1 + i);
-        svfloat16_t v2 = svld1_f16(pg, pVect2 + i);
+        svfloat16_t v1 = svld1_f16(pg, vec1 + i);
+        svfloat16_t v2 = svld1_f16(pg, vec2 + i);
         // Compute multiplications and add to the accumulator.
         // use the existing value of `acc` for the inactive elements (by the `m` suffix)
         acc = svmla_f16_m(pg, acc, v1, v2);
     }
 
     // Reduce the accumulated sum.
-    float result = svaddv_f16(all, acc);
+    float result = svaddv_f16(svptrue_b16(), acc);
     return result;
 }
