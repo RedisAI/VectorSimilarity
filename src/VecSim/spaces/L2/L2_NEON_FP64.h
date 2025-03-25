@@ -17,11 +17,11 @@ static inline void L2SquareStep(double *&pVect1, double *&pVect2, float64x2_t &s
     // Square and accumulate
     sum = vmlaq_f64(sum, diff, diff);
 
-    pVect1 += 4;
-    pVect2 += 4;
+    pVect1 += 2;
+    pVect2 += 2;
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..7
 double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
@@ -41,9 +41,7 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
         __builtin_prefetch(pVect1 + 64, 0, 0);
         __builtin_prefetch(pVect2 + 64, 0, 0);
 
-        // Process 4 NEON vectors (16 floats) per iteration
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
+        // Process 2 NEON vectors (8 floats) per iteration
         L2SquareStep(pVect1, pVect2, sum_squares);
         L2SquareStep(pVect1, pVect2, sum_squares);
     }
@@ -79,7 +77,7 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     }
 
     // Horizontal sum of the 4 elements in the NEON register
-    float64x2_t sum_halves = vaddq_f64(vget_low_f64(sum_squares), vget_high_f64(sum_squares));
+    float64x1_t sum_halves = vaddq_f64(vget_low_f64(sum_squares), vget_high_f64(sum_squares));
     float64x2_t summed = vpaddq_f64(sum_halves, sum_halves);
 
     return vget_lane_f64(summed, 0);
