@@ -11,10 +11,8 @@ static inline void L2SquareStep(float *&pVect1, float *&pVect2, float32x4_t &sum
     float32x4_t v1 = vld1q_f32(pVect1);
     float32x4_t v2 = vld1q_f32(pVect2);
 
-    // Calculate difference between vectors
     float32x4_t diff = vsubq_f32(v1, v2);
 
-    // Square and accumulate
     sum = vmlaq_f32(sum, diff, diff);
 
     pVect1 += 4;
@@ -28,14 +26,9 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
 
     float32x4_t sum_squares = vdupq_n_f32(0.0f);
 
-    // These are compile-time constants derived from the template parameter
-
-    // Calculate how many full 16-element blocks to process
     const size_t main_blocks = (dimension - residual) / 16;
 
-    // Process all complete 16-float blocks (4 vectors at a time)
     for (size_t i = 0; i < main_blocks; i++) {
-        // Process 4 NEON vectors (16 floats) per iteration
         L2SquareStep(pVect1, pVect2, sum_squares);
         L2SquareStep(pVect1, pVect2, sum_squares);
         L2SquareStep(pVect1, pVect2, sum_squares);
@@ -43,7 +36,7 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     }
 
     // Handle remaining complete 4-float blocks within residual
-    constexpr size_t remaining_quads = residual / 4; // Complete 4-element vectors in residual
+    constexpr size_t remaining_quads = residual / 4;
     if constexpr (remaining_quads > 0) {
         for (size_t i = 0; i < remaining_quads; i++) {
             L2SquareStep(pVect1, pVect2, sum_squares);
@@ -51,11 +44,12 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     }
 
     // Handle final residual elements (0-3 elements)
-    constexpr size_t final_residual = residual % 4; // Final 0-3 elements
+    constexpr size_t final_residual = residual % 4;
     if constexpr (final_residual > 0) {
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);
 
+        // loads the elements to the corresponding lane on the vector 
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f32(pVect1, v1, 0);
             v2 = vld1q_lane_f32(pVect2, v2, 0);
