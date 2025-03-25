@@ -14,7 +14,7 @@ static void InnerProductStep(float *&pVect1, float *&pVect2, svfloat32_t &sum) {
     svfloat32_t v2 = svld1_f32(svptrue_b32(), pVect2);
 
     // Multiply-accumulate
-    sum = svmla_f32_z(svptrue_b32(), sum, v1, v2);
+    sum = svmla_f32_x(svptrue_b32(), sum, v1, v2);
 
     // Advance pointers
     pVect1 += svcntw();
@@ -37,10 +37,6 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
     // Process vectors in chunks, with unrolling for better pipelining
     size_t i = 0;
     for (; i + 4 * vl <= dimension; i += 4 * vl) {
-        // Prefetch future data (critical for high dimensions)
-        svprfw(svptrue_b32(), pVect1 + i + 16 * vl, SV_PLDL1KEEP);
-        svprfw(svptrue_b32(), pVect2 + i + 16 * vl, SV_PLDL1KEEP);
-
         float *vec1_0 = pVect1 + i;
         float *vec2_0 = pVect2 + i;
         InnerProductStep(vec1_0, vec2_0, sum0);

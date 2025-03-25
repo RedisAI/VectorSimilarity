@@ -37,7 +37,6 @@
 
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
-#define CASES1(func)    C1(func, 0)
 #define CASES4(func)    C4(func, 0)
 #define CASES8(func)    C8(func, 0)
 #define CASES16(func)   C16(func, 0)
@@ -54,8 +53,6 @@
 // func:    The templated function that we want to choose the implementation for.
 // chunk:   The chunk size. Can be 64, 32, 16 or 8. Should be the number of elements of the expected
 //          type fitting in the expected register size.
-//          chunk == 1 means that there's no use of the residual, and we can use the function
-//          directly.
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \

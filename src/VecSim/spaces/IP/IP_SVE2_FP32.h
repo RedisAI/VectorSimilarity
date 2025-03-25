@@ -38,10 +38,6 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
     // Process vectors in chunks, with unrolling for better pipelining
     size_t i = 0;
     for (; i + 4 * vl <= dimension; i += 4 * vl) {
-        // Prefetch future data
-        svprfw(svptrue_b32(), pVect1 + i + 16 * vl, SV_PLDL1KEEP);
-        svprfw(svptrue_b32(), pVect2 + i + 16 * vl, SV_PLDL1KEEP);
-
         // Process 4 chunks with separate accumulators and properly separated pointers
         float *vec1_0 = pVect1 + i;
         float *vec2_0 = pVect2 + i;

@@ -13,9 +13,7 @@ on:
       ami-id:
         required: true
         type: string
-      github-runner-label:
-        required: true
-        type: string
+
 
 jobs:
   start-runner:
@@ -41,7 +39,6 @@ jobs:
           ec2-instance-type: ${{ inputs.instance-type }}
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID_BENCHMARK }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID_BENCHMARK }}
-          label: ${{ inputs.github-runner-label }}
 
   benchmark:
     name: Run benchmarks on runner
@@ -107,6 +104,5 @@ jobs:
         with:
           mode: stop
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-          label: ${{ inputs.github-runner-label }}
+          label: ${{ needs.start-runner.outputs.runner_label }}
           ec2-instance-id: ${{ needs.start-runner.outputs.ec2_instance_id }}
-
