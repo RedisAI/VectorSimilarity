@@ -13,7 +13,7 @@ static void L2SquareStep_SVE2(double *&pVect1, double *&pVect2, svfloat64_t &sum
     svfloat64_t v2 = svld1_f64(svptrue_b64(), pVect2);
 
     // Calculate difference between vectors (using SVE2's fused operations)
-    svfloat64_t diff = svsub_f64_z(svptrue_b64(), v1, v2);
+    svfloat64_t diff = svsub_f64_x(svptrue_b64(), v1, v2);
 
     // Square the difference and accumulate: sum += diff * diff
     sum = svmla_f64_z(svptrue_b64(), sum, diff, diff);
