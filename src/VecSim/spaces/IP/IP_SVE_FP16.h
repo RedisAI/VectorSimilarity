@@ -50,8 +50,8 @@ float FP16_InnerProduct_SVE(const void *pVect1v, const void *pVect2v, size_t dim
         svbool_t pg = svwhilelt_b16(offset, dimension);
 
         // Load half-precision vectors.
-        svfloat16_t v1 = svld1_f16(pg, vec1 + i);
-        svfloat16_t v2 = svld1_f16(pg, vec2 + i);
+        svfloat16_t v1 = svld1_f16(pg, vec1 + offset);
+        svfloat16_t v2 = svld1_f16(pg, vec2 + offset);
         // Compute multiplications and add to the accumulator.
         // use the existing value of `acc` for the inactive elements (by the `m` suffix)
         acc = svmla_f16_m(pg, acc, v1, v2);
