@@ -63,6 +63,6 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     }
 
     // Horizontal sum of the 4 elements in the NEON register
-    float64x1_t sum = vaddq_f64(vget_low_f64(sum_squares), vget_high_f64(sum_squares));
+    float64x1_t sum = vadd_f64(vget_low_f64(sum_squares), vget_high_f64(sum_squares));
     return vget_lane_f64(sum, 0);
 }
