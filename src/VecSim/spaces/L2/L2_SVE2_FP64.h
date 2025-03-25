@@ -43,10 +43,10 @@ double FP64_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dime
         // Process 4 chunks with separate accumulators
         double *vec1_0 = pVect1 + i;
         double *vec2_0 = pVect2 + i;
-        L2SquareStep(vec1_0, vec2_0, sum0);
-        L2SquareStep(vec1_0, vec2_0, sum1);
-        L2SquareStep(vec1_0, vec2_0, sum2);
-        L2SquareStep(vec1_0, vec2_0, sum3);
+        L2SquareStep_SVE2(vec1_0, vec2_0, sum0);
+        L2SquareStep_SVE2(vec1_0, vec2_0, sum1);
+        L2SquareStep_SVE2(vec1_0, vec2_0, sum2);
+        L2SquareStep_SVE2(vec1_0, vec2_0, sum3);
     }
 
     if constexpr (residual > 0) {
