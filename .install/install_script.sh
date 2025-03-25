@@ -19,12 +19,19 @@ fi
 echo $OS
 if [[ $ARCH == 'aarch64' ]]
 then
-    # install libarmpl
     wget https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_24.10/arm-performance-libraries_24.10_deb_gcc.tar
     tar -xf arm-performance-libraries_24.10_deb_gcc.tar
     sudo ./arm-performance-libraries_24.10_deb/arm-performance-libraries_24.10_deb.sh --accept --install-to armpl
     sudo rm -rf arm-performance-libraries_24.10_deb_gcc.tar
+    # install libarmpl
+elif [[ $OS == 'macos' ]]
+then
+    wget https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_24.10/arm-performance-libraries_24.10_macOS.tgz
+    tar zxvf arm-performance-libraries_24.10_macOS.tgz
+    hdiutil attach armpl_24.10_flang-new_clang_19.dmg
+    /Volumes/armpl_24.10_flang-new_clang_19_installer/armpl_24.10_flang-new_clang_19_install.sh -y --install-to armpl
 fi
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 cd $SCRIPT_DIR
