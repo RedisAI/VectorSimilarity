@@ -31,19 +31,16 @@
 #define C64(func, N)   C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
 #define C128(func, N)  C64(func, 2 * (N)) C64(func, 2 * (N) + 1)
 #define C256(func, N)  C128(func, 2 * (N)) C128(func, 2 * (N) + 1)
-#define C512(func, N)  C256(func, 2 * (N)) C256(func, 2 * (N) + 1)
-#define C1024(func, N) C512(func, 2 * (N)) C512(func, 2 * (N) + 1)
-#define C2048(func, N) C1024(func, 2 * (N)) C1024(func, 2 * (N) + 1)
 
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
-#define CASES4(func)    C4(func, 0)
-#define CASES8(func)    C8(func, 0)
-#define CASES16(func)   C16(func, 0)
-#define CASES32(func)   C32(func, 0)
-#define CASES64(func)   C64(func, 0)
-#define CASES128(func)  C128(func, 0)
-#define CASES256(func)  C256(func, 0)
+#define CASES4(func)   C4(func, 0)
+#define CASES8(func)   C8(func, 0)
+#define CASES16(func)  C16(func, 0)
+#define CASES32(func)  C32(func, 0)
+#define CASES64(func)  C64(func, 0)
+#define CASES128(func) C128(func, 0)
+#define CASES256(func) C256(func, 0)
 
 // Main macro. Expands into a switch statement that chooses the implementation based on the
 // dimension's remainder.
@@ -67,7 +64,7 @@
     X(32, func)                                                                                    \
     X(64, func)                                                                                    \
     X(128, func)                                                                                   \
-    X(256, func)                                                                                   \
+    X(256, func)
 
 #define GENERATE_CASE(val, func)                                                                   \
     case val:                                                                                      \

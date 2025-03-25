@@ -51,7 +51,7 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     }
 
     // Handle final residual elements (0-3 elements)
-    constexpr size_t final_residual = residual % 4;  // Final 0-3 elements
+    constexpr size_t final_residual = residual % 4; // Final 0-3 elements
     if constexpr (final_residual > 0) {
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);

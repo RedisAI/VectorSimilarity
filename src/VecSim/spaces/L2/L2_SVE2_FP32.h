@@ -71,5 +71,5 @@ float FP32_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
 
     // Horizontal sum and convert to similarity score
     float result = svaddv_f32(svptrue_b32(), sum0);
-    return result; // Convert distance to similarity score
+    return result;
 }
