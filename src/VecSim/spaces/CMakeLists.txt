@@ -84,31 +84,6 @@ endif()
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
-	if(EXISTS "${root}/armpl/armpl_24.10_gcc")
-		set(ARMPL_DIR "${root}/armpl/armpl_24.10_gcc")
-	elseif(EXISTS "${root}/armpl/armpl_24.10_flang-new_clang_19")
-		set(ARMPL_DIR "${root}/armpl/armpl_24.10_flang-new_clang_19")
-	elseif(EXISTS "/opt/arm/armpl_24.10_gcc")
-		set(ARMPL_DIR "/opt/arm/armpl_24.10_gcc")
-	elseif(EXISTS "/opt/arm/armpl_24.10_flang-new_clang_19")
-		set(ARMPL_DIR "/opt/arm/armpl_24.10_flang-new_clang_19")
-	else()
-		# Default fallback path
-		set(ARMPL_DIR "${root}/armpl/armpl_24.10_gcc")
-		message(WARNING "None of the expected ARM Performance Libraries paths exist. Using default: ${ARMPL_DIR}")
-	endif()
-
-	include_directories(${ARMPL_DIR}/include)
-	message(STATUS "$ENV{ARMPL_LIBRARIES} and ${ARMPL_DIR}/lib")
-	# Find and set up ARM Performance Libraries with no default path
-	find_library(ARMPL_LIB armpl_lp64 PATHS ${ARMPL_DIR}/lib)
-
-	if(NOT ARMPL_LIB)
-	
-		message(STATUS "Could not find ARM Performance Libraries")
-	else()
-		message(STATUS "Found ARM Performance Libraries: ${ARMPL_LIB}")
-	endif()
 
 	# Create different optimization implementations for ARM architecture
 	if (CXX_ARMV8A)
