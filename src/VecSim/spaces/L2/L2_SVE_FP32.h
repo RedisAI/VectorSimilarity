@@ -38,14 +38,11 @@ float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
     svfloat32_t sum3 = svdup_f32(0.0f);
 
     // Process vectors in chunks, with unrolling for better pipelining
-    auto chunk_size = 4 * vl;
+    auto chunk_size = vl;
     size_t number_of_chunks = dimension / chunk_size;
     for (size_t i = 0; i < number_of_chunks; ++i) {
         // Process 4 chunks with separate accumulators
         L2SquareStep(pVect1, pVect2, offset, sum0);
-        L2SquareStep(pVect1, pVect2, offset, sum1);
-        L2SquareStep(pVect1, pVect2, offset, sum2);
-        L2SquareStep(pVect1, pVect2, offset, sum3);
     }
 
     if constexpr (additional_steps > 0) {

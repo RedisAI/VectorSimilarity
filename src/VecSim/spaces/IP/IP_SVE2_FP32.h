@@ -30,13 +30,10 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
     svfloat32_t sum2 = svdup_f32(0.0f);
     svfloat32_t sum3 = svdup_f32(0.0f);
 
-    auto chunk_size = 4 * vl;
+    auto chunk_size = vl;
     size_t number_of_chunks = dimension / chunk_size;
     for (size_t i = 0; i < number_of_chunks; i++) {
         InnerProductStep(pVect1, pVect2, offset, sum0);
-        InnerProductStep(pVect1, pVect2, offset, sum1);
-        InnerProductStep(pVect1, pVect2, offset, sum2);
-        InnerProductStep(pVect1, pVect2, offset, sum3);
     }
 
     if constexpr (additional_steps > 0) {
