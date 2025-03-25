@@ -40,10 +40,10 @@ double FP64_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size
     for (; i + 4 * vl <= dimension; i += 4 * vl) {
         double *vec1_0 = pVect1 + i;
         double *vec2_0 = pVect2 + i;
-        InnerProductStep(vec1_0, vec2_0, sum0);
-        InnerProductStep(vec1_0, vec2_0, sum1);
-        InnerProductStep(vec1_0, vec2_0, sum2);
-        InnerProductStep(vec1_0, vec2_0, sum3);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum0);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum1);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum2);
+        InnerProductStep_SVE2(vec1_0, vec2_0, sum3);
     }
 
     if constexpr (residual > 0) {
