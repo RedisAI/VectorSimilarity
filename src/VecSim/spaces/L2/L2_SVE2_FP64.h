@@ -51,17 +51,17 @@ double FP64_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dime
 
     if constexpr (residual > 0) {
         for (; i < dimension; i += vl) {
-            svbool_t pg = svwhilelt_b32(i, dimension);
+            svbool_t pg = svwhilelt_b64(i, dimension);
 
             // Load vectors with predication
-            svfloat32_t v1 = svld1_f32(pg, pVect1 + i);
-            svfloat32_t v2 = svld1_f32(pg, pVect2 + i);
+            svfloat64_t v1 = svld1_f64(pg, pVect1 + i);
+            svfloat64_t v2 = svld1_f64(pg, pVect2 + i);
 
             // Calculate difference with predication (corrected)
-            svfloat32_t diff = svsub_f32_m(pg, v1, v2);
+            svfloat64_t diff = svsub_f64_m(pg, v1, v2);
 
             // Square the difference and accumulate with predication
-            sum0 = svmla_f32_m(pg, sum0, diff, diff);
+            sum0 = svmla_f64_m(pg, sum0, diff, diff);
         }
     }
 
