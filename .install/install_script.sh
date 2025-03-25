@@ -29,7 +29,7 @@ then
     wget https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_24.10/arm-performance-libraries_24.10_macOS.tgz
     tar zxvf arm-performance-libraries_24.10_macOS.tgz
     hdiutil attach armpl_24.10_flang-new_clang_19.dmg
-    sudo /Volumes/armpl_24.10_flang-new_clang_19_installer/armpl_24.10_flang-new_clang_19_install.sh -y --install-to armpl
+    sudo /Volumes/armpl_24.10_flang-new_clang_19_installer/armpl_24.10_flang-new_clang_19_install.sh --install-to=$(pwd)/armpl -y 
     # Clean up
     hdiutil detach /Volumes/armpl_24.10_flang-new_clang_19_installer
     rm -f arm-performance-libraries_24.10_macOS.tgz
