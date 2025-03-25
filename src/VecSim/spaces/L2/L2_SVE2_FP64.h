@@ -19,8 +19,8 @@ static void L2SquareStep_SVE2(double *&pVect1, double *&pVect2, svfloat64_t &sum
     sum = svmla_f64_z(svptrue_b64(), sum, diff, diff);
 
     // Advance pointers by the vector length
-    pVect1 += svcntw();
-    pVect2 += svcntw();
+    pVect1 += svcntd();
+    pVect2 += svcntd();
 }
 
 template <unsigned char residual>
