@@ -27,16 +27,14 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
 
     svfloat32_t sum0 = svdup_f32(0.0f);
     svfloat32_t sum1 = svdup_f32(0.0f);
-    svfloat32_t sum2 = svdup_f32(0.0f);
-    svfloat32_t sum3 = svdup_f32(0.0f);
 
     auto chunk_size = 4 * vl;
     size_t number_of_chunks = dimension / chunk_size;
     for (size_t i = 0; i < number_of_chunks; i++) {
         InnerProductStep(pVect1, pVect2, offset, sum0);
         InnerProductStep(pVect1, pVect2, offset, sum1);
-        InnerProductStep(pVect1, pVect2, offset, sum2);
-        InnerProductStep(pVect1, pVect2, offset, sum3);
+        InnerProductStep(pVect1, pVect2, offset, sum0);
+        InnerProductStep(pVect1, pVect2, offset, sum1);
     }
 
     if constexpr (additional_steps > 0) {
@@ -47,7 +45,7 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
             InnerProductStep(pVect1, pVect2, offset, sum1);
         }
         if constexpr (additional_steps >= 3) {
-            InnerProductStep(pVect1, pVect2, offset, sum2);
+            InnerProductStep(pVect1, pVect2, offset, sum0);
         }
     }
 
@@ -55,13 +53,11 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
         svbool_t pg = svwhilelt_b32(offset, dimension);
         svfloat32_t v1 = svld1_f32(pg, pVect1 + offset);
         svfloat32_t v2 = svld1_f32(pg, pVect2 + offset);
-        sum0 = svmla_f32_m(pg, sum0, v1, v2);
+        sum1 = svmla_f32_m(pg, sum1, v1, v2);
     }
 
     // Combine the partial sums
     sum0 = svadd_f32_z(svptrue_b32(), sum0, sum1);
-    sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);
-    sum0 = svadd_f32_z(svptrue_b32(), sum0, sum2);
 
     // Horizontal sum
     float result = svaddv_f32(svptrue_b32(), sum0);
