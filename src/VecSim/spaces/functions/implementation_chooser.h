@@ -23,27 +23,24 @@
 
 // Macros for folding cases of a switch statement, for easier readability.
 // Each macro expands into a sequence of cases, from 0 to N-1, doubling the previous macro.
-#define C2(func, N)    C1(func, 2 * (N)) C1(func, 2 * (N) + 1)
-#define C4(func, N)    C2(func, 2 * (N)) C2(func, 2 * (N) + 1)
-#define C8(func, N)    C4(func, 2 * (N)) C4(func, 2 * (N) + 1)
-#define C16(func, N)   C8(func, 2 * (N)) C8(func, 2 * (N) + 1)
-#define C32(func, N)   C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
-#define C64(func, N)   C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
-#define C128(func, N)  C64(func, 2 * (N)) C64(func, 2 * (N) + 1)
-#define C256(func, N)  C128(func, 2 * (N)) C128(func, 2 * (N) + 1)
-#define C512(func, N)  C256(func, 2 * (N)) C256(func, 2 * (N) + 1)
-#define C1024(func, N) C512(func, 2 * (N)) C512(func, 2 * (N) + 1)
-#define C2048(func, N) C1024(func, 2 * (N)) C1024(func, 2 * (N) + 1)
+#define C2(func, N)   C1(func, 2 * (N)) C1(func, 2 * (N) + 1)
+#define C4(func, N)   C2(func, 2 * (N)) C2(func, 2 * (N) + 1)
+#define C8(func, N)   C4(func, 2 * (N)) C4(func, 2 * (N) + 1)
+#define C16(func, N)  C8(func, 2 * (N)) C8(func, 2 * (N) + 1)
+#define C32(func, N)  C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
+#define C64(func, N)  C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
+#define C128(func, N) C64(func, 2 * (N)) C64(func, 2 * (N) + 1)
+#define C256(func, N) C128(func, 2 * (N)) C128(func, 2 * (N) + 1)
 
 // Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
 // Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
-#define CASES4(func)    C4(func, 0)
-#define CASES8(func)    C8(func, 0)
-#define CASES16(func)   C16(func, 0)
-#define CASES32(func)   C32(func, 0)
-#define CASES64(func)   C64(func, 0)
-#define CASES128(func)  C128(func, 0)
-#define CASES256(func)  C256(func, 0)
+#define CASES4(func)   C4(func, 0)
+#define CASES8(func)   C8(func, 0)
+#define CASES16(func)  C16(func, 0)
+#define CASES32(func)  C32(func, 0)
+#define CASES64(func)  C64(func, 0)
+#define CASES128(func) C128(func, 0)
+#define CASES256(func) C256(func, 0)
 
 // Main macro. Expands into a switch statement that chooses the implementation based on the
 // dimension's remainder.
@@ -60,19 +57,26 @@
         out = __ret_dist_func;                                                                     \
     } while (0)
 
-#define DIV_VALUES(X, func)                                                                        \
-    X(4, func)                                                                                     \
-    X(8, func)                                                                                     \
-    X(16, func)                                                                                    \
-    X(32, func)                                                                                    \
-    X(64, func)                                                                                    \
-    X(128, func)                                                                                   \
-    X(256, func)                                                                                   \
+#define SVE_CASE(base_func, N)                                                                     \
+    case (N):                                                                                      \
+        if (partial_chunk)                                                                         \
+            __ret_dist_func = base_func<true, (N)>;                                                \
+        else                                                                                       \
+            __ret_dist_func = base_func<false, (N)>;                                               \
+        break
 
-#define GENERATE_CASE(val, func)                                                                   \
-    case val:                                                                                      \
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, val, func);                                      \
-        break;
-
-#define CHOOSE_RUNTIME_IMPLEMENTATION(ret_dist_func, dim, div, func)                               \
-    switch (div) { DIV_VALUES(GENERATE_CASE, func) }
+#define CHOOSE_SVE_IMPLEMENTATION(out, base_func, dim, chunk_getter)                               \
+    do {                                                                                           \
+        decltype(out) __ret_dist_func;                                                             \
+        size_t chunk = chunk_getter();                                                             \
+        bool partial_chunk = dim % chunk;                                                          \
+        /* Assuming `base_func` has its main loop for 4 steps */                                   \
+        unsigned char additional_steps = (dim / chunk) % 4;                                        \
+        switch (additional_steps) {                                                                \
+            SVE_CASE(base_func, 0);                                                                \
+            SVE_CASE(base_func, 1);                                                                \
+            SVE_CASE(base_func, 2);                                                                \
+            SVE_CASE(base_func, 3);                                                                \
+        }                                                                                          \
+        out = __ret_dist_func;                                                                     \
+    } while (0)

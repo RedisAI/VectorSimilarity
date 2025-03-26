@@ -8,50 +8,48 @@
 
 #include <arm_sve.h>
 
-static void InnerProductStep(float *&pVect1, float *&pVect2, svfloat32_t &sum) {
-    // Load vectors
-    svfloat32_t v1 = svld1_f32(svptrue_b32(), pVect1);
-    svfloat32_t v2 = svld1_f32(svptrue_b32(), pVect2);
+static void InnerProductStep(float *&pVect1, float *&pVect2, size_t &offset, svfloat32_t &sum) {
+    svfloat32_t v1 = svld1_f32(svptrue_b32(), pVect1 + offset);
+    svfloat32_t v2 = svld1_f32(svptrue_b32(), pVect2 + offset);
 
-    // Multiply-accumulate
     sum = svmla_f32_x(svptrue_b32(), sum, v1, v2);
 
-    // Advance pointers
-    pVect1 += svcntw();
-    pVect2 += svcntw();
+    offset += svcntw();
 }
 
-template <unsigned char residual>
+template <bool partial_chunk, unsigned char additional_steps>
 float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
+    size_t offset = 0;
 
     uint64_t vl = svcntw();
 
-    // Multiple accumulators to increase instruction-level parallelism
     svfloat32_t sum0 = svdup_f32(0.0f);
     svfloat32_t sum1 = svdup_f32(0.0f);
     svfloat32_t sum2 = svdup_f32(0.0f);
     svfloat32_t sum3 = svdup_f32(0.0f);
 
-    // Process vectors in chunks, with unrolling for better pipelining
-    size_t i = 0;
-    for (; i + 4 * vl <= dimension; i += 4 * vl) {
-        float *vec1_0 = pVect1 + i;
-        float *vec2_0 = pVect2 + i;
-        InnerProductStep(vec1_0, vec2_0, sum0);
-        InnerProductStep(vec1_0, vec2_0, sum1);
-        InnerProductStep(vec1_0, vec2_0, sum2);
-        InnerProductStep(vec1_0, vec2_0, sum3);
+    auto chunk_size = 4 * vl;
+    size_t number_of_chunks = dimension / chunk_size;
+    for (size_t i = 0; i < number_of_chunks; i++) {
+        InnerProductStep(pVect1, pVect2, offset, sum0);
+        InnerProductStep(pVect1, pVect2, offset, sum1);
+        InnerProductStep(pVect1, pVect2, offset, sum2);
+        InnerProductStep(pVect1, pVect2, offset, sum3);
     }
 
-    if constexpr (residual > 0) {
-        for (; i < dimension; i += vl) {
-            svbool_t pg = svwhilelt_b32(i, dimension);
-            svfloat32_t v1 = svld1_f32(pg, pVect1 + i);
-            svfloat32_t v2 = svld1_f32(pg, pVect2 + i);
-            sum0 = svmla_f32_m(pg, sum0, v1, v2);
+    if constexpr (additional_steps > 0) {
+        for (unsigned char c = 0; c < additional_steps; ++c) {
+            InnerProductStep(pVect1, pVect2, offset, sum0);
         }
+    }
+
+    if constexpr (partial_chunk) {
+        svbool_t pg = svwhilelt_b32(offset, dimension);
+        svfloat32_t v1 = svld1_f32(pg, pVect1 + offset);
+        svfloat32_t v2 = svld1_f32(pg, pVect2 + offset);
+        sum0 = svmla_f32_m(pg, sum0, v1, v2);
     }
 
     // Combine the partial sums

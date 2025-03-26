@@ -23,13 +23,9 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     float32x4_t sum_prod = vdupq_n_f32(0.0f);
 
     // Calculate how many full 16-element blocks to process (each block = 4 NEON vectors)
-    // This ensures we process dimension-residual elements in the main loop
     const size_t main_blocks = (dimension - residual) / 16;
 
-    // Process all complete 16-float blocks (4 vectors at a time)
     for (size_t i = 0; i < main_blocks; i++) {
-
-        // Process 4 NEON vectors (16 floats) per iteration
         InnerProductStep(pVect1, pVect2, sum_prod);
         InnerProductStep(pVect1, pVect2, sum_prod);
         InnerProductStep(pVect1, pVect2, sum_prod);
@@ -37,8 +33,7 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     }
 
     // Handle remaining complete 4-float blocks within residual
-    // This code generates specialized paths at compile time based on residual
-    constexpr size_t remaining_quads = residual / 4; // Complete 4-element vectors in residual
+    constexpr size_t remaining_quads = residual / 4;
     if constexpr (remaining_quads > 0) {
         for (size_t i = 0; i < remaining_quads; i++) {
             InnerProductStep(pVect1, pVect2, sum_prod);
@@ -46,12 +41,12 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     }
 
     // Handle final residual elements (0-3 elements)
-    // This entire block is eliminated at compile time if final_residual is 0
     constexpr size_t final_residual = residual % 4; // Final 0-3 elements
     if constexpr (final_residual > 0) {
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);
 
+        // loads the elements to the corresponding lane on the vector 
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f32(pVect1, v1, 0);
             v2 = vld1q_lane_f32(pVect2, v2, 0);
