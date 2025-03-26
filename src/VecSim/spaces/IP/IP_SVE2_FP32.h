@@ -40,8 +40,14 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
     }
 
     if constexpr (additional_steps > 0) {
-        for (unsigned char c = 0; c < additional_steps; ++c) {
+        if constexpr (additional_steps >= 1) {
             InnerProductStep(pVect1, pVect2, offset, sum0);
+        }
+        if constexpr (additional_steps >= 2) {
+            InnerProductStep(pVect1, pVect2, offset, sum1);
+        }
+        if constexpr (additional_steps >= 3) {
+            InnerProductStep(pVect1, pVect2, offset, sum2);
         }
     }
 
