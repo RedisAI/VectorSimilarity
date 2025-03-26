@@ -142,9 +142,9 @@ protected:
 
         const auto data_size = this->dim * sizeof(DataType) * n;
 
-        auto processed_blob = MemoryUtils::unique_blob{
-            this->allocator->allocate_aligned(data_size, this->preprocessors->getAlignment()),
-            [this](void *ptr) { this->allocator->free_allocation(ptr); }};
+        auto processed_blob =
+            MemoryUtils::unique_blob{this->allocator->allocate(data_size),
+                                     [this](void *ptr) { this->allocator->free_allocation(ptr); }};
         memcpy(processed_blob.get(), original_data, data_size);
         // Preprocess each vector in place
         for (size_t i = 0; i < n; i++) {
@@ -156,6 +156,7 @@ protected:
 
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
+            assert(false && "Empty batch of vectors"); // This case to be enabled for TieredSVS
             return 0;
         }
 
@@ -235,7 +236,7 @@ public:
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{makeVamanaBuildParameters(params)},
           search_window_size{getOrDefault(params.search_window_size, 10)},
-          epsilon{params.epsilon > 0 ? params.epsilon : 0.01}, impl_{nullptr} {}
+          epsilon{getOrDefault(params.epsilon, 0.01)}, impl_{nullptr} {}
 
     ~SVSIndex() = default;
 
@@ -365,18 +366,24 @@ public:
         auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
 
+        // Prepare query blob for SVS
+        auto processed_query_ptr = this->preprocessQuery(queryBlob);
+        const void *processed_query = processed_query_ptr.get();
+        std::span<const data_type> query{static_cast<const data_type *>(processed_query),
+                                         this->dim};
+
+        // Base search parameters for the SVS iterator schedule.
         auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams);
+        // SVS BatchIterator handles the search in batches
+        // The batch size is set to the index search window size by default
         const size_t batch_size = queryParams && queryParams->batchSize
                                       ? queryParams->batchSize
                                       : sp.buffer_config_.get_search_window_size();
-        // Base search parameters for the iterator schedule.
         auto schedule = svs::index::vamana::DefaultSchedule{sp, batch_size};
 
-        auto processed_query_ptr = this->preprocessQuery(queryBlob);
-        const void *processed_query = processed_query_ptr.get();
-
-        std::span<const data_type> query{static_cast<const data_type *>(processed_query),
-                                         this->dim};
+        // Create SVS BatchIterator for range search
+        // SVS BatchIterator executes first batch of search at construction
+        // Search result is cached in the iterator and can be accessed by the user
         svs::index::vamana::BatchIterator<impl_type, data_type> svs_it{*impl_, query, schedule,
                                                                        cancel};
         if (cancel()) {
@@ -384,24 +391,27 @@ public:
             return rep;
         }
 
-#if 1
-        // fast range search using epsilon
-        const auto epsilon = queryParams && queryParams->svsRuntimeParams.epsilon > 0.0
+        // range search using epsilon
+        const auto epsilon = queryParams && queryParams->svsRuntimeParams.epsilon != 0
                                  ? queryParams->svsRuntimeParams.epsilon
                                  : this->epsilon;
 
-        const auto range_search_boundaries = radius * (1.0 + epsilon);
+        const auto range_search_boundaries = radius * (1.0 + std::abs(epsilon));
         bool keep_searching = true;
+
+        // Loop while iterator cache is not empty and search radius + epsilon is not exceeded
         while (keep_searching && svs_it.size() > 0) {
+            // Iterate over the cached search results
             for (auto &neighbor : svs_it) {
                 const auto dist = toVecSimDistance(neighbor.distance());
                 if (dist <= radius) {
                     rep->results.emplace_back(neighbor.id(), dist);
                 } else if (dist > range_search_boundaries) {
                     keep_searching = false;
-                    break;
                 }
             }
+            // If search radius + epsilon is not exceeded, request SVS BatchIterator for the next
+            // batch
             if (keep_searching) {
                 svs_it.next(cancel);
                 if (cancel()) {
@@ -410,29 +420,6 @@ public:
                 }
             }
         }
-#else
-        // strict range search assuming that batch iterator results are not sorted in 100%
-        int batch_times = 3;
-        bool done = false;
-        while (svs_it.size() > 0 && batch_times > 0) {
-            for (auto &neighbor : svs_it) {
-                if (toVecSimDistance(neighbor.distance()) <= radius) {
-                    rep->results.emplace_back(neighbor.id(), toVecSimDistance(neighbor.distance()));
-                    done = false;
-                } else {
-                    done = true;
-                }
-            }
-            if (done)
-                if (--batch_times == 0)
-                    break;
-            svs_it.next(cancel);
-            if (cancel()) {
-                rep->code = VecSim_QueryReply_TimedOut;
-                return rep;
-            }
-        }
-#endif
         return rep;
     }
 
