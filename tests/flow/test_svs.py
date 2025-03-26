@@ -146,10 +146,11 @@ def test_recall_for_svs_index_with_deletion():
 
 def test_batch_iterator():
     dim = 100
-    num_elements = 100000
+    num_elements = 10000
     num_queries = 10
+    windowSize = 128
 
-    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, window_size=windowSize)
 
     # Add 100k random vectors to the index
     rng = np.random.default_rng(seed=47)
@@ -177,21 +178,20 @@ def test_batch_iterator():
             should_have_return_in_first_batch.append(dist)
     assert (len(should_have_return_in_first_batch) <= 2)
 
-    # TODO(rfsaliev): Add testing with reduced window size
-    # # Verify that runtime args are sent properly to the batch iterator.
-    # query_params = VecSimQueryParams()
-    # query_params.hnswRuntimeParams.efRuntime = 5
-    # batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
-    # labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
-    # # Verify that accuracy is worse with the new lower ef_runtime.
-    # assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
+    # Verify that runtime args are sent properly to the batch iterator.
+    query_params = VecSimQueryParams()
+    query_params.svsRuntimeParams.windowSize = 5
+    batch_iterator_new = index.create_batch_iterator(query_data, query_params)
+    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+    # Verify that accuracy is worse with the new lower window size.
+    assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
 
-    # query_params.hnswRuntimeParams.efRuntime = efRuntime  # Restore previous ef_runtime.
-    # batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
-    # labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
-    # # Verify that results are now the same.
-    # assert_allclose(distances_first_batch_new[0], distances_first_batch[0])
-    # assert_equal(labels_first_batch_new[0], labels_first_batch[0])
+    query_params.svsRuntimeParams.windowSize = windowSize  # Restore previous window size.
+    batch_iterator_new = index.create_batch_iterator(query_data, query_params)
+    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+    # Verify that results are now the same.
+    assert_allclose(distances_first_batch_new[0], distances_first_batch[0])
+    assert_equal(labels_first_batch_new[0], labels_first_batch[0])
 
     # Reset
     batch_iterator.reset()
@@ -223,20 +223,19 @@ def test_batch_iterator():
     print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
           total_recall / num_queries)
 
-    # FIXME(rfsaliev): SVSIndex iterator returns the whole index data
-    # # Run again a single query in batches until it is depleted.
-    # batch_iterator = index.create_batch_iterator(query_data[0])
-    # iterations = 0
-    # accumulated_labels = set()
+    # Run again a single query in batches until it is depleted.
+    batch_iterator = index.create_batch_iterator(query_data[0])
+    iterations = 0
+    accumulated_labels = set()
 
-    # while batch_iterator.has_next():
-    #     iterations += 1
-    #     labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
-    #     # Verify that we got new scores in each iteration.
-    #     assert len(accumulated_labels.intersection(set(labels[0]))) == 0
-    #     accumulated_labels = accumulated_labels.union(set(labels[0]))
-    # assert len(accumulated_labels) >= 0.95 * num_elements
-    # print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+    while batch_iterator.has_next():
+        iterations += 1
+        labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+        # Verify that we got new scores in each iteration.
+        assert len(accumulated_labels.intersection(set(labels[0]))) == 0
+        accumulated_labels = accumulated_labels.union(set(labels[0]))
+    assert len(accumulated_labels) >= 0.95 * num_elements
+    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
 
 
 def test_topk_query():
