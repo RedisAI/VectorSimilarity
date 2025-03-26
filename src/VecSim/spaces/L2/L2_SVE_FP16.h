@@ -25,25 +25,28 @@ float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension)
     const auto *vec2 = static_cast<const float16_t *>(pVect2v);
     const size_t chunk = svcnth(); // number of 16-bit elements in a register
     svbool_t all = svptrue_b16();
-    svfloat16_t acc = svdup_f16(0.0f);
+    svfloat16_t acc1 = svdup_f16(0.0f);
+    svfloat16_t acc2 = svdup_f16(0.0f);
+    svfloat16_t acc3 = svdup_f16(0.0f);
+    svfloat16_t acc4 = svdup_f16(0.0f);
     size_t offset = 0;
 
     // Process all full vectors
     const size_t full_iterations = dimension / chunk / 4;
     for (size_t iter = 0; iter < full_iterations; iter++) {
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
+        L2Sqr_step(vec1, vec2, acc1, offset, chunk);
+        L2Sqr_step(vec1, vec2, acc2, offset, chunk);
+        L2Sqr_step(vec1, vec2, acc3, offset, chunk);
+        L2Sqr_step(vec1, vec2, acc4, offset, chunk);
     }
 
     // Perform between 0 and 3 additional steps, according to `additional_steps` value
-    if constexpr (additional_steps >= 3)
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
-    if constexpr (additional_steps >= 2)
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
     if constexpr (additional_steps >= 1)
-        L2Sqr_step(vec1, vec2, acc, offset, chunk);
+        L2Sqr_step(vec1, vec2, acc1, offset, chunk);
+    if constexpr (additional_steps >= 2)
+        L2Sqr_step(vec1, vec2, acc2, offset, chunk);
+    if constexpr (additional_steps >= 3)
+        L2Sqr_step(vec1, vec2, acc3, offset, chunk);
 
     // Handle partial chunk, if needed
     if constexpr (partial_chunk) {
@@ -56,10 +59,15 @@ float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension)
         svfloat16_t diff = svsub_f16_x(pg, v1, v2);
         // Square the differences.
         // Use `m` suffix to keep the inactive elements as they are in `acc`
-        acc = svmla_f16_m(pg, acc, diff, diff);
+        acc4 = svmla_f16_m(pg, acc4, diff, diff);
     }
 
+    // Accumulate accumulators
+    acc1 = svadd_f16_x(all, acc1, acc3);
+    acc2 = svadd_f16_x(all, acc2, acc4);
+
     // Reduce the accumulated sum.
-    float result = svaddv_f16(all, acc);
-    return result;
+    float result1 = svaddv_f16(all, acc1);
+    float result2 = svaddv_f16(all, acc2);
+    return result1 + result2;
 }
