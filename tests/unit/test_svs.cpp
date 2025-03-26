@@ -1,11 +1,3 @@
-/* TODO: change the copyright here */
-
-/*
- *Copyright Redis Ltd. 2021 - present
- *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
- *the Server Side Public License v1 (SSPLv1).
- */
-
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "unit_test_utils.h"
@@ -1423,7 +1415,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
 TYPED_TEST(SVSTest, testSizeEstimation) {
     size_t dim = 128;
 #if HAVE_SVS_LVQ
-    // FIXME(rfsaliev) SVS block sizes always rounded to a power of 2
+    // SVS block sizes always rounded to a power of 2
     // This why, in case of quantization, actual block size can be differ than requested
     // In addition, block size to be passed to graph and dataset counted in bytes,
     // converted then to a number of elements.
@@ -1762,8 +1754,6 @@ TYPED_TEST(SVSTest, FitMemoryTest) {
 
     size_t initial_memory = index->getAllocationSize();
     index->fitMemory();
-    // TODO: change to ASSERT_EQ once the bf ctor initializes the label2id size to the initial
-    // capacity.
     ASSERT_GE(index->getAllocationSize(), initial_memory);
 
     // Add vector

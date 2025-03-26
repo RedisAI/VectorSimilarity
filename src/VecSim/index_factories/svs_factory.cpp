@@ -1,5 +1,3 @@
-/* TODO: what kind of copyrght should we add here */
-
 #include "VecSim/index_factories/svs_factory.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/vec_sim_index.h"
