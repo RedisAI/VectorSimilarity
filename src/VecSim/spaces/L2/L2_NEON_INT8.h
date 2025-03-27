@@ -61,7 +61,7 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     if constexpr (remaining_chunks > 0)
     {
         // Process remaining full chunks of 16 elements
-        for (size_t i = 0; i < remaining; i++) {
+        for (size_t i = 0; i < remaining_chunks; i++) {
             L2SquareStep(pVect1, pVect2, sum);
         }
     }
