@@ -98,11 +98,9 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 8) {
         return ret_dist_func;
     }
-
+    
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef CPU_FEATURES_ARCH_AARCH64
-auto features = (arch_opt == nullptr)
-                    ? cpu_features::GetAarch64Info().features
-                    : *static_cast<const cpu_features::Aarch64Features *>(arch_opt);
 
 #ifdef OPT_SVE2
     if (features.sve2) {
