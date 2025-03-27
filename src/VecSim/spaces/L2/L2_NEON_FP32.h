@@ -59,7 +59,6 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);
 
-        // loads the elements to the corresponding lane on the vector
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f32(pVect1, v1, 0);
             v2 = vld1q_lane_f32(pVect2, v2, 0);
@@ -73,7 +72,6 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
             v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
         }
 
-        // Calculate difference and square
         float32x4_t diff = vsubq_f32(v1, v2);
         sum3 = vmlaq_f32(sum3, diff, diff);
     }
