@@ -73,7 +73,7 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     }
 
     // Combine all four sum accumulators
-    float32x4_t sum0 = vaddq_f32(vaddq_f32(sum0, sum1), vaddq_f32(sum2, sum3));
+    float32x4_t sum_combined = vaddq_f32(vaddq_f32(sum0, sum1), vaddq_f32(sum2, sum3));
 
     // Horizontal sum of the 4 elements in the combined NEON register
     float32x2_t sum_halves = vadd_f32(vget_low_f32(sum_combined), vget_high_f32(sum_combined));
