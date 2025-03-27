@@ -62,7 +62,7 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
     sum0 = svadd_f32_z(svptrue_b32(), sum0, sum1);
     sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);
     // Perform vector addition in parallel
-    svfloat32_t sum_all = svadd_f32_z(svptrue_b32(), sum0, sum2);
+    svfloat32_t sum_all = svadd_f32_x(svptrue_b32(), sum0, sum2);
     // Single horizontal reduction at the end
     float result = svaddv_f32(svptrue_b32(), sum_all);
     return 1.0f - result;

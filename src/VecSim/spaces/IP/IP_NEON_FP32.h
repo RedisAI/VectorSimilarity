@@ -36,17 +36,16 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
 
     // Handle remaining complete 4-float blocks within residual
     constexpr size_t remaining_chunks = residual / 4;
-    if constexpr (remaining_chunks > 0) {
-        // Unrolled loop for the 4-float blocks
-        if constexpr (remaining_chunks >= 1) {
-            InnerProductStep(pVect1, pVect2, sum0);
-        }
-        if constexpr (remaining_chunks >= 2) {
-            InnerProductStep(pVect1, pVect2, sum1);
-        }
-        if constexpr (remaining_chunks >= 3) {
-            InnerProductStep(pVect1, pVect2, sum2);
-        }
+
+    // Unrolled loop for the 4-float blocks
+    if constexpr (remaining_chunks >= 1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+    }
+    if constexpr (remaining_chunks >= 2) {
+        InnerProductStep(pVect1, pVect2, sum1);
+    }
+    if constexpr (remaining_chunks >= 3) {
+        InnerProductStep(pVect1, pVect2, sum2);
     }
 
     // Handle final residual elements (0-3 elements)

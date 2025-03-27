@@ -74,7 +74,7 @@ float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
 
     sum0 = svadd_f32_z(svptrue_b32(), sum0, sum1);
     sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);
-    svfloat32_t sum_all = svadd_f32_z(svptrue_b32(), sum0, sum2);
+    svfloat32_t sum_all = svadd_f32_x(svptrue_b32(), sum0, sum2);
     float result = svaddv_f32(svptrue_b32(), sum_all);
     return result;
 }
