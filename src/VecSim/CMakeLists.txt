@@ -22,17 +22,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
 #     add_definitions(-DSVS_EXPERIMENTAL_LEANVEC)
 # endif()
 
-set(SVS_REPOSITORY "https://github.com/intel/ScalableVectorSearch.git" CACHE STRING "SVS repository")
-
-include(FetchContent)
-FetchContent_Declare(
-    svs
-    GIT_REPOSITORY "${SVS_REPOSITORY}"
-    GIT_TAG main
-)
-
-FetchContent_MakeAvailable(svs)
-set(LVQ_IMPL_HEADER "${svs_SOURCE_DIR}/include/svs/quantization/lvq/impl/lvq_impl.h")
+set(LVQ_IMPL_HEADER "${CMAKE_SOURCE_DIR}/deps/ScalableVectorSearch/include/svs/quantization/lvq/impl/lvq_impl.h")
 
 add_subdirectory(spaces)
 
