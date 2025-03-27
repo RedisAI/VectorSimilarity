@@ -79,13 +79,13 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float INT8_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return 1.0f -
            INT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float INT8_CosineSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = INT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
     float norm_v1 =
         *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);

@@ -4,33 +4,46 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
- #include "SVE.h"
- #include "VecSim/spaces/L2/L2_SVE_FP32.h"
- #include "VecSim/spaces/L2/L2_SVE_INT8.h"
- #include "VecSim/spaces/IP/IP_SVE_FP32.h"
+#include "SVE.h"
+#include "VecSim/spaces/L2/L2_SVE_FP32.h"
+#include "VecSim/spaces/IP/IP_SVE_FP32.h"
+#include "VecSim/spaces/L2/L2_SVE_INT8.h"
+#include "VecSim/spaces/IP/IP_SVE_INT8.h"
 
- namespace spaces {
+namespace spaces {
 
- #include "implementation_chooser.h"
+#include "implementation_chooser.h"
 
- dist_func_t<float> Choose_FP32_IP_implementation_SVE(size_t dim) {
-     dist_func_t<float> ret_dist_func;
-     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_InnerProductSIMD_SVE, dim, svcntw);
-     return ret_dist_func;
- }
+dist_func_t<float> Choose_FP32_IP_implementation_SVE(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_InnerProductSIMD_SVE, dim, svcntw);
+    return ret_dist_func;
+}
 
- dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
-     dist_func_t<float> ret_dist_func;
-     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_L2SqrSIMD_SVE, dim, svcntw);
-     return ret_dist_func;
- }
+dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_L2SqrSIMD_SVE, dim, svcntw);
+    return ret_dist_func;
+}
 
- dist_func_t<float> Choose_INT8_L2_implementation_SVE(size_t dim) {
+dist_func_t<float> Choose_INT8_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, INT8_L2SqrSIMD_SVE, dim, svcntb);
     return ret_dist_func;
 }
 
- #include "implementation_chooser_cleanup.h"
+dist_func_t<float> Choose_INT8_IP_implementation_SVE(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, INT8_InnerProductSIMD_SVE, dim, svcntb);
+    return ret_dist_func;
+}
 
- } // namespace spaces
+dist_func_t<float> Choose_INT8_Cosine_implementation_SVE(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, INT8_CosineSIMD_SVE, dim, svcntb);
+    return ret_dist_func;
+}
+
+#include "implementation_chooser_cleanup.h"
+
+} // namespace spaces
