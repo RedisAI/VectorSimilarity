@@ -22,7 +22,7 @@ static void InnerProductStep(double *&pVect1, double *&pVect2, size_t &offset, s
 
 template <bool partial_chunk, unsigned char additional_steps>
 double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    double *pVect1 = (double*)pVect1v;
+    double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
     size_t offset = 0;
 
@@ -33,7 +33,6 @@ double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_
     svfloat64_t sum1 = svdup_f64(0.0f);
     svfloat64_t sum2 = svdup_f64(0.0f);
     svfloat64_t sum3 = svdup_f64(0.0f);
-
 
     auto chunk_size = 4 * vl;
     size_t number_of_chunks = dimension / chunk_size;

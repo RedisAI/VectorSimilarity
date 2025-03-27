@@ -24,8 +24,8 @@ static void L2SquareStep(double *&pVect1, double *&pVect2, size_t &offset, svflo
 
 template <bool partial_chunk, unsigned char additional_steps>
 double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    double *pVect1 = (double*) pVect1v;
-    double *pVect2 = (double*) pVect2v;
+    double *pVect1 = (double *)pVect1v;
+    double *pVect2 = (double *)pVect2v;
     size_t offset = 0;
 
     // Get the number of 64-bit elements per vector at runtime

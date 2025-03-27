@@ -58,7 +58,7 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     }
 
     // Handle final residual element
-    constexpr size_t final_residual = residual % 2;  // Final element
+    constexpr size_t final_residual = residual % 2; // Final element
     if constexpr (final_residual > 0) {
         float64x2_t v1 = vdupq_n_f64(0.0f);
         float64x2_t v2 = vdupq_n_f64(0.0f);

@@ -34,7 +34,6 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
         InnerProductStep(pVect1, pVect2, sum3);
     }
 
-
     // Handle remaining complete 2-float blocks within residual
     constexpr size_t remaining_chunks = residual / 2;
     if constexpr (remaining_chunks > 0) {
@@ -61,7 +60,7 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
 
         sum3 = vmlaq_f64(sum3, v1, v2);
     }
-    
+
     float64x2_t sum_combined = vaddq_f64(vaddq_f64(sum0, sum1), vaddq_f64(sum2, sum3));
 
     // Horizontal sum of the 4 elements in the NEON register

@@ -98,7 +98,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 8) {
         return ret_dist_func;
     }
-    
+
     auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef CPU_FEATURES_ARCH_AARCH64
 

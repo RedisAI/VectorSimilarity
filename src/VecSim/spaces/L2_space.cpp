@@ -116,7 +116,6 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 #endif
 
-
 #ifdef CPU_FEATURES_ARCH_X86_64
     auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512F
