@@ -49,10 +49,17 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     }
 
     if constexpr (additional_steps > 0) {
-        for (unsigned char c = 0; c < additional_steps; ++c) {
+        if constexpr (additional_steps >= 1) {
             L2SquareStep(pVect1, pVect2, offset, sum0);
         }
+        if constexpr (additional_steps >= 2) {
+            L2SquareStep(pVect1, pVect2, offset, sum1);
+        }
+        if constexpr (additional_steps >= 3) {
+            L2SquareStep(pVect1, pVect2, offset, sum2);
+        }
     }
+
     if constexpr (partial_chunk) {
         svbool_t pg = svwhilelt_b64(offset, dimension);
 
@@ -70,9 +77,7 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     // Combine the partial sums
     sum0 = svadd_f64_z(svptrue_b64(), sum0, sum1);
     sum2 = svadd_f64_z(svptrue_b64(), sum2, sum3);
-    sum0 = svadd_f64_z(svptrue_b64(), sum0, sum2);
-
-    // Horizontal sum
+    svfloat32_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
     double result = svaddv_f64(svptrue_b64(), sum0);
     return result;
 }

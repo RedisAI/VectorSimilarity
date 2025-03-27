@@ -20,32 +20,33 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    float64x2_t sum_prod = vdupq_n_f64(0.0f);
+    float64x2_t sum0 = vdupq_n_f64(0.0f);
+    float64x2_t sum1 = vdupq_n_f64(0.0f);
+    float64x2_t sum2 = vdupq_n_f64(0.0f);
+    float64x2_t sum3 = vdupq_n_f64(0.0f);
 
-    // These are compile-time constants derived from the template parameter
+    const size_t num_of_chunks = dimension / 8;
 
-    // Calculate how many full 8-element blocks to process (each block = 4 NEON vectors)
-    // This ensures we process dimension-residual elements in the main loop
-    const size_t main_blocks = (dimension - residual) / 8;
-
-    // Process all complete 8-float blocks (2 vectors at a time)
-    for (size_t i = 0; i < main_blocks; i++) {
-        // Prefetch next data block (64 bytes ahead = 8 floats)
-        __builtin_prefetch(pVect1 + 64, 0, 0);
-        __builtin_prefetch(pVect2 + 64, 0, 0);
-
-        // Process 2 NEON vectors (4 floats) per iteration
-        InnerProductStep(pVect1, pVect2, sum_prod);
-        InnerProductStep(pVect1, pVect2, sum_prod);
-
+    for (size_t i = 0; i < num_of_chunks; i++) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
     }
 
-    // Handle remaining complete 4-float blocks within residual
-    // This code generates specialized paths at compile time based on residual
-    constexpr size_t remaining_duos = residual / 2; // Complete 4-element vectors in residual
-    if constexpr (remaining_duos > 0) {
-        for (size_t i = 0; i < remaining_duos; i++) {
-            InnerProductStep(pVect1, pVect2, sum_prod);
+
+    // Handle remaining complete 2-float blocks within residual
+    constexpr size_t remaining_chunks = residual / 2;
+    if constexpr (remaining_chunks > 0) {
+        // Unrolled loop for the 2-float blocks
+        if constexpr (remaining_chunks >= 1) {
+            InnerProductStep(pVect1, pVect2, sum0);
+        }
+        if constexpr (remaining_chunks >= 2) {
+            InnerProductStep(pVect1, pVect2, sum1);
+        }
+        if constexpr (remaining_chunks >= 3) {
+            InnerProductStep(pVect1, pVect2, sum2);
         }
     }
 
@@ -58,11 +59,13 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
         v1 = vld1q_lane_f64(pVect1, v1, 0);
         v2 = vld1q_lane_f64(pVect2, v2, 0);
 
-        sum_prod = vmlaq_f64(sum_prod, v1, v2);
+        sum3 = vmlaq_f64(sum3, v1, v2);
     }
+    
+    float64x2_t sum_combined = vaddq_f64(vaddq_f64(sum0, sum1), vaddq_f64(sum2, sum3));
 
     // Horizontal sum of the 4 elements in the NEON register
-    float64x1_t summed = vadd_f64(vget_low_f64(sum_prod), vget_high_f64(sum_prod));
+    float64x1_t summed = vadd_f64(vget_low_f64(sum_combined), vget_high_f64(sum_combined));
     double sum = vget_lane_f64(summed, 0);
 
     return 1.0f - sum;

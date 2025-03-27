@@ -45,8 +45,14 @@ double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_
     }
 
     if constexpr (additional_steps > 0) {
-        for (unsigned char c = 0; c < additional_steps; ++c) {
+        if constexpr (additional_steps >= 1) {
             InnerProductStep(pVect1, pVect2, offset, sum0);
+        }
+        if constexpr (additional_steps >= 2) {
+            InnerProductStep(pVect1, pVect2, offset, sum1);
+        }
+        if constexpr (additional_steps >= 3) {
+            InnerProductStep(pVect1, pVect2, offset, sum2);
         }
     }
 
@@ -54,15 +60,16 @@ double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_
         svbool_t pg = svwhilelt_b64(offset, dimension);
         svfloat64_t v1 = svld1_f64(pg, pVect1 + offset);
         svfloat64_t v2 = svld1_f64(pg, pVect2 + offset);
-        sum0 = svmla_f64_m(pg, sum0, v1, v2);
+        sum3 = svmla_f64_m(pg, sum0, v1, v2);
     }
 
     // Combine the partial sums
     sum0 = svadd_f64_z(svptrue_b64(), sum0, sum1);
     sum2 = svadd_f64_z(svptrue_b64(), sum2, sum3);
-    sum0 = svadd_f64_z(svptrue_b64(), sum0, sum2);
 
-    // Horizontal sum
+    // Perform vector addition in parallel
+    svfloat32_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
+    // Single horizontal reduction at the end
     double result = svaddv_f64(svptrue_b64(), sum0);
     return 1.0f - result;
 }
