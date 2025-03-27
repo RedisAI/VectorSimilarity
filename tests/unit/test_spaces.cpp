@@ -1111,7 +1111,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    
+    float baseline = INT8_InnerProduct(v1, v2, dim);
 #ifdef OPT_NEON
     if (optimization.asimd) {
         unsigned char alignment = 0;
