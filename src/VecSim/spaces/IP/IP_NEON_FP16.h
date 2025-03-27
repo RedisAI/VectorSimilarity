@@ -46,7 +46,7 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
             (chunk_residual >= 5) ? 0xFFFF : 0,
             (chunk_residual >= 6) ? 0xFFFF : 0,
             (chunk_residual >= 7) ? 0xFFFF : 0,
-            0
+            0,
         };
 
         // Load partial vectors
