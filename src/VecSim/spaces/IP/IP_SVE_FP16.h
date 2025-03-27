@@ -64,10 +64,9 @@ float FP16_InnerProduct_SVE(const void *pVect1v, const void *pVect2v, size_t dim
     // Accumulate accumulators
     acc1 = svadd_f16_x(all, acc1, acc3);
     acc2 = svadd_f16_x(all, acc2, acc4);
+    acc1 = svadd_f16_x(all, acc1, acc2);
 
     // Reduce the accumulated sum.
-    float result1 = svaddv_f16(all, acc1);
-    float result2 = svaddv_f16(all, acc2);
-    float result = result1 + result2;
+    float result = svaddv_f16(all, acc1);
     return 1.0f - result;
 }
