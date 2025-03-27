@@ -1078,6 +1078,18 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
             optimization.avx512vnni = 0;
     }
 #endif
+#ifdef NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(128, dim)) << "NEON with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimd = 0;
+    }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, INT8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -1099,7 +1111,17 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    float baseline = INT8_InnerProduct(v1, v2, dim);
+    
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
         optimization.avx512vnni) {

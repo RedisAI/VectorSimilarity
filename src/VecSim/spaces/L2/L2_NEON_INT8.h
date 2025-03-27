@@ -7,82 +7,70 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void L2SquareStep(float *&pVect1, float *&pVect2, float32x4_t &sum) {
-    float32x4_t v1 = vld1q_f32(pVect1);
-    float32x4_t v2 = vld1q_f32(pVect2);
-
-    float32x4_t diff = vsubq_f32(v1, v2);
-
-    sum = vmlaq_f32(sum, diff, diff);
-
-    pVect1 += 4;
-    pVect2 += 4;
+static inline void L2SquareStep(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
+    // Load 16 int8 elements (16 bytes) into NEON registers
+    int8x16_t v1 = vld1q_s8(pVect1);
+    int8x16_t v2 = vld1q_s8(pVect2);
+    
+    // Calculate difference
+    int8x16_t diff = vsubq_s8(v1, v2);
+    
+    // Split into low and high halves
+    int8x8_t diff_low = vget_low_s8(diff);
+    int8x8_t diff_high = vget_high_s8(diff);
+    
+    // Widen to 16-bit and square (multiply by itself)
+    int16x8_t diff_low_wide = vmovl_s8(diff_low);
+    int16x8_t diff_high_wide = vmovl_s8(diff_high);
+    
+    int16x8_t square_low = vmulq_s16(diff_low_wide, diff_low_wide);
+    int16x8_t square_high = vmulq_s16(diff_high_wide, diff_high_wide);
+    
+    // Accumulate into 32-bit sum
+    sum = vpadalq_s16(sum, square_low);
+    sum = vpadalq_s16(sum, square_high);
+    
+    pVect1 += 16;
+    pVect2 += 16;
 }
 
 template <unsigned char residual> // 0..15
-float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float *)pVect1v;
-    float *pVect2 = (float *)pVect2v;
+float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    int8_t *pVect1 = (int8_t *)pVect1v;
+    int8_t *pVect2 = (int8_t *)pVect2v;
 
-    float32x4_t sum0 = vdupq_n_f32(0.0f);
-    float32x4_t sum1 = vdupq_n_f32(0.0f);
-    float32x4_t sum2 = vdupq_n_f32(0.0f);
-    float32x4_t sum3 = vdupq_n_f32(0.0f);
-
+    // Initialize sum accumulators to zero (4 lanes of 32-bit integers)
+    int32x4_t sum = vdupq_n_s32(0);
+    
+    // Process 16 elements at a time
     const size_t num_of_chunks = dimension / 16;
-
+    
     for (size_t i = 0; i < num_of_chunks; i++) {
-        L2SquareStep(pVect1, pVect2, sum0);
-        L2SquareStep(pVect1, pVect2, sum1);
-        L2SquareStep(pVect1, pVect2, sum2);
-        L2SquareStep(pVect1, pVect2, sum3);
+        L2SquareStep(pVect1, pVect2, sum);
     }
 
-    // Handle remaining complete 4-float blocks within residual
-    constexpr size_t remaining_chunks = residual / 4;
-    if constexpr (remaining_chunks > 0) {
-        // Unrolled loop for the 4-float blocks
-        if constexpr (remaining_chunks >= 1) {
-            L2SquareStep(pVect1, pVect2, sum0);
+    // Handle remaining elements (0-15)
+    if constexpr (residual > 0) {
+        // For residual elements, we need to handle them carefully
+        int8_t temp1[16] = {0};
+        int8_t temp2[16] = {0};
+        
+        // Copy residual elements to temporary buffers
+        for (size_t i = 0; i < residual; i++) {
+            temp1[i] = pVect1[i];
+            temp2[i] = pVect2[i];
         }
-        if constexpr (remaining_chunks >= 2) {
-            L2SquareStep(pVect1, pVect2, sum1);
-        }
-        if constexpr (remaining_chunks >= 3) {
-            L2SquareStep(pVect1, pVect2, sum2);
-        }
+        
+        int8_t *pTemp1 = temp1;
+        int8_t *pTemp2 = temp2;
+        
+        // Process the residual elements
+        L2SquareStep(pTemp1, pTemp2, sum);
     }
 
-    // Handle final residual elements (0-3 elements)
-    constexpr size_t final_residual = residual % 4;
-    if constexpr (final_residual > 0) {
-        float32x4_t v1 = vdupq_n_f32(0.0f);
-        float32x4_t v2 = vdupq_n_f32(0.0f);
-
-        if constexpr (final_residual >= 1) {
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            v2 = vld1q_lane_f32(pVect2, v2, 0);
-        }
-        if constexpr (final_residual >= 2) {
-            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
-            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
-        }
-        if constexpr (final_residual >= 3) {
-            v1 = vld1q_lane_f32(pVect1 + 2, v1, 2);
-            v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
-        }
-
-        float32x4_t diff = vsubq_f32(v1, v2);
-        sum3 = vmlaq_f32(sum3, diff, diff);
-    }
-
-    // Combine all four sum accumulators
-    float32x4_t sum_combined = vaddq_f32(vaddq_f32(sum0, sum1), vaddq_f32(sum2, sum3));
-
-    // Horizontal sum of the 4 elements in the combined NEON register
-    float32x2_t sum_halves = vadd_f32(vget_low_f32(sum_combined), vget_high_f32(sum_combined));
-    float32x2_t summed = vpadd_f32(sum_halves, sum_halves);
-    float sum = vget_lane_f32(summed, 0);
-
-    return sum;
+    // Horizontal sum of the 4 elements in the sum register to get final result
+    int32_t result = vaddvq_s32(sum);
+    
+    // Return the L2 squared distance as a float
+    return static_cast<float>(result);
 }

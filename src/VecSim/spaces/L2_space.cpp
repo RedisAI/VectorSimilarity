@@ -214,8 +214,18 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
     auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON
+    if (features.asimd) {
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(int8_t); // align to 128 bits.
+        return Choose_INT8_L2_implementation_NEON(dim);
+    }
+#endif
+#endif // __aarch64__
+
+#ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual

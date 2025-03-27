@@ -65,7 +65,8 @@ float INT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
     
     // Normalize and invert the result similar to the floating-point version
     // The scaling factor might need adjustment based on your specific use case
-    float normalized_result = static_cast<float>(result) / (127.0f * 127.0f * dimension);
-    
-    return 1.0f - normalized_result;
+    // Horizontal sum of the 4 elements in the sum register to get final result
+    int32_t result = vaddvq_s32(sum);
+    // Return the raw inner product without normalization or inversion
+    return 1.0f - static_cast<float>(result);
 }

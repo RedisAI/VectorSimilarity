@@ -88,7 +88,7 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	# Create different optimization implementations for ARM architecture
 	if (CXX_ARMV8A)
 		message("Building with ARMV8A")
-		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
+		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+i8mm")
 		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
 	endif()
 

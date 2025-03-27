@@ -240,7 +240,7 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON
     if (features.asimd) {
-        return Choose_FP32_IP_implementation_NEON(dim);
+        return Choose_INT8_IP_implementation_NEON(dim);
     }
 #endif
 #endif
