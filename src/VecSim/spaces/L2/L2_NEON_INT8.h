@@ -12,19 +12,25 @@ static inline void L2SquareStep(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum
     int8x16_t v1 = vld1q_s8(pVect1);
     int8x16_t v2 = vld1q_s8(pVect2);
     
-    // Calculate difference
-    int8x16_t diff = vsubq_s8(v1, v2);
-    
     // Split into low and high halves
-    int8x8_t diff_low = vget_low_s8(diff);
-    int8x8_t diff_high = vget_high_s8(diff);
+    int8x8_t v1_low = vget_low_s8(v1);
+    int8x8_t v1_high = vget_high_s8(v1);
+    int8x8_t v2_low = vget_low_s8(v2);
+    int8x8_t v2_high = vget_high_s8(v2);
     
-    // Widen to 16-bit and square (multiply by itself)
-    int16x8_t diff_low_wide = vmovl_s8(diff_low);
-    int16x8_t diff_high_wide = vmovl_s8(diff_high);
+    // Widen to 16-bit before subtraction
+    int16x8_t v1_low_wide = vmovl_s8(v1_low);
+    int16x8_t v1_high_wide = vmovl_s8(v1_high);
+    int16x8_t v2_low_wide = vmovl_s8(v2_low);
+    int16x8_t v2_high_wide = vmovl_s8(v2_high);
     
-    int16x8_t square_low = vmulq_s16(diff_low_wide, diff_low_wide);
-    int16x8_t square_high = vmulq_s16(diff_high_wide, diff_high_wide);
+    // Calculate difference on widened values
+    int16x8_t diff_low = vsubq_s16(v1_low_wide, v2_low_wide);
+    int16x8_t diff_high = vsubq_s16(v1_high_wide, v2_high_wide);
+    
+    // Square differences
+    int16x8_t square_low = vmulq_s16(diff_low, diff_low);
+    int16x8_t square_high = vmulq_s16(diff_high, diff_high);
     
     // Accumulate into 32-bit sum
     sum = vpadalq_s16(sum, square_low);
@@ -39,14 +45,25 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
-    // Initialize sum accumulators to zero (4 lanes of 32-bit integers)
     int32x4_t sum = vdupq_n_s32(0);
     
     // Process 16 elements at a time
-    const size_t num_of_chunks = dimension / 16;
+    const size_t num_of_chunks = dimension / 64;
     
     for (size_t i = 0; i < num_of_chunks; i++) {
         L2SquareStep(pVect1, pVect2, sum);
+        L2SquareStep(pVect1, pVect2, sum);
+        L2SquareStep(pVect1, pVect2, sum);
+        L2SquareStep(pVect1, pVect2, sum);
+    }
+
+    constexpr size_t remaining_chunks = residual / 16;
+    if constexpr (remaining > 0)
+    {
+        // Process remaining full chunks of 16 elements
+        for (size_t i = 0; i < remaining; i++) {
+            L2SquareStep(pVect1, pVect2, sum);
+        }
     }
 
     // Handle remaining elements (0-15)

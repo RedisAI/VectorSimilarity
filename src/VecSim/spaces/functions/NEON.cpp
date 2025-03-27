@@ -22,7 +22,7 @@ dist_func_t<float> Choose_FP32_IP_implementation_NEON(size_t dim) {
 
 dist_func_t<float> Choose_INT8_IP_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, INT8_InnerProductSIMD16_NEON);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, INT8_InnerProductSIMD16_NEON);
     return ret_dist_func;
 }
 
@@ -33,7 +33,7 @@ dist_func_t<float> Choose_FP32_L2_implementation_NEON(size_t dim) {
 }
 dist_func_t<float> Choose_INT8_L2_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, INT8_L2SqrSIMD16_NEON);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, INT8_L2SqrSIMD16_NEON);
     return ret_dist_func;
 }
 
