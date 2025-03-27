@@ -3,18 +3,18 @@
  *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
  *the Server Side Public License v1 (SSPLv1).
  */
-
+#pragma once
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
-static void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, svfloat32_t &sum) {
+static void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, svfloat32_t &sum) {
     svbool_t pg = svptrue_b8();
 
-    // Load int8 vectors
-    svint8_t v1_i8 = svld1_s8(pg, pVect1);
-    svint8_t v2_i8 = svld1_s8(pg, pVect2);
+    // Load uint8 vectors
+    svuint8_t v1_ui8 = svld1_u8(pg, pVect1);
+    svuint8_t v2_ui8 = svld1_u8(pg, pVect2);
 
-    svfloat32_t ipf32 = svcvt_f32_s32_z(pg, svdot_s32(svdup_s32(0), v1_i8, v2_i8));
+    svfloat32_t ipf32 = svcvt_f32_u32_z(pg, svdot_u32(svdup_u32(0), v1_ui8, v2_ui8));
 
     sum = svadd_f32_m(pg, sum, ipf32);
 
@@ -23,9 +23,9 @@ static void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, svflo
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const int8_t *pVect1 = reinterpret_cast<const int8_t *>(pVect1v);
-    const int8_t *pVect2 = reinterpret_cast<const int8_t *>(pVect2v);
+float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const uint8_t *pVect1 = reinterpret_cast<const uint8_t *>(pVect1v);
+    const uint8_t *pVect2 = reinterpret_cast<const uint8_t *>(pVect2v);
 
     size_t offset = 0;
     const size_t vl = svcntb();
@@ -57,10 +57,10 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
         svbool_t pg = svwhilelt_b8(offset, dimension);
         svbool_t pg32 = svwhilelt_b32(offset, dimension);
 
-        svint8_t v1_i8 = svld1_s8(pg, pVect1);
-        svint8_t v2_i8 = svld1_s8(pg, pVect2);
+        svuint8_t v1_ui8 = svld1_u8(pg, pVect1);
+        svuint8_t v2_ui8 = svld1_u8(pg, pVect2);
 
-        svfloat32_t ipf32 = svcvt_f32_s32_z(pg32, svdot_s32(svdup_s32(0), v1_i8, v2_i8));
+        svfloat32_t ipf32 = svcvt_f32_u32_z(pg32, svdot_u32(svdup_u32(0), v1_ui8, v2_ui8));
 
         sum0 = svadd_f32_m(pg32, sum0, ipf32);
 
@@ -79,17 +79,17 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float UINT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return 1.0f -
-           INT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
+           UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_CosineSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float ip = INT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
+float UINT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float ip = UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
     float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);
+        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
     float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
+        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
 }

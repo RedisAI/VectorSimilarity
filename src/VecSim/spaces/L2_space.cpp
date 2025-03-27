@@ -268,6 +268,21 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 32) {
         return ret_dist_func;
     }
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    auto features = (arch_opt == nullptr)
+                        ? cpu_features::GetAarch64Info().features
+                        : *static_cast<const cpu_features::Aarch64Features *>(arch_opt);
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_UINT8_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_UINT8_L2_implementation_SVE(dim);
+    }
+#endif
+#endif
 #ifdef CPU_FEATURES_ARCH_X86_64
     auto features = (arch_opt == nullptr)
                         ? cpu_features::GetX86Info().features

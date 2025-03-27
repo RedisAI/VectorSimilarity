@@ -20,4 +20,10 @@ dist_func_t<float> Choose_INT8_IP_implementation_SVE(size_t dim);
 
 dist_func_t<float> Choose_INT8_Cosine_implementation_SVE(size_t dim);
 
+dist_func_t<float> Choose_UINT8_L2_implementation_SVE(size_t dim);
+
+dist_func_t<float> Choose_UINT8_IP_implementation_SVE(size_t dim);
+
+dist_func_t<float> Choose_UINT8_Cosine_implementation_SVE(size_t dim);
+
 } // namespace spaces

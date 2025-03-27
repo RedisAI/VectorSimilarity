@@ -8,19 +8,19 @@
 #include <arm_sve.h>
 
 // Aligned step using svptrue_b8()
-static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, svfloat32_t &sum) {
+static inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, svfloat32_t &sum) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
 
-    svint8_t v1_i8 = svld1_s8(pg, pVect1);
-    svint8_t v2_i8 = svld1_s8(pg, pVect2);
+    svuint8_t v1_ui8 = svld1_u8(pg, pVect1);
+    svuint8_t v2_ui8 = svld1_u8(pg, pVect2);
 
     // Subtract v2 from v1 and widen the results to int16 for the even indexes
-    svint16_t diff_e = svsublb_s16(v1_i8, v2_i8);
+    svint16_t diff_e = svreinterpret_s16(svsublb_u16(v1_ui8, v2_ui8));
 
     // Subtract v2 from v1 and widen the results to int16 for the odd indexes
-    svint16_t diff_o = svsublt_s16(v1_i8, v2_i8);
+    svint16_t diff_o = svreinterpret_s16(svsublt_u16(v1_ui8, v2_ui8));
 
     svint32_t sum_int = svdup_s32(0);
 
@@ -39,9 +39,9 @@ static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, sv
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const int8_t *pVect1 = reinterpret_cast<const int8_t *>(pVect1v);
-    const int8_t *pVect2 = reinterpret_cast<const int8_t *>(pVect2v);
+float UINT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const uint8_t *pVect1 = reinterpret_cast<const uint8_t *>(pVect1v);
+    const uint8_t *pVect2 = reinterpret_cast<const uint8_t *>(pVect2v);
 
     // number of int8 per SVE2 register
     const size_t vl = svcntb();
@@ -75,14 +75,14 @@ float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
         svbool_t pg = svwhilelt_b8(offset, dimension);
         svbool_t pg32 = svwhilelt_b32(offset, dimension);
 
-        svint8_t v1_i8 = svld1_s8(pg, pVect1);
-        svint8_t v2_i8 = svld1_s8(pg, pVect2);
+        svuint8_t v1_ui8 = svld1_u8(pg, pVect1);
+        svuint8_t v2_ui8 = svld1_u8(pg, pVect2);
 
         // Subtract v2 from v1 and widen the results to int16 for the even indexes
-        svint16_t diff_e = svsublb_s16(v1_i8, v2_i8);
+        svint16_t diff_e = svreinterpret_s16(svsublb_u16(v1_ui8, v2_ui8));
 
         // Subtract v2 from v1 and widen the results to int16 for the odd indexes
-        svint16_t diff_o = svsublt_s16(v1_i8, v2_i8);
+        svint16_t diff_o = svreinterpret_s16(svsublt_u16(v1_ui8, v2_ui8));
 
         svint32_t sum_int = svdup_s32(0);
 
