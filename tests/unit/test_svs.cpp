@@ -104,32 +104,9 @@ TYPED_TEST(SVSTest, svs_vector_update_test) {
     // Index size shouldn't change.
     EXPECT_EQ(VecSimIndex_IndexSize(index), 1);
 
-    // // The idTolabel mapping size should be aligned with the current index *capacity* (not its
-    // size)
-    // // hence, it is the default block size that was allocated at the first insertion.
-    // ASSERT_EQ(svs_index->idToLabelMapping.size(), DEFAULT_BLOCK_SIZE);
-
-    // // Check update.
-    // TEST_DATA_T *vector_data = svs_index->getDataByInternalId(0);
-    // for (size_t i = 0; i < dim; ++i) {
-    //     ASSERT_EQ(*vector_data, 2.0);
-    //     ++vector_data;
-    // }
-
     // Delete the last vector.
     VecSimIndex_DeleteVector(index, 1);
     EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    // // VectorBlocks vector is empty.
-    // ASSERT_EQ(svs_index->vectorBlocks.size(), 0);
-    // // idTolabel size should also decrease to zero.
-    // ASSERT_EQ(svs_index->idToLabelMapping.size(), 0);
-
-    // SVSIndex_Single<TEST_DATA_T, TEST_DIST_T> *bf_single_index =
-    //     this->CastToBF_Single(index);
-
-    // // Label2id of the last vector doesn't exist.
-    // ASSERT_EQ(bf_single_index->labelToIdLookup.find(1), bf_single_index->labelToIdLookup.end());
 
     VecSimIndex_Free(index);
 }
@@ -165,7 +142,7 @@ TYPED_TEST(SVSTest, svs_vector_search_by_id_test) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(SVSTest, svs_bulk_vectors_add_test) {
+TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     size_t n = 1000;
     size_t k = 11;
     const size_t dim = 4;
@@ -201,6 +178,11 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_test) {
     TEST_DATA_T query[] = {50, 50, 50, 50};
     auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    // Delete almost all vectors
+    const size_t keep_num = 1;
+    ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), keep_num);
 
     VecSimIndex_Free(index);
 }
@@ -357,12 +339,6 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    // // The vector block should be removed.
-    // ASSERT_EQ(bf_index->getVectorBlocks().size(), 0);
-
-    // // id2label size and capacity should turn to zero.
-    // ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);
 
     // Reinsert the same vectors under the same ids.
     for (size_t i = 0; i < n; i++) {
@@ -636,9 +612,13 @@ TYPED_TEST(SVSTest, svs_batch_iterator_corner_cases) {
     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
     VecSimQueryReply_Free(res);
     // Retry to get results.
+    VecSimBatchIterator_Reset(batchIterator);
     res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
     VecSimQueryReply_Free(res);
+
+    // Check if depleted
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
     VecSimBatchIterator_Free(batchIterator);
 
     for (size_t i = 0; i < n; i++) {
@@ -680,6 +660,35 @@ TYPED_TEST(SVSTest, svs_batch_iterator_corner_cases) {
     VecSimIndex_Free(index);
 }
 
+// Add up to capacity.
+TYPED_TEST(SVSTest, resizeIndex) {
+    size_t dim = 4;
+    size_t n = 10;
+    size_t bs = 4;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    // Add up to n.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+    if constexpr (TypeParam::get_quant_bits() > 0) {
+        // LVQDataset does not provide a capacity method
+        extra_cap = 1;
+    }
+    // The size (+extra) and the capacity should be equal.
+    ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
+    // The capacity shouldn't be changed.
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap);
+
+    VecSimIndex_Free(index);
+}
+
 // Test empty index edge cases.
 TYPED_TEST(SVSTest, svs_empty_index) {
     size_t dim = 4;
@@ -712,10 +721,12 @@ TYPED_TEST(SVSTest, svs_empty_index) {
 
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
-    // The expected_capacity should decrease in one block.
 
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // The expected capacity should be 1 for empty index.
+    ASSERT_EQ(index->indexCapacity(), 1);
 
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);
@@ -725,18 +736,10 @@ TYPED_TEST(SVSTest, svs_empty_index) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(SVSTest, test_delete_shift_index) {
+TYPED_TEST(SVSTest, test_delete_vector) {
     size_t k = 5;
     size_t dim = 2;
     size_t block_size = 3;
-
-    // This test creates 2 vector blocks with size of 3
-    // Insert 6 vectors with ascending ids; The vector blocks will look like
-    // 0 [0, 1, 2]
-    // 1 [3, 4, 5]
-    // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move vector
-    // data of id 5 to vector block 0 at index 1. id2label[1] should hold the label of the vector
-    // that was in id 5.
 
     SVSParams params = {
         .dim = dim,
@@ -752,6 +755,10 @@ TYPED_TEST(SVSTest, test_delete_shift_index) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+
+    // Delete from empty index
+    ASSERT_EQ(VecSimIndex_DeleteVector(index, 111), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     size_t n = 6;
     for (size_t i = 0; i < n; i++) {
@@ -982,14 +989,6 @@ TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
     ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
-
-    // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    // ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
-    // info = VecSimIndex_Info(index);
-    // infoIter = VecSimIndex_InfoIterator(index);
-    // ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.lastMode);
-    // compareFlatIndexInfoToIterator(info, infoIter);
-    // VecSimInfoIterator_Free(infoIter);
 
     // Simulate the case where another call to the heuristics is done after realizing that
     // the subset size is smaller, and change the policy as a result.
@@ -1672,6 +1671,13 @@ TYPED_TEST(SVSTest, rangeQuery) {
     // in the boundaries.
     double radius = dim * pow(expected_num_results / 2, 2);
     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
+
+    // Rerun with a given query params.
+    SVSRuntimeParams svsRuntimeParams = {.epsilon = 1.0};
+    auto query_params = CreateQueryParams(svsRuntimeParams);
+    query_params.batchSize = 100;
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE,
+                      &query_params);
 
     // Get results by id.
     auto verify_res_by_id = [&](size_t id, double score, size_t index) {

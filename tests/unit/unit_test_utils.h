@@ -127,6 +127,7 @@ size_t EstimateElementSize(const IndexParams &index_params) {
 }
 
 VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
+VecSimQueryParams CreateQueryParams(const SVSRuntimeParams &RuntimeParams);
 
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
