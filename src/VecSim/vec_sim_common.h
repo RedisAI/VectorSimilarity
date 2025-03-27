@@ -131,12 +131,12 @@ typedef struct {
 } BFParams;
 
 typedef enum {
-    VecSimQuant_NONE = 0,            // No quantization.
-    VecSimQuant_8 = 8,               // 8-bit quantization
-    VecSimQuant_4 = 4,               // 4-bit quantization
-    VecSimQuant_4x4 = 4 | (4 << 10), // 4-bit quantization with 4-bit residuals
-    VecSimQuant_4x8 = 4 | (8 << 10)  // 4-bit quantization with 8-bit residuals
-} VecSimQuantBits;
+    VecSimSvsQuant_NONE = 0,            // No quantization.
+    VecSimSvsQuant_8 = 8,               // 8-bit quantization
+    VecSimSvsQuant_4 = 4,               // 4-bit quantization
+    VecSimSvsQuant_4x4 = 4 | (4 << 10), // 4-bit quantization with 4-bit residuals
+    VecSimSvsQuant_4x8 = 4 | (8 << 10)  // 4-bit quantization with 8-bit residuals
+} VecSimSvsQuantBits;
 
 typedef struct {
     VecSimType type;     // Datatype to index.
@@ -145,7 +145,7 @@ typedef struct {
     size_t blockSize;
 
     /* SVS-Vamana specifics. See Intel ScalableVectorSearch documentation */
-    VecSimQuantBits quantBits;       // Quantization level.
+    VecSimSvsQuantBits quantBits;    // Quantization level.
     float alpha;                     // The pruning parameter.
     size_t graph_max_degree;         // Maximum degree in the graph.
     size_t construction_window_size; // Search window size to use during graph construction.
