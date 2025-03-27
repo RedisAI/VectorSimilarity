@@ -58,7 +58,7 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     }
 
     constexpr size_t remaining_chunks = residual / 16;
-    if constexpr (remaining > 0)
+    if constexpr (remaining_chunks > 0)
     {
         // Process remaining full chunks of 16 elements
         for (size_t i = 0; i < remaining; i++) {

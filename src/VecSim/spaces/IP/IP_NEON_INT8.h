@@ -26,7 +26,7 @@ static inline void InnerProductStepInt8(int8_t *&pVect1, int8_t *&pVect2, int32x
     pVect2 += 16;
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..63
 float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
@@ -35,11 +35,24 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     int32x4_t sum = vdupq_n_s32(0);
 
     // Process 16 elements at a time
-    const size_t num_of_chunks = dimension / 16;
+    const size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
         InnerProductStepInt8(pVect1, pVect2, sum);
+        InnerProductStepInt8(pVect1, pVect2, sum);
+        InnerProductStepInt8(pVect1, pVect2, sum);
+        InnerProductStepInt8(pVect1, pVect2, sum);
     }
+
+    constexpr size_t remaining_chunks = residual / 16;
+    if constexpr (remaining_chunks > 0)
+    {
+        // Process remaining full chunks of 16 elements
+        for (size_t i = 0; i < remaining_chunks; i++) {
+            L2SquareStep(pVect1, pVect2, sum);
+        }
+    }
+
 
     // Handle remaining elements (0-15)
     if constexpr (residual > 0) {
