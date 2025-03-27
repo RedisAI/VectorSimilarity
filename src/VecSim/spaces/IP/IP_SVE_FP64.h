@@ -70,6 +70,6 @@ double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_
     // Perform vector addition in parallel
     svfloat64_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
     // Single horizontal reduction at the end
-    double result = svaddv_f64(svptrue_b64(), sum0);
+    double result = svaddv_f64(svptrue_b64(), sum_all);
     return 1.0f - result;
 }
