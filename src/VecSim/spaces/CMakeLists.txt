@@ -81,6 +81,31 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
+
+	# Create different optimization implementations for ARM architecture
+	if (CXX_ARMV8A)
+		message("Building with ARMV8A")
+		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
+		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
+	endif()
+
+	# SVE support
+	if (CXX_SVE)
+		message("Building with SVE")
+		set_source_files_properties(functions/SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
+	endif()
+
+	# SVE2 support
+	if (CXX_SVE2)
+		message("Building with ARMV9A and SVE2")
+		set_source_files_properties(functions/SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
+		list(APPEND OPTIMIZATIONS functions/SVE2.cpp)
+	endif()
+endif()
+
 # Here we are compiling the space selectors with the relevant optimization flag.
 add_library(VectorSimilaritySpaces
 	L2_space.cpp
