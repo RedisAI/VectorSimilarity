@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_HP.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
 
@@ -188,11 +189,11 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
         return Choose_FP16_L2_implementation_SVE(dim);
     }
 #endif
-// #ifdef OPT_NEON
-//     if (features.asimd) {
-//         return Choose_FP16_L2_implementation_NEON(dim);
-//     }
-// #endif
+#ifdef OPT_NEON_HP
+    if (features.asimdhp) {
+        return Choose_FP16_L2_implementation_NEON_HP(dim);
+    }
+#endif
 #elif defined(CPU_FEATURES_ARCH_X86_64)
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:

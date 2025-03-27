@@ -6,18 +6,18 @@
 
 #include "NEON_HP.h"
 
-// #include "VecSim/spaces/L2/L2_NEON_FP16.h"
+#include "VecSim/spaces/L2/L2_NEON_FP16.h"
 #include "VecSim/spaces/IP/IP_NEON_FP16.h"
 
 namespace spaces {
 
 #include "implementation_chooser.h"
 
-// dist_func_t<float> Choose_FP16_L2_implementation_NEON_HP(size_t dim) {
-//     dist_func_t<float> ret_dist_func;
-//     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_L2Sqr_NEON_HP);
-//     return ret_dist_func;
-// }
+dist_func_t<float> Choose_FP16_L2_implementation_NEON_HP(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_L2Sqr_NEON_HP);
+    return ret_dist_func;
+}
 
 dist_func_t<float> Choose_FP16_IP_implementation_NEON_HP(size_t dim) {
     dist_func_t<float> ret_dist_func;

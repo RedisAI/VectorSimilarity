@@ -966,17 +966,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
         optimization.sve = 0;
     }
 #endif
-// #ifdef OPT_NEON_HP
-//     if (optimization.asimdhp) {
-//         unsigned char alignment = 0;
-//         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
-//         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_NEON_HP(dim))
-//             << "Unexpected distance function chosen for dim OPT_NEON_HP " << dim;
-//         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_HP with dim " << dim;
-//         ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
-//         optimization.asimdhp = 0;
-//     }
-// #endif
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON_HP " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
 #endif
     unsigned char alignment = 0;
     arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);

@@ -6,7 +6,7 @@
 
 #include <arm_neon.h>
 
-static inline void InnerProduct_step(const float16_t *&vec1, const float16_t *&vec2,
+static inline void L2Sqr_step(const float16_t *&vec1, const float16_t *&vec2,
                                      float16x8_t &acc) {
     // Load half-precision vectors
     float16x8_t v1 = vld1q_f16(vec1);
@@ -14,12 +14,14 @@ static inline void InnerProduct_step(const float16_t *&vec1, const float16_t *&v
     vec1 += 8;
     vec2 += 8;
 
-    // Multiply and accumulate
-    acc = vfmaq_f16(acc, v1, v2);
+    // Calculate differences
+    float16x8_t diff = vsubq_f16(v1, v2);
+    // Square and accumulate
+    acc = vfmaq_f16(acc, diff, diff);
 }
 
 template <unsigned char residual> // 0..31
-float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_L2Sqr_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *vec1 = static_cast<const float16_t *>(pVect1v);
     const auto *vec2 = static_cast<const float16_t *>(pVect2v);
     const auto *const v1End = vec1 + dimension;
@@ -57,8 +59,10 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
         float16x8_t masked_v1 = vreinterpretq_f16_u16(vandq_u16(vreinterpretq_u16_f16(v1), mask));
         float16x8_t masked_v2 = vreinterpretq_f16_u16(vandq_u16(vreinterpretq_u16_f16(v2), mask));
 
-        // Multiply and accumulate
-        acc1 = vfmaq_f16(acc1, masked_v1, masked_v2);
+        // Calculate differences
+        float16x8_t diff = vsubq_f16(masked_v1, masked_v2);
+        // Square and accumulate
+        acc1 = vfmaq_f16(acc1, diff, diff);
 
         // Advance pointers
         vec1 += chunk_residual;
@@ -67,19 +71,19 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
 
     // Handle (residual - (residual % 8)) in chunks of 8 bfloat16
     if constexpr (residual >= 8)
-        InnerProduct_step(vec1, vec2, acc2);
+    L2Sqr_step(vec1, vec2, acc2);
     if constexpr (residual >= 16)
-        InnerProduct_step(vec1, vec2, acc3);
+    L2Sqr_step(vec1, vec2, acc3);
     if constexpr (residual >= 24)
-        InnerProduct_step(vec1, vec2, acc4);
+    L2Sqr_step(vec1, vec2, acc4);
 
     // Process the rest of the vectors (the full chunks part)
     while (vec1 < v1End) {
         // TODO: use `vld1q_f16_x4` for quad-loading?
-        InnerProduct_step(vec1, vec2, acc1);
-        InnerProduct_step(vec1, vec2, acc2);
-        InnerProduct_step(vec1, vec2, acc3);
-        InnerProduct_step(vec1, vec2, acc4);
+        L2Sqr_step(vec1, vec2, acc1);
+        L2Sqr_step(vec1, vec2, acc2);
+        L2Sqr_step(vec1, vec2, acc3);
+        L2Sqr_step(vec1, vec2, acc4);
     }
 
     // Accumulate accumulators
@@ -96,5 +100,5 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
     sum_2 = vpadd_f32(sum_2, sum_2);
 
     // Extract result
-    return 1.0f - vget_lane_f32(sum_2, 0);
+    return vget_lane_f32(sum_2, 0);
 }
