@@ -27,18 +27,18 @@ protected:
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
-template <VecSimType type, typename DataType, VecSimQuantBits quantBits>
+template <VecSimType type, typename DataType, VecSimSvsQuantBits quantBits>
 struct SVSIndexType {
     static constexpr VecSimType get_index_type() { return type; }
-    static constexpr VecSimQuantBits get_quant_bits() { return quantBits; }
+    static constexpr VecSimSvsQuantBits get_quant_bits() { return quantBits; }
     typedef DataType data_t;
 };
 
 // clang-format off
-using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_NONE>
+using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
 #if HAVE_SVS_LVQ
-                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_8>
-                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_4>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_4>
 #endif
                                         >;
 // clang-format on

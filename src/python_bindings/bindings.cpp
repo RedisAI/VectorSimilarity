@@ -629,12 +629,12 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
-    py::enum_<VecSimQuantBits>(m, "VecSimQuantBits")
-        .value("VecSimQuant_NONE", VecSimQuant_NONE)
-        .value("VecSimQuant_8", VecSimQuant_8)
-        .value("VecSimQuant_4", VecSimQuant_4)
-        .value("VecSimQuant_4x4", VecSimQuant_4x4)
-        .value("VecSimQuant_4x8", VecSimQuant_4x8)
+    py::enum_<VecSimSvsQuantBits>(m, "VecSimSvsQuantBits")
+        .value("VecSimSvsQuant_NONE", VecSimSvsQuant_NONE)
+        .value("VecSimSvsQuant_8", VecSimSvsQuant_8)
+        .value("VecSimSvsQuant_4", VecSimSvsQuant_4)
+        .value("VecSimSvsQuant_4x4", VecSimSvsQuant_4x4)
+        .value("VecSimSvsQuant_4x8", VecSimSvsQuant_4x8)
         .export_values();
 
     py::class_<SVSParams>(m, "SVSParams")

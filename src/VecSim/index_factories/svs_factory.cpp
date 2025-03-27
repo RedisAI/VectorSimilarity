@@ -36,15 +36,15 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 template <typename MetricType, typename DataType>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     switch (params->algoParams.svsParams.quantBits) {
-    case VecSimQuant_NONE:
+    case VecSimSvsQuant_NONE:
         return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
-    case VecSimQuant_8:
+    case VecSimSvsQuant_8:
         return NewIndexImpl<MetricType, DataType, 8>(params, is_normalized);
-    case VecSimQuant_4:
+    case VecSimSvsQuant_4:
         return NewIndexImpl<MetricType, DataType, 4>(params, is_normalized);
-    case VecSimQuant_4x4:
+    case VecSimSvsQuant_4x4:
         return NewIndexImpl<MetricType, DataType, 4, 4>(params, is_normalized);
-    case VecSimQuant_4x8:
+    case VecSimSvsQuant_4x8:
         return NewIndexImpl<MetricType, DataType, 4, 8>(params, is_normalized);
     default:
         // If we got here something is wrong.
@@ -90,17 +90,17 @@ constexpr size_t SVSIndexVectorSize(size_t dims, size_t alignment = 0) {
 }
 
 template <typename DataType>
-size_t SVSIndexVectorSize(VecSimQuantBits quant_bits, size_t dims, size_t alignment = 0) {
+size_t SVSIndexVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0) {
     switch (quant_bits) {
-    case VecSimQuant_NONE:
+    case VecSimSvsQuant_NONE:
         return SVSIndexVectorSize<DataType, 0>(dims, alignment);
-    case VecSimQuant_8:
+    case VecSimSvsQuant_8:
         return SVSIndexVectorSize<DataType, 8>(dims, alignment);
-    case VecSimQuant_4:
+    case VecSimSvsQuant_4:
         return SVSIndexVectorSize<DataType, 4>(dims, alignment);
-    case VecSimQuant_4x4:
+    case VecSimSvsQuant_4x4:
         return SVSIndexVectorSize<DataType, 4, 4>(dims, alignment);
-    case VecSimQuant_4x8:
+    case VecSimSvsQuant_4x8:
         return SVSIndexVectorSize<DataType, 4, 8>(dims, alignment);
     default:
         // If we got here something is wrong.
@@ -109,7 +109,7 @@ size_t SVSIndexVectorSize(VecSimQuantBits quant_bits, size_t dims, size_t alignm
     }
 }
 
-size_t SVSIndexVectorSize(VecSimType data_type, VecSimQuantBits quant_bits, size_t dims,
+size_t SVSIndexVectorSize(VecSimType data_type, VecSimSvsQuantBits quant_bits, size_t dims,
                           size_t alignment = 0) {
     switch (data_type) {
     case VecSimType_FLOAT32:
