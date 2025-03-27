@@ -8,7 +8,8 @@
 
 #include <arm_sve.h>
 
-static inline void InnerProductStep(float *&pVect1, float *&pVect2, size_t &offset, svfloat32_t &sum) {
+static inline void InnerProductStep(float *&pVect1, float *&pVect2, size_t &offset,
+                                    svfloat32_t &sum) {
     svfloat32_t v1 = svld1_f32(svptrue_b32(), pVect1 + offset);
     svfloat32_t v2 = svld1_f32(svptrue_b32(), pVect2 + offset);
 
@@ -29,7 +30,6 @@ float FP32_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_
     svfloat32_t sum1 = svdup_f32(0.0f);
     svfloat32_t sum2 = svdup_f32(0.0f);
     svfloat32_t sum3 = svdup_f32(0.0f);
-    
 
     auto chunk_size = 4 * vl;
     const size_t number_of_chunks = dimension / chunk_size;
