@@ -46,7 +46,7 @@ float FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);
 
-        // loads the elements to the corresponding lane on the vector 
+        // loads the elements to the corresponding lane on the vector
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f32(pVect1, v1, 0);
             v2 = vld1q_lane_f32(pVect2, v2, 0);
