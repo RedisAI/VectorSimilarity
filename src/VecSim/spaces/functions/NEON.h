@@ -12,6 +12,8 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP32_IP_implementation_NEON(size_t dim);
 
+dist_func_t<float> Choose_INT8_IP_implementation_NEON(size_t dim);
+
 dist_func_t<float> Choose_FP32_L2_implementation_NEON(size_t dim);
 
 } // namespace spaces
