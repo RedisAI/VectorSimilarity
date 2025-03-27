@@ -66,14 +66,15 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
         }
     }
 
+    constexpr size_t final_residual = residual % 16;
     // Handle remaining elements (0-15)
-    if constexpr (residual > 0) {
+    if constexpr (final_residual > 0) {
         // For residual elements, we need to handle them carefully
         int8_t temp1[16] = {0};
         int8_t temp2[16] = {0};
         
         // Copy residual elements to temporary buffers
-        for (size_t i = 0; i < residual; i++) {
+        for (size_t i = 0; i < final_residual; i++) {
             temp1[i] = pVect1[i];
             temp2[i] = pVect2[i];
         }
