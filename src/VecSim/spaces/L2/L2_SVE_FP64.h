@@ -77,7 +77,7 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     // Combine the partial sums
     sum0 = svadd_f64_z(svptrue_b64(), sum0, sum1);
     sum2 = svadd_f64_z(svptrue_b64(), sum2, sum3);
-    svfloat32_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
+    svfloat64_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
     double result = svaddv_f64(svptrue_b64(), sum0);
     return result;
 }

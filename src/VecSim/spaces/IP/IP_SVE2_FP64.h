@@ -68,7 +68,7 @@
      sum2 = svadd_f64_z(svptrue_b64(), sum2, sum3);
  
      // Perform vector addition in parallel
-     svfloat32_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
+     svfloat64_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
      // Single horizontal reduction at the end
      double result = svaddv_f64(svptrue_b64(), sum0);
      return 1.0f - result;
