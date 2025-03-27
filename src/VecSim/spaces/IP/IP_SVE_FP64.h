@@ -60,7 +60,7 @@ double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_
         svbool_t pg = svwhilelt_b64(offset, dimension);
         svfloat64_t v1 = svld1_f64(pg, pVect1 + offset);
         svfloat64_t v2 = svld1_f64(pg, pVect2 + offset);
-        sum3 = svmla_f64_m(pg, sum0, v1, v2);
+        sum3 = svmla_f64_m(pg, sum3, v1, v2);
     }
 
     // Combine the partial sums
