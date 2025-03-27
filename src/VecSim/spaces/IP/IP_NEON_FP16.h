@@ -19,7 +19,7 @@ static inline void InnerProduct_step(const float16_t *&vec1, const float16_t *&v
 }
 
 template <unsigned char residual> // 0..31
-float FP16_InnerProduct_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *vec1 = static_cast<const float16_t *>(pVect1v);
     const auto *vec2 = static_cast<const float16_t *>(pVect2v);
     const auto *const v1End = vec1 + dimension;
@@ -37,12 +37,12 @@ float FP16_InnerProduct_NEON(const void *pVect1v, const void *pVect2v, size_t di
         // }
         constexpr uint16x8_t mask = {
             0xFFFF,
-            (chunk_residual >= 7) ? 0xFFFF : 0,
-            (chunk_residual >= 6) ? 0xFFFF : 0,
-            (chunk_residual >= 5) ? 0xFFFF : 0,
-            (chunk_residual >= 4) ? 0xFFFF : 0,
-            (chunk_residual >= 3) ? 0xFFFF : 0,
             (chunk_residual >= 2) ? 0xFFFF : 0,
+            (chunk_residual >= 3) ? 0xFFFF : 0,
+            (chunk_residual >= 4) ? 0xFFFF : 0,
+            (chunk_residual >= 5) ? 0xFFFF : 0,
+            (chunk_residual >= 6) ? 0xFFFF : 0,
+            (chunk_residual >= 7) ? 0xFFFF : 0,
             0
         };
 
