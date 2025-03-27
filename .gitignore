@@ -6,7 +6,6 @@
 /build/
 /dist/
 /venv/
-/deps/
 /1/
 **/build/
 

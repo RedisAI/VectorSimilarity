@@ -1,0 +1,3 @@
+[submodule "deps/ScalableVectorSearch"]
+	path = deps/ScalableVectorSearch
+	url = https://github.com/intel/ScalableVectorSearch.git
