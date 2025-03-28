@@ -1,2 +1,3 @@
 pip>=21.1
 poetry==1.4.2
+mkl-devel>=2025.1.0

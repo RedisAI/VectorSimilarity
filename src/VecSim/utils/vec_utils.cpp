@@ -21,6 +21,7 @@ const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
 const char *VecSimCommonStrings::HNSW_STRING = "HNSW";
 const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
+const char *VecSimCommonStrings::SVS_STRING = "SVS";
 
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
 const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
@@ -50,6 +51,9 @@ const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 const char *VecSimCommonStrings::HNSW_NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
+
+const char *VecSimCommonStrings::SVS_WS_SEARCH_STRING = "WS_SEARCH";
+const char *VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING = "USE_SEARCH_HISTORY";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
@@ -128,6 +132,22 @@ VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double
     return VecSimParamResolver_OK;
 }
 
+VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionMode *val) {
+    // Here we verify that given value is strictly ON or OFF
+    std::string value(rawParam.value, rawParam.valLen);
+    std::transform(value.begin(), value.end(), value.begin(), ::toupper);
+    if (value == "ON") {
+        *val = VecSimOption_ENABLE;
+    } else if (value == "OFF") {
+        *val = VecSimOption_DISABLE;
+    } else if (value == "AUTO") {
+        *val = VecSimOption_AUTO;
+    } else {
+        return VecSimParamResolverErr_BadValue;
+    }
+    return VecSimParamResolver_OK;
+}
+
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
     switch (vecsimAlgo) {
     case VecSimAlgo_BF:
@@ -136,6 +156,8 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::HNSW_STRING;
     case VecSimAlgo_TIERED:
         return VecSimCommonStrings::TIERED_STRING;
+    case VecSimAlgo_SVS:
+        return VecSimCommonStrings::SVS_STRING;
     }
     return NULL;
 }
