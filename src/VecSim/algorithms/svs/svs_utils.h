@@ -86,6 +86,13 @@ public:
     constexpr void deallocate(value_type *ptr, size_t count) noexcept {
         allocator_->deallocate(ptr, count * sizeof(T));
     }
+
+    // Support allocator type rebinding in LeanVec
+    template <typename U>
+    friend class SVSAllocator;
+
+    template <typename U>
+    SVSAllocator(SVSAllocator<U> other) : allocator_{other.allocator_} {}
 };
 
 // Join default SVS search parameters with VecSim query runtime parameters

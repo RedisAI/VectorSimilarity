@@ -2,7 +2,7 @@
 #include "VecSim/algorithms/svs/svs_utils.h"
 
 #if HAVE_SVS_LVQ
-#include "svs/quantization/lvq/impl/lvq_impl.h"
+#include SVS_LVQ_HEADER
 
 namespace svs_details {
 template <size_t Primary>
@@ -19,7 +19,7 @@ struct LVQSelector<4> {
 template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(QuantBits > 0)>> {
     using allocator_type = svs_details::SVSAllocator<std::byte>;
-    using blocked_type = svs::data::Blocked<allocator_type>;
+    using blocked_type = svs::data::Blocked<svs::AllocatorHandle<std::byte>>;
     using strategy_type = typename svs_details::LVQSelector<QuantBits>::strategy;
     using index_storage_type =
         svs::quantization::lvq::LVQDataset<QuantBits, ResidualBits, svs::Dynamic, strategy_type,
@@ -32,7 +32,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(Qua
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
         allocator_type data_allocator{std::move(allocator)};
-        blocked_type blocked_alloc{{svs_bs}, data_allocator};
+        auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
 
         return index_storage_type::compress(data, blocked_alloc);
     }

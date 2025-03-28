@@ -71,7 +71,6 @@ if(VECSIM_BUILD_TESTS)
 	endif()
 endif()
 
-add_subdirectory(deps/ScalableVectorSearch)
 add_subdirectory(src/VecSim)
 
 # Needed for build as ExternalProject (like RediSearch does)
