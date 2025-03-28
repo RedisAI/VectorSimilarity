@@ -104,7 +104,9 @@ protected:
     void initImpl(impl_type::data_type data, std::span<const labelType> ids) {
         VecSimSVSThreadPool threadpool;
         // Compute the entry point.
-        auto entry_point = svs::index::vamana::extensions::compute_entry_point(data, threadpool);
+        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool}};
+        auto entry_point =
+            svs::index::vamana::extensions::compute_entry_point(data, threadpool_handle);
 
         // Perform graph construction.
         auto distance = distance_f{};
