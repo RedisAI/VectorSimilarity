@@ -69,7 +69,7 @@ static VecSimResolveCode _ResolveParams_WSSearch(VecSimAlgo index_type, VecSimRa
 static VecSimResolveCode _ResolveParams_UseSearchHistory(VecSimAlgo index_type,
                                                          VecSimRawParam rparam,
                                                          VecSimQueryParams *qparams) {
-    VecSimOptionBool bool_val;
+    VecSimOptionMode bool_val;
     // USE_SEARCH_HISTORY is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
         return VecSimParamResolverErr_UnknownParam;

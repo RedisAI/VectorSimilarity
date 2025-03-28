@@ -12,7 +12,7 @@ import hnswlib
 
 def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
                      alpha = 1.2, graph_max_degree = 64, window_size = 128,
-                     max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_DEFAULT):
+                     max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_AUTO):
     svs_params = SVSParams()
 
     svs_params.dim = dim
@@ -264,7 +264,7 @@ def test_topk_query():
     for window_size in [128, 256, 512]:
         query_params = VecSimQueryParams()
         query_params.svsRuntimeParams.windowSize = window_size
-        query_params.svsRuntimeParams.searchHistory = VecSimOption_DEFAULT
+        query_params.svsRuntimeParams.searchHistory = VecSimOption_AUTO
         start = time.time()
         redis_labels, redis_distances = index.knn_query(query_data, k, query_param=query_params)
         end = time.time()
@@ -316,7 +316,7 @@ def test_range_query():
     for window_size in [128, 256, 512]:
         query_params = VecSimQueryParams()
         query_params.svsRuntimeParams.windowSize = window_size
-        query_params.svsRuntimeParams.searchHistory = VecSimOption_DEFAULT
+        query_params.svsRuntimeParams.searchHistory = VecSimOption_AUTO
         start = time.time()
         redis_labels, redis_distances = index.range_query(query_data, radius=radius, query_param=query_params)
         end = time.time()

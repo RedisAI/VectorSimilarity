@@ -132,7 +132,7 @@ VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double
     return VecSimParamResolver_OK;
 }
 
-VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionBool *val) {
+VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionMode *val) {
     // Here we verify that given value is strictly ON or OFF
     std::string value(rawParam.value, rawParam.valLen);
     std::transform(value.begin(), value.end(), value.begin(), ::toupper);
@@ -140,6 +140,8 @@ VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOpti
         *val = VecSimOption_ENABLE;
     } else if (value == "OFF") {
         *val = VecSimOption_DISABLE;
+    } else if (value == "AUTO") {
+        *val = VecSimOption_AUTO;
     } else {
         return VecSimParamResolverErr_BadValue;
     }
