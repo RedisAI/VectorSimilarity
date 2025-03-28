@@ -597,8 +597,8 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimMetric_Cosine", VecSimMetric_Cosine)
         .export_values();
 
-    py::enum_<VecSimOptionBool>(m, "VecSimOptionBool")
-        .value("VecSimOption_DEFAULT", VecSimOption_DEFAULT)
+    py::enum_<VecSimOptionMode>(m, "VecSimOptionMode")
+        .value("VecSimOption_AUTO", VecSimOption_AUTO)
         .value("VecSimOption_ENABLE", VecSimOption_ENABLE)
         .value("VecSimOption_DISABLE", VecSimOption_DISABLE)
         .export_values();

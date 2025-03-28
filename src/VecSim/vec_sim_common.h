@@ -46,10 +46,10 @@ typedef enum {
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
 
 typedef enum {
-    VecSimOption_DEFAULT = 0,
+    VecSimOption_AUTO = 0,
     VecSimOption_ENABLE = 1,
     VecSimOption_DISABLE = 2,
-} VecSimOptionBool;
+} VecSimOptionMode;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -151,7 +151,7 @@ typedef struct {
     size_t construction_window_size; // Search window size to use during graph construction.
     size_t max_candidate_pool_size;  // Limit on the number of neighbors considered during pruning.
     size_t prune_to;                 // Amount that candidates will be pruned.
-    VecSimOptionBool use_search_history; // Either the contents of the search buffer can be used or
+    VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
     size_t search_window_size;           // Search window size to use during search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
@@ -207,7 +207,7 @@ typedef struct {
 
 typedef struct {
     size_t windowSize;              // Search window size for Vamana graph accuracy/latency tune.
-    VecSimOptionBool searchHistory; // Enabling of the visited set for search.
+    VecSimOptionMode searchHistory; // Enabling of the visited set for search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSRuntimeParams;
 

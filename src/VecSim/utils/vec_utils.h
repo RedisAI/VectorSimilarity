@@ -87,7 +87,7 @@ VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long 
 
 VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
 
-VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionBool *val);
+VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionMode *val);
 
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 

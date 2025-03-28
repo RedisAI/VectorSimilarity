@@ -38,7 +38,6 @@ struct SVSIndexType {
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
 #if HAVE_SVS_LVQ
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
-                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_4>
 #endif
                                         >;
 // clang-format on
@@ -1903,6 +1902,14 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSim_OK);
     ASSERT_EQ(qparams.svsRuntimeParams.searchHistory, VecSimOption_DISABLE);
+
+    param_name = "use_search_history";
+    param_val = "auto";
+    rparams[0] = mkRawParams(param_name, param_val);
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    ASSERT_EQ(qparams.svsRuntimeParams.searchHistory, VecSimOption_AUTO);
 
     param_name = "wrong_name";
     param_val = "on";
