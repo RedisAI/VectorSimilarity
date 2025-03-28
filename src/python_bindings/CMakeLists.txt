@@ -20,6 +20,7 @@ if(NOT pybind11_POPULATED)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
+add_subdirectory(${root}/deps/ScalableVectorSearch ScalableVectorSearch)
 add_subdirectory(${root}/src/VecSim VectorSimilarity)
 
 include_directories(${root}/src ${root}/tests/utils)
