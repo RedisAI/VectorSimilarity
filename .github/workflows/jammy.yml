@@ -7,3 +7,4 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:jammy
+      pre-checkout-script: apt-get update && apt-get install -y git

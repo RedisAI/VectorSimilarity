@@ -7,3 +7,5 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:8
+      pre-checkout-script: dnf -y update && dnf install -y git
+
