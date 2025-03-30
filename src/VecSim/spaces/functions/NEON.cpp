@@ -7,6 +7,7 @@
 #include "NEON.h"
 #include "VecSim/spaces/L2/L2_NEON_FP32.h"
 #include "VecSim/spaces/L2/L2_NEON_INT8.h"
+#include "VecSim/spaces/L2/L2_NEON_UINT8.h"
 #include "VecSim/spaces/IP/IP_NEON_FP32.h"
 #include "VecSim/spaces/IP/IP_NEON_INT8.h"
 #include "VecSim/spaces/IP/IP_NEON_UINT8.h"
@@ -41,6 +42,12 @@ dist_func_t<float> Choose_FP32_L2_implementation_NEON(size_t dim) {
 dist_func_t<float> Choose_INT8_L2_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, INT8_L2SqrSIMD16_NEON);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_UINT8_L2_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD16_NEON);
     return ret_dist_func;
 }
 

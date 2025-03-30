@@ -175,3 +175,37 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     // Return the L2 squared distance as a float
     return static_cast<float>(result);
 }
+
+template <unsigned char residual> // 0..63
+float UINT8_L2SIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // Calculate L2 squared distance
+    float l2_sqr = UINT8_L2SqrSIMD16_NEON<residual>(pVect1v, pVect2v, dimension);
+    
+    // Return actual L2 distance (square root of squared distance)
+    return sqrtf(l2_sqr);
+}
+
+template <unsigned char residual> // 0..63
+float UINT8_L2NormalizedSIMD_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // For normalized vectors, we can optimize:
+    // L2(v1, v2)^2 = |v1|^2 + |v2|^2 - 2*dot(v1, v2)
+    // For normalized vectors, |v1| = |v2| = 1
+    // So L2(v1, v2)^2 = 2 - 2*dot(v1, v2)
+    
+    // Retrieve the stored norms
+    float norm_v1 =
+        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    float norm_v2 =
+        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    
+    // Calculate L2 squared distance
+    float l2_sqr = UINT8_L2SqrSIMD16_NEON<residual>(pVect1v, pVect2v, dimension);
+    
+    // Apply normalization if the vectors aren't already normalized
+    if (norm_v1 != 1.0f || norm_v2 != 1.0f) {
+        l2_sqr /= (norm_v1 * norm_v2);
+    }
+    
+    // Return actual L2 distance (square root of squared distance)
+    return sqrtf(l2_sqr);
+}
