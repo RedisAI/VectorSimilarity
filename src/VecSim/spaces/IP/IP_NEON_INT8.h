@@ -45,14 +45,12 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     }
 
     constexpr size_t remaining_chunks = residual / 16;
-    if constexpr (remaining_chunks > 0)
-    {
+    if constexpr (remaining_chunks > 0) {
         // Process remaining full chunks of 16 elements
         for (size_t i = 0; i < remaining_chunks; i++) {
-            L2SquareStep(pVect1, pVect2, sum);
+            InnerProductStepInt8(pVect1, pVect2, sum);
         }
     }
-
 
     // Handle remaining elements (0-15)
     constexpr size_t final_residual = residual % 16;
@@ -84,9 +82,8 @@ float INT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, siz
 }
 
 template <unsigned char residual> // 0..63
-float UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
-                                            size_t dimension) {
-    float ip = UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+float INT8_CosineSIMD_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float ip = INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
     float norm_v1 =
         *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
     float norm_v2 =

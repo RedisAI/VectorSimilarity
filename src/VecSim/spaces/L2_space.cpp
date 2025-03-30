@@ -215,6 +215,13 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
         return ret_dist_func;
     }
     auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_INT8_L2_implementation_NEON(dim);
+    }
+#endif
+
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON
     if (features.asimd) {

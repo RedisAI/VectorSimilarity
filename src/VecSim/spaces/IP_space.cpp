@@ -260,8 +260,8 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
     auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         // For int8 vectors with cosine distance, the extra float for the norm shifts alignment to
@@ -272,7 +272,14 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
+
 #endif // __x86_64__
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_INT8_Cosine_implementation_NEON(dim);
+    }
+#endif
+
     return ret_dist_func;
 }
 
