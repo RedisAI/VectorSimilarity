@@ -48,16 +48,14 @@ double FP64_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dime
         L2SquareStep(pVect1, pVect2, offset, sum3);
     }
 
-    if constexpr (additional_steps > 0) {
-        if constexpr (additional_steps >= 1) {
-            L2SquareStep(pVect1, pVect2, offset, sum0);
-        }
-        if constexpr (additional_steps >= 2) {
-            L2SquareStep(pVect1, pVect2, offset, sum1);
-        }
-        if constexpr (additional_steps >= 3) {
-            L2SquareStep(pVect1, pVect2, offset, sum2);
-        }
+    if constexpr (additional_steps >= 1) {
+        L2SquareStep(pVect1, pVect2, offset, sum0);
+    }
+    if constexpr (additional_steps >= 2) {
+        L2SquareStep(pVect1, pVect2, offset, sum1);
+    }
+    if constexpr (additional_steps >= 3) {
+        L2SquareStep(pVect1, pVect2, offset, sum2);
     }
 
     if constexpr (partial_chunk) {

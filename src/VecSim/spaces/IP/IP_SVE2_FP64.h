@@ -43,16 +43,14 @@ double FP64_InnerProductSIMD_SVE2(const void *pVect1v, const void *pVect2v, size
         InnerProductStep(pVect1, pVect2, offset, sum3);
     }
 
-    if constexpr (additional_steps > 0) {
-        if constexpr (additional_steps >= 1) {
-            InnerProductStep(pVect1, pVect2, offset, sum0);
-        }
-        if constexpr (additional_steps >= 2) {
-            InnerProductStep(pVect1, pVect2, offset, sum1);
-        }
-        if constexpr (additional_steps >= 3) {
-            InnerProductStep(pVect1, pVect2, offset, sum2);
-        }
+    if constexpr (additional_steps >= 1) {
+        InnerProductStep(pVect1, pVect2, offset, sum0);
+    }
+    if constexpr (additional_steps >= 2) {
+        InnerProductStep(pVect1, pVect2, offset, sum1);
+    }
+    if constexpr (additional_steps >= 3) {
+        InnerProductStep(pVect1, pVect2, offset, sum2);
     }
 
     if constexpr (partial_chunk) {

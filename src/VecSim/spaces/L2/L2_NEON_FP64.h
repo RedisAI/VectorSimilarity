@@ -22,7 +22,7 @@ static inline void L2SquareStep(double *&pVect1, double *&pVect2, float64x2_t &s
 }
 
 template <unsigned char residual> // 0..7
-double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+double FP64_L2SqrSIMD8_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
@@ -44,17 +44,15 @@ double FP64_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
 
     // Handle remaining complete 2-float blocks within residual
     constexpr size_t remaining_chunks = residual / 2;
-    if constexpr (remaining_chunks > 0) {
-        // Unrolled loop for the 2-float blocks
-        if constexpr (remaining_chunks >= 1) {
-            L2SquareStep(pVect1, pVect2, sum0);
-        }
-        if constexpr (remaining_chunks >= 2) {
-            L2SquareStep(pVect1, pVect2, sum1);
-        }
-        if constexpr (remaining_chunks >= 3) {
-            L2SquareStep(pVect1, pVect2, sum2);
-        }
+    // Unrolled loop for the 2-float blocks
+    if constexpr (remaining_chunks >= 1) {
+        L2SquareStep(pVect1, pVect2, sum0);
+    }
+    if constexpr (remaining_chunks >= 2) {
+        L2SquareStep(pVect1, pVect2, sum1);
+    }
+    if constexpr (remaining_chunks >= 3) {
+        L2SquareStep(pVect1, pVect2, sum2);
     }
 
     // Handle final residual element

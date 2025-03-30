@@ -16,7 +16,7 @@ static inline void InnerProductStep(double *&pVect1, double *&pVect2, float64x2_
 }
 
 template <unsigned char residual> // 0..7
-double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+double FP64_InnerProductSIMD8_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
@@ -36,17 +36,15 @@ double FP64_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
 
     // Handle remaining complete 2-float blocks within residual
     constexpr size_t remaining_chunks = residual / 2;
-    if constexpr (remaining_chunks > 0) {
-        // Unrolled loop for the 2-float blocks
-        if constexpr (remaining_chunks >= 1) {
-            InnerProductStep(pVect1, pVect2, sum0);
-        }
-        if constexpr (remaining_chunks >= 2) {
-            InnerProductStep(pVect1, pVect2, sum1);
-        }
-        if constexpr (remaining_chunks >= 3) {
-            InnerProductStep(pVect1, pVect2, sum2);
-        }
+    // Unrolled loop for the 2-float blocks
+    if constexpr (remaining_chunks >= 1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+    }
+    if constexpr (remaining_chunks >= 2) {
+        InnerProductStep(pVect1, pVect2, sum1);
+    }
+    if constexpr (remaining_chunks >= 3) {
+        InnerProductStep(pVect1, pVect2, sum2);
     }
 
     // Handle final residual elements (0-1 elements)

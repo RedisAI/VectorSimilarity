@@ -669,6 +669,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         arch_opt_func = L2_FP64_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP64_L2_implementation_NEON(dim))
             << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NOEN with dim " << dim;
         ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
         optimization.asimd = 0;
     }
