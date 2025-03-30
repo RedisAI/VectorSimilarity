@@ -6,7 +6,7 @@
 
 #include <arm_sve.h>
 
-static inline void InnerProduct_step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
+static inline void InnerProduct_Step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
                                      size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
@@ -35,19 +35,19 @@ float FP16_InnerProduct_SVE(const void *pVect1v, const void *pVect2v, size_t dim
     // Process all full vectors
     const size_t full_iterations = dimension / chunk / 4;
     for (size_t iter = 0; iter < full_iterations; iter++) {
-        InnerProduct_step(vec1, vec2, acc1, offset, chunk);
-        InnerProduct_step(vec1, vec2, acc2, offset, chunk);
-        InnerProduct_step(vec1, vec2, acc3, offset, chunk);
-        InnerProduct_step(vec1, vec2, acc4, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc1, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc2, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc3, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc4, offset, chunk);
     }
 
     // Perform between 0 and 3 additional steps, according to `additional_steps` value
     if constexpr (additional_steps >= 1)
-        InnerProduct_step(vec1, vec2, acc1, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc1, offset, chunk);
     if constexpr (additional_steps >= 2)
-        InnerProduct_step(vec1, vec2, acc2, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc2, offset, chunk);
     if constexpr (additional_steps >= 3)
-        InnerProduct_step(vec1, vec2, acc3, offset, chunk);
+        InnerProduct_Step(vec1, vec2, acc3, offset, chunk);
 
     // Handle the tail with the residual predicate
     if constexpr (partial_chunk) {

@@ -6,7 +6,7 @@
 
 #include <arm_neon.h>
 
-static inline void L2Sqr_step(const float16_t *&vec1, const float16_t *&vec2, float16x8_t &acc) {
+static inline void L2Sqr_Step(const float16_t *&vec1, const float16_t *&vec2, float16x8_t &acc) {
     // Load half-precision vectors
     float16x8_t v1 = vld1q_f16(vec1);
     float16x8_t v2 = vld1q_f16(vec2);
@@ -70,19 +70,19 @@ float FP16_L2Sqr_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimens
 
     // Handle (residual - (residual % 8)) in chunks of 8 bfloat16
     if constexpr (residual >= 8)
-        L2Sqr_step(vec1, vec2, acc2);
+        L2Sqr_Step(vec1, vec2, acc2);
     if constexpr (residual >= 16)
-        L2Sqr_step(vec1, vec2, acc3);
+        L2Sqr_Step(vec1, vec2, acc3);
     if constexpr (residual >= 24)
-        L2Sqr_step(vec1, vec2, acc4);
+        L2Sqr_Step(vec1, vec2, acc4);
 
     // Process the rest of the vectors (the full chunks part)
     while (vec1 < v1End) {
         // TODO: use `vld1q_f16_x4` for quad-loading?
-        L2Sqr_step(vec1, vec2, acc1);
-        L2Sqr_step(vec1, vec2, acc2);
-        L2Sqr_step(vec1, vec2, acc3);
-        L2Sqr_step(vec1, vec2, acc4);
+        L2Sqr_Step(vec1, vec2, acc1);
+        L2Sqr_Step(vec1, vec2, acc2);
+        L2Sqr_Step(vec1, vec2, acc3);
+        L2Sqr_Step(vec1, vec2, acc4);
     }
 
     // Accumulate accumulators
