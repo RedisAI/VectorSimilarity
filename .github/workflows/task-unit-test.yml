@@ -25,7 +25,7 @@ jobs:
     container: ${{ inputs.container || null }}
     defaults:
       run:
-        shell: bash -l -eo pipefail {0}
+        shell: sh -l -eo pipefail {0}
     steps:
       - name: pre-checkout script
         run: ${{ inputs.pre-checkout-script }}
