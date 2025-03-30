@@ -56,6 +56,8 @@ std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() c
 }
 
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
 void DataBlocksContainer::saveVectorsData(std::ostream &output) const {
     // Save data blocks
     for (size_t i = 0; i < this->numBlocks(); i++) {
@@ -103,6 +105,7 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
     }
 }
 
+#endif
 void DataBlocksContainer::shrinkToFit() { this->blocks.shrink_to_fit(); }
 
 size_t DataBlocksContainer::numBlocks() const { return this->blocks.size(); }

@@ -38,10 +38,13 @@ public:
     std::unique_ptr<RawDataContainer::Iterator> getIterator() const override;
 
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
     void saveVectorsData(std::ostream &output) const override;
     // Use that in deserialization when file was created with old version (v3) that serialized
     // the blocks themselves and not just thw raw vector data.
     void restoreBlocks(std::istream &input, size_t num_vectors, Serializer::EncodingVersion);
+#endif
     void shrinkToFit();
     size_t numBlocks() const;
 #endif

@@ -7,7 +7,7 @@
 #pragma once
 
 #include "hnsw.h"
-#include "hnsw_single_batch_iterator.h"
+// #include "hnsw_single_batch_iterator.h"
 
 template <typename DataType, typename DistType>
 class HNSWIndex_Single : public HNSWIndex<DataType, DistType> {
@@ -34,6 +34,8 @@ public:
         : HNSWIndex<DataType, DistType>(params, abstractInitParams, components, random_seed),
           labelLookup(this->allocator) {}
 #ifdef BUILD_TESTS
+#ifdef SERIALIZE
+
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
                      const AbstractIndexInitParams &abstractInitParams,
@@ -42,6 +44,7 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
+#endif
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
 
@@ -64,8 +67,8 @@ public:
             new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator));
     }
     size_t indexLabelCount() const override;
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) const override;
+    // VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+    //                                       VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
@@ -155,18 +158,18 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
     return label_exists ? 0 : 1;
 }
 
-template <typename DataType, typename DistType>
-VecSimBatchIterator *
-HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                       VecSimQueryParams *queryParams) const {
-    auto queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->preprocessQueryInPlace(queryBlobCopy);
-    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
-    return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
-        queryBlobCopy, this, queryParams, this->allocator);
-}
+// template <typename DataType, typename DistType>
+// VecSimBatchIterator *
+// HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
+//                                                        VecSimQueryParams *queryParams) const {
+//     auto queryBlobCopy =
+//         this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
+//     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+//     this->preprocessQueryInPlace(queryBlobCopy);
+//     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
+//     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
+//         queryBlobCopy, this, queryParams, this->allocator);
+// }
 
 /**
  * Marks an element with the given label deleted, does NOT really change the current graph.

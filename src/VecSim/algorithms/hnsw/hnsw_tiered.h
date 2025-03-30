@@ -195,14 +195,14 @@ public:
     VecSimIndexInfo info() const override;
     VecSimIndexBasicInfo basicInfo() const override;
     VecSimInfoIterator *infoIterator() const override;
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
-        void *queryBlobCopy = this->allocator->allocate(blobSize);
-        memcpy(queryBlobCopy, queryBlob, blobSize);
-        return new (this->allocator)
-            TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
-    }
+    // VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+    //                                       VecSimQueryParams *queryParams) const override {
+    //     size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
+    //     void *queryBlobCopy = this->allocator->allocate(blobSize);
+    //     memcpy(queryBlobCopy, queryBlob, blobSize);
+    //     return new (this->allocator)
+    //         TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    // }
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
     }

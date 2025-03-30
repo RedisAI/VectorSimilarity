@@ -23,6 +23,8 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
     VecSimIndex::setLogCallbackFunction(callback);
 }
 
+extern "C" void VecSim_ResetLogCallbackFunction() { VecSimIndex::resetLogCallbackFunction(); }
+
 extern "C" void VecSim_SetWriteMode(VecSimWriteMode mode) { VecSimIndex::setWriteMode(mode); }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
@@ -245,7 +247,8 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
-    return index->newBatchIterator(queryBlob, queryParams);
+    return NULL;
+    // return index->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSimTieredIndex_GC(VecSimIndex *index) {

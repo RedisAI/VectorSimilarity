@@ -7,7 +7,7 @@
 #pragma once
 
 #include "brute_force.h"
-#include "bfm_batch_iterator.h"
+// #include "bfm_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 
@@ -80,11 +80,11 @@ private:
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
 
-    inline BF_BatchIterator<DataType, DistType> *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
-        return new (this->allocator)
-            BFM_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
-    }
+    // inline BF_BatchIterator<DataType, DistType> *
+    // newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
+    //     return new (this->allocator)
+    //         BFM_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
+    // }
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_multi_tests_friends.h"
