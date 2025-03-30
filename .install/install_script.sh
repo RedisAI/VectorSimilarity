@@ -16,6 +16,7 @@ else
     OS=$(echo $OS | sed 's/[/ ]/_/g') # replace spaces and slashes with underscores
 fi
 echo $OS
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 cd $SCRIPT_DIR
