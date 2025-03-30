@@ -31,48 +31,81 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
-    // Initialize sum accumulators to zero (4 lanes of 32-bit integers)
-    int32x4_t sum = vdupq_n_s32(0);
+    // Initialize multiple sum accumulators for better parallelism
+    int32x4_t sum0 = vdupq_n_s32(0);
+    int32x4_t sum1 = vdupq_n_s32(0);
+    int32x4_t sum2 = vdupq_n_s32(0);
+    int32x4_t sum3 = vdupq_n_s32(0);
 
-    // Process 16 elements at a time
+    // Process 64 elements at a time in the main loop
     const size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStepInt8(pVect1, pVect2, sum);
-        InnerProductStepInt8(pVect1, pVect2, sum);
-        InnerProductStepInt8(pVect1, pVect2, sum);
-        InnerProductStepInt8(pVect1, pVect2, sum);
+        InnerProductStepInt8(pVect1, pVect2, sum0);
+        InnerProductStepInt8(pVect1, pVect2, sum1);
+        InnerProductStepInt8(pVect1, pVect2, sum2);
+        InnerProductStepInt8(pVect1, pVect2, sum3);
     }
 
-    constexpr size_t remaining_chunks = residual / 16;
-    if constexpr (remaining_chunks > 0) {
-        // Process remaining full chunks of 16 elements
-        for (size_t i = 0; i < remaining_chunks; i++) {
-            InnerProductStepInt8(pVect1, pVect2, sum);
+    constexpr size_t residual_chunks = residual / 16;
+
+    if constexpr (residual_chunks > 0) {
+        if constexpr (residual_chunks >= 1) {
+            InnerProductStepInt8(pVect1, pVect2, sum0);
+        }
+        if constexpr (residual_chunks >= 2) {
+            InnerProductStepInt8(pVect1, pVect2, sum1);
+        }
+        if constexpr (residual_chunks >= 3) {
+            InnerProductStepInt8(pVect1, pVect2, sum2);
         }
     }
 
-    // Handle remaining elements (0-15)
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
-        // For residual elements, we need to handle them carefully
-        int8_t temp1[16] = {0};
-        int8_t temp2[16] = {0};
+        // Create an index vector: 0, 1, 2, ..., 15
+        uint8x16_t indices =
+            vcombine_u8(vcreate_u8(0x0706050403020100ULL), vcreate_u8(0x0F0E0D0C0B0A0908ULL));
 
-        // Copy residual elements to temporary buffers
-        for (size_t i = 0; i < final_residual; i++) {
-            temp1[i] = pVect1[i];
-            temp2[i] = pVect2[i];
+        // Create threshold vector with all elements = final_residual
+        uint8x16_t threshold = vdupq_n_u8(final_residual);
+
+        // Create mask: indices < final_residual ? 0xFF : 0x00
+        uint8x16_t mask = vcltq_u8(indices, threshold);
+
+        // Load data directly from input vectors
+        int8x16_t v1 = vld1q_s8(pVect1);
+        int8x16_t v2 = vld1q_s8(pVect2);
+
+        // Apply mask to zero out irrelevant elements
+        v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
+        v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
+
+        // Split vectors into low and high parts
+        int8x8_t v1_low = vget_low_s8(v1);
+        int8x8_t v1_high = vget_high_s8(v1);
+        int8x8_t v2_low = vget_low_s8(v2);
+        int8x8_t v2_high = vget_high_s8(v2);
+
+        // Multiply and accumulate
+        int16x8_t prod_low = vmull_s8(v1_low, v2_low);
+        int16x8_t prod_high = vmull_s8(v1_high, v2_high);
+
+        // Accumulate products
+        sum3 = vpadalq_s16(sum3, prod_low);
+        if constexpr (final_residual > 8) {
+            sum3 = vpadalq_s16(sum3, prod_high);
         }
-
-        int8_t *pTemp1 = temp1;
-        int8_t *pTemp2 = temp2;
-
-        // Process the residual elements
-        InnerProductStepInt8(pTemp1, pTemp2, sum);
     }
 
-    int32_t result = vaddvq_s32(sum);
+    // Combine all four sum registers
+    int32x4_t total_sum = vaddq_s32(sum0, sum1);
+    total_sum = vaddq_s32(total_sum, sum2);
+    total_sum = vaddq_s32(total_sum, sum3);
+
+    // Horizontal sum of the 4 elements in the combined sum register
+    int32_t result = vaddvq_s32(total_sum);
+
     return static_cast<float>(result);
 }
 
