@@ -7,7 +7,6 @@
 #include <utility>
 #include <random>
 #include <cmath>
-#include <float.h>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -1000,7 +999,6 @@ INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
  * that has different logic than the float32 and float64 reduce functions.
  * For more info, refer to intel's intrinsics guide.
  */
-#if defined(__fp16) || defined(FLT16_MIN)
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
@@ -1011,7 +1009,8 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     std::mt19937 gen(42);
     std::uniform_real_distribution<> dis(-0.99, 0.99);
 
-#ifdef __fp16
+#if defined(CPU_FEATURES_ARCH_AARCH64) && defined(__GNUC__) && (__GNUC__ < 13)
+    // https://github.com/pytorch/executorch/issues/6844
     __fp16 baseline = 0;
 #else
     _Float16 baseline = 0;
@@ -1150,7 +1149,6 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
 // Start from a 32 multiplier
 INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
                          testing::Range(512UL, 512 + 32UL + 1));
-#endif // _Float16/__fp16
 
 class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
