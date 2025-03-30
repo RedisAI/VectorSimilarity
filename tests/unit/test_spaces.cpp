@@ -999,6 +999,7 @@ INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
  * that has different logic than the float32 and float64 reduce functions.
  * For more info, refer to intel's intrinsics guide.
  */
+#if defined(__fp16) || defined(_Float16)
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
@@ -1009,16 +1010,21 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     std::mt19937 gen(42);
     std::uniform_real_distribution<> dis(-0.99, 0.99);
 
+#ifdef _Float16
+    _Float16 baseline = 0;
+#else
     __fp16 baseline = 0;
+#endif
+
     for (size_t i = 0; i < dim; i++) {
         float val1 = (dis(gen));
         float val2 = (dis(gen));
         v1[i] = vecsim_types::FP32_to_FP16((val1));
         v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-        baseline += static_cast<__fp16>(val1) * static_cast<__fp16>(val2);
+        baseline += static_cast<decltype(baseline)>(val1) * static_cast<decltype(baseline)>(val2);
     }
-    baseline = __fp16(1) - baseline;
+    baseline = decltype(baseline)(1) - baseline;
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
@@ -1143,6 +1149,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
 // Start from a 32 multiplier
 INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
                          testing::Range(512UL, 512 + 32UL + 1));
+#endif // _Float16/__fp16
 
 class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
