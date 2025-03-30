@@ -7,7 +7,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void InnerProductStepUint8(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t &sum) {
+static inline void InnerProductStepUint8(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
     // Load 16 uint8 elements (16 bytes) into NEON registers
     uint8x16_t v1 = vld1q_u8(pVect1);
     uint8x16_t v2 = vld1q_u8(pVect2);
@@ -18,13 +18,9 @@ static inline void InnerProductStepUint8(uint8_t *&pVect1, uint8_t *&pVect2, int
     // Multiply and accumulate high 8 elements (second half)
     uint16x8_t prod_high = vmull_u8(vget_high_u8(v1), vget_high_u8(v2));
 
-    // Convert to signed for accumulation with the signed result
-    int16x8_t signed_prod_low = vreinterpretq_s16_u16(prod_low);
-    int16x8_t signed_prod_high = vreinterpretq_s16_u16(prod_high);
-
     // Pairwise add adjacent elements to 32-bit accumulators
-    sum = vpadalq_s16(sum, signed_prod_low);
-    sum = vpadalq_s16(sum, signed_prod_high);
+    sum = vpadalq_u16(sum, prod_low);
+    sum = vpadalq_u16(sum, prod_high);
 
     pVect1 += 16;
     pVect2 += 16;
@@ -35,69 +31,81 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
-    // Initialize sum accumulators to zero (4 lanes of 32-bit integers)
-    int32x4_t sum = vdupq_n_s32(0);
+    // Initialize multiple sum accumulators for better parallelism
+    uint32x4_t sum0 = vdupq_n_u32(0);
+    uint32x4_t sum1 = vdupq_n_u32(0);
+    uint32x4_t sum2 = vdupq_n_u32(0);
+    uint32x4_t sum3 = vdupq_n_u32(0);
 
-    // Process 16 elements at a time in chunks of 64
+    // Process 64 elements at a time in the main loop
     const size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStepUint8(pVect1, pVect2, sum);
-        InnerProductStepUint8(pVect1, pVect2, sum);
-        InnerProductStepUint8(pVect1, pVect2, sum);
-        InnerProductStepUint8(pVect1, pVect2, sum);
+        InnerProductStepUint8(pVect1, pVect2, sum0);
+        InnerProductStepUint8(pVect1, pVect2, sum1);
+        InnerProductStepUint8(pVect1, pVect2, sum2);
+        InnerProductStepUint8(pVect1, pVect2, sum3);
     }
 
-    constexpr size_t remaining_chunks = residual / 16;
-    if constexpr (remaining_chunks > 0) {
-        // Process remaining full chunks of 16 elements
-        for (size_t i = 0; i < remaining_chunks; i++) {
-            InnerProductStepUint8(pVect1, pVect2, sum);
+    constexpr size_t residual_chunks = residual / 16;
+
+    if constexpr (residual_chunks > 0) {
+        if constexpr (residual_chunks >= 1) {
+            InnerProductStepUint8(pVect1, pVect2, sum0);
+        }
+        if constexpr (residual_chunks >= 2) {
+            InnerProductStepUint8(pVect1, pVect2, sum1);
+        }
+        if constexpr (residual_chunks >= 3) {
+            InnerProductStepUint8(pVect1, pVect2, sum2);
         }
     }
 
-    // Handle remaining elements (0-15)
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
-        // Create temporary arrays with padding
-        uint8x16_t indices = vcombine_u8(
-            vcreate_u8(0x0706050403020100ULL), 
-            vcreate_u8(0x0F0E0D0C0B0A0908ULL)
-        );
-        
+        // Create an index vector: 0, 1, 2, ..., 15
+        uint8x16_t indices =
+            vcombine_u8(vcreate_u8(0x0706050403020100ULL), vcreate_u8(0x0F0E0D0C0B0A0908ULL));
+
         // Create threshold vector with all elements = final_residual
         uint8x16_t threshold = vdupq_n_u8(final_residual);
-        
+
         // Create mask: indices < final_residual ? 0xFF : 0x00
         uint8x16_t mask = vcltq_u8(indices, threshold);
-        
+
         // Load data directly from input vectors
         uint8x16_t v1 = vld1q_u8(pVect1);
         uint8x16_t v2 = vld1q_u8(pVect2);
-        
+
         // Apply mask to zero out irrelevant elements
         v1 = vandq_u8(v1, mask);
         v2 = vandq_u8(v2, mask);
 
-        // Multiply and accumulate low 8 elements (first half)
-        uint16x8_t prod_low = vmull_u8(vget_low_u8(v1), vget_low_u8(v2));
+        // Split vectors into low and high parts
+        uint8x8_t v1_low = vget_low_u8(v1);
+        uint8x8_t v1_high = vget_high_u8(v1);
+        uint8x8_t v2_low = vget_low_u8(v2);
+        uint8x8_t v2_high = vget_high_u8(v2);
 
-        // Multiply and accumulate high 8 elements (second half)
-        uint16x8_t prod_high = vmull_u8(vget_high_u8(v1), vget_high_u8(v2));
+        // Multiply and accumulate
+        uint16x8_t prod_low = vmull_u8(v1_low, v2_low);
+        uint16x8_t prod_high = vmull_u8(v1_high, v2_high);
 
-        // Convert to signed for accumulation with the signed result
-        int16x8_t signed_prod_low = vreinterpretq_s16_u16(prod_low);
-        int16x8_t signed_prod_high = vreinterpretq_s16_u16(prod_high);
-
-        // Pairwise add adjacent elements to 32-bit accumulators
-        sum = vpadalq_s16(sum, signed_prod_low);
-        
+        // Accumulate products
+        sum3 = vpadalq_u16(sum3, prod_low);
         if constexpr (final_residual > 8) {
-            sum = vpadalq_s16(sum, signed_prod_high);
+            sum3 = vpadalq_u16(sum3, prod_high);
         }
     }
 
-    int32_t result = vaddvq_s32(sum);
+    // Combine all four sum registers
+    uint32x4_t total_sum = vaddq_u32(sum0, sum1);
+    total_sum = vaddq_u32(total_sum, sum2);
+    total_sum = vaddq_u32(total_sum, sum3);
+
+    // Horizontal sum of the 4 elements in the combined sum register
+    uint32_t result = vaddvq_u32(total_sum);
+
     return static_cast<float>(result);
 }
 

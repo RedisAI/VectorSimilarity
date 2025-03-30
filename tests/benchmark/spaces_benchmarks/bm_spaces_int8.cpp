@@ -42,7 +42,8 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 // NEON functions
 #ifdef OPT_NEON
 bool neon_supported = opt.asimd;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, NEON, 64, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, NEON, 64, neon_supported);
 #endif
 #endif
 
@@ -52,8 +53,8 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 // AVX512_F_BW_VL_VNNI functions
 #ifdef OPT_AVX512_F_BW_VL_VNNI
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
-                                avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_L2(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
+                             avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
                                  avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI

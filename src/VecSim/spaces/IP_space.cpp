@@ -295,8 +295,8 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
     auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
@@ -305,6 +305,13 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif // __x86_64__
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_UINT8_IP_implementation_NEON(dim);
+    }
+#endif
+#endif
     return ret_dist_func;
 }
 
@@ -333,6 +340,13 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
     }
 #endif
 #endif // __x86_64__
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_UINT8_Cosine_implementation_NEON(dim);
+    }
+#endif
+#endif
     return ret_dist_func;
 }
 
