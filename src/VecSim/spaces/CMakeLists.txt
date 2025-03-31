@@ -98,6 +98,13 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
 	endif()
 
+	# SVE with BF16 support
+	if (CXX_SVE_BF16)
+		message("Building with SVE + BF16")
+		set_source_files_properties(functions/SVE_BF16.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sve+bf16")
+		list(APPEND OPTIMIZATIONS functions/SVE_BF16.cpp)
+	endif()
+
 	# SVE2 support
 	if (CXX_SVE2)
 		message("Building with ARMV9A and SVE2")

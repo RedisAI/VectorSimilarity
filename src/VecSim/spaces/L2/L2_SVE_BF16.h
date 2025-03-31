@@ -8,15 +8,15 @@
 
 // Assumes little-endianess
 static inline void L2Sqr_Op(svfloat32_t &acc, svbfloat16_t &v1, svbfloat16_t &v2) {
-    svfloat32_t v1_lo = svreinterpret_bf16_f32(svzip1(svdup_bf16(0), v1));
-    svfloat32_t v2_lo = svreinterpret_bf16_f32(svzip1(svdup_bf16(0), v2));
-    svfloat32_t diff_lo = svsub_f32_x(v1_lo, v2_lo);
+    svfloat32_t v1_lo = svreinterpret_f32(svzip1(svdup_u16(0), svreinterpret_u16(v1)));
+    svfloat32_t v2_lo = svreinterpret_f32(svzip1(svdup_u16(0), svreinterpret_u16(v2)));
+    svfloat32_t diff_lo = svsub_f32_x(svptrue_b32(), v1_lo, v2_lo);
 
     acc = svmla_f32_x(svptrue_b32(), acc, diff_lo, diff_lo);
 
-    svfloat32_t v1_hi = svreinterpret_bf16_f32(svzip2(svdup_bf16(0), v1));
-    svfloat32_t v2_hi = svreinterpret_bf16_f32(svzip2(svdup_bf16(0), v2));
-    svfloat32_t diff_hi = svsub_f32_x(v1_hi, v2_hi);
+    svfloat32_t v1_hi = svreinterpret_f32(svzip2(svdup_u16(0), svreinterpret_u16(v1)));
+    svfloat32_t v2_hi = svreinterpret_f32(svzip2(svdup_u16(0), svreinterpret_u16(v2)));
+    svfloat32_t diff_hi = svsub_f32_x(svptrue_b32(), v1_hi, v2_hi);
 
     acc = svmla_f32_x(svptrue_b32(), acc, diff_hi, diff_hi);
 }
