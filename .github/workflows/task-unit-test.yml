@@ -25,11 +25,10 @@ jobs:
     container: ${{ inputs.container || null }}
     defaults:
       run:
-        shell: bash -l -eo pipefail {0}
+        # Use bash as default shell for every OS other than alpine
+        shell: ${{ inputs.container && contains(inputs.container, 'alpine') && 'sh -l -eo pipefail {0}' || 'bash -l -eo pipefail {0}' }}
     steps:
       - name: pre-checkout script
-        if: ${{ inputs.pre-checkout-script }}
-        shell: sh -l -eo pipefail {0}
         run: ${{ inputs.pre-checkout-script }}
       - name: checkout
         uses: actions/checkout@v4
