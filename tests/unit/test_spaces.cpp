@@ -28,6 +28,7 @@
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
 #include "VecSim/spaces/functions/SVE2.h"
@@ -779,6 +780,17 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
         optimization.svebf16 = 0;
     }
 #endif
+#ifdef OPT_NEON_BF16
+    if (optimization.asimd && optimization.bf16) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_BF16_IP_implementation_NEON_BF16(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON_BF16 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "NEON_BF16 with dim " << dim;
+        optimization.bf16 = 0;
+    }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, BF16_InnerProduct_LittleEndian)
@@ -846,6 +858,17 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE_BF16 with dim " << dim;
         ASSERT_EQ(alignment, 0) << "SVE_BF16 with dim " << dim;
         optimization.svebf16 = 0;
+    }
+#endif
+#ifdef OPT_NEON_BF16
+    if (optimization.asimd && optimization.bf16) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_BF16_L2_implementation_NEON_BF16(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON_BF16 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "NEON_BF16 with dim " << dim;
+        optimization.bf16 = 0;
     }
 #endif
     unsigned char alignment = 0;
