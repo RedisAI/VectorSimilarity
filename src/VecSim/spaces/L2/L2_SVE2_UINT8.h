@@ -62,10 +62,17 @@ float UINT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dime
     }
 
     if constexpr (additional_steps > 0) {
-        for (unsigned char c = 0; c < additional_steps; ++c) {
+        if constexpr (additional_steps >= 1) {
             L2SquareStep(pVect1, pVect2, offset, sum0);
         }
+        if constexpr (additional_steps >= 2) {
+            L2SquareStep(pVect1, pVect2, offset, sum1);
+        }
+        if constexpr (additional_steps >= 3) {
+            L2SquareStep(pVect1, pVect2, offset, sum2);
+        }
     }
+
 
     if constexpr (partial_chunk) {
 
@@ -89,14 +96,12 @@ float UINT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dime
         sum_int = svmlalb_s32(sum_int, diff_o, diff_o);
         sum_int = svmlalt_s32(sum_int, diff_o, diff_o);
 
-        sum0 = svadd_f32_z(svptrue_b32(), sum0, svcvt_f32_s32_z(pg32, sum_int));
+        sum3 = svadd_f32_z(svptrue_b32(), sum3, svcvt_f32_s32_z(pg32, sum_int));
     }
 
-    // Combine the partial sums
-    sum0 = svadd_f32_z(svptrue_b32(), sum0, sum1);
-    sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);
-    sum0 = svadd_f32_z(svptrue_b32(), sum0, sum2);
-
-    // Horizontal sum
-    return svaddv_f32(svptrue_b32(), sum0);
+    sum0 = svadd_f32_x(svptrue_b32(), sum0, sum1);
+    sum2 = svadd_f32_x(svptrue_b32(), sum2, sum3);
+    svfloat32_t sum_all = svadd_f32_x(svptrue_b32(), sum0, sum2);
+    float result = svaddv_f32(svptrue_b32(), sum_all);
+    return result;
 }

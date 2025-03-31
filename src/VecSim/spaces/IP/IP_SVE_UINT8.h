@@ -44,9 +44,17 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
         InnerProductStep(pVect1, pVect2, offset, sum3);
     }
 
+    // Process remaining complete SVE vectors that didn't fit into the main loop
+    // These are full vector operations (0-3 elements)
     if constexpr (additional_steps > 0) {
-        for (unsigned char c = 0; c < additional_steps; ++c) {
+        if constexpr (additional_steps >= 1) {
             InnerProductStep(pVect1, pVect2, offset, sum0);
+        }
+        if constexpr (additional_steps >= 2) {
+            InnerProductStep(pVect1, pVect2, offset, sum1);
+        }
+        if constexpr (additional_steps >= 3) {
+            InnerProductStep(pVect1, pVect2, offset, sum2);
         }
     }
 
@@ -59,19 +67,19 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
 
         svfloat32_t ipf32 = svcvt_f32_u32_z(pg32, svdot_u32(svdup_u32(0), v1_ui8, v2_ui8));
 
-        sum0 = svadd_f32_m(pg32, sum0, ipf32);
+        sum3 = svadd_f32_m(pg32, sum3, ipf32);
 
         pVect1 += svcntb();
         pVect2 += svcntb();
     }
 
-    // Combine and reduce
-    sum0 = svadd_f32_z(svptrue_b32(), sum0, sum1);
-    sum2 = svadd_f32_z(svptrue_b32(), sum2, sum3);
-    sum0 = svadd_f32_z(svptrue_b32(), sum0, sum2);
+    sum0 = svadd_f32_x(svptrue_b32(), sum0, sum1);
+    sum2 = svadd_f32_x(svptrue_b32(), sum2, sum3);
+    // Perform vector addition in parallel
+    svfloat32_t sum_all = svadd_f32_x(svptrue_b32(), sum0, sum2);
 
     // Horizontal sum
-    float result = svaddv_f32(svptrue_b32(), sum0);
+    float result = svaddv_f32(svptrue_b32(), sum_all);
     return result;
 }
 
