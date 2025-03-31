@@ -8,13 +8,13 @@
 #include <arm_sve.h>
 
 // Aligned step using svptrue_b8()
-static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, svfloat32_t &sum) {
+static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset, svfloat32_t &sum) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
 
-    svint8_t v1_i8 = svld1_s8(pg, pVect1);
-    svint8_t v2_i8 = svld1_s8(pg, pVect2);
+    svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
+    svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
     svint16_t v1_16_l = svunpklo_s16(v1_i8);
     svint16_t v1_16_h = svunpkhi_s16(v1_i8);
@@ -49,8 +49,7 @@ static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, sv
     sum = svadd_f32_z(pg, sum, sqf_l);
     sum = svadd_f32_z(pg, sum, sqf_h);
 
-    pVect1 += svcntb();
-    pVect2 += svcntb();
+    offset += svcntb(); // Move to the next set of int8 elements
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -71,25 +70,23 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
     size_t num_main_blocks = dimension / chunk_size;
 
     for (size_t i = 0; i < num_main_blocks; ++i) {
-        L2SquareStep(pVect1, pVect2, sum0);
-        L2SquareStep(pVect1, pVect2, sum1);
-        L2SquareStep(pVect1, pVect2, sum2);
-        L2SquareStep(pVect1, pVect2, sum3);
-        offset += chunk_size;
+        L2SquareStep(pVect1, pVect2, offset, sum0);
+        L2SquareStep(pVect1, pVect2, offset, sum1);
+        L2SquareStep(pVect1, pVect2, offset, sum2);
+        L2SquareStep(pVect1, pVect2, offset, sum3);
     }
 
     if constexpr (additional_steps > 0) {
         for (unsigned char c = 0; c < additional_steps; ++c) {
-            L2SquareStep(pVect1, pVect2, sum0);
-            offset += vl;
+            L2SquareStep(pVect1, pVect2, offset, sum0);
         }
     }
 
     if constexpr (partial_chunk) {
 
         svbool_t pg = svwhilelt_b8(offset, dimension);
-        svint8_t v1_i8 = svld1_s8(pg, pVect1);
-        svint8_t v2_i8 = svld1_s8(pg, pVect2);
+        svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
+        svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
         svbool_t pg32 = svwhilelt_b32(offset, dimension);
 
