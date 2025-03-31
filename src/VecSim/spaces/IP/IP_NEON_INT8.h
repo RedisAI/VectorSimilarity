@@ -26,28 +26,6 @@ static inline void InnerProductStepInt8(int8_t *&pVect1, int8_t *&pVect2, int32x
     pVect2 += 16;
 }
 
-static inline void InnerProductStepInt8_32(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum0,
-                                           int32x4_t &sum1) {
-    // Load 2 consecutive 16-element vectors (32 bytes) at once
-    int8x16x2_t v1 = vld1q_s8_x2(pVect1);
-    int8x16x2_t v2 = vld1q_s8_x2(pVect2);
-
-    // Process first chunk
-    int16x8_t prod_low0 = vmull_s8(vget_low_s8(v1.val[0]), vget_low_s8(v2.val[0]));
-    int16x8_t prod_high0 = vmull_s8(vget_high_s8(v1.val[0]), vget_high_s8(v2.val[0]));
-    sum0 = vpadalq_s16(sum0, prod_low0);
-    sum0 = vpadalq_s16(sum0, prod_high0);
-
-    // Process second chunk
-    int16x8_t prod_low1 = vmull_s8(vget_low_s8(v1.val[1]), vget_low_s8(v2.val[1]));
-    int16x8_t prod_high1 = vmull_s8(vget_high_s8(v1.val[1]), vget_high_s8(v2.val[1]));
-    sum1 = vpadalq_s16(sum1, prod_low1);
-    sum1 = vpadalq_s16(sum1, prod_high1);
-
-    pVect1 += 32;
-    pVect2 += 32;
-}
-
 template <unsigned char residual> // 0..63
 float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
@@ -56,28 +34,29 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     // Initialize multiple sum accumulators for better parallelism
     int32x4_t sum0 = vdupq_n_s32(0);
     int32x4_t sum1 = vdupq_n_s32(0);
-    int32x4_t sum2 = vdupq_n_s32(0);
-    int32x4_t sum3 = vdupq_n_s32(0);
 
     // Process 64 elements at a time in the main loop
     const size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStepInt8_32(pVect1, pVect2, sum0, sum1);
-        InnerProductStepInt8_32(pVect1, pVect2, sum2, sum3);
+        InnerProductStepInt8(pVect1, pVect2, sum0);
+        InnerProductStepInt8(pVect1, pVect2, sum1);
+        InnerProductStepInt8(pVect1, pVect2, sum0);
+        InnerProductStepInt8(pVect1, pVect2, sum1);
     }
 
-    constexpr size_t num_of_32_chunks = residual / 32;
-    if constexpr (num_of_32_chunks) {
-        InnerProductStepInt8_32(pVect1, pVect2, sum0, sum1);
-    }
+    constexpr size_t residual_chunks = residual / 16;
 
-    constexpr size_t residual_chunks = (residual % 32) / 16;
-    if constexpr (residual_chunks >= 1) {
-        InnerProductStepInt8(pVect1, pVect2, sum2);
-    }
-    if constexpr (residual_chunks >= 2) {
-        InnerProductStepInt8(pVect1, pVect2, sum3);
+    if constexpr (residual_chunks > 0) {
+        if constexpr (residual_chunks >= 1) {
+            InnerProductStepInt8(pVect1, pVect2, sum0);
+        }
+        if constexpr (residual_chunks >= 2) {
+            InnerProductStepInt8(pVect1, pVect2, sum1);
+        }
+        if constexpr (residual_chunks >= 3) {
+            InnerProductStepInt8(pVect1, pVect2, sum0);
+        }
     }
 
     constexpr size_t final_residual = residual % 16;
@@ -111,17 +90,14 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
         int16x8_t prod_high = vmull_s8(v1_high, v2_high);
 
         // Accumulate products
-        sum3 = vpadalq_s16(sum3, prod_low);
+        sum1 = vpadalq_s16(sum1, prod_low);
         if constexpr (final_residual > 8) {
-            sum3 = vpadalq_s16(sum3, prod_high);
+            sum0 = vpadalq_s16(sum0, prod_high);
         }
     }
 
     // Combine all four sum registers
     int32x4_t total_sum = vaddq_s32(sum0, sum1);
-    total_sum = vaddq_s32(total_sum, sum2);
-    total_sum = vaddq_s32(total_sum, sum3);
-
     // Horizontal sum of the 4 elements in the combined sum register
     int32_t result = vaddvq_s32(total_sum);
 

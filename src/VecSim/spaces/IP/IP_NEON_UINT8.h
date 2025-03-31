@@ -7,7 +7,11 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void InnerProductStep(const uint8x16_t &v1, const uint8x16_t &v2, uint32x4_t &sum) {
+static inline void InnerProductStepUint8(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
+    // Load 16 uint8 elements (16 bytes) into NEON registers
+    uint8x16_t v1 = vld1q_u8(pVect1);
+    uint8x16_t v2 = vld1q_u8(pVect2);
+
     // Multiply and accumulate low 8 elements (first half)
     uint16x8_t prod_low = vmull_u8(vget_low_u8(v1), vget_low_u8(v2));
 
@@ -17,33 +21,9 @@ static inline void InnerProductStep(const uint8x16_t &v1, const uint8x16_t &v2, 
     // Pairwise add adjacent elements to 32-bit accumulators
     sum = vpadalq_u16(sum, prod_low);
     sum = vpadalq_u16(sum, prod_high);
-}
 
-static inline void InnerProductStep16(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
-    // Load 16 uint8 elements (16 bytes) into NEON registers
-    uint8x16_t v1 = vld1q_u8(pVect1);
-    uint8x16_t v2 = vld1q_u8(pVect2);
-    InnerProductStep(v1, v2, sum);
     pVect1 += 16;
     pVect2 += 16;
-}
-
-static inline void InnerProductStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1,
-                                      uint32x4_t &sum2) {
-    // Load first 16 uint8 elements
-    uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
-    uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
-
-    // Reference the individual vectors
-    uint8x16_t v1_first = v1_pair.val[0];
-    uint8x16_t v1_second = v1_pair.val[1];
-    uint8x16_t v2_first = v2_pair.val[0];
-    uint8x16_t v2_second = v2_pair.val[1];
-
-    InnerProductStep(v1_first, v2_first, sum1);
-    InnerProductStep(v1_second, v2_second, sum2);
-    pVect1 += 32;
-    pVect2 += 32;
 }
 
 template <unsigned char residual> // 0..63
@@ -54,27 +34,29 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     // Initialize multiple sum accumulators for better parallelism
     uint32x4_t sum0 = vdupq_n_u32(0);
     uint32x4_t sum1 = vdupq_n_u32(0);
-    uint32x4_t sum2 = vdupq_n_u32(0);
-    uint32x4_t sum3 = vdupq_n_u32(0);
 
     // Process 64 elements at a time in the main loop
     const size_t num_of_chunks = dimension / 64;
+
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStep32(pVect1, pVect2, sum0, sum1);
-        InnerProductStep32(pVect1, pVect2, sum2, sum3);
+        InnerProductStepUint8(pVect1, pVect2, sum0);
+        InnerProductStepUint8(pVect1, pVect2, sum1);
+        InnerProductStepUint8(pVect1, pVect2, sum0);
+        InnerProductStepUint8(pVect1, pVect2, sum1);
     }
 
-    constexpr size_t num_of_32_chunks = residual / 32;
-    if constexpr (num_of_32_chunks) {
-        InnerProductStep32(pVect1, pVect2, sum0, sum1);
-    }
+    constexpr size_t residual_chunks = residual / 16;
 
-    constexpr size_t residual_chunks = (residual % 32) / 16;
-    if constexpr (residual_chunks >= 1) {
-        InnerProductStep16(pVect1, pVect2, sum2);
-    }
-    if constexpr (residual_chunks >= 2) {
-        InnerProductStep16(pVect1, pVect2, sum3);
+    if constexpr (residual_chunks > 0) {
+        if constexpr (residual_chunks >= 1) {
+            InnerProductStepUint8(pVect1, pVect2, sum0);
+        }
+        if constexpr (residual_chunks >= 2) {
+            InnerProductStepUint8(pVect1, pVect2, sum1);
+        }
+        if constexpr (residual_chunks >= 3) {
+            InnerProductStepUint8(pVect1, pVect2, sum0);
+        }
     }
 
     constexpr size_t final_residual = residual % 16;
@@ -108,17 +90,14 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
         uint16x8_t prod_high = vmull_u8(v1_high, v2_high);
 
         // Accumulate products
-        sum3 = vpadalq_u16(sum3, prod_low);
+        sum1 = vpadalq_u16(sum1, prod_low);
         if constexpr (final_residual > 8) {
-            sum3 = vpadalq_u16(sum3, prod_high);
+            sum0 = vpadalq_u16(sum0, prod_high);
         }
     }
 
     // Combine all four sum registers
     uint32x4_t total_sum = vaddq_u32(sum0, sum1);
-    total_sum = vaddq_u32(total_sum, sum2);
-    total_sum = vaddq_u32(total_sum, sum3);
-
     // Horizontal sum of the 4 elements in the combined sum register
     uint32_t result = vaddvq_u32(total_sum);
 
