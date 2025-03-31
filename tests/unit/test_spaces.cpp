@@ -1211,7 +1211,7 @@
      dist_func_t<float> arch_opt_func;
      float baseline = UINT8_L2Sqr(v1, v2, dim);
  
-#ifdef OPT_NEON
+ #ifdef OPT_NEON
      if (optimization.asimd) {
          unsigned char alignment = 0;
          arch_opt_func = L2_UINT8_GetDistFunc(dim, &alignment, &optimization);
@@ -1222,9 +1222,9 @@
          // Unset optimizations flag, so we'll choose the next optimization.
          optimization.asimd = 0;
      }
-#endif
+ #endif
  
-#ifdef OPT_AVX512_F_BW_VL_VNNI
+ #ifdef OPT_AVX512_F_BW_VL_VNNI
      if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
          optimization.avx512vnni) {
          unsigned char alignment = 0;
@@ -1237,7 +1237,7 @@
          optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
              optimization.avx512vnni = 0;
      }
-#endif
+ #endif
      unsigned char alignment = 0;
      arch_opt_func = L2_UINT8_GetDistFunc(dim, &alignment, &optimization);
      ASSERT_EQ(arch_opt_func, UINT8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -1334,8 +1334,10 @@
      unsigned char alignment = 0;
      arch_opt_func = Cosine_UINT8_GetDistFunc(dim, &alignment, &optimization);
      ASSERT_EQ(arch_opt_func, UINT8_Cosine) << "Unexpected distance function chosen for dim " << dim;
-     ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "No optimization with dim " << dim     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+     ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "No optimization with dim " << dim;
+     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
  }
  
  INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                           testing::Range(32UL, 64 * 2UL + 1));
+ 

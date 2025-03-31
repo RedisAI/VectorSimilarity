@@ -37,6 +37,16 @@ public:
     }
 };
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
+// NEON functions
+#ifdef OPT_NEON
+bool neon_supported = opt.asimd && opt.i8mm;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_UINT8, UINT8, NEON, 64, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_UINT8, UINT8, NEON, 64, neon_supported);
+#endif
+#endif
+
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
