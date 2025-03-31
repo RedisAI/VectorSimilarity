@@ -24,23 +24,31 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
-    float32x4_t sum_squares = vdupq_n_f32(0.0f);
+    float32x4_t sum0 = vdupq_n_f32(0.0f);
+    float32x4_t sum1 = vdupq_n_f32(0.0f);
+    float32x4_t sum2 = vdupq_n_f32(0.0f);
+    float32x4_t sum3 = vdupq_n_f32(0.0f);
 
-    const size_t main_blocks = (dimension - residual) / 16;
+    const size_t num_of_chunks = dimension / 16;
 
-    for (size_t i = 0; i < main_blocks; i++) {
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
-        L2SquareStep(pVect1, pVect2, sum_squares);
+    for (size_t i = 0; i < num_of_chunks; i++) {
+        L2SquareStep(pVect1, pVect2, sum0);
+        L2SquareStep(pVect1, pVect2, sum1);
+        L2SquareStep(pVect1, pVect2, sum2);
+        L2SquareStep(pVect1, pVect2, sum3);
     }
 
     // Handle remaining complete 4-float blocks within residual
-    constexpr size_t remaining_quads = residual / 4;
-    if constexpr (remaining_quads > 0) {
-        for (size_t i = 0; i < remaining_quads; i++) {
-            L2SquareStep(pVect1, pVect2, sum_squares);
-        }
+    constexpr size_t remaining_chunks = residual / 4;
+    // Unrolled loop for the 4-float blocks
+    if constexpr (remaining_chunks >= 1) {
+        L2SquareStep(pVect1, pVect2, sum0);
+    }
+    if constexpr (remaining_chunks >= 2) {
+        L2SquareStep(pVect1, pVect2, sum1);
+    }
+    if constexpr (remaining_chunks >= 3) {
+        L2SquareStep(pVect1, pVect2, sum2);
     }
 
     // Handle final residual elements (0-3 elements)
@@ -49,7 +57,6 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
         float32x4_t v1 = vdupq_n_f32(0.0f);
         float32x4_t v2 = vdupq_n_f32(0.0f);
 
-        // loads the elements to the corresponding lane on the vector
         if constexpr (final_residual >= 1) {
             v1 = vld1q_lane_f32(pVect1, v1, 0);
             v2 = vld1q_lane_f32(pVect2, v2, 0);
@@ -63,14 +70,17 @@ float FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
             v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
         }
 
-        // Calculate difference and square
         float32x4_t diff = vsubq_f32(v1, v2);
-        sum_squares = vmlaq_f32(sum_squares, diff, diff);
+        sum3 = vmlaq_f32(sum3, diff, diff);
     }
 
-    // Horizontal sum of the 4 elements in the NEON register
-    float32x2_t sum_halves = vadd_f32(vget_low_f32(sum_squares), vget_high_f32(sum_squares));
-    float32x2_t summed = vpadd_f32(sum_halves, sum_halves);
+    // Combine all four sum accumulators
+    float32x4_t sum_combined = vaddq_f32(vaddq_f32(sum0, sum1), vaddq_f32(sum2, sum3));
 
-    return vget_lane_f32(summed, 0);
+    // Horizontal sum of the 4 elements in the combined NEON register
+    float32x2_t sum_halves = vadd_f32(vget_low_f32(sum_combined), vget_high_f32(sum_combined));
+    float32x2_t summed = vpadd_f32(sum_halves, sum_halves);
+    float sum = vget_lane_f32(summed, 0);
+
+    return sum;
 }

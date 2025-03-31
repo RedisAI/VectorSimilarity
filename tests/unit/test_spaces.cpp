@@ -35,17 +35,6 @@
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
-inline auto getCpuOptimizationFeatures() {
-#if defined(CPU_FEATURES_ARCH_X86_64)
-    return cpu_features::GetX86Info().features;
-#elif defined(CPU_FEATURES_ARCH_AARCH64)
-    return cpu_features::GetAarch64Info().features;
-#else
-    // Return empty/default features if on an unsupported architecture
-    return cpu_features::X86Info().features;
-#endif
-}
-
 class SpacesTest : public ::testing::Test {
 
 protected:
@@ -343,7 +332,7 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricUINT8) {
 }
 
 using namespace spaces;
-
+#ifdef CPU_FEATURES_ARCH_AARCH64
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that small dimensions gets the no optimization function.
     for (size_t dim = 1; dim < 8; dim++) {
@@ -389,6 +378,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
 }
+#endif
 
 /* ======================== Test SIMD Functions ======================== */
 
