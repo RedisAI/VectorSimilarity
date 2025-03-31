@@ -58,7 +58,7 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
     // This section handles the case when dimension is not evenly divisible by SVE vector length
     if constexpr (partial_chunk) {
         // Create a predicate mask where each lane is active only for the remaining elements
-        svbool_t pg = svwhilelt_b32(offset, dimension);
+        svbool_t pg = svwhilelt_b32(static_cast<uint64_t>(offset), static_cast<uint64_t>(dimension));
 
         // Load vectors with predication
         svfloat32_t v1 = svld1_f32(pg, pVect1 + offset);
