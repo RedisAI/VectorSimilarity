@@ -22,7 +22,7 @@ inline void L2Sqr_Op(svfloat32_t &acc, svbfloat16_t &v1, svbfloat16_t &v2) {
 }
 
 inline void L2Sqr_Step(const bfloat16_t *vec1, const bfloat16_t *vec2, svfloat32_t &acc,
-                              size_t &offset, const size_t chunk) {
+                       size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
     // Load brain-half-precision vectors.

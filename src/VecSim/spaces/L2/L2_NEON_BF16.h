@@ -40,8 +40,8 @@ float BF16_L2Sqr_NEON(const void *pVect1v, const void *pVect2v, size_t dimension
     float32x4_t acc3 = vdupq_n_f32(0.0f);
     float32x4_t acc4 = vdupq_n_f32(0.0f);
 
-     // First, handle the partial chunk residual
-     if constexpr (residual % 8) {
+    // First, handle the partial chunk residual
+    if constexpr (residual % 8) {
         auto constexpr chunk_residual = residual % 8;
         // TODO: spacial cases and benchmark if its better
         // if constexpr (chunk_residual == 1) {
@@ -66,8 +66,10 @@ float BF16_L2Sqr_NEON(const void *pVect1v, const void *pVect2v, size_t dimension
         bfloat16x8_t v2 = vld1q_bf16(vec2);
 
         // Apply mask to both vectors
-        bfloat16x8_t masked_v1 = vreinterpretq_bf16_u16(vandq_u16(vreinterpretq_u16_bf16(v1), mask));
-        bfloat16x8_t masked_v2 = vreinterpretq_bf16_u16(vandq_u16(vreinterpretq_u16_bf16(v2), mask));
+        bfloat16x8_t masked_v1 =
+            vreinterpretq_bf16_u16(vandq_u16(vreinterpretq_u16_bf16(v1), mask));
+        bfloat16x8_t masked_v2 =
+            vreinterpretq_bf16_u16(vandq_u16(vreinterpretq_u16_bf16(v2), mask));
 
         L2Sqr_Op(acc1, masked_v1, masked_v2);
 

@@ -6,8 +6,8 @@
 
 #include <arm_sve.h>
 
-inline void InnerProduct_Step(const bfloat16_t *vec1, const bfloat16_t *vec2,
-                                     svfloat32_t &acc, size_t &offset, const size_t chunk) {
+inline void InnerProduct_Step(const bfloat16_t *vec1, const bfloat16_t *vec2, svfloat32_t &acc,
+                              size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
     // Load brain-half-precision vectors.
