@@ -7,44 +7,66 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void L2SquareStep(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t &sum) {
+static inline void L2Step(const uint8x16_t &v1_first, const uint8x16_t &v2_first, int32x4_t &sum) {
+    // Process first 16 elements
+    // Split into low and high halves
+    uint8x8_t v1_first_low = vget_low_u8(v1_first);
+    uint8x8_t v1_first_high = vget_high_u8(v1_first);
+    uint8x8_t v2_first_low = vget_low_u8(v2_first);
+    uint8x8_t v2_first_high = vget_high_u8(v2_first);
+
+    // Widen directly to int16 instead of uint16
+    int16x8_t v1_first_low_wide = vreinterpretq_s16_u16(vmovl_u8(v1_first_low));
+    int16x8_t v1_first_high_wide = vreinterpretq_s16_u16(vmovl_u8(v1_first_high));
+    int16x8_t v2_first_low_wide = vreinterpretq_s16_u16(vmovl_u8(v2_first_low));
+    int16x8_t v2_first_high_wide = vreinterpretq_s16_u16(vmovl_u8(v2_first_high));
+
+    // Use absolute difference directly with signed integers
+    int16x8_t diff_first_low = vabdq_s16(v1_first_low_wide, v2_first_low_wide);
+    int16x8_t diff_first_high = vabdq_s16(v1_first_high_wide, v2_first_high_wide);
+
+    // Further widen differences to 32-bit for safer squaring
+    int32x4_t diff_first_low_0 = vmovl_s16(vget_low_s16(diff_first_low));
+    int32x4_t diff_first_low_1 = vmovl_s16(vget_high_s16(diff_first_low));
+    int32x4_t diff_first_high_0 = vmovl_s16(vget_low_s16(diff_first_high));
+    int32x4_t diff_first_high_1 = vmovl_s16(vget_high_s16(diff_first_high));
+
+    // Square differences in 32-bit
+    int32x4_t square_first_low_0 = vmulq_s32(diff_first_low_0, diff_first_low_0);
+    int32x4_t square_first_low_1 = vmulq_s32(diff_first_low_1, diff_first_low_1);
+    int32x4_t square_first_high_0 = vmulq_s32(diff_first_high_0, diff_first_high_0);
+    int32x4_t square_first_high_1 = vmulq_s32(diff_first_high_1, diff_first_high_1);
+    // Accumulate all results into sum
+    sum = vaddq_s32(sum, square_first_low_0);
+    sum = vaddq_s32(sum, square_first_low_1);
+    sum = vaddq_s32(sum, square_first_high_0);
+    sum = vaddq_s32(sum, square_first_high_1);
+}
+
+static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t &sum1,
+                                  int32x4_t &sum2) {
+    uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
+    uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
+
+    // Reference the individual vectors
+    uint8x16_t v1_first = v1_pair.val[0];
+    uint8x16_t v1_second = v1_pair.val[1];
+    uint8x16_t v2_first = v2_pair.val[0];
+    uint8x16_t v2_second = v2_pair.val[1];
+
+    L2Step(v1_first, v2_first, sum1);
+    L2Step(v1_second, v2_second, sum2);
+
+    pVect1 += 32;
+    pVect2 += 32;
+}
+
+static inline void L2SquareStep16(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t &sum) {
     // Load 16 uint8 elements into NEON registers
     uint8x16_t v1 = vld1q_u8(pVect1);
     uint8x16_t v2 = vld1q_u8(pVect2);
 
-    // Split into low and high halves
-    uint8x8_t v1_low = vget_low_u8(v1);
-    uint8x8_t v1_high = vget_high_u8(v1);
-    uint8x8_t v2_low = vget_low_u8(v2);
-    uint8x8_t v2_high = vget_high_u8(v2);
-
-    // Widen directly to int16 instead of uint16
-    int16x8_t v1_low_wide = vreinterpretq_s16_u16(vmovl_u8(v1_low));
-    int16x8_t v1_high_wide = vreinterpretq_s16_u16(vmovl_u8(v1_high));
-    int16x8_t v2_low_wide = vreinterpretq_s16_u16(vmovl_u8(v2_low));
-    int16x8_t v2_high_wide = vreinterpretq_s16_u16(vmovl_u8(v2_high));
-
-    // Use absolute difference directly with signed integers
-    int16x8_t diff_low = vabdq_s16(v1_low_wide, v2_low_wide);
-    int16x8_t diff_high = vabdq_s16(v1_high_wide, v2_high_wide);
-
-    // Further widen differences to 32-bit for safer squaring
-    int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
-    int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
-    int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
-    int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
-
-    // Square differences in 32-bit
-    int32x4_t square_low_0 = vmulq_s32(diff_low_0, diff_low_0);
-    int32x4_t square_low_1 = vmulq_s32(diff_low_1, diff_low_1);
-    int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
-    int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
-
-    // Accumulate into sum
-    sum = vaddq_s32(sum, square_low_0);
-    sum = vaddq_s32(sum, square_low_1);
-    sum = vaddq_s32(sum, square_high_0);
-    sum = vaddq_s32(sum, square_high_1);
+    L2Step(v1, v2, sum);
 
     pVect1 += 16;
     pVect2 += 16;
@@ -63,28 +85,27 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        L2SquareStep(pVect1, pVect2, sum0);
-        L2SquareStep(pVect1, pVect2, sum1);
-        L2SquareStep(pVect1, pVect2, sum2);
-        L2SquareStep(pVect1, pVect2, sum3);
+        L2SquareStep32(pVect1, pVect2, sum0, sum2);
+        L2SquareStep32(pVect1, pVect2, sum1, sum3);
     }
+
+    constexpr size_t num_of_32_chunks = residual / 32;
+
+    if constexpr (num_of_32_chunks) {
+        L2SquareStep32(pVect1, pVect2, sum0, sum1);
+    }
+
     // Handle residual elements (0-63)
     // First, process full chunks of 16 elements
-    constexpr size_t residual_chunks = residual / 16;
-
-    if constexpr (residual_chunks > 0) {
-        if constexpr (residual_chunks >= 1) {
-            L2SquareStep(pVect1, pVect2, sum0);
-        }
-        if constexpr (residual_chunks >= 2) {
-            L2SquareStep(pVect1, pVect2, sum1);
-        }
-        if constexpr (residual_chunks >= 3) {
-            L2SquareStep(pVect1, pVect2, sum2);
-        }
+    constexpr size_t residual_chunks = (residual % 32) / 16;
+    if constexpr (residual_chunks >= 1) {
+        L2SquareStep16(pVect1, pVect2, sum0);
+    }
+    if constexpr (residual_chunks >= 2) {
+        L2SquareStep16(pVect1, pVect2, sum1);
     }
 
-    constexpr size_t final_residual = residual % 16;
+    constexpr size_t final_residual = (residual % 32) % 16;
     if constexpr (final_residual > 0) {
         // SAFETY: We need to ensure we don't read past the end of the arrays
         // Create a mask where only the valid indices (< final_residual) are set
