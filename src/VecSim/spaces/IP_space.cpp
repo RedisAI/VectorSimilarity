@@ -20,6 +20,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
 #include "VecSim/spaces/functions/SVE2.h"
@@ -143,11 +144,11 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
         return Choose_BF16_IP_implementation_SVE_BF16(dim);
     }
 #endif
-// #ifdef OPT_NEON
-//     if (features.asimd) {
-//         return Choose_BF16_IP_implementation_NEON(dim);
-//     }
-// #endif
+#ifdef OPT_NEON_BF16
+    if (features.bf16 && features.asimd) {
+        return Choose_BF16_IP_implementation_NEON_BF16(dim);
+    }
+#endif
 #elif defined(CPU_FEATURES_ARCH_X86_64)
     // Optimizations assume at least 32 bfloats. If we have less, we use the naive implementation.
     if (dim < 32) {

@@ -91,6 +91,13 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
 	endif()
 
+	# NEON bfloat16 support
+	if (CXX_NEON_HP AND CXX_ARMV8A)
+		message("Building with NEON+BF16")
+		set_source_files_properties(functions/NEON_BF16.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+bf16")
+		list(APPEND OPTIMIZATIONS functions/NEON_BF16.cpp)
+	endif()
+
 	# SVE support
 	if (CXX_SVE)
 		message("Building with SVE")
