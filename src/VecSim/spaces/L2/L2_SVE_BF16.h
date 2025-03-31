@@ -7,7 +7,7 @@
 #include <arm_sve.h>
 
 // Assumes little-endianess
-static inline void L2Sqr_Op(svfloat32_t &acc, svbfloat16_t &v1, svbfloat16_t &v2) {
+inline void L2Sqr_Op(svfloat32_t &acc, svbfloat16_t &v1, svbfloat16_t &v2) {
     svfloat32_t v1_lo = svreinterpret_f32(svzip1(svdup_u16(0), svreinterpret_u16(v1)));
     svfloat32_t v2_lo = svreinterpret_f32(svzip1(svdup_u16(0), svreinterpret_u16(v2)));
     svfloat32_t diff_lo = svsub_f32_x(svptrue_b32(), v1_lo, v2_lo);
@@ -21,7 +21,7 @@ static inline void L2Sqr_Op(svfloat32_t &acc, svbfloat16_t &v1, svbfloat16_t &v2
     acc = svmla_f32_x(svptrue_b32(), acc, diff_hi, diff_hi);
 }
 
-static inline void L2Sqr_Step(const bfloat16_t *vec1, const bfloat16_t *vec2, svfloat32_t &acc,
+inline void L2Sqr_Step(const bfloat16_t *vec1, const bfloat16_t *vec2, svfloat32_t &acc,
                               size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
@@ -82,5 +82,5 @@ float BF16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension)
 
     // Reduce the accumulated sum.
     float result = svaddv_f32(svptrue_b32(), acc1);
-    return 1.0f - result;
+    return result;
 }

@@ -6,7 +6,7 @@
 
 #include <arm_sve.h>
 
-static inline void InnerProduct_Step(const bfloat16_t *vec1, const bfloat16_t *vec2,
+inline void InnerProduct_Step(const bfloat16_t *vec1, const bfloat16_t *vec2,
                                      svfloat32_t &acc, size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
