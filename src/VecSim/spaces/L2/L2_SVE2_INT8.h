@@ -8,7 +8,8 @@
 #include <arm_sve.h>
 
 // Aligned step using svptrue_b8()
-static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset, svfloat32_t &sum) {
+static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
+                                svfloat32_t &sum) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
