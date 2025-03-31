@@ -138,14 +138,9 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     auto features = getCpuOptimizationFeatures(arch_opt);
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
-// #ifdef OPT_SVE2
-//     if (features.sve2) {
-//         return Choose_BF16_L2_implementation_SVE2(dim);
-//     }
-// #endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_BF16_L2_implementation_SVE(dim);
+#ifdef OPT_SVE_BF16
+    if (features.svebf16) {
+        return Choose_BF16_L2_implementation_SVE_BF16(dim);
     }
 #endif
 // #ifdef OPT_NEON

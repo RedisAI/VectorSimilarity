@@ -13,12 +13,12 @@
 
  #include "implementation_chooser.h"
 
- dist_func_t<float> Choose_BF16_IP_implementation_SVE(size_t dim) {
+ dist_func_t<float> Choose_BF16_IP_implementation_SVE_BF16(size_t dim) {
      dist_func_t<float> ret_dist_func;
      CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, BF16_InnerProduct_SVE, dim, svcnth);
      return ret_dist_func;
  }
- dist_func_t<float> Choose_BF16_L2_implementation_SVE(size_t dim) {
+ dist_func_t<float> Choose_BF16_L2_implementation_SVE_BF16(size_t dim) {
      dist_func_t<float> ret_dist_func;
      CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, BF16_L2Sqr_SVE, dim, svcnth);
      return ret_dist_func;
