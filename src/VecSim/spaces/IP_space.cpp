@@ -145,7 +145,7 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 #endif
 #ifdef OPT_NEON_BF16
-    if (features.asimd && features.bf16) {
+    if (features.bf16) {
         return Choose_BF16_IP_implementation_NEON_BF16(dim);
     }
 #endif

@@ -781,7 +781,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
     }
 #endif
 #ifdef OPT_NEON_BF16
-    if (optimization.asimd && optimization.bf16) {
+    if (optimization.bf16) {
         unsigned char alignment = 0;
         arch_opt_func = IP_BF16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_BF16_IP_implementation_NEON_BF16(dim))
@@ -861,7 +861,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
     }
 #endif
 #ifdef OPT_NEON_BF16
-    if (optimization.asimd && optimization.bf16) {
+    if (optimization.bf16) {
         unsigned char alignment = 0;
         arch_opt_func = L2_BF16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_BF16_L2_implementation_NEON_BF16(dim))
