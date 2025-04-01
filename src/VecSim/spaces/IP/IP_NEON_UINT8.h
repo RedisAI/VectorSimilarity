@@ -88,9 +88,6 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
 
     uint32x4_t total_sum = vaddq_u32(sum0, sum1);
 
-    // total_sum = vaddq_u32(total_sum, sum2);
-    // total_sum = vaddq_u32(total_sum, sum3);
-
     // Horizontal sum of the 4 elements in the combined sum register
     int32_t result = vaddvq_u32(total_sum);
 

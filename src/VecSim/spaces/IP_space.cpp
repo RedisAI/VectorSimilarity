@@ -250,7 +250,6 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 #endif
 #endif
-
     return ret_dist_func;
 }
 
@@ -292,7 +291,6 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif
-
     return ret_dist_func;
 }
 

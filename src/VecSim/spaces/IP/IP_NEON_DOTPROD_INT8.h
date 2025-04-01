@@ -24,21 +24,6 @@ InnerProductStep16(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
     pVect2 += 16;
 }
 
-__attribute__((always_inline)) static inline void
-InnerProductStep32(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum0, int32x4_t &sum1) {
-    // Load and process 32 elements at once (2×16)
-    int8x16_t v1_0 = vld1q_s8(pVect1);
-    int8x16_t v1_1 = vld1q_s8(pVect1 + 16);
-    int8x16_t v2_0 = vld1q_s8(pVect2);
-    int8x16_t v2_1 = vld1q_s8(pVect2 + 16);
-
-    sum0 = vdotq_s32(sum0, v1_0, v2_0);
-    sum1 = vdotq_s32(sum1, v1_1, v2_1);
-
-    pVect1 += 32;
-    pVect2 += 32;
-}
-
 template <unsigned char residual> // 0..63
 float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
@@ -103,7 +88,7 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     return static_cast<float>(result);
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..63
 float INT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
                                            size_t dimension) {
     return 1.0f - INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);

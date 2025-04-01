@@ -85,7 +85,7 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     return static_cast<float>(result);
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..63
 float UINT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
     return 1.0f - UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);

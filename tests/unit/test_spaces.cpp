@@ -1087,7 +1087,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_NEON(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "NEON with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(0, dim)) << "NEON with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.asimd = 0;
     }
@@ -1120,8 +1120,8 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
         arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_NEON_DOTPROD(dim))
             << "Unexpected distance function chosen for dim OPT_NEON_DOTPROD " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "NEON with dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_DOTPROD with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(0, dim)) << "NEON_DOTPROD with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.asimddp = 0;
     }
@@ -1193,9 +1193,8 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
         arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_INT8_Cosine_implementation_NEON_DOTPROD(dim))
             << "Unexpected distance function chosen for dim OPT_NEON_DOTPROD " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
-        // We don't align int8 vectors with cosine distance
-        ASSERT_EQ(alignment, 0) << "NEON with dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_DOTPROD with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "NEON_DOTPROD with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.asimddp = 0;
     }
@@ -1245,7 +1244,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8L2SqrTest) {
         ASSERT_EQ(arch_opt_func, Choose_UINT8_L2_implementation_NEON(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "NEON with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(0, dim)) << "NEON with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.asimd = 0;
     }
@@ -1293,7 +1292,8 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8InnerProductTest) {
         arch_opt_func = IP_UINT8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_UINT8_IP_implementation_NEON_DOTPROD(dim))
             << "Unexpected distance function chosen for dim NEON_DOTPROD " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_DOTPROD with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(0, dim)) << "NEON_DOTPROD with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.asimddp = 0;
     }
@@ -1365,7 +1365,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
         arch_opt_func = Cosine_UINT8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim))
             << "Unexpected distance function chosen for dim OPT_NEON_DOTPROD " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_DOTPROD with dim " << dim;
         // We don't align uint8 vectors with cosine distance
         ASSERT_EQ(alignment, 0) << "NEON with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.

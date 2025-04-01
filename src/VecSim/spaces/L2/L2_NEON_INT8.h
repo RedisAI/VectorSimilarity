@@ -121,40 +121,7 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
         v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
         v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
 
-        // Split into low and high halves
-        int8x8_t v1_low = vget_low_s8(v1);
-        int8x8_t v1_high = vget_high_s8(v1);
-        int8x8_t v2_low = vget_low_s8(v2);
-        int8x8_t v2_high = vget_high_s8(v2);
-
-        // Compute absolute differences and widen to 16-bit in one step
-        int16x8_t diff_low = vabdl_s8(v1_low, v2_low);
-        int16x8_t diff_high = vabdl_s8(v1_high, v2_high);
-
-        // Further widen differences to 32-bit for safer squaring
-        int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
-        int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
-        int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
-        int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
-
-        // Square differences in 32-bit
-        int32x4_t square_low_0 = vmulq_s32(diff_low_0, diff_low_0);
-        int32x4_t square_low_1 = vmulq_s32(diff_low_1, diff_low_1);
-        int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
-        int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
-
-        // Accumulate into 32-bit sum
-        sum0 = vaddq_s32(sum0, square_low_0);
-        sum1 = vaddq_s32(sum1, square_low_1);
-
-        // Only include high portions if we have enough elements
-        // if constexpr (final_residual > 8) {
-        sum2 = vaddq_s32(sum2, square_high_0);
-
-        // if constexpr (final_residual > 12) {
-        sum3 = vaddq_s32(sum3, square_high_1);
-        // }
-        // }
+        L2SquareStep(v1, v2, sum0);
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result
