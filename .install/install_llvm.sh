@@ -14,7 +14,12 @@ if [[ $OS_TYPE == Darwin ]]; then
 
     # Update profiles with LLVM path
     [[ -f ~/.bash_profile ]] && update_profile ~/.bash_profile "$LLVM"
-    [[ -f ~/.zshrc ]] && update_profile ~/.zshrc "$LLVM"
+    if [[ -f ~/.zshrc ]]; then
+        echo "Updating ~/.zshrc..."
+        update_profile ~/.zshrc "$LLVM" || { echo "Error: Failed to update ~/.zshrc"; exit 1; }
+    else
+        echo "~/.zshrc does not exist. Skipping..."
+    fi
 else
     $MODE apt install -y lsb-release wget software-properties-common gnupg
     wget https://apt.llvm.org/llvm.sh
