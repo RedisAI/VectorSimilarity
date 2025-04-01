@@ -13,8 +13,8 @@ if [[ $OS_TYPE == Darwin ]]; then
     LLVM="$BREW_PREFIX/opt/llvm@$VERSION/bin"
 
     # Update profiles with LLVM path
-    [[ -f ~/.bash_profile ]] && update_profile ~/.bash_profile "$LLVM"
     [[ -f ~/.zshrc ]] && update_profile ~/.zshrc "$LLVM"
+    [[ -f ~/.zshrc ]] && update_profile ~/.bashrc "$LLVM"
 else
     $MODE apt install -y lsb-release wget software-properties-common gnupg
     wget https://apt.llvm.org/llvm.sh
