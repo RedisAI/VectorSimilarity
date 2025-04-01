@@ -26,5 +26,5 @@ GNUBIN=$BREW_PREFIX/opt/make/libexec/gnubin
 COREUTILS=$BREW_PREFIX/opt/coreutils/libexec/gnubin
 
 # Update both profile files with all tools
-[[ -f ~/.bash_profile ]] && update_profile ~/.bash_profile "$GNUBIN" "$COREUTILS"
+[[ -f ~/.bash_profile ]] && update_profile ~/.bashrc "$GNUBIN" "$COREUTILS"
 [[ -f ~/.zshrc ]] && update_profile ~/.zshrc "$GNUBIN" "$COREUTILS"
