@@ -15,8 +15,12 @@ update_profile() {
 
     # Add each path to the profile if not already present
     for path in "${paths[@]}"; do
+        echo "Processing path: $path"
         if ! grep -q "export PATH=\"$path:\$PATH\"" "$profile_file"; then
-            sudo echo "export PATH=\"$path:\$PATH\"" >> "$profile_file"
+            echo "Adding path: $path to $profile_file"
+            echo "export PATH=\"$path:\$PATH\"" >> "$profile_file" || { echo "Error: Failed to write to $profile_file"; exit 1; }
+        else
+            echo "Path $path is already present in $profile_file"
         fi
     done
 }
