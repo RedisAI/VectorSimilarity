@@ -16,7 +16,7 @@ update_profile() {
     # Add each path to the profile if not already present
     for path in "${paths[@]}"; do
         if ! grep -q "export PATH=\"$path:\$PATH\"" "$profile_file"; then
-            echo "export PATH=\"$path:\$PATH\"" >> "$profile_file"
+            sudo echo "export PATH=\"$path:\$PATH\"" >> "$profile_file"
         fi
     done
 }
