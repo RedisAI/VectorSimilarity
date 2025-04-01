@@ -34,11 +34,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    if (dim < 16) {
-        return ret_dist_func;
-    }
-#ifdef CPU_FEATURES_ARCH_AARCH64
+
     auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_SVE2
     if (features.sve2) {
@@ -58,6 +54,11 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
+    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+
+    if (dim < 16) {
+        return ret_dist_func;
+    }
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual

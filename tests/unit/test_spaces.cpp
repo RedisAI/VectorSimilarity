@@ -332,7 +332,7 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricUINT8) {
 }
 
 using namespace spaces;
-
+#ifdef CPU_FEATURES_ARCH_X86_64
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that small dimensions gets the no optimization function.
     for (size_t dim = 1; dim < 8; dim++) {
@@ -378,6 +378,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
 }
+#endif
 
 /* ======================== Test SIMD Functions ======================== */
 
