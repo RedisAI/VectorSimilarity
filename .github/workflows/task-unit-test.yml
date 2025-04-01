@@ -37,7 +37,7 @@ jobs:
           submodules: recursive
       - name: install dependencies
         working-directory: .install
-        run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
+        run: ./install_script.sh ${{ !inputs.container && 'sudo' || '' }}
       - name: Set Artifact Name
         # Artifact names have to be unique, so we base them on the environment.
         # We also remove invalid characters from the name.
