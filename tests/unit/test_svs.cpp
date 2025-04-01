@@ -1344,8 +1344,8 @@ TYPED_TEST(SVSTest, batchIteratorSwapIndices) {
 }
 
 TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
-    size_t dim = 128;
-    size_t n = 100;
+    const size_t dim = 128;
+    const size_t n = 100;
 
     SVSParams params = {
         .dim = dim,
@@ -1361,14 +1361,22 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
+    // To meet accurary in LVQ case we have to add bulk of vectors at once.
+    std::vector<TEST_DATA_T[dim]> v(n);
     for (size_t i = 1; i <= n; i++) {
-        TEST_DATA_T f[dim];
+        auto &f = v[i - 1];
         f[0] = (TEST_DATA_T)i / n;
         for (size_t j = 1; j < dim; j++) {
             f[j] = 1.0;
         }
-        VecSimIndex_AddVector(index, f, i);
     }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 1);
+
+    auto svs_index = this->CastToSVS(index);
+    svs_index->addVectors(v.data(), ids.data(), n);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
@@ -1397,7 +1405,10 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
-            ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            // In case of quantization, the result is not guaranteed to be properly ordered
+            if constexpr (TypeParam::get_quant_bits() == 0) {
+                ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            }
             TEST_DATA_T expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
             // Verify that abs difference between the actual and expected score is at most 1/10^5.
             ASSERT_NEAR((TEST_DATA_T)score, expected_score, 1e-5f);
@@ -1689,8 +1700,8 @@ TYPED_TEST(SVSTest, rangeQuery) {
 }
 
 TYPED_TEST(SVSTest, rangeQueryCosine) {
-    size_t n = 100;
-    size_t dim = 4;
+    const size_t n = 100;
+    const size_t dim = 4;
 
     SVSParams params = {
         .dim = dim,
@@ -1707,18 +1718,27 @@ TYPED_TEST(SVSTest, rangeQueryCosine) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
+    // To meet accurary in LVQ case we have to add bulk of vectors at once.
+    std::vector<TEST_DATA_T[dim]> v(n);
+    std::vector<size_t> ids(n);
+
     for (size_t i = 0; i < n; i++) {
-        TEST_DATA_T f[dim];
+        auto &f = v[i];
         f[0] = TEST_DATA_T(i + 1) / n;
         for (size_t j = 1; j < dim; j++) {
             f[j] = 1.0;
         }
         // Use as label := n - (internal id)
-        VecSimIndex_AddVector(index, (const void *)f, n - i);
+        ids[i] = n - i;
     }
+
+    auto svs_index = this->CastToSVS(index);
+    svs_index->addVectors(v.data(), ids.data(), n);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
-    for (size_t i = 0; i < dim; i++) {
+    query[0] = 1.1;
+    for (size_t i = 1; i < dim; i++) {
         query[i] = 1.0;
     }
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
