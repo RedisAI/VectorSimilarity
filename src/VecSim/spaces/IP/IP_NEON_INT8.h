@@ -7,11 +7,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void InnerProductStepInt8(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
-    // Load 16 int8 elements (16 bytes) into NEON registers
-    int8x16_t v1 = vld1q_s8(pVect1);
-    int8x16_t v2 = vld1q_s8(pVect2);
-
+__attribute__((always_inline)) static inline void InnerProductStep(int8x16_t &v1, int8x16_t &v2,
+                                                                   int32x4_t &sum) {
     // Multiply and accumulate low 8 elements (first half)
     int16x8_t prod_low = vmull_s8(vget_low_s8(v1), vget_low_s8(v2));
 
@@ -21,6 +18,14 @@ static inline void InnerProductStepInt8(int8_t *&pVect1, int8_t *&pVect2, int32x
     // Pairwise add adjacent elements to 32-bit accumulators
     sum = vpadalq_s16(sum, prod_low);
     sum = vpadalq_s16(sum, prod_high);
+}
+
+__attribute__((always_inline)) static inline void
+InnerProductStep16(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
+    // Load 16 int8 elements (16 bytes) into NEON registers
+    int8x16_t v1 = vld1q_s8(pVect1);
+    int8x16_t v2 = vld1q_s8(pVect2);
+    InnerProductStep(v1, v2, sum);
 
     pVect1 += 16;
     pVect2 += 16;
@@ -39,20 +44,20 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     const size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStepInt8(pVect1, pVect2, sum0);
-        InnerProductStepInt8(pVect1, pVect2, sum1);
-        InnerProductStepInt8(pVect1, pVect2, sum0);
-        InnerProductStepInt8(pVect1, pVect2, sum1);
+        InnerProductStep16(pVect1, pVect2, sum0);
+        InnerProductStep16(pVect1, pVect2, sum1);
+        InnerProductStep16(pVect1, pVect2, sum0);
+        InnerProductStep16(pVect1, pVect2, sum1);
     }
 
     constexpr size_t residual_chunks = residual / 16;
 
     if constexpr (residual_chunks > 0) {
         if constexpr (residual_chunks >= 1) {
-            InnerProductStepInt8(pVect1, pVect2, sum0);
+            InnerProductStep16(pVect1, pVect2, sum0);
         }
         if constexpr (residual_chunks >= 2) {
-            InnerProductStepInt8(pVect1, pVect2, sum1);
+            InnerProductStep16(pVect1, pVect2, sum1);
         }
         if constexpr (residual_chunks >= 3) {
             InnerProductStepInt8(pVect1, pVect2, sum0);
@@ -79,21 +84,7 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
         v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
         v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
 
-        // Split vectors into low and high parts
-        int8x8_t v1_low = vget_low_s8(v1);
-        int8x8_t v1_high = vget_high_s8(v1);
-        int8x8_t v2_low = vget_low_s8(v2);
-        int8x8_t v2_high = vget_high_s8(v2);
-
-        // Multiply and accumulate
-        int16x8_t prod_low = vmull_s8(v1_low, v2_low);
-        int16x8_t prod_high = vmull_s8(v1_high, v2_high);
-
-        // Accumulate products
-        sum1 = vpadalq_s16(sum1, prod_low);
-        if constexpr (final_residual > 8) {
-            sum0 = vpadalq_s16(sum0, prod_high);
-        }
+        InnerProductStep(v1, v2, sum0);
     }
 
     // Combine all four sum registers

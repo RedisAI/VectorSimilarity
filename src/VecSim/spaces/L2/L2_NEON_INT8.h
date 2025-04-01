@@ -7,57 +7,17 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void L2SquareStep(const int8x16_t &v1, const int8x16_t &v2, int32x4_t &sum) {
-    // Process first chunk
-    int8x8_t v1_low_0 = vget_low_s8(v1);
-    int8x8_t v1_high_0 = vget_high_s8(v1);
-    int8x8_t v2_low_0 = vget_low_s8(v2);
-    int8x8_t v2_high_0 = vget_high_s8(v2);
-
-    int16x8_t v1_low_wide_0 = vmovl_s8(v1_low_0);
-    int16x8_t v1_high_wide_0 = vmovl_s8(v1_high_0);
-    int16x8_t v2_low_wide_0 = vmovl_s8(v2_low_0);
-    int16x8_t v2_high_wide_0 = vmovl_s8(v2_high_0);
-
-    int16x8_t diff_low_0 = vsubq_s16(v1_low_wide_0, v2_low_wide_0);
-    int16x8_t diff_high_0 = vsubq_s16(v1_high_wide_0, v2_high_wide_0);
-
-    int32x4_t diff_low_00 = vmovl_s16(vget_low_s16(diff_low_0));
-    int32x4_t diff_low_01 = vmovl_s16(vget_high_s16(diff_low_0));
-    int32x4_t diff_high_00 = vmovl_s16(vget_low_s16(diff_high_0));
-    int32x4_t diff_high_01 = vmovl_s16(vget_high_s16(diff_high_0));
-
-    int32x4_t square_low_00 = vmulq_s32(diff_low_00, diff_low_00);
-    int32x4_t square_low_01 = vmulq_s32(diff_low_01, diff_low_01);
-    int32x4_t square_high_00 = vmulq_s32(diff_high_00, diff_high_00);
-    int32x4_t square_high_01 = vmulq_s32(diff_high_01, diff_high_01);
-
-    sum = vaddq_s32(sum, square_low_00);
-    sum = vaddq_s32(sum, square_low_01);
-    sum = vaddq_s32(sum, square_high_00);
-    sum = vaddq_s32(sum, square_high_01);
-}
-
-static inline void L2SquareStep16(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
-    // Load 16 int8 elements (16 bytes) into NEON registers
-    int8x16_t v1 = vld1q_s8(pVect1);
-    int8x16_t v2 = vld1q_s8(pVect2);
-
-    // Split into low and high halves
+__attribute__((always_inline)) static inline void
+L2SquareStep(const int8x16_t &v1, const int8x16_t &v2, int32x4_t &sum) {
+    // Split into low and high 8-bit halves
     int8x8_t v1_low = vget_low_s8(v1);
     int8x8_t v1_high = vget_high_s8(v1);
     int8x8_t v2_low = vget_low_s8(v2);
     int8x8_t v2_high = vget_high_s8(v2);
 
-    // Widen to 16-bit before subtraction
-    int16x8_t v1_low_wide = vmovl_s8(v1_low);
-    int16x8_t v1_high_wide = vmovl_s8(v1_high);
-    int16x8_t v2_low_wide = vmovl_s8(v2_low);
-    int16x8_t v2_high_wide = vmovl_s8(v2_high);
-
-    // Calculate difference on widened values
-    int16x8_t diff_low = vsubq_s16(v1_low_wide, v2_low_wide);
-    int16x8_t diff_high = vsubq_s16(v1_high_wide, v2_high_wide);
+    // Compute absolute differences and widen to 16-bit in one step
+    int16x8_t diff_low = vabdl_s8(v1_low, v2_low);
+    int16x8_t diff_high = vabdl_s8(v1_high, v2_high);
 
     // Further widen differences to 32-bit for safer squaring
     int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
@@ -71,11 +31,20 @@ static inline void L2SquareStep16(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &s
     int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
     int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
 
-    // Accumulate into 32-bit sum
+    // Accumulate all results into sum
     sum = vaddq_s32(sum, square_low_0);
     sum = vaddq_s32(sum, square_low_1);
     sum = vaddq_s32(sum, square_high_0);
     sum = vaddq_s32(sum, square_high_1);
+}
+
+__attribute__((always_inline)) static inline void L2SquareStep16(int8_t *&pVect1, int8_t *&pVect2,
+                                                                 int32x4_t &sum) {
+    // Load 16 int8 elements (16 bytes) into NEON registers
+    int8x16_t v1 = vld1q_s8(pVect1);
+    int8x16_t v2 = vld1q_s8(pVect2);
+
+    L2SquareStep(v1, v2, sum);
 
     pVect1 += 16;
     pVect2 += 16;
@@ -151,21 +120,16 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
         // Apply mask to zero out irrelevant elements
         v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
         v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
+
         // Split into low and high halves
         int8x8_t v1_low = vget_low_s8(v1);
         int8x8_t v1_high = vget_high_s8(v1);
         int8x8_t v2_low = vget_low_s8(v2);
         int8x8_t v2_high = vget_high_s8(v2);
 
-        // Widen to 16-bit before subtraction
-        int16x8_t v1_low_wide = vmovl_s8(v1_low);
-        int16x8_t v1_high_wide = vmovl_s8(v1_high);
-        int16x8_t v2_low_wide = vmovl_s8(v2_low);
-        int16x8_t v2_high_wide = vmovl_s8(v2_high);
-
-        // Calculate difference on widened values
-        int16x8_t diff_low = vsubq_s16(v1_low_wide, v2_low_wide);
-        int16x8_t diff_high = vsubq_s16(v1_high_wide, v2_high_wide);
+        // Compute absolute differences and widen to 16-bit in one step
+        int16x8_t diff_low = vabdl_s8(v1_low, v2_low);
+        int16x8_t diff_high = vabdl_s8(v1_high, v2_high);
 
         // Further widen differences to 32-bit for safer squaring
         int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
@@ -183,10 +147,14 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
         sum0 = vaddq_s32(sum0, square_low_0);
         sum1 = vaddq_s32(sum1, square_low_1);
 
-        if constexpr (final_residual > 8) {
-            sum2 = vaddq_s32(sum2, square_high_0);
-            sum3 = vaddq_s32(sum3, square_high_1);
-        }
+        // Only include high portions if we have enough elements
+        // if constexpr (final_residual > 8) {
+        sum2 = vaddq_s32(sum2, square_high_0);
+
+        // if constexpr (final_residual > 12) {
+        sum3 = vaddq_s32(sum3, square_high_1);
+        // }
+        // }
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result

@@ -9,15 +9,7 @@
 
 __attribute__((always_inline)) static inline void InnerProductStep(uint8x16_t &v1, uint8x16_t &v2,
                                                                    uint32x4_t &sum) {
-    // Multiply and accumulate low 8 elements (first half)
-    uint16x8_t prod_low = vmull_u8(vget_low_u8(v1), vget_low_u8(v2));
-
-    // Multiply and accumulate high 8 elements (second half)
-    uint16x8_t prod_high = vmull_u8(vget_high_u8(v1), vget_high_u8(v2));
-
-    // Pairwise add adjacent elements to 32-bit accumulators
-    sum = vpadalq_u16(sum, prod_low);
-    sum = vpadalq_u16(sum, prod_high);
+    sum = vdotq_u32(sum, v1, v2);
 }
 
 __attribute__((always_inline)) static inline void
@@ -88,22 +80,19 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
 
     uint32x4_t total_sum = vaddq_u32(sum0, sum1);
 
-    // total_sum = vaddq_u32(total_sum, sum2);
-    // total_sum = vaddq_u32(total_sum, sum3);
-
-    // Horizontal sum of the 4 elements in the combined sum register
     int32_t result = vaddvq_u32(total_sum);
 
     return static_cast<float>(result);
 }
 
 template <unsigned char residual> // 0..15
-float UINT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float UINT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
+                                            size_t dimension) {
     return 1.0f - UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
 }
 
 template <unsigned char residual> // 0..63
-float UINT8_CosineSIMD_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float UINT8_CosineSIMD_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
     float norm_v1 =
         *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);

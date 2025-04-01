@@ -28,6 +28,7 @@
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
 #include "tests_utils.h"
@@ -332,7 +333,7 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricUINT8) {
 }
 
 using namespace spaces;
-
+#ifdef CPU_FEATURES_ARCH_X86_64
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that small dimensions gets the no optimization function.
     for (size_t dim = 1; dim < 8; dim++) {
@@ -378,6 +379,7 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
 }
+#endif
 
 /* ======================== Test SIMD Functions ======================== */
 
@@ -1112,6 +1114,18 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = INT8_InnerProduct(v1, v2, dim);
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_NEON_DOTPROD(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON_DOTPROD " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "NEON with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimddp = 0;
+    }
+#endif
 #ifdef OPT_NEON
     if (optimization.asimd) {
         unsigned char alignment = 0;
@@ -1171,6 +1185,19 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_Cosine_implementation_NEON_DOTPROD(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON_DOTPROD " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        // We don't align int8 vectors with cosine distance
+        ASSERT_EQ(alignment, 0) << "NEON with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimddp = 0;
     }
 #endif
 #ifdef OPT_NEON
@@ -1260,6 +1287,17 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = UINT8_InnerProduct(v1, v2, dim);
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_IP_implementation_NEON_DOTPROD(dim))
+            << "Unexpected distance function chosen for dim NEON_DOTPROD " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimddp = 0;
+    }
+#endif
 #ifdef OPT_NEON
     if (optimization.asimd) {
         unsigned char alignment = 0;
@@ -1319,6 +1357,19 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON_DOTPROD " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON with dim " << dim;
+        // We don't align uint8 vectors with cosine distance
+        ASSERT_EQ(alignment, 0) << "NEON with dim " << dim;
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimddp = 0;
     }
 #endif
 #ifdef OPT_NEON

@@ -7,44 +7,55 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void L2Step(const uint8x16_t &v1_first, const uint8x16_t &v2_first, int32x4_t &sum) {
-    // Process first 16 elements
-    // Split into low and high halves
-    uint8x8_t v1_first_low = vget_low_u8(v1_first);
-    uint8x8_t v1_first_high = vget_high_u8(v1_first);
-    uint8x8_t v2_first_low = vget_low_u8(v2_first);
-    uint8x8_t v2_first_high = vget_high_u8(v2_first);
+__attribute__((always_inline)) static inline void
+L2Step(const uint8x16_t &v1_first, const uint8x16_t &v2_first, int32x4_t &sum) {
+    // Split into low and high 8-bit halves
+    uint8x8_t v1_low = vget_low_u8(v1_first);
+    uint8x8_t v1_high = vget_high_u8(v1_first);
+    uint8x8_t v2_low = vget_low_u8(v2_first);
+    uint8x8_t v2_high = vget_high_u8(v2_first);
 
-    // Widen directly to int16 instead of uint16
-    int16x8_t v1_first_low_wide = vreinterpretq_s16_u16(vmovl_u8(v1_first_low));
-    int16x8_t v1_first_high_wide = vreinterpretq_s16_u16(vmovl_u8(v1_first_high));
-    int16x8_t v2_first_low_wide = vreinterpretq_s16_u16(vmovl_u8(v2_first_low));
-    int16x8_t v2_first_high_wide = vreinterpretq_s16_u16(vmovl_u8(v2_first_high));
+    // Compute absolute differences and widen to 16-bit in one step
+    uint16x8_t diff_low_u = vabdl_u8(v1_low, v2_low);
+    uint16x8_t diff_high_u = vabdl_u8(v1_high, v2_high);
 
-    // Use absolute difference directly with signed integers
-    int16x8_t diff_first_low = vabdq_s16(v1_first_low_wide, v2_first_low_wide);
-    int16x8_t diff_first_high = vabdq_s16(v1_first_high_wide, v2_first_high_wide);
+    // Reinterpret as signed for compatibility with the rest of the code
+    int16x8_t diff_low = vreinterpretq_s16_u16(diff_low_u);
+    int16x8_t diff_high = vreinterpretq_s16_u16(diff_high_u);
 
     // Further widen differences to 32-bit for safer squaring
-    int32x4_t diff_first_low_0 = vmovl_s16(vget_low_s16(diff_first_low));
-    int32x4_t diff_first_low_1 = vmovl_s16(vget_high_s16(diff_first_low));
-    int32x4_t diff_first_high_0 = vmovl_s16(vget_low_s16(diff_first_high));
-    int32x4_t diff_first_high_1 = vmovl_s16(vget_high_s16(diff_first_high));
+    int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
+    int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
+    int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
+    int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
 
     // Square differences in 32-bit
-    int32x4_t square_first_low_0 = vmulq_s32(diff_first_low_0, diff_first_low_0);
-    int32x4_t square_first_low_1 = vmulq_s32(diff_first_low_1, diff_first_low_1);
-    int32x4_t square_first_high_0 = vmulq_s32(diff_first_high_0, diff_first_high_0);
-    int32x4_t square_first_high_1 = vmulq_s32(diff_first_high_1, diff_first_high_1);
+    int32x4_t square_low_0 = vmulq_s32(diff_low_0, diff_low_0);
+    int32x4_t square_low_1 = vmulq_s32(diff_low_1, diff_low_1);
+    int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
+    int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
+
     // Accumulate all results into sum
-    sum = vaddq_s32(sum, square_first_low_0);
-    sum = vaddq_s32(sum, square_first_low_1);
-    sum = vaddq_s32(sum, square_first_high_0);
-    sum = vaddq_s32(sum, square_first_high_1);
+    sum = vaddq_s32(sum, square_low_0);
+    sum = vaddq_s32(sum, square_low_1);
+    sum = vaddq_s32(sum, square_high_0);
+    sum = vaddq_s32(sum, square_high_1);
 }
 
-static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t &sum1,
-                                  int32x4_t &sum2) {
+__attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect1, uint8_t *&pVect2,
+                                                                 int32x4_t &sum) {
+    // Load 16 uint8 elements into NEON registers
+    uint8x16_t v1 = vld1q_u8(pVect1);
+    uint8x16_t v2 = vld1q_u8(pVect2);
+
+    L2Step(v1, v2, sum);
+
+    pVect1 += 16;
+    pVect2 += 16;
+}
+
+__attribute__((always_inline)) static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2,
+                                                                 int32x4_t &sum1, int32x4_t &sum2) {
     uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
     uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
 
@@ -59,17 +70,6 @@ static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t 
 
     pVect1 += 32;
     pVect2 += 32;
-}
-
-static inline void L2SquareStep16(uint8_t *&pVect1, uint8_t *&pVect2, int32x4_t &sum) {
-    // Load 16 uint8 elements into NEON registers
-    uint8x16_t v1 = vld1q_u8(pVect1);
-    uint8x16_t v2 = vld1q_u8(pVect2);
-
-    L2Step(v1, v2, sum);
-
-    pVect1 += 16;
-    pVect2 += 16;
 }
 
 template <unsigned char residual> // 0..63
@@ -122,47 +122,7 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
         v1 = vandq_u8(v1, mask);
         v2 = vandq_u8(v2, mask);
 
-        // Split into low and high halves
-        uint8x8_t v1_low = vget_low_u8(v1);
-        uint8x8_t v1_high = vget_high_u8(v1);
-        uint8x8_t v2_low = vget_low_u8(v2);
-        uint8x8_t v2_high = vget_high_u8(v2);
-
-        // Widen directly to signed 16-bit integers
-        int16x8_t v1_low_wide = vreinterpretq_s16_u16(vmovl_u8(v1_low));
-        int16x8_t v1_high_wide = vreinterpretq_s16_u16(vmovl_u8(v1_high));
-        int16x8_t v2_low_wide = vreinterpretq_s16_u16(vmovl_u8(v2_low));
-        int16x8_t v2_high_wide = vreinterpretq_s16_u16(vmovl_u8(v2_high));
-
-        // Use absolute difference directly with signed integers
-        int16x8_t diff_low = vabdq_s16(v1_low_wide, v2_low_wide);
-        int16x8_t diff_high = vabdq_s16(v1_high_wide, v2_high_wide);
-
-        // Widen to 32-bit for squaring
-        int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
-        int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
-        int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
-        int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
-
-        // Square the differences
-        int32x4_t square_low_0 = vmulq_s32(diff_low_0, diff_low_0);
-        int32x4_t square_low_1 = vmulq_s32(diff_low_1, diff_low_1);
-        int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
-        int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
-
-        // Accumulate based on how many valid elements we have
-        sum0 = vaddq_s32(sum0, square_low_0);
-        sum1 = vaddq_s32(sum1, square_low_1);
-
-        // Only add the high part if we have more than 8 elements
-        if constexpr (final_residual > 8) {
-            sum2 = vaddq_s32(sum2, square_high_0);
-
-            // Only add the last high part if needed (elements 12-15)
-            if constexpr (final_residual > 12) {
-                sum3 = vaddq_s32(sum3, square_high_1);
-            }
-        }
+        L2Step(v1, v2, sum0);
     }
     // Horizontal sum of the 4 elements in the sum register to get final result
     int32x4_t total_sum = vaddq_s32(sum0, sum1);

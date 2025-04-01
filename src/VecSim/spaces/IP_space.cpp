@@ -20,6 +20,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
 
@@ -238,6 +239,11 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp) {
+        return Choose_INT8_IP_implementation_NEON_DOTPROD(dim);
+    }
+#endif
 #ifdef OPT_NEON
     if (features.asimd) {
         return Choose_INT8_IP_implementation_NEON(dim);
@@ -257,11 +263,11 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = INT8_Cosine;
     // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
+    auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_X86_64
     if (dim < 32) {
         return ret_dist_func;
     }
-    auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         // For int8 vectors with cosine distance, the extra float for the norm shifts alignment to
@@ -274,10 +280,17 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 
 #endif // __x86_64__
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp) {
+        return Choose_INT8_Cosine_implementation_NEON_DOTPROD(dim);
+    }
+#endif
 #ifdef OPT_NEON
     if (features.asimd) {
         return Choose_INT8_Cosine_implementation_NEON(dim);
     }
+#endif
 #endif
 
     return ret_dist_func;
@@ -292,11 +305,11 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = UINT8_InnerProduct;
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
+    auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_X86_64
     if (dim < 32) {
         return ret_dist_func;
     }
-    auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
@@ -306,6 +319,11 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp) {
+        return Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
+    }
+#endif
 #ifdef OPT_NEON
     if (features.asimd) {
         return Choose_UINT8_IP_implementation_NEON(dim);
@@ -324,11 +342,11 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
 
     dist_func_t<float> ret_dist_func = UINT8_Cosine;
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
+    auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_X86_64
     if (dim < 32) {
         return ret_dist_func;
     }
-    auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         // For uint8 vectors with cosine distance, the extra float for the norm shifts alignment to
@@ -341,6 +359,11 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
 #endif
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp) {
+        return Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
+    }
+#endif
 #ifdef OPT_NEON
     if (features.asimd) {
         return Choose_UINT8_Cosine_implementation_NEON(dim);
