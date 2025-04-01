@@ -63,6 +63,3 @@ jobs:
   #     run-valgrind: false
   macos:
     uses: ./.github/workflows/macos.yml
-  arm:
-    uses: ./.github/workflows/arm.yml
-    secrets: inherit
