@@ -25,7 +25,7 @@ dist_func_t<float> Choose_FP32_L2_implementation_SVE2(size_t dim) {
 }
 dist_func_t<double> Choose_FP64_IP_implementation_SVE(size_t dim) {
     dist_func_t<double> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP64_InnerProductSIMD_SVE2, dim, svcntd);
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP64_InnerProductSIMD_SVE, dim, svcntd);
     return ret_dist_func;
 }
 dist_func_t<double> Choose_FP64_L2_implementation_SVE2(size_t dim) {
