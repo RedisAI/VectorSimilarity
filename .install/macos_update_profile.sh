@@ -23,4 +23,6 @@ update_profile() {
             echo "Path $path is already present in $profile_file"
         fi
     done
+
+    echo "Profile update completed successfully."
 }
