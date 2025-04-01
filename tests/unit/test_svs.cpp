@@ -678,7 +678,7 @@ TYPED_TEST(SVSTest, resizeIndex) {
     size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
     if constexpr (TypeParam::get_quant_bits() > 0) {
         // LVQDataset does not provide a capacity method
-        extra_cap = 1;
+        extra_cap = 0;
     }
     // The size (+extra) and the capacity should be equal.
     ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
@@ -724,8 +724,8 @@ TYPED_TEST(SVSTest, svs_empty_index) {
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // The expected capacity should be 1 for empty index.
-    ASSERT_EQ(index->indexCapacity(), 1);
+    // The expected capacity should be 0 for empty index.
+    ASSERT_EQ(index->indexCapacity(), 0);
 
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);

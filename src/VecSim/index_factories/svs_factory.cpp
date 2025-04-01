@@ -83,25 +83,25 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     }
 }
 
-// SVSIndexVectorSize() is the chain of template functions to estimate vector DataSize.
+// QuantizedVectorSize() is the chain of template functions to estimate vector DataSize.
 template <typename DataType, size_t QuantBits, size_t ResidualBits = 0>
-constexpr size_t SVSIndexVectorSize(size_t dims, size_t alignment = 0) {
+constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0) {
     return SVSStorageTraits<DataType, QuantBits, ResidualBits>::element_size(dims, alignment);
 }
 
 template <typename DataType>
-size_t SVSIndexVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0) {
+size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0) {
     switch (quant_bits) {
     case VecSimSvsQuant_NONE:
-        return SVSIndexVectorSize<DataType, 0>(dims, alignment);
+        return QuantizedVectorSize<DataType, 0>(dims, alignment);
     case VecSimSvsQuant_8:
-        return SVSIndexVectorSize<DataType, 8>(dims, alignment);
+        return QuantizedVectorSize<DataType, 8>(dims, alignment);
     case VecSimSvsQuant_4:
-        return SVSIndexVectorSize<DataType, 4>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4>(dims, alignment);
     case VecSimSvsQuant_4x4:
-        return SVSIndexVectorSize<DataType, 4, 4>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4, 4>(dims, alignment);
     case VecSimSvsQuant_4x8:
-        return SVSIndexVectorSize<DataType, 4, 8>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4, 8>(dims, alignment);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported quantization mode");
@@ -109,13 +109,13 @@ size_t SVSIndexVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t ali
     }
 }
 
-size_t SVSIndexVectorSize(VecSimType data_type, VecSimSvsQuantBits quant_bits, size_t dims,
-                          size_t alignment = 0) {
+size_t QuantizedVectorSize(VecSimType data_type, VecSimSvsQuantBits quant_bits, size_t dims,
+                           size_t alignment = 0) {
     switch (data_type) {
     case VecSimType_FLOAT32:
-        return SVSIndexVectorSize<float>(quant_bits, dims, alignment);
+        return QuantizedVectorSize<float>(quant_bits, dims, alignment);
     case VecSimType_FLOAT16:
-        return SVSIndexVectorSize<svs::Float16>(quant_bits, dims, alignment);
+        return QuantizedVectorSize<svs::Float16>(quant_bits, dims, alignment);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported data type");
@@ -150,7 +150,7 @@ size_t EstimateElementSize(const SVSParams *params) {
     using graph_idx_type = uint32_t;
     const auto graph_node_size =
         SVSGraphBuilder<graph_idx_type>::element_size(params->graph_max_degree);
-    const auto vector_size = SVSIndexVectorSize(params->type, params->quantBits, params->dim);
+    const auto vector_size = QuantizedVectorSize(params->type, params->quantBits, params->dim);
 
     return vector_size + graph_node_size;
 }

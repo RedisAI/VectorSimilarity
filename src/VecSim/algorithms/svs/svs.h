@@ -245,7 +245,7 @@ public:
     size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
 
     size_t indexCapacity() const override {
-        return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 1;
+        return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 0;
     }
 
     size_t indexLabelCount() const override { return indexSize(); }
@@ -378,9 +378,7 @@ public:
         auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams);
         // SVS BatchIterator handles the search in batches
         // The batch size is set to the index search window size by default
-        const size_t batch_size = queryParams && queryParams->batchSize
-                                      ? queryParams->batchSize
-                                      : sp.buffer_config_.get_search_window_size();
+        const size_t batch_size = sp.buffer_config_.get_search_window_size();
         auto schedule = svs::index::vamana::DefaultSchedule{sp, batch_size};
 
         // Create SVS BatchIterator for range search

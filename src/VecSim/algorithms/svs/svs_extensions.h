@@ -47,7 +47,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(Qua
 
     static size_t storage_capacity(const index_storage_type &storage) {
         // LVQDataset does not provide a capacity method
-        return storage.size() + 1;
+        return storage.size();
     }
 };
 #else
