@@ -9,6 +9,51 @@
 // A wrapper of benchmark definition for fp32
 #define BENCHMARK_DISTANCE_F_FP32(arch, settings, func)                                            \
     BENCHMARK_DISTANCE_F(FP32, arch, settings, func)
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+// NEON implementation for ARMv8-a
+#ifdef OPT_NEON
+INITIALIZE_EXACT_BM(FP32, NEON, L2, 16, spaces::Choose_FP32_L2_implementation_NEON(16));
+INITIALIZE_EXACT_BM(FP32, NEON, L2, 4, spaces::Choose_FP32_L2_implementation_NEON(4));
+INITIALIZE_RESIDUAL_BM(FP32, NEON, L2, 16_Residuals, spaces::Choose_FP32_L2_implementation_NEON(16));
+INITIALIZE_RESIDUAL_BM(FP32, NEON, L2, 4_Residuals, spaces::Choose_FP32_L2_implementation_NEON(4));
+
+INITIALIZE_EXACT_BM(FP32, NEON, IP, 16, spaces::Choose_FP32_L2_implementation_NEON(16));
+INITIALIZE_EXACT_BM(FP32, NEON, IP, 4, spaces::Choose_FP32_L2_implementation_NEON(4));
+INITIALIZE_RESIDUAL_BM(FP32, NEON, IP, 16_Residuals,
+    spaces::Choose_FP32_L2_implementation_NEON(16));
+INITIALIZE_RESIDUAL_BM(FP32, NEON, IP, 4_Residuals, spaces::Choose_FP32_L2_implementation_NEON(4));
+#endif
+// SVE implementation
+#ifdef OPT_SVE
+INITIALIZE_EXACT_BM(FP32, SVE, L2, 16, spaces::Choose_FP32_L2_implementation_SVE(16));
+INITIALIZE_EXACT_BM(FP32, SVE, L2, 4, spaces::Choose_FP32_L2_implementation_SVE(4));
+INITIALIZE_RESIDUAL_BM(FP32, SVE, L2, 16_Residuals, spaces::Choose_FP32_L2_implementation_SVE(16));
+INITIALIZE_RESIDUAL_BM(FP32, SVE, L2, 4_Residuals, spaces::Choose_FP32_L2_implementation_SVE(4));
+
+INITIALIZE_EXACT_BM(FP32, SVE, IP, 16, spaces::Choose_FP32_L2_implementation_SVE(16));
+INITIALIZE_EXACT_BM(FP32, SVE, IP, 4, spaces::Choose_FP32_L2_implementation_SVE(4));
+INITIALIZE_RESIDUAL_BM(FP32, SVE, IP, 16_Residuals,
+    spaces::Choose_FP32_L2_implementation_SVE(16));
+INITIALIZE_RESIDUAL_BM(FP32, SVE, IP, 4_Residuals, spaces::Choose_FP32_L2_implementation_SVE(4));
+#endif
+// SVE2 implementation
+#ifdef OPT_SVE2
+INITIALIZE_EXACT_BM(FP32, SVE2, L2, 16, spaces::Choose_FP32_L2_implementation_SVE2(16));
+INITIALIZE_EXACT_BM(FP32, SVE2, L2, 4, spaces::Choose_FP32_L2_implementation_SVE2(4));
+INITIALIZE_RESIDUAL_BM(FP32, SVE2, L2, 16_Residuals, spaces::Choose_FP32_L2_implementation_SVE2(16));
+INITIALIZE_RESIDUAL_BM(FP32, SVE2, L2, 4_Residuals, spaces::Choose_FP32_L2_implementation_SVE2(4));
+INITIALIZE_EXACT_BM(FP32, SVE2, IP, 16, spaces::Choose_FP32_IP_implementation_SVE2(16));
+INITIALIZE_EXACT_BM(FP32, SVE2, IP, 4, spaces::Choose_FP32_IP_implementation_SVE2(4));
+INITIALIZE_RESIDUAL_BM(FP32, SVE2, IP, 16_Residuals,
+    spaces::Choose_FP32_IP_implementation_SVE2(16));
+INITIALIZE_RESIDUAL_BM(FP32, SVE2, IP, 4_Residuals, spaces::Choose_FP32_IP_implementation_SVE2(4));
+
+#endif
+#endif // AARCH64
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+
 // AVX512 functions
 #ifdef OPT_AVX512F
 #include "VecSim/spaces/L2/L2_AVX512.h"
@@ -58,6 +103,7 @@ INITIALIZE_RESIDUAL_BM(FP32, SSE, IP, 16_Residuals, FP32_InnerProductSIMD16ExtRe
 INITIALIZE_RESIDUAL_BM(FP32, SSE, IP, 4_Residuals, FP32_InnerProductSIMD4ExtResiduals_SSE);
 
 #endif // SSE
+#endif //CPU_FEATURES_ARCH_X86_64
 
 // Naive algorithms
 
