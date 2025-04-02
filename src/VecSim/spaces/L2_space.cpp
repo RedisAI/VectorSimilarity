@@ -36,6 +36,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
 
     auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_SVE2
     if (features.sve2) {
         return Choose_FP32_L2_implementation_SVE2(dim);

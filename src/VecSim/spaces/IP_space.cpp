@@ -35,6 +35,8 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
     auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+
 #ifdef OPT_SVE2
     if (features.sve2) {
         return Choose_FP32_IP_implementation_SVE2(dim);
