@@ -23,7 +23,10 @@
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE.h"
-
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
+#include "bm_macros.h"
 #include "bm_spaces_class.h"
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the

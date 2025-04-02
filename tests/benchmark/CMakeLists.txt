@@ -25,6 +25,15 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
+	add_compile_definitions(BENCHMARK_ARCH=arm64)
+	
+else()
+	include(${root}/cmake/x86_64InstructionFlags.cmake)
+	add_compile_definitions(BENCHMARK_ARCH=x86_64)
+endif()
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Spaces benchmarks								                                          #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
