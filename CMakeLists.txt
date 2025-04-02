@@ -4,12 +4,10 @@ cmake_policy(SET CMP0077 NEW)
 set(CMAKE_CXX_STANDARD 20)
 option(VECSIM_BUILD_TESTS "Build tests" ON)
 
-# option(VECSIM_STATIC "Build as static library" OFF)
 get_filename_component(root ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
 get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
-message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 
 if(USE_COVERAGE)
 	if(NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG")
@@ -73,13 +71,9 @@ if(VECSIM_BUILD_TESTS)
 	endif()
 endif()
 
+add_subdirectory(deps/ScalableVectorSearch)
 add_subdirectory(src/VecSim)
 
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
-
-# if(NOT VECSIM_STATIC)
-# set_target_properties(VectorSimilarity PROPERTIES PREFIX "lib")
-# set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
-# endif()

@@ -7,5 +7,5 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: mcr.microsoft.com/cbl-mariner/base/core:2.0
-      pre-checkout-script: tdnf install -y --noplugins --skipsignature tar gzip
+      pre-checkout-script: tdnf install -y --noplugins --skipsignature tar gzip ca-certificates git
       run-valgrind: false # TODO: enable valgrind? (requires to install valgrind)
