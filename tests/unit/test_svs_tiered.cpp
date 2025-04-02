@@ -64,17 +64,18 @@ protected:
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
-template <VecSimType type, typename DataType, VecSimQuantBits quantBits>
+template <VecSimType type, typename DataType, VecSimSvsQuantBits quantBits>
 struct SVSIndexType {
     static constexpr VecSimType get_index_type() { return type; }
-    static constexpr VecSimQuantBits get_quant_bits() { return quantBits; }
+    static constexpr VecSimSvsQuantBits get_quant_bits() { return quantBits; }
     typedef DataType data_t;
 };
 
 // clang-format off
-using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_NONE>
-                                    //   ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_8>
-                                    //   ,SVSIndexType<VecSimType_FLOAT32, float, VecSimQuant_4>
+using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
+#if HAVE_SVS_LVQ
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
+#endif
                                         >;
 // clang-format on
 
@@ -140,7 +141,7 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     // The number of reserved threads should be equal to requested
     ASSERT_EQ(num_reserved_threads, num_threads - 2);
 
-    // Request and more threads than available
+    // Request more threads than available
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
                                          tiered_index, num_threads + 2, timeout);
     tiered_index->submitJobs(jobs);
@@ -215,7 +216,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE + 1);
+    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(vec_label, vector), 0);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
     // Validate that the job was created properly
@@ -265,7 +266,10 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // SVS index should have allocated a single record, while flat index should remove the
     // block.
-    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    // LVQDataset does not provide a capacity method
+    const size_t expected_capacity =
+        TypeParam::get_quant_bits() > 0 ? tiered_index->indexSize() : DEFAULT_BLOCK_SIZE;
+    ASSERT_EQ(tiered_index->indexCapacity(), expected_capacity);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, vector), 0);
 }
@@ -288,7 +292,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
 
-    mock_thread_pool.thread_pool_join();
+    mock_thread_pool.thread_pool_wait();
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
@@ -303,6 +307,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
             << "Vector label: " << i;
     }
 
+    mock_thread_pool.thread_pool_join();
     // Verify that all vectors were moved to SVS as expected
     sz_f = tiered_index->GetFlatIndex()->indexSize();
     sz_b = tiered_index->GetBackendIndex()->indexSize();
