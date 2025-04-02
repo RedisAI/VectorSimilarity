@@ -7,19 +7,5 @@
 brew pin cmake
 brew update
 brew install make
+brew install coreutils
 source install_cmake.sh
-
-VERSION=18
-brew install llvm@$VERSION
-BREW_PREFIX=$(brew --prefix)
-LLVM="$BREW_PREFIX/opt/llvm@$VERSION/bin"
-GNUBIN=$BREW_PREFIX/opt/make/libexec/gnubin
-
-# Update both profile files with all tools
-
-# Source the profile update utility
-source "$(dirname "$0")/macos_update_profile.sh"
-
-update_profile ~/.zshrc "$LLVM" "$GNUBIN"
-update_profile ~/.bash_profile "$LLVM" "$GNUBIN"
-echo "Profile update completed successfully."
