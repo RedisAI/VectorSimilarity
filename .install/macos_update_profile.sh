@@ -11,7 +11,7 @@ update_profile() {
     # Check if the profile exists
     if [[ ! -f $profile_file ]]; then
         echo "$profile_file does not exist. Skipping..."
-        exit 0
+        return 0
     fi
 
     # Add each path to the profile if not already present

@@ -21,6 +21,6 @@ COREUTILS=$BREW_PREFIX/opt/coreutils/libexec/gnubin
 # Source the profile update utility
 source "$(dirname "$0")/macos_update_profile.sh"
 
-update_profile ~/.zshrc "$LLVM" "$GNUBIN" "$COREUTILS" || true
-update_profile ~/.bash_profile "$LLVM" "$GNUBIN" "$COREUTILS" || true
+update_profile ~/.zshrc "$LLVM" "$GNUBIN" "$COREUTILS"
+update_profile ~/.bash_profile "$LLVM" "$GNUBIN" "$COREUTILS"
 echo "Profile update completed successfully."
