@@ -278,6 +278,91 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
     default:
         ASSERT_TRUE(false);
     }
+    auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+        size_t elements_in_reg = reg_bit_size / sizeof(float) / 8;
+        return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float) : 0;
+    };
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = FP32_L2Sqr(v, v2, dim);
+// CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512F
+    if (optimization.avx512f) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX512F(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+        // Unset avx512f flag, so we'll choose the next optimization (AVX).
+        optimization.avx512f = 0;
+    }
+#endif
+#ifdef OPT_AVX
+    if (optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_AVX(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
+        // Unset avx flag as well, so we'll choose the next optimization (SSE).
+        optimization.avx = 0;
+    }
+#endif
+#ifdef OPT_SSE
+    if (optimization.sse) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_SSE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
+        // Unset sse flag as well, so we'll choose the next option (default).
+        optimization.sse = 0;
+    }
+#endif
+
+// CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
+
+    unsigned char alignment = 0;
+    arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, FP32_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "No optimization with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -310,6 +395,111 @@ class FP64SpacesOptimizationTest
 TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = GetParam().first;
+TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+    float v[dim];
+    float v2[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+        v2[i] = (float)(i + 1.5);
+    }
+
+    auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
+        size_t elements_in_reg = reg_bit_size / sizeof(float) / 8;
+        return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float) : 0;
+    };
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = FP32_InnerProduct(v, v2, dim);
+
+// CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512F
+    if (optimization.avx512f) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX512F(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
+#ifdef OPT_AVX
+    if (optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
+        optimization.avx = 0;
+    }
+#endif
+#ifdef OPT_SSE
+    if (optimization.sse) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_SSE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+        ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
+        optimization.sse = 0;
+    }
+#endif
+
+// CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
+
+    unsigned char alignment = 0;
+    arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, FP32_InnerProduct)
+        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "No optimization with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
+                         testing::Range(16UL, 16 * 2UL + 1));
+
+class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
     double v[dim];
     double v2[dim];
     for (size_t i = 0; i < dim; i++) {

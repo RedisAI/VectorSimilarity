@@ -129,4 +129,4 @@ add_library(VectorSimilaritySpaces
 	${ARM_OPTIMIZATIONS}
 )
 
-target_link_libraries(VectorSimilaritySpaces cpu_features VectorSimilaritySpaces_no_optimization ${OPTIMIZATIONS})
+target_link_libraries(VectorSimilaritySpaces cpu_features VectorSimilaritySpaces_no_optimization )
