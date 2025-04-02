@@ -14,7 +14,6 @@ brew install llvm@$VERSION
 BREW_PREFIX=$(brew --prefix)
 LLVM="$BREW_PREFIX/opt/llvm@$VERSION/bin"
 GNUBIN=$BREW_PREFIX/opt/make/libexec/gnubin
-COREUTILS=$BREW_PREFIX/opt/coreutils/libexec/gnubin
 
 # Update both profile files with all tools
 
