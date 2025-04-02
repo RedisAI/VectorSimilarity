@@ -19,6 +19,9 @@
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -31,14 +34,32 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
+    auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_FP32_IP_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_FP32_IP_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_FP32_IP_implementation_NEON(dim);
+    }
+#endif
+
+#endif
+
+#ifdef CPU_FEATURES_ARCH_X86_64
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     if (dim < 16) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
@@ -77,9 +98,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
@@ -119,10 +138,9 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (dim < 32) {
         return ret_dist_func;
     }
+
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_BF16_VL
     if (features.avx512_bf16 && features.avx512vl) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
@@ -167,9 +185,7 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
@@ -209,9 +225,7 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
@@ -236,9 +250,7 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         // For int8 vectors with cosine distance, the extra float for the norm shifts alignment to
@@ -266,9 +278,7 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
@@ -293,9 +303,7 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
         return ret_dist_func;
     }
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = (arch_opt == nullptr)
-                        ? cpu_features::GetX86Info().features
-                        : *static_cast<const cpu_features::X86Features *>(arch_opt);
+    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         // For uint8 vectors with cosine distance, the extra float for the norm shifts alignment to

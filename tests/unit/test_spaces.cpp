@@ -27,6 +27,9 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/F16C.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
 #include "tests_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -329,7 +332,7 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricUINT8) {
 }
 
 using namespace spaces;
-
+#ifdef CPU_FEATURES_ARCH_X86_64
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that small dimensions gets the no optimization function.
     for (size_t dim = 1; dim < 8; dim++) {
@@ -375,17 +378,17 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
 }
+#endif
 
 /* ======================== Test SIMD Functions ======================== */
 
 // In this following tests we assume that compiler supports all X86 optimizations, so if we have
 // some hardware flag enabled, we check that the corresponding optimization function was chosen.
-#ifdef CPU_FEATURES_ARCH_X86_64
 
 class FP32SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     float v[dim];
     float v2[dim];
@@ -401,6 +404,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_L2Sqr(v, v2, dim);
+// CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -437,6 +441,42 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         optimization.sse = 0;
     }
 #endif
+
+// CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_L2_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
+
     unsigned char alignment = 0;
     arch_opt_func = L2_FP32_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP32_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -445,7 +485,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
 }
 
 TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     float v[dim];
     float v2[dim];
@@ -461,6 +501,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = FP32_InnerProduct(v, v2, dim);
+
+// CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -494,6 +536,43 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         optimization.sse = 0;
     }
 #endif
+
+// CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim OPT_NEON " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
+
     unsigned char alignment = 0;
     arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP32_InnerProduct)
@@ -508,7 +587,7 @@ INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     double v[dim];
     double v2[dim];
@@ -565,7 +644,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
 }
 
 TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     double v[dim];
     double v2[dim];
@@ -628,7 +707,7 @@ INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest,
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     bfloat16 v[dim];
     bfloat16 v2[dim];
@@ -697,7 +776,7 @@ TEST_P(BF16SpacesOptimizationTest, BF16InnerProductTest) {
 }
 
 TEST_P(BF16SpacesOptimizationTest, BF16L2SqrTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     bfloat16 v[dim];
     bfloat16 v2[dim];
@@ -760,7 +839,7 @@ INSTANTIATE_TEST_SUITE_P(BF16OptFuncs, BF16SpacesOptimizationTest,
 class FP16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     float16 v1[dim], v2[dim];
     float v1_fp32[dim], v2_fp32[dim];
@@ -780,6 +859,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     float baseline = FP16_InnerProduct(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_InnerProduct(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
     // Turn off advanced fp16 flags. They will be tested in the next test.
+#if defined(CPU_FEATURES_ARCH_X86_64)
     optimization.avx512_fp16 = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
@@ -803,6 +883,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
         optimization.f16c = optimization.fma3 = optimization.avx = 0;
     }
 #endif
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, FP16_InnerProduct)
@@ -812,7 +893,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
 }
 
 TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     float16 v1[dim], v2[dim];
     float v1_fp32[dim], v2_fp32[dim];
@@ -831,6 +912,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = FP16_L2Sqr(v1, v2, dim);
     ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
+#if defined(CPU_FEATURES_ARCH_X86_64)
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
@@ -854,6 +936,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
         ASSERT_EQ(alignment, expected_alignment(256, dim)) << "F16C with dim " << dim;
         optimization.f16c = optimization.fma3 = optimization.avx = 0;
     }
+#endif
 #endif
     unsigned char alignment = 0;
     arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -968,7 +1051,7 @@ INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
 class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     int8_t v1[dim];
     int8_t v2[dim];
@@ -1004,7 +1087,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
 }
 
 TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     int8_t v1[dim];
     int8_t v2[dim];
@@ -1041,7 +1124,7 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
 }
 
 TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     int8_t v1[dim + sizeof(float)];
     int8_t v2[dim + sizeof(float)];
@@ -1082,7 +1165,7 @@ INSTANTIATE_TEST_SUITE_P(INT8OptFuncs, INT8SpacesOptimizationTest,
 class UINT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(UINT8SpacesOptimizationTest, UINT8L2SqrTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     uint8_t v1[dim];
     uint8_t v2[dim];
@@ -1118,7 +1201,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8L2SqrTest) {
 }
 
 TEST_P(UINT8SpacesOptimizationTest, UINT8InnerProductTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     uint8_t v1[dim];
     uint8_t v2[dim];
@@ -1155,7 +1238,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8InnerProductTest) {
 }
 
 TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
-    auto optimization = cpu_features::GetX86Info().features;
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     uint8_t v1[dim + sizeof(float)];
     uint8_t v2[dim + sizeof(float)];
@@ -1192,5 +1275,3 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
 
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                          testing::Range(32UL, 64 * 2UL + 1));
-
-#endif // CPU_FEATURES_ARCH_X86_64
