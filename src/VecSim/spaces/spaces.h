@@ -37,4 +37,16 @@ CalculationGuideline FP64_GetCalculationGuideline(size_t dim);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func);
 
+static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
+
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+    using FeaturesType = cpu_features::Aarch64Features;
+    constexpr auto getFeatures = cpu_features::GetAarch64Info;
+#else
+    using FeaturesType = cpu_features::X86Features; // Fallback
+    constexpr auto getFeatures = cpu_features::GetX86Info;
+#endif
+    return arch_opt ? *static_cast<const FeaturesType *>(arch_opt) : getFeatures().features;
+}
+
 } // namespace spaces
