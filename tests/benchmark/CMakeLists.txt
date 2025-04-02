@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(../)
+include_directories(./)
 
 enable_testing()
 
@@ -32,6 +33,7 @@ set(DATA_TYPE fp32 fp64)
 include(CheckCXXCompilerFlag)
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+	add_compile_definitions(BENCHMARK_ARCH=x86_64)
 	# build SSE/AVX* code only on x64 processors.
 	# Check that the compiler supports instructions flag.
 	# This will add the relevant flag both the the space selector and the optimization.
@@ -55,6 +57,9 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	if(CXX_SSE)
 		add_compile_definitions(OPT_SSE)
 	endif()
+else()
+include(${root}/cmake/aarch64InstructionFlags.cmake)
+add_compile_definitions(BENCHMARK_ARCH=arm64)
 endif()
 
 foreach(data_type IN LISTS DATA_TYPE)

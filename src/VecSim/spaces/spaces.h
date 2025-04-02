@@ -8,6 +8,8 @@
 
 #include "VecSim/vec_sim_common.h"   // enum VecSimMetric
 #include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
+#include "space_includes.h"
+
 namespace spaces {
 
 template <typename RET_TYPE>
@@ -34,5 +36,6 @@ CalculationGuideline FP64_GetCalculationGuideline(size_t dim);
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func);
+
 
 } // namespace spaces
