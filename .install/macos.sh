@@ -9,8 +9,9 @@ brew update
 brew install make
 source install_cmake.sh
 
+VERSION=18
 brew install llvm@$VERSION
-BREW_PREFIX=$(brew --prefix)
+BREW_PREFIX=$(brew --prefi
 LLVM="$BREW_PREFIX/opt/llvm@$VERSION/bin"
 GNUBIN=$BREW_PREFIX/opt/make/libexec/gnubin
 COREUTILS=$BREW_PREFIX/opt/coreutils/libexec/gnubin
