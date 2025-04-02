@@ -20,6 +20,6 @@ GNUBIN=$BREW_PREFIX/opt/make/libexec/gnubin
 # Source the profile update utility
 source "$(dirname "$0")/macos_update_profile.sh"
 
-update_profile ~/.zshrc "$LLVM" "$GNUBIN" "$COREUTILS"
-update_profile ~/.bash_profile "$LLVM" "$GNUBIN" "$COREUTILS"
+update_profile ~/.zshrc "$LLVM" "$GNUBIN"
+update_profile ~/.bash_profile "$LLVM" "$GNUBIN"
 echo "Profile update completed successfully."
