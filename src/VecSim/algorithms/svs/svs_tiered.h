@@ -428,9 +428,11 @@ private:
         assert(index);
         // prevent parallel updates
         std::lock_guard<std::mutex> lock(index->updateJobMutex);
+        // Release the scheduled flag to allow scheduling again
+        index->indexUpdateScheduled.clear();
+        // Update the SVS index
         index->GetSVSIndex()->setNumThreads(availableThreads);
         index->updateSVSIndex();
-        index->indexUpdateScheduled.clear();
     }
 
 #ifdef BUILD_TESTS
