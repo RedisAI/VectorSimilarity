@@ -176,7 +176,6 @@ protected:
 
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
-            assert(false && "Empty batch of vectors"); // This case to be enabled for TieredSVS
             return 0;
         }
 
