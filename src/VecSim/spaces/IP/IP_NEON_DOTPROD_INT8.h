@@ -18,7 +18,7 @@ InnerProductStep16(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
     int8x16_t v1 = vld1q_s8(pVect1);
     int8x16_t v2 = vld1q_s8(pVect2);
 
-    InnerProductStep(v1, v2, sum);
+    sum = vdotq_s32(sum, v1, v2);
 
     pVect1 += 16;
     pVect2 += 16;

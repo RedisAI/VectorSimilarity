@@ -60,7 +60,7 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
             InnerProductStep16(pVect1, pVect2, sum1);
         }
         if constexpr (residual_chunks >= 3) {
-            InnerProductStepInt8(pVect1, pVect2, sum0);
+            InnerProductStep16(pVect1, pVect2, sum0);
         }
     }
 
