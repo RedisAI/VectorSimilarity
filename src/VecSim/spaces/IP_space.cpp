@@ -95,9 +95,9 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 8) {
         return ret_dist_func;
     }
+    auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
-    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_SVE2
     if (features.sve2) {
         return Choose_FP64_IP_implementation_SVE2(dim);
@@ -117,7 +117,6 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
