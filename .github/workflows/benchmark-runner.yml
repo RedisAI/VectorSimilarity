@@ -45,10 +45,13 @@ jobs:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.runner_label }}
     steps:
+      - name: Pre checkout deps
+        run:  sudo apt-get update && sudo apt-get -y install git
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
+          submodules: recursive
       - name: Print runner info
         run: |
           printf "Runner lscpu:\n$(lscpu)\n"
