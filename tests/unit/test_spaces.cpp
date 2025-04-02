@@ -87,7 +87,7 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 #ifdef CPU_FEATURES_ARCH_X86_64
 
 using namespace spaces;
-
+#ifdef CPU_FEATURES_ARCH_X86_64
 TEST_F(SpacesTest, smallDimChooser) {
     size_t dim = 5;
 
@@ -97,6 +97,7 @@ TEST_F(SpacesTest, smallDimChooser) {
     ASSERT_EQ(IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_F), FP32_InnerProduct);
     ASSERT_EQ(IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_F), FP64_InnerProduct);
 }
+#endif
 
 class FP32SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -122,10 +123,24 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     case ARCH_OPT_SSE:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_NEON:
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_NEON);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
+        break;
+    case ARCH_OPT_SVE:
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SVE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        break;
+    case ARCH_OPT_SVE2:
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SVE2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+        break;
     case ARCH_OPT_NONE:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_NONE);
         ASSERT_EQ(FP32_L2Sqr, arch_opt_func);
         break;
+
+        
     default:
         FAIL();
     }
@@ -153,6 +168,18 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
     case ARCH_OPT_SSE:
         arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_NEON:
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_NEON);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
+        break;
+    case ARCH_OPT_SVE:
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_SVE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        break;
+    case ARCH_OPT_SVE2:
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_SVE2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+        break;
     case ARCH_OPT_NONE:
         arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_NONE);
         ASSERT_EQ(FP32_InnerProduct, arch_opt_func);
