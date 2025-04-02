@@ -10,7 +10,8 @@ update_profile() {
 
     # Check if the profile exists
     if [[ ! -f $profile_file ]]; then
-        touch "$profile_file"
+        echo "$profile_file does not exist. Skipping..."
+        exit 0
     fi
 
     # Add each path to the profile if not already present
