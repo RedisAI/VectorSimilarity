@@ -93,10 +93,6 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
-    // Optimizations assume at least 8 doubles. If we have less, we use the naive implementation.
-    if (dim < 8) {
-        return ret_dist_func;
-    }
     auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
@@ -119,6 +115,10 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
+    // Optimizations assume at least 8 doubles. If we have less, we use the naive implementation.
+    if (dim < 8) {
+        return ret_dist_func;
+    }
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual

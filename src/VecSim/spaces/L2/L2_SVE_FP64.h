@@ -16,7 +16,7 @@ static void L2SquareStep(double *&pVect1, double *&pVect2, size_t &offset, svflo
     svfloat64_t diff = svsub_f64_x(svptrue_b64(), v1, v2);
 
     // Square the difference and accumulate: sum += diff * diff
-    sum = svmla_f64_z(svptrue_b64(), sum, diff, diff);
+    sum = svmla_f64_x(svptrue_b64(), sum, diff, diff);
 
     // Advance pointers by the vector length
     offset += svcntd();
@@ -32,10 +32,10 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     uint64_t vl = svcntd();
 
     // Multiple accumulators to increase instruction-level parallelism
-    svfloat64_t sum0 = svdup_f64(0.0f);
-    svfloat64_t sum1 = svdup_f64(0.0f);
-    svfloat64_t sum2 = svdup_f64(0.0f);
-    svfloat64_t sum3 = svdup_f64(0.0f);
+    svfloat64_t sum0 = svdup_f64(0.0);
+    svfloat64_t sum1 = svdup_f64(0.0);
+    svfloat64_t sum2 = svdup_f64(0.0);
+    svfloat64_t sum3 = svdup_f64(0.0);
 
     // Process vectors in chunks, with unrolling for better pipelining
     auto chunk_size = 4 * vl;
@@ -66,16 +66,16 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
         svfloat64_t v2 = svld1_f64(pg, pVect2 + offset);
 
         // Calculate difference with predication (corrected)
-        svfloat64_t diff = svsub_f64_m(pg, v1, v2);
+        svfloat64_t diff = svsub_f64_x(pg, v1, v2);
 
         // Square the difference and accumulate with predication
         sum0 = svmla_f64_m(pg, sum0, diff, diff);
     }
 
     // Combine the partial sums
-    sum0 = svadd_f64_z(svptrue_b64(), sum0, sum1);
-    sum2 = svadd_f64_z(svptrue_b64(), sum2, sum3);
-    svfloat64_t sum_all = svadd_f64_z(svptrue_b64(), sum0, sum2);
+    sum0 = svadd_f64_x(svptrue_b64(), sum0, sum1);
+    sum2 = svadd_f64_x(svptrue_b64(), sum2, sum3);
+    svfloat64_t sum_all = svadd_f64_x(svptrue_b64(), sum0, sum2);
     double result = svaddv_f64(svptrue_b64(), sum_all);
     return result;
 }

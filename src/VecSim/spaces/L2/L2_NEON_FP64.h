@@ -26,10 +26,10 @@ double FP64_L2SqrSIMD8_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    float64x2_t sum0 = vdupq_n_f64(0.0f);
-    float64x2_t sum1 = vdupq_n_f64(0.0f);
-    float64x2_t sum2 = vdupq_n_f64(0.0f);
-    float64x2_t sum3 = vdupq_n_f64(0.0f);
+    float64x2_t sum0 = vdupq_n_f64(0.0);
+    float64x2_t sum1 = vdupq_n_f64(0.0);
+    float64x2_t sum2 = vdupq_n_f64(0.0);
+    float64x2_t sum3 = vdupq_n_f64(0.0);
     // These are compile-time constants derived from the template parameter
 
     // Calculate how many full 8-element blocks to process
@@ -58,8 +58,8 @@ double FP64_L2SqrSIMD8_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     // Handle final residual element
     constexpr size_t final_residual = residual % 2; // Final element
     if constexpr (final_residual > 0) {
-        float64x2_t v1 = vdupq_n_f64(0.0f);
-        float64x2_t v2 = vdupq_n_f64(0.0f);
+        float64x2_t v1 = vdupq_n_f64(0.0);
+        float64x2_t v2 = vdupq_n_f64(0.0);
         v1 = vld1q_lane_f64(pVect1, v1, 0);
         v2 = vld1q_lane_f64(pVect2, v2, 0);
 

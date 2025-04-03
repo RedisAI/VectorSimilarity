@@ -20,10 +20,10 @@ double FP64_InnerProductSIMD8_NEON(const void *pVect1v, const void *pVect2v, siz
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    float64x2_t sum0 = vdupq_n_f64(0.0f);
-    float64x2_t sum1 = vdupq_n_f64(0.0f);
-    float64x2_t sum2 = vdupq_n_f64(0.0f);
-    float64x2_t sum3 = vdupq_n_f64(0.0f);
+    float64x2_t sum0 = vdupq_n_f64(0.0);
+    float64x2_t sum1 = vdupq_n_f64(0.0);
+    float64x2_t sum2 = vdupq_n_f64(0.0);
+    float64x2_t sum3 = vdupq_n_f64(0.0);
 
     const size_t num_of_chunks = dimension / 8;
 
@@ -51,8 +51,8 @@ double FP64_InnerProductSIMD8_NEON(const void *pVect1v, const void *pVect2v, siz
     // This entire block is eliminated at compile time if final_residual is 0
     constexpr size_t final_residual = residual % 2; // Final 0-1 elements
     if constexpr (final_residual == 1) {
-        float64x2_t v1 = vdupq_n_f64(0.0f);
-        float64x2_t v2 = vdupq_n_f64(0.0f);
+        float64x2_t v1 = vdupq_n_f64(0.0);
+        float64x2_t v2 = vdupq_n_f64(0.0);
         v1 = vld1q_lane_f64(pVect1, v1, 0);
         v2 = vld1q_lane_f64(pVect2, v2, 0);
 
@@ -65,5 +65,5 @@ double FP64_InnerProductSIMD8_NEON(const void *pVect1v, const void *pVect2v, siz
     float64x1_t summed = vadd_f64(vget_low_f64(sum_combined), vget_high_f64(sum_combined));
     double sum = vget_lane_f64(summed, 0);
 
-    return 1.0f - sum;
+    return 1.0 - sum;
 }
