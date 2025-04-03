@@ -8,16 +8,14 @@
 #include <arm_sve.h>
 
 static void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
-                             svfloat32_t &sum) {
+                             svint32_t &sum) {
     svbool_t pg = svptrue_b8();
 
     // Load int8 vectors
     svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset);
     svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset);
 
-    svfloat32_t ipf32 = svcvt_f32_s32_x(pg, svdot_s32(svdup_s32(0), v1_i8, v2_i8));
-
-    sum = svadd_f32_x(pg, sum, ipf32);
+    sum = svdot_s32(sum, v1_i8, v2_i8);
 
     offset += svcntb(); // Move to the next set of int8 elements
 }
@@ -31,10 +29,17 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     const size_t vl = svcntb();
     const size_t chunk_size = 4 * vl;
 
-    svfloat32_t sum0 = svdup_f32(0.0f);
-    svfloat32_t sum1 = svdup_f32(0.0f);
-    svfloat32_t sum2 = svdup_f32(0.0f);
-    svfloat32_t sum3 = svdup_f32(0.0f);
+    // Each innerProductStep adds maximum 2^8 & 2^8 = 2^16
+    // Therefore, on a single accumulator, we can perform 2^16 steps before overflowing
+    // That scenario will happen only is the dimension of the vector is larger than 16*4*2^16 = 2^22
+    // (16 int8 in 1 SVE register) * (4 accumulators) * (2^16 steps)
+    // We can safely assume that the dimension is smaller than that
+    // So using int32_t is safe
+
+    svint32_t sum0 = svdup_s32(0);
+    svint32_t sum1 = svdup_s32(0);
+    svint32_t sum2 = svdup_s32(0);
+    svint32_t sum3 = svdup_s32(0);
 
     size_t num_chunks = dimension / chunk_size;
 
@@ -61,27 +66,23 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
 
     if constexpr (partial_chunk) {
         svbool_t pg = svwhilelt_b8(offset, dimension);
-        svbool_t pg32 = svwhilelt_b32(offset, dimension);
 
         svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors
         svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors
 
-        svfloat32_t ipf32 = svcvt_f32_s32_z(pg32, svdot_s32(svdup_s32(0), v1_i8, v2_i8));
-
-        sum3 = svadd_f32_m(pg32, sum3, ipf32);
+        sum3 = svdot_s32(sum3, v1_i8, v2_i8);
 
         pVect1 += svcntb();
         pVect2 += svcntb();
     }
 
-    sum0 = svadd_f32_x(svptrue_b32(), sum0, sum1);
-    sum2 = svadd_f32_x(svptrue_b32(), sum2, sum3);
-    // Perform vector addition in parallel
-    svfloat32_t sum_all = svadd_f32_x(svptrue_b32(), sum0, sum2);
+    sum0 = svadd_s32_x(svptrue_b32(), sum0, sum1);
+    sum2 = svadd_s32_x(svptrue_b32(), sum2, sum3);
 
-    // Horizontal sum
-    float result = svaddv_f32(svptrue_b32(), sum_all);
-    return result;
+    // Perform vector addition in parallel and // Horizontal sum
+    int32_t sum_all = svaddv_s32(svptrue_b32(), svadd_s32_x(svptrue_b32(), sum0, sum2));
+
+    return sum_all;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
