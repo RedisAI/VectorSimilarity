@@ -101,10 +101,14 @@ protected:
 
     // Create SVS index instance with initial data
     // Data should not be empty
-    void initImpl(impl_type::data_type data, std::span<const labelType> ids) {
+    template <svs::data::ImmutableMemoryDataset Dataset>
+    void initImpl(const Dataset &points, std::span<const labelType> ids) {
         VecSimSVSThreadPool threadpool;
-        // Compute the entry point.
         svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool}};
+        // Construct SVS index initial storage with compression if needed
+        auto data = storage_traits_t::create_storage(points, this->blockSize, threadpool_handle,
+                                                     this->getAllocator());
+        // Compute the entry point.
         auto entry_point =
             svs::index::vamana::extensions::compute_entry_point(data, threadpool_handle);
 
@@ -174,10 +178,7 @@ protected:
 
         // SVS index instance cannot be empty, so we have to construct it at first rows
         if (!impl_) {
-            // Construct SVS index initial storage with compression if needed
-            auto init_data =
-                storage_traits_t::create_storage(points, this->blockSize, this->getAllocator());
-            initImpl(std::move(init_data), ids);
+            initImpl(points, ids);
             return n;
         }
 

@@ -25,8 +25,8 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(Qua
         svs::quantization::lvq::LVQDataset<QuantBits, ResidualBits, svs::Dynamic, strategy_type,
                                            blocked_type>;
 
-    template <svs::data::ImmutableMemoryDataset Dataset>
-    static index_storage_type create_storage(const Dataset &data, size_t block_size,
+    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
+    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator) {
         const auto dim = data.dimensions();
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
@@ -34,7 +34,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, std::enable_if_t<(Qua
         allocator_type data_allocator{std::move(allocator)};
         auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
 
-        return index_storage_type::compress(data, blocked_alloc);
+        return index_storage_type::compress(data, pool, 0, blocked_alloc);
     }
 
     static constexpr size_t element_size(size_t dims, size_t alignment = 0) {

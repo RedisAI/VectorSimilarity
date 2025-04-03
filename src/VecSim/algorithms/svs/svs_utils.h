@@ -147,8 +147,8 @@ struct SVSStorageTraits {
     // svs::Dynamic means runtime dimensionality in opposite to compile-time dimensionality
     using index_storage_type = svs::data::BlockedData<DataType, svs::Dynamic, allocator_type>;
 
-    template <svs::data::ImmutableMemoryDataset Dataset>
-    static index_storage_type create_storage(const Dataset &data, size_t block_size,
+    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
+    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator) {
         const auto dim = data.dimensions();
         const auto size = data.size();
@@ -159,9 +159,12 @@ struct SVSStorageTraits {
         blocked_type blocked_alloc{{svs_bs}, data_allocator};
         index_storage_type init_data{size, dim, blocked_alloc};
         // Copy data to allocated storage
-        for (const auto &i : data.eachindex()) {
-            init_data.set_datum(i, data.get_datum(i));
-        }
+        svs::threads::parallel_for(pool, svs::threads::StaticPartition(data.eachindex()),
+                                   [&](auto is, auto SVS_UNUSED(tid)) {
+                                       for (auto i : is) {
+                                           init_data.set_datum(i, data.get_datum(i));
+                                       }
+                                   });
         return init_data;
     }
 
