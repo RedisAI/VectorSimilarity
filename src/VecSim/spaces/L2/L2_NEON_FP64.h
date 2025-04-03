@@ -7,7 +7,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-static inline void L2SquareStep(double *&pVect1, double *&pVect2, float64x2_t &sum) {
+inline void L2SquareStep(double *&pVect1, double *&pVect2, float64x2_t &sum) {
     float64x2_t v1 = vld1q_f64(pVect1);
     float64x2_t v2 = vld1q_f64(pVect2);
 

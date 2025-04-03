@@ -18,12 +18,12 @@ INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, NEON, 8, neon_suppor
 // SVE implementation
 #ifdef OPT_SVE
 bool sve_supported = opt.sve; // Check for SVE support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, SVE, 16, sve_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, SVE, 8, sve_supported);
 #endif
 // SVE2 implementation
 #ifdef OPT_SVE2
 bool sve2_supported = opt.sve2; // Check for SVE2 support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, SVE2, 16, sve2_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP64, FP64, SVE2, 8, sve2_supported);
 #endif
 #endif // AARCH64
 

@@ -8,7 +8,7 @@
 
 #include <arm_sve.h>
 
-static void InnerProductStep(double *&pVect1, double *&pVect2, size_t &offset, svfloat64_t &sum) {
+inline void InnerProductStep(double *&pVect1, double *&pVect2, size_t &offset, svfloat64_t &sum, const size_t chunk) {
     // Load vectors
     svfloat64_t v1 = svld1_f64(svptrue_b64(), pVect1 + offset);
     svfloat64_t v2 = svld1_f64(svptrue_b64(), pVect2 + offset);
@@ -17,16 +17,15 @@ static void InnerProductStep(double *&pVect1, double *&pVect2, size_t &offset, s
     sum = svmla_f64_x(svptrue_b64(), sum, v1, v2);
 
     // Advance pointers
-    offset += svcntd();
+    offset += chunk;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
 double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
+    const size_t chunk = svcntd(); 
     size_t offset = 0;
-
-    uint64_t vl = svcntd();
 
     // Multiple accumulators to increase instruction-level parallelism
     svfloat64_t sum0 = svdup_f64(0.0);
@@ -34,23 +33,23 @@ double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_
     svfloat64_t sum2 = svdup_f64(0.0);
     svfloat64_t sum3 = svdup_f64(0.0);
 
-    auto chunk_size = 4 * vl;
+    auto chunk_size = 4 * chunk;
     size_t number_of_chunks = dimension / chunk_size;
     for (size_t i = 0; i < number_of_chunks; i++) {
-        InnerProductStep(pVect1, pVect2, offset, sum0);
-        InnerProductStep(pVect1, pVect2, offset, sum1);
-        InnerProductStep(pVect1, pVect2, offset, sum2);
-        InnerProductStep(pVect1, pVect2, offset, sum3);
+        InnerProductStep(pVect1, pVect2, offset, sum0, chunk);
+        InnerProductStep(pVect1, pVect2, offset, sum1, chunk);
+        InnerProductStep(pVect1, pVect2, offset, sum2, chunk);
+        InnerProductStep(pVect1, pVect2, offset, sum3, chunk);
     }
 
     if constexpr (additional_steps >= 1) {
-        InnerProductStep(pVect1, pVect2, offset, sum0);
+        InnerProductStep(pVect1, pVect2, offset, sum0, chunk);
     }
     if constexpr (additional_steps >= 2) {
-        InnerProductStep(pVect1, pVect2, offset, sum1);
+        InnerProductStep(pVect1, pVect2, offset, sum1, chunk);
     }
     if constexpr (additional_steps >= 3) {
-        InnerProductStep(pVect1, pVect2, offset, sum2);
+        InnerProductStep(pVect1, pVect2, offset, sum2, chunk);
     }
 
     if constexpr (partial_chunk) {
