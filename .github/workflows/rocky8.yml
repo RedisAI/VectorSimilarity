@@ -1,9 +1,11 @@
 name: rocky8 flow
 
-on: [workflow_dispatch]
+on: [workflow_dispatch, workflow_call]
 
 jobs:
   rocky8:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:8
+      pre-checkout-script: dnf -y update && dnf install -y git
+
