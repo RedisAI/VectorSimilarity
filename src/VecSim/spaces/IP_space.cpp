@@ -203,8 +203,9 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
         return Choose_FP16_IP_implementation_NEON_HP(dim);
     }
 #endif
+#endif
 
-#elif defined(CPU_FEATURES_ARCH_X86_64)
+#if defined(CPU_FEATURES_ARCH_X86_64)
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
