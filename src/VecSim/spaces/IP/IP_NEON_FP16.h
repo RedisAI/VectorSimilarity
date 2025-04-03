@@ -65,7 +65,7 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
         vec2 += chunk_residual;
     }
 
-    // Handle (residual - (residual % 8)) in chunks of 8 bfloat16
+    // Handle (residual - (residual % 8)) in chunks of 8 float16
     if constexpr (residual >= 8)
         InnerProduct_Step(vec1, vec2, acc2);
     if constexpr (residual >= 16)
