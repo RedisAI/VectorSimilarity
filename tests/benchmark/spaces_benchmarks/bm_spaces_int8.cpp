@@ -37,14 +37,31 @@ public:
     }
 };
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
+#ifdef OPT_NEON_DOTPROD
+bool neon_dotprod_supported = opt.asimddp;
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_Integers_INT8, INT8, NEON_DOTPROD, 64,
+                             neon_dotprod_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, NEON_DOTPROD, 64,
+                                 neon_dotprod_supported);
+#endif
+
+#ifdef OPT_NEON
+bool neon_supported = opt.asimd;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, NEON, 64, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, NEON, 64, neon_supported);
+#endif
+#endif
+
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
 // AVX512_F_BW_VL_VNNI functions
 #ifdef OPT_AVX512_F_BW_VL_VNNI
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
-                                avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_L2(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
+                             avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW_VL_VNNI, 32,
                                  avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI

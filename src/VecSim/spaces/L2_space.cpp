@@ -213,11 +213,19 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
 
     dist_func_t<float> ret_dist_func = INT8_L2Sqr;
     // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
+    auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_INT8_L2_implementation_NEON(dim);
+    }
+#endif
+#endif // __aarch64__
+
+#ifdef CPU_FEATURES_ARCH_X86_64
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
@@ -238,11 +246,20 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = UINT8_L2Sqr;
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
+    auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_UINT8_L2_implementation_NEON(dim);
+    }
+#endif
+#endif // __aarch64__
+
+#ifdef CPU_FEATURES_ARCH_X86_64
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
