@@ -33,7 +33,7 @@ static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, si
     sum_int = svmlalb_s32(sum_int, diff_o, diff_o);
     sum_int = svmlalt_s32(sum_int, diff_o, diff_o);
 
-    sum = svadd_f32_x(pg, sum, svcvt_f32_s32_z(pg, sum_int));
+    sum = svadd_f32_x(pg, sum, svcvt_f32_s32_x(pg, sum_int));
 
     offset += svcntb(); // Move to the next set of int8 elements
 }

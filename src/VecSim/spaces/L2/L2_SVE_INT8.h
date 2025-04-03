@@ -28,24 +28,24 @@ static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, si
     svint32_t diff32_l_l = svunpklo_s32(diff_l);
     svint32_t diff32_l_h = svunpkhi_s32(diff_l);
 
-    svint32_t sq_l_l = svmul_s32_z(pg, diff32_l_l, diff32_l_l);
-    svint32_t sq_l_h = svmul_s32_z(pg, diff32_l_h, diff32_l_h);
+    svint32_t sq_l_l = svmul_s32_x(pg, diff32_l_l, diff32_l_l);
+    svint32_t sq_l_h = svmul_s32_x(pg, diff32_l_h, diff32_l_h);
 
-    svint32_t sq_l = svadd_s32_z(pg, sq_l_l, sq_l_h);
+    svint32_t sq_l = svadd_s32_x(pg, sq_l_l, sq_l_h);
 
     svint16_t diff_h = svsub_s16_x(pg, v1_16_h, v2_16_h);
 
     svint32_t diff32_h_l = svunpklo_s32(diff_h);
     svint32_t diff32_h_h = svunpkhi_s32(diff_h);
 
-    svint32_t sq_h_l = svmul_s32_z(pg, diff32_h_l, diff32_h_l);
-    svint32_t sq_h_h = svmul_s32_z(pg, diff32_h_h, diff32_h_h);
+    svint32_t sq_h_l = svmul_s32_x(pg, diff32_h_l, diff32_h_l);
+    svint32_t sq_h_h = svmul_s32_x(pg, diff32_h_h, diff32_h_h);
 
-    svint32_t sq_h = svadd_s32_z(pg, sq_h_l, sq_h_h);
+    svint32_t sq_h = svadd_s32_x(pg, sq_h_l, sq_h_h);
 
     // Convert to float and accumulate
-    svfloat32_t sqf_l = svcvt_f32_s32_z(pg, sq_l);
-    svfloat32_t sqf_h = svcvt_f32_s32_z(pg, sq_h);
+    svfloat32_t sqf_l = svcvt_f32_s32_x(pg, sq_l);
+    svfloat32_t sqf_h = svcvt_f32_s32_x(pg, sq_h);
 
     sum = svadd_f32_x(pg, sum, sqf_l);
     sum = svadd_f32_x(pg, sum, sqf_h);
