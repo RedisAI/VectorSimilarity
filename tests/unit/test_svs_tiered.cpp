@@ -489,44 +489,43 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
     // Memory usage should not change.
     ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
-    // TODO: add timeouts support to SVS index and test it here.
-    // // // // // // // // // // // // //
-    // // Check behavior upon timeout.  //
-    // // // // // // // // // // // // //
+    // // // // // // // // // // // //
+    // Check behavior upon timeout.  //
+    // // // // // // // // // // // //
 
-    // VecSimQueryReply *res;
-    // // Add a vector to the SVS index so there will be a reason to query it.
-    // GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, n, n);
+    VecSimQueryReply *res;
+    // Add a vector to the SVS index so there will be a reason to query it.
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, n, n);
 
-    // // Set timeout callback to always return 1 (will fail while querying the flat buffer).
-    // VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    // Set timeout callback to always return 1 (will fail while querying the flat buffer).
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
-    // res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
-    // ASSERT_TRUE(res->results.empty());
-    // ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
-    // VecSimQueryReply_Free(res);
+    res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
+    ASSERT_TRUE(res->results.empty());
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
 
-    // // Set timeout callback to return 1 after n checks (will fail while querying the SVS index).
-    // // Brute-force index checks for timeout after each vector.
-    // size_t checks_in_flat = flat_index->indexSize();
-    // VecSimQueryParams qparams = {.timeoutCtx = &checks_in_flat};
-    // VecSim_SetTimeoutCallbackFunction([](void *ctx) {
-    //     auto count = static_cast<size_t *>(ctx);
-    //     if (*count == 0) {
-    //         return 1;
-    //     }
-    //     (*count)--;
-    //     return 0;
-    // });
-    // res = VecSimIndex_TopKQuery(tiered_index, query_0, k, &qparams, BY_SCORE);
-    // ASSERT_TRUE(res->results.empty());
-    // ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
-    // VecSimQueryReply_Free(res);
-    // // Make sure we didn't get the timeout in the flat index.
-    // checks_in_flat = flat_index->indexSize(); // Reset the counter.
-    // res = VecSimIndex_TopKQuery(flat_index, query_0, k, &qparams, BY_SCORE);
-    // ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
-    // VecSimQueryReply_Free(res);
+    // Set timeout callback to return 1 after n checks (will fail while querying the SVS index).
+    // Brute-force index checks for timeout after each vector.
+    size_t checks_in_flat = flat_index->indexSize();
+    VecSimQueryParams qparams = {.timeoutCtx = &checks_in_flat};
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) {
+        auto count = static_cast<size_t *>(ctx);
+        if (*count == 0) {
+            return 1;
+        }
+        (*count)--;
+        return 0;
+    });
+    res = VecSimIndex_TopKQuery(tiered_index, query_0, k, &qparams, BY_SCORE);
+    ASSERT_TRUE(res->results.empty());
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
+    VecSimQueryReply_Free(res);
+    // Make sure we didn't get the timeout in the flat index.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_TopKQuery(flat_index, query_0, k, &qparams, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
+    VecSimQueryReply_Free(res);
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
