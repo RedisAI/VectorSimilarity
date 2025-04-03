@@ -239,12 +239,12 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
+    if (features.asimddp && dim >= 16) {
         return Choose_INT8_IP_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd) {
+    if (features.asimd && dim >= 16) {
         return Choose_INT8_IP_implementation_NEON(dim);
     }
 #endif
@@ -280,12 +280,12 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
+    if (features.asimddp && dim >= 16) {
         return Choose_INT8_Cosine_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd) {
+    if (features.asimd && dim >= 16) {
         return Choose_INT8_Cosine_implementation_NEON(dim);
     }
 #endif
@@ -317,12 +317,12 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
+    if (features.asimddp && dim >= 16) {
         return Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd) {
+    if (features.asimd && dim >= 16) {
         return Choose_UINT8_IP_implementation_NEON(dim);
     }
 #endif
@@ -357,12 +357,12 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
+    if (features.asimddp && dim >= 16) {
         return Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd) {
+    if (features.asimd && dim >= 16) {
         return Choose_UINT8_Cosine_implementation_NEON(dim);
     }
 #endif

@@ -217,8 +217,6 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON
     if (features.asimd) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(int8_t); // align to 128 bits.
         return Choose_INT8_L2_implementation_NEON(dim);
     }
 #endif
