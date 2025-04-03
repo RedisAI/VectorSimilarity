@@ -6,8 +6,8 @@
 
 #include <arm_sve.h>
 
-static inline void L2Sqr_Step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
-                              size_t &offset, const size_t chunk) {
+inline void L2Sqr_Step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
+                       size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
     svfloat16_t v1 = svld1_f16(all, vec1 + offset);

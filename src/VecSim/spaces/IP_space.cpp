@@ -182,10 +182,6 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     auto features = getCpuOptimizationFeatures(arch_opt);
 
     dist_func_t<float> ret_dist_func = FP16_InnerProduct;
-    // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
-    if (dim < 32) {
-        return ret_dist_func;
-    }
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
 #ifdef OPT_SVE2
@@ -199,13 +195,17 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 #endif
 #ifdef OPT_NEON_HP
-    if (features.asimdhp) {
+    if (features.asimdhp && dim >= 8) { // Optimization assumes at least 8 16FPs (full chunk)
         return Choose_FP16_IP_implementation_NEON_HP(dim);
     }
 #endif
 #endif
 
 #if defined(CPU_FEATURES_ARCH_X86_64)
+    // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477

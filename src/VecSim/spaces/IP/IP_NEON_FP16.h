@@ -6,8 +6,7 @@
 
 #include <arm_neon.h>
 
-static inline void InnerProduct_Step(const float16_t *&vec1, const float16_t *&vec2,
-                                     float16x8_t &acc) {
+inline void InnerProduct_Step(const float16_t *&vec1, const float16_t *&vec2, float16x8_t &acc) {
     // Load half-precision vectors
     float16x8_t v1 = vld1q_f16(vec1);
     float16x8_t v2 = vld1q_f16(vec2);
@@ -31,13 +30,7 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
     // First, handle the partial chunk residual
     if constexpr (residual % 8) {
         auto constexpr chunk_residual = residual % 8;
-        // TODO: spacial cases and benchmark if its better
-        // if constexpr (chunk_residual == 1) {
-        //     float16x8_t v1 = vld1q_f16(Vec1);
-        // } else if constexpr (chunk_residual == 2) {
-        // } else if constexpr (chunk_residual == 3) {
-        // } else {
-        // }
+        // TODO: spacial cases for some residuals and benchmark if its better
         constexpr uint16x8_t mask = {
             0xFFFF,
             (chunk_residual >= 2) ? 0xFFFF : 0,

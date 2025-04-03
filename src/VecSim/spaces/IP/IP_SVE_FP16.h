@@ -6,8 +6,8 @@
 
 #include <arm_sve.h>
 
-static inline void InnerProduct_Step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
-                                     size_t &offset, const size_t chunk) {
+inline void InnerProduct_Step(const float16_t *vec1, const float16_t *vec2, svfloat16_t &acc,
+                              size_t &offset, const size_t chunk) {
     svbool_t all = svptrue_b16();
 
     // Load half-precision vectors.
