@@ -7,7 +7,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
-inline void L2SquareStep(double *&pVect1, double *&pVect2, size_t &offset, svfloat64_t &sum, const size_t chunk) {
+inline void L2SquareStep(double *&pVect1, double *&pVect2, size_t &offset, svfloat64_t &sum,
+                         const size_t chunk) {
     // Load vectors
     svfloat64_t v1 = svld1_f64(svptrue_b64(), pVect1 + offset);
     svfloat64_t v2 = svld1_f64(svptrue_b64(), pVect2 + offset);

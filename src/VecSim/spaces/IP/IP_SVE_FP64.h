@@ -8,7 +8,8 @@
 
 #include <arm_sve.h>
 
-inline void InnerProductStep(double *&pVect1, double *&pVect2, size_t &offset, svfloat64_t &sum, const size_t chunk) {
+inline void InnerProductStep(double *&pVect1, double *&pVect2, size_t &offset, svfloat64_t &sum,
+                             const size_t chunk) {
     // Load vectors
     svfloat64_t v1 = svld1_f64(svptrue_b64(), pVect1 + offset);
     svfloat64_t v2 = svld1_f64(svptrue_b64(), pVect2 + offset);
@@ -24,7 +25,7 @@ template <bool partial_chunk, unsigned char additional_steps>
 double FP64_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
-    const size_t chunk = svcntd(); 
+    const size_t chunk = svcntd();
     size_t offset = 0;
 
     // Multiple accumulators to increase instruction-level parallelism
