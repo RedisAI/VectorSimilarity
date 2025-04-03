@@ -31,6 +31,8 @@ public:
 
     virtual void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const;
 
+    virtual void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const;
+
     unsigned char getAlignment() const { return alignment; }
 
 protected:
@@ -86,6 +88,8 @@ public:
                                              size_t processed_bytes_count) const override;
 
     void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const override;
+
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override;
 
 #ifdef BUILD_TESTS
     std::array<PreprocessorInterface *, n_preprocessors> getPreprocessors() const {
@@ -235,5 +239,17 @@ void MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessQueryInPl
             break;
         // modifies the memory in place
         pp->preprocessQueryInPlace(blob, processed_bytes_count, this->alignment);
+    }
+}
+
+template <typename DataType, size_t n_preprocessors>
+void MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessStorageInPlace(
+    void *blob, size_t processed_bytes_count) const {
+
+    for (auto pp : preprocessors) {
+        if (!pp)
+            break;
+        // modifies the memory in place
+        pp->preprocessStorageInPlace(blob, processed_bytes_count);
     }
 }

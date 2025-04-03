@@ -79,6 +79,12 @@ public:
     }
     void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
                                 unsigned char alignment) const override {}
+
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {
+        assert(blob);
+        static_cast<DataType *>(blob)[0] += value_to_add_storage;
+    }
+
     void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
                          unsigned char alignment) const override {
         /* do nothing*/
@@ -114,6 +120,7 @@ public:
                                 unsigned char alignment) const override {
         static_cast<DataType *>(blob)[0] += value_to_add_query;
     }
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {}
     void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
                          unsigned char alignment) const override {
         // If the blob was not allocated yet, allocate it.
@@ -165,6 +172,8 @@ public:
     }
     void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
                                 unsigned char alignment) const override {}
+
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {}
     void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
                          unsigned char alignment) const override {
         // If the blob was not allocated yet, allocate it.

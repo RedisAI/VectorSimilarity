@@ -4203,6 +4203,13 @@ public:
             static_cast<DataType *>(blob)[i] *= 2;
         }
     }
+
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {
+        for (size_t i = 0; i < dim; i++) {
+            static_cast<DataType *>(blob)[i] *= 2;
+        }
+    }
+
     void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
                          unsigned char alignment) const override {
         // If the blob was not allocated yet, allocate it.

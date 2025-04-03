@@ -163,6 +163,13 @@ public:
      */
     void preprocessQueryInPlace(void *blob) const;
 
+    /**
+     * @brief Preprocess a blob for query in place.
+     *
+     * @param blob will be directly modified, not copied.
+     */
+    void preprocessStorageInPlace(void *blob) const;
+
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
     inline bool isMultiValue() const { return isMulti; }
@@ -286,4 +293,9 @@ VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *origin
 template <typename DataType, typename DistType>
 void VecSimIndexAbstract<DataType, DistType>::preprocessQueryInPlace(void *blob) const {
     this->preprocessors->preprocessQueryInPlace(blob, this->dataSize);
+}
+
+template <typename DataType, typename DistType>
+void VecSimIndexAbstract<DataType, DistType>::preprocessStorageInPlace(void *blob) const {
+    this->preprocessors->preprocessStorageInPlace(blob, this->dataSize);
 }
