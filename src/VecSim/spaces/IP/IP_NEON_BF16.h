@@ -29,13 +29,7 @@ float BF16_InnerProduct_NEON(const void *pVect1v, const void *pVect2v, size_t di
     // First, handle the partial chunk residual
     if constexpr (residual % 8) {
         auto constexpr chunk_residual = residual % 8;
-        // TODO: special cases and benchmark if its better
-        // if constexpr (chunk_residual == 1) {
-        //     float16x8_t v1 = vld1q_f16(Vec1);
-        // } else if constexpr (chunk_residual == 2) {
-        // } else if constexpr (chunk_residual == 3) {
-        // } else {
-        // }
+        // TODO: special cases for some residuals and benchmark if its better
         constexpr uint16x8_t mask = {
             0xFFFF,
             (chunk_residual >= 2) ? 0xFFFF : 0,

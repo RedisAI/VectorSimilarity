@@ -145,15 +145,13 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 #endif
 #ifdef OPT_NEON_BF16
-    if (features.bf16) {
-        // Optimizations assume at least 32 bfloats. If we have less, we use the naive
-        // implementation.
-        if (dim < 32)
-            return ret_dist_func;
+    if (features.bf16 && dim >= 8) { // Optimization assumes at least 8 BF16s (full chunk)
         return Choose_BF16_L2_implementation_NEON_BF16(dim);
     }
 #endif
-#elif defined(CPU_FEATURES_ARCH_X86_64)
+#endif // AARCH64
+
+#if defined(CPU_FEATURES_ARCH_X86_64)
     // Optimizations assume at least 32 bfloats. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
