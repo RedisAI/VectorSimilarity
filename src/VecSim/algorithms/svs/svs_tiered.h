@@ -1,12 +1,3 @@
-/* TODO: change the copyright here */
-
-/*
- *Copyright Redis Ltd. 2021 - present
- *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
- *the Server Side Public License v1 (SSPLv1).
- */
-
-/* TODO clean the includes */
 #pragma once
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_tiered_index.h"
@@ -490,7 +481,6 @@ private:
         { // lock both indicies for writing - these changes to be synchronized
             std::scoped_lock lock(this->flatIndexGuard, this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
-            // TODO(rfsaliev) remove below assuming that vectors had to be deleted directly
             auto deleted_num =
                 svs_index->deleteVectors(labels_to_delete.data(), labels_to_delete.size());
             assert(deleted_num == 0);
