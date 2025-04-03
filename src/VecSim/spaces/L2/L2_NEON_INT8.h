@@ -8,7 +8,7 @@
 #include <arm_neon.h>
 
 __attribute__((always_inline)) static inline void
-L2SquareStep(const int8x16_t &v1, const int8x16_t &v2, int32x4_t &sum) {
+L2SquareOp(const int8x16_t &v1, const int8x16_t &v2, int32x4_t &sum) {
     // Split into low and high 8-bit halves
     int8x8_t v1_low = vget_low_s8(v1);
     int8x8_t v1_high = vget_high_s8(v1);
@@ -44,13 +44,13 @@ __attribute__((always_inline)) static inline void L2SquareStep16(int8_t *&pVect1
     int8x16_t v1 = vld1q_s8(pVect1);
     int8x16_t v2 = vld1q_s8(pVect2);
 
-    L2SquareStep(v1, v2, sum);
+    L2SquareOp(v1, v2, sum);
 
     pVect1 += 16;
     pVect2 += 16;
 }
 
-static inline void L2SquareStep_32(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum0,
+static inline void L2SquareStep32(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum0,
                                    int32x4_t &sum1) {
     // Load 32 int8 elements (32 bytes) at once
     int8x16x2_t v1 = vld1q_s8_x2(pVect1);
@@ -58,11 +58,11 @@ static inline void L2SquareStep_32(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &
 
     auto v1_0 = v1.val[0];
     auto v2_0 = v2.val[0];
-    L2SquareStep(v1_0, v2_0, sum0);
+    L2SquareOp(v1_0, v2_0, sum0);
 
     auto v1_1 = v1.val[1];
     auto v2_1 = v2.val[1];
-    L2SquareStep(v1_1, v2_1, sum1);
+    L2SquareOp(v1_1, v2_1, sum1);
 
     pVect1 += 32;
     pVect2 += 32;
@@ -78,18 +78,52 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     int32x4_t sum2 = vdupq_n_s32(0);
     int32x4_t sum3 = vdupq_n_s32(0);
 
+    constexpr size_t final_residual = residual % 16;
+    if constexpr (final_residual > 0) {
+        // Define a compile-time constant mask based on final_residual
+        constexpr uint8x16_t mask = {
+            0xFF,
+            (final_residual >= 2) ? 0xFF : 0,
+            (final_residual >= 3) ? 0xFF : 0,
+            (final_residual >= 4) ? 0xFF : 0,
+            (final_residual >= 5) ? 0xFF : 0,
+            (final_residual >= 6) ? 0xFF : 0,
+            (final_residual >= 7) ? 0xFF : 0,
+            (final_residual >= 8) ? 0xFF : 0,
+            (final_residual >= 9) ? 0xFF : 0,
+            (final_residual >= 10) ? 0xFF : 0,
+            (final_residual >= 11) ? 0xFF : 0,
+            (final_residual >= 12) ? 0xFF : 0,
+            (final_residual >= 13) ? 0xFF : 0,
+            (final_residual >= 14) ? 0xFF : 0,
+            (final_residual >= 15) ? 0xFF : 0,
+            0
+        };
+        
+        // Load data directly from input vectors
+        int8x16_t v1 = vld1q_s8(pVect1);
+        int8x16_t v2 = vld1q_s8(pVect2);
+        
+        // Apply mask to zero out irrelevant elements
+        v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
+        v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
+        L2SquareOp(v1, v2, sum0);
+        pVect1 += final_residual;
+        pVect2 += final_residual;
+    }
+
     // Process 64 elements at a time in the main loop
     size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        L2SquareStep_32(pVect1, pVect2, sum0, sum1);
-        L2SquareStep_32(pVect1, pVect2, sum2, sum3);
+        L2SquareStep32(pVect1, pVect2, sum0, sum1);
+        L2SquareStep32(pVect1, pVect2, sum2, sum3);
     }
 
     constexpr size_t num_of_32_chunks = residual / 32;
 
     if constexpr (num_of_32_chunks) {
-        L2SquareStep_32(pVect1, pVect2, sum0, sum1);
+        L2SquareStep32(pVect1, pVect2, sum0, sum1);
     }
 
     constexpr size_t residual_chunks = (residual % 32) / 16;
@@ -98,30 +132,6 @@ float INT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     }
     if constexpr (residual_chunks >= 2) {
         L2SquareStep16(pVect1, pVect2, sum3);
-    }
-
-    // Then handle the final 0-15 elements
-    constexpr size_t final_residual = (residual % 32) % 16;
-    if constexpr (final_residual > 0) {
-        // Create temporary arrays with padding
-        uint8x16_t indices =
-            vcombine_u8(vcreate_u8(0x0706050403020100ULL), vcreate_u8(0x0F0E0D0C0B0A0908ULL));
-
-        // Create threshold vector with all elements = final_residual
-        uint8x16_t threshold = vdupq_n_u8(final_residual);
-
-        // Create mask: indices < final_residual ? 0xFF : 0x00
-        uint8x16_t mask = vcltq_u8(indices, threshold);
-
-        // Load data directly from input vectors
-        int8x16_t v1 = vld1q_s8(pVect1);
-        int8x16_t v2 = vld1q_s8(pVect2);
-
-        // Apply mask to zero out irrelevant elements
-        v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
-        v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
-
-        L2SquareStep(v1, v2, sum0);
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result

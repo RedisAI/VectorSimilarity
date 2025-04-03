@@ -7,18 +7,18 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-__attribute__((always_inline)) static inline void InnerProductStep(int8x16_t &v1, int8x16_t &v2,
+__attribute__((always_inline)) static inline void InnerProductOp(int8x16_t &v1, int8x16_t &v2,
                                                                    int32x4_t &sum) {
     sum = vdotq_s32(sum, v1, v2);
 }
 
 __attribute__((always_inline)) static inline void
-InnerProductStep16(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
+InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
     // Load 16 int8 elements (16 bytes) into NEON registers
     int8x16_t v1 = vld1q_s8(pVect1);
     int8x16_t v2 = vld1q_s8(pVect2);
 
-    sum = vdotq_s32(sum, v1, v2);
+    InnerProductOp(v1, v2, sum);
 
     pVect1 += 16;
     pVect2 += 16;
@@ -33,52 +33,64 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     int32x4_t sum0 = vdupq_n_s32(0);
     int32x4_t sum1 = vdupq_n_s32(0);
 
+    constexpr size_t final_residual = residual % 16;
+    if constexpr (final_residual > 0) {
+        // Define a compile-time constant mask based on final_residual
+        constexpr uint8x16_t mask = {
+            0xFF,
+            (final_residual >= 2) ? 0xFF : 0,
+            (final_residual >= 3) ? 0xFF : 0,
+            (final_residual >= 4) ? 0xFF : 0,
+            (final_residual >= 5) ? 0xFF : 0,
+            (final_residual >= 6) ? 0xFF : 0,
+            (final_residual >= 7) ? 0xFF : 0,
+            (final_residual >= 8) ? 0xFF : 0,
+            (final_residual >= 9) ? 0xFF : 0,
+            (final_residual >= 10) ? 0xFF : 0,
+            (final_residual >= 11) ? 0xFF : 0,
+            (final_residual >= 12) ? 0xFF : 0,
+            (final_residual >= 13) ? 0xFF : 0,
+            (final_residual >= 14) ? 0xFF : 0,
+            (final_residual >= 15) ? 0xFF : 0,
+            0
+        };
+        
+        // Load data directly from input vectors
+        int8x16_t v1 = vld1q_s8(pVect1);
+        int8x16_t v2 = vld1q_s8(pVect2);
+        
+        // Apply mask to zero out irrelevant elements
+        v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
+        v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
+        InnerProductOp(v1, v2, sum0);
+        pVect1 += final_residual;
+        pVect2 += final_residual;
+    }
+
     // Process 64 elements at a time in the main loop
     const size_t num_of_chunks = dimension / 64;
 
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStep16(pVect1, pVect2, sum0);
-        InnerProductStep16(pVect1, pVect2, sum1);
-        InnerProductStep16(pVect1, pVect2, sum0);
-        InnerProductStep16(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
     }
 
     constexpr size_t residual_chunks = residual / 16;
 
     if constexpr (residual_chunks > 0) {
         if constexpr (residual_chunks >= 1) {
-            InnerProductStep16(pVect1, pVect2, sum0);
+            InnerProductStep(pVect1, pVect2, sum0);
         }
         if constexpr (residual_chunks >= 2) {
-            InnerProductStep16(pVect1, pVect2, sum1);
+            InnerProductStep(pVect1, pVect2, sum1);
         }
         if constexpr (residual_chunks >= 3) {
-            InnerProductStep16(pVect1, pVect2, sum0);
+            InnerProductStep(pVect1, pVect2, sum0);
         }
     }
 
-    constexpr size_t final_residual = residual % 16;
-    if constexpr (final_residual > 0) {
-        // Create an index vector: 0, 1, 2, ..., 15
-        uint8x16_t indices =
-            vcombine_u8(vcreate_u8(0x0706050403020100ULL), vcreate_u8(0x0F0E0D0C0B0A0908ULL));
-
-        // Create threshold vector with all elements = final_residual
-        uint8x16_t threshold = vdupq_n_u8(final_residual);
-
-        // Create mask: indices < final_residual ? 0xFF : 0x00
-        uint8x16_t mask = vcltq_u8(indices, threshold);
-
-        // Load data directly from input vectors
-        int8x16_t v1 = vld1q_s8(pVect1);
-        int8x16_t v2 = vld1q_s8(pVect2);
-
-        // Apply mask to zero out irrelevant elements
-        v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
-        v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
-
-        InnerProductStep(v1, v2, sum0);
-    }
 
     // Combine all four sum registers
     int32x4_t total_sum = vaddq_s32(sum0, sum1);
