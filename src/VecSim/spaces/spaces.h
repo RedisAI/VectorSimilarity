@@ -7,6 +7,7 @@
 #pragma once
 
 #include "VecSim/vec_sim_common.h" // enum VecSimMetric
+#include "space_includes.h"
 
 namespace spaces {
 
@@ -28,6 +29,18 @@ normalizeVector_f<DataType> GetNormalizeFunc();
 static int inline is_little_endian() {
     unsigned int x = 1;
     return *(char *)&x;
+}
+
+static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
+
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+    using FeaturesType = cpu_features::Aarch64Features;
+    constexpr auto getFeatures = cpu_features::GetAarch64Info;
+#else
+    using FeaturesType = cpu_features::X86Features; // Fallback
+    constexpr auto getFeatures = cpu_features::GetX86Info;
+#endif
+    return arch_opt ? *static_cast<const FeaturesType *>(arch_opt) : getFeatures().features;
 }
 
 } // namespace spaces
