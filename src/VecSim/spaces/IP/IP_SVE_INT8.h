@@ -17,7 +17,7 @@ static void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_
 
     svfloat32_t ipf32 = svcvt_f32_s32_z(pg, svdot_s32(svdup_s32(0), v1_i8, v2_i8));
 
-    sum = svadd_f32_m(pg, sum, ipf32);
+    sum = svadd_f32_x(pg, sum, ipf32);
 
     offset += svcntb(); // Move to the next set of int8 elements
 }

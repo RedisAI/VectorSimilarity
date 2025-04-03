@@ -33,7 +33,7 @@ static inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, 
     sum_int = svmlalb_s32(sum_int, diff_o, diff_o);
     sum_int = svmlalt_s32(sum_int, diff_o, diff_o);
 
-    sum = svadd_f32_z(pg, sum, svcvt_f32_s32_z(pg, sum_int));
+    sum = svadd_f32_x(pg, sum, svcvt_f32_s32_z(pg, sum_int));
 
     offset += svcntb(); // Move to the next set of uint8 elements
 }
@@ -96,7 +96,7 @@ float UINT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dime
         sum_int = svmlalb_s32(sum_int, diff_o, diff_o);
         sum_int = svmlalt_s32(sum_int, diff_o, diff_o);
 
-        sum3 = svadd_f32_z(svptrue_b32(), sum3, svcvt_f32_s32_z(pg32, sum_int));
+        sum3 = svadd_f32_x(svptrue_b32(), sum3, svcvt_f32_s32_z(pg32, sum_int));
     }
 
     sum0 = svadd_f32_x(svptrue_b32(), sum0, sum1);
