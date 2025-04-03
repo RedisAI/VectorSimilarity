@@ -212,10 +212,6 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 
     dist_func_t<float> ret_dist_func = INT8_L2Sqr;
-    // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
-    if (dim < 32) {
-        return ret_dist_func;
-    }
 
     auto features = getCpuOptimizationFeatures(arch_opt);
 
@@ -229,9 +225,13 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (features.sve) {
         return Choose_INT8_L2_implementation_SVE(dim);
     }
-#endif
-#endif
+    #endif
+    #endif
 #ifdef CPU_FEATURES_ARCH_X86_64
+    // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
+    if (dim < 32) {
+        return ret_dist_func;
+    }
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
