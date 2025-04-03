@@ -90,6 +90,11 @@ inline VecSimParams CreateParams(const TieredIndexParams &tiered_params) {
     return params;
 }
 
+inline VecSimParams CreateParams(const SVSParams &svs_params) {
+    VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
+    return params;
+}
+
 namespace test_utils {
 template <typename IndexParams>
 inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
@@ -122,6 +127,7 @@ size_t EstimateElementSize(const IndexParams &index_params) {
 }
 
 VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
+VecSimQueryParams CreateQueryParams(const SVSRuntimeParams &RuntimeParams);
 
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
