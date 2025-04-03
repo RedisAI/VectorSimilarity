@@ -18,7 +18,7 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 
 // NEON implementation for ARMv8-a
 #ifdef OPT_NEON_BF16
-bool neon_supported = opt.bf16 && opt.asimd;
+bool neon_supported = opt.bf16;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_BF16, BF16, NEON_BF16, 32, neon_supported);
 #endif
 #ifdef OPT_SVE_BF16
