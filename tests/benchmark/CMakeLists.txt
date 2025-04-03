@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(../)
+include_directories(./)
 
 enable_testing()
 
@@ -24,6 +25,15 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	add_executable(bm_${benchmark} ../utils/mock_thread_pool.cpp bm_vecsim_general.cpp run_files/bm_${benchmark}.cpp)
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
+
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
+	add_compile_definitions(BENCHMARK_ARCH=arm64)
+	
+else()
+	include(${root}/cmake/x86_64InstructionFlags.cmake)
+	add_compile_definitions(BENCHMARK_ARCH=x86_64)
+endif()
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Spaces benchmarks								                                          #
