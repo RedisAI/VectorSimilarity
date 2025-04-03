@@ -13,6 +13,8 @@ jobs:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
+      - name: Check CPU Vendor
+        run: cat /proc/cpuinfo | grep "vendor_id" | uniq
       - name: checkout
         uses: actions/checkout@v4
         with:
