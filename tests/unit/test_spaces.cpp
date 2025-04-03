@@ -932,5 +932,3 @@ INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
                          testing::Range(512UL, 512 + 32UL + 1));
 
 #endif
-
-#endif // CPU_FEATURES_ARCH_X86_64
