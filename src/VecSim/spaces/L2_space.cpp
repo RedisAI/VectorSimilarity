@@ -225,8 +225,8 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (features.sve) {
         return Choose_INT8_L2_implementation_SVE(dim);
     }
-    #endif
-    #endif
+#endif
+#endif
 #ifdef CPU_FEATURES_ARCH_X86_64
     // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
     if (dim < 32) {
