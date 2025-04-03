@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
+#include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
@@ -32,7 +33,7 @@
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)         \
-    BENCHMARK_DEFINE_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                      \
+    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, bm_name))  \
     (benchmark::State & st) {                                                                      \
         if (!arch_supported) {                                                                     \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -46,7 +47,8 @@
 
 #define INITIALIZE_BM(bm_class, type_prefix, arch, metric, bm_name, arch_supported)                \
     BENCHMARK_DISTANCE_F(bm_class, type_prefix, arch, metric, bm_name, arch_supported)             \
-    BENCHMARK_REGISTER_F(bm_class, type_prefix##_##arch##_##metric##_##bm_name)                    \
+    BENCHMARK_REGISTER_F(bm_class,                                                                 \
+                         CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, bm_name))          \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
@@ -97,7 +99,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 /* Naive algorithms */
 #define BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                      \
-    BENCHMARK_DEFINE_F(bm_class, type_prefix##_NAIVE_##metric)                                     \
+    BENCHMARK_DEFINE_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))          \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
@@ -106,7 +108,7 @@ static constexpr size_t start = min_no_res_th_dim;
 
 #define INITIALIZE_NAIVE_BM(bm_class, type_prefix, metric, dim_opt)                                \
     BENCHMARK_DEFINE_NAIVE(bm_class, type_prefix, metric)                                          \
-    BENCHMARK_REGISTER_F(bm_class, type_prefix##_NAIVE_##metric)                                   \
+    BENCHMARK_REGISTER_F(bm_class, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))        \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)                                                             \
         ->Arg(100)                                                                                 \
@@ -126,6 +128,12 @@ static constexpr size_t start = min_no_res_th_dim;
     INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);          \
     INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, IP, dim_opt, arch_supported);
 
-#define INITIALIZE_BENCHMARKS_SET(bm_class, type_prefix, arch, dim_opt, arch_supported)            \
+#define INITIALIZE_BENCHMARKS_SET_Cosine(bm_class, type_prefix, arch, dim_opt, arch_supported)     \
+    INITIALIZE_HIGH_DIM(bm_class, type_prefix, arch, Cosine, arch_supported);                      \
+    INITIALIZE_LOW_DIM(bm_class, type_prefix, arch, Cosine, arch_supported);                       \
+    INITIALIZE_EXACT_512BIT_BM(bm_class, type_prefix, arch, Cosine, dim_opt, arch_supported);      \
+    INITIALIZE_RESIDUAL_BM(bm_class, type_prefix, arch, Cosine, dim_opt, arch_supported);
+
+#define INITIALIZE_BENCHMARKS_SET_L2_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)      \
     INITIALIZE_BENCHMARKS_SET_L2(bm_class, type_prefix, arch, dim_opt, arch_supported)             \
     INITIALIZE_BENCHMARKS_SET_IP(bm_class, type_prefix, arch, dim_opt, arch_supported)
