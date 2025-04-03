@@ -1079,6 +1079,30 @@ TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
             optimization.avx512vnni = 0;
     }
 #endif
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_L2_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_INT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, INT8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -1113,6 +1137,30 @@ TEST_P(INT8SpacesOptimizationTest, INT8InnerProductTest) {
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
+    }
+#endif
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
     }
 #endif
     unsigned char alignment = 0;
@@ -1150,6 +1198,30 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
             optimization.avx512vnni = 0;
+    }
+#endif
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_Cosine_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_INT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_INT8_Cosine_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
     }
 #endif
     unsigned char alignment = 0;
@@ -1193,6 +1265,30 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8L2SqrTest) {
             optimization.avx512vnni = 0;
     }
 #endif
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_L2_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_L2_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = L2_UINT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, UINT8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
@@ -1229,6 +1325,30 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8InnerProductTest) {
             optimization.avx512vnni = 0;
     }
 #endif
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
     unsigned char alignment = 0;
     arch_opt_func = IP_UINT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, UINT8_InnerProduct)
@@ -1251,6 +1371,30 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = UINT8_Cosine(v1, v2, dim);
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_Cosine_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_UINT8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_UINT8_Cosine_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
         optimization.avx512vnni) {
