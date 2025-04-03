@@ -4,9 +4,20 @@
 #include "VecSim/algorithms/svs/svs.h"
 #include "cpu_features_macros.h"
 #include <cmath>
+#include <cpuid.h>
+#include <string>
 
 template <typename index_type_t>
 class SVSTest : public ::testing::Test {
+    bool _checkCPU() {
+        uint32_t eax, ebx, ecx, edx;
+        __cpuid(0, eax, ebx, ecx, edx);
+        std::string vendor_id = std::string((const char *)&ebx, 4) +
+                                std::string((const char *)&edx, 4) +
+                                std::string((const char *)&ecx, 4);
+        return (vendor_id == "GenuineIntel");
+    }
+
 public:
     using data_t = typename index_type_t::data_t;
 
@@ -22,6 +33,13 @@ protected:
         auto indexBase = dynamic_cast<SVSIndexBase *>(index);
         assert(indexBase != nullptr);
         return indexBase;
+    }
+
+    void SetUp() override {
+        if constexpr (index_type_t::get_quant_bits() != VecSimSvsQuant_NONE)
+            if (!_checkCPU()) {
+                GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
+            }
     }
 };
 
