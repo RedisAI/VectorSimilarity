@@ -8,12 +8,12 @@
 #include <arm_neon.h>
 
 __attribute__((always_inline)) static inline void InnerProductOp(int8x16_t &v1, int8x16_t &v2,
-                                                                   int32x4_t &sum) {
+                                                                 int32x4_t &sum) {
     sum = vdotq_s32(sum, v1, v2);
 }
 
-__attribute__((always_inline)) static inline void
-InnerProductStep(int8_t *&pVect1, int8_t *&pVect2, int32x4_t &sum) {
+__attribute__((always_inline)) static inline void InnerProductStep(int8_t *&pVect1, int8_t *&pVect2,
+                                                                   int32x4_t &sum) {
     // Load 16 int8 elements (16 bytes) into NEON registers
     int8x16_t v1 = vld1q_s8(pVect1);
     int8x16_t v2 = vld1q_s8(pVect2);
@@ -36,29 +36,27 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
         // Define a compile-time constant mask based on final_residual
-        constexpr uint8x16_t mask = {
-            0xFF,
-            (final_residual >= 2) ? 0xFF : 0,
-            (final_residual >= 3) ? 0xFF : 0,
-            (final_residual >= 4) ? 0xFF : 0,
-            (final_residual >= 5) ? 0xFF : 0,
-            (final_residual >= 6) ? 0xFF : 0,
-            (final_residual >= 7) ? 0xFF : 0,
-            (final_residual >= 8) ? 0xFF : 0,
-            (final_residual >= 9) ? 0xFF : 0,
-            (final_residual >= 10) ? 0xFF : 0,
-            (final_residual >= 11) ? 0xFF : 0,
-            (final_residual >= 12) ? 0xFF : 0,
-            (final_residual >= 13) ? 0xFF : 0,
-            (final_residual >= 14) ? 0xFF : 0,
-            (final_residual >= 15) ? 0xFF : 0,
-            0
-        };
-        
+        constexpr uint8x16_t mask = {0xFF,
+                                     (final_residual >= 2) ? 0xFF : 0,
+                                     (final_residual >= 3) ? 0xFF : 0,
+                                     (final_residual >= 4) ? 0xFF : 0,
+                                     (final_residual >= 5) ? 0xFF : 0,
+                                     (final_residual >= 6) ? 0xFF : 0,
+                                     (final_residual >= 7) ? 0xFF : 0,
+                                     (final_residual >= 8) ? 0xFF : 0,
+                                     (final_residual >= 9) ? 0xFF : 0,
+                                     (final_residual >= 10) ? 0xFF : 0,
+                                     (final_residual >= 11) ? 0xFF : 0,
+                                     (final_residual >= 12) ? 0xFF : 0,
+                                     (final_residual >= 13) ? 0xFF : 0,
+                                     (final_residual >= 14) ? 0xFF : 0,
+                                     (final_residual >= 15) ? 0xFF : 0,
+                                     0};
+
         // Load data directly from input vectors
         int8x16_t v1 = vld1q_s8(pVect1);
         int8x16_t v2 = vld1q_s8(pVect2);
-        
+
         // Apply mask to zero out irrelevant elements
         v1 = vandq_s8(v1, vreinterpretq_s8_u8(mask));
         v2 = vandq_s8(v2, vreinterpretq_s8_u8(mask));
@@ -90,7 +88,6 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
             InnerProductStep(pVect1, pVect2, sum0);
         }
     }
-
 
     // Combine all four sum registers
     int32x4_t total_sum = vaddq_s32(sum0, sum1);
