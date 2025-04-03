@@ -6,9 +6,9 @@
 
 #include "NEON.h"
 #include "VecSim/spaces/L2/L2_NEON_FP32.h"
+#include "VecSim/spaces/IP/IP_NEON_FP32.h"
 #include "VecSim/spaces/L2/L2_NEON_INT8.h"
 #include "VecSim/spaces/L2/L2_NEON_UINT8.h"
-#include "VecSim/spaces/IP/IP_NEON_FP32.h"
 #include "VecSim/spaces/IP/IP_NEON_INT8.h"
 #include "VecSim/spaces/IP/IP_NEON_UINT8.h"
 

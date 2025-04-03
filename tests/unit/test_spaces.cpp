@@ -568,7 +568,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_NEON(dim))
-            << "Unexpected distance function chosen for dim " << dim;
+            << "Unexpected distance function chosen for dim OPT_NEON " << dim;
         ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
         optimization.asimd = 0;
     }

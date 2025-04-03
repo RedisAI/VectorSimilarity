@@ -10,13 +10,9 @@ on:
 jobs:
 
   jammy:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:jammy
+    uses: ./.github/workflows/jammy.yml
   focal:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:focal
+    uses: ./.github/workflows/focal.yml
 #  bionic:
 #    needs: [check-if-docs-only]
 #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -24,9 +20,7 @@ jobs:
 #    with:
 #      container: ubuntu:bionic
   bullseye:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: debian:bullseye
+    uses: ./.github/workflows/debian11.yml
 #  amazonlinux2:
 #    needs: [check-if-docs-only]
 #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -34,13 +28,9 @@ jobs:
   mariner2:
     uses: ./.github/workflows/mariner2.yml
   rocky8:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: rockylinux:8
+    uses: ./.github/workflows/rocky8.yml
   rocky9:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: rockylinux:9
+    uses: ./.github/workflows/rocky9.yml
   alpine3:
     uses: ./.github/workflows/alpine3.yml
   macos:

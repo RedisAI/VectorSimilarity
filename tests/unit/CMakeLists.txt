@@ -29,7 +29,6 @@ if(FP64_TESTS)
 endif()
 
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
-	message(STATUS "Enabling Arm Performance Libraries integration")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)

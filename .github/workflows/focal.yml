@@ -1,9 +1,10 @@
 name: focal flow
 
-on: [workflow_dispatch]
+on: [workflow_dispatch, workflow_call]
 
 jobs:
   focal:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
+      pre-checkout-script: apt-get update && apt-get install -y git

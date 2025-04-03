@@ -32,11 +32,11 @@ jobs:
   #   with:
   #     container: ubuntu:focal
   #     run-valgrind: false
-  bullseye:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: debian:bullseye
-      run-valgrind: false
+  # bullseye:
+  #   uses: ./.github/workflows/task-unit-test.yml
+  #   with:
+  #     container: debian:bullseye
+  #     run-valgrind: false
   # amazonlinux2:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
@@ -63,6 +63,3 @@ jobs:
   #     run-valgrind: false
   macos:
     uses: ./.github/workflows/macos.yml
-  arm:
-    uses: ./.github/workflows/arm.yml
-    secrets: inherit

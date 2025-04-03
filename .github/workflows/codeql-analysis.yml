@@ -34,7 +34,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
+        submodules: recursive
+
+    - name: Install Cmake   # Install Cmake using the project's fix version
+      run: chmod +x .install/install_cmake.sh && .install/install_cmake.sh sudo
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
