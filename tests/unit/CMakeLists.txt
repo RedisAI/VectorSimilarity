@@ -38,7 +38,7 @@ add_executable(test_hnsw ../utils/mock_thread_pool.cpp test_hnsw.cpp test_hnsw_m
 add_executable(test_hnsw_parallel test_hnsw_parallel.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
 add_executable(test_allocator test_allocator.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
-add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp unit_test_utils.cpp)
+add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp unit_test_utils.cpp)
 add_executable(test_spaces test_spaces.cpp)
 add_executable(test_types test_types.cpp)
 add_executable(test_common ../utils/mock_thread_pool.cpp test_common.cpp unit_test_utils.cpp)
