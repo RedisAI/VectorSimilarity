@@ -9,6 +9,56 @@
 #include "mock_thread_pool.h"
 
 #include <thread>
+#include <cpuid.h>
+
+// For getAvailableCPUs():
+#if defined(__linux__)
+#include <sched.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
+
+// System helpers
+static bool checkCPU() {
+    uint32_t eax, ebx, ecx, edx;
+    __cpuid(0, eax, ebx, ecx, edx);
+    std::string vendor_id = std::string((const char *)&ebx, 4) +
+                            std::string((const char *)&edx, 4) + std::string((const char *)&ecx, 4);
+    return (vendor_id == "GenuineIntel");
+}
+
+// Get available number of CPUs
+// Returns the number of logical processors on the process
+// Returns std::thread::hardware_concurrency() if the number of logical processors is not available
+static unsigned int getAvailableCPUs() {
+#if defined(__linux__)
+    // On Linux, use sched_getaffinity to get the number of CPUs available to the current process.
+    cpu_set_t cpu_set;
+    if (sched_getaffinity(0, sizeof(cpu_set), &cpu_set) == 0) {
+        return CPU_COUNT(&cpu_set);
+    }
+
+#elif defined(_WIN32)
+    // On Windows, use GetProcessAffinityMask to get the number of CPUs available to the current
+    // process.
+    DWORD_PTR process_affinity, system_affinity;
+    if (GetProcessAffinityMask(GetCurrentProcess(), &process_affinity, &system_affinity)) {
+        return std::bitset<sizeof(DWORD_PTR) * 8>(process_affinity).count();
+    }
+
+#elif defined(__APPLE__)
+    // On macOS, use sysctl to get the number of CPUs available to the current process.
+    int num_cpus;
+    size_t size = sizeof(num_cpus);
+    if (sysctlbyname("hw.logicalcpu", &num_cpus, &size, nullptr, 0) == 0) {
+        return num_cpus;
+    }
+#endif
+    // Fallback.
+    return std::thread::hardware_concurrency();
+}
 
 // Runs the test for all combination of data type(float/double) - label type (single/multi)
 
@@ -60,6 +110,13 @@ protected:
             svs_params, mock_thread_pool, update_job_threshold, flat_buffer_limit);
         return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
+
+    void SetUp() override {
+        if constexpr (index_type_t::get_quant_bits() != VecSimSvsQuant_NONE)
+            if (!checkCPU()) {
+                GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
+            }
+    }
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -73,7 +130,7 @@ struct SVSIndexType {
 
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
-#if HAVE_SVS_LVQ
+#if 0
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
 #endif
                                         >;
@@ -86,19 +143,35 @@ TYPED_TEST_SUITE(SVSTieredIndexTest, SVSDataTypeSet);
 
 template <typename index_type_t>
 class SVSTieredIndexTestBasic : public SVSTieredIndexTest<index_type_t> {};
-TYPED_TEST_SUITE(SVSTieredIndexTestBasic, DataTypeSet);
+
+using SVSBasicDataTypeSet =
+    ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>>;
+
+TYPED_TEST_SUITE(SVSTieredIndexTestBasic, SVSBasicDataTypeSet);
 
 TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
+    // Set thread_pool_size to 4 or actual number of available CPUs
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        // If the number of threads is less than 2, we can't run the test
+        GTEST_SKIP() << "No threads available";
+    }
+
     std::chrono::milliseconds timeout{1};
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
+    mock_thread_pool.thread_pool_size = num_threads;
+
+    // Create TieredSVS index instance with a mock queue.
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
 
-    size_t num_reserved_threads = 0;
+    // Counter of reserved threads
+    // This is set in the update_job_mock callback only
+    std::atomic<size_t> num_reserved_threads = 0;
 
     auto update_job_mock = [&num_reserved_threads](VecSimIndex * /*unused*/, size_t num_threads) {
         num_reserved_threads = num_threads;
@@ -115,9 +188,10 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 3);
     ASSERT_EQ(num_reserved_threads, 1);
 
-    auto num_threads = mock_thread_pool.thread_pool_size;
-    ASSERT_GE(num_threads, 4);
+    // Complete rest of wait jobs
     mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_wait();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Request and run exact number of available threads
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
@@ -135,15 +209,15 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
 
     // Request and run less threads than available
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                         tiered_index, num_threads - 2, timeout);
+                                         tiered_index, num_threads - 1, timeout);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     // The number of reserved threads should be equal to requested
-    ASSERT_EQ(num_reserved_threads, num_threads - 2);
+    ASSERT_EQ(num_reserved_threads, num_threads - 1);
 
     // Request more threads than available
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                         tiered_index, num_threads + 2, timeout);
+                                         tiered_index, num_threads + 1, timeout);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     // The number of reserved threads should be equal to the number of available threads
@@ -275,6 +349,11 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
+    // LVQ vectors representation do not allow to always get exact distance==0 for big range of
+    // values
+    if (TypeParam::get_quant_bits() != VecSimSvsQuant_NONE) {
+        GTEST_SKIP() << "LVQ is not precise enough";
+    }
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
     size_t n = 5000;
@@ -912,326 +991,6 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertAdHoc) {
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
 
-// TODO: Uncomment tests below or remove if not relevant.
-/*
-TYPED_TEST(SVSTieredIndexTest, deleteVectorAndRepairAsync) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 1000;
-    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
-        SVSParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .blockSize = 100};
-        VecSimParams svs_params = CreateParams(params);
-        auto mock_thread_pool = tieredIndexMock();
-
-        auto *tiered_index =
-            this->CreateTieredSVSIndex(svs_params, mock_thread_pool, maxSwapJobs);
-        auto allocator = tiered_index->getAllocator();
-
-        size_t per_label = TypeParam::isMulti() ? 50 : 1;
-        size_t n_labels = n / per_label;
-
-        // Launch the BG threads loop that takes jobs from the queue and executes them.
-
-        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
-            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
-                                                      std::ref(mock_thread_pool));
-        }
-
-        // Create and insert vectors one by one, then delete them one by one.
-        std::srand(10); // create pseudo random generator with any arbitrary seed.
-        for (size_t i = 0; i < n; i++) {
-            TEST_DATA_T vector[dim];
-            for (size_t j = 0; j < dim; j++) {
-                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-            }
-            VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
-        }
-        // While a thread is ingesting a vector into SVS, a vector may appear in both indexes
-        // (hence it will be counted twice in the index size calculation).
-        size_t index_size = tiered_index->indexSize();
-        EXPECT_GE(index_size, n);
-        EXPECT_LE(index_size, n + mock_thread_pool.thread_pool_size);
-        EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
-        for (size_t i = 0; i < n_labels; i++) {
-            // Every vector associated with the label may appear in flat/SVS index or in both if
-            // its just being ingested.
-            int num_deleted = tiered_index->deleteVector(i);
-            EXPECT_GE(num_deleted, per_label);
-            EXPECT_LE(num_deleted,
-                      std::min(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
-            EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
-        }
-        EXPECT_EQ(tiered_index->indexLabelCount(), 0);
-
-        mock_thread_pool.thread_pool_join();
-
-        EXPECT_EQ(tiered_index->getSVSIndex()->checkIntegrity().connections_to_repair, 0);
-        EXPECT_EQ(tiered_index->getSVSIndex()->safeGetEntryPointState().first, INVALID_ID);
-        // Verify that we have no pending jobs.
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-        EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
-        for (auto &it : tiered_index->idToSwapJob) {
-            EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
-        }
-        // Trigger swapping of vectors that hadn't been swapped yet.
-        tiered_index->executeReadySwapJobs();
-        ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
-        EXPECT_EQ(tiered_index->indexSize(), 0);
-    }
-}
-
-TYPED_TEST(SVSTieredIndexTest, alternateInsertDeleteAsync) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 16;
-    size_t n = 1000;
-    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
-        for (size_t M : {2, 16}) {
-            SVSParams params = {.type = TypeParam::get_index_type(),
-                                 .dim = dim,
-                                 .metric = VecSimMetric_L2,
-                                 .blockSize = 100,
-                                 .M = M};
-            VecSimParams svs_params = CreateParams(params);
-            auto mock_thread_pool = tieredIndexMock();
-
-            auto *tiered_index =
-                this->CreateTieredSVSIndex(svs_params, mock_thread_pool, maxSwapJobs);
-            auto allocator = tiered_index->getAllocator();
-
-            size_t per_label = TypeParam::isMulti() ? 5 : 1;
-            size_t n_labels = n / per_label;
-
-            // Launch the BG threads loop that takes jobs from the queue and executes them.
-
-            for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
-                mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
-                                                          std::ref(mock_thread_pool));
-            }
-
-            // Create and insert 10 vectors, then delete them right after.
-            size_t batch_size = 5;
-            std::srand(10); // create pseudo random generator with any arbitrary seed.
-            for (size_t i = 0; i < n / batch_size; i++) {
-                for (size_t l = 0; l < batch_size; l++) {
-                    TEST_DATA_T vector[dim];
-                    for (size_t j = 0; j < dim; j++) {
-                        vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-                    }
-                    tiered_index->addVector(vector, (i * batch_size + l) / per_label);
-                }
-                for (size_t l = 0; l < batch_size / per_label; l++) {
-                    // Every vector associated with the label may appear in flat/SVS index or in
-                    // both if its just being ingested.
-                    int num_deleted = tiered_index->deleteVector(i * batch_size / per_label + l);
-                    EXPECT_GE(num_deleted, per_label);
-                    EXPECT_LE(num_deleted, 2 * per_label);
-                }
-            }
-            // Vectors are deleted from flat buffer in place (in SVS they are only marked as
-            // deleted).
-            EXPECT_GE(tiered_index->frontendIndex->indexSize(), 0);
-            EXPECT_EQ(tiered_index->indexLabelCount(), 0);
-
-            mock_thread_pool.thread_pool_join();
-
-            EXPECT_EQ(tiered_index->getSVSIndex()->checkIntegrity().connections_to_repair, 0);
-            EXPECT_EQ(tiered_index->getSVSIndex()->safeGetEntryPointState().first, INVALID_ID);
-            // Verify that we have no pending jobs.
-            EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-            EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
-            for (auto &it : tiered_index->idToSwapJob) {
-                EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
-            }
-            // Trigger swapping of vectors that hadn't been swapped yet.
-            tiered_index->executeReadySwapJobs();
-            ASSERT_LE(tiered_index->idToSwapJob.size(), 0);
-            ASSERT_EQ(tiered_index->indexSize(), 0);
-        }
-    }
-}
-
-TYPED_TEST(SVSTieredIndexTest, swapJobBasic) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
-    auto allocator = tiered_index->getAllocator();
-
-    // Test initialization of the pendingSwapJobsThreshold value.
-    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
-    mock_thread_pool.ctx->index_strong_ref.reset();
-
-    tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
-                                               MAX_PENDING_SWAP_JOBS_THRESHOLD + 1);
-    allocator = tiered_index->getAllocator();
-    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
-    mock_thread_pool.ctx->index_strong_ref.reset();
-
-    tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
-    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
-
-    allocator = tiered_index->getAllocator();
-
-    // Call reserve for the unordered maps that are going to be used, since upon initialization it
-    // consumed 0 memory, but after insertion and deletion they will consume a minimal amount of
-    // memory (that is equivalent to the memory consumption upon reserving 0 buckets).
-    tiered_index->idToRepairJobs.reserve(0);
-    tiered_index->idToSwapJob.reserve(0);
-    TypeParam::isMulti() ? reinterpret_cast<SVSIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
-                               tiered_index->getSVSIndex())
-                               ->labelLookup.reserve(0)
-                         : reinterpret_cast<SVSIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
-                               tiered_index->getSVSIndex())
-                               ->labelLookup.reserve(0);
-
-    size_t initial_mem = tiered_index->getAllocationSize();
-    size_t initial_mem_backend = tiered_index->backendIndex->getAllocationSize();
-    size_t initial_mem_frontend = tiered_index->frontendIndex->getAllocationSize();
-
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
-    EXPECT_EQ(tiered_index->indexLabelCount(), 2);
-    EXPECT_EQ(tiered_index->indexSize(), 2);
-    // Delete both vectors.
-    EXPECT_EQ(tiered_index->deleteVector(0), 1);
-    EXPECT_EQ(tiered_index->deleteVector(1), 1);
-    EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 2);
-    // Expect to have pending repair jobs, so that swap job cannot be executed yet - for each
-    // deleted vector there should be a single repair job.
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 1);
-    mock_thread_pool.thread_iteration();
-    mock_thread_pool.thread_iteration();
-    EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
-    // Insert another vector and remove it. expect it to have no neighbors.
-    // Threshold for is set to be 1, so now we expect that a single deleted vector (which has no
-    // pending repair jobs) will be swapped - and 2 will remain.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
-    EXPECT_EQ(tiered_index->deleteVector(2), 1);
-    EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
-    EXPECT_EQ(tiered_index->indexSize(), 2);
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 2);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
-
-    // Now swap the rest of the jobs.
-    tiered_index->executeReadySwapJobs();
-    EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
-    EXPECT_EQ(tiered_index->indexSize(), 0);
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 0);
-
-    // Reserve manually 0 buckets in the hash tables so that memory would be as it was before we
-    // started inserting vectors.
-    tiered_index->idToRepairJobs.reserve(0);
-    tiered_index->idToSwapJob.reserve(0);
-    // Manually shrink the vectors so that memory would be as it was before we started inserting
-    tiered_index->getSVSIndex()->vectorBlocks.shrink_to_fit();
-    tiered_index->getSVSIndex()->graphDataBlocks.shrink_to_fit();
-
-    EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
-    EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
-    EXPECT_EQ(tiered_index->getAllocationSize(), initial_mem);
-    mock_thread_pool.reset_ctx();
-
-    // VecSimAllocator::allocation_header_size = size_t, this should be the only memory that we
-    // account for at this point.
-    EXPECT_EQ(allocator->getAllocationSize(), sizeof(size_t));
-}
-
-TYPED_TEST(SVSTieredIndexTest, swapJobBasic2) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
-    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
-    auto allocator = tiered_index->getAllocator();
-
-    // Insert 3 vectors, expect to have a fully connected graph.
-    idType invalid_jobs_counter = 0;
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
-    // Delete 0, expect to have two repair jobs pending for 1 and 2 and execute it.
-    EXPECT_EQ(tiered_index->deleteVector(0), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_REPAIR_NODE_CONNECTIONS_JOB);
-    mock_thread_pool.thread_iteration();
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_REPAIR_NODE_CONNECTIONS_JOB);
-    mock_thread_pool.thread_iteration();
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // Delete 2, expect to create two repair job pending from 0 and 1. Also, expect that swap
-    // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
-    // pending repair job for the "new" 0 - for deleting the old 1->2, while the second job for
-    // deleting the old 0->2 is invalid and reduced from the pending repair jobs counter.
-    EXPECT_EQ(tiered_index->deleteVector(2), 1);
-    EXPECT_EQ(tiered_index->indexSize(), 2);
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 1);
-
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
-    // The first repair job should remove 1->0 (originally was 1->2).
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<SVSRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
-    ASSERT_EQ(reinterpret_cast<SVSRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // The second repair job is invalid due to the removal of (the original) 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<SVSRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
-              invalid_jobs_counter++);
-    ASSERT_EQ(reinterpret_cast<SVSRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
-    // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
-    // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
-    // get id 0, and then the new 0 should have no pending repair jobs.
-    EXPECT_EQ(tiered_index->deleteVector(1), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
-    EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
-    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // The repair job is invalid due to the removal of (the previous) 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<SVSRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
-              invalid_jobs_counter);
-    ASSERT_EQ(reinterpret_cast<SVSRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
-    EXPECT_EQ(tiered_index->indexSize(), 1);
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 1);
-    EXPECT_EQ(tiered_index->getSVSIndex()->safeGetEntryPointState().first, INVALID_ID);
-
-    // Call delete again, this should only trigger the swap and removal of 1
-    // (which has already deleted)
-    EXPECT_EQ(tiered_index->deleteVector(1), 0);
-    EXPECT_EQ(tiered_index->indexSize(), 0);
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 0);
-}
-
 // A set of lambdas that determine whether a vector should be inserted to the
 // SVS index (returns true) or to the flat index (returns false).
 inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)>, 11> lambdas = {{
@@ -1250,26 +1009,21 @@ inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)
 
 TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
     size_t d = 4;
-    size_t M = 8;
-    size_t ef = 20;
     size_t n = 1000;
 
-    size_t per_label = TypeParam::isMulti() ? 10 : 1;
-    size_t n_labels = n / per_label;
+    size_t block_size = n / 100;
+    size_t n_labels = n;
 
     // Create TieredSVS index instance with a mock queue.
     SVSParams svs_params = {
         .type = TypeParam::get_index_type(),
         .dim = d,
         .metric = VecSimMetric_L2,
-        .efConstruction = ef,
-        .efRuntime = ef,
+        .blockSize = block_size,
     };
     VecSimParams params = CreateParams(svs_params);
 
-    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
-        // manually deconstruct the pair to avoid the clang error
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
@@ -1278,8 +1032,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
-        auto *svs = tiered_index->backendIndex;
-        auto *flat = tiered_index->frontendIndex;
+        auto *svs = tiered_index->GetBackendIndex();
+        auto *flat = tiered_index->GetFlatIndex();
 
         // For every i, add the vector (i,i,i,i) under the label i.
         for (size_t i = 0; i < n; i++) {
@@ -1289,7 +1043,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
         // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
-        TEST_DATA_T query[d];
+        auto query = (TEST_DATA_T *)allocator->allocate(d * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, d, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
@@ -1318,10 +1072,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
     size_t d = 4;
     size_t M = 8;
-    size_t ef = 20;
+    size_t sws = 20;
     size_t n = 1000;
 
-    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t per_label = 1;
     size_t n_labels = n / per_label;
 
     // Create TieredSVS index instance with a mock queue.
@@ -1329,12 +1083,11 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
         .type = TypeParam::get_index_type(),
         .dim = d,
         .metric = VecSimMetric_L2,
-        .efConstruction = ef,
-        .efRuntime = ef,
+        .construction_window_size = sws,
+        .search_window_size = sws,
     };
     VecSimParams params = CreateParams(svs_params);
 
-    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
         // manually deconstruct the pair to avoid the clang error
         auto &decider_name = lambda.first;
@@ -1345,8 +1098,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
-        auto *svs = tiered_index->backendIndex;
-        auto *flat = tiered_index->frontendIndex;
+        auto *svs = tiered_index->GetBackendIndex();
+        auto *flat = tiered_index->GetFlatIndex();
 
         // For every i, add the vector (i,i,i,i) under the label i.
         for (size_t i = 0; i < n; i++) {
@@ -1356,7 +1109,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
         // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
-        TEST_DATA_T query[d];
+        auto query = (TEST_DATA_T *)allocator->allocate(d * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, d, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
@@ -1408,10 +1161,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
     size_t d = 4;
     size_t M = 8;
-    size_t ef = 20;
+    size_t sws = 20;
     size_t n = 1000;
 
-    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t per_label = 1;
     size_t n_labels = n / per_label;
 
     // Create TieredSVS index instance with a mock queue.
@@ -1419,8 +1172,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
         .type = TypeParam::get_index_type(),
         .dim = d,
         .metric = VecSimMetric_L2,
-        .efConstruction = ef,
-        .efRuntime = ef,
+        .construction_window_size = sws,
+        .search_window_size = sws,
     };
     VecSimParams params = CreateParams(svs_params);
 
@@ -1435,8 +1188,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
-        auto *svs = tiered_index->backendIndex;
-        auto *flat = tiered_index->frontendIndex;
+        auto *svs = tiered_index->GetBackendIndex();
+        auto *flat = tiered_index->GetFlatIndex();
 
         // For every i, add the vector (i,i,i,i) under the label `n_labels - (i % n_labels)`.
         for (size_t i = 0; i < n; i++) {
@@ -1471,10 +1224,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
     size_t d = 4;
     size_t M = 8;
-    size_t ef = 1000;
+    size_t sws = 20;
     size_t n = 1000;
 
-    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t per_label = 1;
     size_t n_labels = n / per_label;
 
     // Create TieredSVS index instance with a mock queue.
@@ -1482,10 +1235,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
         .type = TypeParam::get_index_type(),
         .dim = d,
         .metric = VecSimMetric_L2,
-        .efConstruction = ef,
+        .construction_window_size = sws,
     };
     VecSimParams params = CreateParams(svs_params);
-    SVSRuntimeParams svsRuntimeParams = {.efRuntime = ef};
+    SVSRuntimeParams svsRuntimeParams = {.windowSize = sws};
     VecSimQueryParams query_params = CreateQueryParams(svsRuntimeParams);
 
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
@@ -1499,8 +1252,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
-        auto *svs = tiered_index->backendIndex;
-        auto *flat = tiered_index->frontendIndex;
+        auto *svs = tiered_index->GetBackendIndex();
+        auto *flat = tiered_index->GetFlatIndex();
 
         TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
@@ -1582,10 +1335,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
     size_t d = 4;
     size_t M = 8;
-    size_t ef = 20;
+    size_t sws = 20;
     size_t n = 1000;
 
-    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t per_label = 1;
     size_t n_labels = n / per_label;
 
     // Create TieredSVS index instance with a mock queue.
@@ -1593,8 +1346,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
         .type = TypeParam::get_index_type(),
         .dim = d,
         .metric = VecSimMetric_L2,
-        .efConstruction = ef,
-        .efRuntime = ef,
+        .construction_window_size = sws,
+        .search_window_size = sws,
     };
     VecSimParams params = CreateParams(svs_params);
 
@@ -1609,8 +1362,8 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
-        auto *svs = tiered_index->backendIndex;
-        auto *flat = tiered_index->frontendIndex;
+        auto *svs = tiered_index->GetBackendIndex();
+        auto *flat = tiered_index->GetFlatIndex();
 
         // For every i, add the vector (i,i,i,i) under the label i.
         size_t flat_count = 0;
@@ -1629,7 +1382,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
         ASSERT_LE(VecSimIndex_IndexSize(tiered_index), n * 1.1) << decider_name;
         ASSERT_GE(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
         // The number of unique labels should be n_labels.
-        ASSERT_EQ(tiered_index->indexLabelCount(), n_labels) << decider_name;
+        // ASSERT_EQ(tiered_index->indexLabelCount(), n_labels) << decider_name;
 
         // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
         TEST_DATA_T query[d];
@@ -1673,132 +1426,14 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
     }
 }
 
-TYPED_TEST(SVSTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases) {
-    size_t d = 4;
-
-    std::shared_ptr<VecSimAllocator> allocator;
-    TieredSVSIndex<TEST_DATA_T, TEST_DIST_T> *tiered_index;
-    VecSimIndex *svs, *flat;
-    TEST_DATA_T query[d];
-    VecSimBatchIterator *iterator;
-    VecSimQueryReply *batch;
-
-    // Create TieredSVS index instance with a mock queue.
-    SVSParams svs_params = {
-        .type = TypeParam::get_index_type(),
-        .dim = d,
-        .metric = VecSimMetric_L2,
-    };
-    VecSimParams params = CreateParams(svs_params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto L2 = [&](size_t element) { return element * element * d; };
-
-    // TEST 1:
-    // first batch contains duplicates with different scores.
-    tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
-    allocator = tiered_index->getAllocator();
-    svs = tiered_index->backendIndex;
-    flat = tiered_index->frontendIndex;
-
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 0);
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 1);
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 2);
-
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 1, 3);
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 0, 4);
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 3, 5);
-
-    ASSERT_EQ(tiered_index->indexLabelCount(), 4);
-
-    GenerateVector<TEST_DATA_T>(query, d, 0);
-    iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
-
-    // batch size is 3 (the size of each index). Internally the tiered batch iterator will have to
-    // handle the duplicates with different scores.
-    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
-    batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(batch), 3);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 0);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(0));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 1);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(1));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 2), 2);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 2), L2(2));
-    VecSimQueryReply_Free(batch);
-
-    // we have 1 more label in the index. we expect the tiered batch iterator to return it only and
-    // filter out the duplicates.
-    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
-    batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(batch), 1);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 3);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(5));
-    ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
-    VecSimQueryReply_Free(batch);
-    // TEST 1 clean up.
-    VecSimBatchIterator_Free(iterator);
-
-    // TEST 2:
-    // second batch contains duplicates (different scores) from the first batch.
-    auto *ctx = new tieredIndexMock::IndexExtCtx(&mock_thread_pool);
-    mock_thread_pool.reset_ctx(ctx);
-    tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
-    allocator = tiered_index->getAllocator();
-    svs = tiered_index->backendIndex;
-    flat = tiered_index->frontendIndex;
-
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 0, 0);
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 1, 1);
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 2, 2);
-    GenerateAndAddVector<TEST_DATA_T>(svs, d, 3, 3);
-
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 0);
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 3, 1);
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 2);
-    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 3);
-
-    ASSERT_EQ(tiered_index->indexLabelCount(), 4);
-
-    iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
-
-    // ask for 2 results. The internal batch iterators will return 2 results: svs - [0, 1], flat -
-    // [2, 3] so there are no duplicates.
-    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
-    batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(batch), 2);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 0);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(0));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 2);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(0));
-    VecSimQueryReply_Free(batch);
-
-    // first batch contained 1 result from each index, so there is one leftover from each iterator.
-    // Asking for 3 results will return additional 2 results from each iterator and the tiered batch
-    // iterator will have to handle the duplicates that each iterator returned (both labels that
-    // were returned in the first batch and duplicates in the current batch).
-    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
-    batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(batch), 2);
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 0), 1);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 0), L2(1));
-    ASSERT_EQ(VecSimQueryResult_GetId(batch->results.data() + 1), 3);
-    ASSERT_EQ(VecSimQueryResult_GetScore(batch->results.data() + 1), L2(1));
-    ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
-    VecSimQueryReply_Free(batch);
-    // TEST 2 clean up.
-    VecSimBatchIterator_Free(iterator);
-}
-
 TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
     size_t dim = 4;
-    size_t ef = 500;
+    size_t sws = 500;
     size_t n = 1000;
     size_t n_res_min = 3;  // minimum number of results to return per batch
     size_t n_res_max = 15; // maximum number of results to return per batch
-    bool isMulti = TypeParam::isMulti();
 
-    size_t per_label = isMulti ? 5 : 1;
+    size_t per_label = 1;
     size_t n_labels = n / per_label;
 
     // Create TieredSVS index instance with a mock queue.
@@ -1806,13 +1441,16 @@ TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
         .type = TypeParam::get_index_type(),
         .dim = dim,
         .metric = VecSimMetric_L2,
-        .efRuntime = ef,
+        .search_window_size = sws,
     };
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
+
+    auto *svs = tiered_index->GetBackendIndex();
+    auto *flat = tiered_index->GetFlatIndex();
 
     std::atomic_int successful_searches(0);
     auto parallel_10_batches = [](AsyncJob *job) {
@@ -1840,11 +1478,9 @@ TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
         delete job;
     };
 
-    // Fill the job queue with insert and batch-search jobs, while filling the flat index, before
-    // initializing the thread pool.
     for (size_t i = 0; i < n; i++) {
-        // Insert a vector to the flat index and add a job to insert it to the main index.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto cur = i % 2 ? svs : flat;
+        GenerateAndAddVector<TEST_DATA_T>(cur, dim, i % n_labels, i);
 
         // Add a search job.
         size_t cur_res_per_batch = i % (n_res_max - n_res_min) + n_res_min;
@@ -1860,592 +1496,24 @@ TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
 
     EXPECT_EQ(tiered_index->indexSize(), n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
-    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
-    for (auto &it : tiered_index->labelToInsertJobs) {
-        EXPECT_EQ(it.second.size(), per_label);
-    }
-    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), n);
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    EXPECT_EQ(svs->indexSize(), n / 2);
+    EXPECT_EQ(flat->indexSize(), n / 2);
 
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    // All the vectors are already in the tiered index, so we expect to find the expected
-    // results from the get-go.
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
 
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
-    EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
-    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(successful_searches, n);
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
-}
-
-TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 1000;
-    SVSParams params = {
-        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
-    auto allocator = tiered_index->getAllocator();
-
-    TEST_DATA_T val = 1.0;
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, val);
-    // Overwrite label 0 (in the flat buffer) with a different value.
-    val = 2.0;
-    TEST_DATA_T overwritten_vec[] = {val, val, val, val};
-    ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
-    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    ASSERT_EQ(tiered_index->indexSize(), 1);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
-
-    // Validate that jobs were created properly - first job should be invalid after overwrite,
-    // the second should be a pending insert job.
-    ASSERT_EQ(tiered_index->labelToInsertJobs.at(0).size(), 1);
-    auto *pending_insert_job = tiered_index->labelToInsertJobs.at(0)[0];
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_INSERT_VECTOR_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job)->label, 0);
-    ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
-    mock_thread_pool.thread_iteration();
-
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_INSERT_VECTOR_JOB);
-    ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job)->label, 0);
-    ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
-    ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job),
-              pending_insert_job);
-
-    // Ingest vector into SVS, and then overwrite it.
-    mock_thread_pool.thread_iteration();
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    val = 3.0;
-    overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
-    ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
-    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    // Swap job should be executed for the overwritten vector since limit is 1, and we are calling
-    // swap job execution prior to insert jobs.
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
-
-    // Ingest the updated vector to SVS.
-    mock_thread_pool.thread_iteration();
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
-}
-
-TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 1000;
-    SVSParams params = {
-        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    for (size_t maxSwapJobs : {(int)n + 1, 1}) {
-        auto mock_thread_pool = tieredIndexMock();
-
-        auto *tiered_index =
-            this->CreateTieredSVSIndex(svs_params, mock_thread_pool, maxSwapJobs);
-        auto allocator = tiered_index->getAllocator();
-
-        // Launch the BG threads loop that takes jobs from the queue and executes them.
-
-        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
-            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
-                                                      std::ref(mock_thread_pool));
-        }
-
-        // Insert vectors and overwrite them multiple times while thread run in the background.
-        std::srand(10); // create pseudo random generator with any arbitrary seed.
-        for (size_t i = 0; i < n; i++) {
-            TEST_DATA_T vector[dim];
-            for (size_t j = 0; j < dim; j++) {
-                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-            }
-            tiered_index->addVector(vector, i);
-        }
-        EXPECT_EQ(tiered_index->indexLabelCount(), n);
-
-        size_t num_overwrites = 1000;
-        for (size_t i = 0; i < num_overwrites; i++) {
-            size_t label_to_overwrite = std::rand() % n;
-            TEST_DATA_T vector[dim];
-            for (size_t j = 0; j < dim; j++) {
-                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-            }
-            EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
-        }
-
-        mock_thread_pool.thread_pool_join();
-
-        EXPECT_EQ(tiered_index->indexSize() - tiered_index->getSVSIndex()->getNumMarkedDeleted(),
-                  n);
-        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-        EXPECT_EQ(tiered_index->indexLabelCount(), n);
-        auto report = tiered_index->getSVSIndex()->checkIntegrity();
-        EXPECT_EQ(report.connections_to_repair, 0);
-        EXPECT_EQ(report.valid_state, true);
-    }
-}
-
-TYPED_TEST(SVSTieredIndexTest, testInfo) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 1000;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1000);
-    auto allocator = tiered_index->getAllocator();
-
-    VecSimIndexInfo info = tiered_index->info();
-    EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVSLIB);
-    EXPECT_EQ(info.commonInfo.indexSize, 0);
-    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.commonInfo.memory, tiered_index->getAllocationSize());
-    EXPECT_EQ(info.commonInfo.basicInfo.isMulti, TypeParam::isMulti());
-    EXPECT_EQ(info.commonInfo.basicInfo.dim, dim);
-    EXPECT_EQ(info.commonInfo.basicInfo.metric, VecSimMetric_L2);
-    EXPECT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
-    EXPECT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
-    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
-    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
-
-    compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
-    compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
-    compareCommonInfo(info.tieredInfo.backendCommonInfo, backendIndexInfo.commonInfo);
-    compareSVSInfo(info.tieredInfo.backendInfo.svsInfo, backendIndexInfo.svsInfo);
-
-    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
-                                          backendIndexInfo.commonInfo.memory +
-                                          frontendIndexInfo.commonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
-    EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
-    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.pendingSwapJobsThreshold, 1);
-
-    // Validate that Static info returns the right restricted info as well.
-    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
-    ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
-    ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
-    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
-    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
-    ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
-    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
-    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
-
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
-    info = tiered_index->info();
-
-    EXPECT_EQ(info.commonInfo.indexSize, 1);
-    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
-    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
-    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
-    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
-    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
-                                          info.tieredInfo.backendCommonInfo.memory +
-                                          info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
-
-    mock_thread_pool.thread_iteration();
-    info = tiered_index->info();
-
-    EXPECT_EQ(info.commonInfo.indexSize, 1);
-    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
-    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
-    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
-    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
-    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
-                                          info.tieredInfo.backendCommonInfo.memory +
-                                          info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
-
-    if (TypeParam::isMulti()) {
-        GenerateAndAddVector(tiered_index, dim, 1, 1);
-        info = tiered_index->info();
-
-        EXPECT_EQ(info.commonInfo.indexSize, 2);
-        EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
-        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
-        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
-        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
-        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
-        EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
-                                              info.tieredInfo.backendCommonInfo.memory +
-                                              info.tieredInfo.frontendCommonInfo.memory);
-        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
-    }
-
-    VecSimIndex_DeleteVector(tiered_index, 1);
-    info = tiered_index->info();
-
-    EXPECT_EQ(info.commonInfo.indexSize, 0);
-    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
-    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
-    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
-                                          info.tieredInfo.backendCommonInfo.memory +
-                                          info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
-}
-
-TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 1000;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2};
-
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
-    auto allocator = tiered_index->getAllocator();
-
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
-    VecSimIndexInfo info = tiered_index->info();
-    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
-    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
-
-    VecSimInfoIterator *infoIterator = tiered_index->infoIterator();
-    EXPECT_EQ(infoIterator->numberOfFields(), 15);
-
-    while (infoIterator->hasNext()) {
-        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
-
-        if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
-            // Algorithm type.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimCommonStrings::TIERED_STRING);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
-            // Vector type.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimType_ToString(info.commonInfo.basicInfo.type));
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
-            // Vector dimension.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.dim);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::METRIC_STRING)) {
-            // Metric.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimMetric_ToString(info.commonInfo.basicInfo.metric));
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
-            // Search mode.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
-            // Index size.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexSize);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
-            // Index label count.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexLabelCount);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
-            // Is the index multi value.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
-            // Memory.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-            compareSVSIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::TIERED_SVS_SWAP_JOBS_THRESHOLD_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(
-                infoField->fieldValue.uintegerValue,
-                info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.pendingSwapJobsThreshold);
-        } else {
-            FAIL();
-        }
-    }
-    VecSimInfoIterator_Free(infoIterator);
-}
-
-TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
-    auto allocator = tiered_index->getAllocator();
-
-    VecSim_SetWriteMode(VecSim_WriteInPlace);
-    // Validate that the vector was inserted directly to the SVS index.
-    labelType vec_label = 0;
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-
-    // Overwrite inplace - only in single-value mode
-    if (!TypeParam::isMulti()) {
-        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
-        tiered_index->addVector(overwritten_vec, vec_label);
-        ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-        ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
-    }
-
-    // Validate that the vector is removed in place.
-    tiered_index->deleteVector(vec_label);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 0);
-}
-
-TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 500;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 32,
-                         .efRuntime = 3 * n};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
-    auto allocator = tiered_index->getAllocator();
-    VecSim_SetWriteMode(VecSim_WriteAsync);
-
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    mock_thread_pool.init_threads();
-
-    // Create and insert vectors one by one async.
-    size_t per_label = TypeParam::isMulti() ? 5 : 1;
-    size_t n_labels = n / per_label;
-    std::srand(10); // create pseudo random generator with any arbitrary seed.
-    for (size_t i = 0; i < n; i++) {
-        TEST_DATA_T vector[dim];
-        for (size_t j = 0; j < dim; j++) {
-            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-        }
-        VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
-    }
-
-    // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
-    VecSim_SetWriteMode(VecSim_WriteInPlace);
-    EXPECT_LE(tiered_index->backendIndex->indexSize(), n);
-    for (size_t i = 0; i < n; i++) {
-        TEST_DATA_T vector[dim];
-        for (size_t j = 0; j < dim; j++) {
-            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-        }
-        VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
-    }
-    mock_thread_pool.thread_pool_join();
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
-
-    // Now delete the last n inserted vectors of the index using async jobs.
-    VecSim_SetWriteMode(VecSim_WriteAsync);
-    mock_thread_pool.init_threads();
-    for (size_t i = 0; i < n_labels; i++) {
-        VecSimIndex_DeleteVector(tiered_index, n_labels + i);
-    }
-    // At this point, repair jobs should be executed in the background.
-    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), n);
-
-    // Insert INPLACE another n vector (instead of the ones that were deleted).
-    VecSim_SetWriteMode(VecSim_WriteInPlace);
-    auto svs_index = tiered_index->getSVSIndex();
-    // Run twice, at first run we insert non-existing labels, in the second run we overwrite them
-    // (for single-value index only).
-    for (auto overwrite : {0, 1}) {
-        for (size_t i = 0; i < n; i++) {
-            TEST_DATA_T vector[dim];
-            for (size_t j = 0; j < dim; j++) {
-                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-            }
-            labelType cur_label = i % n_labels + n_labels;
-            EXPECT_EQ(tiered_index->addVector(vector, cur_label),
-                      TypeParam::isMulti() ? 1 : 1 - overwrite);
-            // Run a query over svs index and see that we only receive ids with label < n_labels+i
-            // (the label that we just inserted), and the first result should be this vector
-            // (unless it is unreachable)
-            auto ver_res = [&](size_t res_label, double score, size_t index) {
-                if (index == 0) {
-                    if (res_label == cur_label) {
-                        EXPECT_DOUBLE_EQ(score, 0);
-                    } else {
-                        svs_index->lockSharedIndexDataGuard();
-                        ASSERT_EQ(svs_index->getDistanceFrom_Unsafe(cur_label, vector), 0);
-                        svs_index->unlockSharedIndexDataGuard();
-                    }
-                }
-                if (!overwrite) {
-                    ASSERT_LE(res_label, i + n_labels);
-                }
-            };
-            runTopKSearchTest(svs_index, vector, 10, ver_res);
-        }
-    }
-
-    mock_thread_pool.thread_pool_join();
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 2 * n_labels);
-}
-
-TYPED_TEST(SVSTieredIndexTest, bufferLimit) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    // Create tiered index with buffer limit set to 0.
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
-                                                     DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, 0);
-    auto allocator = tiered_index->getAllocator();
-
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-
-    // Set the flat limit to 1 and insert another vector - expect it to go to the flat buffer.
-    tiered_index->flatBufferLimit = 1;
-    labelType vec_label = 1;
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-
-    // Overwrite the vector, expect removing it from the flat buffer and replace it with the new one
-    // only in single-value mode
-    if (!TypeParam::isMulti()) {
-        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
-        ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
-        ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-        ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
-        // The first job in Q should be the invalid overwritten insert vector job.
-        ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-        ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
-        mock_thread_pool.jobQ.pop();
-    }
-
-    // Insert another vector, this one should go directly to SVS index since the buffer limit has
-    // reached.
-    vec_label = 2;
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2);
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-    ASSERT_EQ(tiered_index->indexLabelCount(), 3);
-
-    // Overwrite the vector, expect marking it as deleted in SVS and insert the new one directly
-    // to SVS as well.
-    if (!TypeParam::isMulti()) {
-        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
-        ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
-        ASSERT_EQ(tiered_index->backendIndex->indexSize(), 3);
-        ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 1);
-        ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-        ASSERT_EQ(tiered_index->indexLabelCount(), 3);
-        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
-    }
-}
-
-TYPED_TEST(SVSTieredIndexTest, bufferLimitAsync) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    size_t n = 500;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .M = 64};
-
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-
-    // Create tiered index with buffer limit set to 100.
-    size_t flat_buffer_limit = 100;
-    auto *tiered_index = this->CreateTieredSVSIndex(
-        svs_params, mock_thread_pool, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
-    auto allocator = tiered_index->getAllocator();
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    mock_thread_pool.init_threads();
-    // Create and insert vectors one by one async. At some point, buffer limit gets full and vectors
-    // are inserted directly to SVS.
-    size_t per_label = TypeParam::isMulti() ? 5 : 1;
-    size_t n_labels = n / per_label;
-    std::srand(10); // create pseudo random generator with any arbitrary seed.
-    // Run twice, at first run we insert non-existing labels, in the second run we overwrite them
-    // (for single-value index only).
-    for (auto overwrite : {0, 1}) {
-        for (size_t i = 0; i < n; i++) {
-            TEST_DATA_T vector[dim];
-            for (size_t j = 0; j < dim; j++) {
-                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-            }
-            EXPECT_EQ(tiered_index->addVector(vector, i % n_labels),
-                      TypeParam::isMulti() ? 1 : 1 - overwrite);
-            EXPECT_LE(tiered_index->frontendIndex->indexSize(), flat_buffer_limit);
-        }
-        // In first run, wait until all vectors are moved from flat index to SVS backend index.
-        while (tiered_index->backendIndex->indexSize() < n) {
-            //do nothing
-        }
-    }
-    mock_thread_pool.thread_pool_join();
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
-    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
 }
 
 TYPED_TEST(SVSTieredIndexTest, RangeSearch) {
     size_t dim = 4;
     size_t k = 11;
-    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+    size_t per_label = 1;
 
     size_t n_labels = k * 3;
     size_t n = n_labels * per_label;
+    size_t block_size = 10;
 
     auto edge_delta = (k - 0.8) * per_label;
     auto mid_delta = edge_delta / 2;
@@ -2459,6 +1527,7 @@ TYPED_TEST(SVSTieredIndexTest, RangeSearch) {
         .type = TypeParam::get_index_type(),
         .dim = dim,
         .metric = VecSimMetric_L2,
+        .blockSize = block_size,
         .epsilon = 3.0 * per_label,
     };
     VecSimParams svs_params = CreateParams(params);
@@ -2470,8 +1539,8 @@ TYPED_TEST(SVSTieredIndexTest, RangeSearch) {
     auto allocator = tiered_index->getAllocator();
     ASSERT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
-    auto svs_index = tiered_index->backendIndex;
-    auto flat_index = tiered_index->frontendIndex;
+    auto svs_index = tiered_index->GetBackendIndex();
+    auto flat_index = tiered_index->GetFlatIndex();
 
     TEST_DATA_T query_0[dim];
     GenerateVector<TEST_DATA_T>(query_0, dim, 0);
@@ -2664,16 +1733,17 @@ TYPED_TEST(SVSTieredIndexTest, parallelRangeSearch) {
     size_t dim = 4;
     size_t k = 11;
     size_t n = 1000;
-    bool isMulti = TypeParam::isMulti();
 
-    size_t per_label = isMulti ? 10 : 1;
+    size_t per_label = 1;
     size_t n_labels = n / per_label;
+    size_t block_size = n / 100;
 
     // Create TieredSVS index instance with a mock queue.
     SVSParams params = {
         .type = TypeParam::get_index_type(),
         .dim = dim,
         .metric = VecSimMetric_L2,
+        .blockSize = block_size,
         .epsilon = double(dim * k * k),
     };
     VecSimParams svs_params = CreateParams(params);
@@ -2682,6 +1752,9 @@ TYPED_TEST(SVSTieredIndexTest, parallelRangeSearch) {
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
+
+    auto *svs = tiered_index->GetBackendIndex();
+    auto *flat = tiered_index->GetFlatIndex();
 
     std::atomic_int successful_searches(0);
     auto parallel_range_search = [](AsyncJob *job) {
@@ -2702,11 +1775,9 @@ TYPED_TEST(SVSTieredIndexTest, parallelRangeSearch) {
         delete job;
     };
 
-    // Fill the job queue with insert and search jobs, while filling the flat index, before
-    // initializing the thread pool.
     for (size_t i = 0; i < n; i++) {
-        // Insert a vector to the flat index and add a job to insert it to the main index.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto cur = i % 2 ? svs : flat;
+        GenerateAndAddVector<TEST_DATA_T>(cur, dim, i % n_labels, i);
 
         // Add a search job. Make sure the query element is between k and n_labels - k.
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
@@ -2718,25 +1789,559 @@ TYPED_TEST(SVSTieredIndexTest, parallelRangeSearch) {
 
     EXPECT_EQ(tiered_index->indexSize(), n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
-    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
-    for (auto &it : tiered_index->labelToInsertJobs) {
-        EXPECT_EQ(it.second.size(), per_label);
-    }
-    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), n);
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    EXPECT_EQ(svs->indexSize(), n / 2);
+    EXPECT_EQ(flat->indexSize(), n / 2);
 
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    // All the vectors are already in the tiered index, so we expect to find the expected
-    // results from the get-go.
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
 
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
-    EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
-    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(successful_searches, n);
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = 1};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    TEST_DATA_T val = 1.0;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, val);
+    // Overwrite label 0 (in the flat buffer) with a different value.
+    val = 2.0;
+    TEST_DATA_T overwritten_vec[] = {val, val, val, val};
+    ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
+
+    // Validate that jobs were created properly - first job should be invalid after overwrite,
+    // the second should be a pending insert job.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, true);
+    mock_thread_pool.thread_iteration();
+
+    // Ingest vector into SVS, and then overwrite it.
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    val = 3.0;
+    overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
+    ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    // Swap job should be executed for the overwritten vector since limit is 1, and we are calling
+    // swap job execution prior to insert jobs.
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
+
+    // Ingest the updated vector to SVS.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    for (size_t updateThreshold : {n, size_t{1}}) {
+        auto mock_thread_pool = tieredIndexMock();
+
+        auto *tiered_index =
+            this->CreateTieredSVSIndex(svs_params, mock_thread_pool, updateThreshold);
+        auto allocator = tiered_index->getAllocator();
+
+        // Launch the BG threads loop that takes jobs from the queue and executes them.
+
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                      std::ref(mock_thread_pool));
+        }
+
+        // Insert vectors and overwrite them multiple times while thread run in the background.
+        std::srand(10); // create pseudo random generator with any arbitrary seed.
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            tiered_index->addVector(vector, i);
+        }
+        EXPECT_EQ(tiered_index->indexLabelCount(), n);
+
+        size_t num_overwrites = 1000;
+        for (size_t i = 0; i < num_overwrites; i++) {
+            size_t label_to_overwrite = std::rand() % n;
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
+        }
+
+        mock_thread_pool.thread_pool_join();
+
+        EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), n);
+    }
+}
+
+// TODO: Uncomment tests below or remove if not relevant.
+/*
+TYPED_TEST(SVSTieredIndexTest, testInfo) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1000);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSimIndexInfo info = tiered_index->info();
+    EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVSLIB);
+    EXPECT_EQ(info.commonInfo.indexSize, 0);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, tiered_index->getAllocationSize());
+    EXPECT_EQ(info.commonInfo.basicInfo.isMulti, TypeParam::isMulti());
+    EXPECT_EQ(info.commonInfo.basicInfo.dim, dim);
+    EXPECT_EQ(info.commonInfo.basicInfo.metric, VecSimMetric_L2);
+    EXPECT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
+    EXPECT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    VecSimIndexInfo frontendIndexInfo = tiered_index->GetFlatIndex()->info();
+    VecSimIndexInfo backendIndexInfo = tiered_index->GetBackendIndex()->info();
+
+    compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
+    compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
+    compareCommonInfo(info.tieredInfo.backendCommonInfo, backendIndexInfo.commonInfo);
+    compareSVSInfo(info.tieredInfo.backendInfo.svsInfo, backendIndexInfo.svsInfo);
+
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          backendIndexInfo.commonInfo.memory +
+                                          frontendIndexInfo.commonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.pendingSwapJobsThreshold, 1);
+
+    // Validate that Static info returns the right restricted info as well.
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
+
+    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 1);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+
+    mock_thread_pool.thread_iteration();
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 1);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    if (TypeParam::isMulti()) {
+        GenerateAndAddVector(tiered_index, dim, 1, 1);
+        info = tiered_index->info();
+
+        EXPECT_EQ(info.commonInfo.indexSize, 2);
+        EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
+        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
+        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                              info.tieredInfo.backendCommonInfo.memory +
+                                              info.tieredInfo.frontendCommonInfo.memory);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    }
+
+    VecSimIndex_DeleteVector(tiered_index, 1);
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 0);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+}
+
+TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2};
+
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    VecSimIndexInfo info = tiered_index->info();
+    VecSimIndexInfo frontendIndexInfo = tiered_index->GetFlatIndex()->info();
+    VecSimIndexInfo backendIndexInfo = tiered_index->GetBackendIndex()->info();
+
+    VecSimInfoIterator *infoIterator = tiered_index->infoIterator();
+    EXPECT_EQ(infoIterator->numberOfFields(), 15);
+
+    while (infoIterator->hasNext()) {
+        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
+
+        if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
+            // Algorithm type.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimCommonStrings::TIERED_STRING);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
+            // Vector type.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimType_ToString(info.commonInfo.basicInfo.type));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
+            // Vector dimension.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.dim);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::METRIC_STRING)) {
+            // Metric.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimMetric_ToString(info.commonInfo.basicInfo.metric));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
+            // Search mode.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
+            // Index size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
+            // Index label count.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexLabelCount);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
+            // Is the index multi value.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
+            // Memory.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
+            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
+            compareSVSIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_SVS_SWAP_JOBS_THRESHOLD_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(
+                infoField->fieldValue.uintegerValue,
+                info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.pendingSwapJobsThreshold);
+        } else {
+            FAIL();
+        }
+    }
+    VecSimInfoIterator_Free(infoIterator);
+}
+
+TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    // Validate that the vector was inserted directly to the SVS index.
+    labelType vec_label = 0;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+
+    // Overwrite inplace - only in single-value mode
+    if (!TypeParam::isMulti()) {
+        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
+        tiered_index->addVector(overwritten_vec, vec_label);
+        ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
+    }
+
+    // Validate that the vector is removed in place.
+    tiered_index->deleteVector(vec_label);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 0);
+}
+
+TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 500;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = 32,
+                         .efRuntime = 3 * n};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    // Create and insert vectors one by one async.
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+    size_t n_labels = n / per_label;
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
+    }
+
+    // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    EXPECT_LE(tiered_index->GetBackendIndex()->indexSize(), n);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
+    }
+    mock_thread_pool.thread_pool_join();
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2 * n);
+
+    // Now delete the last n inserted vectors of the index using async jobs.
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    mock_thread_pool.init_threads();
+    for (size_t i = 0; i < n_labels; i++) {
+        VecSimIndex_DeleteVector(tiered_index, n_labels + i);
+    }
+    // At this point, repair jobs should be executed in the background.
+    EXPECT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), n);
+
+    // Insert INPLACE another n vector (instead of the ones that were deleted).
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    auto svs_index = tiered_index->getSVSIndex();
+    // Run twice, at first run we insert non-existing labels, in the second run we overwrite them
+    // (for single-value index only).
+    for (auto overwrite : {0, 1}) {
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            labelType cur_label = i % n_labels + n_labels;
+            EXPECT_EQ(tiered_index->addVector(vector, cur_label),
+                      TypeParam::isMulti() ? 1 : 1 - overwrite);
+            // Run a query over svs index and see that we only receive ids with label < n_labels+i
+            // (the label that we just inserted), and the first result should be this vector
+            // (unless it is unreachable)
+            auto ver_res = [&](size_t res_label, double score, size_t index) {
+                if (index == 0) {
+                    if (res_label == cur_label) {
+                        EXPECT_DOUBLE_EQ(score, 0);
+                    } else {
+                        svs_index->lockSharedIndexDataGuard();
+                        ASSERT_EQ(svs_index->getDistanceFrom_Unsafe(cur_label, vector), 0);
+                        svs_index->unlockSharedIndexDataGuard();
+                    }
+                }
+                if (!overwrite) {
+                    ASSERT_LE(res_label, i + n_labels);
+                }
+            };
+            runTopKSearchTest(svs_index, vector, 10, ver_res);
+        }
+    }
+
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), 2 * n_labels);
+}
+
+TYPED_TEST(SVSTieredIndexTest, bufferLimit) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Create tiered index with buffer limit set to 0.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                     DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, 0);
+    auto allocator = tiered_index->getAllocator();
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+
+    // Set the flat limit to 1 and insert another vector - expect it to go to the flat buffer.
+    tiered_index->flatBufferLimit = 1;
+    labelType vec_label = 1;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+
+    // Overwrite the vector, expect removing it from the flat buffer and replace it with the new one
+    // only in single-value mode
+    if (!TypeParam::isMulti()) {
+        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
+        ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
+        ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
+        // The first job in Q should be the invalid overwritten insert vector job.
+        ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+        ASSERT_EQ(reinterpret_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
+        mock_thread_pool.jobQ.pop();
+    }
+
+    // Insert another vector, this one should go directly to SVS index since the buffer limit has
+    // reached.
+    vec_label = 2;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 3);
+
+    // Overwrite the vector, expect marking it as deleted in SVS and insert the new one directly
+    // to SVS as well.
+    if (!TypeParam::isMulti()) {
+        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
+        ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
+        ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 3);
+        ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 1);
+        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 3);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTest, bufferLimitAsync) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 500;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = 64};
+
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Create tiered index with buffer limit set to 100.
+    size_t flat_buffer_limit = 100;
+    auto *tiered_index = this->CreateTieredSVSIndex(
+        svs_params, mock_thread_pool, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
+    auto allocator = tiered_index->getAllocator();
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+    // Create and insert vectors one by one async. At some point, buffer limit gets full and vectors
+    // are inserted directly to SVS.
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+    size_t n_labels = n / per_label;
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    // Run twice, at first run we insert non-existing labels, in the second run we overwrite them
+    // (for single-value index only).
+    for (auto overwrite : {0, 1}) {
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            EXPECT_EQ(tiered_index->addVector(vector, i % n_labels),
+                      TypeParam::isMulti() ? 1 : 1 - overwrite);
+            EXPECT_LE(tiered_index->GetFlatIndex()->indexSize(), flat_buffer_limit);
+        }
+        // In first run, wait until all vectors are moved from flat index to SVS backend index.
+        while (tiered_index->GetBackendIndex()->indexSize() < n) {
+            //do nothing
+        }
+    }
+    mock_thread_pool.thread_pool_join();
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2 * n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, preferAdHocOptimization) {
@@ -2754,8 +2359,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, preferAdHocOptimization) {
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
-    auto svs = tiered_index->backendIndex;
-    auto flat = tiered_index->frontendIndex;
+    auto svs = tiered_index->GetBackendIndex();
+    auto flat = tiered_index->GetFlatIndex();
 
     // Insert 5 vectors to the main index.
     for (size_t i = 0; i < 5; i++) {
@@ -2798,7 +2403,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
         for (size_t j = 0; j < dim; j++) {
             vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
         }
-        VecSimIndex_AddVector(tiered_index->backendIndex, vector, i);
+        VecSimIndex_AddVector(tiered_index->GetBackendIndex(), vector, i);
     }
 
     // Delete all the vectors and wait for the thread pool to finish running the repair jobs.
@@ -2810,7 +2415,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     mock_thread_pool.thread_pool_join();
 
     ASSERT_EQ(tiered_index->indexSize(), n);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), n);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
@@ -2874,8 +2479,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, FitMemoryTest) {
     auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
 
     // Add vector
-    GenerateAndAddVector<TEST_DATA_T>(index->frontendIndex, dim, 0);
-    GenerateAndAddVector<TEST_DATA_T>(index->backendIndex, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index->GetFlatIndex(), dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index->GetBackendIndex(), dim, 0);
     size_t initial_memory = index->getAllocationSize();
     index->fitMemory();
     // Tired backendIndex index doesn't have initial capacity, so adding the first vector triggers
@@ -2897,9 +2502,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteBothAsyncAndInplace) {
     auto allocator = tiered_index->getAllocator();
 
     // Insert one vector to SVS.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 0);
     // Add another vector and remove it. Expect that at SVS index one repair job will be created.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 1, 1);
     ASSERT_EQ(tiered_index->deleteLabelFromSVS(1), 1);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
 
@@ -2916,7 +2521,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteBothAsyncAndInplace) {
 
     // Add one more vector and remove it, expect that the same repair job for 0 would be created
     // for repairing 0->2.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 2, 2);
     ASSERT_EQ(tiered_index->deleteLabelFromSVS(2), 1);
     ASSERT_TRUE(tiered_index->idToSwapJob.contains(2));
     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
@@ -2954,9 +2559,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
     auto allocator = tiered_index->getAllocator();
 
     // Insert three vector to SVS, expect a full graph to be created
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 2, 2);
 
     // Delete vector with id=0 asynchronously, expect to have a repair job for the other vectors.
     ASSERT_EQ(tiered_index->deleteVector(0), 1);
@@ -2971,7 +2576,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
 
     // Insert another vector with id=3, that should be connected to both 1 and 2.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 3, -1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 3, -1);
 
     // Delete in-place id=2, expect that upon repairing inplace 1 due to 1->2, there will *not* be
     // a new edge 1->0 since 0 is deleted. Also the other repair job 2->0 should be invalidated.
@@ -3037,7 +2642,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
         }
         VecSimIndex_AddVector(tiered_index, vector, i);
     }
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
 
     // Update vectors while changing the write mode.
     for (size_t i = 0; i < n; i++) {
@@ -3056,8 +2661,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
     }
 
     mock_thread_pool.thread_pool_join();
-    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), n);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n);
     auto state = tiered_index->getSVSIndex()->checkIntegrity();
     ASSERT_EQ(state.valid_state, 1);
     ASSERT_EQ(state.connections_to_repair, 0);
