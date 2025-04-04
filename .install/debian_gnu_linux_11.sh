@@ -11,4 +11,4 @@ source install_cmake.sh $MODE
 wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | $MODE tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
 echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | $MODE tee /etc/apt/sources.list.d/oneAPI.list
 $MODE apt update
-$MODE apt install intel-oneapi-mkl
+$MODE apt install -y intel-oneapi-mkl
