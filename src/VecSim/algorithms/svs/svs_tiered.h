@@ -200,7 +200,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             auto batch_res = new VecSimQueryReply(allocator);
             auto [from_svs, from_flat] =
                 merge_results<false>(batch_res->results, svs_results, flat_results, n_res);
-            merge_results<false>(batch_res->results, svs_results, flat_results, n_res);
 
             // We're on a single-value index, update the set of results returned from the FLAT index
             // before popping them, to prevent them to be returned from the SVS index in later
@@ -536,10 +535,7 @@ public:
         {
             std::scoped_lock lock(this->flatIndexGuard, this->mainIndexGuard, this->journal_mutex);
             ret = this->frontendIndex->addVector(blob, label);
-            ret -= svs_index->deleteVectors(&label, 1);
-            // The case when exists in both indicies (ret = 0-1) should not happen
-            // elsewhere search queries may return wrong result.
-            assert(ret >= 0 && "addVector: vector duplication in both indices");
+            ret = std::max(ret - svs_index->deleteVectors(&label, 1), 0);
             journal.emplace_back(label, true);
             index_update_needed = this->backendIndex->indexSize() > 0 ||
                                   this->journal.size() >= this->updateJobThreshold;
