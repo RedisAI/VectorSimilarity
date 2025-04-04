@@ -9,6 +9,7 @@ $MODE yum remove -y gcc # remove gcc 7
 $MODE yum install -y wget git valgrind gcc10 gcc10-c++
 $MODE update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc10-gcc 60 --slave /usr/bin/g++ g++ /usr/bin/gcc10-g++
 
-$MODE yum install intel-oneapi-mkl-devel
+$MODE yum install -y intel-oneapi-mkl-devel
+source /opt/intel/oneapi/setvars.sh
 
 source install_cmake.sh $MODE
