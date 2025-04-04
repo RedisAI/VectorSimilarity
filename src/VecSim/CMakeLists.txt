@@ -23,10 +23,11 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
 # endif()
 
 # Configure SVS build
+
 set(SVS_SHARED_LIB ON CACHE BOOL "Use SVS pre-compiled shared library")
 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
-if(SVS_SHARED_LIB)
+if(SVS_SHARED_LIB AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
     include(FetchContent)
     FetchContent_Declare(
         svs
