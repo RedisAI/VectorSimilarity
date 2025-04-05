@@ -23,7 +23,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
 # endif()
 
 # Configure SVS build TODO: set default back to ON once MKL installation issue is resolved.
-set(SVS_SHARED_LIB ON CACHE BOOL "Use SVS pre-compiled shared library")
+set(SVS_SHARED_LIB OFF CACHE BOOL "Use SVS pre-compiled shared library")
 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
 if(SVS_SHARED_LIB)
