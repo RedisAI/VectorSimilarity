@@ -24,10 +24,10 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
 
 # TODO: enable svs build again once MKL installation issue is resolved, and after we validate
 # that we only build for supported platforms (and fail gracefully for those that are not)
-option(SVS_SUPPORTED "Build with SVS library support" ON)
+option(SVS_SUPPORTED "Build with SVS library support" OFF)
 
 # Configure SVS build
-set(SVS_SHARED_LIB OFF CACHE BOOL "Use SVS pre-compiled shared library")
+set(SVS_SHARED_LIB ON CACHE BOOL "Use SVS pre-compiled shared library")
 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
 if(SVS_SUPPORTED)
@@ -39,7 +39,7 @@ if(SVS_SUPPORTED)
             URL "${SVS_URL}"
         )
         FetchContent_MakeAvailable(svs)
-        list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR} /opt/intel/oneapi/mkl/2025.1/lib/cmake")
+        list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR}")
         find_package(MKL REQUIRED)
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
