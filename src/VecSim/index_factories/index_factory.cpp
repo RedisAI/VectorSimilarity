@@ -4,12 +4,14 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
+#include "VecSim/vec_sim_index.h"
 #include "index_factory.h"
 #include "hnsw_factory.h"
 #include "brute_force_factory.h"
 #include "tiered_factory.h"
+#if HAVE_SVS
 #include "svs_factory.h"
-#include "VecSim/vec_sim_index.h"
+#endif
 
 namespace VecSimFactory {
 VecSimIndex *NewIndex(const VecSimParams *params) {
@@ -31,7 +33,9 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             break;
         }
         case VecSimAlgo_SVS: {
+#if HAVE_SVS
             index = SVSFactory::NewIndex(params);
+#endif
             break;
         }
         }
@@ -49,8 +53,10 @@ size_t EstimateInitialSize(const VecSimParams *params) {
         return BruteForceFactory::EstimateInitialSize(&params->algoParams.bfParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateInitialSize(&params->algoParams.tieredParams);
-    case VecSimAlgo_SVS:
+    case VecSimAlgo_SVS:; // empty statement if svs not available
+#if HAVE_SVS
         return SVSFactory::EstimateInitialSize(&params->algoParams.svsParams);
+#endif
     }
     return -1;
 }
@@ -63,8 +69,10 @@ size_t EstimateElementSize(const VecSimParams *params) {
         return BruteForceFactory::EstimateElementSize(&params->algoParams.bfParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateElementSize(&params->algoParams.tieredParams);
-    case VecSimAlgo_SVS:
+    case VecSimAlgo_SVS:; // empty statement if svs not available
+#if HAVE_SVS
         return SVSFactory::EstimateElementSize(&params->algoParams.svsParams);
+#endif
     }
     return -1;
 }
