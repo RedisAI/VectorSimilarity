@@ -7,7 +7,9 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#if HAVE_SVS
 #include "VecSim/algorithms/svs/svs.h"
+#endif
 #include "VecSim/batch_iterator.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
@@ -540,6 +542,7 @@ public:
     }
 };
 
+#if HAVE_SVS
 class PySVSIndex : public PyVecSimIndex {
 public:
     explicit PySVSIndex(const SVSParams &svs_params) {
@@ -572,6 +575,7 @@ public:
         svs_index->addVectors(vectors_data.data(), labels.data(), n_vectors);
     }
 };
+#endif
 
 PYBIND11_MODULE(VecSim, m) {
     py::enum_<VecSimAlgo>(m, "VecSimAlgo")
@@ -735,13 +739,13 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
              py::arg("params"));
-
+#if HAVE_SVS
     py::class_<PySVSIndex, PyVecSimIndex>(m, "SVSIndex")
         .def(py::init([](const SVSParams &params) { return new PySVSIndex(params); }),
              py::arg("params"))
         .def("add_vector_parallel", &PySVSIndex::addVectorsParallel, py::arg("vectors"),
              py::arg("labels"));
-
+#endif
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
         .def("get_next_results", &PyBatchIterator::getNextResults)
