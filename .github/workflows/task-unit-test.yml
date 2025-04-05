@@ -36,6 +36,8 @@ jobs:
           submodules: recursive
       - name: install dependencies
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
+      - name: install python packages
+        run: pip3 install -r requirements.txt
       - name: Set Artifact Name
         # Artifact names have to be unique, so we base them on the environment.
         # We also remove invalid characters from the name.
