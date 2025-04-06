@@ -122,10 +122,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     case ARCH_OPT_SSE:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
-    case ARCH_OPT_NEON:
-        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_NEON);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
-        break;
 #endif // CPU_FEATURES_ARCH_X86_64
 #ifdef CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_SVE:
@@ -136,11 +132,15 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SVE2);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
         break;
+    case ARCH_OPT_NEON:
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_NEON);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
+        break;
+#endif // CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_NONE:
         arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_NONE);
         ASSERT_EQ(FP32_L2Sqr, arch_opt_func);
         break;
-#endif // CPU_FEATURES_ARCH_AARCH64
     default:
         FAIL();
     }
