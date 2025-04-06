@@ -6,7 +6,6 @@
 #define DATA_TYPE float
 #include "bm_spaces.h"
 
-
 // NEON implementation for ARMv8-a
 #ifdef OPT_NEON
 INITIALIZE_EXACT_512BIT_BM(FP32, NEON, L2, 16);

@@ -140,7 +140,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
         ASSERT_EQ(FP32_L2Sqr, arch_opt_func);
         break;
 
-        
     default:
         FAIL();
     }
