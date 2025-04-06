@@ -7,7 +7,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
-static void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
+inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
                              svuint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
 
