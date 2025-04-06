@@ -35,10 +35,6 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: recursive
-
-    - name: Install Cmake   # Install Cmake using the project's fix version
-      run: chmod +x .install/install_cmake.sh && .install/install_cmake.sh sudo
-
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
