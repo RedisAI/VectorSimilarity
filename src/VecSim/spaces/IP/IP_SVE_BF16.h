@@ -50,7 +50,7 @@ float BF16_InnerProduct_SVE(const void *pVect1v, const void *pVect2v, size_t dim
 
     // Handle the tail with the residual predicate
     if constexpr (partial_chunk) {
-        svbool_t pg = svwhilelt_b16(offset, dimension);
+        svbool_t pg = svwhilelt_b16_u64(offset, dimension);
 
         // Load brain-half-precision vectors.
         // Inactive elements are zeros, according to the docs
