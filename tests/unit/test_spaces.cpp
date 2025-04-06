@@ -84,7 +84,7 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 
-#ifdef CPU_FEATURES_ARCH_X86_64
+
 
 using namespace spaces;
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -256,4 +256,3 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Range(1UL, 8 * 2UL));
 
-#endif // CPU_FEATURES_ARCH_X86_64

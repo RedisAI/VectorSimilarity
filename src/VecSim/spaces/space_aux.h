@@ -8,17 +8,13 @@
 #include "cpu_features_macros.h"
 
 enum Arch_Optimization {
-#ifdef CPU_FEATURES_ARCH_X86_64
+    ARCH_OPT_NONE,
     ARCH_OPT_SSE,
     ARCH_OPT_AVX,
     ARCH_OPT_AVX512_F,
-#endif // CPU_FEATURES_ARCH_X86_64
-#ifdef CPU_FEATURES_ARCH_AARCH64
-    ARCH_OPT_NEON,
-    ARCH_OPT_SVE,
     ARCH_OPT_SVE2,
-#endif // CPU_FEATURES_ARCH_AARCH64
-    ARCH_OPT_NONE
+    ARCH_OPT_SVE,
+    ARCH_OPT_NEON
 };
 
 Arch_Optimization getArchitectureOptimization();
