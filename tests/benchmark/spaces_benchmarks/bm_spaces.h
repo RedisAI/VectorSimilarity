@@ -49,10 +49,10 @@
     Arg(16 - 1)->Arg(16 + 1)->Arg(128 - 1)->Arg(128 + 1)->Arg(400 - 1)->Arg(400 + 1)
 
 #define INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)                                    \
-    BENCHMARK_DISTANCE_F_##type_prefix(arch, metric##_##dim_opt, func)                             \
-        BENCHMARK_REGISTER_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))         \
-            ->ArgName("Dimension")                                                                 \
-            ->Unit(benchmark::kNanosecond)
+    BENCHMARK_DISTANCE_F_##type_prefix(arch, metric##_##dim_opt, func) BENCHMARK_REGISTER_F(       \
+        BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))          \
+        ->ArgName("Dimension")                                                                     \
+        ->Unit(benchmark::kNanosecond)
 
 #define INITIALIZE_EXACT_BM(type_prefix, arch, metric, dim_opt, func)                              \
     INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_PARAMS_MODULU##dim_opt##DIM
@@ -65,7 +65,7 @@
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/IP/IP.h"
 #define BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))                              \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))   \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \

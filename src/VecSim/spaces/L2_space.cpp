@@ -19,10 +19,10 @@ namespace spaces {
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
-    
+
 #ifdef CPU_FEATURES_ARCH_X86_64
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
-    
+
     if (dim < 16) {
         return ret_dist_func;
     }
@@ -34,7 +34,8 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #endif
 
     switch (arch_opt) {
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+        // Optimizations assume at least 16 floats. If we have less, we use the naive
+        // implementation.
 #ifdef CPU_FEATURES_ARCH_X86_64
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
