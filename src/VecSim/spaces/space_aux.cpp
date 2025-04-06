@@ -23,6 +23,17 @@ Arch_Optimization getArchitectureOptimization() {
         return ARCH_OPT_SSE;
     }
 #endif // CPU_FEATURES_ARCH_X86_64
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    if (features.sve2) {
+        return ARCH_OPT_SVE2;
+    }
+    if (features.sve) {
+        return ARCH_OPT_SVE;
+    }
+    if (features.asimd) {
+        return ARCH_OPT_NEON;
+    }
+#endif // CPU_FEATURES_ARCH_AARCH64
 
     return ARCH_OPT_NONE;
 }
