@@ -15,13 +15,14 @@
 #ifdef OPT_NEON
 INITIALIZE_EXACT_BM(FP32, NEON, L2, 16, spaces::Choose_FP32_L2_implementation_NEON(16));
 INITIALIZE_EXACT_BM(FP32, NEON, L2, 4, spaces::Choose_FP32_L2_implementation_NEON(4));
-INITIALIZE_RESIDUAL_BM(FP32, NEON, L2, 16_Residuals, spaces::Choose_FP32_L2_implementation_NEON(16));
+INITIALIZE_RESIDUAL_BM(FP32, NEON, L2, 16_Residuals,
+                       spaces::Choose_FP32_L2_implementation_NEON(16));
 INITIALIZE_RESIDUAL_BM(FP32, NEON, L2, 4_Residuals, spaces::Choose_FP32_L2_implementation_NEON(4));
 
 INITIALIZE_EXACT_BM(FP32, NEON, IP, 16, spaces::Choose_FP32_L2_implementation_NEON(16));
 INITIALIZE_EXACT_BM(FP32, NEON, IP, 4, spaces::Choose_FP32_L2_implementation_NEON(4));
 INITIALIZE_RESIDUAL_BM(FP32, NEON, IP, 16_Residuals,
-    spaces::Choose_FP32_L2_implementation_NEON(16));
+                       spaces::Choose_FP32_L2_implementation_NEON(16));
 INITIALIZE_RESIDUAL_BM(FP32, NEON, IP, 4_Residuals, spaces::Choose_FP32_L2_implementation_NEON(4));
 #endif
 // SVE implementation
@@ -33,20 +34,20 @@ INITIALIZE_RESIDUAL_BM(FP32, SVE, L2, 4_Residuals, spaces::Choose_FP32_L2_implem
 
 INITIALIZE_EXACT_BM(FP32, SVE, IP, 16, spaces::Choose_FP32_L2_implementation_SVE(16));
 INITIALIZE_EXACT_BM(FP32, SVE, IP, 4, spaces::Choose_FP32_L2_implementation_SVE(4));
-INITIALIZE_RESIDUAL_BM(FP32, SVE, IP, 16_Residuals,
-    spaces::Choose_FP32_L2_implementation_SVE(16));
+INITIALIZE_RESIDUAL_BM(FP32, SVE, IP, 16_Residuals, spaces::Choose_FP32_L2_implementation_SVE(16));
 INITIALIZE_RESIDUAL_BM(FP32, SVE, IP, 4_Residuals, spaces::Choose_FP32_L2_implementation_SVE(4));
 #endif
 // SVE2 implementation
 #ifdef OPT_SVE2
 INITIALIZE_EXACT_BM(FP32, SVE2, L2, 16, spaces::Choose_FP32_L2_implementation_SVE2(16));
 INITIALIZE_EXACT_BM(FP32, SVE2, L2, 4, spaces::Choose_FP32_L2_implementation_SVE2(4));
-INITIALIZE_RESIDUAL_BM(FP32, SVE2, L2, 16_Residuals, spaces::Choose_FP32_L2_implementation_SVE2(16));
+INITIALIZE_RESIDUAL_BM(FP32, SVE2, L2, 16_Residuals,
+                       spaces::Choose_FP32_L2_implementation_SVE2(16));
 INITIALIZE_RESIDUAL_BM(FP32, SVE2, L2, 4_Residuals, spaces::Choose_FP32_L2_implementation_SVE2(4));
 INITIALIZE_EXACT_BM(FP32, SVE2, IP, 16, spaces::Choose_FP32_IP_implementation_SVE2(16));
 INITIALIZE_EXACT_BM(FP32, SVE2, IP, 4, spaces::Choose_FP32_IP_implementation_SVE2(4));
 INITIALIZE_RESIDUAL_BM(FP32, SVE2, IP, 16_Residuals,
-    spaces::Choose_FP32_IP_implementation_SVE2(16));
+                       spaces::Choose_FP32_IP_implementation_SVE2(16));
 INITIALIZE_RESIDUAL_BM(FP32, SVE2, IP, 4_Residuals, spaces::Choose_FP32_IP_implementation_SVE2(4));
 
 #endif
@@ -103,7 +104,7 @@ INITIALIZE_RESIDUAL_BM(FP32, SSE, IP, 16_Residuals, FP32_InnerProductSIMD16ExtRe
 INITIALIZE_RESIDUAL_BM(FP32, SSE, IP, 4_Residuals, FP32_InnerProductSIMD4ExtResiduals_SSE);
 
 #endif // SSE
-#endif //CPU_FEATURES_ARCH_X86_64
+#endif // CPU_FEATURES_ARCH_X86_64
 
 // Naive algorithms
 

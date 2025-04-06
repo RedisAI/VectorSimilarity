@@ -37,5 +37,4 @@ CalculationGuideline FP64_GetCalculationGuideline(size_t dim);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func);
 
-
 } // namespace spaces
