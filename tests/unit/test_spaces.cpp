@@ -333,7 +333,6 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
         ASSERT_TRUE(false);
     }
 }
-
 INSTANTIATE_TEST_SUITE_P(
     FP64DimNOptFuncs, FP64SpacesOptimizationTest,
     testing::Values(std::make_pair(8, spaces_test::L2_dist_funcs_8Ext),
@@ -344,4 +343,5 @@ INSTANTIATE_TEST_SUITE_P(
                     std::make_pair(17, spaces_test::IP_dist_funcs_8ExtResiduals),
                     std::make_pair(7, spaces_test::L2_dist_funcs_2ExtResiduals),
                     std::make_pair(7, spaces_test::IP_dist_funcs_2ExtResiduals)));
-#endif
+
+#endif // CPU_FEATURES_ARCH_X86_64
