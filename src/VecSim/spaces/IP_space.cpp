@@ -13,7 +13,6 @@
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
 
-
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
                                        unsigned char *alignment) {
@@ -76,7 +75,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         break;
 #endif
 #endif // __aarch64__
-        case ARCH_OPT_NONE:
+    case ARCH_OPT_NONE:
         break;
     } // switch
     return ret_dist_func;

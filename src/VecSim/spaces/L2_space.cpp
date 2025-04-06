@@ -73,9 +73,9 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         break;
 #endif
 #endif // __aarch64__
-case ARCH_OPT_NONE:
+    case ARCH_OPT_NONE:
         break;
-} // switch
+    } // switch
     return ret_dist_func;
 }
 
