@@ -5,10 +5,13 @@
  */
 
 #include "SVE.h"
+
 #include "VecSim/spaces/L2/L2_SVE_FP32.h"
 #include "VecSim/spaces/IP/IP_SVE_FP32.h"
+
 #include "VecSim/spaces/L2/L2_SVE_INT8.h"
 #include "VecSim/spaces/IP/IP_SVE_INT8.h"
+
 #include "VecSim/spaces/L2/L2_SVE_UINT8.h"
 #include "VecSim/spaces/IP/IP_SVE_UINT8.h"
 

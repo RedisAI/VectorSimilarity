@@ -9,7 +9,7 @@
 
 // Aligned step using svptrue_b8()
 static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
-                                svint32_t &sum) {
+                                svint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
@@ -50,7 +50,7 @@ static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, si
     sum = svadd_s32_x(pg, sum, sq_l);
     sum = svadd_s32_x(pg, sum, sq_h);
 
-    offset += svcntb(); // Move to the next set of int8 elements
+    offset += chunk; // Move to the next set of int8 elements
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -79,21 +79,21 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
     size_t num_main_blocks = dimension / chunk_size;
 
     for (size_t i = 0; i < num_main_blocks; ++i) {
-        L2SquareStep(pVect1, pVect2, offset, sum0);
-        L2SquareStep(pVect1, pVect2, offset, sum1);
-        L2SquareStep(pVect1, pVect2, offset, sum2);
-        L2SquareStep(pVect1, pVect2, offset, sum3);
+        L2SquareStep(pVect1, pVect2, offset, sum0, vl);
+        L2SquareStep(pVect1, pVect2, offset, sum1, vl);
+        L2SquareStep(pVect1, pVect2, offset, sum2, vl);
+        L2SquareStep(pVect1, pVect2, offset, sum3, vl);
     }
 
     if constexpr (additional_steps > 0) {
         if constexpr (additional_steps >= 1) {
-            L2SquareStep(pVect1, pVect2, offset, sum0);
+            L2SquareStep(pVect1, pVect2, offset, sum0, vl);
         }
         if constexpr (additional_steps >= 2) {
-            L2SquareStep(pVect1, pVect2, offset, sum1);
+            L2SquareStep(pVect1, pVect2, offset, sum1, vl);
         }
         if constexpr (additional_steps >= 3) {
-            L2SquareStep(pVect1, pVect2, offset, sum2);
+            L2SquareStep(pVect1, pVect2, offset, sum2, vl);
         }
     }
 

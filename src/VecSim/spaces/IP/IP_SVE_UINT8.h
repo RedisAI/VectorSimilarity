@@ -8,7 +8,7 @@
 #include <arm_sve.h>
 
 static void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
-                             svuint32_t &sum) {
+                             svuint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
 
     // Load uint8 vectors
@@ -17,7 +17,7 @@ static void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, siz
 
     sum = svdot_u32(sum, v1_ui8, v2_ui8);
 
-    offset += svcntb(); // Move to the next set of uint8 elements
+    offset += chunk; // Move to the next set of uint8 elements
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -44,23 +44,23 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     size_t num_chunks = dimension / chunk_size;
 
     for (size_t i = 0; i < num_chunks; ++i) {
-        InnerProductStep(pVect1, pVect2, offset, sum0);
-        InnerProductStep(pVect1, pVect2, offset, sum1);
-        InnerProductStep(pVect1, pVect2, offset, sum2);
-        InnerProductStep(pVect1, pVect2, offset, sum3);
+        InnerProductStep(pVect1, pVect2, offset, sum0, vl);
+        InnerProductStep(pVect1, pVect2, offset, sum1, vl);
+        InnerProductStep(pVect1, pVect2, offset, sum2, vl);
+        InnerProductStep(pVect1, pVect2, offset, sum3, vl);
     }
 
     // Process remaining complete SVE vectors that didn't fit into the main loop
     // These are full vector operations (0-3 elements)
     if constexpr (additional_steps > 0) {
         if constexpr (additional_steps >= 1) {
-            InnerProductStep(pVect1, pVect2, offset, sum0);
+            InnerProductStep(pVect1, pVect2, offset, sum0, vl);
         }
         if constexpr (additional_steps >= 2) {
-            InnerProductStep(pVect1, pVect2, offset, sum1);
+            InnerProductStep(pVect1, pVect2, offset, sum1, vl);
         }
         if constexpr (additional_steps >= 3) {
-            InnerProductStep(pVect1, pVect2, offset, sum2);
+            InnerProductStep(pVect1, pVect2, offset, sum2, vl);
         }
     }
 

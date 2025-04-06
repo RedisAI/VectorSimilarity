@@ -8,7 +8,7 @@
 #include <arm_sve.h>
 
 static void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
-                             svint32_t &sum) {
+                             svint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
 
     // Load int8 vectors
@@ -17,7 +17,7 @@ static void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_
 
     sum = svdot_s32(sum, v1_i8, v2_i8);
 
-    offset += svcntb(); // Move to the next set of int8 elements
+    offset += chunk; // Move to the next set of int8 elements
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -44,23 +44,23 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     size_t num_chunks = dimension / chunk_size;
 
     for (size_t i = 0; i < num_chunks; ++i) {
-        InnerProductStep(pVect1, pVect2, offset, sum0);
-        InnerProductStep(pVect1, pVect2, offset, sum1);
-        InnerProductStep(pVect1, pVect2, offset, sum2);
-        InnerProductStep(pVect1, pVect2, offset, sum3);
+        InnerProductStep(pVect1, pVect2, offset, sum0, vl);
+        InnerProductStep(pVect1, pVect2, offset, sum1, vl);
+        InnerProductStep(pVect1, pVect2, offset, sum2, vl);
+        InnerProductStep(pVect1, pVect2, offset, sum3, vl);
     }
 
     // Process remaining complete SVE vectors that didn't fit into the main loop
     // These are full vector operations (0-3 elements)
     if constexpr (additional_steps > 0) {
         if constexpr (additional_steps >= 1) {
-            InnerProductStep(pVect1, pVect2, offset, sum0);
+            InnerProductStep(pVect1, pVect2, offset, sum0, vl);
         }
         if constexpr (additional_steps >= 2) {
-            InnerProductStep(pVect1, pVect2, offset, sum1);
+            InnerProductStep(pVect1, pVect2, offset, sum1, vl);
         }
         if constexpr (additional_steps >= 3) {
-            InnerProductStep(pVect1, pVect2, offset, sum2);
+            InnerProductStep(pVect1, pVect2, offset, sum2, vl);
         }
     }
 
