@@ -344,5 +344,4 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
                         std::make_pair(17, spaces_test::IP_dist_funcs_8ExtResiduals),
                         std::make_pair(7, spaces_test::L2_dist_funcs_2ExtResiduals),
                         std::make_pair(7, spaces_test::IP_dist_funcs_2ExtResiduals)));
-
-#endif // CPU_FEATURES_ARCH_X86_64
+#endif
