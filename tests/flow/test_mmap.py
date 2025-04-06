@@ -41,7 +41,7 @@ MMAP_ADVISE = "None"
 ENABLE_LOGS = False
 LOAD_ALL_VECTORS = True
 
-PROCESS_LIMIT_HIGH = "1M"
+PROCESS_LIMIT_HIGH = "2G"
 PROCESS_LIMIT_MAX = "None"
 
 TIMESTAMP_PRINT = True
@@ -80,6 +80,7 @@ queries_data = open_pickled_file(queries_file_name)
 dim = queries_data.shape[1]
 if LOAD_ALL_VECTORS:
     vectors_data = open_pickled_file(all_vectors_file_name)
+    input(f"PID: {os.getpid()} Done loading vectors, press enter to continue")
 
 def get_vector_file_count():
     splits = 0
@@ -246,6 +247,8 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
     print('\nBuilding time: ',f"{build_time:.4f} seconds, {(build_time / 60):.4f} m, {(build_time / 60 / 60):.4f} h\n")
     index_max_level = index.index_max_level()
     print(f"index_max_level: {index_max_level}")
+    final_allocations_mem_gb = index.index_memory()/ 1024 / 1024 / 1024
+    print(f"index allocation size: {final_allocations_mem_gb:.4f} GB")
 
     # Sanity checks
     print(f"disk hnsw index contains {(index.index_size()):,} vectors")
@@ -288,9 +291,11 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
             "expected": distances[0][0],
             "actual": float(0)
         }
-    index_settings = {
+    benchmark_settings = {
         "mmap_advise": MMAP_ADVISE,
         "index_block_size": index_block_size,
+        "process_limit_high": PROCESS_LIMIT_HIGH,
+        "process_limit_max": PROCESS_LIMIT_MAX,
     }
 
     build_result = {
@@ -299,6 +304,7 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
         "num_vectors": num_vectors,
         "build_time": build_time,
         "max_level": index_max_level,
+        "allocations_mem_gb": final_allocations_mem_gb,
         "sanity_checks": sanity_checks,
         "failure_info": failure_info,
     }
@@ -310,7 +316,7 @@ def bm_test_case(M, efC, Ks_efR, num_vectors=num_vectors_train, num_queries=num_
         knn_bm_results.append(queries_reslts)
 
     result = {
-        "index_settings": index_settings,
+        "benchmark_settings": benchmark_settings,
         "build_bm": build_result,
         "knn_bm_results": knn_bm_results,
     }
