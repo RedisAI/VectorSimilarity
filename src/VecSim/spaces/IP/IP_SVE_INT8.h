@@ -30,9 +30,9 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     const size_t chunk_size = 4 * vl;
 
     // Each innerProductStep adds maximum 2^8 & 2^8 = 2^16
-    // Therefore, on a single accumulator, we can perform 2^16 steps before overflowing
-    // That scenario will happen only is the dimension of the vector is larger than 16*4*2^16 = 2^22
-    // (16 int8 in 1 SVE register) * (4 accumulators) * (2^16 steps)
+    // Therefore, on a single accumulator, we can perform 2^15 steps before overflowing
+    // That scenario will happen only is the dimension of the vector is larger than 16*4*2^15 = 2^21
+    // (16 int8 in 1 SVE register) * (4 accumulators) * (2^15 steps)
     // We can safely assume that the dimension is smaller than that
     // So using int32_t is safe
 
@@ -79,7 +79,7 @@ float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dime
     sum0 = svadd_s32_x(svptrue_b32(), sum0, sum1);
     sum2 = svadd_s32_x(svptrue_b32(), sum2, sum3);
 
-    // Perform vector addition in parallel and // Horizontal sum
+    // Perform vector addition in parallel and Horizontal sum
     int32_t sum_all = svaddv_s32(svptrue_b32(), svadd_s32_x(svptrue_b32(), sum0, sum2));
 
     return sum_all;

@@ -9,7 +9,7 @@
 
 // Aligned step using svptrue_b8()
 static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
-                                svfloat32_t &sum) {
+    svint32_t &sum) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
@@ -23,17 +23,11 @@ static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, si
     // Subtract v2 from v1 and widen the results to int16 for the odd indexes
     svint16_t diff_o = svsublt_s16(v1_i8, v2_i8);
 
-    svint32_t sum_int = svdup_s32(0);
+    sum = svmlalb_s32(sum, diff_e, diff_e);
+    sum = svmlalt_s32(sum, diff_e, diff_e);
 
-    // sum_int can't overflow because max value is  4*(2^16)
-
-    sum_int = svmlalb_s32(sum_int, diff_e, diff_e);
-    sum_int = svmlalt_s32(sum_int, diff_e, diff_e);
-
-    sum_int = svmlalb_s32(sum_int, diff_o, diff_o);
-    sum_int = svmlalt_s32(sum_int, diff_o, diff_o);
-
-    sum = svadd_f32_x(pg, sum, svcvt_f32_s32_x(pg, sum_int));
+    sum = svmlalb_s32(sum, diff_o, diff_o);
+    sum = svmlalt_s32(sum, diff_o, diff_o);
 
     offset += svcntb(); // Move to the next set of int8 elements
 }
@@ -46,11 +40,19 @@ float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
     // number of int8 per SVE2 register
     const size_t vl = svcntb();
     const size_t chunk_size = 4 * vl;
+    svbool_t all = svptrue_b8();
 
-    svfloat32_t sum0 = svdup_f32(0.0f);
-    svfloat32_t sum1 = svdup_f32(0.0f);
-    svfloat32_t sum2 = svdup_f32(0.0f);
-    svfloat32_t sum3 = svdup_f32(0.0f);
+    // Each L2SquareStep adds maximum (2*2^8)^2 = 2^18
+    // Therefor, on a single accumulator, we can perform 2^13 steps before overflowing
+    // That scenario will happen only is the dimension of the vector is larger than 16*4*2^13 = 2^19
+    // (at least 16 int8 in 1 SVE2 register) * (4 accumulators) * (2^13 steps)
+    // We can safely assume that the dimension is smaller than that
+    // So using int32_t is safe
+
+    svint32_t sum0 = svdup_s32(0);
+    svint32_t sum1 = svdup_s32(0);
+    svint32_t sum2 = svdup_s32(0);
+    svint32_t sum3 = svdup_s32(0);
 
     size_t offset = 0;
     size_t num_main_blocks = dimension / chunk_size;
@@ -77,7 +79,6 @@ float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
     if constexpr (partial_chunk) {
 
         svbool_t pg = svwhilelt_b8(offset, dimension);
-        svbool_t pg32 = svwhilelt_b32(offset, dimension);
 
         svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
         svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
@@ -88,20 +89,18 @@ float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
         // Subtract v2 from v1 and widen the results to int16 for the odd indexes
         svint16_t diff_o = svsublt_s16(v1_i8, v2_i8);
 
-        svint32_t sum_int = svdup_s32(0);
+        // Can sum without lanes because diffs are zero where it's inactive
 
-        sum_int = svmlalb_s32(sum_int, diff_e, diff_e);
-        sum_int = svmlalt_s32(sum_int, diff_e, diff_e);
+        sum2 = svmlalb_s32(sum2, diff_e, diff_e);
+        sum2 = svmlalt_s32(sum2, diff_e, diff_e);
 
-        sum_int = svmlalb_s32(sum_int, diff_o, diff_o);
-        sum_int = svmlalt_s32(sum_int, diff_o, diff_o);
+        sum2 = svmlalb_s32(sum2, diff_o, diff_o);
+        sum2 = svmlalt_s32(sum2, diff_o, diff_o);
 
-        sum2 = svadd_f32_z(svptrue_b32(), sum2, svcvt_f32_s32_z(pg32, sum_int));
     }
 
-    sum0 = svadd_f32_x(svptrue_b32(), sum0, sum1);
-    sum2 = svadd_f32_x(svptrue_b32(), sum2, sum3);
-    svfloat32_t sum_all = svadd_f32_x(svptrue_b32(), sum0, sum2);
-    float result = svaddv_f32(svptrue_b32(), sum_all);
-    return result;
+    sum0 = svadd_s32_x(all, sum0, sum1);
+    sum2 = svadd_s32_x(all, sum2, sum3);
+    svint32_t sum_all = svadd_s32_x(all, sum0, sum2);
+    return svaddv_s32(all, sum_all);
 }

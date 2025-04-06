@@ -79,7 +79,7 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     sum0 = svadd_u32_x(svptrue_b32(), sum0, sum1);
     sum2 = svadd_u32_x(svptrue_b32(), sum2, sum3);
 
-    // Perform vector addition in parallel and // Horizontal sum
+    // Perform vector addition in parallel and Horizontal sum
     int32_t sum_all = svaddv_u32(svptrue_b32(), svadd_u32_x(svptrue_b32(), sum0, sum2));
 
     return sum_all;
