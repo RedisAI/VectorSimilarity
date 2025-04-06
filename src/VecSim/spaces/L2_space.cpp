@@ -29,7 +29,6 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #endif
 
     switch (arch_opt) {
-#ifdef CPU_FEATURES_ARCH_X86_64
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 
