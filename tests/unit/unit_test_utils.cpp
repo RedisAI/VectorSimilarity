@@ -49,6 +49,11 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
     return QueryParams;
 }
 
+VecSimQueryParams CreateQueryParams(const SVSRuntimeParams &RuntimeParams) {
+    VecSimQueryParams QueryParams = {.svsRuntimeParams = RuntimeParams};
+    return QueryParams;
+}
+
 static bool is_async_index(VecSimIndex *index) {
     return dynamic_cast<VecSimTieredIndex<float, float> *>(index) != nullptr ||
            dynamic_cast<VecSimTieredIndex<bfloat16, float> *>(index) != nullptr ||
