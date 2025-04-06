@@ -9,7 +9,7 @@
 
 // Aligned step using svptrue_b8()
 static inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
-    svint32_t &sum) {
+                                svint32_t &sum) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
@@ -96,7 +96,6 @@ float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
 
         sum2 = svmlalb_s32(sum2, diff_o, diff_o);
         sum2 = svmlalt_s32(sum2, diff_o, diff_o);
-
     }
 
     sum0 = svadd_s32_x(all, sum0, sum1);
