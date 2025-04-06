@@ -220,12 +220,12 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
     case ARCH_OPT_SSE:
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
-        #endif
-        #ifdef CPU_FEATURES_ARCH_AARCH64
-        case ARCH_OPT_NEON:
-        case ARCH_OPT_SVE:
-        case ARCH_OPT_SVE2:
-        #endif // CPU_FEATURES_ARCH_AARCH64
+#endif
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    case ARCH_OPT_NEON:
+    case ARCH_OPT_SVE:
+    case ARCH_OPT_SVE2:
+#endif // CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_NONE:
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
         ASSERT_EQ(FP64_L2Sqr, arch_opt_func);
