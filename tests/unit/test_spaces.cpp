@@ -1074,6 +1074,7 @@ INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
  * that has different logic than the float32 and float64 reduce functions.
  * For more info, refer to intel's intrinsics guide.
  */
+#if defined(OPT_AVX512_FP16_VL) || defined(CPU_FEATURES_ARCH_AARCH64)
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
@@ -1179,7 +1180,6 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
 #endif
 }
 
-#ifdef OPT_AVX512_FP16_VL
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
     if (optimization.avx512_fp16 && optimization.avx512vl) {
@@ -1219,11 +1219,12 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
     }
 }
-#endif
 
 // Start from a 32 multiplier
 INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
                          testing::Range(512UL, 512 + 32UL + 1));
+
+#endif // defined(OPT_AVX512_FP16_VL) || defined(CPU_FEATURES_ARCH_AARCH64)
 
 class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
