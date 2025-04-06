@@ -19,17 +19,18 @@ namespace spaces {
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
-    
+
 #ifdef CPU_FEATURES_ARCH_X86_64
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
-    
+
     if (dim < 16) {
         return ret_dist_func;
     }
 #endif
 
     switch (arch_opt) {
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+        // Optimizations assume at least 16 floats. If we have less, we use the naive
+        // implementation.
 #ifdef CPU_FEATURES_ARCH_X86_64
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
@@ -68,26 +69,25 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #ifdef CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_SVE2:
 #ifdef OPT_SVE2
-    ret_dist_func = Choose_FP32_L2_implementation_SVE2(dim);
-    break;
+        ret_dist_func = Choose_FP32_L2_implementation_SVE2(dim);
+        break;
 
 #endif
     case ARCH_OPT_SVE:
 #ifdef OPT_SVE
-    ret_dist_func = Choose_FP32_L2_implementation_SVE(dim);
-    break;
-    
+        ret_dist_func = Choose_FP32_L2_implementation_SVE(dim);
+        break;
+
 #endif
-case ARCH_OPT_NEON:
+    case ARCH_OPT_NEON:
 #ifdef OPT_NEON
-    ret_dist_func = Choose_FP32_L2_implementation_NEON(dim);
-    break;
+        ret_dist_func = Choose_FP32_L2_implementation_NEON(dim);
+        break;
 #endif
 #endif
     case ARCH_OPT_NONE:
         break;
     } // switch
-
 
     return ret_dist_func;
 }
