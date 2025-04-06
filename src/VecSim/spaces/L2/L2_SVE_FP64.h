@@ -58,7 +58,8 @@ double FP64_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     }
 
     if constexpr (partial_chunk) {
-        svbool_t pg = svwhilelt_b64(offset, dimension);
+        svbool_t pg =
+            svwhilelt_b64(static_cast<uint64_t>(offset), static_cast<uint64_t>(dimension));
 
         // Load vectors with predication
         svfloat64_t v1 = svld1_f64(pg, pVect1 + offset);
