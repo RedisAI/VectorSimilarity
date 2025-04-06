@@ -9,18 +9,10 @@
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
-#include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
-#include "VecSim/spaces/functions/AVX512FP16_VL.h"
-#include "VecSim/spaces/functions/AVX512BF16_VL.h"
-#include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
-#include "VecSim/spaces/functions/AVX2.h"
-#include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
 
-using bfloat16 = vecsim_types::bfloat16;
-using float16 = vecsim_types::float16;
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
@@ -66,6 +58,7 @@ switch (arch_opt) {
 
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
     case ARCH_OPT_SVE2:
         ret_dist_func = Choose_FP32_IP_implementation_SVE2(dim);
         break;
@@ -81,7 +74,7 @@ switch (arch_opt) {
 #ifdef OPT_NEON
     case ARCH_OPT_NEON:
         ret_dist_func = Choose_FP32_IP_implementation_NEON(dim);
-        break
+        break;
 #endif
 #endif // __aarch64__
 case ARCH_OPT_NONE:

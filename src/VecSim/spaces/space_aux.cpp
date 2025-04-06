@@ -9,6 +9,9 @@
 #ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"
 #endif // CPU_FEATURES_ARCH_X86_64
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#include "cpuinfo_aarch64.h"
+#endif // CPU_FEATURES_ARCH_AARCH64
 
 Arch_Optimization getArchitectureOptimization() {
 
@@ -24,6 +27,7 @@ Arch_Optimization getArchitectureOptimization() {
     }
 #endif // CPU_FEATURES_ARCH_X86_64
 #ifdef CPU_FEATURES_ARCH_AARCH64
+    cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
     if (features.sve2) {
         return ARCH_OPT_SVE2;
     }
