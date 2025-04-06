@@ -1180,6 +1180,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
 #endif
 }
 
+#ifdef OPT_AVX512_FP16_VL
 TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
     auto optimization = cpu_features::GetX86Info().features;
     if (optimization.avx512_fp16 && optimization.avx512vl) {
@@ -1219,6 +1220,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
     }
 }
+#endif
 
 // Start from a 32 multiplier
 INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
