@@ -50,7 +50,7 @@ float FP16_L2Sqr_SVE(const void *pVect1v, const void *pVect2v, size_t dimension)
 
     // Handle partial chunk, if needed
     if constexpr (partial_chunk) {
-        svbool_t pg = svwhilelt_b16(offset, dimension);
+        svbool_t pg = svwhilelt_b16_u64(offset, dimension);
 
         // Load half-precision vectors.
         svfloat16_t v1 = svld1_f16(pg, vec1 + offset);
