@@ -19,11 +19,6 @@ namespace spaces {
 
 #include "implementation_chooser.h"
 
-dist_func_t<float> Choose_FP32_IP_implementation_NEON(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_NEON);
-    return ret_dist_func;
-}
 
 dist_func_t<float> Choose_INT8_IP_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
@@ -34,6 +29,12 @@ dist_func_t<float> Choose_INT8_IP_implementation_NEON(size_t dim) {
 dist_func_t<float> Choose_UINT8_IP_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_InnerProductSIMD16_NEON);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_FP32_IP_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_NEON);
     return ret_dist_func;
 }
 
