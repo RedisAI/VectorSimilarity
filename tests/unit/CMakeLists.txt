@@ -21,22 +21,9 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 
 enable_testing()
 
-option(FP64_TESTS "Build fp 64 tests" OFF)
-
-if(FP64_TESTS)
-	add_definitions(-DFP64_TESTS)
-endif()
-
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
-	include(${root}/cmake/aarch64InstructionFlags.cmake)
-else()
-	include(${root}/cmake/x86_64InstructionFlags.cmake)
-endif()
-
-add_executable(test_hnsw ../utils/mock_thread_pool.cpp test_hnsw.cpp test_hnsw_multi.cpp test_hnsw_tiered.cpp unit_test_utils.cpp)
-add_executable(test_hnsw_parallel test_hnsw_parallel.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
-add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
-add_executable(test_allocator test_allocator.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
+add_executable(test_hnsw test_hnsw.cpp test_hnsw_multi.cpp test_utils.cpp)
+add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp test_utils.cpp)
+add_executable(test_allocator test_allocator.cpp test_utils.cpp)
 add_executable(test_spaces test_spaces.cpp)
 add_executable(test_common test_common.cpp test_utils.cpp)
 
