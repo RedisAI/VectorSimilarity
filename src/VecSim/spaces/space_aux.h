@@ -18,7 +18,7 @@ enum Arch_Optimization {
 #ifdef CPU_FEATURES_ARCH_AARCH64
     ARCH_OPT_NEON,
     ARCH_OPT_SVE,
-    ARCH_OPT_SVE2
+    ARCH_OPT_SVE2,
 #endif
 };
 
