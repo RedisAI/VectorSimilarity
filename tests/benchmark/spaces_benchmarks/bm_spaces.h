@@ -24,7 +24,8 @@
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                   \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))               \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces,                                                            \
+                       CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))            \
     (benchmark::State & st) {                                                                      \
         if (opt < ARCH_OPT_##arch) {                                                               \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -51,7 +52,8 @@
 
 #define INITIALIZE_BM(type_prefix, arch, metric, dim_opt)                                          \
     BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                       \
-    BENCHMARK_REGISTER_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))             \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces,                                                          \
+                         CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))          \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
@@ -67,7 +69,7 @@
 // Naive algorithms
 
 #define BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))                              \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))   \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
@@ -76,6 +78,6 @@
 
 #define INITIALIZE_NAIVE_BM(type_prefix, metric)                                                   \
     BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                    \
-    BENCHMARK_REGISTER_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))                            \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
