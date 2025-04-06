@@ -48,7 +48,7 @@ if(VECSIM_BUILD_TESTS)
 
 	FetchContent_Declare(
 		googletest
-		URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+		URL https://github.com/google/googletest/archive/refs/tags/v1.16.0.zip
 	)
 
 	# For Windows: Prevent overriding the parent project's compiler/linker settings
@@ -71,7 +71,6 @@ if(VECSIM_BUILD_TESTS)
 	endif()
 endif()
 
-add_subdirectory(deps/ScalableVectorSearch)
 add_subdirectory(src/VecSim)
 
 # Needed for build as ExternalProject (like RediSearch does)
