@@ -30,6 +30,8 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         return ret_dist_func;
     }
     switch (arch_opt) {
+#ifdef CPU_FEATURES_ARCH_X86_64
+
     case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP32_L2_implementation_AVX512(dim);
@@ -51,8 +53,10 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 4 * sizeof(float); // handles 4 floats
         break;
 #endif
-    case ARCH_OPT_SVE2:
+#endif // __x86_64__
+#ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_SVE2
+    case ARCH_OPT_SVE2:
         ret_dist_func = Choose_FP32_L2_implementation_SVE2(dim);
         break;
 
@@ -61,16 +65,16 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #ifdef OPT_SVE
         ret_dist_func = Choose_FP32_L2_implementation_SVE(dim);
         break;
-
 #endif
     case ARCH_OPT_NEON:
 #ifdef OPT_NEON
         ret_dist_func = Choose_FP32_L2_implementation_NEON(dim);
         break;
 #endif
+#endif // __aarch64__
     case ARCH_OPT_NONE:
-        break;
-    } // switch
+            break;
+} // switch
     return ret_dist_func;
 }
 
