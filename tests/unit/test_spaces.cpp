@@ -95,7 +95,6 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 
-#ifdef CPU_FEATURES_ARCH_X86_64
 
 using spaces::dist_func_t;
 namespace spaces_test {
@@ -103,6 +102,7 @@ namespace spaces_test {
 // optimization. For example: L2_dist_funcs_16Ext[ARCH_OPT_NONE = 0] = FP32_L2Sqr,
 // L2_dist_funcs_16Ext[ARCH_OPT_SSE = 1] = FP32_L2SqrSIMD16Ext_SSE, etc.
 
+#ifdef CPU_FEATURES_ARCH_X86_64
 // Functions for dimension % 16 == 0 for each optimization.
 static dist_func_t<float> L2_dist_funcs_16Ext[] = {
     FP32_L2Sqr, FP32_L2SqrSIMD16Ext_SSE, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD16Ext_AVX512};
@@ -160,6 +160,24 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
     FP64_InnerProduct, FP64_InnerProductSIMD2ExtResiduals_SSE,
     FP64_InnerProductSIMD2ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ,
     FP64_InnerProductSIMD2ExtResiduals_AVX512};
+#endif
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+static dist_func_t<float> L2_dist_funcs_arm16[] = {
+    FP32_L2Sqr, spaces::Choose_FP32_L2_implementation_NEON(16), spaces::Choose_FP32_L2_implementation_SVE(16), spaces::Choose_FP32_L2_implementation_SVE2(16)};
+    static dist_func_t<float> IP_dist_funcs_arm16[] = {
+    FP32_InnerProduct, spaces::Choose_FP32_IP_implementation_NEON(16), spaces::Choose_FP32_IP_implementation_SVE(16), spaces::Choose_FP32_IP_implementation_SVE2(16)};
+static dist_func_t<float> L2_dist_funcs_arm8[] = {
+    FP32_L2Sqr, spaces::Choose_FP32_L2_implementation_NEON(8), spaces::Choose_FP32_L2_implementation_SVE(8), spaces::Choose_FP32_L2_implementation_SVE2(8)};
+static dist_func_t<float> IP_dist_funcs_arm8[] = {
+    FP32_InnerProduct, spaces::Choose_FP32_IP_implementation_NEON(8), spaces::Choose_FP32_IP_implementation_SVE(8), spaces::Choose_FP32_IP_implementation_SVE2(8)};
+static dist_func_t<float> L2_dist_funcs_arm4[] = {
+    FP32_L2Sqr, spaces::Choose_FP32_L2_implementation_NEON(4), spaces::Choose_FP32_L2_implementation_SVE(4), spaces::Choose_FP32_L2_implementation_SVE2(4)};
+static dist_func_t<float> IP_dist_funcs_arm4[] = {
+    FP32_InnerProduct, spaces::Choose_FP32_IP_implementation_NEON(4), spaces::Choose_FP32_IP_implementation_SVE(4), spaces::Choose_FP32_IP_implementation_SVE2(4)};
+
+#endif
+
 } // namespace spaces_test
 
 class FP32SpacesOptimizationTest
@@ -201,6 +219,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
         ASSERT_TRUE(false);
     }
 }
+
+#ifdef CPU_FEATURES_ARCH_X86_64
 INSTANTIATE_TEST_SUITE_P(
     FP32DimNOptFuncs, FP32SpacesOptimizationTest,
     testing::Values(std::make_pair(16, spaces_test::L2_dist_funcs_16Ext),
@@ -211,7 +231,20 @@ INSTANTIATE_TEST_SUITE_P(
                     std::make_pair(17, spaces_test::IP_dist_funcs_16ExtResiduals),
                     std::make_pair(9, spaces_test::L2_dist_funcs_4ExtResiduals),
                     std::make_pair(9, spaces_test::IP_dist_funcs_4ExtResiduals)));
+#endif
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    FP32DimNOptFuncs, FP32SpacesOptimizationTest,
+    testing::Values(std::make_pair(16, spaces_test::L2_dist_funcs_arm16),
+                    std::make_pair(16, spaces_test::IP_dist_funcs_arm16),
+                    std::make_pair(8, spaces_test::L2_dist_funcs_arm8),
+                    std::make_pair(8, spaces_test::IP_dist_funcs_arm8),
+                    std::make_pair(4, spaces_test::L2_dist_funcs_arm4),
+                    std::make_pair(4, spaces_test::IP_dist_funcs_arm4)));
+#endif
+
+#ifdef CPU_FEATURES_ARCH_X86_64
 class FP64SpacesOptimizationTest
     : public testing::TestWithParam<std::pair<size_t, dist_func_t<double> *>> {};
 
@@ -252,5 +285,4 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
                         std::make_pair(17, spaces_test::IP_dist_funcs_8ExtResiduals),
                         std::make_pair(7, spaces_test::L2_dist_funcs_2ExtResiduals),
                         std::make_pair(7, spaces_test::IP_dist_funcs_2ExtResiduals)));
-
-#endif // CPU_FEATURES_ARCH_X86_64
+#endif
