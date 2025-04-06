@@ -47,8 +47,8 @@ float FP16_InnerProduct_NEON_HP(const void *pVect1v, const void *pVect2v, size_t
         float16x8_t v2 = vld1q_f16(vec2);
 
         // Apply mask to both vectors
-        float16x8_t masked_v1 = vreinterpretq_f16_u16(vandq_u16(vreinterpretq_u16_f16(v1), mask));
-        float16x8_t masked_v2 = vreinterpretq_f16_u16(vandq_u16(vreinterpretq_u16_f16(v2), mask));
+        float16x8_t masked_v1 = vbslq_f16(mask, v1, acc1); // `acc1` should be all zeros here
+        float16x8_t masked_v2 = vbslq_f16(mask, v2, acc2); // `acc2` should be all zeros here
 
         // Multiply and accumulate
         acc1 = vfmaq_f16(acc1, masked_v1, masked_v2);
