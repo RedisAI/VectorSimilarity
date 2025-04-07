@@ -19,6 +19,10 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+	include(${root}/cmake/aarch64InstructionFlags.cmake)
+endif()
+
 enable_testing()
 
 add_executable(test_hnsw test_hnsw.cpp test_hnsw_multi.cpp test_utils.cpp)

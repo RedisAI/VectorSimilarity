@@ -163,23 +163,78 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
 static dist_func_t<float> L2_dist_funcs_arm16[] = {
-    FP32_L2Sqr, spaces::Choose_FP32_L2_implementation_NEON(16),
-    spaces::Choose_FP32_L2_implementation_SVE(16), spaces::Choose_FP32_L2_implementation_SVE2(16)};
+    FP32_L2Sqr,
+#ifdef OPT_NEON
+    spaces::Choose_FP32_L2_implementation_NEON(16),
+#endif
+#ifdef OPT_SVE
+    spaces::Choose_FP32_L2_implementation_SVE(16),
+#endif
+#ifdef OPT_SVE2
+    spaces::Choose_FP32_L2_implementation_SVE2(16)
+#endif
+};
 static dist_func_t<float> IP_dist_funcs_arm16[] = {
-    FP32_InnerProduct, spaces::Choose_FP32_IP_implementation_NEON(16),
-    spaces::Choose_FP32_IP_implementation_SVE(16), spaces::Choose_FP32_IP_implementation_SVE2(16)};
+    FP32_InnerProduct,
+#ifdef OPT_NEON
+    spaces::Choose_FP32_IP_implementation_NEON(16),
+#endif
+#ifdef OPT_SVE
+    spaces::Choose_FP32_IP_implementation_SVE(16),
+#endif
+#ifdef OPT_SVE2
+    spaces::Choose_FP32_IP_implementation_SVE2(16)
+#endif
+};
 static dist_func_t<float> L2_dist_funcs_arm8[] = {
-    FP32_L2Sqr, spaces::Choose_FP32_L2_implementation_NEON(8),
-    spaces::Choose_FP32_L2_implementation_SVE(8), spaces::Choose_FP32_L2_implementation_SVE2(8)};
+    FP32_L2Sqr,
+#ifdef OPT_NEON
+    spaces::Choose_FP32_L2_implementation_NEON(8),
+#endif
+#ifdef OPT_SVE
+    spaces::Choose_FP32_L2_implementation_SVE(8),
+#endif
+#ifdef OPT_SVE2
+    spaces::Choose_FP32_L2_implementation_SVE2(8)
+#endif
+};
 static dist_func_t<float> IP_dist_funcs_arm8[] = {
-    FP32_InnerProduct, spaces::Choose_FP32_IP_implementation_NEON(8),
-    spaces::Choose_FP32_IP_implementation_SVE(8), spaces::Choose_FP32_IP_implementation_SVE2(8)};
+    FP32_InnerProduct,
+#ifdef OPT_NEON
+    spaces::Choose_FP32_IP_implementation_NEON(8),
+#endif
+#ifdef OPT_SVE
+    spaces::Choose_FP32_IP_implementation_SVE(8),
+#endif
+#ifdef OPT_SVE2
+    spaces::Choose_FP32_IP_implementation_SVE2(8)
+#endif
+
+};
 static dist_func_t<float> L2_dist_funcs_arm4[] = {
-    FP32_L2Sqr, spaces::Choose_FP32_L2_implementation_NEON(4),
-    spaces::Choose_FP32_L2_implementation_SVE(4), spaces::Choose_FP32_L2_implementation_SVE2(4)};
+    FP32_L2Sqr,
+#ifdef OPT_NEON
+    spaces::Choose_FP32_L2_implementation_NEON(4),
+#endif
+#ifdef OPT_SVE
+    spaces::Choose_FP32_L2_implementation_SVE(4),
+#endif
+#ifdef OPT_SVE2
+    spaces::Choose_FP32_L2_implementation_SVE2(4)
+#endif
+};
 static dist_func_t<float> IP_dist_funcs_arm4[] = {
-    FP32_InnerProduct, spaces::Choose_FP32_IP_implementation_NEON(4),
-    spaces::Choose_FP32_IP_implementation_SVE(4), spaces::Choose_FP32_IP_implementation_SVE2(4)};
+    FP32_InnerProduct, 
+#ifdef OPT_NEON
+    spaces::Choose_FP32_IP_implementation_NEON(4),
+#endif
+#ifdef OPT_SVE
+    spaces::Choose_FP32_IP_implementation_SVE(4),
+#endif
+#ifdef OPT_SVE2
+    spaces::Choose_FP32_IP_implementation_SVE2(4)
+#endif
+};
 
 #endif
 
@@ -213,11 +268,17 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
 #endif
 #ifdef CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_SVE2:
+#ifdef OPT_SVE2
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SVE2](v, v2, dim));
+#endif
     case ARCH_OPT_SVE:
+#ifdef OPT_SVE
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SVE](v, v2, dim));
+#endif
     case ARCH_OPT_NEON:
+#ifdef OPT_NEON
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_NEON](v, v2, dim));
+#endif
         break;
 #endif
     default:
