@@ -12,7 +12,7 @@ __attribute__((always_inline)) static inline void L2SquareOp(const int8x16_t &v1
     // Compute absolute differences and widen to 16-bit in one step
     // Use vabdl_s8 for the low half
     int16x8_t diff_low = vabdl_s8(vget_low_s8(v1), vget_low_s8(v2));
-    
+
     // Use vabdl_high_s8 for the high half - eliminates need for vget_high_s8 calls
     int16x8_t diff_high = vabdl_high_s8(v1, v2);
 
@@ -20,10 +20,10 @@ __attribute__((always_inline)) static inline void L2SquareOp(const int8x16_t &v1
     // For the low part
     int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
     int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
-    sum = vmlaq_s32(sum, diff_low_0, diff_low_0);  // sum += diff * diff
+    sum = vmlaq_s32(sum, diff_low_0, diff_low_0); // sum += diff * diff
     sum = vmlaq_s32(sum, diff_low_1, diff_low_1);
 
-    // For the high part  
+    // For the high part
     int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
     int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
     sum = vmlaq_s32(sum, diff_high_0, diff_high_0);

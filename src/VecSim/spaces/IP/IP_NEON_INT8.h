@@ -11,10 +11,10 @@ __attribute__((always_inline)) static inline void InnerProductOp(int8x16_t &v1, 
                                                                  int32x4_t &sum) {
     // Multiply low 8 elements (first half)
     int16x8_t prod_low = vmull_s8(vget_low_s8(v1), vget_low_s8(v2));
-    
+
     // Multiply high 8 elements (second half) using vmull_high_s8
     int16x8_t prod_high = vmull_high_s8(v1, v2);
-    
+
     // Pairwise add adjacent elements to 32-bit accumulators
     sum = vpadalq_s16(sum, prod_low);
     sum = vpadalq_s16(sum, prod_high);
