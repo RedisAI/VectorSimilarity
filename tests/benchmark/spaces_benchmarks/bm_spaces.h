@@ -24,6 +24,7 @@
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_HP.h"
 #include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"

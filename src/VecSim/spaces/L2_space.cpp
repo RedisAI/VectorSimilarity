@@ -18,6 +18,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_HP.h"
 #include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
@@ -204,14 +205,33 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
+    auto features = getCpuOptimizationFeatures(arch_opt);
 
     dist_func_t<float> ret_dist_func = FP16_L2Sqr;
+
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_FP16_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_FP16_L2_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (features.asimdhp && dim >= 8) { // Optimization assumes at least 8 16FPs (full chunk)
+        return Choose_FP16_L2_implementation_NEON_HP(dim);
+    }
+#endif
+#endif // CPU_FEATURES_ARCH_AARCH64
+
+#if defined(CPU_FEATURES_ARCH_X86_64)
     // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
     }
-#ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
