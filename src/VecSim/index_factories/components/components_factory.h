@@ -12,6 +12,10 @@
 #include "VecSim/index_factories/components/preprocessors_factory.h"
 #include "VecSim/spaces/computer/calculator.h"
 
+PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim,
+                                                                bool is_normalized,
+                                                                unsigned char alignment);
+
 template <typename DataType, typename DistType>
 IndexComponents<DataType, DistType>
 CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric, size_t dim,
@@ -22,16 +26,8 @@ CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric m
     // Currently we have only one distance calculator implementation
     auto indexCalculator = new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
 
-    // If the index metric is Cosine, and is_normalized == true, we will skip normalizing vectors
-    // and query blobs.
-    VecSimMetric pp_metric;
-    if (is_normalized && metric == VecSimMetric_Cosine) {
-        pp_metric = VecSimMetric_IP;
-    } else {
-        pp_metric = metric;
-    }
-    PreprocessorsContainerParams ppParams = {
-        .metric = pp_metric, .dim = dim, .alignment = alignment};
+    PreprocessorsContainerParams ppParams =
+        CreatePreprocessorsContainerParams(metric, dim, is_normalized, alignment);
     auto preprocessors = CreatePreprocessorsContainer<DataType>(allocator, ppParams);
 
     return {indexCalculator, preprocessors};
