@@ -22,12 +22,6 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 
 #ifdef CPU_FEATURES_ARCH_X86_64
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
-
-    if (dim < 16) {
-        return ret_dist_func;
-    }
-#endif
-
     if (dim < 16) {
         return ret_dist_func;
     }
