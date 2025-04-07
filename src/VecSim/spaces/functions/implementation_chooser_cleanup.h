@@ -14,4 +14,9 @@
 #undef C4
 #undef CASES8
 #undef CASES16
+#undef CASES32
+
+#undef SVE_CASE
+
 #undef CHOOSE_IMPLEMENTATION
+#undef CHOOSE_SVE_IMPLEMENTATION
