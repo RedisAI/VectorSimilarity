@@ -164,7 +164,7 @@ public:
     void preprocessQueryInPlace(void *blob) const;
 
     /**
-     * @brief Preprocess a blob for query in place.
+     * @brief Preprocess a blob for storage in place.
      *
      * @param blob will be directly modified, not copied.
      */
