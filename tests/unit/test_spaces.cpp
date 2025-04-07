@@ -162,77 +162,71 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
 #endif
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
-static dist_func_t<float> L2_dist_funcs_arm16[] = {
-    FP32_L2Sqr,
+static dist_func_t<float> L2_dist_funcs_arm16[] = {FP32_L2Sqr,
 #ifdef OPT_NEON
-    spaces::Choose_FP32_L2_implementation_NEON(16),
+                                                   spaces::Choose_FP32_L2_implementation_NEON(16),
 #endif
 #ifdef OPT_SVE
-    spaces::Choose_FP32_L2_implementation_SVE(16),
+                                                   spaces::Choose_FP32_L2_implementation_SVE(16),
 #endif
 #ifdef OPT_SVE2
-    spaces::Choose_FP32_L2_implementation_SVE2(16)
+                                                   spaces::Choose_FP32_L2_implementation_SVE2(16)
 #endif
 };
-static dist_func_t<float> IP_dist_funcs_arm16[] = {
-    FP32_InnerProduct,
+static dist_func_t<float> IP_dist_funcs_arm16[] = {FP32_InnerProduct,
 #ifdef OPT_NEON
-    spaces::Choose_FP32_IP_implementation_NEON(16),
+                                                   spaces::Choose_FP32_IP_implementation_NEON(16),
 #endif
 #ifdef OPT_SVE
-    spaces::Choose_FP32_IP_implementation_SVE(16),
+                                                   spaces::Choose_FP32_IP_implementation_SVE(16),
 #endif
 #ifdef OPT_SVE2
-    spaces::Choose_FP32_IP_implementation_SVE2(16)
+                                                   spaces::Choose_FP32_IP_implementation_SVE2(16)
 #endif
 };
-static dist_func_t<float> L2_dist_funcs_arm8[] = {
-    FP32_L2Sqr,
+static dist_func_t<float> L2_dist_funcs_arm8[] = {FP32_L2Sqr,
 #ifdef OPT_NEON
-    spaces::Choose_FP32_L2_implementation_NEON(8),
+                                                  spaces::Choose_FP32_L2_implementation_NEON(8),
 #endif
 #ifdef OPT_SVE
-    spaces::Choose_FP32_L2_implementation_SVE(8),
+                                                  spaces::Choose_FP32_L2_implementation_SVE(8),
 #endif
 #ifdef OPT_SVE2
-    spaces::Choose_FP32_L2_implementation_SVE2(8)
+                                                  spaces::Choose_FP32_L2_implementation_SVE2(8)
 #endif
 };
-static dist_func_t<float> IP_dist_funcs_arm8[] = {
-    FP32_InnerProduct,
+static dist_func_t<float> IP_dist_funcs_arm8[] = {FP32_InnerProduct,
 #ifdef OPT_NEON
-    spaces::Choose_FP32_IP_implementation_NEON(8),
+                                                  spaces::Choose_FP32_IP_implementation_NEON(8),
 #endif
 #ifdef OPT_SVE
-    spaces::Choose_FP32_IP_implementation_SVE(8),
+                                                  spaces::Choose_FP32_IP_implementation_SVE(8),
 #endif
 #ifdef OPT_SVE2
-    spaces::Choose_FP32_IP_implementation_SVE2(8)
+                                                  spaces::Choose_FP32_IP_implementation_SVE2(8)
 #endif
 
 };
-static dist_func_t<float> L2_dist_funcs_arm4[] = {
-    FP32_L2Sqr,
+static dist_func_t<float> L2_dist_funcs_arm4[] = {FP32_L2Sqr,
 #ifdef OPT_NEON
-    spaces::Choose_FP32_L2_implementation_NEON(4),
+                                                  spaces::Choose_FP32_L2_implementation_NEON(4),
 #endif
 #ifdef OPT_SVE
-    spaces::Choose_FP32_L2_implementation_SVE(4),
+                                                  spaces::Choose_FP32_L2_implementation_SVE(4),
 #endif
 #ifdef OPT_SVE2
-    spaces::Choose_FP32_L2_implementation_SVE2(4)
+                                                  spaces::Choose_FP32_L2_implementation_SVE2(4)
 #endif
 };
-static dist_func_t<float> IP_dist_funcs_arm4[] = {
-    FP32_InnerProduct, 
+static dist_func_t<float> IP_dist_funcs_arm4[] = {FP32_InnerProduct,
 #ifdef OPT_NEON
-    spaces::Choose_FP32_IP_implementation_NEON(4),
+                                                  spaces::Choose_FP32_IP_implementation_NEON(4),
 #endif
 #ifdef OPT_SVE
-    spaces::Choose_FP32_IP_implementation_SVE(4),
+                                                  spaces::Choose_FP32_IP_implementation_SVE(4),
 #endif
 #ifdef OPT_SVE2
-    spaces::Choose_FP32_IP_implementation_SVE2(4)
+                                                  spaces::Choose_FP32_IP_implementation_SVE2(4)
 #endif
 };
 
