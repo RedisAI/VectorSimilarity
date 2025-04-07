@@ -21,7 +21,9 @@
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
+#include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE_BF16.h"
 #include "VecSim/spaces/functions/SVE2.h"
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -155,13 +157,27 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (!is_little_endian()) {
         return BF16_InnerProduct_BigEndian;
     }
+    auto features = getCpuOptimizationFeatures(arch_opt);
+
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+#ifdef OPT_SVE_BF16
+    if (features.svebf16) {
+        return Choose_BF16_IP_implementation_SVE_BF16(dim);
+    }
+#endif
+#ifdef OPT_NEON_BF16
+    if (features.bf16 && dim >= 8) { // Optimization assumes at least 8 BF16s (full chunk)
+        return Choose_BF16_IP_implementation_NEON_BF16(dim);
+    }
+#endif
+#endif // AARCH64
+
+#if defined(CPU_FEATURES_ARCH_X86_64)
     // Optimizations assume at least 32 bfloats. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
     }
 
-#ifdef CPU_FEATURES_ARCH_X86_64
-    auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef OPT_AVX512_BF16_VL
     if (features.avx512_bf16 && features.avx512vl) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual

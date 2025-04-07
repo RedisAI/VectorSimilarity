@@ -96,6 +96,13 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with NEON+HP")
 		set_source_files_properties(functions/NEON_HP.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+fp16fml")
 		list(APPEND OPTIMIZATIONS functions/NEON_HP.cpp)
+  endif()
+
+	# NEON bfloat16 support
+	if (CXX_NEON_BF16)
+		message("Building with NEON + BF16")
+		set_source_files_properties(functions/NEON_BF16.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+bf16")
+		list(APPEND OPTIMIZATIONS functions/NEON_BF16.cpp)
 	endif()
 
 	# SVE support
@@ -103,6 +110,13 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with SVE")
 		set_source_files_properties(functions/SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
+	endif()
+
+	# SVE with BF16 support
+	if (CXX_SVE_BF16)
+		message("Building with SVE + BF16")
+		set_source_files_properties(functions/SVE_BF16.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sve+bf16")
+		list(APPEND OPTIMIZATIONS functions/SVE_BF16.cpp)
 	endif()
 
 	# SVE2 support
