@@ -258,7 +258,7 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_NEON_DOTPROD
+#ifdef OPT_NEON_DOTPROD // Should be the first check, as it is the most optimized
     if (features.asimddp && dim >= 16) {
         return Choose_INT8_IP_implementation_NEON_DOTPROD(dim);
     }

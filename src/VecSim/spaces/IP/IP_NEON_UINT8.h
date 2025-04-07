@@ -63,9 +63,12 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
         uint8x16_t v1 = vld1q_u8(pVect1);
         uint8x16_t v2 = vld1q_u8(pVect2);
 
-        // Apply mask to zero out irrelevant elements
-        v1 = vandq_u8(v1, mask);
-        v2 = vandq_u8(v2, mask);
+        // Zero vector for replacement
+        uint8x16_t zeros = vdupq_n_u8(0);
+
+        // Apply bit select to zero out irrelevant elements
+        v1 = vbslq_u8(mask, v1, zeros);
+        v2 = vbslq_u8(mask, v2, zeros);
         InnerProductOp(v1, v2, sum1);
         pVect1 += final_residual;
         pVect2 += final_residual;
