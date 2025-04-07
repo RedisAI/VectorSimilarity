@@ -22,15 +22,27 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
 #     add_definitions(-DSVS_EXPERIMENTAL_LEANVEC)
 # endif()
 
-# TODO: enable svs build again once MKL installation issue is resolved, and after we validate
-# that we only build for supported platforms (and fail gracefully for those that are not)
-option(SVS_SUPPORTED "Build with SVS library support" OFF)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "(x86_64)|(AMD64|amd64)")
+    set(SVS_SUPPORTED 1)
+else()
+    set(SVS_SUPPORTED 0)
+    message(STATUS "SVS is not supported on this architecture")
+endif()
+
+# USE_SVS option forsibly OFF if CPU is not supported
+# elsewhere let user disable SVS
+cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTED" OFF)
+if(USE_SVS)
+    message(STATUS "SVS support enabled")
+else()
+    message(STATUS "SVS support disabled")
+endif()
 
 # Configure SVS build
 set(SVS_SHARED_LIB ON CACHE BOOL "Use SVS pre-compiled shared library")
 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
-if(SVS_SUPPORTED)
+if(USE_SVS)
     set(svs_factory_file "index_factories/svs_factory.cpp")
     if(SVS_SHARED_LIB)
         include(FetchContent)
@@ -78,7 +90,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     ${HEADER_LIST}
 )
 
-if (SVS_SUPPORTED)
+if (USE_SVS)
     target_link_libraries(VectorSimilarity VectorSimilaritySpaces svs::svs)
     if(TARGET svs::svs_shared_library)
         target_link_libraries(VectorSimilarity svs::svs_shared_library MKL::MKL)

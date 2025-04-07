@@ -10,3 +10,4 @@ $MODE yum install -y wget git valgrind gcc10 gcc10-c++
 $MODE update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc10-gcc 60 --slave /usr/bin/g++ g++ /usr/bin/gcc10-g++
 
 source install_cmake.sh $MODE
+source install_mkl.sh $MODE

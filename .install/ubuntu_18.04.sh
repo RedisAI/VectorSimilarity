@@ -21,3 +21,4 @@ $MODE make install
 cd ..
 
 source install_cmake.sh $MODE
+source install_mkl.sh $MODE
