@@ -19,16 +19,16 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 // NEON implementation for ARMv8-a
 #ifdef OPT_NEON_HP
 bool neon_supported = opt.asimdhp; // ARMv8-a always supports NEON
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP16, FP16, NEON_HP, 32, neon_supported);
+INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP16, FP16, NEON_HP, 32, neon_supported);
 #endif
 #ifdef OPT_SVE
 bool sve_supported = opt.sve; // Check for SVE support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP16, FP16, SVE, 32, sve_supported);
+INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP16, FP16, SVE, 32, sve_supported);
 #endif
 // SVE2 implementation
 #ifdef OPT_SVE2
 bool sve2_supported = opt.sve2; // Check for SVE2 support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_FP16, FP16, SVE2, 32, sve2_supported);
+INITIALIZE_BENCHMARKS_SET(BM_VecSimSpaces_FP16, FP16, SVE2, 32, sve2_supported);
 #endif
 #endif // AARCH64
 
