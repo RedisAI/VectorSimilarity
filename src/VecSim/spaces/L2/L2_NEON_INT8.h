@@ -9,33 +9,25 @@
 
 __attribute__((always_inline)) static inline void L2SquareOp(const int8x16_t &v1,
                                                              const int8x16_t &v2, int32x4_t &sum) {
-    // Split into low and high 8-bit halves
-    int8x8_t v1_low = vget_low_s8(v1);
-    int8x8_t v1_high = vget_high_s8(v1);
-    int8x8_t v2_low = vget_low_s8(v2);
-    int8x8_t v2_high = vget_high_s8(v2);
-
     // Compute absolute differences and widen to 16-bit in one step
-    int16x8_t diff_low = vabdl_s8(v1_low, v2_low);
-    int16x8_t diff_high = vabdl_s8(v1_high, v2_high);
+    // Use vabdl_s8 for the low half
+    int16x8_t diff_low = vabdl_s8(vget_low_s8(v1), vget_low_s8(v2));
+    
+    // Use vabdl_high_s8 for the high half - eliminates need for vget_high_s8 calls
+    int16x8_t diff_high = vabdl_high_s8(v1, v2);
 
-    // Further widen differences to 32-bit for safer squaring
+    // Square and accumulate the differences
+    // For the low part
     int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
     int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
+    sum = vmlaq_s32(sum, diff_low_0, diff_low_0);  // sum += diff * diff
+    sum = vmlaq_s32(sum, diff_low_1, diff_low_1);
+
+    // For the high part  
     int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
     int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
-
-    // Square differences in 32-bit
-    int32x4_t square_low_0 = vmulq_s32(diff_low_0, diff_low_0);
-    int32x4_t square_low_1 = vmulq_s32(diff_low_1, diff_low_1);
-    int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
-    int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
-
-    // Accumulate all results into sum
-    sum = vaddq_s32(sum, square_low_0);
-    sum = vaddq_s32(sum, square_low_1);
-    sum = vaddq_s32(sum, square_high_0);
-    sum = vaddq_s32(sum, square_high_1);
+    sum = vmlaq_s32(sum, diff_high_0, diff_high_0);
+    sum = vmlaq_s32(sum, diff_high_1, diff_high_1);
 }
 
 __attribute__((always_inline)) static inline void L2SquareStep16(int8_t *&pVect1, int8_t *&pVect2,
