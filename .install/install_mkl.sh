@@ -1,6 +1,6 @@
 #!/bin/bash
-version=2025.1.0.803
-uuid=dc93af13-2b3f-40c3-a41b-2bc05a707a80
+filename=l_BaseKit_p_2024.1.0.596.sh
+uuid=fdc7a2bc-b7a8-47eb-8876-de6201297144
 prefix=/opt/intel/oneapi
 processor=$(uname -m)
 OS_TYPE=$(uname -s)
@@ -10,10 +10,9 @@ if [[ $OS_TYPE = 'Linux' ]]
 then
     if [[ $processor = 'x86_64' ]]
     then
-        filename=intel-onemkl-${version}_offline.sh
         wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/${uuid}/${filename}
         chmod u+x ./${filename}
-        $MODE ./${filename} -a --silent --eula accept --install-dir ${prefix}
-        source ${prefix}/setvars.sh
+        $MODE ./${filename} -a --action install --silent --eula accept --components intel.oneapi.lin.mkl.devel --install-dir ${prefix}
+        #source ${prefix}/setvars.sh
     fi
 fi
