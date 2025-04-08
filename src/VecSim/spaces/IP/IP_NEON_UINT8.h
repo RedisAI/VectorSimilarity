@@ -42,22 +42,24 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
 
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
-        constexpr uint8x16_t mask = {0xFF,
-                                     (final_residual >= 2) ? 0xFF : 0,
-                                     (final_residual >= 3) ? 0xFF : 0,
-                                     (final_residual >= 4) ? 0xFF : 0,
-                                     (final_residual >= 5) ? 0xFF : 0,
-                                     (final_residual >= 6) ? 0xFF : 0,
-                                     (final_residual >= 7) ? 0xFF : 0,
-                                     (final_residual >= 8) ? 0xFF : 0,
-                                     (final_residual >= 9) ? 0xFF : 0,
-                                     (final_residual >= 10) ? 0xFF : 0,
-                                     (final_residual >= 11) ? 0xFF : 0,
-                                     (final_residual >= 12) ? 0xFF : 0,
-                                     (final_residual >= 13) ? 0xFF : 0,
-                                     (final_residual >= 14) ? 0xFF : 0,
-                                     (final_residual >= 15) ? 0xFF : 0,
-                                     0};
+        constexpr uint8x16_t mask = {
+            0xFF,
+            (final_residual >= 2) ? 0xFF : 0,
+            (final_residual >= 3) ? 0xFF : 0,
+            (final_residual >= 4) ? 0xFF : 0,
+            (final_residual >= 5) ? 0xFF : 0,
+            (final_residual >= 6) ? 0xFF : 0,
+            (final_residual >= 7) ? 0xFF : 0,
+            (final_residual >= 8) ? 0xFF : 0,
+            (final_residual >= 9) ? 0xFF : 0,
+            (final_residual >= 10) ? 0xFF : 0,
+            (final_residual >= 11) ? 0xFF : 0,
+            (final_residual >= 12) ? 0xFF : 0,
+            (final_residual >= 13) ? 0xFF : 0,
+            (final_residual >= 14) ? 0xFF : 0,
+            (final_residual >= 15) ? 0xFF : 0,
+            0,
+        };
 
         // Load data directly from input vectors
         uint8x16_t v1 = vld1q_u8(pVect1);
