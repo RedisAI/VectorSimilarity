@@ -8,6 +8,8 @@
 
 #include "VecSim/vec_sim_common.h"   // enum VecSimMetric
 #include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
+#include "space_includes.h"
+
 namespace spaces {
 
 template <typename RET_TYPE>

@@ -6,10 +6,6 @@
 
 #include "space_aux.h"
 
-#ifdef CPU_FEATURES_ARCH_X86_64
-#include "cpuinfo_x86.h"
-#endif // CPU_FEATURES_ARCH_X86_64
-
 Arch_Optimization getArchitectureOptimization() {
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -26,6 +22,18 @@ Arch_Optimization getArchitectureOptimization() {
         return ARCH_OPT_SSE;
     }
 #endif // CPU_FEATURES_ARCH_X86_64
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
+    if (features.sve2) {
+        return ARCH_OPT_SVE2;
+    }
+    if (features.sve) {
+        return ARCH_OPT_SVE;
+    }
+    if (features.asimd) {
+        return ARCH_OPT_NEON;
+    }
+#endif // CPU_FEATURES_ARCH_AARCH64
 
     return ARCH_OPT_NONE;
 }

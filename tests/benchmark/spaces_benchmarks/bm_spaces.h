@@ -10,12 +10,21 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/spaces/space_aux.h"
 
+#include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/L2/L2.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
+#include "bm_macros.h"
 #include "bm_spaces_class.h"
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(type_prefix, arch, settings, func)                                    \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##settings)                         \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, settings))  \
     (benchmark::State & st) {                                                                      \
         if (opt < ARCH_OPT_##arch) {                                                               \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -40,10 +49,10 @@
     Arg(16 - 1)->Arg(16 + 1)->Arg(128 - 1)->Arg(128 + 1)->Arg(400 - 1)->Arg(400 + 1)
 
 #define INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)                                    \
-    BENCHMARK_DISTANCE_F_##type_prefix(arch, metric##_##dim_opt, func)                             \
-        BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)         \
-            ->ArgName("Dimension")                                                                 \
-            ->Unit(benchmark::kNanosecond)
+    BENCHMARK_DISTANCE_F_##type_prefix(arch, metric##_##dim_opt, func) BENCHMARK_REGISTER_F(       \
+        BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))          \
+        ->ArgName("Dimension")                                                                     \
+        ->Unit(benchmark::kNanosecond)
 
 #define INITIALIZE_EXACT_BM(type_prefix, arch, metric, dim_opt, func)                              \
     INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_PARAMS_MODULU##dim_opt##DIM
@@ -56,7 +65,7 @@
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/IP/IP.h"
 #define BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                              \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))   \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
@@ -65,6 +74,6 @@
 
 #define INITIALIZE_NAIVE_BM(type_prefix, metric)                                                   \
     BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                    \
-    BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                            \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)

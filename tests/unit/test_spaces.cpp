@@ -21,6 +21,9 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
 
 class SpacesTest : public ::testing::Test {
 
@@ -92,14 +95,13 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 
-#ifdef CPU_FEATURES_ARCH_X86_64
-
 using spaces::dist_func_t;
 namespace spaces_test {
 // Each array contains all the possible architecture optimization related to one dimension
 // optimization. For example: L2_dist_funcs_16Ext[ARCH_OPT_NONE = 0] = FP32_L2Sqr,
 // L2_dist_funcs_16Ext[ARCH_OPT_SSE = 1] = FP32_L2SqrSIMD16Ext_SSE, etc.
 
+#ifdef CPU_FEATURES_ARCH_X86_64
 // Functions for dimension % 16 == 0 for each optimization.
 static dist_func_t<float> L2_dist_funcs_16Ext[] = {
     FP32_L2Sqr, FP32_L2SqrSIMD16Ext_SSE, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD16Ext_AVX512};
@@ -157,10 +159,53 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
     FP64_InnerProduct, FP64_InnerProductSIMD2ExtResiduals_SSE,
     FP64_InnerProductSIMD2ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ,
     FP64_InnerProductSIMD2ExtResiduals_AVX512};
+#endif
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+static dist_func_t<float> *build_arm_funcs_array(size_t dim, bool is_ip) {
+    static dist_func_t<float> funcs[ARCH_OPT_SVE2] = {nullptr};
+    cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
+    // Always add baseline implementation
+    funcs[ARCH_OPT_NONE] = is_ip ? FP32_InnerProduct : FP32_L2Sqr;
+
+// Add NEON implementation if available
+#ifdef OPT_NEON
+    if (features.asimd) {
+        funcs[ARCH_OPT_NEON] = is_ip ? spaces::Choose_FP32_IP_implementation_NEON(dim)
+                                     : spaces::Choose_FP32_L2_implementation_NEON(dim);
+    }
+#endif
+
+// Add SVE implementation if available
+#ifdef OPT_SVE
+    if (features.sve) {
+        funcs[ARCH_OPT_SVE] = is_ip ? spaces::Choose_FP32_IP_implementation_SVE(dim)
+                                    : spaces::Choose_FP32_L2_implementation_SVE(dim);
+    }
+#endif
+
+// Add SVE2 implementation if available
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        funcs[ARCH_OPT_SVE2] = is_ip ? spaces::Choose_FP32_IP_implementation_SVE2(dim)
+                                     : spaces::Choose_FP32_L2_implementation_SVE2(dim);
+    }
+#endif
+
+    return funcs;
+}
+#endif
+
 } // namespace spaces_test
 
 class FP32SpacesOptimizationTest
-    : public testing::TestWithParam<std::pair<size_t, dist_func_t<float> *>> {};
+#ifdef CPU_FEATURES_ARCH_X86_64
+    : public testing::TestWithParam<std::pair<size_t, dist_func_t<float> *>> {
+};
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    : public testing::TestWithParam<std::pair<size_t, bool>> {
+};
+#endif
 
 TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
     Arch_Optimization optimization = getArchitectureOptimization();
@@ -171,10 +216,14 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
         v[i] = (float)i;
         v2[i] = (float)(i + 1.5);
     }
-
+#ifdef CPU_FEATURES_ARCH_X86_64
     dist_func_t<float> *arch_opt_funcs = GetParam().second;
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    dist_func_t<float> *arch_opt_funcs = spaces_test::build_arm_funcs_array(dim, GetParam().second);
+#endif
     float baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
+#ifdef CPU_FEATURES_ARCH_X86_64
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512_F](v, v2, dim));
@@ -183,10 +232,28 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SSE](v, v2, dim));
         break;
+#endif
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    case ARCH_OPT_SVE2:
+#ifdef OPT_SVE2
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SVE2](v, v2, dim));
+#endif
+    case ARCH_OPT_SVE:
+#ifdef OPT_SVE
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SVE](v, v2, dim));
+#endif
+    case ARCH_OPT_NEON:
+#ifdef OPT_NEON
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_NEON](v, v2, dim));
+#endif
+        break;
+#endif
     default:
         ASSERT_TRUE(false);
     }
 }
+
+#ifdef CPU_FEATURES_ARCH_X86_64
 INSTANTIATE_TEST_SUITE_P(
     FP32DimNOptFuncs, FP32SpacesOptimizationTest,
     testing::Values(std::make_pair(16, spaces_test::L2_dist_funcs_16Ext),
@@ -197,7 +264,17 @@ INSTANTIATE_TEST_SUITE_P(
                     std::make_pair(17, spaces_test::IP_dist_funcs_16ExtResiduals),
                     std::make_pair(9, spaces_test::L2_dist_funcs_4ExtResiduals),
                     std::make_pair(9, spaces_test::IP_dist_funcs_4ExtResiduals)));
+#endif
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(FP32DimNOptFuncs, FP32SpacesOptimizationTest,
+                         testing::Values(std::make_pair(16, true), // is_ip = true
+                                         std::make_pair(16, false), std::make_pair(8, true),
+                                         std::make_pair(8, false), std::make_pair(4, true),
+                                         std::make_pair(4, false)));
+#endif
+
+#ifdef CPU_FEATURES_ARCH_X86_64
 class FP64SpacesOptimizationTest
     : public testing::TestWithParam<std::pair<size_t, dist_func_t<double> *>> {};
 
