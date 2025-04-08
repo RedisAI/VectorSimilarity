@@ -23,6 +23,8 @@ inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &o
     // Subtract v2 from v1 and widen the results to int16 for the odd indexes
     svint16_t diff_o = svsublt_s16(v1_i8, v2_i8);
 
+    // TODO - check if using svdot_s64 is faster (with type conversion or using i64 accumulators)
+
     sum = svmlalb_s32(sum, diff_e, diff_e);
     sum = svmlalt_s32(sum, diff_e, diff_e);
 
@@ -78,7 +80,7 @@ float INT8_L2SqrSIMD_SVE2(const void *pVect1v, const void *pVect2v, size_t dimen
 
     if constexpr (partial_chunk) {
 
-        svbool_t pg = svwhilelt_b8(offset, dimension);
+        svbool_t pg = svwhilelt_b8_u64(offset, dimension);
 
         svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
         svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2

@@ -65,15 +65,15 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     }
 
     if constexpr (partial_chunk) {
-        svbool_t pg = svwhilelt_b8(offset, dimension);
+        svbool_t pg = svwhilelt_b8_u64(offset, dimension);
 
         svuint8_t v1_ui8 = svld1_u8(pg, pVect1 + offset); // Load uint8 vectors
         svuint8_t v2_ui8 = svld1_u8(pg, pVect2 + offset); // Load uint8 vectors
 
         sum3 = svdot_u32(sum3, v1_ui8, v2_ui8);
 
-        pVect1 += svcntb();
-        pVect2 += svcntb();
+        pVect1 += vl;
+        pVect2 += vl;
     }
 
     sum0 = svadd_u32_x(svptrue_b32(), sum0, sum1);

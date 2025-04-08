@@ -102,7 +102,7 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
         /* TODO: Test using svptrue_b8() instead of svwhilelt_b8/b16/b32) in vector arithmetics
         Because Inactive lanes are set to 0 in load */
 
-        svbool_t pg = svwhilelt_b8(offset, dimension);
+        svbool_t pg = svwhilelt_b8_u64(offset, dimension);
         svbool_t pg16 = svwhilelt_b16(offset, dimension);
         svbool_t pg32 = svwhilelt_b32(offset, dimension);
 

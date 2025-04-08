@@ -101,7 +101,7 @@ float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
 
     if constexpr (partial_chunk) {
 
-        svbool_t pg = svwhilelt_b8(offset, dimension);
+        svbool_t pg = svwhilelt_b8_u64(offset, dimension);
         svuint8_t v1_ui8 = svld1_u8(pg, pVect1 + offset); // Load uint8 vectors from pVect1
         svuint8_t v2_ui8 = svld1_u8(pg, pVect2 + offset); // Load uint8 vectors from pVect2
 

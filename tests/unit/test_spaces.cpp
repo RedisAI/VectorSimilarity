@@ -1485,12 +1485,88 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
             optimization.avx512vnni = 0;
     }
 #endif
+
+
     unsigned char alignment = 0;
     arch_opt_func = Cosine_UINT8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, UINT8_Cosine) << "Unexpected distance function chosen for dim " << dim;
     ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
+TEST_P(UINT8SpacesOptimizationTest, UINT8_IP_and_L2_full_range_test) {
+    constexpr size_t dim = 512;
+
+    uint8_t v1[dim];
+    uint8_t v2[dim];
+
+    // v1: 0..255 followed by 255..0
+    for (size_t i = 0; i < 256; i++) {
+        v1[i] = static_cast<uint8_t>(i);
+        v1[256 + i] = static_cast<uint8_t>(255 - i);
+    }
+
+    // v2: 255..0 followed by 0..255
+    for (size_t i = 0; i < 256; i++) {
+        v2[i] = static_cast<uint8_t>(255 - i);
+        v2[256 + i] = static_cast<uint8_t>(i);
+    }
+
+    float baseline_l2 = UINT8_L2Sqr(v1, v2, dim);
+    float baseline_ip = UINT8_InnerProduct(v1, v2, dim);
+    float baseline_cosine = UINT8_Cosine(v1, v2, dim);
+
+    dist_func_t<float> arch_opt_func;
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+
+        arch_opt_func = Choose_UINT8_L2_implementation_SVE2(dim)
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1, v2, dim)) << "L2 SVE2 with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_SVE2(dim)
+        ASSERT_EQ(baseline_ip, arch_opt_func(v1, v2, dim)) << "IP SVE2 with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_SVE2(dim)
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1, v2, dim)) << "Cosine SVE2 with dim " << dim;
+
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+
+        arch_opt_func = Choose_UINT8_L2_implementation_SVE(dim)
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1, v2, dim)) << "L2 SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_SVE(dim)
+        ASSERT_EQ(baseline_ip, arch_opt_func(v1, v2, dim)) << "IP SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_SVE(dim)
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1, v2, dim)) << "Cosine SVE with dim " << dim;
+
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        unsigned char alignment = 0;
+
+        arch_opt_func = Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim)
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1, v2, dim)) << "L2 SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim)
+        ASSERT_EQ(baseline_ip, arch_opt_func(v1, v2, dim)) << "IP SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim)
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1, v2, dim)) << "Cosine SVE with dim " << dim;
+
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
+            optimization.avx512vnni = 0;
+    }
+#endif
+
+}
+
 
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                          testing::Range(32UL, 64 * 2UL + 1));
