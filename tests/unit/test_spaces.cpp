@@ -286,7 +286,14 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
         break;
 #endif // CPU_FEATURES_ARCH_AARCH64
-
+    case ARCH_OPT_NONE:
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP64_L2Sqr, arch_opt_func);
+        break;
+    default:
+        FAIL();
+    }
+}
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest,
                          testing::Range(8UL, 8 * 2UL + 1));
 
