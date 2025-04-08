@@ -7,7 +7,6 @@
 #pragma once
 
 #include "VecSim/vec_sim_common.h" // enum VecSimMetric
-#include "space_includes.h"
 
 namespace spaces {
 
