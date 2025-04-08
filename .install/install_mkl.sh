@@ -12,7 +12,7 @@ then
     then
         wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/${uuid}/${filename}
         chmod u+x ./${filename}
-        $MODE ./${filename} -a --action install --silent --eula accept --components intel.oneapi.lin.mkl.devel --install-dir ${prefix}
+        $MODE ./${filename} -a --action install --silent --ignore-errors --eula accept --components intel.oneapi.lin.mkl.devel --install-dir ${prefix}
         #source ${prefix}/setvars.sh
     fi
 fi
