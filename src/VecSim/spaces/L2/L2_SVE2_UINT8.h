@@ -18,6 +18,12 @@ inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t 
     svuint8_t v2_i8 = svld1_u8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
     // Subtract v2 from v1 and widen the results to int16 for the even indexes
+
+    // Note that reinterpreting the modulo-wrapped uint16 result of svsublb_u16
+    // as int16_t is valid because two’s complement ensures the bit pattern represents
+    // the correct signed difference. For example, (uint8_t)(10 - 20) = 246 (0x00F6),
+    // which reinterprets to -10 as desired.
+
     svint16_t diff_e = svreinterpret_s16(svsublb_u16(v1_i8, v2_i8));
 
     // Subtract v2 from v1 and widen the results to int16 for the odd indexes
