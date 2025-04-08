@@ -29,6 +29,15 @@ else()
     message(STATUS "SVS is not supported on this architecture")
 endif()
 
+# GCC < v11 does not support C++20 features required for SVS
+# https://gcc.gnu.org/projects/cxx-status.html
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "11.0")
+        set(SVS_SUPPORTED 0)
+        message(STATUS "Insufficient gcc version for SVS")
+    endif()
+endif()
+
 # USE_SVS option forsibly OFF if CPU is not supported
 # elsewhere let user disable SVS
 cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTED" OFF)
