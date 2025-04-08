@@ -10,36 +10,23 @@
 __attribute__((always_inline)) static inline void
 L2SquareOp(const uint8x16_t &v1_first, const uint8x16_t &v2_first, int32x4_t &sum) {
     // Split into low and high 8-bit halves
-    uint8x8_t v1_low = vget_low_u8(v1_first);
-    uint8x8_t v1_high = vget_high_u8(v1_first);
-    uint8x8_t v2_low = vget_low_u8(v2_first);
-    uint8x8_t v2_high = vget_high_u8(v2_first);
+    uint16x8_t diff_low = vabdl_u8(vget_low_u8(v1), vget_low_u8(v2));
 
-    // Compute absolute differences and widen to 16-bit in one step
-    uint16x8_t diff_low_u = vabdl_u8(v1_low, v2_low);
-    uint16x8_t diff_high_u = vabdl_u8(v1_high, v2_high);
+    // Use vabdl_high_u8 for the high half - eliminates need for vget_high_u8 calls
+    uint16x8_t diff_high = vabdl_high_u8(v1, v2);
 
-    // Reinterpret as signed for compatibility with the rest of the code
-    int16x8_t diff_low = vreinterpretq_s16_u16(diff_low_u);
-    int16x8_t diff_high = vreinterpretq_s16_u16(diff_high_u);
+    // Square and accumulate the differences
+    // For the low part - reinterpret as signed for compatibility
+    int32x4_t diff_low_0 = vmovl_s16(vreinterpretq_s16_u16(vget_low_u16(diff_low)));
+    int32x4_t diff_low_1 = vmovl_s16(vreinterpretq_s16_u16(vget_high_u16(diff_low)));
+    sum = vmlaq_s32(sum, diff_low_0, diff_low_0);
+    sum = vmlaq_s32(sum, diff_low_1, diff_low_1);
 
-    // Further widen differences to 32-bit for safer squaring
-    int32x4_t diff_low_0 = vmovl_s16(vget_low_s16(diff_low));
-    int32x4_t diff_low_1 = vmovl_s16(vget_high_s16(diff_low));
-    int32x4_t diff_high_0 = vmovl_s16(vget_low_s16(diff_high));
-    int32x4_t diff_high_1 = vmovl_s16(vget_high_s16(diff_high));
-
-    // Square differences in 32-bit
-    int32x4_t square_low_0 = vmulq_s32(diff_low_0, diff_low_0);
-    int32x4_t square_low_1 = vmulq_s32(diff_low_1, diff_low_1);
-    int32x4_t square_high_0 = vmulq_s32(diff_high_0, diff_high_0);
-    int32x4_t square_high_1 = vmulq_s32(diff_high_1, diff_high_1);
-
-    // Accumulate all results into sum
-    sum = vaddq_s32(sum, square_low_0);
-    sum = vaddq_s32(sum, square_low_1);
-    sum = vaddq_s32(sum, square_high_0);
-    sum = vaddq_s32(sum, square_high_1);
+    // For the high part
+    int32x4_t diff_high_0 = vmovl_s16(vreinterpretq_s16_u16(vget_low_u16(diff_high)));
+    int32x4_t diff_high_1 = vmovl_s16(vreinterpretq_s16_u16(vget_high_u16(diff_high)));
+    sum = vmlaq_s32(sum, diff_high_0, diff_high_0);
+    sum = vmlaq_s32(sum, diff_high_1, diff_high_1);
 }
 
 __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect1, uint8_t *&pVect2,
