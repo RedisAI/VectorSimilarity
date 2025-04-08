@@ -55,11 +55,10 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 #endif
 #endif // __x86_64__
 #ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
     case ARCH_OPT_SVE2:
+#ifdef OPT_SVE2
         ret_dist_func = Choose_FP32_L2_implementation_SVE2(dim);
         break;
-
 #endif
     case ARCH_OPT_SVE:
 #ifdef OPT_SVE
