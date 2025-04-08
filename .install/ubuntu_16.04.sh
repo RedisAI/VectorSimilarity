@@ -12,4 +12,4 @@ $MODE apt update
 $MODE apt-get install -yqq git wget make valgrind gcc-9 g++-9
 $MODE update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 --slave /usr/bin/g++ g++ /usr/bin/g++-9
 source install_cmake.sh $MODE
-source install_mkl.sh $MODE
+source install_mkl_apt.sh $MODE
