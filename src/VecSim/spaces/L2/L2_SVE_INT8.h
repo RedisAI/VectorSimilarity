@@ -17,39 +17,9 @@ inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &o
     svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
     svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
-    svint16_t v1_16_l = svunpklo_s16(v1_i8);
-    svint16_t v1_16_h = svunpkhi_s16(v1_i8);
-    svint16_t v2_16_l = svunpklo_s16(v2_i8);
-    svint16_t v2_16_h = svunpkhi_s16(v2_i8);
+    svint8_t abs_diff = svabd_s8_x(pg, v1_i8, v2_i8);
 
-    // Calculate difference and square for low part
-    svint16_t diff_l = svsub_s16_x(pg, v1_16_l, v2_16_l);
-
-    // Unpacking to 32 bits is necessary for the multiplication
-    // The multiplication of two 16 bits numbers can overflow
-    // Maximal value of int8 - int8 is 255 (127 - (-128))
-    // 255^2 = 65025 while int16 can hold upto 32767
-
-    svint32_t diff32_l_l = svunpklo_s32(diff_l);
-    svint32_t diff32_l_h = svunpkhi_s32(diff_l);
-
-    // Result register is the same as the accumulator for better performance
-    svint32_t sq_l = svmul_s32_x(pg, diff32_l_l, diff32_l_l);
-    sq_l = svmla_s32_x(pg, sq_l, diff32_l_h, diff32_l_h);
-
-    svint16_t diff_h = svsub_s16_x(pg, v1_16_h, v2_16_h);
-
-    svint32_t diff32_h_l = svunpklo_s32(diff_h);
-    svint32_t diff32_h_h = svunpkhi_s32(diff_h);
-
-    // Result register is the same as the accumulator for better performance
-    svint32_t sq_h = svmul_s32_x(pg, diff32_h_l, diff32_h_l);
-    sq_h = svmla_s32_x(pg, sq_h, diff32_h_h, diff32_h_h);
-
-    // Accumulate
-    sum = svadd_s32_x(pg, sum, sq_l);
-    sum = svadd_s32_x(pg, sum, sq_h);
-
+    sum = svdot_s32(sum, abs_diff, abs_diff);
     offset += chunk; // Move to the next set of int8 elements
 }
 
@@ -103,39 +73,14 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
         Because Inactive lanes are set to 0 in load */
 
         svbool_t pg = svwhilelt_b8_u64(offset, dimension);
-        svbool_t pg16 = svwhilelt_b16(offset, dimension);
-        svbool_t pg32 = svwhilelt_b32(offset, dimension);
 
         svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
         svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
-        svint16_t v1_16_l = svunpklo_s16(v1_i8);
-        svint16_t v1_16_h = svunpkhi_s16(v1_i8);
-        svint16_t v2_16_l = svunpklo_s16(v2_i8);
-        svint16_t v2_16_h = svunpkhi_s16(v2_i8);
+        svint8_t abs_diff = svabd_s8_x(pg, v1_i8, v2_i8);
 
-        // Calculate difference and square for low part
-        svint16_t diff_l = svsub_s16_x(pg16, v1_16_l, v2_16_l);
-
-        svint32_t diff32_l_l = svunpklo_s32(diff_l);
-        svint32_t diff32_l_h = svunpkhi_s32(diff_l);
-
-        // Result register is the same as the accumulator for better performance
-        svint32_t sq_l = svmul_s32_x(pg32, diff32_l_l, diff32_l_l);
-        sq_l = svmla_s32_x(pg32, sq_l, diff32_l_h, diff32_l_h);
-
-        svint16_t diff_h = svsub_s16_x(pg16, v1_16_h, v2_16_h);
-
-        svint32_t diff32_h_l = svunpklo_s32(diff_h);
-        svint32_t diff32_h_h = svunpkhi_s32(diff_h);
-
-        // Result register is the same as the accumulator for better performance
-        svint32_t sq_h = svmul_s32_x(pg32, diff32_h_l, diff32_h_l);
-        sq_h = svmla_s32_x(pg32, sq_h, diff32_h_h, diff32_h_h);
-
-        // Accumulate
-        sum3 = svadd_s32_x(pg32, sum3, sq_l);
-        sum3 = svadd_s32_x(pg32, sum3, sq_h);
+        // Can sum with taking into account pg because svld1 will set inactive lanes to 0
+        sum3 = svdot_s32(sum3, abs_diff, abs_diff);
     }
 
     sum0 = svadd_s32_x(all, sum0, sum1);
