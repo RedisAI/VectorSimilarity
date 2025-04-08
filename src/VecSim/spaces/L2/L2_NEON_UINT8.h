@@ -8,25 +8,18 @@
 #include <arm_neon.h>
 
 __attribute__((always_inline)) static inline void
-L2SquareOp(const uint8x16_t &v1_first, const uint8x16_t &v2_first, int32x4_t &sum) {
-    // Split into low and high 8-bit halves
+L2SquareOp(const uint8x16_t &v1, const uint8x16_t &v2, int32x4_t &sum) {
+    // Compute absolute differences and widen to 16-bit in one step
     uint16x8_t diff_low = vabdl_u8(vget_low_u8(v1), vget_low_u8(v2));
+    uint16x8_t diff_high = vabdl_u8(vget_high_u8(v1), vget_high_u8(v2));
 
-    // Use vabdl_high_u8 for the high half - eliminates need for vget_high_u8 calls
-    uint16x8_t diff_high = vabdl_high_u8(v1, v2);
-
-    // Square and accumulate the differences
-    // For the low part - reinterpret as signed for compatibility
-    int32x4_t diff_low_0 = vmovl_s16(vreinterpretq_s16_u16(vget_low_u16(diff_low)));
-    int32x4_t diff_low_1 = vmovl_s16(vreinterpretq_s16_u16(vget_high_u16(diff_low)));
-    sum = vmlaq_s32(sum, diff_low_0, diff_low_0);
-    sum = vmlaq_s32(sum, diff_low_1, diff_low_1);
-
-    // For the high part
-    int32x4_t diff_high_0 = vmovl_s16(vreinterpretq_s16_u16(vget_low_u16(diff_high)));
-    int32x4_t diff_high_1 = vmovl_s16(vreinterpretq_s16_u16(vget_high_u16(diff_high)));
-    sum = vmlaq_s32(sum, diff_high_0, diff_high_0);
-    sum = vmlaq_s32(sum, diff_high_1, diff_high_1);
+    // Square and accumulate the differences using vmlal_u16
+    uint32x4_t sum_u32 = vreinterpretq_u32_s32(sum); // Reinterpret sum as uint32x4_t for vmlal_u16
+    sum_u32 = vmlal_u16(sum_u32, vget_low_u16(diff_low), vget_low_u16(diff_low));
+    sum_u32 = vmlal_u16(sum_u32, vget_high_u16(diff_low), vget_high_u16(diff_low));
+    sum_u32 = vmlal_u16(sum_u32, vget_low_u16(diff_high), vget_low_u16(diff_high));
+    sum_u32 = vmlal_u16(sum_u32, vget_high_u16(diff_high), vget_high_u16(diff_high));
+    sum = vreinterpretq_s32_u32(sum_u32); // Reinterpret back to int32x4_t
 }
 
 __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect1, uint8_t *&pVect2,
