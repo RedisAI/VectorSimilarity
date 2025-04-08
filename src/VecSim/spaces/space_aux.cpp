@@ -6,13 +6,6 @@
 
 #include "space_aux.h"
 
-#ifdef CPU_FEATURES_ARCH_X86_64
-#include "cpuinfo_x86.h"
-#endif // CPU_FEATURES_ARCH_X86_64
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#include "cpuinfo_aarch64.h"
-#endif // CPU_FEATURES_ARCH_AARCH64
-
 Arch_Optimization getArchitectureOptimization() {
 
 #ifdef CPU_FEATURES_ARCH_X86_64

@@ -162,80 +162,50 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
 #endif
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
-static dist_func_t<float> L2_dist_funcs_arm16[] = {FP32_L2Sqr,
+static dist_func_t<float> *build_arm_funcs_array(size_t dim, bool is_ip) {
+    static dist_func_t<float> funcs[ARCH_OPT_LENGTH] = {nullptr};
+    cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
+    // Always add baseline implementation
+    funcs[ARCH_OPT_NONE] = is_ip ? FP32_InnerProduct : FP32_L2Sqr;
+
+// Add NEON implementation if available
 #ifdef OPT_NEON
-                                                   spaces::Choose_FP32_L2_implementation_NEON(16),
-#endif
-#ifdef OPT_SVE
-                                                   spaces::Choose_FP32_L2_implementation_SVE(16),
-#endif
-#ifdef OPT_SVE2
-                                                   spaces::Choose_FP32_L2_implementation_SVE2(16)
-#endif
-};
-static dist_func_t<float> IP_dist_funcs_arm16[] = {FP32_InnerProduct,
-#ifdef OPT_NEON
-                                                   spaces::Choose_FP32_IP_implementation_NEON(16),
-#endif
-#ifdef OPT_SVE
-                                                   spaces::Choose_FP32_IP_implementation_SVE(16),
-#endif
-#ifdef OPT_SVE2
-                                                   spaces::Choose_FP32_IP_implementation_SVE2(16)
-#endif
-};
-static dist_func_t<float> L2_dist_funcs_arm8[] = {FP32_L2Sqr,
-#ifdef OPT_NEON
-                                                  spaces::Choose_FP32_L2_implementation_NEON(8),
-#endif
-#ifdef OPT_SVE
-                                                  spaces::Choose_FP32_L2_implementation_SVE(8),
-#endif
-#ifdef OPT_SVE2
-                                                  spaces::Choose_FP32_L2_implementation_SVE2(8)
-#endif
-};
-static dist_func_t<float> IP_dist_funcs_arm8[] = {FP32_InnerProduct,
-#ifdef OPT_NEON
-                                                  spaces::Choose_FP32_IP_implementation_NEON(8),
-#endif
-#ifdef OPT_SVE
-                                                  spaces::Choose_FP32_IP_implementation_SVE(8),
-#endif
-#ifdef OPT_SVE2
-                                                  spaces::Choose_FP32_IP_implementation_SVE2(8)
+    if (features.asimd) {
+        funcs[ARCH_OPT_NEON] = is_ip ? spaces::Choose_FP32_IP_implementation_NEON(dim)
+                                     : spaces::Choose_FP32_L2_implementation_NEON(dim);
+    }
 #endif
 
-};
-static dist_func_t<float> L2_dist_funcs_arm4[] = {FP32_L2Sqr,
-#ifdef OPT_NEON
-                                                  spaces::Choose_FP32_L2_implementation_NEON(4),
-#endif
+// Add SVE implementation if available
 #ifdef OPT_SVE
-                                                  spaces::Choose_FP32_L2_implementation_SVE(4),
+    if (features.sve) {
+        funcs[ARCH_OPT_SVE] = is_ip ? spaces::Choose_FP32_IP_implementation_SVE(dim)
+                                    : spaces::Choose_FP32_L2_implementation_SVE(dim);
+    }
 #endif
-#ifdef OPT_SVE2
-                                                  spaces::Choose_FP32_L2_implementation_SVE2(4)
-#endif
-};
-static dist_func_t<float> IP_dist_funcs_arm4[] = {FP32_InnerProduct,
-#ifdef OPT_NEON
-                                                  spaces::Choose_FP32_IP_implementation_NEON(4),
-#endif
-#ifdef OPT_SVE
-                                                  spaces::Choose_FP32_IP_implementation_SVE(4),
-#endif
-#ifdef OPT_SVE2
-                                                  spaces::Choose_FP32_IP_implementation_SVE2(4)
-#endif
-};
 
+// Add SVE2 implementation if available
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        funcs[ARCH_OPT_SVE2] = is_ip ? spaces::Choose_FP32_IP_implementation_SVE2(dim)
+                                     : spaces::Choose_FP32_L2_implementation_SVE2(dim);
+    }
+#endif
+
+    return funcs;
+}
 #endif
 
 } // namespace spaces_test
 
 class FP32SpacesOptimizationTest
-    : public testing::TestWithParam<std::pair<size_t, dist_func_t<float> *>> {};
+#ifdef CPU_FEATURES_ARCH_X86_64
+    : public testing::TestWithParam<std::pair<size_t, dist_func_t<float> *>> {
+};
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    : public testing::TestWithParam<std::pair<size_t, bool>> {
+};
+#endif
 
 TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
     Arch_Optimization optimization = getArchitectureOptimization();
@@ -246,8 +216,11 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
         v[i] = (float)i;
         v2[i] = (float)(i + 1.5);
     }
-
+#ifdef CPU_FEATURES_ARCH_X86_64
     dist_func_t<float> *arch_opt_funcs = GetParam().second;
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    dist_func_t<float> *arch_opt_funcs = spaces_test::build_arm_funcs_array(dim, GetParam().second);
+#endif
     float baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -295,12 +268,10 @@ INSTANTIATE_TEST_SUITE_P(
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
 INSTANTIATE_TEST_SUITE_P(FP32DimNOptFuncs, FP32SpacesOptimizationTest,
-                         testing::Values(std::make_pair(16, spaces_test::L2_dist_funcs_arm16),
-                                         std::make_pair(16, spaces_test::IP_dist_funcs_arm16),
-                                         std::make_pair(8, spaces_test::L2_dist_funcs_arm8),
-                                         std::make_pair(8, spaces_test::IP_dist_funcs_arm8),
-                                         std::make_pair(4, spaces_test::L2_dist_funcs_arm4),
-                                         std::make_pair(4, spaces_test::IP_dist_funcs_arm4)));
+                         testing::Values(std::make_pair(16, true), // is_ip = true
+                                         std::make_pair(16, false), std::make_pair(8, true),
+                                         std::make_pair(8, false), std::make_pair(4, true),
+                                         std::make_pair(4, false)));
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
