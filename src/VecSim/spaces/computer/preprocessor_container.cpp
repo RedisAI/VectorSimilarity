@@ -27,6 +27,9 @@ PreprocessorsContainerAbstract::preprocessQuery(const void *original_blob,
 void PreprocessorsContainerAbstract::preprocessQueryInPlace(void *blob,
                                                             size_t processed_bytes_count) const {}
 
+void PreprocessorsContainerAbstract::preprocessStorageInPlace(void *blob,
+                                                              size_t processed_bytes_count) const {}
+
 MemoryUtils::unique_blob
 PreprocessorsContainerAbstract::maybeCopyToAlignedMem(const void *original_blob,
                                                       size_t blob_bytes_count) const {
