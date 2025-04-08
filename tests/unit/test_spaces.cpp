@@ -163,7 +163,7 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
 static dist_func_t<float> *build_arm_funcs_array(size_t dim, bool is_ip) {
-    static dist_func_t<float> funcs[ARCH_OPT_LENGTH] = {nullptr};
+    static dist_func_t<float> funcs[ARCH_OPT_SVE2] = {nullptr};
     cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
     // Always add baseline implementation
     funcs[ARCH_OPT_NONE] = is_ip ? FP32_InnerProduct : FP32_L2Sqr;

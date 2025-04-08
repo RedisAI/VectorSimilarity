@@ -26,7 +26,6 @@ enum Arch_Optimization {
     ARCH_OPT_SVE,
     ARCH_OPT_SVE2,
 #endif
-    ARCH_OPT_LENGTH,
 };
 
 Arch_Optimization getArchitectureOptimization();
