@@ -13,13 +13,19 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/L2/L2.h"
-
+#include "VecSim/spaces/functions/AVX.h"
+#include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
+#include "bm_macros.h"
 #include "bm_spaces_class.h"
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                   \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)               \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces,                                                            \
+                       CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))            \
     (benchmark::State & st) {                                                                      \
         if (opt < ARCH_OPT_##arch) {                                                               \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
@@ -46,7 +52,8 @@
 
 #define INITIALIZE_BM(type_prefix, arch, metric, dim_opt)                                          \
     BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                       \
-    BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)             \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces,                                                          \
+                         CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, arch, metric, dim_opt))          \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
@@ -62,7 +69,7 @@
 // Naive algorithms
 
 #define BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                              \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric))   \
     (benchmark::State & st) {                                                                      \
         for (auto _ : st) {                                                                        \
             type_prefix##_##metric(v1, v2, dim);                                                   \
@@ -71,6 +78,6 @@
 
 #define INITIALIZE_NAIVE_BM(type_prefix, metric)                                                   \
     BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                    \
-    BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                            \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces, CONCAT_WITH_UNDERSCORE_ARCH(type_prefix, NAIVE, metric)) \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)

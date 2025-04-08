@@ -19,5 +19,4 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist
                  unsigned char *alignment);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func,
                  unsigned char *alignment);
-
 } // namespace spaces

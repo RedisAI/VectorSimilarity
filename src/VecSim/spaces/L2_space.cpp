@@ -9,6 +9,9 @@
 #include "VecSim/spaces/functions/AVX512.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
+#include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/SVE.h"
+#include "VecSim/spaces/functions/SVE2.h"
 
 namespace spaces {
 
@@ -20,13 +23,15 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     }
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
+
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+
     if (dim < 16) {
         return ret_dist_func;
     }
+    switch (arch_opt) {
 #ifdef CPU_FEATURES_ARCH_X86_64
 
-    switch (arch_opt) {
     case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP32_L2_implementation_AVX512(dim);
@@ -48,11 +53,27 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
             *alignment = 4 * sizeof(float); // handles 4 floats
         break;
 #endif
+#endif // __x86_64__
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    case ARCH_OPT_SVE2:
+#ifdef OPT_SVE2
+        ret_dist_func = Choose_FP32_L2_implementation_SVE2(dim);
+        break;
+#endif
+    case ARCH_OPT_SVE:
+#ifdef OPT_SVE
+        ret_dist_func = Choose_FP32_L2_implementation_SVE(dim);
+        break;
+#endif
+    case ARCH_OPT_NEON:
+#ifdef OPT_NEON
+        ret_dist_func = Choose_FP32_L2_implementation_NEON(dim);
+        break;
+#endif
+#endif // __aarch64__
     case ARCH_OPT_NONE:
         break;
     } // switch
-
-#endif // __x86_64__
     return ret_dist_func;
 }
 
