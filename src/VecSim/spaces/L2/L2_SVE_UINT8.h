@@ -29,17 +29,18 @@ float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     const uint8_t *pVect1 = reinterpret_cast<const uint8_t *>(pVect1v);
     const uint8_t *pVect2 = reinterpret_cast<const uint8_t *>(pVect2v);
 
-    // number of int8 per SVE register
+    // number of uint8 per SVE register
     const size_t vl = svcntb();
     const size_t chunk_size = 4 * vl;
     svbool_t all = svptrue_b8();
 
-    // Each L2SquareStep adds maximum (2*2^8)^2 = 2^18
-    // Therefor, on a single accumulator, we can perform 2^13 steps before overflowing
-    // That scenario will happen only is the dimension of the vector is larger than 16*4*2^13 = 2^19
-    // (16 int8 in 1 SVE register) * (4 accumulators) * (2^13 steps)
+    // Each L2SquareStep adds maximum (2^8)^2 = 2^16
+    // Therefor, on a single accumulator, we can perform 2^16 steps before overflowing
+    // That scenario will happen only is the dimension of the vector is larger than 16*4*2^16 = 2^22
+    // (16 uint8 in 1 SVE register) * (4 accumulators) * (2^16 steps)
     // We can safely assume that the dimension is smaller than that
-    // So using int32_t is safe
+    // So using uint32_t is safe
+
 
     svuint32_t sum0 = svdup_u32(0);
     svuint32_t sum1 = svdup_u32(0);
