@@ -221,10 +221,21 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
 #endif
+
+// CPU_FEATURES_ARCH_AARCH64
 #ifdef CPU_FEATURES_ARCH_AARCH64
-    case ARCH_OPT_NEON:
     case ARCH_OPT_SVE:
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_SVE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        break;
     case ARCH_OPT_SVE2:
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_SVE2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+        break;
+    case ARCH_OPT_NEON:
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_NEON);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
+        break;
 #endif // CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_NONE:
         arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
@@ -259,10 +270,21 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
         arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
         ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
 #endif
+
+// CPU_FEATURES_ARCH_AARCH64
 #ifdef CPU_FEATURES_ARCH_AARCH64
-    case ARCH_OPT_NEON:
     case ARCH_OPT_SVE:
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_SVE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE with dim " << dim;
+        break;
     case ARCH_OPT_SVE2:
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_SVE2);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SVE2 with dim " << dim;
+        break;
+    case ARCH_OPT_NEON:
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_NEON);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "NEON with dim " << dim;
+        break;
 #endif // CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_NONE:
         arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
