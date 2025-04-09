@@ -8,22 +8,20 @@
 #include <arm_neon.h>
 
 __attribute__((always_inline)) static inline void L2SquareOp(const uint8x16_t &v1,
-                                                             const uint8x16_t &v2, int32x4_t &sum) {
+                                                             const uint8x16_t &v2, uint32x4_t &sum) {
     // Compute absolute differences and widen to 16-bit in one step
     uint16x8_t diff_low = vabdl_u8(vget_low_u8(v1), vget_low_u8(v2));
     uint16x8_t diff_high = vabdl_u8(vget_high_u8(v1), vget_high_u8(v2));
 
     // Square and accumulate the differences using vmlal_u16
-    uint32x4_t sum_u32 = vreinterpretq_u32_s32(sum); // Reinterpret sum as uint32x4_t for vmlal_u16
-    sum_u32 = vmlal_u16(sum_u32, vget_low_u16(diff_low), vget_low_u16(diff_low));
-    sum_u32 = vmlal_u16(sum_u32, vget_high_u16(diff_low), vget_high_u16(diff_low));
-    sum_u32 = vmlal_u16(sum_u32, vget_low_u16(diff_high), vget_low_u16(diff_high));
-    sum_u32 = vmlal_u16(sum_u32, vget_high_u16(diff_high), vget_high_u16(diff_high));
-    sum = vreinterpretq_s32_u32(sum_u32); // Reinterpret back to int32x4_t
+    sum = vmlal_u16(sum, vget_low_u16(diff_low), vget_low_u16(diff_low));
+    sum = vmlal_u16(sum, vget_high_u16(diff_low), vget_high_u16(diff_low));
+    sum = vmlal_u16(sum, vget_low_u16(diff_high), vget_low_u16(diff_high));
+    sum = vmlal_u16(sum, vget_high_u16(diff_high), vget_high_u16(diff_high));
 }
 
 __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect1, uint8_t *&pVect2,
-                                                                 int32x4_t &sum) {
+                                                                 uint32x4_t &sum) {
     // Load 16 uint8 elements into NEON registers
     uint8x16_t v1 = vld1q_u8(pVect1);
     uint8x16_t v2 = vld1q_u8(pVect2);
@@ -35,7 +33,7 @@ __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect
 }
 
 __attribute__((always_inline)) static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2,
-                                                                 int32x4_t &sum1, int32x4_t &sum2) {
+                                                                 uint32x4_t &sum1, uint32x4_t &sum2) {
     uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
     uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
 
@@ -57,10 +55,10 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
-    int32x4_t sum0 = vdupq_n_s32(0);
-    int32x4_t sum1 = vdupq_n_s32(0);
-    int32x4_t sum2 = vdupq_n_s32(0);
-    int32x4_t sum3 = vdupq_n_s32(0);
+    uint32x4_t sum0 = vdupq_n_u32(0);
+    uint32x4_t sum1 = vdupq_n_u32(0);
+    uint32x4_t sum2 = vdupq_n_u32(0);
+    uint32x4_t sum3 = vdupq_n_u32(0);
 
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
@@ -120,13 +118,13 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result
-    int32x4_t total_sum = vaddq_s32(sum0, sum1);
+    uint32x4_t total_sum = vaddq_u32(sum0, sum1);
 
-    total_sum = vaddq_s32(total_sum, sum2);
-    total_sum = vaddq_s32(total_sum, sum3);
+    total_sum = vaddq_u32(total_sum, sum2);
+    total_sum = vaddq_u32(total_sum, sum3);
 
     // Horizontal sum of the 4 elements in the combined sum register
-    int32_t result = vaddvq_s32(total_sum);
+    int32_t result = vaddvq_u32(total_sum);
 
     // Return the L2 squared distance as a float
     return static_cast<float>(result);
