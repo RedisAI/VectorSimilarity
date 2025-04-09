@@ -13,10 +13,10 @@ __attribute__((always_inline)) static inline void L2SquareOp(const int8x16_t &v1
 
     // Compute absolute differences (results in uint8x16_t)
     int8x16_t diff = vabdq_s8(v1, v2);
-    
+
     // Reinterpret back to int8x16_t for vdotq_s32
     uint8x16_t diff_s8 = vreinterpretq_u8_s8(diff);
-    
+
     // Use dot product to square and accumulate (diff·diff)
     sum = vdotq_u32(sum, diff_s8, diff_s8);
 }
@@ -64,22 +64,24 @@ float INT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, si
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
         // Define a compile-time constant mask based on final_residual
-        constexpr uint8x16_t mask = {0xFF,
-                                     (final_residual >= 2) ? 0xFF : 0,
-                                     (final_residual >= 3) ? 0xFF : 0,
-                                     (final_residual >= 4) ? 0xFF : 0,
-                                     (final_residual >= 5) ? 0xFF : 0,
-                                     (final_residual >= 6) ? 0xFF : 0,
-                                     (final_residual >= 7) ? 0xFF : 0,
-                                     (final_residual >= 8) ? 0xFF : 0,
-                                     (final_residual >= 9) ? 0xFF : 0,
-                                     (final_residual >= 10) ? 0xFF : 0,
-                                     (final_residual >= 11) ? 0xFF : 0,
-                                     (final_residual >= 12) ? 0xFF : 0,
-                                     (final_residual >= 13) ? 0xFF : 0,
-                                     (final_residual >= 14) ? 0xFF : 0,
-                                     (final_residual >= 15) ? 0xFF : 0,
-                                     0,};
+        constexpr uint8x16_t mask = {
+            0xFF,
+            (final_residual >= 2) ? 0xFF : 0,
+            (final_residual >= 3) ? 0xFF : 0,
+            (final_residual >= 4) ? 0xFF : 0,
+            (final_residual >= 5) ? 0xFF : 0,
+            (final_residual >= 6) ? 0xFF : 0,
+            (final_residual >= 7) ? 0xFF : 0,
+            (final_residual >= 8) ? 0xFF : 0,
+            (final_residual >= 9) ? 0xFF : 0,
+            (final_residual >= 10) ? 0xFF : 0,
+            (final_residual >= 11) ? 0xFF : 0,
+            (final_residual >= 12) ? 0xFF : 0,
+            (final_residual >= 13) ? 0xFF : 0,
+            (final_residual >= 14) ? 0xFF : 0,
+            (final_residual >= 15) ? 0xFF : 0,
+            0,
+        };
 
         // Load data directly from input vectors
         int8x16_t v1 = vld1q_s8(pVect1);

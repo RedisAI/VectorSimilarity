@@ -30,8 +30,8 @@ __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect
     pVect2 += 16;
 }
 
-__attribute__((always_inline)) static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2,
-                                                                 uint32x4_t &sum1, uint32x4_t &sum2) {
+__attribute__((always_inline)) static inline void
+L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1, uint32x4_t &sum2) {
     uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
     uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
 
