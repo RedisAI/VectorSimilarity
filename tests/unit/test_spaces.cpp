@@ -287,8 +287,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
         break;
 #endif // CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_NONE:
-        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
-        ASSERT_EQ(FP64_L2Sqr, arch_opt_func);
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP64_InnerProduct, arch_opt_func);
         break;
     default:
         FAIL();

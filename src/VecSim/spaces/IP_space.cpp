@@ -115,6 +115,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         break;
 #endif
 #endif // __x86_64__ */
+
 #ifdef CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_SVE2:
 
