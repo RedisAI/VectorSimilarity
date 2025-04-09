@@ -9,7 +9,7 @@
 
 // Aligned step using svptrue_b8()
 inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
-                         svint32_t &sum, const size_t chunk) {
+                         svuint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
     // Note: Because all the bits are 1, the extention to 16 and 32 bits does not make a difference
     // Otherwise, pg should be recalculated for 16 and 32 operations
@@ -17,9 +17,9 @@ inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &o
     svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
     svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
-    svint8_t abs_diff = svabd_s8_x(pg, v1_i8, v2_i8);
+    svuint8_t abs_diff = svreinterpret_u8_s8(svabd_s8_x(pg, v1_i8, v2_i8));
 
-    sum = svdot_s32(sum, abs_diff, abs_diff);
+    sum = svdot_u32(sum, abs_diff, abs_diff);
     offset += chunk; // Move to the next set of int8 elements
 }
 
@@ -40,10 +40,10 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
     // We can safely assume that the dimension is smaller than that
     // So using int32_t is safe
 
-    svint32_t sum0 = svdup_s32(0);
-    svint32_t sum1 = svdup_s32(0);
-    svint32_t sum2 = svdup_s32(0);
-    svint32_t sum3 = svdup_s32(0);
+    svuint32_t sum0 = svdup_u32(0);
+    svuint32_t sum1 = svdup_u32(0);
+    svuint32_t sum2 = svdup_u32(0);
+    svuint32_t sum3 = svdup_u32(0);
 
     size_t offset = 0;
     size_t num_main_blocks = dimension / chunk_size;
@@ -77,14 +77,14 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
         svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
         svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
-        svint8_t abs_diff = svabd_s8_x(pg, v1_i8, v2_i8);
+        svuint8_t abs_diff = svreinterpret_u8_s8(svabd_s8_x(pg, v1_i8, v2_i8));
 
         // Can sum with taking into account pg because svld1 will set inactive lanes to 0
-        sum3 = svdot_s32(sum3, abs_diff, abs_diff);
+        sum3 = svdot_u32(sum3, abs_diff, abs_diff);
     }
 
-    sum0 = svadd_s32_x(all, sum0, sum1);
-    sum2 = svadd_s32_x(all, sum2, sum3);
-    svint32_t sum_all = svadd_s32_x(all, sum0, sum2);
-    return svaddv_s32(svptrue_b32(), sum_all);
+    sum0 = svadd_u32_x(all, sum0, sum1);
+    sum2 = svadd_u32_x(all, sum2, sum3);
+    svuint32_t sum_all = svadd_u32_x(all, sum0, sum2);
+    return svaddv_u32(svptrue_b32(), sum_all);
 }
