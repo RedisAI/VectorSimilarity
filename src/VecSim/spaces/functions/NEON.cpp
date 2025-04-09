@@ -11,7 +11,6 @@
 #include "VecSim/spaces/L2/L2_NEON_UINT8.h"
 #include "VecSim/spaces/IP/IP_NEON_INT8.h"
 #include "VecSim/spaces/IP/IP_NEON_UINT8.h"
-
 #include "VecSim/spaces/L2/L2_NEON_FP64.h"
 #include "VecSim/spaces/IP/IP_NEON_FP64.h"
 
@@ -37,6 +36,24 @@ dist_func_t<float> Choose_FP32_IP_implementation_NEON(size_t dim) {
     return ret_dist_func;
 }
 
+dist_func_t<double> Choose_FP64_IP_implementation_NEON(size_t dim) {
+    dist_func_t<double> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_NEON);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_INT8_Cosine_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, INT8_CosineSIMD_NEON);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_UINT8_Cosine_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD_NEON);
+    return ret_dist_func;
+}
+
 dist_func_t<float> Choose_FP32_L2_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16_NEON);
@@ -54,23 +71,6 @@ dist_func_t<float> Choose_UINT8_L2_implementation_NEON(size_t dim) {
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_INT8_Cosine_implementation_NEON(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, INT8_CosineSIMD_NEON);
-    return ret_dist_func;
-}
-
-dist_func_t<float> Choose_UINT8_Cosine_implementation_NEON(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD_NEON);
-    return ret_dist_func;
-}
-
-dist_func_t<double> Choose_FP64_IP_implementation_NEON(size_t dim) {
-    dist_func_t<double> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_NEON);
-    return ret_dist_func;
-}
 dist_func_t<double> Choose_FP64_L2_implementation_NEON(size_t dim) {
     dist_func_t<double> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8_NEON);

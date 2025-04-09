@@ -268,6 +268,22 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 
     dist_func_t<float> ret_dist_func = INT8_L2Sqr;
+
+    auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_INT8_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_INT8_L2_implementation_SVE(dim);
+    }
+#endif
+#endif
+#ifdef CPU_FEATURES_ARCH_X86_64
     // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
     auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef CPU_FEATURES_ARCH_AARCH64
@@ -310,6 +326,16 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_UINT8_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_UINT8_L2_implementation_SVE(dim);
+    }
+#endif
 #ifdef OPT_NEON_DOTPROD
     if (features.asimddp && dim >= 16) {
         return Choose_UINT8_L2_implementation_NEON_DOTPROD(dim);
@@ -321,7 +347,6 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif // __aarch64__
-
 #ifdef CPU_FEATURES_ARCH_X86_64
     if (dim < 32) {
         return ret_dist_func;
