@@ -1647,8 +1647,8 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
     auto optimization = getCpuOptimizationFeatures();
     constexpr size_t dim = 512;
 
-    uint8_t v1[dim];
-    uint8_t v2[dim];
+    uint8_t v1[dim + sizeof(float)];
+    uint8_t v2[dim + sizeof(float)];
 
     // v1: 0..255 followed by 255..0
     for (size_t i = 0; i < 256; i++) {
