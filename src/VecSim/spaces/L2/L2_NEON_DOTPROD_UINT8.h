@@ -30,8 +30,8 @@ __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect
     pVect2 += 16;
 }
 
-__attribute__((always_inline)) static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2,
-                                                                 uint32x4_t &sum1, uint32x4_t &sum2) {
+__attribute__((always_inline)) static inline void
+L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1, uint32x4_t &sum2) {
     uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
     uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
 
@@ -60,22 +60,24 @@ float UINT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, s
 
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
-        constexpr uint8x16_t mask = {0xFF,
-                                     (final_residual >= 2) ? 0xFF : 0,
-                                     (final_residual >= 3) ? 0xFF : 0,
-                                     (final_residual >= 4) ? 0xFF : 0,
-                                     (final_residual >= 5) ? 0xFF : 0,
-                                     (final_residual >= 6) ? 0xFF : 0,
-                                     (final_residual >= 7) ? 0xFF : 0,
-                                     (final_residual >= 8) ? 0xFF : 0,
-                                     (final_residual >= 9) ? 0xFF : 0,
-                                     (final_residual >= 10) ? 0xFF : 0,
-                                     (final_residual >= 11) ? 0xFF : 0,
-                                     (final_residual >= 12) ? 0xFF : 0,
-                                     (final_residual >= 13) ? 0xFF : 0,
-                                     (final_residual >= 14) ? 0xFF : 0,
-                                     (final_residual >= 15) ? 0xFF : 0,
-                                     0};
+        constexpr uint8x16_t mask = {
+            0xFF,
+            (final_residual >= 2) ? 0xFF : 0,
+            (final_residual >= 3) ? 0xFF : 0,
+            (final_residual >= 4) ? 0xFF : 0,
+            (final_residual >= 5) ? 0xFF : 0,
+            (final_residual >= 6) ? 0xFF : 0,
+            (final_residual >= 7) ? 0xFF : 0,
+            (final_residual >= 8) ? 0xFF : 0,
+            (final_residual >= 9) ? 0xFF : 0,
+            (final_residual >= 10) ? 0xFF : 0,
+            (final_residual >= 11) ? 0xFF : 0,
+            (final_residual >= 12) ? 0xFF : 0,
+            (final_residual >= 13) ? 0xFF : 0,
+            (final_residual >= 14) ? 0xFF : 0,
+            (final_residual >= 15) ? 0xFF : 0,
+            0,
+        };
 
         // Load data directly from input vectors
         uint8x16_t v1 = vld1q_u8(pVect1);
@@ -109,11 +111,8 @@ float UINT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, s
     // Handle residual elements (0-63)
     // First, process full chunks of 16 elements
     constexpr size_t residual_chunks = (residual % 32) / 16;
-    if constexpr (residual_chunks >= 1) {
+    if constexpr (residual_chunks > 0) {
         L2SquareStep16(pVect1, pVect2, sum0);
-    }
-    if constexpr (residual_chunks >= 2) {
-        L2SquareStep16(pVect1, pVect2, sum1);
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result
