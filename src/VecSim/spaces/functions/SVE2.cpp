@@ -14,8 +14,8 @@
 
 #include "VecSim/spaces/IP/IP_SVE_FP64.h"
 #include "VecSim/spaces/L2/L2_SVE_FP64.h"
-#include "VecSim/spaces/L2/L2_SVE_INT8.h" // SVE2 implementation is identical to SVE
-#include "VecSim/spaces/IP/IP_SVE_INT8.h" // SVE2 implementation is identical to SVE
+#include "VecSim/spaces/L2/L2_SVE_INT8.h"  // SVE2 implementation is identical to SVE
+#include "VecSim/spaces/IP/IP_SVE_INT8.h"  // SVE2 implementation is identical to SVE
 #include "VecSim/spaces/L2/L2_SVE_UINT8.h" // SVE2 implementation is identical to SVE
 #include "VecSim/spaces/IP/IP_SVE_UINT8.h" // SVE2 implementation is identical to SVE
 
