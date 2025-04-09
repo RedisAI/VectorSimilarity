@@ -178,6 +178,12 @@ public:
     inline size_t getDataSize() const { return dataSize; }
     inline size_t getBlockSize() const { return blockSize; }
     inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
+    virtual inline VecSimIndexStatsInfo statisticInfo() const override {
+        return VecSimIndexStatsInfo{
+            .memory = this->getAllocationSize(),
+            .numberOfMarkedDeleted = 0,
+        };
+    }
 
     virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                          VecSimQueryParams *queryParams) const = 0;
