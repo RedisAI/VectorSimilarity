@@ -162,7 +162,7 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
 #endif
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
-static dist_func_t<float> *build_arm_funcs_array(size_t dim, bool is_ip) {
+static dist_func_t<float> *build_arm_funcs_array_fp32(size_t dim, bool is_ip) {
     static dist_func_t<float> funcs[ARCH_OPT_SVE2] = {nullptr};
     cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
     // Always add baseline implementation
@@ -195,7 +195,7 @@ static dist_func_t<float> *build_arm_funcs_array(size_t dim, bool is_ip) {
     return funcs;
 }
 
-static dist_func_t<double> *build_arm_funcs_array(size_t dim, bool is_ip) {
+static dist_func_t<double> *build_arm_funcs_array_fp64(size_t dim, bool is_ip) {
     static dist_func_t<double> funcs[ARCH_OPT_SVE2] = {nullptr};
     cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
     // Always add baseline implementation
@@ -257,7 +257,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
 #ifdef CPU_FEATURES_ARCH_X86_64
     dist_func_t<float> *arch_opt_funcs = GetParam().second;
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
-    dist_func_t<float> *arch_opt_funcs = spaces_test::build_arm_funcs_array(dim, GetParam().second);
+    dist_func_t<float> *arch_opt_funcs = spaces_test::build_arm_funcs_array_fp32(dim, GetParam().second);
 #endif
     float baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
@@ -325,8 +325,11 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
         v[i] = (double)i;
         v2[i] = (double)(i + 1.5);
     }
-
+#ifdef CPU_FEATURES_ARCH_X86_64
     dist_func_t<double> *arch_opt_funcs = GetParam().second;
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    dist_func_t<double> *arch_opt_funcs = spaces_test::build_arm_funcs_array_fp64(dim, GetParam().second);
+#endif
     double baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
 #ifdef CPU_FEATURES_ARCH_X86_64
