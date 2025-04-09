@@ -150,12 +150,12 @@ void compareCommonInfo(CommonInfo info1, CommonInfo info2);
 void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
 void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
 
-void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterator *infoIter);
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
-void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterator *infoIter);
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
-void compareTieredHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimIndexInfo frontendIndexInfo,
-                                          VecSimIndexInfo backendIndexInfo,
+void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimIndexDebugInfo frontendIndexInfo,
+                                          VecSimIndexDebugInfo backendIndexInfo,
                                           VecSimDebugInfoIterator *infoIterator);
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,

@@ -194,7 +194,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
               expectedAllocationSize + deleteCommandAllocationDelta);
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
-    memory = bfIndex->statisticInfo().memory
+    memory = bfIndex->statisticInfo().memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     VecSimIndex_Free(bfIndex);
 }
@@ -214,7 +214,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     expectedAllocationSize +=
         sizeof(HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
-    size_t memory = bfIndex->statisticInfo().memory;
+    size_t memory = hnswIndex->statisticInfo().memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     expectedAllocationSize = memory;
 
@@ -222,7 +222,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     VecSimIndex_AddVector(hnswIndex, vec, 1);
     int addCommandAllocationDelta = allocator->getAllocationSize() - before;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
-    memory = bfIndex->statisticInfo().memory;
+    memory = hnswIndex->statisticInfo().memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     expectedAllocationSize = memory;
 
@@ -231,7 +231,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     addCommandAllocationDelta = allocator->getAllocationSize() - before;
 
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
-    memory = bfIndex->statisticInfo().memory;
+    memory = hnswIndex->statisticInfo().memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
     expectedAllocationSize = memory;
@@ -242,7 +242,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
-    memory = bfIndex->statisticInfo().memory;
+    memory = hnswIndex->statisticInfo().memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     expectedAllocationSize = memory;
 
@@ -252,7 +252,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
-    memory = bfIndex->statisticInfo().memory;
+    memory = hnswIndex->statisticInfo().memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     VecSimIndex_Free(hnswIndex);
 }

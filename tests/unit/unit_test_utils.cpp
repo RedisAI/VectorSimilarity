@@ -171,7 +171,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
     VecSimQueryReply_Free(res);
 }
 
-void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterator *infoIter) {
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
     ASSERT_EQ(10, VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
@@ -225,7 +225,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterato
     }
 }
 
-void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterator *infoIter) {
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
     ASSERT_EQ(17, VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
@@ -309,8 +309,8 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterato
     }
 }
 
-void compareTieredHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimIndexInfo frontendIndexInfo,
-                                          VecSimIndexInfo backendIndexInfo,
+void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimIndexDebugInfo frontendIndexInfo,
+                                          VecSimIndexDebugInfo backendIndexInfo,
                                           VecSimDebugInfoIterator *infoIterator) {
     while (infoIterator->hasNext()) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIterator);

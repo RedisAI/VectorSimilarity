@@ -2711,7 +2711,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1, 1000);
     auto allocator = tiered_index->getAllocator();
 
-    VecSimIndexInfo info = tiered_index->debugInfo();
+    VecSimIndexDebugInfo info = tiered_index->debugInfo();
     EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
@@ -2721,8 +2721,8 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.basicInfo.metric, VecSimMetric_L2);
     EXPECT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
     EXPECT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
-    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
-    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
+    VecSimIndexDebugInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
+    VecSimIndexDebugInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
 
     compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
     compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
@@ -2821,9 +2821,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     auto allocator = tiered_index->getAllocator();
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
-    VecSimIndexInfo info = tiered_index->debugInfo();
-    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
-    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
+    VecSimIndexDebugInfo info = tiered_index->debugInfo();
+    VecSimIndexDebugInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
+    VecSimIndexDebugInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
 
     VecSimDebugInfoIterator *infoIterator = tiered_index->debugInfoIterator();
     EXPECT_EQ(infoIterator->numberOfFields(), 15);
