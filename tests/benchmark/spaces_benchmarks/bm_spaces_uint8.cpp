@@ -42,7 +42,7 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 #ifdef OPT_NEON_DOTPROD
 // NEON_DOTPROD functions
 bool neon_dotprod_supported = opt.asimddp;
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_Integers_UINT8, UINT8, NEON_DOTPROD, 64,
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_UINT8, UINT8, NEON_DOTPROD, 64,
                              neon_dotprod_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_UINT8, UINT8, NEON_DOTPROD, 64,
                                  neon_dotprod_supported);

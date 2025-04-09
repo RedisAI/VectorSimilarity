@@ -19,6 +19,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
 #include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
@@ -270,6 +271,11 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
     // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
     auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_INT8_L2_implementation_NEON_DOTPROD(dim);
+    }
+#endif
 #ifdef OPT_NEON
     if (features.asimd && dim >= 16) {
         return Choose_INT8_L2_implementation_NEON(dim);
@@ -304,6 +310,11 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_UINT8_L2_implementation_NEON_DOTPROD(dim);
+    }
+#endif
 #ifdef OPT_NEON
     if (features.asimd && dim >= 16) {
         return Choose_UINT8_L2_implementation_NEON(dim);
