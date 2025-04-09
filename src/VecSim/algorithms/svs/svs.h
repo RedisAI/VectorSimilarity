@@ -258,20 +258,20 @@ public:
         return info;
     }
 
-    VecSimIndexInfo info() const override {
-        VecSimIndexInfo info;
+    VecSimIndexDInfo debugInfo() const override {
+        VecSimIndexDebugInfo info;
         info.commonInfo = this->getCommonInfo();
         info.commonInfo.basicInfo.algo = VecSimAlgo_SVS;
         info.commonInfo.basicInfo.isTiered = false;
         return info;
     }
 
-    VecSimInfoIterator *infoIterator() const override {
-        VecSimIndexInfo info = this->info();
+    VecSimDebugInfoIterator *debugInfoIterator() const override {
+        VecSimIndexDebugInfo info = this->debugInfo();
         // For readability. Update this number when needed.
         size_t numberOfInfoFields = 10;
-        VecSimInfoIterator *infoIterator =
-            new VecSimInfoIterator(numberOfInfoFields, this->allocator);
+        VecSimDebugInfoIterator *infoIterator =
+            new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::ALGORITHM_STRING,

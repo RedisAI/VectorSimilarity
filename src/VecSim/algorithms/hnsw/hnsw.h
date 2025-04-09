@@ -249,9 +249,9 @@ public:
     void unlockNodeLinks(ElementGraphData *node_data) const;
     VisitedNodesHandler *getVisitedList() const;
     void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
-    VecSimIndexInfo info() const override;
+    VecSimIndexDebugInfo debugInfo() const override;
     VecSimIndexBasicInfo basicInfo() const override;
-    VecSimInfoIterator *infoIterator() const override;
+    VecSimDebugInfoIterator *debugInfoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     const char *getDataByInternalId(idType internal_id) const;
     ElementGraphData *getGraphDataByInternalId(idType internal_id) const;
@@ -2083,9 +2083,9 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
+VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
 
-    VecSimIndexInfo info;
+    VecSimIndexDebugInfo info;
     info.commonInfo = this->getCommonInfo();
 
     info.commonInfo.basicInfo.algo = VecSimAlgo_HNSWLIB;
@@ -2109,11 +2109,12 @@ VecSimIndexBasicInfo HNSWIndex<DataType, DistType>::basicInfo() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
-    VecSimIndexInfo info = this->info();
+VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() const {
+    VecSimIndexDebugInfo info = this->debugInfo();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 17;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
+    VecSimDebugInfoIterator *infoIterator =
+        new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
@@ -2309,7 +2310,7 @@ VecSimDebugCommandCode
 HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neighborsData) {
     std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     // Assume single value index. TODO: support for multi as well.
-    if (this->info().commonInfo.basicInfo.isMulti) {
+    if (this->basicInfo().isMulti) {
         return VecSimDebugCommandCode_MultiNotSupported;
     }
     auto ids = this->getElementIds(label);

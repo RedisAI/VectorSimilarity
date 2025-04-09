@@ -6,22 +6,23 @@
 
 #include "info_iterator_struct.h"
 
-extern "C" size_t VecSimInfoIterator_NumberOfFields(VecSimInfoIterator *infoIterator) {
+extern "C" size_t VecSimDebugInfoIterator_NumberOfFields(VecSimDebugInfoIterator *infoIterator) {
     return infoIterator->numberOfFields();
 }
 
-extern "C" bool VecSimInfoIterator_HasNextField(VecSimInfoIterator *infoIterator) {
+extern "C" bool VecSimDebugInfoIterator_HasNextField(VecSimDebugInfoIterator *infoIterator) {
     return infoIterator->hasNext();
 }
 
-extern "C" VecSim_InfoField *VecSimInfoIterator_NextField(VecSimInfoIterator *infoIterator) {
+extern "C" VecSim_InfoField *
+VecSimDebugInfoIterator_NextField(VecSimDebugInfoIterator *infoIterator) {
     if (infoIterator->hasNext()) {
         return infoIterator->next();
     }
     return NULL;
 }
 
-extern "C" void VecSimInfoIterator_Free(VecSimInfoIterator *infoIterator) {
+extern "C" void VecSimDebugInfoIterator_Free(VecSimDebugInfoIterator *infoIterator) {
     if (infoIterator != NULL) {
         delete infoIterator;
     }

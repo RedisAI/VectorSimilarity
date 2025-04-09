@@ -82,8 +82,8 @@ public:
                this->frontendIndex->getAllocationSize();
     }
 
-    virtual VecSimIndexInfo info() const override;
-    virtual VecSimInfoIterator *infoIterator() const override;
+    virtual VecSimIndexDebugInfo debugInfo() const override;
+    virtual VecSimDebugInfoIterator *debugInfoIterator() const override;
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
@@ -240,14 +240,14 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
-    VecSimIndexInfo info;
+VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
+    VecSimIndexDebugInfo info;
     this->flatIndexGuard.lock_shared();
-    VecSimIndexInfo frontendInfo = this->frontendIndex->info();
+    VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
     this->flatIndexGuard.unlock_shared();
 
     this->mainIndexGuard.lock();
-    VecSimIndexInfo backendInfo = this->backendIndex->info();
+    VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
     this->mainIndexGuard.unlock();
 
     info.commonInfo.indexLabelCount = this->indexLabelCount();
@@ -256,13 +256,15 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     info.commonInfo.memory = this->getAllocationSize();
     info.commonInfo.lastMode = backendInfo.commonInfo.lastMode;
 
-    VecSimIndexBasicInfo basic_info{.algo = backendInfo.commonInfo.basicInfo.algo,
-                                    .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
-                                    .metric = backendInfo.commonInfo.basicInfo.metric,
-                                    .type = backendInfo.commonInfo.basicInfo.type,
-                                    .isMulti = this->backendIndex->isMultiValue(),
-                                    .dim = backendInfo.commonInfo.basicInfo.dim,
-                                    .isTiered = true};
+    VecSimIndexBasicInfo basic_info{
+        .algo = backendInfo.commonInfo.basicInfo.algo,
+        .metric = backendInfo.commonInfo.basicInfo.metric,
+        .type = backendInfo.commonInfo.basicInfo.type,
+        .isMulti = this->backendIndex->isMultiValue(),
+        .isTiered = true,
+        .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
+        .dim = backendInfo.commonInfo.basicInfo.dim,
+    };
     info.commonInfo.basicInfo = basic_info;
 
     switch (backendInfo.commonInfo.basicInfo.algo) {
@@ -287,11 +289,11 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
-    VecSimIndexInfo info = this->info();
+VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterator() const {
+    VecSimIndexDebugInfo info = this->debugInfo();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 14;
-    auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
+    auto *infoIterator = new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
     // Set tiered explicitly as algo name for root iterator.
     infoIterator->addInfoField(VecSim_InfoField{
@@ -319,11 +321,11 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::FRONTEND_INDEX_STRING,
         .fieldType = INFOFIELD_ITERATOR,
-        .fieldValue = {FieldValue{.iteratorValue = this->frontendIndex->infoIterator()}}});
+        .fieldValue = {FieldValue{.iteratorValue = this->frontendIndex->debugInfoIterator()}}});
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
         .fieldType = INFOFIELD_ITERATOR,
-        .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->infoIterator()}}});
+        .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->debugInfoIterator()}}});
     return infoIterator;
 };

@@ -171,10 +171,10 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
     VecSimQueryReply_Free(res);
 }
 
-void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(10, VecSimInfoIterator_NumberOfFields(infoIter));
-    while (VecSimInfoIterator_HasNextField(infoIter)) {
-        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIter);
+void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterator *infoIter) {
+    ASSERT_EQ(10, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+    while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
+        VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
             // Algorithm type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
@@ -225,10 +225,10 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
     }
 }
 
-void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(17, VecSimInfoIterator_NumberOfFields(infoIter));
-    while (VecSimInfoIterator_HasNextField(infoIter)) {
-        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIter);
+void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimDebugInfoIterator *infoIter) {
+    ASSERT_EQ(17, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+    while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
+        VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
             // Algorithm type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
@@ -311,9 +311,9 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 
 void compareTieredHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimIndexInfo frontendIndexInfo,
                                           VecSimIndexInfo backendIndexInfo,
-                                          VecSimInfoIterator *infoIterator) {
+                                          VecSimDebugInfoIterator *infoIterator) {
     while (infoIterator->hasNext()) {
-        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
+        VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIterator);
 
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
             // Algorithm type.
