@@ -17,6 +17,7 @@ inline void L2SquareStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &o
     svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
     svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
+    // The result of svabd can be reinterpreted as uint8
     svuint8_t abs_diff = svreinterpret_u8_s8(svabd_s8_x(pg, v1_i8, v2_i8));
 
     sum = svdot_u32(sum, abs_diff, abs_diff);
@@ -77,6 +78,7 @@ float INT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
         svint8_t v1_i8 = svld1_s8(pg, pVect1 + offset); // Load int8 vectors from pVect1
         svint8_t v2_i8 = svld1_s8(pg, pVect2 + offset); // Load int8 vectors from pVect2
 
+        // The result of svabd can be reinterpreted as uint8
         svuint8_t abs_diff = svreinterpret_u8_s8(svabd_s8_x(pg, v1_i8, v2_i8));
 
         // Can sum with taking into account pg because svld1 will set inactive lanes to 0
