@@ -39,6 +39,16 @@ public:
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
 cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
+#ifdef OPT_SVE2
+bool sve2_supported = opt.sve2; // Check for SVE support
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, SVE2, 32, sve2_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE2, 32, sve2_supported);
+#endif
+#ifdef OPT_SVE
+bool sve_supported = opt.sve; // Check for SVE support
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve2_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve2_supported);
+#endif
 #ifdef OPT_NEON_DOTPROD
 bool neon_dotprod_supported = opt.asimddp;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, NEON_DOTPROD, 64,
@@ -67,20 +77,6 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, AVX512F_BW
 #endif // AVX512_F_BW_VL_VNNI
 
 #endif // x86_64
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
-#ifdef OPT_SVE2
-bool sve2_supported = opt.sve2; // Check for SVE support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, SVE2, 32, sve2_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE2, 32, sve2_supported);
-#endif
-#ifdef OPT_SVE
-bool sve_supported = opt.sve; // Check for SVE support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve2_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve2_supported);
-#endif
-#endif
 
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, InnerProduct, 32);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_Integers_INT8, INT8, Cosine, 32);
