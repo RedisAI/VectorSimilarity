@@ -199,7 +199,7 @@ static dist_func_t<double> *build_arm_funcs_array(size_t dim, bool is_ip) {
     static dist_func_t<double> funcs[ARCH_OPT_SVE2] = {nullptr};
     cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
     // Always add baseline implementation
-    funcs[ARCH_OPT_NONE] = is_ip ? FP32_InnerProduct : FP32_L2Sqr;
+    funcs[ARCH_OPT_NONE] = is_ip ? FP64_InnerProduct : FP64_L2Sqr;
 
 // Add NEON implementation if available
 #ifdef OPT_NEON
@@ -228,7 +228,11 @@ static dist_func_t<double> *build_arm_funcs_array(size_t dim, bool is_ip) {
     return funcs;
 }
 
+
 #endif
+
+
+
 
 } // namespace spaces_test
 
@@ -351,7 +355,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_NEON](v, v2, dim));
 #endif
         break;
-#endif
+        #endif
     default:
         ASSERT_TRUE(false);
     }
