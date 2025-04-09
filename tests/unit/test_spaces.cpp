@@ -228,11 +228,7 @@ static dist_func_t<double> *build_arm_funcs_array_fp64(size_t dim, bool is_ip) {
     return funcs;
 }
 
-
 #endif
-
-
-
 
 } // namespace spaces_test
 
@@ -257,7 +253,8 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
 #ifdef CPU_FEATURES_ARCH_X86_64
     dist_func_t<float> *arch_opt_funcs = GetParam().second;
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
-    dist_func_t<float> *arch_opt_funcs = spaces_test::build_arm_funcs_array_fp32(dim, GetParam().second);
+    dist_func_t<float> *arch_opt_funcs =
+        spaces_test::build_arm_funcs_array_fp32(dim, GetParam().second);
 #endif
     float baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
@@ -328,7 +325,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
 #ifdef CPU_FEATURES_ARCH_X86_64
     dist_func_t<double> *arch_opt_funcs = GetParam().second;
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
-    dist_func_t<double> *arch_opt_funcs = spaces_test::build_arm_funcs_array_fp64(dim, GetParam().second);
+    dist_func_t<double> *arch_opt_funcs =
+        spaces_test::build_arm_funcs_array_fp64(dim, GetParam().second);
 #endif
     double baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
@@ -358,7 +356,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_NEON](v, v2, dim));
 #endif
         break;
-        #endif
+#endif
     default:
         ASSERT_TRUE(false);
     }
