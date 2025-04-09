@@ -143,6 +143,23 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         ret_dist_func = dist_funcs[optimization_type];
     } break;
 #endif
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    case ARCH_OPT_SVE2:
+#ifdef OPT_SVE2
+        ret_dist_func = Choose_FP64_L2_implementation_SVE2(dim);
+        break;
+#endif
+    case ARCH_OPT_SVE:
+#ifdef OPT_SVE
+        ret_dist_func = Choose_FP64_L2_implementation_SVE(dim);
+        break;
+#endif
+    case ARCH_OPT_NEON:
+#ifdef OPT_NEON
+        ret_dist_func = Choose_FP64_L2_implementation_NEON(dim);
+        break;
+#endif
+#endif // CPU_FEATURES_ARCH_X86_64
     case ARCH_OPT_NONE:
         break;
     } // switch

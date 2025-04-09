@@ -194,7 +194,45 @@ static dist_func_t<float> *build_arm_funcs_array(size_t dim, bool is_ip) {
 
     return funcs;
 }
+
+static dist_func_t<double> *build_arm_funcs_array(size_t dim, bool is_ip) {
+    static dist_func_t<double> funcs[ARCH_OPT_SVE2] = {nullptr};
+    cpu_features::Aarch64Features features = cpu_features::GetAarch64Info().features;
+    // Always add baseline implementation
+    funcs[ARCH_OPT_NONE] = is_ip ? FP32_InnerProduct : FP32_L2Sqr;
+
+// Add NEON implementation if available
+#ifdef OPT_NEON
+    if (features.asimd) {
+        funcs[ARCH_OPT_NEON] = is_ip ? spaces::Choose_FP64_IP_implementation_NEON(dim)
+                                     : spaces::Choose_FP64_L2_implementation_NEON(dim);
+    }
 #endif
+
+// Add SVE implementation if available
+#ifdef OPT_SVE
+    if (features.sve) {
+        funcs[ARCH_OPT_SVE] = is_ip ? spaces::Choose_FP64_IP_implementation_SVE(dim)
+                                    : spaces::Choose_FP64_L2_implementation_SVE(dim);
+    }
+#endif
+
+// Add SVE2 implementation if available
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        funcs[ARCH_OPT_SVE2] = is_ip ? spaces::Choose_FP64_IP_implementation_SVE2(dim)
+                                     : spaces::Choose_FP64_L2_implementation_SVE2(dim);
+    }
+#endif
+
+    return funcs;
+}
+
+
+#endif
+
+
+
 
 } // namespace spaces_test
 
@@ -291,6 +329,8 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
     dist_func_t<double> *arch_opt_funcs = GetParam().second;
     double baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
+#ifdef CPU_FEATURES_ARCH_X86_64
+
     case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512_DQ](v, v2, dim));
     case ARCH_OPT_AVX512_F:
@@ -300,6 +340,22 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SSE](v, v2, dim));
         break;
+#endif
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    case ARCH_OPT_SVE2:
+#ifdef OPT_SVE2
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SVE2](v, v2, dim));
+#endif
+    case ARCH_OPT_SVE:
+#ifdef OPT_SVE
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_SVE](v, v2, dim));
+#endif
+    case ARCH_OPT_NEON:
+#ifdef OPT_NEON
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_NEON](v, v2, dim));
+#endif
+        break;
+        #endif
     default:
         ASSERT_TRUE(false);
     }
