@@ -41,7 +41,6 @@ float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     // We can safely assume that the dimension is smaller than that
     // So using uint32_t is safe
 
-
     svuint32_t sum0 = svdup_u32(0);
     svuint32_t sum1 = svdup_u32(0);
     svuint32_t sum2 = svdup_u32(0);
