@@ -107,17 +107,13 @@ float INT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, si
     }
 
     constexpr size_t num_of_32_chunks = residual / 32;
-
     if constexpr (num_of_32_chunks) {
         L2SquareStep32(pVect1, pVect2, sum0, sum1);
     }
 
     constexpr size_t residual_chunks = (residual % 32) / 16;
-    if constexpr (residual_chunks >= 1) {
+    if constexpr (residual_chunks > 0) {
         L2SquareStep16(pVect1, pVect2, sum2);
-    }
-    if constexpr (residual_chunks >= 2) {
-        L2SquareStep16(pVect1, pVect2, sum3);
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result
