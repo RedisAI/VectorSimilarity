@@ -8,6 +8,9 @@
 #include "VecSim/spaces/L2/L2_SVE_FP32.h"
 #include "VecSim/spaces/IP/IP_SVE_FP32.h"
 
+#include "VecSim/spaces/IP/IP_SVE_FP64.h"
+#include "VecSim/spaces/L2/L2_SVE_FP64.h"
+
 namespace spaces {
 
 #include "implementation_chooser.h"
@@ -17,10 +20,20 @@ dist_func_t<float> Choose_FP32_IP_implementation_SVE2(size_t dim) {
     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_InnerProductSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
-
 dist_func_t<float> Choose_FP32_L2_implementation_SVE2(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_L2SqrSIMD_SVE, dim, svcntw);
+    return ret_dist_func;
+}
+
+dist_func_t<double> Choose_FP64_IP_implementation_SVE2(size_t dim) {
+    dist_func_t<double> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP64_InnerProductSIMD_SVE, dim, svcntd);
+    return ret_dist_func;
+}
+dist_func_t<double> Choose_FP64_L2_implementation_SVE2(size_t dim) {
+    dist_func_t<double> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP64_L2SqrSIMD_SVE, dim, svcntd);
     return ret_dist_func;
 }
 

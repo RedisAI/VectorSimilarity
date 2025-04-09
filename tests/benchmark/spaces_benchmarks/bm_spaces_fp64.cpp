@@ -14,6 +14,45 @@
 
 #define EXACT_PARAMS_MODULU2DIM EXACT_PARAMS_MODULU4DIM
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+// NEON implementation for ARMv8-a
+#ifdef OPT_NEON
+INITIALIZE_EXACT_BM(FP64, NEON, L2, 8, spaces::Choose_FP64_L2_implementation_NEON(8));
+INITIALIZE_EXACT_BM(FP64, NEON, L2, 2, spaces::Choose_FP64_L2_implementation_NEON(2));
+INITIALIZE_RESIDUAL_BM(FP64, NEON, L2, 8_Residuals, spaces::Choose_FP64_L2_implementation_NEON(8));
+INITIALIZE_RESIDUAL_BM(FP64, NEON, L2, 2_Residuals, spaces::Choose_FP64_L2_implementation_NEON(2));
+
+INITIALIZE_EXACT_BM(FP64, NEON, IP, 8, spaces::Choose_FP64_L2_implementation_NEON(8));
+INITIALIZE_EXACT_BM(FP64, NEON, IP, 2, spaces::Choose_FP64_L2_implementation_NEON(2));
+INITIALIZE_RESIDUAL_BM(FP64, NEON, IP, 8_Residuals, spaces::Choose_FP64_L2_implementation_NEON(8));
+INITIALIZE_RESIDUAL_BM(FP64, NEON, IP, 2_Residuals, spaces::Choose_FP64_L2_implementation_NEON(2));
+#endif
+// SVE implementation
+#ifdef OPT_SVE
+INITIALIZE_EXACT_BM(FP64, SVE, L2, 8, spaces::Choose_FP64_L2_implementation_SVE(8));
+INITIALIZE_EXACT_BM(FP64, SVE, L2, 2, spaces::Choose_FP64_L2_implementation_SVE(2));
+INITIALIZE_RESIDUAL_BM(FP64, SVE, L2, 8_Residuals, spaces::Choose_FP64_L2_implementation_SVE(8));
+INITIALIZE_RESIDUAL_BM(FP64, SVE, L2, 2_Residuals, spaces::Choose_FP64_L2_implementation_SVE(2));
+
+INITIALIZE_EXACT_BM(FP64, SVE, IP, 8, spaces::Choose_FP64_L2_implementation_SVE(8));
+INITIALIZE_EXACT_BM(FP64, SVE, IP, 2, spaces::Choose_FP64_L2_implementation_SVE(2));
+INITIALIZE_RESIDUAL_BM(FP64, SVE, IP, 8_Residuals, spaces::Choose_FP64_L2_implementation_SVE(8));
+INITIALIZE_RESIDUAL_BM(FP64, SVE, IP, 2_Residuals, spaces::Choose_FP64_L2_implementation_SVE(2));
+#endif
+// SVE2 implementation
+#ifdef OPT_SVE2
+INITIALIZE_EXACT_BM(FP64, SVE2, L2, 8, spaces::Choose_FP64_L2_implementation_SVE2(8));
+INITIALIZE_EXACT_BM(FP64, SVE2, L2, 2, spaces::Choose_FP64_L2_implementation_SVE2(2));
+INITIALIZE_RESIDUAL_BM(FP64, SVE2, L2, 8_Residuals, spaces::Choose_FP64_L2_implementation_SVE2(8));
+INITIALIZE_RESIDUAL_BM(FP64, SVE2, L2, 2_Residuals, spaces::Choose_FP64_L2_implementation_SVE2(2));
+INITIALIZE_EXACT_BM(FP64, SVE2, IP, 8, spaces::Choose_FP64_IP_implementation_SVE2(8));
+INITIALIZE_EXACT_BM(FP64, SVE2, IP, 2, spaces::Choose_FP64_IP_implementation_SVE2(2));
+INITIALIZE_RESIDUAL_BM(FP64, SVE2, IP, 8_Residuals, spaces::Choose_FP64_IP_implementation_SVE2(8));
+INITIALIZE_RESIDUAL_BM(FP64, SVE2, IP, 2_Residuals, spaces::Choose_FP64_IP_implementation_SVE2(2));
+
+#endif
+#endif // AARCH64
+
 // AVX512 functions
 #ifdef OPT_AVX512F
 #include "VecSim/spaces/L2/L2_AVX512.h"
