@@ -309,7 +309,8 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
     }
 }
 
-void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimIndexDebugInfo frontendIndexInfo,
+void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info,
+                                          VecSimIndexDebugInfo frontendIndexInfo,
                                           VecSimIndexDebugInfo backendIndexInfo,
                                           VecSimDebugInfoIterator *infoIterator) {
     while (infoIterator->hasNext()) {
