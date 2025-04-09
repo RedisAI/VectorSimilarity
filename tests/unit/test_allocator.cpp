@@ -104,7 +104,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         sizeof(DistanceCalculatorCommon<TEST_DIST_T>) + vecsimAllocationOverhead;
     expectedAllocationSize += sizeof(PreprocessorsContainerAbstract) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
-    size_t memory = bfIndex->statisticInfo().memory;
+    size_t memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
     int before = allocator->getAllocationSize();
@@ -123,7 +123,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
-    memory = bfIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
     // Prepare for next assertion test
@@ -144,7 +144,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
-    memory = bfIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
     // Prepare for next assertion test
@@ -167,7 +167,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_GE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_GE(expectedAllocationDelta, deleteCommandAllocationDelta);
 
-    memory = bfIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
     // Prepare for next assertion test
@@ -194,7 +194,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
               expectedAllocationSize + deleteCommandAllocationDelta);
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
-    memory = bfIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     VecSimIndex_Free(bfIndex);
 }
@@ -214,7 +214,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     expectedAllocationSize +=
         sizeof(HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
-    size_t memory = hnswIndex->statisticInfo().memory;
+    size_t memory = VecSimIndex_StatsInfo(hnswIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     expectedAllocationSize = memory;
 
@@ -222,7 +222,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     VecSimIndex_AddVector(hnswIndex, vec, 1);
     int addCommandAllocationDelta = allocator->getAllocationSize() - before;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
-    memory = hnswIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(hnswIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     expectedAllocationSize = memory;
 
@@ -231,7 +231,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     addCommandAllocationDelta = allocator->getAllocationSize() - before;
 
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
-    memory = hnswIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(hnswIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
     expectedAllocationSize = memory;
@@ -242,7 +242,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
-    memory = hnswIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(hnswIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     expectedAllocationSize = memory;
 
@@ -252,7 +252,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
-    memory = hnswIndex->statisticInfo().memory;
+    memory = VecSimIndex_StatsInfo(hnswIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     VecSimIndex_Free(hnswIndex);
 }

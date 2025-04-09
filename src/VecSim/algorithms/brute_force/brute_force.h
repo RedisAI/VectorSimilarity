@@ -329,8 +329,7 @@ VecSimDebugInfoIterator *BruteForceIndex<DataType, DistType>::debugInfoIterator(
     VecSimIndexDebugInfo info = this->debugInfo();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 10;
-    VecSimDebugInfoIterator *infoIterator =
-        new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
+    auto *infoIterator = new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,

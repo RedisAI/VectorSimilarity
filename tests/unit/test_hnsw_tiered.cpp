@@ -953,6 +953,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
 
     ASSERT_EQ(tiered_index->indexSize(), 4);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
+    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 3);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
 }
 
@@ -1423,6 +1424,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
 
     // Re-insert a deleted label with a different vector.
     TEST_DATA_T new_vec_val = 2.0;
@@ -1473,6 +1475,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
     ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id,
               invalidJobsCounter++);
@@ -1510,6 +1513,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
+    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 3);
 
     // Expect to see two repair jobs - one for each deleted vector internal id.
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
@@ -1794,6 +1798,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 2);
     // Expect to have pending repair jobs, so that swap job cannot be executed yet - for each
     // deleted vector there should be a single repair job.
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
@@ -1810,6 +1815,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
     EXPECT_EQ(tiered_index->indexSize(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 2);
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Now swap the rest of the jobs.
@@ -1817,6 +1823,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
     EXPECT_EQ(tiered_index->indexSize(), 0);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 
     // Reserve manually 0 buckets in the hash tables so that memory would be as it was before we
     // started inserting vectors.
@@ -1874,6 +1881,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->deleteVector(2), 1);
     EXPECT_EQ(tiered_index->indexSize(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
 
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
@@ -1916,6 +1924,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
 
     // Call delete again, this should only trigger the swap and removal of 1
@@ -1923,6 +1932,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->deleteVector(1), 0);
     EXPECT_EQ(tiered_index->indexSize(), 0);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 }
 
 // A set of lambdas that determine whether a vector should be inserted to the
@@ -2687,7 +2697,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
 
         mock_thread_pool.thread_pool_join();
 
-        EXPECT_EQ(tiered_index->indexSize() - tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->statisticInfo().numberOfMarkedDeleted,
                   n);
         EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
         EXPECT_EQ(tiered_index->indexLabelCount(), n);
@@ -2712,6 +2722,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
+    VecSimIndexStatsInfo stats = tiered_index->statisticInfo();
     EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
@@ -2732,6 +2743,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
+    EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
     EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
@@ -2748,6 +2760,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
     info = tiered_index->debugInfo();
+    stats = tiered_index->statisticInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
@@ -2758,10 +2771,12 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
 
     mock_thread_pool.thread_iteration();
     info = tiered_index->debugInfo();
+    stats = tiered_index->statisticInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
@@ -2772,11 +2787,13 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
     if (TypeParam::isMulti()) {
         GenerateAndAddVector(tiered_index, dim, 1, 1);
         info = tiered_index->debugInfo();
+        stats = tiered_index->statisticInfo();
 
         EXPECT_EQ(info.commonInfo.indexSize, 2);
         EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
@@ -2787,11 +2804,13 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
         EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                               info.tieredInfo.backendCommonInfo.memory +
                                               info.tieredInfo.frontendCommonInfo.memory);
+        EXPECT_EQ(info.commonInfo.memory, stats.memory);
         EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
     }
 
     VecSimIndex_DeleteVector(tiered_index, 1);
     info = tiered_index->debugInfo();
+    stats = tiered_index->statisticInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
@@ -2802,6 +2821,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 }
 
@@ -2936,6 +2956,7 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     tiered_index->deleteVector(vec_label);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
@@ -2991,6 +3012,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
     }
     // At this point, repair jobs should be executed in the background.
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, n);
 
     // Insert INPLACE another n vector (instead of the ones that were deleted).
     VecSim_SetWriteMode(VecSim_WriteInPlace);
@@ -3091,6 +3113,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
         ASSERT_EQ(tiered_index->backendIndex->indexSize(), 3);
         ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+        EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
         ASSERT_EQ(tiered_index->indexLabelCount(), 3);
@@ -3706,6 +3729,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, n);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Run the GC API call, expect that we will clean the defined threshold number of vectors
@@ -3827,6 +3851,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteBothAsyncAndInplace) {
 
     // Also expect that the swap job for 2 will not exist anymore, as 2 swapped with 0
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 2);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
     ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
     ASSERT_FALSE(tiered_index->idToSwapJob.contains(2));
@@ -3891,6 +3916,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteBothAsyncAndInplaceMulti) {
 
     // Also expect that the swap job for 3 will not exist anymore, as 2 swapped with 2.
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 2);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
     ASSERT_FALSE(tiered_index->idToSwapJob.contains(3));
     // Id 1 is now ready due to the deletion of 0 and its associated jobs.
