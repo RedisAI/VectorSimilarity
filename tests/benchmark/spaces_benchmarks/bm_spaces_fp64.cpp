@@ -19,14 +19,12 @@
 #ifdef OPT_NEON
 INITIALIZE_EXACT_BM(FP64, NEON, L2, 8, spaces::Choose_FP64_L2_implementation_NEON(8));
 INITIALIZE_EXACT_BM(FP64, NEON, L2, 2, spaces::Choose_FP64_L2_implementation_NEON(2));
-INITIALIZE_RESIDUAL_BM(FP64, NEON, L2, 8_Residuals,
-                       spaces::Choose_FP64_L2_implementation_NEON(8));
+INITIALIZE_RESIDUAL_BM(FP64, NEON, L2, 8_Residuals, spaces::Choose_FP64_L2_implementation_NEON(8));
 INITIALIZE_RESIDUAL_BM(FP64, NEON, L2, 2_Residuals, spaces::Choose_FP64_L2_implementation_NEON(2));
 
 INITIALIZE_EXACT_BM(FP64, NEON, IP, 8, spaces::Choose_FP64_L2_implementation_NEON(8));
 INITIALIZE_EXACT_BM(FP64, NEON, IP, 2, spaces::Choose_FP64_L2_implementation_NEON(2));
-INITIALIZE_RESIDUAL_BM(FP64, NEON, IP, 8_Residuals,
-                       spaces::Choose_FP64_L2_implementation_NEON(8));
+INITIALIZE_RESIDUAL_BM(FP64, NEON, IP, 8_Residuals, spaces::Choose_FP64_L2_implementation_NEON(8));
 INITIALIZE_RESIDUAL_BM(FP64, NEON, IP, 2_Residuals, spaces::Choose_FP64_L2_implementation_NEON(2));
 #endif
 // SVE implementation
@@ -45,13 +43,11 @@ INITIALIZE_RESIDUAL_BM(FP64, SVE, IP, 2_Residuals, spaces::Choose_FP64_L2_implem
 #ifdef OPT_SVE2
 INITIALIZE_EXACT_BM(FP64, SVE2, L2, 8, spaces::Choose_FP64_L2_implementation_SVE2(8));
 INITIALIZE_EXACT_BM(FP64, SVE2, L2, 2, spaces::Choose_FP64_L2_implementation_SVE2(2));
-INITIALIZE_RESIDUAL_BM(FP64, SVE2, L2, 8_Residuals,
-                       spaces::Choose_FP64_L2_implementation_SVE2(8));
+INITIALIZE_RESIDUAL_BM(FP64, SVE2, L2, 8_Residuals, spaces::Choose_FP64_L2_implementation_SVE2(8));
 INITIALIZE_RESIDUAL_BM(FP64, SVE2, L2, 2_Residuals, spaces::Choose_FP64_L2_implementation_SVE2(2));
 INITIALIZE_EXACT_BM(FP64, SVE2, IP, 8, spaces::Choose_FP64_IP_implementation_SVE2(8));
 INITIALIZE_EXACT_BM(FP64, SVE2, IP, 2, spaces::Choose_FP64_IP_implementation_SVE2(2));
-INITIALIZE_RESIDUAL_BM(FP64, SVE2, IP, 8_Residuals,
-                       spaces::Choose_FP64_IP_implementation_SVE2(8));
+INITIALIZE_RESIDUAL_BM(FP64, SVE2, IP, 8_Residuals, spaces::Choose_FP64_IP_implementation_SVE2(8));
 INITIALIZE_RESIDUAL_BM(FP64, SVE2, IP, 2_Residuals, spaces::Choose_FP64_IP_implementation_SVE2(2));
 
 #endif
