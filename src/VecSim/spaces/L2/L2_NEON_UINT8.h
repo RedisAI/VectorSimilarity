@@ -7,8 +7,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
-__attribute__((always_inline)) static inline void L2SquareOp(const uint8x16_t &v1,
-                                                             const uint8x16_t &v2, uint32x4_t &sum) {
+__attribute__((always_inline)) static inline void
+L2SquareOp(const uint8x16_t &v1, const uint8x16_t &v2, uint32x4_t &sum) {
     // Compute absolute differences and widen to 16-bit in one step
     uint16x8_t diff_low = vabdl_u8(vget_low_u8(v1), vget_low_u8(v2));
     uint16x8_t diff_high = vabdl_u8(vget_high_u8(v1), vget_high_u8(v2));
@@ -32,8 +32,8 @@ __attribute__((always_inline)) static inline void L2SquareStep16(uint8_t *&pVect
     pVect2 += 16;
 }
 
-__attribute__((always_inline)) static inline void L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2,
-                                                                 uint32x4_t &sum1, uint32x4_t &sum2) {
+__attribute__((always_inline)) static inline void
+L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1, uint32x4_t &sum2) {
     uint8x16x2_t v1_pair = vld1q_u8_x2(pVect1);
     uint8x16x2_t v2_pair = vld1q_u8_x2(pVect2);
 
