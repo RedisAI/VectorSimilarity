@@ -32,6 +32,8 @@ public:
                                  size_t processed_bytes_count, unsigned char alignment) const = 0;
     virtual void preprocessQueryInPlace(void *original_blob, size_t processed_bytes_count,
                                         unsigned char alignment) const = 0;
+    virtual void preprocessStorageInPlace(void *original_blob,
+                                          size_t processed_bytes_count) const = 0;
 };
 
 template <typename DataType>
@@ -94,6 +96,11 @@ public:
 
     void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
                                 unsigned char alignment) const override {
+        assert(blob);
+        normalize_func(blob, this->dim);
+    }
+
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {
         assert(blob);
         normalize_func(blob, this->dim);
     }
