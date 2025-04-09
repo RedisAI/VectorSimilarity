@@ -115,11 +115,8 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     // Handle residual elements (0-63)
     // First, process full chunks of 16 elements
     constexpr size_t residual_chunks = (residual % 32) / 16;
-    if constexpr (residual_chunks >= 1) {
+    if constexpr (residual_chunks > 0) {
         L2SquareStep16(pVect1, pVect2, sum0);
-    }
-    if constexpr (residual_chunks >= 2) {
-        L2SquareStep16(pVect1, pVect2, sum1);
     }
 
     // Horizontal sum of the 4 elements in the sum register to get final result
