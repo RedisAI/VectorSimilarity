@@ -89,11 +89,10 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     if (dim < 8) {
         return ret_dist_func;
     }
-    
 
     switch (arch_opt) {
 #ifdef CPU_FEATURES_ARCH_X86_64
-        case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_F:
 #ifdef OPT_AVX512F
         ret_dist_func = Choose_FP64_L2_implementation_AVX512(dim);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
@@ -116,24 +115,24 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 #endif
 #endif // __x86_64__ */
 #ifdef CPU_FEATURES_ARCH_AARCH64
-case ARCH_OPT_SVE2:
+    case ARCH_OPT_SVE2:
 
 #ifdef OPT_SVE2
         ret_dist_func = Choose_FP64_L2_implementation_SVE2(dim);
         break;
-    
+
 #endif
-case ARCH_OPT_SVE:
+    case ARCH_OPT_SVE:
 
 #ifdef OPT_SVE
         ret_dist_func = Choose_FP64_L2_implementation_SVE(dim);
-    break;
+        break;
 #endif
-case ARCH_OPT_NEON:
+    case ARCH_OPT_NEON:
 
 #ifdef OPT_NEON
         ret_dist_func = Choose_FP64_L2_implementation_NEON(dim);
-    break;
+        break;
 #endif
 
 #endif // CPU_FEATURES_ARCH_AARCH64
