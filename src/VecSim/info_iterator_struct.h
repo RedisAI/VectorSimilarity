@@ -9,13 +9,13 @@
 #include "info_iterator.h"
 #include "VecSim/utils/vecsim_stl.h"
 
-struct VecSimInfoIterator {
+struct VecSimDebugInfoIterator {
 private:
     vecsim_stl::vector<VecSim_InfoField> fields;
     size_t currentIndex;
 
 public:
-    VecSimInfoIterator(size_t len, const std::shared_ptr<VecSimAllocator> &alloc)
+    VecSimDebugInfoIterator(size_t len, const std::shared_ptr<VecSimAllocator> &alloc)
         : fields(alloc), currentIndex(0) {
         this->fields.reserve(len);
     }
@@ -28,7 +28,7 @@ public:
 
     inline size_t numberOfFields() { return this->fields.size(); }
 
-    virtual ~VecSimInfoIterator() {
+    virtual ~VecSimDebugInfoIterator() {
         for (size_t i = 0; i < this->fields.size(); i++) {
             if (this->fields[i].fieldType == INFOFIELD_ITERATOR) {
                 delete this->fields[i].fieldValue.iteratorValue;

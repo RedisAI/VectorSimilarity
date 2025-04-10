@@ -120,21 +120,28 @@ public:
      * be time consuming (specially for tiered index where computing label count required
      * locking and going over the labels sets). So this should be used carefully.
      */
-    virtual VecSimIndexInfo info() const = 0;
+    virtual VecSimIndexDebugInfo debugInfo() const = 0;
 
     /**
      * @brief Return index static information.
      *
-     * @return Index general and specific meta-data (for quick and lock-less data retrieval)_
+     * @return Index general and specific meta-data (for quick and lock-less data retrieval)
      */
     virtual VecSimIndexBasicInfo basicInfo() const = 0;
 
     /**
+     * @brief Return index statistic information.
+     *
+     * @return Index general and specific statistic data (for quick and lock-less retrieval)
+     */
+    virtual VecSimIndexStatsInfo statisticInfo() const = 0;
+
+    /**
      * @brief Returns an index information in an iterable structure.
      *
-     * @return VecSimInfoIterator Index general and specific meta-data.
+     * @return VecSimDebugInfoIterator Index general and specific meta-data.
      */
-    virtual VecSimInfoIterator *infoIterator() const = 0;
+    virtual VecSimDebugInfoIterator *debugInfoIterator() const = 0;
 
     /**
      * @brief A function to be implemented by the inheriting index and called by rangeQuery.

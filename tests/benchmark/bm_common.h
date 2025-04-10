@@ -62,7 +62,7 @@ void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned s
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] = (double)VecSimIndex_Info(index).commonInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
 }
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, unsigned short index_offset) {
@@ -72,7 +72,7 @@ void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, unsigned s
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] = (double)VecSimIndex_Info(index).commonInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
 }
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
@@ -82,7 +82,7 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] = (double)VecSimIndex_Info(index).commonInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
 }
 
 // TopK search BM
