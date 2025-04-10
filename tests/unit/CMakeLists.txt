@@ -60,6 +60,11 @@ target_link_libraries(test_fp16 PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_int8 PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_uint8 PUBLIC gtest_main VectorSimilarity)
 
+if(USE_SVS)
+	add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp unit_test_utils.cpp)
+	target_link_libraries(test_svs PUBLIC gtest_main VectorSimilarity)
+endif()
+
 include(GoogleTest)
 
 gtest_discover_tests(test_hnsw)
@@ -76,7 +81,5 @@ gtest_discover_tests(test_int8 TEST_PREFIX INT8UNIT_)
 gtest_discover_tests(test_uint8 TEST_PREFIX UINT8UNIT_)
 
 if(USE_SVS)
-	add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp unit_test_utils.cpp)
-	target_link_libraries(test_svs PUBLIC gtest_main VectorSimilarity)
 	gtest_discover_tests(test_svs)
 endif()

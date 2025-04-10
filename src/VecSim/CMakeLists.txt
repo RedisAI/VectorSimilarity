@@ -40,7 +40,7 @@ endif()
 
 # USE_SVS option forsibly OFF if CPU or compiler is not supported
 # elsewhere let user disable SVS
-cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTED" OFF)
+set(USE_SVS ${SVS_SUPPORTED} CACHE BOOL "Build with SVS library support" PARENT_SCOPE)
 if(USE_SVS)
     message(STATUS "SVS support enabled")
 else()
@@ -78,7 +78,6 @@ if(USE_SVS)
         )
         FetchContent_MakeAvailable(svs)
         list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR}")
-        #find_package(MKL REQUIRED HINTS ${MKL_HINTS})
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
     else()
