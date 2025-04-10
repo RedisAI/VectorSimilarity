@@ -195,7 +195,7 @@ public:
 
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
 
-    VecSimType indexType() { return index->info().commonInfo.basicInfo.type; }
+    VecSimType indexType() { return index->basicInfo().type; }
 
     size_t indexMemory() { return this->index->getAllocationSize(); }
 
@@ -206,15 +206,15 @@ public:
     }
 
     py::object getVector(labelType label) {
-        VecSimIndexInfo info = index->info();
-        size_t dim = info.commonInfo.basicInfo.dim;
-        if (info.commonInfo.basicInfo.type == VecSimType_FLOAT32) {
+        VecSimIndexBasicInfo info = index->basicInfo();
+        size_t dim = info.dim;
+        if (info.type == VecSimType_FLOAT32) {
             return rawVectorsAsNumpy<float, float>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
+        } else if (info.type == VecSimType_FLOAT64) {
             return rawVectorsAsNumpy<double, double>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_BFLOAT16) {
+        } else if (info.type == VecSimType_BFLOAT16) {
             return rawVectorsAsNumpy<bfloat16, float, float>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT16) {
+        } else if (info.type == VecSimType_FLOAT16) {
             return rawVectorsAsNumpy<float16, float, float>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
@@ -281,7 +281,7 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+        auto type = VecSimIndex_BasicInfo(this->index.get()).type;
         if (type == VecSimType_FLOAT32) {
             auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
             hnsw->saveIndex(location);
@@ -389,7 +389,7 @@ public:
     }
 
     bool checkIntegrity() {
-        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+        auto type = VecSimIndex_BasicInfo(this->index.get()).type;
         if (type == VecSimType_FLOAT32) {
             return dynamic_cast<HNSWIndex<float, float> *>(this->index.get())
                 ->checkIntegrity()
@@ -472,7 +472,7 @@ public:
     }
 
     size_t HNSWLabelCount() {
-        return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount;
+        return this->index->debugInfo().tieredInfo.backendCommonInfo.indexLabelCount;
     }
 };
 

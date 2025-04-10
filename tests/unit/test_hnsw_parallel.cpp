@@ -190,7 +190,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
         successful_searches++;
     };
 
-    size_t memory_before = index->info().commonInfo.memory;
+    size_t memory_before = index->statisticInfo().memory;
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -208,10 +208,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     // Memory delta should only be the visited nodes handler added to the pool.
     size_t max_elements = this->CastToHNSW(index)->maxElements;
     size_t expected_memory =
-        memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+        memory_before + (index->debugInfo().hnswInfo.visitedNodesPoolSize - 1) *
                             (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
                              2 * sizeof(size_t) + sizeof(void *));
-    ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
+    ASSERT_EQ(expected_memory, index->statisticInfo().memory);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
@@ -367,7 +367,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     };
 
     std::thread thread_objs[n_threads];
-    size_t memory_before = index->info().commonInfo.memory;
+    size_t memory_before = index->statisticInfo().memory;
     for (size_t i = 0; i < n_threads; i++) {
         if (i % 3 == 0) {
             thread_objs[i] = std::thread(parallel_knn_search, i);
@@ -391,10 +391,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     // Memory delta should only be the visited nodes handler added to the pool.
     size_t max_elements = this->CastToHNSW(index)->maxElements;
     size_t expected_memory =
-        memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+        memory_before + (index->debugInfo().hnswInfo.visitedNodesPoolSize - 1) *
                             (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
                              2 * sizeof(size_t) + sizeof(void *));
-    ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
+    ASSERT_EQ(expected_memory, index->statisticInfo().memory);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsert) {
