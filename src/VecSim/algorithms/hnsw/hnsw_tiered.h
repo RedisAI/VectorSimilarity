@@ -193,9 +193,9 @@ public:
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
-    VecSimIndexInfo info() const override;
+    VecSimIndexDebugInfo debugInfo() const override;
     VecSimIndexBasicInfo basicInfo() const override;
-    VecSimInfoIterator *infoIterator() const override;
+    VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
         size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
@@ -1118,8 +1118,8 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrel
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexInfo TieredHNSWIndex<DataType, DistType>::info() const {
-    auto info = VecSimTieredIndex<DataType, DistType>::info();
+VecSimIndexDebugInfo TieredHNSWIndex<DataType, DistType>::debugInfo() const {
+    auto info = VecSimTieredIndex<DataType, DistType>::debugInfo();
 
     HnswTieredInfo hnswTieredInfo = {.pendingSwapJobsThreshold = this->pendingSwapJobsThreshold};
     info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
@@ -1128,10 +1128,10 @@ VecSimIndexInfo TieredHNSWIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimInfoIterator *TieredHNSWIndex<DataType, DistType>::infoIterator() const {
-    VecSimIndexInfo info = this->info();
+VecSimDebugInfoIterator *TieredHNSWIndex<DataType, DistType>::debugInfoIterator() const {
+    VecSimIndexDebugInfo info = this->debugInfo();
     // Get the base tiered fields.
-    auto *infoIterator = VecSimTieredIndex<DataType, DistType>::infoIterator();
+    auto *infoIterator = VecSimTieredIndex<DataType, DistType>::debugInfoIterator();
 
     // Tiered HNSW specific param.
     infoIterator->addInfoField(VecSim_InfoField{

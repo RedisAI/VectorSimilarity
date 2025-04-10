@@ -200,15 +200,24 @@ typedef struct {
  * Index info that is static and immutable (cannot be changed over time)
  */
 typedef struct {
-    VecSimAlgo algo;     // Algorithm being used.
-    size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
+    VecSimAlgo algo;     // Algorithm being used (if index is tiered, this is the backend index).
     VecSimMetric metric; // Index distance metric
     VecSimType type;     // Datatype the index holds.
     bool isMulti;        // Determines if the index should multi-index or not.
+    bool isTiered;       // Is the index is tiered or not.
+    size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
     size_t dim;          // Vector size (dimension).
-
-    bool isTiered; // The algorithm for the tiered index (if algo is tiered).
 } VecSimIndexBasicInfo;
+
+/**
+ * Index info for statistics - a thin and efficient (no locks, no calculations) info. Can be used in
+ * production without worrying about performance
+ */
+typedef struct {
+    size_t memory;
+    size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
+                                  // only).
+} VecSimIndexStatsInfo;
 
 typedef struct {
     VecSimIndexBasicInfo basicInfo; // Index immutable meta-data.
@@ -257,7 +266,7 @@ typedef struct {
 } tieredInfoStruct;
 
 /**
- * @brief Index information. Mainly used for debug/testing.
+ * @brief Index information. Should only be used for debug/testing.
  *
  */
 typedef struct {
@@ -267,7 +276,7 @@ typedef struct {
         hnswInfoStruct hnswInfo;
         tieredInfoStruct tieredInfo;
     };
-} VecSimIndexInfo;
+} VecSimIndexDebugInfo;
 
 // Memory function declarations.
 typedef void *(*allocFn)(size_t n);
