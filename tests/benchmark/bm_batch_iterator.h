@@ -53,7 +53,7 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     }
     st.PauseTiming();
     // Update the memory delta as a result of using the batch iterator.
-    size_t curr_memory = VecSimIndex_Info(INDICES.at(VecSimAlgo_HNSWLIB)).commonInfo.memory;
+    size_t curr_memory = VecSimIndex_StatsInfo(INDICES.at(VecSimAlgo_HNSWLIB)).memory;
     memory_delta += (double)(curr_memory - index_memory);
     VecSimBatchIterator_Free(batchIterator);
 
@@ -74,7 +74,7 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
     size_t batch_size = st.range(0);
     size_t num_batches = st.range(1);
     size_t iter = 0;
-    size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_BF]).commonInfo.memory;
+    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_BF]).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
@@ -89,7 +89,7 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
                 break;
             }
         }
-        size_t curr_memory = VecSimIndex_Info(INDICES[VecSimAlgo_BF]).commonInfo.memory;
+        size_t curr_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_BF]).memory;
         memory_delta += (double)(curr_memory - index_memory);
         VecSimBatchIterator_Free(batchIterator);
         iter++;
@@ -157,7 +157,7 @@ void BM_BatchIterator<index_type_t>::HNSW_FixedBatchSize(benchmark::State &st) {
     size_t total_res_num = num_batches * batch_size;
     size_t iter = 0;
     std::atomic_int correct = 0;
-    size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).commonInfo.memory;
+    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_HNSWLIB]).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
@@ -176,7 +176,7 @@ void BM_BatchIterator<index_type_t>::HNSW_VariableBatchSize(benchmark::State &st
     size_t total_res_num;
     size_t iter = 0;
     std::atomic_int correct = 0;
-    size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).commonInfo.memory;
+    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_HNSWLIB]).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
@@ -195,7 +195,7 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
     size_t total_res_num;
     size_t iter = 0;
     std::atomic_int correct = 0;
-    size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).commonInfo.memory;
+    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_HNSWLIB]).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
