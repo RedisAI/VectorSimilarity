@@ -75,7 +75,6 @@ if(USE_SVS)
         FetchContent_Declare(
             svs
             URL "${SVS_URL}"
-            PATCH_COMMAND ${CMAKE_COMMAND} -E create_symlink lib lib64 # durtyfix svs binary package issue
         )
         FetchContent_MakeAvailable(svs)
         list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR}")
