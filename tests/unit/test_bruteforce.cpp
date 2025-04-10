@@ -528,7 +528,7 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
     ASSERT_FALSE(info.bfInfo.isMulti);
@@ -543,7 +543,7 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
 
     index = this->CreateNewIndex(params);
 
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
     ASSERT_FALSE(info.bfInfo.isMulti);
@@ -566,10 +566,10 @@ TYPED_TEST(BruteForceTest, test_basic_bf_info_iterator) {
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        VecSimIndexInfo info = VecSimIndex_Info(index);
-        VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
         compareFlatIndexInfoToIterator(info, infoIter);
-        VecSimInfoIterator_Free(infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
         VecSimIndex_Free(index);
     }
 }
@@ -581,12 +581,12 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
-    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(1, info.bfInfo.blockSize);
     ASSERT_EQ(0, info.bfInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     TEST_DATA_T v[d];
     for (size_t i = 0; i < d; i++) {
@@ -594,62 +594,60 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     }
     // Add vector.
     VecSimIndex_AddVector(index, v, 0);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(1, info.bfInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Delete vector.
     VecSimIndex_DeleteVector(index, 0);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(0, info.bfInfo.indexSize);
-    compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
 
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_ADHOC_BF, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     this->CastToBF(index)->count = 1e4;
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Simulate the case where another call to the heuristics is done after realizing that
     // the subset size is smaller, and change the policy as a result.
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     VecSimIndex_Free(index);
 }
@@ -666,7 +664,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         ASSERT_EQ(info.algo, VecSimAlgo_BF);
         ASSERT_EQ(info.bfInfo.blockSize, blocksize);
 
@@ -701,7 +699,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         ASSERT_EQ(info.algo, VecSimAlgo_BF);
         ASSERT_EQ(info.bfInfo.blockSize, blocksize);
 

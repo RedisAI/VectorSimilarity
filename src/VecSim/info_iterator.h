@@ -15,7 +15,7 @@ extern "C" {
  * the type VecSim_InfoFieldType. This struct exposes an iterator-like API to iterate over the
  * information fields.
  */
-typedef struct VecSimInfoIterator VecSimInfoIterator;
+typedef struct VecSimDebugInfoIterator VecSimDebugInfoIterator;
 
 typedef enum {
     INFOFIELD_STRING,
@@ -49,7 +49,7 @@ typedef struct {
  * @param infoIterator Given info iterator.
  * @return size_t Number of fields.
  */
-size_t VecSimInfoIterator_NumberOfFields(VecSimInfoIterator *infoIterator);
+size_t VecSimDebugInfoIterator_NumberOfFields(VecSimDebugInfoIterator *infoIterator);
 
 /**
  * @brief Returns if the fields iterator is depleted.
@@ -58,7 +58,7 @@ size_t VecSimInfoIterator_NumberOfFields(VecSimInfoIterator *infoIterator);
  * @return true Iterator is not depleted.
  * @return false Otherwise.
  */
-bool VecSimInfoIterator_HasNextField(VecSimInfoIterator *infoIterator);
+bool VecSimDebugInfoIterator_HasNextField(VecSimDebugInfoIterator *infoIterator);
 
 /**
  * @brief Returns a pointer to the next info field.
@@ -66,14 +66,14 @@ bool VecSimInfoIterator_HasNextField(VecSimInfoIterator *infoIterator);
  * @param infoIterator Given info iterator.
  * @return VecSim_InfoField* A pointer to the next info field.
  */
-VecSim_InfoField *VecSimInfoIterator_NextField(VecSimInfoIterator *infoIterator);
+VecSim_InfoField *VecSimDebugInfoIterator_NextField(VecSimDebugInfoIterator *infoIterator);
 
 /**
  * @brief Free an info iterator.
  *
  * @param infoIterator Given info iterator.
  */
-void VecSimInfoIterator_Free(VecSimInfoIterator *infoIterator);
+void VecSimDebugInfoIterator_Free(VecSimDebugInfoIterator *infoIterator);
 
 #ifdef __cplusplus
 }

@@ -192,8 +192,8 @@ public:
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
-    VecSimIndexInfo info() const override;
-    VecSimInfoIterator *infoIterator() const override;
+    VecSimIndexDebugInfo debugInfo() const override;
+    VecSimDebugInfoIterator *debugInfoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
@@ -1539,9 +1539,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
+VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
 
-    VecSimIndexInfo info;
+    VecSimIndexDebugInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
     info.hnswInfo.dim = this->dim;
     info.hnswInfo.type = this->vecType;
@@ -1562,11 +1562,11 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
-    VecSimIndexInfo info = this->info();
+VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() const {
+    VecSimIndexDebugInfo info = this->debugInfo();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 12;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    auto *infoIterator = new VecSimDebugInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::ALGORITHM_STRING,

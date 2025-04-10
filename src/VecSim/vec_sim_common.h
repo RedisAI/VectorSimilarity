@@ -140,7 +140,15 @@ typedef struct {
 } VecSimQueryParams;
 
 /**
- * @brief Index information. Mainly used for debug/testing.
+ * Index info for statistics - a thin and efficient (no locks, no calculations) info. Can be used in
+ * production without worrying about performance
+ */
+typedef struct {
+    size_t memory;
+} VecSimIndexStatsInfo;
+
+/**
+ * @brief Index information. Should only be used for debug/testing.
  *
  */
 typedef struct {
@@ -175,7 +183,7 @@ typedef struct {
         } bfInfo;
     };
     VecSimAlgo algo; // Algorithm being used.
-} VecSimIndexInfo;
+} VecSimIndexDebugInfo;
 
 // Memory function declarations.
 typedef void *(*allocFn)(size_t n);

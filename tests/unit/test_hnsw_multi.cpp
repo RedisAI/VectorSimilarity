@@ -354,7 +354,7 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     ASSERT_TRUE(info.hnswInfo.isMulti);
@@ -380,7 +380,7 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
     params.epsilon = epsilon;
 
     index = this->CreateNewIndex(params);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     ASSERT_TRUE(info.hnswInfo.isMulti);
@@ -403,10 +403,10 @@ TYPED_TEST(HNSWMultiTest, test_basic_hnsw_info_iterator) {
         HNSWParams params = {.dim = d, .metric = metrics[i], .initialCapacity = n};
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        VecSimIndexInfo info = VecSimIndex_Info(index);
-        VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
         compareHNSWIndexInfoToIterator(info, infoIter);
-        VecSimInfoIterator_Free(infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
         VecSimIndex_Free(index);
     }
 }
@@ -425,8 +425,8 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
-    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(100, info.hnswInfo.M);
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
@@ -435,7 +435,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Add vectors.
     TEST_DATA_T v[d];
@@ -446,48 +446,48 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_AddVector(index, v, 0);
     VecSimIndex_AddVector(index, v, 1);
     VecSimIndex_AddVector(index, v, 1);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(4, info.hnswInfo.indexSize);
     ASSERT_EQ(2, info.hnswInfo.indexLabelCount);
     ASSERT_GE(1, info.hnswInfo.max_level);
     ASSERT_EQ(0, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Delete vectors.
     VecSimIndex_DeleteVector(index, 0);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(2, info.hnswInfo.indexSize);
     ASSERT_EQ(1, info.hnswInfo.indexLabelCount);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     this->CastToHNSW(index)->cur_element_count = 1e6;
@@ -496,20 +496,20 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
         this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Simulate the case where another call to the heuristics is done after realizing that
     // the subset size is smaller, and change the policy as a result.
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     VecSimIndex_Free(index);
 }
@@ -1185,7 +1185,7 @@ TYPED_TEST(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     TEST_DATA_T query[] = {query_element, query_element, query_element, query_element};
     runTopKSearchTest(index, query, k, verify_res);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
@@ -1196,7 +1196,7 @@ TYPED_TEST(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     VecSimQueryParams queryParams = CreateQueryParams(hnswRuntimeParams);
     runTopKSearchTest(index, query, k, verify_res, &queryParams);
 
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
@@ -1204,13 +1204,13 @@ TYPED_TEST(HNSWMultiTest, test_query_runtime_params_user_build_args) {
 
     // Create batch iterator with query param - verify that ef_runtime is not effected.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, &queryParams);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
     // Run one batch for sanity.
     runBatchIteratorSearchTest(batchIterator, k, verify_res);
     // After releasing the batch iterator, ef_runtime should still be the default one.
     VecSimBatchIterator_Free(batchIterator);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
 
     VecSimIndex_Free(index);
@@ -1239,11 +1239,11 @@ TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
     for (size_t j = 0; j < n; j++)
         VecSimIndex_AddVector(index, vec, j / per_label);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
 
     while (info.hnswInfo.indexSize > 0) {
         ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entrypoint));
-        info = VecSimIndex_Info(index);
+        info = VecSimIndex_DebugInfo(index);
     }
     VecSimIndex_Free(index);
 }
@@ -1684,3 +1684,124 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
 
     VecSimIndex_Free(index);
 }
+<<<<<<< HEAD
+=======
+
+TYPED_TEST(HNSWMultiTest, markDelete) {
+    size_t n_labels = 100;
+    size_t per_label = 10;
+    size_t k = 11;
+    size_t dim = 4;
+    VecSimBatchIterator *batchIterator;
+
+    size_t n = n_labels * per_label;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // Try marking a non-existing label
+    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0),
+              vecsim_stl::vector<idType>(index->getAllocator()));
+
+    for (size_t i = 0; i < n_labels; i++) {
+        for (size_t j = 0; j < per_label; j++)
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i * per_label + j);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
+    // Search for k results from the origin. expect to find them.
+    auto verify_res = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id, idx);
+        ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(id);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], id * per_label + j);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    // with all vectors, this is the element of the k-th vector from the origin
+    size_t all_element = per_label * (k - 1);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
+
+    unsigned char ep_reminder = index->debugInfo().hnswInfo.entrypoint % 2;
+    // Mark as deleted half of the vectors including the entrypoint.
+    for (labelType label = 0; label < n_labels; label++) {
+        if (label % 2 == ep_reminder) {
+            vecsim_stl::vector<idType> expected_deleted_ids(index->getAllocator());
+            for (size_t j = 0; j < per_label; j++)
+                expected_deleted_ids.push_back(label * per_label + j);
+            ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), expected_deleted_ids);
+        }
+    }
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(this->CastToHNSW(index)->indexLabelCount(), n_labels / 2);
+
+    // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
+    // This value is very close to a deleted vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
+    for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
+         level++) {
+        ElementLevelData &level_data = this->CastToHNSW(index)->getElementLevelData(n, level);
+        for (size_t idx = 0; idx < level_data.numLinks; idx++) {
+            ASSERT_TRUE((level_data.links[idx] / per_label) % 2 != ep_reminder)
+                << "Got a link to " << level_data.links[idx] << " on level " << level;
+        }
+    }
+
+    // Search for k results closest to the origin. expect to find only even results.
+    auto verify_res_even = [&](size_t id, double score, size_t idx) {
+        ASSERT_NE(id % 2, ep_reminder);
+        ASSERT_EQ(id, idx * 2);
+        ASSERT_EQ(score, dim * per_label * per_label * id * id);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(id);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], id * per_label + j);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res_even);
+    // with only even vectors, this is the element of the k-th vector from the origin.
+    size_t even_el = all_element * 2 + (1 - ep_reminder);
+    runRangeQueryTest(index, query, dim * even_el * even_el, verify_res_even, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
+    VecSimBatchIterator_Free(batchIterator);
+
+    for (labelType label = 0; label < n_labels; label++) {
+        if (label % 2 == ep_reminder) {
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label * per_label + j);
+            }
+        }
+    }
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + n / 2 + 1);
+    ASSERT_EQ(this->CastToHNSW(index)->indexLabelCount(), n_labels + 1);
+
+    // Search for k results closest to the origin again. expect to find the same results we found in
+    // the first search (the validation over the internal ids is removed, as these internal ids
+    // change). Search for k results from the origin. expect to find them.
+    auto verify_res_after_reinsert = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id, idx);
+        ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
+    };
+
+    runTopKSearchTest(index, query, k, verify_res_after_reinsert);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res_after_reinsert, k,
+                      BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_after_reinsert);
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
+>>>>>>> 5f7dbdf0 (Refactor Info Report - [MOD-9321] (#650))

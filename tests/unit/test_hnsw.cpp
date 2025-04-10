@@ -502,7 +502,7 @@ TYPED_TEST(HNSWTest, test_hnsw_info) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // Default args.
@@ -522,7 +522,7 @@ TYPED_TEST(HNSWTest, test_hnsw_info) {
     params.epsilon = 0.005;
 
     index = this->CreateNewIndex(params);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // User args.
@@ -548,10 +548,10 @@ TYPED_TEST(HNSWTest, test_basic_hnsw_info_iterator) {
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        VecSimIndexInfo info = VecSimIndex_Info(index);
-        VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
         compareHNSWIndexInfoToIterator(info, infoIter);
-        VecSimInfoIterator_Free(infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
         VecSimIndex_Free(index);
     }
 }
@@ -570,8 +570,8 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
-    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(100, info.hnswInfo.M);
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
@@ -581,7 +581,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
     ASSERT_EQ(params.type, info.hnswInfo.type);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     TEST_DATA_T v[d];
     for (size_t i = 0; i < d; i++) {
@@ -589,46 +589,46 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     }
     // Add vector.
     VecSimIndex_AddVector(index, v, 1);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(1, info.hnswInfo.indexSize);
     ASSERT_EQ(1, info.hnswInfo.entrypoint);
     ASSERT_GE(1, info.hnswInfo.max_level);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Delete vector.
     VecSimIndex_DeleteVector(index, 1);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(0, info.bfInfo.indexSize);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     this->CastToHNSW(index)->cur_element_count = 1e6;
@@ -637,20 +637,20 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
         label_lookup[i] = i;
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Simulate the case where another call to the heuristics is done after realizing that
     // the subset size is smaller, and change the policy as a result.
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
-    info = VecSimIndex_Info(index);
-    infoIter = VecSimIndex_InfoIterator(index);
+    info = VecSimIndex_DebugInfo(index);
+    infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     VecSimIndex_Free(index);
 }
@@ -678,7 +678,7 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {
     TEST_DATA_T query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     // Check that default args did not change.
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
@@ -689,7 +689,7 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {
     VecSimQueryParams queryParams = CreateQueryParams(hnswRuntimeParams);
     runTopKSearchTest(index, query, k, verify_res, &queryParams);
 
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     // Check that default args did not change.
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
@@ -697,13 +697,13 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {
 
     // Create batch iterator without query param - verify that ef_runtime didn't change.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
     // Run one batch for sanity.
     runBatchIteratorSearchTest(batchIterator, k, verify_res);
     // After releasing the batch iterator, ef_runtime should return to the default one.
     VecSimBatchIterator_Free(batchIterator);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
 
     VecSimIndex_Free(index);
@@ -742,7 +742,7 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_user_build_args) {
     size_t k = 11;
     runTopKSearchTest(index, query, k, verify_res);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
@@ -753,7 +753,7 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_user_build_args) {
     VecSimQueryParams queryParams = CreateQueryParams(hnswRuntimeParams);
     runTopKSearchTest(index, query, k, verify_res, &queryParams);
 
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
@@ -761,7 +761,7 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_user_build_args) {
 
     // Create batch iterator with query param.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, &queryParams);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
@@ -770,7 +770,7 @@ TYPED_TEST(HNSWTest, test_query_runtime_params_user_build_args) {
     runBatchIteratorSearchTest(batchIterator, k, verify_res);
     // Check that user args did not change after releasing the batch iterator.
     VecSimBatchIterator_Free(batchIterator);
-    info = VecSimIndex_Info(index);
+    info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
@@ -918,11 +918,11 @@ TYPED_TEST(HNSWTest, hnsw_delete_entry_point) {
     for (size_t j = 0; j < n; j++)
         VecSimIndex_AddVector(index, vec, j);
 
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
 
     while (info.hnswInfo.indexSize > 0) {
         ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entrypoint));
-        info = VecSimIndex_Info(index);
+        info = VecSimIndex_DebugInfo(index);
     }
     VecSimIndex_Free(index);
 }
@@ -1652,7 +1652,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 
     // Check timeout again - range query.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.0);
-    ASSERT_EQ(VecSimIndex_Info(index).hnswInfo.max_level, 0);
+    ASSERT_EQ(VecSimIndex_DebugInfo(index).hnswInfo.max_level, 0);
     // Here, the entry point is inserted to the results set before we test for timeout.
     // hence, expect a single result to be returned (instead of 2 that would have return without
     // timeout).
@@ -1664,7 +1664,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     // Fail on searching bottom layer entry point.
     // We need to have at least 1 vector in layer higher than 0 to fail there.
     size_t next = 0;
-    while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
+    while (VecSimIndex_DebugInfo(index).hnswInfo.max_level == 0) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, next, 1.0);
         ++next;
     }
@@ -1741,7 +1741,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     // Fail on searching bottom layer entry point.
     // We need to have at least 1 vector in layer higher than 0 to fail there.
     size_t next = 0;
-    while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
+    while (VecSimIndex_DebugInfo(index).hnswInfo.max_level == 0) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, next++, 1.0);
     }
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
@@ -1896,7 +1896,7 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
         hnsw_index->saveIndex(file_name);
 
         // Fetch info after saving, as memory size change during saving.
-        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
         ASSERT_EQ(info.hnswInfo.M, M);
         ASSERT_EQ(info.hnswInfo.efConstruction, ef);
@@ -1916,7 +1916,7 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
         // Verify that the index was loaded as expected.
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
 
-        VecSimIndexInfo info2 = VecSimIndex_Info(serialized_index);
+        VecSimIndexDebugInfo info2 = VecSimIndex_DebugInfo(serialized_index);
         ASSERT_EQ(info2.algo, VecSimAlgo_HNSWLIB);
         ASSERT_EQ(info2.hnswInfo.M, M);
         ASSERT_EQ(info2.hnswInfo.isMulti, is_multi[i]);
@@ -1987,7 +1987,7 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         // Verify that the index was loaded as expected.
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
 
-        VecSimIndexInfo info2 = VecSimIndex_Info(serialized_index);
+        VecSimIndexDebugInfo info2 = VecSimIndex_DebugInfo(serialized_index);
         ASSERT_EQ(info2.algo, VecSimAlgo_HNSWLIB);
         // Check that M is taken from file and not from @params.
         ASSERT_EQ(info2.hnswInfo.M, M_serialized);
