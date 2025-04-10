@@ -20,6 +20,7 @@
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
 #include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
@@ -290,6 +291,16 @@ dist_func_t<float> IP_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
         return Choose_INT8_IP_implementation_SVE(dim);
     }
 #endif
+#ifdef OPT_NEON_DOTPROD // Should be the first check, as it is the most optimized
+    if (features.asimddp && dim >= 16) {
+        return Choose_INT8_IP_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_INT8_IP_implementation_NEON(dim);
+    }
+#endif
 #endif
 #ifdef CPU_FEATURES_ARCH_X86_64
     // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
@@ -330,9 +341,18 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_INT8_Cosine_implementation_SVE(dim);
     }
 #endif
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_INT8_Cosine_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_INT8_Cosine_implementation_NEON(dim);
+    }
+#endif
 #endif
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 32 int8. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
     }
@@ -346,6 +366,7 @@ dist_func_t<float> Cosine_INT8_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
+
 #endif // __x86_64__
     return ret_dist_func;
 }
@@ -372,9 +393,18 @@ dist_func_t<float> IP_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_UINT8_IP_implementation_SVE(dim);
     }
 #endif
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_UINT8_IP_implementation_NEON(dim);
+    }
+#endif
 #endif
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
     }
@@ -411,9 +441,18 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
         return Choose_UINT8_Cosine_implementation_SVE(dim);
     }
 #endif
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_UINT8_Cosine_implementation_NEON(dim);
+    }
+#endif
 #endif
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
     if (dim < 32) {
         return ret_dist_func;
     }
