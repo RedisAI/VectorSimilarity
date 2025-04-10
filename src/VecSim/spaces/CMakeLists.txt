@@ -85,6 +85,11 @@ if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 
 	# Create different optimization implementations for ARM architecture
+	if (CXX_NEON_DOTPROD)
+		message("Building with ARMV8.2 with dotprod")
+		set_source_files_properties(functions/NEON_DOTPROD.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+dotprod")
+		list(APPEND OPTIMIZATIONS functions/NEON_DOTPROD.cpp)
+	endif()
 	if (CXX_ARMV8A)
 		message("Building with ARMV8A")
 		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
