@@ -2309,7 +2309,7 @@ VecSimDebugCommandCode
 HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neighborsData) {
     std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     // Assume single value index. TODO: support for multi as well.
-    if (this->basicInfo().isMulti) {
+    if (this->isMultiValue()) {
         return VecSimDebugCommandCode_MultiNotSupported;
     }
     auto ids = this->getElementIds(label);
