@@ -15,7 +15,8 @@ private:
     size_t currentIndex;
 
 public:
-    VecSimDebugInfoIterator(size_t len) : fields(array_new<VecSim_InfoField>(len)), currentIndex(0) {}
+    VecSimDebugInfoIterator(size_t len)
+        : fields(array_new<VecSim_InfoField>(len)), currentIndex(0) {}
 
     inline void addInfoField(VecSim_InfoField infoField) {
         this->fields = array_append(this->fields, infoField);

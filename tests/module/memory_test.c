@@ -26,7 +26,7 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 
 // Adds 'amount' vectors to the index. could be 0.
 void _add_vectors(VecSimIndex *index, long long amount) {
-    VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo indexInfo = VecSimIndex_DebugInfo(index);
     size_t dim;
     switch (indexInfo.algo) {
     case VecSimAlgo_BF:

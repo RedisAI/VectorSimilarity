@@ -354,7 +354,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
                                        2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
-    size_t block_size = hnswIndex->info().hnswInfo.blockSize;
+    size_t block_size = hnswIndex->debugInfo().hnswInfo.blockSize;
     size_t accumulated_mem_delta = 0;
 
     for (size_t i = 0; i < block_size; i++) {

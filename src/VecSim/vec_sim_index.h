@@ -60,7 +60,7 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
-            .memory = this->getAllocationSize(),
+            .memory = static_cast<size_t>(this->getAllocationSize()),
         };
     }
 };

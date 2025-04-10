@@ -172,7 +172,7 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
     }
-    VecSimAlgo index_type = index->info().algo;
+    VecSimAlgo index_type = index->debugInfo().algo;
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {

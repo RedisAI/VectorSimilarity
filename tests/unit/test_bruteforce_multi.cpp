@@ -85,7 +85,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
-    VecSimIndexInfo info = VecSimIndex_DebugInfo(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.bfInfo.indexSize, n);
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
@@ -486,7 +486,7 @@ TYPED_TEST(BruteForceMultiTest, test_bf_info) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    VecSimIndexInfo info = VecSimIndex_DebugInfo(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
     ASSERT_TRUE(info.bfInfo.isMulti);
