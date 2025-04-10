@@ -38,7 +38,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
 endif()
 
-# USE_SVS option forsibly OFF if CPU is not supported
+# USE_SVS option forsibly OFF if CPU or compiler is not supported
 # elsewhere let user disable SVS
 cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTED" OFF)
 if(USE_SVS)
@@ -51,17 +51,21 @@ endif()
 set(SVS_SHARED_LIB ON CACHE BOOL "Use SVS pre-compiled shared library")
 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
-set(MKL_HINTS
-    ${MKLROOT}
-    $ENV{MKL_DIR}
-    $ENV{MKL_ROOT}
-    $ENV{MKLROOT})
+if(SVS_SHARED_LIB)
+    # try to find MKL
+    set(MKL_HINTS ${MKLROOT} $ENV{MKL_DIR} $ENV{MKL_ROOT} $ENV{MKLROOT})
+    if(LINUX)
+        list(APPEND MKL_HINTS "/opt/intel/oneapi/mkl/latest")
+    endif()
+    if(WIN32)
+        list(APPEND MKL_HINTS "C:/Program Files (x86)/Intel/oneAPI/mkl/latest")
+    endif()
 
-if(LINUX)
-    list(APPEND MKL_HINTS "/opt/intel/oneapi/mkl/latest")
-endif()
-if(WIN32)
-    list(APPEND MKL_HINTS "C:/Program Files (x86)/Intel/oneAPI/mkl/latest")
+    find_package(MKL HINTS ${MKL_HINTS})
+    if(NOT MKL_FOUND)
+        message(WARNING "MKL not found - disabling SVS shared library")
+        set(SVS_SHARED_LIB OFF FORCE)
+    endif()
 endif()
 
 if(USE_SVS)
@@ -75,7 +79,7 @@ if(USE_SVS)
         )
         FetchContent_MakeAvailable(svs)
         list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR}")
-        find_package(MKL REQUIRED HINTS ${MKL_HINTS})
+        #find_package(MKL REQUIRED HINTS ${MKL_HINTS})
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
     else()
