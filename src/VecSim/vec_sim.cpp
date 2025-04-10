@@ -283,14 +283,20 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) {
     delete index;
 }
 
-extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
+extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
+    return index->debugInfo();
+}
 
-extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
-    return index->infoIterator();
+extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
+    return index->debugInfoIterator();
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
     return index->basicInfo();
+}
+
+extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
+    return index->statisticInfo();
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
