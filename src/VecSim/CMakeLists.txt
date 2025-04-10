@@ -64,7 +64,7 @@ if(SVS_SHARED_LIB)
     find_package(MKL HINTS ${MKL_HINTS})
     if(NOT MKL_FOUND)
         message(WARNING "MKL not found - disabling SVS shared library")
-        set(SVS_SHARED_LIB OFF FORCE)
+        set(SVS_SHARED_LIB OFF)
     endif()
 endif()
 
