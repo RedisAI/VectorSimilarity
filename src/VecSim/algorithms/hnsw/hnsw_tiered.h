@@ -194,7 +194,6 @@ public:
     // needed.
     VecSimIndexDebugInfo debugInfo() const override;
     VecSimIndexBasicInfo basicInfo() const override;
-    VecSimIndexStatsInfo statisticInfo() const override;
     VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
@@ -1176,14 +1175,6 @@ VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
     info.isTiered = true;
     info.algo = VecSimAlgo_HNSWLIB;
     return info;
-}
-
-template <typename DataType, typename DistType>
-VecSimIndexStatsInfo TieredHNSWIndex<DataType, DistType>::statisticInfo() const {
-    return VecSimIndexStatsInfo{
-        .memory = this->getAllocationSize(),
-        .numberOfMarkedDeleted = this->getHNSWIndex()->getNumMarkedDeleted(),
-    };
 }
 
 #ifdef BUILD_TESTS

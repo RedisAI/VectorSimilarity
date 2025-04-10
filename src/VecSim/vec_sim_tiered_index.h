@@ -3,6 +3,7 @@
 #include "vec_sim_index.h"
 #include "algorithms/brute_force/brute_force.h"
 #include "VecSim/batch_iterator.h"
+#include "VecSim/tombstone_interface.h"
 #include "VecSim/utils/query_result_utils.h"
 #include "VecSim/utils/alignment.h"
 
@@ -82,6 +83,7 @@ public:
                this->frontendIndex->getAllocationSize();
     }
 
+    VecSimIndexStatsInfo statisticInfo() const override;
     virtual VecSimIndexDebugInfo debugInfo() const override;
     virtual VecSimDebugInfoIterator *debugInfoIterator() const override;
 
@@ -237,6 +239,22 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             return main_results;
         }
     }
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() const {
+    auto stats = VecSimIndexStatsInfo{
+        .memory = this->getAllocationSize(),
+    };
+
+    // Check if backend implements VecSimIndexTombstone
+    if (auto tombstone = dynamic_cast<VecSimIndexTombstone *>(this->backendIndex)) {
+        stats.numberOfMarkedDeleted = tombstone->getNumMarkedDeleted();
+    } else {
+        stats.numberOfMarkedDeleted = 0; // Default value if cast fails
+    }
+
+    return stats;
 }
 
 template <typename DataType, typename DistType>
