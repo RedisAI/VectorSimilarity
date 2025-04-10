@@ -245,13 +245,12 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() const {
     auto stats = VecSimIndexStatsInfo{
         .memory = this->getAllocationSize(),
+        .numberOfMarkedDeleted = 0, // Default value if cast fails
     };
 
-    // Check if backend implements VecSimIndexTombstone
+    // If backend implements VecSimIndexTombstone, get number of marked deleted
     if (auto tombstone = dynamic_cast<VecSimIndexTombstone *>(this->backendIndex)) {
         stats.numberOfMarkedDeleted = tombstone->getNumMarkedDeleted();
-    } else {
-        stats.numberOfMarkedDeleted = 0; // Default value if cast fails
     }
 
     return stats;
