@@ -260,12 +260,11 @@ template <typename DataType, typename DistType>
 VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     VecSimIndexDebugInfo info;
     this->flatIndexGuard.lock_shared();
+    this->mainIndexGuard.lock_shared();
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
-    this->flatIndexGuard.unlock_shared();
-
-    this->mainIndexGuard.lock();
     VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
-    this->mainIndexGuard.unlock();
+    this->flatIndexGuard.unlock_shared();
+    this->mainIndexGuard.unlock_shared();
 
     info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize =

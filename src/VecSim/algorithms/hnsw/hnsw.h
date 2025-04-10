@@ -2087,14 +2087,15 @@ VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
 
     VecSimIndexDebugInfo info;
     info.commonInfo = this->getCommonInfo();
+    auto [ep_id, max_level] = this->safeGetEntryPointState();
 
     info.commonInfo.basicInfo.algo = VecSimAlgo_HNSWLIB;
     info.hnswInfo.M = this->getM();
     info.hnswInfo.efConstruction = this->getEfConstruction();
     info.hnswInfo.efRuntime = this->getEf();
     info.hnswInfo.epsilon = this->epsilon;
-    info.hnswInfo.max_level = this->getMaxLevel();
-    info.hnswInfo.entrypoint = this->getEntryPointLabel();
+    info.hnswInfo.max_level = max_level;
+    info.hnswInfo.entrypoint = ep_id != INVALID_ID ? getExternalLabel(ep_id) : INVALID_LABEL;
     info.hnswInfo.visitedNodesPoolSize = this->visitedNodesHandlerPool.getPoolSize();
     info.hnswInfo.numberOfMarkedDeletedNodes = this->getNumMarkedDeleted();
     return info;
