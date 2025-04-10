@@ -34,8 +34,6 @@ jobs:
     steps:
       - name: Pre checkout deps
         run:  sudo apt-get update && sudo apt-get install -y git
-      - name: Print EC2 storage size
-        run: lsblk
       - name: checkout
         uses: actions/checkout@v4
         with:

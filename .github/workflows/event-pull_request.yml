@@ -33,7 +33,7 @@ jobs:
         run: make flow_test VERBOSE=1
 
   coverage:
-    # needs: [basic-tests]
+    needs: [basic-tests]
     if: ${{ !github.event.pull_request.draft}}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
