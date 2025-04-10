@@ -63,7 +63,7 @@ protected:
     }
 
     size_t GetValidVectorsCount() {
-        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         return info.commonInfo.indexLabelCount;
     }
 
@@ -86,7 +86,7 @@ protected:
     template <typename params_t>
     void test_batch_iterator_basic(params_t index_params);
     template <typename params_t>
-    VecSimIndexInfo test_info(params_t index_params);
+    VecSimIndexDebugInfo test_info(params_t index_params);
     template <typename params_t>
     void test_info_iterator(VecSimMetric metric);
     template <typename params_t>
@@ -678,9 +678,9 @@ TEST_F(UINT8TieredTest, BatchIteratorBasic) {
 /* ---------------------------- Info tests ---------------------------- */
 
 template <typename params_t>
-VecSimIndexInfo UINT8Test::test_info(params_t params) {
+VecSimIndexDebugInfo UINT8Test::test_info(params_t params) {
     SetUp(params);
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     EXPECT_EQ(info.commonInfo.basicInfo.dim, params.dim);
     EXPECT_EQ(info.commonInfo.basicInfo.isMulti, params.multi);
     EXPECT_EQ(info.commonInfo.basicInfo.type, VecSimType_UINT8);
@@ -705,7 +705,7 @@ VecSimIndexInfo UINT8Test::test_info(params_t params) {
 
 void UINT8HNSWTest::test_info(bool is_multi) {
     HNSWParams params = {.dim = 128, .multi = is_multi};
-    VecSimIndexInfo info = UINT8Test::test_info(params);
+    VecSimIndexDebugInfo info = UINT8Test::test_info(params);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
 
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
@@ -718,7 +718,7 @@ TEST_F(UINT8HNSWTest, testInfoMulti) { test_info(true); }
 
 void UINT8BruteForceTest::test_info(bool is_multi) {
     BFParams params = {.dim = 128, .multi = is_multi};
-    VecSimIndexInfo info = UINT8Test::test_info(params);
+    VecSimIndexDebugInfo info = UINT8Test::test_info(params);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
 }
 
@@ -729,10 +729,10 @@ void UINT8TieredTest::test_info(bool is_multi) {
     size_t bufferLimit = SIZE_MAX;
     HNSWParams hnsw_params = {.dim = 128, .multi = is_multi};
 
-    VecSimIndexInfo info = UINT8Test::test_info(hnsw_params);
+    VecSimIndexDebugInfo info = UINT8Test::test_info(hnsw_params);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
-    VecSimIndexInfo frontendIndexInfo = CastToBruteForce()->info();
-    VecSimIndexInfo backendIndexInfo = CastToHNSW()->info();
+    VecSimIndexDebugInfo frontendIndexInfo = CastToBruteForce()->debugInfo();
+    VecSimIndexDebugInfo backendIndexInfo = CastToHNSW()->debugInfo();
 
     compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
     compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
@@ -747,7 +747,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
 
     UINT8Test::GenerateAndAddVector(1, 1);
-    info = index->info();
+    info = index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
@@ -761,7 +761,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
 
     mock_thread_pool.thread_iteration();
-    info = index->info();
+    info = index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
@@ -776,7 +776,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
 
     if (is_multi) {
         UINT8Test::GenerateAndAddVector(1, 1);
-        info = index->info();
+        info = index->debugInfo();
 
         EXPECT_EQ(info.commonInfo.indexSize, 2);
         EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
@@ -791,7 +791,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     }
 
     VecSimIndex_DeleteVector(index, 1);
-    info = index->info();
+    info = index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
@@ -812,15 +812,15 @@ template <typename params_t>
 void UINT8Test::test_info_iterator(VecSimMetric metric) {
     params_t params = {.dim = 128, .metric = metric};
     SetUp(params);
-    VecSimIndexInfo info = VecSimIndex_Info(index);
-    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
     VecSimAlgo algo = info.commonInfo.basicInfo.algo;
     if (algo == VecSimAlgo_HNSWLIB) {
         compareHNSWIndexInfoToIterator(info, infoIter);
     } else if (algo == VecSimAlgo_BF) {
         compareFlatIndexInfoToIterator(info, infoIter);
     }
-    VecSimInfoIterator_Free(infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 }
 
 TEST_F(UINT8BruteForceTest, InfoIteratorCosine) {
@@ -837,11 +837,11 @@ void UINT8TieredTest::test_info_iterator(VecSimMetric metric) {
     size_t d = 128;
     HNSWParams params = {.dim = d, .metric = metric, .initialCapacity = n};
     SetUp(params);
-    VecSimIndexInfo info = VecSimIndex_Info(index);
-    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
-    VecSimIndexInfo frontendIndexInfo = CastToBruteForce()->info();
-    VecSimIndexInfo backendIndexInfo = CastToHNSW()->info();
-    VecSimInfoIterator_Free(infoIter);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
+    VecSimIndexDebugInfo frontendIndexInfo = CastToBruteForce()->debugInfo();
+    VecSimIndexDebugInfo backendIndexInfo = CastToHNSW()->debugInfo();
+    VecSimDebugInfoIterator_Free(infoIter);
 }
 
 TEST_F(UINT8TieredTest, InfoIteratorCosine) { test_info_iterator(VecSimMetric_Cosine); }
@@ -892,7 +892,7 @@ void UINT8HNSWTest::test_serialization(bool is_multi) {
     hnsw_index->saveIndex(file_name);
 
     // Fetch info after saving, as memory size change during saving.
-    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, ef);
@@ -910,7 +910,7 @@ void UINT8HNSWTest::test_serialization(bool is_multi) {
     // Verify that the index was loaded as expected.
     ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
 
-    VecSimIndexInfo info2 = VecSimIndex_Info(serialized_index);
+    VecSimIndexDebugInfo info2 = VecSimIndex_DebugInfo(serialized_index);
     ASSERT_EQ(info2.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info2.hnswInfo.M, M);
     ASSERT_EQ(info2.commonInfo.basicInfo.isMulti, is_multi);
