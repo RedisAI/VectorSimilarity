@@ -197,7 +197,7 @@ endif
 
 flow_test:
 	$(SHOW)poetry install $(POETRY_ARGS)
-	$(SHOW)poetry run pytest tests/flow/$(TEST) --deselect=tests/flow/test_svs.py -v -s
+	$(SHOW)poetry run pytest tests/flow/$(TEST) -v -s
 
 .PHONY: flow_test
 

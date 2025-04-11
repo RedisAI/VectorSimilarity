@@ -1178,13 +1178,6 @@ TYPED_TEST(SVSTest, svs_test_inf_score) {
         .dim = dim,
         .metric = VecSimMetric_L2,
         .blockSize = 1,
-        /* SVS-Vamana specifics */
-        .alpha = 1.2,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);

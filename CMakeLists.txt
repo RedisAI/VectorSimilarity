@@ -33,6 +33,8 @@ IF(USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
 
+include(cmake/svs.cmake)
+
 include_directories(src)
 
 if(VECSIM_BUILD_TESTS)
