@@ -605,6 +605,8 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     info = VecSimIndex_DebugInfo(index);
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(0, info.bfInfo.indexSize);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimDebugInfoIterator_Free(infoIter);
 
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
