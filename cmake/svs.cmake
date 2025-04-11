@@ -9,6 +9,13 @@ endif()
 #     add_definitions(-DSVS_EXPERIMENTAL_LEANVEC)
 # endif()
 
+# Valgrind does not support AVX512 and Valgrind in running in Debug
+# so disable it if we are in Debug mode
+string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
+if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+    set(SVS_NO_AVX512 ON)
+endif()
+
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "(x86_64)|(AMD64|amd64)")
     set(SVS_SUPPORTED 1)
 else()
