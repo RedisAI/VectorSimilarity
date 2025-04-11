@@ -172,7 +172,7 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
     }
-    VecSimAlgo index_type = index->info().algo;
+    VecSimAlgo index_type = index->debugInfo().algo;
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
@@ -256,10 +256,16 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) {
     delete index;
 }
 
-extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
+extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
+    return index->debugInfo();
+}
 
-extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
-    return index->infoIterator();
+extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
+    return index->debugInfoIterator();
+}
+
+extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
+    return index->statisticInfo();
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,

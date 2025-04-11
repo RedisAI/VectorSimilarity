@@ -146,15 +146,22 @@ VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *qu
  * @param index the index to return its info.
  * @return Index general and specific meta-data.
  */
-VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
+VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index);
+
+/**
+ * @brief Return statistics information.
+ * @param index the index to return its info.
+ * @return Index statistic data.
+ */
+VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index);
 
 /**
  * @brief Returns an info iterator for generic reply purposes.
  *
  * @param index this index to return its info.
- * @return VecSimInfoIterator* An iterable containing the index general and specific meta-data.
+ * @return VecSimDebugInfoIterator* An iterable containing the index general and specific meta-data.
  */
-VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
+VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index);
 
 /**
  * @brief Create a new batch iterator for a specific index, for a specific query vector,

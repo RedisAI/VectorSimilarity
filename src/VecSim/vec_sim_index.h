@@ -58,4 +58,9 @@ public:
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
+    virtual inline VecSimIndexStatsInfo statisticInfo() const override {
+        return VecSimIndexStatsInfo{
+            .memory = static_cast<size_t>(this->getAllocationSize()),
+        };
+    }
 };

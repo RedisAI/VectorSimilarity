@@ -43,8 +43,8 @@ public:
                                              VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override;
-    virtual VecSimIndexInfo info() const override;
-    virtual VecSimInfoIterator *infoIterator() const override;
+    VecSimIndexDebugInfo debugInfo() const override;
+    VecSimDebugInfoIterator *debugInfoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
@@ -329,9 +329,9 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
+VecSimIndexDebugInfo BruteForceIndex<DataType, DistType>::debugInfo() const {
 
-    VecSimIndexInfo info;
+    VecSimIndexDebugInfo info;
     info.algo = VecSimAlgo_BF;
     info.bfInfo.dim = this->dim;
     info.bfInfo.type = this->vecType;
@@ -346,11 +346,11 @@ VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
-    VecSimIndexInfo info = this->info();
+VecSimDebugInfoIterator *BruteForceIndex<DataType, DistType>::debugInfoIterator() const {
+    VecSimIndexDebugInfo info = this->debugInfo();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 8;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    auto *infoIterator = new VecSimDebugInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::ALGORITHM_STRING,

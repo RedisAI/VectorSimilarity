@@ -9,13 +9,14 @@
 #include "info_iterator.h"
 #include "VecSim/utils/arr_cpp.h"
 
-struct VecSimInfoIterator {
+struct VecSimDebugInfoIterator {
 private:
     VecSim_InfoField *fields;
     size_t currentIndex;
 
 public:
-    VecSimInfoIterator(size_t len) : fields(array_new<VecSim_InfoField>(len)), currentIndex(0) {}
+    VecSimDebugInfoIterator(size_t len)
+        : fields(array_new<VecSim_InfoField>(len)), currentIndex(0) {}
 
     inline void addInfoField(VecSim_InfoField infoField) {
         this->fields = array_append(this->fields, infoField);
@@ -27,5 +28,5 @@ public:
 
     inline size_t numberOfFields() { return array_len(this->fields); }
 
-    virtual ~VecSimInfoIterator() { array_free(this->fields); }
+    virtual ~VecSimDebugInfoIterator() { array_free(this->fields); }
 };

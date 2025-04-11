@@ -110,14 +110,21 @@ public:
      *
      * @return Index general and specific meta-data.
      */
-    virtual VecSimIndexInfo info() const = 0;
+    virtual VecSimIndexDebugInfo debugInfo() const = 0;
+
+    /**
+     * @brief Return index statistic information.
+     *
+     * @return Index general and specific statistic data (for quick and lock-less retrieval)
+     */
+    virtual VecSimIndexStatsInfo statisticInfo() const = 0;
 
     /**
      * @brief Returns an index information in an iterable structure.
      *
-     * @return VecSimInfoIterator Index general and specific meta-data.
+     * @return VecSimDebugInfoIterator Index general and specific meta-data.
      */
-    virtual VecSimInfoIterator *infoIterator() const = 0;
+    virtual VecSimDebugInfoIterator *debugInfoIterator() const = 0;
 
     /**
      * @brief Create a new batch iterator for a specific index, for a specific query vector,
