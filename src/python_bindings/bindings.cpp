@@ -184,11 +184,11 @@ public:
     }
 
     py::object getVector(labelType label) {
-        VecSimIndexInfo info = index->info();
-        size_t dim = info.commonInfo.basicInfo.dim;
-        if (info.commonInfo.basicInfo.type == VecSimType_FLOAT32) {
+        VecSimIndexBasicInfo info = index->basicInfo();
+        size_t dim = info.dim;
+        if (info.type == VecSimType_FLOAT32) {
             return rawVectorsAsNumpy<float>(label, dim);
-        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
+        } else if (info.type == VecSimType_FLOAT64) {
             return rawVectorsAsNumpy<double>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
@@ -349,7 +349,7 @@ public:
     }
 
     bool checkIntegrity() {
-        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
+        auto type = VecSimIndex_BasicInfo(this->index.get()).type;
         if (type == VecSimType_FLOAT32) {
             return reinterpret_cast<HNSWIndex<float, float> *>(this->index.get())
                 ->checkIntegrity()
@@ -424,7 +424,7 @@ public:
     }
 
     size_t HNSWLabelCount() {
-        return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount;
+        return this->index->debugInfo().tieredInfo.backendCommonInfo.indexLabelCount;
     }
 };
 

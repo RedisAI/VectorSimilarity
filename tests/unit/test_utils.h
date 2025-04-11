@@ -130,9 +130,9 @@ void compareCommonInfo(CommonInfo info1, CommonInfo info2);
 void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
 void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
 
-void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
-void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,

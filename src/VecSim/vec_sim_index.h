@@ -106,6 +106,12 @@ public:
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getDataSize() const { return dataSize; }
     inline size_t getBlockSize() const { return blockSize; }
+    virtual inline VecSimIndexStatsInfo statisticInfo() const override {
+        return VecSimIndexStatsInfo{
+            .memory = this->getAllocationSize(),
+            .numberOfMarkedDeleted = 0,
+        };
+    }
 
     virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                          VecSimQueryParams *queryParams) const = 0;
@@ -134,7 +140,8 @@ public:
     }
 
     // Adds all common info to the info iterator, besides the block size (currently 8 fields).
-    void addCommonInfoToIterator(VecSimInfoIterator *infoIterator, const CommonInfo &info) const {
+    void addCommonInfoToIterator(VecSimDebugInfoIterator *infoIterator,
+                                 const CommonInfo &info) const {
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::TYPE_STRING,
             .fieldType = INFOFIELD_STRING,
@@ -195,11 +202,13 @@ public:
      * @return basicInfo
      */
     VecSimIndexBasicInfo getBasicInfo() const {
-        VecSimIndexBasicInfo info{.blockSize = this->blockSize,
-                                  .metric = this->metric,
-                                  .type = this->vecType,
-                                  .isMulti = this->isMulti,
-                                  .dim = this->dim};
+        VecSimIndexBasicInfo info{
+            .metric = this->metric,
+            .type = this->vecType,
+            .isMulti = this->isMulti,
+            .blockSize = this->blockSize,
+            .dim = this->dim,
+        };
         return info;
     }
 
