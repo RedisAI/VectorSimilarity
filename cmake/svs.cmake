@@ -75,6 +75,7 @@ if(USE_SVS)
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
         set(SVS_TARGET_NAME "svs::svs_shared_library")
+        set(_svs_patch_dir "${svs_SOURCE_DIR}")
     else()
         # this file is included from python_bindings/CMakeLists.txt
         # SVS sources path to be relative to this file
@@ -85,7 +86,24 @@ if(USE_SVS)
         )
         set(SVS_LVQ_HEADER "svs/quantization/lvq/impl/lvq_impl.h")
         set(SVS_TARGET_NAME "svs::svs")
+
+        # begin durtyfix svs allocator issue
+        find_path(_svs_patch_dir
+            NAMES "include/svs/lib/memory.h"
+            PATHS ${root}/deps/ScalableVectorSearch
+            PATH_SUFFIXES "ScalableVectorSearch"
+            REQUIRED NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH
+            NO_CACHE
+        )
+        # end durtifix
     endif()
+    # begin durtyfix svs allocator issue
+    find_package(Patch)
+    set(_svs_alloc_patch_args "-f" "-p" "1" "-i" "${CMAKE_CURRENT_LIST_DIR}/svs_allocator.patch" )
+    execute_process(COMMAND ${Patch_EXECUTABLE} ${_svs_alloc_patch_args}
+        WORKING_DIRECTORY ${_svs_patch_dir}
+    )
+    # end durtifix
 else()
     add_compile_definitions("HAVE_SVS=0")
 endif()
