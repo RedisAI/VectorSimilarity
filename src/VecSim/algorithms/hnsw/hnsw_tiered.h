@@ -129,6 +129,8 @@ private:
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelFromHNSWInplace(labelType label);
 
+    idType getNewElementId();
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -443,7 +445,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
         // we hold the main index lock for exclusive access.
-        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -468,7 +470,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // At this point we are certain that the index has enough capacity for the new element, and
         // this call will not resize the index.
-        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -516,6 +518,13 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
     }
     readySwapJobs -= idsToRemove.size();
     return ids.size();
+}
+
+template <typename DataType, typename DistType>
+idType TieredHNSWIndex<DataType, DistType>::getNewElementId() {
+    auto *hnsw_index = this->getHNSWIndex();
+    return hnsw_index->getNewElementId();
+    // Note that this function is not thread-safe, and should be called while the main index lock
 }
 
 /******************** Job's callbacks **********************************/

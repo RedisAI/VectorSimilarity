@@ -271,7 +271,7 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data, idType newElementId);
     void removeAndSwapMarkDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
@@ -283,6 +283,7 @@ public:
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
     void removeVectorInPlace(idType id);
+    idType getNewElementId();
 
     /*************************** Labels lookup API ***************************/
     /* Virtual functions that access the label lookup which is implemented in the derived classes */
@@ -354,6 +355,11 @@ double HNSWIndex<DataType, DistType>::getEpsilon() const {
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexSize() const {
     return this->curElementCount;
+}
+
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::getNewElementId() {
+    return this->curElementCount++;
 }
 
 template <typename DataType, typename DistType>
@@ -1749,14 +1755,11 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 // scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                                  const void *vector_data) {
-    HNSWAddVectorState state{};
+                                                                  const void *vector_data, idType newElementId) {
+    HNSWAddVectorState state(newElementId=newElementId);
 
     // Choose randomly the maximum level in which the new element will be in the index.
     state.elementMaxLevel = getRandomLevel(mult);
-
-    // Access and update the index global data structures with the new element meta-data.
-    state.newElementId = curElementCount++;
 
     // Create the new element's graph metadata.
     // We must assign manually enough memory on the stack and not just declare an `ElementGraphData`
@@ -1814,7 +1817,7 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeVector(const void *vector
     HNSWAddVectorState state{};
 
     this->lockIndexDataGuard();
-    state = storeNewElement(label, vector_data);
+    state = storeNewElement(label, vector_data, this->getNewElementId());
     if (state.currMaxLevel >= state.elementMaxLevel) {
         this->unlockIndexDataGuard();
     }
