@@ -36,7 +36,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
     }
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
-    auto features = getCpuOptimizationFeatures(arch_opt);
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef CPU_FEATURES_ARCH_AARCH64
 
 #ifdef OPT_SVE2
@@ -95,7 +95,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
-    auto features = getCpuOptimizationFeatures(arch_opt);
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_SVE2
@@ -156,7 +156,7 @@ dist_func_t<float> IP_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (!is_little_endian()) {
         return BF16_InnerProduct_BigEndian;
     }
-    auto features = getCpuOptimizationFeatures(arch_opt);
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
 #ifdef OPT_SVE_BF16
@@ -214,7 +214,7 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    auto features = getCpuOptimizationFeatures(arch_opt);
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
     dist_func_t<float> ret_dist_func = FP16_InnerProduct;
 
