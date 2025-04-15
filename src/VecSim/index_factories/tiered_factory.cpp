@@ -219,7 +219,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
     case VecSimAlgo_SVS:
         return TieredSVSFactory::NewIndex(params);
 #endif
-        default:
+    default:
         return nullptr; // Invalid algorithm.
     }
 }
