@@ -76,7 +76,7 @@ gtest_discover_tests(test_int8 TEST_PREFIX INT8UNIT_)
 gtest_discover_tests(test_uint8 TEST_PREFIX UINT8UNIT_)
 
 if(SVS_SUPPORTED)
-	add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp unit_test_utils.cpp)
+	add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp unit_test_utils.cpp)
 	target_link_libraries(test_svs PUBLIC gtest_main VectorSimilarity)
 	gtest_discover_tests(test_svs)
 endif()
