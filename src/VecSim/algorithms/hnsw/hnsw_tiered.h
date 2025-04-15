@@ -63,6 +63,8 @@ struct HNSWRepairJob : public AsyncJob {
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
+    size_t bg_vector_indexing_count;
+    size_t main_vector_indexing_count;
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
     // In MULTI, we can have more than one insert job pending per label.
     // **This map is protected with the flat buffer lock**
@@ -633,9 +635,11 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      const TieredIndexParams &tiered_index_params,
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
+    bg_vector_indexing_count(0), main_vector_indexing_count(0),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
       readySwapJobs(0) {
+
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
@@ -708,6 +712,10 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
     int ret = 1;
+    if (label == 999999) {
+        TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
+            "bg_vec_count: %zu, main_thread_vector_count: %zu", this->bg_vector_indexing_count, this->main_vector_indexing_count);
+    }
     auto hnsw_index = this->getHNSWIndex();
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exculusively calling add/delete vector).
@@ -733,6 +741,10 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
             // remove vector from the flat buffer and/or the HNSW index.
             ret -= this->deleteVector(label);
+            if (ret != 1) {
+                TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
+                    "removed a vector while trying to insert label %zu. ret: %d", label, ret);
+            }
         }
         if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
             // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
@@ -742,11 +754,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // index.
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
             this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
+            this->main_vector_indexing_count++;
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer
         // (since it is not full anymore after removing the previous vector stored under the label).
     }
+    this->bg_vector_indexing_count++;
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
