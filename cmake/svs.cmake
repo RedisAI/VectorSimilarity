@@ -57,7 +57,7 @@ if(NOT MKL_FOUND)
 endif()
 
 # Configure SVS build
-cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "SVS_SUPPORTED AND MKL_FOUND" OFF)
+cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" OFF "SVS_SUPPORTED AND MKL_FOUND" OFF)
 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
 if(USE_SVS)
