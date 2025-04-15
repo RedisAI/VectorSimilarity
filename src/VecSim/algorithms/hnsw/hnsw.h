@@ -273,6 +273,7 @@ public:
     void unmarkInProcess(idType internalId);
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data, idType newElementId);
     void removeAndSwapMarkDeletedElement(idType internalId);
+    void removeIncomingEdgesAndDelete(idType deletedId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
     const ElementMetaData *getMetaDataAddress(idType internal_id) const {
@@ -1634,11 +1635,11 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
+void HNSWIndex<DataType, DistType>::removeIncomingEdgesAndDelete(idType deletedId) {
     // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
     // upon marking it as deleted.
-    assert(entrypointNode != internalId);
-    auto element = getGraphDataByInternalId(internalId);
+    assert(entrypointNode != deletedId);
+    auto element = getGraphDataByInternalId(deletedId);
 
     // Remove the deleted id form the relevant incoming edges sets in which it appears.
     for (size_t level = 0; level <= element->toplevel; level++) {
@@ -1650,17 +1651,25 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             // (we know we will get here and remove this deleted id permanently).
             // However, upon asynchronous delete, this should always succeed since we do update
             // the incoming edges in the mutual update even for deleted elements.
-            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
+            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(deletedId);
             // Assert the logical condition of: is_marked_deleted(id) => res==True.
             (void)res;
-            assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming "
+            assert((!isMarkedDeleted(deletedId) || res) && "The edge should be in the incoming "
                                                             "unidirectional edges");
         }
     }
 
     // Free the element's resources
     element->destroy(this->levelDataSize, this->allocator);
+    --numMarkedDeleted;
 
+}
+
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
+    
+    removeIncomingEdgesAndDelete(internalId);
     // We can say now that the element has removed completely from index.
     --curElementCount;
 

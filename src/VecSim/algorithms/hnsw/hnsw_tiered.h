@@ -523,6 +523,12 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
 template <typename DataType, typename DistType>
 idType TieredHNSWIndex<DataType, DistType>::getNewElementId() {
     auto *hnsw_index = this->getHNSWIndex();
+    if (idToSwapJob.size() == 0) {
+        // No pending swap jobs, so we can use a new id.
+        return hnsw_index->getNewElementId();
+    }
+    // idType deleted_id = idToSwapJob.begin()->first;
+
     return hnsw_index->getNewElementId();
     // Note that this function is not thread-safe, and should be called while the main index lock
 }
