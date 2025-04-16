@@ -38,7 +38,7 @@ protected:
     void SetUp() override {
         if constexpr (index_type_t::get_quant_bits() != VecSimSvsQuant_NONE)
             if (!_checkCPU()) {
-                // GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
+                GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
             }
     }
 };
