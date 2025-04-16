@@ -271,7 +271,8 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data, idType newElementId);
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
+                                       idType newElementId);
     void removeAndSwapMarkDeletedElement(idType internalId);
     void removeIncomingEdgesAndDelete(idType deletedId);
     void repairNodeConnections(idType node_id, size_t level);
@@ -1651,24 +1652,26 @@ void HNSWIndex<DataType, DistType>::removeIncomingEdgesAndDelete(idType deletedI
             // (we know we will get here and remove this deleted id permanently).
             // However, upon asynchronous delete, this should always succeed since we do update
             // the incoming edges in the mutual update even for deleted elements.
+
+            lockNodeLinks(cur_level.getLinkAtPos(i));
             bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(deletedId);
+            unlockNodeLinks(cur_level.getLinkAtPos(i));
+
             // Assert the logical condition of: is_marked_deleted(id) => res==True.
             (void)res;
             assert((!isMarkedDeleted(deletedId) || res) && "The edge should be in the incoming "
-                                                            "unidirectional edges");
+                                                           "unidirectional edges");
         }
     }
 
     // Free the element's resources
     element->destroy(this->levelDataSize, this->allocator);
     --numMarkedDeleted;
-
 }
-
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
-    
+
     removeIncomingEdgesAndDelete(internalId);
     // We can say now that the element has removed completely from index.
     --curElementCount;
@@ -1764,8 +1767,9 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 // scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                                  const void *vector_data, idType newElementId) {
-    HNSWAddVectorState state(newElementId=newElementId);
+                                                                  const void *vector_data,
+                                                                  idType newElementId) {
+    HNSWAddVectorState state(newElementId = newElementId);
 
     // Choose randomly the maximum level in which the new element will be in the index.
     state.elementMaxLevel = getRandomLevel(mult);

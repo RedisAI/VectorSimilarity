@@ -445,7 +445,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
         // we hold the main index lock for exclusive access.
-        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
+        auto state =
+            hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -470,7 +471,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // At this point we are certain that the index has enough capacity for the new element, and
         // this call will not resize the index.
-        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
+        auto state =
+            hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -527,9 +529,11 @@ idType TieredHNSWIndex<DataType, DistType>::getNewElementId() {
         // No pending swap jobs, so we can use a new id.
         return hnsw_index->getNewElementId();
     }
-    // idType deleted_id = idToSwapJob.begin()->first;
+    idType deletedId = idToSwapJob.begin()->first;
+    hnsw_index->removeIncomingEdgesAndDelete(deletedId);
+    idToSwapJob.erase(deletedId);
 
-    return hnsw_index->getNewElementId();
+    return deletedId;
     // Note that this function is not thread-safe, and should be called while the main index lock
 }
 
