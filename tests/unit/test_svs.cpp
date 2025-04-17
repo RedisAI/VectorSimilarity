@@ -8,11 +8,10 @@
 
 #define ASSERT_INDEX(index)                                                                        \
     if (index == nullptr) {                                                                        \
-        const auto quantBits = TypeParam::get_quant_bits();                                        \
-        if (quantBits != VecSimSvsQuant_NONE && !svs_details::isSVSLVQModeSupported(quantBits)) {  \
-            GTEST_SKIP() << "SVS LVQ is not supported.";                                           \
-        } else {                                                                                   \
+        if (svs_details::isSVSLVQModeSupported(TypeParam::get_quant_bits())) {                     \
             GTEST_FAIL() << "Failed to create SVS index";                                          \
+        } else {                                                                                   \
+            GTEST_SKIP() << "SVS LVQ is not supported.";                                           \
         }                                                                                          \
     }
 
