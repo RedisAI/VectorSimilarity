@@ -147,16 +147,15 @@ inline bool check_cpuid() {
                             std::string((const char*)&ecx, 4);
     return (vendor_id == "GenuineIntel");
 }
-//clang-format on
+// clang-format on
 
 inline bool isSVSLVQModeSupported(VecSimSvsQuantBits quant_bits) {
+    return quant_bits == VecSimSvsQuant_NONE
 #if HAVE_SVS_LVQ
-    // Check if the CPU supports SVS LVQ
-    return check_cpuid();
+           || check_cpuid() // Check if the CPU supports SVS LVQ
 #endif
-    return quant_bits == VecSimSvsQuant_NONE;
+        ;
 }
-
 } // namespace svs_details
 
 template <typename DataType, size_t QuantBits, size_t ResidualBits, class Enable = void>
