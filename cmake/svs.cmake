@@ -37,7 +37,6 @@ if(USE_SVS)
     message(STATUS "SVS support enabled")
     # Configure SVS build
     add_compile_definitions("HAVE_SVS=1")
-    set(svs_factory_file "index_factories/svs_factory.cpp")
 
     # try to find MKL
     set(MKL_HINTS ${MKLROOT} $ENV{MKL_DIR} $ENV{MKL_ROOT} $ENV{MKLROOT})

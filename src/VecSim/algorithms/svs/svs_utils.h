@@ -138,7 +138,8 @@ inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
     return svs_bs;
 }
 
-bool check_cpuid() {
+// clang-format off
+inline bool check_cpuid() {
     uint32_t eax, ebx, ecx, edx;
     __cpuid(0, eax, ebx, ecx, edx);
     std::string vendor_id = std::string((const char*)&ebx, 4) +
@@ -146,8 +147,9 @@ bool check_cpuid() {
                             std::string((const char*)&ecx, 4);
     return (vendor_id == "GenuineIntel");
 }
+//clang-format on
 
-bool isSVSLVQModeSupported(VecSimSvsQuantBits quant_bits) {
+inline bool isSVSLVQModeSupported(VecSimSvsQuantBits quant_bits) {
 #if HAVE_SVS_LVQ
     // Check if the CPU supports SVS LVQ
     return check_cpuid();
