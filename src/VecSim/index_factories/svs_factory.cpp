@@ -1,4 +1,6 @@
 #include "VecSim/index_factories/svs_factory.h"
+
+#if HAVE_SVS
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
@@ -35,6 +37,10 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 
 template <typename MetricType, typename DataType>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
+    if (!svs_details::isSVSLVQModeSupported(params->algoParams.svsParams.quantBits)) {
+        return NULL;
+    }
+
     switch (params->algoParams.svsParams.quantBits) {
     case VecSimSvsQuant_NONE:
         return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
@@ -169,3 +175,11 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 }
 
 } // namespace SVSFactory
+
+#else  // HAVE_SVS
+namespace SVSFactory {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
+size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) { return -1; }
+size_t EstimateElementSize(const SVSParams *params) { return -1; }
+}; // namespace SVSFactory
+#endif // HAVE_SVS

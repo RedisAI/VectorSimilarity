@@ -29,7 +29,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/brute_force_factory.cpp
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
-    ${svs_factory_file}
+    index_factories/svs_factory.cpp
     index_factories/index_factory.cpp
     index_factories/components/components_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp

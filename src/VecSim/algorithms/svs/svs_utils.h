@@ -6,6 +6,11 @@
 #include "svs/lib/float16.h"
 #include "svs/index/vamana/dynamic_index.h"
 
+#include <cpuid.h>
+#include <cstdint>
+#include <cstdlib>
+#include <string>
+
 namespace svs_details {
 // VecSim->SVS data type conversion
 template <typename T>
@@ -133,6 +138,24 @@ inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
     return svs_bs;
 }
 
+// clang-format off
+inline bool check_cpuid() {
+    uint32_t eax, ebx, ecx, edx;
+    __cpuid(0, eax, ebx, ecx, edx);
+    std::string vendor_id = std::string((const char*)&ebx, 4) +
+                            std::string((const char*)&edx, 4) +
+                            std::string((const char*)&ecx, 4);
+    return (vendor_id == "GenuineIntel");
+}
+// clang-format on
+
+inline bool isSVSLVQModeSupported(VecSimSvsQuantBits quant_bits) {
+    return quant_bits == VecSimSvsQuant_NONE
+#if HAVE_SVS_LVQ
+           || check_cpuid() // Check if the CPU supports SVS LVQ
+#endif
+        ;
+}
 } // namespace svs_details
 
 template <typename DataType, size_t QuantBits, size_t ResidualBits, class Enable = void>
