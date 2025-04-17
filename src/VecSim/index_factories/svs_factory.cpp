@@ -1,4 +1,6 @@
 #include "VecSim/index_factories/svs_factory.h"
+
+#if HAVE_SVS
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
@@ -173,3 +175,11 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 }
 
 } // namespace SVSFactory
+
+#else  // HAVE_SVS
+namespace SVSFactory {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
+size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) { return -1; }
+size_t EstimateElementSize(const SVSParams *params) { return -1; }
+}; // namespace SVSFactory
+#endif // HAVE_SVS
