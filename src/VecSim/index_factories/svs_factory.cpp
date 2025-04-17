@@ -35,6 +35,10 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 
 template <typename MetricType, typename DataType>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
+    if (!svs_details::isSVSLVQModeSupported(params->algoParams.svsParams.quantBits)) {
+        return NULL;
+    }
+
     switch (params->algoParams.svsParams.quantBits) {
     case VecSimSvsQuant_NONE:
         return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
