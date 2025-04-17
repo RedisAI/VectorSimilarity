@@ -35,6 +35,10 @@ cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTE
 
 if(USE_SVS)
     message(STATUS "SVS support enabled")
+    # Configure SVS build
+    add_compile_definitions("HAVE_SVS=1")
+    set(svs_factory_file "index_factories/svs_factory.cpp")
+
     # try to find MKL
     set(MKL_HINTS ${MKLROOT} $ENV{MKL_DIR} $ENV{MKL_ROOT} $ENV{MKLROOT})
     if(LINUX)
@@ -47,19 +51,10 @@ if(USE_SVS)
     if(NOT MKL_FOUND)
         message(WARNING "MKL not found - disabling SVS shared library")
     endif()
-else()
-    message(STATUS "SVS support disabled")
-    set(MKL_FOUND FALSE)
-endif()
 
-# Configure SVS build
-cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND MKL_FOUND" OFF)
-set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
+    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND MKL_FOUND" OFF)
+    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
 
-if(USE_SVS)
-    add_compile_definitions("HAVE_SVS=1")
-    set(svs_factory_file "index_factories/svs_factory.cpp")
-    set(SVS_TARGET_NAME "svs::svs")
     if(SVS_SHARED_LIB)
         include(FetchContent)
         FetchContent_Declare(
@@ -70,7 +65,6 @@ if(USE_SVS)
         list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR}")
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
-        set(SVS_TARGET_NAME "svs::svs_shared_library")
     else()
         # This file is included from both CMakeLists.txt and python_bindings/CMakeLists.txt  
         # Set `root` relative to this file, regardless of where it is included from. 
@@ -80,16 +74,16 @@ if(USE_SVS)
             deps/ScalableVectorSearch
         )
         set(SVS_LVQ_HEADER "svs/quantization/lvq/impl/lvq_impl.h")
-        set(SVS_TARGET_NAME "svs::svs")
+    endif()
+
+    if(EXISTS "${svs_SOURCE_DIR}/include/${SVS_LVQ_HEADER}")
+        message("SVS LVQ implementation found")
+        add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=1" PUBLIC "SVS_LVQ_HEADER=\"${SVS_LVQ_HEADER}\"")
+    else()
+        message("SVS LVQ implementation not found")
+        add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=0")
     endif()
 else()
+    message(STATUS "SVS support disabled")
     add_compile_definitions("HAVE_SVS=0")
-endif()
-
-if(EXISTS "${svs_SOURCE_DIR}/include/${SVS_LVQ_HEADER}")
-    message("SVS LVQ implementation found")
-    add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=1" PUBLIC "SVS_LVQ_HEADER=\"${SVS_LVQ_HEADER}\"")
-else()
-    message("SVS LVQ implementation not found")
-    add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=0")
 endif()
