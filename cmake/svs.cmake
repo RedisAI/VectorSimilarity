@@ -32,9 +32,6 @@ include(CMakeDependentOption)
 # USE_SVS option forcibly OFF if CPU or compiler is not supported
 # elsewhere let user disable SVS
 cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTED" OFF)
-if(USE_SVS)
-else()
-endif()
 
 if(USE_SVS)
     message(STATUS "SVS support enabled")
@@ -75,8 +72,8 @@ if(USE_SVS)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
         set(SVS_TARGET_NAME "svs::svs_shared_library")
     else()
-        # this file is included from both CMakeLists.txt and python_bindings/CMakeLists.txt
-        # so, set SVS sources path relative to this file
+        # This file is included from both CMakeLists.txt and python_bindings/CMakeLists.txt  
+        # Set `root` relative to this file, regardless of where it is included from. 
         get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
         add_subdirectory(
             ${root}/deps/ScalableVectorSearch
