@@ -538,10 +538,11 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
     // Copy the vector blob from the flat buffer, so we can release the flat lock while we are
     // indexing the vector into HNSW index.
+    size_t data_size = this->frontendIndex->getDataSize();
     auto blob_copy = this->getAllocator()->allocate_unique(this->frontendIndex->getDataSize());
 
     memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id),
-           this->frontendIndex->getDim() * sizeof(DataType));
+           data_size);
 
     this->insertVectorToHNSW<true>(hnsw_index, job->label, blob_copy.get());
 
@@ -703,7 +704,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     this->mainIndexGuard.unlock();
     return output.size();
 }
-
+#include "VecSim/vec_sim_debug.h"
 // In the tiered index, we assume that the blobs are processed by the flat buffer
 // before being transferred to the HNSW index.
 // When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
@@ -712,11 +713,40 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
     int ret = 1;
+    auto hnsw_index = this->getHNSWIndex();
+    if (label == 100000) {
+            std::string res("index connections: {");
+
+                res += "Entry Point Label: ";
+                res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
+                TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
+                    "%s", res.c_str());
+            for (idType id = 0; id < this->backendIndex->indexSize(); id++) {
+                std::string n_data("Node ");
+                labelType label = hnsw_index->getExternalLabel(id);
+                if (label == SIZE_MAX)
+                    continue; // The ID is not in the index
+                int **neighbors_output;
+                VecSimDebug_GetElementNeighborsInHNSWGraph(this->backendIndex, label, &neighbors_output);
+                n_data += std::to_string(label) + ": ";
+                for (size_t l = 0; neighbors_output[l]; l++) {
+                    n_data += "Level " + std::to_string(l) + " neighbors: ";
+                    auto &neighbours = neighbors_output[l];
+                    auto neighbours_count = neighbours[0];
+                    for (size_t j = 1; j <= neighbours_count; j++) {
+                        n_data += std::to_string(neighbours[j]) + ", ";
+                    }
+                    TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
+                        "%s", n_data.c_str());
+                }
+                VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+            }
+    }
     if (label == 999999) {
         TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
             "bg_vec_count: %zu, main_thread_vector_count: %zu", this->bg_vector_indexing_count, this->main_vector_indexing_count);
     }
-    auto hnsw_index = this->getHNSWIndex();
+
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exculusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteInPlace) {
