@@ -430,13 +430,13 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
 
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
-    this->mainIndexGuard.lock_shared();
-    hnsw_index->lockIndexDataGuard();
-    // Check if resizing is needed for HNSW index (requires write lock).
-    if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
-        // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
-        this->mainIndexGuard.unlock_shared();
-        hnsw_index->unlockIndexDataGuard();
+    // this->mainIndexGuard.lock_shared();
+    // hnsw_index->lockIndexDataGuard();
+    // // Check if resizing is needed for HNSW index (requires write lock).
+    // if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+    //     // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
+    //     this->mainIndexGuard.unlock_shared();
+    //     hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
 
@@ -464,29 +464,29 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
             hnsw_index->unlockIndexDataGuard();
         }
         this->mainIndexGuard.unlock();
-    } else {
-        // Do the same as above except for changing the capacity, but with *shared* lock held:
-        // Hold the index data lock while we store the new element. If the new node's max level is
-        // higher than the current one, hold the lock through the entire insertion to ensure that
-        // graph scans will not occur, as they will try access the entry point's neighbors.
-        // At this point we are certain that the index has enough capacity for the new element, and
-        // this call will not resize the index.
-        auto state =
-            hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
-        if constexpr (releaseFlatGuard) {
-            this->flatIndexGuard.unlock_shared();
-        }
+    // } else {
+    //     // Do the same as above except for changing the capacity, but with *shared* lock held:
+    //     // Hold the index data lock while we store the new element. If the new node's max level is
+    //     // higher than the current one, hold the lock through the entire insertion to ensure that
+    //     // graph scans will not occur, as they will try access the entry point's neighbors.
+    //     // At this point we are certain that the index has enough capacity for the new element, and
+    //     // this call will not resize the index.
+    //     auto state =
+    //         hnsw_index->storeNewElement(label, processed_storage_blob, this->getNewElementId());
+    //     if constexpr (releaseFlatGuard) {
+    //         this->flatIndexGuard.unlock_shared();
+    //     }
 
-        if (state.elementMaxLevel <= state.currMaxLevel) {
-            hnsw_index->unlockIndexDataGuard();
-        }
-        // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->indexVector(processed_for_index, label, state);
-        if (state.elementMaxLevel > state.currMaxLevel) {
-            hnsw_index->unlockIndexDataGuard();
-        }
-        this->mainIndexGuard.unlock_shared();
-    }
+    //     if (state.elementMaxLevel <= state.currMaxLevel) {
+    //         hnsw_index->unlockIndexDataGuard();
+    //     }
+    //     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
+    //     hnsw_index->indexVector(processed_for_index, label, state);
+    //     if (state.elementMaxLevel > state.currMaxLevel) {
+    //         hnsw_index->unlockIndexDataGuard();
+    //     }
+    //     this->mainIndexGuard.unlock_shared();
+    // }
 }
 
 template <typename DataType, typename DistType>
@@ -524,16 +524,36 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
 
 template <typename DataType, typename DistType>
 idType TieredHNSWIndex<DataType, DistType>::getNewElementId() {
+    this->idToRepairJobsGuard.lock();
     auto *hnsw_index = this->getHNSWIndex();
-    if (idToSwapJob.size() == 0) {
-        // No pending swap jobs, so we can use a new id.
-        return hnsw_index->getNewElementId();
-    }
-    idType deletedId = idToSwapJob.begin()->first;
-    hnsw_index->removeIncomingEdgesAndDelete(deletedId);
-    idToSwapJob.erase(deletedId);
+    for (auto &it : idToSwapJob) {
+        auto *swap_job = it.second;
+        if (swap_job->pending_repair_jobs_counter.load() == 0) {
+            // Swap job is ready for execution - execute and delete it.
+            idType deletedId = it.first;
+            assert(hnsw_index->isMarkedDeleted(deletedId));
+            hnsw_index->removeIncomingEdgesAndDelete(deletedId);
+            delete swap_job;
+            idToSwapJob.erase(deletedId);
+            if (idToRepairJobs.find(deletedId) != idToRepairJobs.end()) {
+                for (auto &job_it : idToRepairJobs.at(deletedId)) {
+                    job_it->node_id = this->setAndSaveInvalidJob(job_it);
+                    for (auto &swap_job_it : job_it->associatedSwapJobs) {
+                        if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
+                            readySwapJobs++;
+                        }
+                    }
+                }
+                idToRepairJobs.erase(deletedId);
+            }
+            this->idToRepairJobsGuard.unlock();
 
-    return deletedId;
+            return deletedId;
+        }
+    }
+    this->idToRepairJobsGuard.unlock();
+    return hnsw_index->getNewElementId();
+    // return hnsw_index->getNewElementId();
     // Note that this function is not thread-safe, and should be called while the main index lock
 }
 
