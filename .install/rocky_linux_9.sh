@@ -8,4 +8,3 @@ $MODE dnf install -y gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ make wget git val
 cp /opt/rh/gcc-toolset-13/enable /etc/profile.d/gcc-toolset-13.sh
 
 source install_cmake.sh $MODE
-source install_mkl.sh $MODE

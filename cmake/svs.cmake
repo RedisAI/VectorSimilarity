@@ -39,21 +39,8 @@ if(USE_SVS)
     add_compile_definitions("HAVE_SVS=1")
     set(svs_factory_file "index_factories/svs_factory.cpp")
 
-    # try to find MKL
-    set(MKL_HINTS ${MKLROOT} $ENV{MKL_DIR} $ENV{MKL_ROOT} $ENV{MKLROOT})
-    if(LINUX)
-        list(APPEND MKL_HINTS "/opt/intel/oneapi/mkl/latest")
-    endif()
-    if(WIN32)
-        list(APPEND MKL_HINTS "C:/Program Files (x86)/Intel/oneAPI/mkl/latest")
-    endif()
-    find_package(MKL HINTS ${MKL_HINTS})
-    if(NOT MKL_FOUND)
-        message(WARNING "MKL not found - disabling SVS shared library")
-    endif()
-
-    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND MKL_FOUND" OFF)
-    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.7/svs-shared-library-0.0.7-avx2.tar.gz" CACHE STRING "SVS URL")
+    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS" OFF)
+    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250423.tar.gz" CACHE STRING "SVS URL")
 
     if(SVS_SHARED_LIB)
         include(FetchContent)
