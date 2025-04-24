@@ -133,11 +133,13 @@ typedef struct {
 } BFParams;
 
 typedef enum {
-    VecSimSvsQuant_NONE = 0,            // No quantization.
-    VecSimSvsQuant_8 = 8,               // 8-bit quantization
-    VecSimSvsQuant_4 = 4,               // 4-bit quantization
-    VecSimSvsQuant_4x4 = 4 | (4 << 10), // 4-bit quantization with 4-bit residuals
-    VecSimSvsQuant_4x8 = 4 | (8 << 10)  // 4-bit quantization with 8-bit residuals
+    VecSimSvsQuant_NONE = 0,           // No quantization.
+    VecSimSvsQuant_4 = 4,              // 4-bit quantization
+    VecSimSvsQuant_8 = 8,              // 8-bit quantization
+    VecSimSvsQuant_4x4 = 4 | (4 << 8), // 4-bit quantization with 4-bit residuals
+    VecSimSvsQuant_4x8 = 4 | (8 << 8), // 4-bit quantization with 8-bit residuals
+    VecSimSvsQuant_4x8_leanvec = 4 | (8 << 8) | (1 << 16), // LeanVec 4x4 quantization
+    VecSimSvsQuant_8x8_leanvec = 8 | (8 << 8) | (1 << 16), // LeanVec 8x8 quantization
 } VecSimSvsQuantBits;
 
 typedef struct {

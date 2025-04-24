@@ -32,7 +32,8 @@ AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
 }
 
 // NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
-template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     auto abstractInitParams = NewAbstractInitParams(params);
     auto &svsParams = params->algoParams.svsParams;
@@ -40,8 +41,8 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
         abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized);
     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
     return new (abstractInitParams.allocator)
-        SVSIndex<MetricType, DataType, QuantBits, ResidualBits>(svsParams, abstractInitParams,
-                                                                components, forcePreprocessing);
+        SVSIndex<MetricType, DataType, QuantBits, ResidualBits, IsLeanVec>(
+            svsParams, abstractInitParams, components, forcePreprocessing);
 }
 
 template <typename MetricType, typename DataType>
@@ -53,15 +54,19 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 
     switch (quantBits) {
     case VecSimSvsQuant_NONE:
-        return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
+        return NewIndexImpl<MetricType, DataType, 0, 0, false>(params, is_normalized);
     case VecSimSvsQuant_8:
-        return NewIndexImpl<MetricType, DataType, 8>(params, is_normalized);
+        return NewIndexImpl<MetricType, DataType, 8, 0, false>(params, is_normalized);
     case VecSimSvsQuant_4:
-        return NewIndexImpl<MetricType, DataType, 4>(params, is_normalized);
+        return NewIndexImpl<MetricType, DataType, 4, 0, false>(params, is_normalized);
     case VecSimSvsQuant_4x4:
-        return NewIndexImpl<MetricType, DataType, 4, 4>(params, is_normalized);
+        return NewIndexImpl<MetricType, DataType, 4, 4, false>(params, is_normalized);
     case VecSimSvsQuant_4x8:
-        return NewIndexImpl<MetricType, DataType, 4, 8>(params, is_normalized);
+        return NewIndexImpl<MetricType, DataType, 4, 8, false>(params, is_normalized);
+    case VecSimSvsQuant_4x8_leanvec:
+        return NewIndexImpl<MetricType, DataType, 4, 8, true>(params, is_normalized);
+    case VecSimSvsQuant_8x8_leanvec:
+        return NewIndexImpl<MetricType, DataType, 8, 8, true>(params, is_normalized);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported quantization mode");
@@ -100,9 +105,10 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 }
 
 // QuantizedVectorSize() is the chain of template functions to estimate vector DataSize.
-template <typename DataType, size_t QuantBits, size_t ResidualBits = 0>
+template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec>
 constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0) {
-    return SVSStorageTraits<DataType, QuantBits, ResidualBits>::element_size(dims, alignment);
+    return SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>::element_size(dims,
+                                                                                        alignment);
 }
 
 template <typename DataType>
@@ -113,15 +119,19 @@ size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t al
 
     switch (quantBits) {
     case VecSimSvsQuant_NONE:
-        return QuantizedVectorSize<DataType, 0>(dims, alignment);
+        return QuantizedVectorSize<DataType, 0, 0, false>(dims, alignment);
     case VecSimSvsQuant_8:
-        return QuantizedVectorSize<DataType, 8>(dims, alignment);
+        return QuantizedVectorSize<DataType, 8, 0, false>(dims, alignment);
     case VecSimSvsQuant_4:
-        return QuantizedVectorSize<DataType, 4>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4, 0, false>(dims, alignment);
     case VecSimSvsQuant_4x4:
-        return QuantizedVectorSize<DataType, 4, 4>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4, 4, false>(dims, alignment);
     case VecSimSvsQuant_4x8:
-        return QuantizedVectorSize<DataType, 4, 8>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4, 8, false>(dims, alignment);
+    case VecSimSvsQuant_4x8_leanvec:
+        return QuantizedVectorSize<DataType, 4, 8, true>(dims, alignment);
+    case VecSimSvsQuant_8x8_leanvec:
+        return QuantizedVectorSize<DataType, 8, 8, true>(dims, alignment);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported quantization mode");
@@ -181,8 +191,9 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 
     // Assume all floats have same cases
     // Assume quantBits>0 cases have same sizes
-    est += (params->quantBits == 0) ? sizeof(SVSIndex<svs::distance::DistanceL2, float, 0>)
-                                    : sizeof(SVSIndex<svs::distance::DistanceL2, float, 8>);
+    est += (params->quantBits == 0)
+               ? sizeof(SVSIndex<svs::distance::DistanceL2, float, 0, 0, false>)
+               : sizeof(SVSIndex<svs::distance::DistanceL2, float, 8, 0, false>);
     est += EstimateComponentsMemorySVS(params->type, params->metric, is_normalized);
     est += sizeof(DataBlocksContainer) + allocations_overhead;
     return est;
