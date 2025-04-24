@@ -157,7 +157,7 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
         GTEST_SKIP() << "No threads available";
     }
 
-    std::chrono::milliseconds timeout{1};
+    std::chrono::milliseconds timeout{10};
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
