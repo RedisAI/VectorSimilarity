@@ -39,7 +39,15 @@ if(USE_SVS)
     add_compile_definitions("HAVE_SVS=1")
     set(svs_factory_file "index_factories/svs_factory.cpp")
 
-    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS" OFF)
+    # detect if build environment is using glibc
+    include(CheckSymbolExists)
+    unset(GLIBC_FOUND CACHE)
+    check_symbol_exists(__GLIBC__ "features.h" GLIBC_FOUND)
+    if(NOT GLIBC_FOUND)
+        message(STATUS "GLIBC is not detected - SVS shared library is not supported")
+    endif()
+
+    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND" OFF)
     set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250423.tar.gz" CACHE STRING "SVS URL")
 
     if(SVS_SHARED_LIB)
