@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <utility>
 
 namespace svs_details {
 // VecSim->SVS data type conversion
@@ -149,12 +150,23 @@ inline bool check_cpuid() {
 }
 // clang-format on
 
-inline bool isSVSLVQModeSupported(VecSimSvsQuantBits quant_bits) {
-    return quant_bits == VecSimSvsQuant_NONE
+// Check if the SVS implementation supports Qquantization mode
+// @param quant_bits requested SVS quantization mode
+// @return pair<fallbackMode, bool>
+inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuantBits quant_bits) {
+    // If HAVE_SVS_LVQ is not defined, we don't support any quantization mode
+    // else we check if the CPU supports SVS LVQ
+    bool supported = quant_bits == VecSimSvsQuant_NONE
 #if HAVE_SVS_LVQ
-           || check_cpuid() // Check if the CPU supports SVS LVQ
+                     || check_cpuid() // Check if the CPU supports SVS LVQ
 #endif
         ;
+
+    // If the quantization mode is not supported, we fallback to non-quantized mode
+    auto fallBack = supported ? quant_bits : VecSimSvsQuant_NONE;
+
+    // And always return true, as far as non-quantized mode is always supported
+    return std::make_pair(fallBack, true);
 }
 } // namespace svs_details
 

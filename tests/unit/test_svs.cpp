@@ -8,7 +8,7 @@
 
 #define ASSERT_INDEX(index)                                                                        \
     if (index == nullptr) {                                                                        \
-        if (svs_details::isSVSLVQModeSupported(TypeParam::get_quant_bits())) {                     \
+        if (std::get<1>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits()))) {      \
             GTEST_FAIL() << "Failed to create SVS index";                                          \
         } else {                                                                                   \
             GTEST_SKIP() << "SVS LVQ is not supported.";                                           \
@@ -698,7 +698,10 @@ TYPED_TEST(SVSTest, resizeIndex) {
 
     // Initial capacity is rounded up to the block size.
     size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
-    if constexpr (TypeParam::get_quant_bits() > 0) {
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+    if (quantBits != VecSimSvsQuant_NONE) {
         // LVQDataset does not provide a capacity method
         extra_cap = 0;
     }
@@ -1460,7 +1463,10 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    if (TypeParam::get_quant_bits() > 0) {
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+    if (quantBits != VecSimSvsQuant_NONE) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
         dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
