@@ -714,34 +714,34 @@ template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
-    if (label == 100000) {
-            std::string res("index connections: {");
+    // if (label == 100000) {
+    //         std::string res("index connections: {");
 
-                res += "Entry Point Label: ";
-                res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
-                TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-                    "%s", res.c_str());
-            for (idType id = 0; id < this->backendIndex->indexSize(); id++) {
-                std::string n_data("Node ");
-                labelType label = hnsw_index->getExternalLabel(id);
-                if (label == SIZE_MAX)
-                    continue; // The ID is not in the index
-                int **neighbors_output;
-                VecSimDebug_GetElementNeighborsInHNSWGraph(this->backendIndex, label, &neighbors_output);
-                n_data += std::to_string(label) + ": ";
-                for (size_t l = 0; neighbors_output[l]; l++) {
-                    n_data += "Level " + std::to_string(l) + " neighbors: ";
-                    auto &neighbours = neighbors_output[l];
-                    auto neighbours_count = neighbours[0];
-                    for (size_t j = 1; j <= neighbours_count; j++) {
-                        n_data += std::to_string(neighbours[j]) + ", ";
-                    }
-                    TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-                        "%s", n_data.c_str());
-                }
-                VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
-            }
-    }
+    //             res += "Entry Point Label: ";
+    //             res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
+    //             TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
+    //                 "%s", res.c_str());
+    //         for (idType id = 0; id < this->backendIndex->indexSize(); id++) {
+    //             std::string n_data("Node ");
+    //             labelType label = hnsw_index->getExternalLabel(id);
+    //             if (label == SIZE_MAX)
+    //                 continue; // The ID is not in the index
+    //             int **neighbors_output;
+    //             VecSimDebug_GetElementNeighborsInHNSWGraph(this->backendIndex, label, &neighbors_output);
+    //             n_data += std::to_string(label) + ": ";
+    //             for (size_t l = 0; neighbors_output[l]; l++) {
+    //                 n_data += "Level " + std::to_string(l) + " neighbors: ";
+    //                 auto &neighbours = neighbors_output[l];
+    //                 auto neighbours_count = neighbours[0];
+    //                 for (size_t j = 1; j <= neighbours_count; j++) {
+    //                     n_data += std::to_string(neighbours[j]) + ", ";
+    //                 }
+    //                 TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
+    //                     "%s", n_data.c_str());
+    //             }
+    //             VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
+    //         }
+    // }
     if (label == 999999) {
         TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
             "bg_vec_count: %zu, main_thread_vector_count: %zu", this->bg_vector_indexing_count, this->main_vector_indexing_count);
