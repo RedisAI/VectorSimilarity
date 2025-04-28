@@ -8,6 +8,7 @@ endif()
 # so disable it if we are in Debug mode
 string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
 if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+    message(STATUS "SVS: Disabling AVX512 support in Debug mode due to Valgrind")
     set(SVS_NO_AVX512 ON)
 endif()
 
@@ -23,7 +24,7 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "11.0")
         set(SVS_SUPPORTED 0)
-        message(STATUS "Insufficient gcc version for SVS")
+        message(STATUS "Skipping SVS: requires GCC >= 11.")
     endif()
 endif()
 
