@@ -236,7 +236,7 @@ protected:
         // SVS index instance cannot be empty, so we have to construct it at first rows
         if (!impl_) {
             initImpl(points, ids);
-            return n;
+            return n - deleted_num;
         }
 
         // Add new points to existing SVS index

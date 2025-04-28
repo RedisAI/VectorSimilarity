@@ -112,6 +112,8 @@ protected:
     }
 
     void SetUp() override {
+        // Reset VecSim index write mode to async
+        VecSim_SetWriteMode(VecSim_WriteAsync);
         if constexpr (index_type_t::get_quant_bits() != VecSimSvsQuant_NONE)
             if (!checkCPU()) {
                 GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
