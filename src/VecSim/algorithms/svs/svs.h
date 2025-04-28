@@ -258,7 +258,7 @@ public:
         return info;
     }
 
-    VecSimIndexDInfo debugInfo() const override {
+    VecSimIndexDebugInfo debugInfo() const override {
         VecSimIndexDebugInfo info;
         info.commonInfo = this->getCommonInfo();
         info.commonInfo.basicInfo.algo = VecSimAlgo_SVS;
