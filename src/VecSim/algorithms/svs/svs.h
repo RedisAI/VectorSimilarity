@@ -28,7 +28,7 @@ struct SVSIndexBase {
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
-    virtual bool isLabelExists(const labelType label) const = 0;
+    virtual size_t indexStorageSize() const = 0;
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
 };
@@ -257,11 +257,9 @@ public:
 
     ~SVSIndex() = default;
 
-    bool isLabelExists(const labelType label) const override {
-        return impl_ ? impl_->has_id(label) : false;
-    }
-
     size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
+
+    size_t indexStorageSize() const override { return impl_ ? impl_->view_data().size() : 0; }
 
     size_t indexCapacity() const override {
         return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 0;
