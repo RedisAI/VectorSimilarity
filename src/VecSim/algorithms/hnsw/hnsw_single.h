@@ -161,7 +161,7 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) const {
     auto queryBlobCopy =
         this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    memcpy(queryBlobCopy, queryBlob, this->getDataSize());
     this->preprocessQueryInPlace(queryBlobCopy);
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(

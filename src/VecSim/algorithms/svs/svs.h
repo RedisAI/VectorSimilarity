@@ -146,7 +146,7 @@ protected:
             return MemoryUtils::unique_blob{const_cast<void *>(original_data), [](void *) {}};
         }
 
-        const auto data_size = this->dim * sizeof(DataType) * n;
+        const auto data_size = this->getDataSize() * n;
 
         auto processed_blob =
             MemoryUtils::unique_blob{this->allocator->allocate(data_size),
@@ -428,7 +428,7 @@ public:
                                           VecSimQueryParams *queryParams) const override {
         auto *queryBlobCopy =
             this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-        memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+        memcpy(queryBlobCopy, queryBlob, this->getDataSize());
         this->preprocessQueryInPlace(queryBlobCopy);
         // Ownership of queryBlobCopy moves to VecSimBatchIterator that will free it at the end.
         if (indexSize() == 0) {

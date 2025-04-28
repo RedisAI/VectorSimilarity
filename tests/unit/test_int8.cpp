@@ -993,3 +993,117 @@ TEST_F(INT8TieredTest, getElementNeighbors) {
     HNSWParams params = {.dim = 4, .M = 20};
     get_element_neighbors(params);
 }
+
+// /**
+//  * This test specifically targets the bug where memcpy in hnsw_tiered.h uses manually computed
+//  size
+//  * (dim * sizeof(DataType)) instead of getDataSize(), which doesn't account for additional data
+//  * stored alongside the vector. In the int8 + cosine configuration, a float norm is appended to
+//  the
+//  * vector data, and using the manual size truncates this norm during the copy.
+//  */
+// TEST_F(INT8TieredTest, TestInt8CosineVectorCopy) {
+//     // Create a tiered HNSW index with int8 vectors and cosine similarity
+//     HNSWParams params = {
+//         .type = VecSimType_INT8,
+//         .dim = 4,
+//         .metric = VecSimMetric_Cosine,
+//     };
+
+//     // Create the tiered index with a small flat buffer limit to ensure vectors move to HNSW
+//     quickly TieredIndexParams tiered_params = generate_tiered_params(params, 1, 1);
+//     SetUp(tiered_params);
+
+//     // Create a test vector
+//     int8_t vector[4];
+//     test_utils::populate_int8_vec(vector, 4, 42);
+
+//     // Add the vector to the index
+//     VecSimIndex_AddVector(index, vector, 1);
+
+//     // Verify the vector is in the flat buffer
+//     auto *flat_index = reinterpret_cast<BruteForceIndex<int8_t, float>*>(CastToBruteForce());
+//     auto *hnsw_index = CastToHNSW();
+//     ASSERT_EQ(flat_index->indexSize(), 1);
+//     ASSERT_EQ(hnsw_index->indexSize(), 0);
+
+//     // Get the vector from the flat buffer
+//     const int8_t *flat_vector = reinterpret_cast<const int8_t
+//     *>(flat_index->getDataByInternalId(0)); float vector_norm =
+//     spaces::IntegralType_ComputeNorm<int8_t>(flat_vector, dim); ASSERT_EQ(index_vector_norm,
+//     vector_norm) << "wrong vector norm for vector id:" << i;
+
+//     // Run a thread iteration to move the vector from flat to HNSW
+//     mock_thread_pool.thread_iteration();
+
+//     // Verify the vector has been moved to HNSW
+//     ASSERT_EQ(flat_index->indexSize(), 0);
+//     ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+//     // Get the vector from HNSW
+//     const int8_t *hnsw_vector = reinterpret_cast<const int8_t
+//     *>(hnsw_index->getDataByInternalId(0));
+
+//     // Verify the norm is correctly preserved in the HNSW vector
+//     float norm_in_hnsw = *(reinterpret_cast<const float *>(hnsw_vector + params.dim));
+
+//     // This would fail with the bug, as the norm would be truncated
+//     ASSERT_NEAR(norm_in_flat, norm_in_hnsw, 1e-5);
+
+//     // Calculate the distance from the vector to itself in HNSW
+//     // For cosine distance to itself, this should be close to 0
+//     // We don't use ASSERT_NEAR here because the distance calculation might have some numerical
+//     issues
+//     // that are not related to the bug we're testing
+// }
+
+// /**
+//  * This test specifically targets the bug fix where memcpy was using the wrong size.
+//  * It demonstrates the difference between using the correct size (getDataSize())
+//  * and the incorrect size (dim * sizeof(DataType)).
+//  */
+// TEST_F(INT8TieredTest, TestInt8CosineBugFix) {
+//     // Create a tiered HNSW index with int8 vectors and cosine similarity
+//     HNSWParams params = {
+//         .type = VecSimType_INT8,
+//         .dim = 4,
+//         .metric = VecSimMetric_Cosine,
+//         .multi = false
+//     };
+
+//     // Create the tiered index
+//     // TieredIndexParams tiered_params = generate_tiered_params(params);
+//     SetUp(params);
+
+//     // Create a test vector
+//     int8_t vector[4];
+//     test_utils::populate_int8_vec(vector, 4, 42);
+
+//     // Add the vector to the index
+//     ASSERT_EQ(this->GenerateAndAddVector(i, i), 1);
+//     // VecSimIndex_AddVector(index, vector, 1);
+
+//     // Get the flat index and the vector from it
+//     auto *flat_index = CastToBruteForce();
+//     const int8_t *flat_vector = reinterpret_cast<const int8_t
+//     *>(flat_index->getDataByInternalId(0));
+
+//     // Verify the norm is present in the correct copy
+//     float norm_in_flat = *(reinterpret_cast<const float *>(flat_vector + params.dim));
+
+//     ASSERT_NEAR(norm_in_flat, norm_in_correct_copy, 1e-5);
+
+//     // Run a thread iteration to move the vector from flat to HNSW
+//     mock_thread_pool.thread_iteration();
+
+//     // Get the HNSW index and the vector from it
+//     auto *hnsw_index = CastToHNSW();
+//     const int8_t *hnsw_vector = reinterpret_cast<const int8_t
+//     *>(hnsw_index->getDataByInternalId(0));
+
+//     // Verify the norm is correctly preserved in the HNSW vector
+//     float norm_in_hnsw = *(reinterpret_cast<const float *>(hnsw_vector + params.dim));
+
+//     // This would fail with the bug, as the norm would be truncated
+//     ASSERT_NEAR(norm_in_flat, norm_in_hnsw, 1e-5);
+// }

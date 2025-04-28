@@ -199,7 +199,7 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
+        size_t blobSize = this->frontendIndex->getDataSize();
         void *queryBlobCopy = this->allocator->allocate(blobSize);
         memcpy(queryBlobCopy, queryBlob, blobSize);
         return new (this->allocator)
@@ -539,10 +539,9 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // Copy the vector blob from the flat buffer, so we can release the flat lock while we are
     // indexing the vector into HNSW index.
     size_t data_size = this->frontendIndex->getDataSize();
-    auto blob_copy = this->getAllocator()->allocate_unique(this->frontendIndex->getDataSize());
+    auto blob_copy = this->getAllocator()->allocate_unique(data_size);
 
-    memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id),
-           data_size);
+    memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
 
     this->insertVectorToHNSW<true>(hnsw_index, job->label, blob_copy.get());
 
@@ -636,7 +635,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      const TieredIndexParams &tiered_index_params,
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
-    bg_vector_indexing_count(0), main_vector_indexing_count(0),
+      bg_vector_indexing_count(0), main_vector_indexing_count(0),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
       readySwapJobs(0) {
@@ -727,9 +726,9 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     //             if (label == SIZE_MAX)
     //                 continue; // The ID is not in the index
     //             int **neighbors_output;
-    //             VecSimDebug_GetElementNeighborsInHNSWGraph(this->backendIndex, label, &neighbors_output);
-    //             n_data += std::to_string(label) + ": ";
-    //             for (size_t l = 0; neighbors_output[l]; l++) {
+    //             VecSimDebug_GetElementNeighborsInHNSWGraph(this->backendIndex, label,
+    //             &neighbors_output); n_data += std::to_string(label) + ": "; for (size_t l = 0;
+    //             neighbors_output[l]; l++) {
     //                 n_data += "Level " + std::to_string(l) + " neighbors: ";
     //                 auto &neighbours = neighbors_output[l];
     //                 auto neighbours_count = neighbours[0];
@@ -744,7 +743,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // }
     if (label == 999999) {
         TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-            "bg_vec_count: %zu, main_thread_vector_count: %zu", this->bg_vector_indexing_count, this->main_vector_indexing_count);
+                   "bg_vec_count: %zu, main_thread_vector_count: %zu",
+                   this->bg_vector_indexing_count, this->main_vector_indexing_count);
     }
 
     // writeMode is not protected since it is assumed to be called only from the "main thread"
@@ -773,7 +773,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             ret -= this->deleteVector(label);
             if (ret != 1) {
                 TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
-                    "removed a vector while trying to insert label %zu. ret: %d", label, ret);
+                           "removed a vector while trying to insert label %zu. ret: %d", label,
+                           ret);
             }
         }
         if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
