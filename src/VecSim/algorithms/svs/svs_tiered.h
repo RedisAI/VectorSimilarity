@@ -9,6 +9,25 @@
 #include <memory>
 #include <mutex>
 
+/**
+ * @class SVSMultiThreadJob
+ * @brief Represents a multi-threaded asynchronous job for the SVS algorithm.
+ *
+ * This class is responsible for managing multi-threaded jobs, including thread reservation,
+ * synchronization, and execution of tasks. It uses a control block to coordinate threads
+ * and ensure proper execution of the job.
+ *
+ * @details
+ * The SVSMultiThreadJob class supports creating multiple threads for a task and ensures
+ * synchronization between them. It uses a nested ControlBlock class to manage thread
+ * reservations and job completion. Additionally, it includes a nested ReserveThreadJob
+ * class to handle individual thread reservations.
+ *
+ * The main job executes a user-defined task with the number of reserved threads, while
+ * additional threads wait for the main job to complete.
+ *
+ * @note This class is designed to work with the AsyncJob framework.
+ */
 class SVSMultiThreadJob : public AsyncJob {
 
     // Thread reservation control block shared between all threads
@@ -19,8 +38,10 @@ class SVSMultiThreadJob : public AsyncJob {
         const std::chrono::microseconds timeout; // timeout for threads reservation
         size_t reservedThreads;                  // number of threads reserved
         bool jobDone;
-        std::mutex mutex;
-        std::condition_variable cv;
+        std::mutex m_reserve;
+        std::condition_variable cv_reserve;
+        std::mutex m_done;
+        std::condition_variable cv_done;
 
     public:
         template <typename Rep, typename Period>
@@ -33,33 +54,31 @@ class SVSMultiThreadJob : public AsyncJob {
         void reserveThreadAndWait() {
             // count current thread
             {
-                std::lock_guard lock{mutex};
+                std::unique_lock lock{m_reserve};
                 ++reservedThreads;
             }
-            cv.notify_one();
-            // wait for the job to be done
-            {
-                std::unique_lock lock{mutex};
-                cv.wait(lock, [&] { return jobDone; });
-            }
+            cv_reserve.notify_one();
+            std::unique_lock lock{m_done};
+            // Wait until the job is marked as done, handling potential spurious wakeups.
+            cv_done.wait(lock, [&] { return jobDone; });
         }
 
         // wait for threads to be reserved
         // return actual number of reserved threads
         size_t waitForThreads() {
-            std::unique_lock lock{mutex};
+            std::unique_lock lock{m_reserve};
             ++reservedThreads; // count current thread
-            cv.wait_for(lock, timeout, [&] { return reservedThreads >= requestedThreads; });
+            cv_reserve.wait_for(lock, timeout, [&] { return reservedThreads >= requestedThreads; });
             return reservedThreads;
         }
 
         // mark the whole job as done
         void markJobDone() {
             {
-                std::lock_guard lock{mutex};
+                std::lock_guard lock{m_done};
                 jobDone = true;
             }
-            cv.notify_all();
+            cv_done.notify_all();
         }
     };
 
@@ -528,7 +547,7 @@ public:
             // Use the frontend parameters to manually prepare the blob for its transfer to the SVS
             // index.
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-            std::unique_lock<std::shared_mutex> svs_lock(this->mainIndexGuard);
+            std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
             return svs_index->addVectors(storage_blob.get(), &label, 1);
         }
         bool index_update_needed = false;
@@ -557,7 +576,7 @@ public:
                 return !this->frontendIndex->isLabelExists(label);
             }());
 
-            std::unique_lock<std::shared_mutex> svs_lock(this->mainIndexGuard);
+            std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
             return svs_index->deleteVectors(&label, 1);
         }
 

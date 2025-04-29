@@ -296,15 +296,23 @@ public:
     }
 
     void parallel_for(std::function<void(size_t)> f, size_t n) {
+        if (n > size_) {
+            throw svs::threads::ThreadingException("Number of tasks exceeds the thread pool size");
+        }
         if (n == 0) {
             return;
         } else if (n == 1) {
-            f(0);
+            // Run on the main function.
+            try {
+                f(0);
+            } catch (const std::exception &error) {
+                manage_exception_during_run(error.what());
+            }
             return;
         } else {
             std::lock_guard lock{use_mutex_};
             for (size_t i = 0; i < n - 1; ++i) {
-                threads_[i % (size_)].assign({&f, i + 1});
+                threads_[i].assign({&f, i + 1});
             }
             // Run on the main function.
             try {
