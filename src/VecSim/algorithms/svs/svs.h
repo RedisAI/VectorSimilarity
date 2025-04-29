@@ -30,6 +30,7 @@ struct SVSIndexBase {
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual size_t indexStorageSize() const = 0;
+    virtual size_t getNumThreads() const = 0;
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
 #ifdef BUILD_TESTS
@@ -233,14 +234,25 @@ protected:
         // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
-        // SVS index instance cannot be empty, so we have to construct it at first rows
-        if (!impl_) {
-            initImpl(points, ids);
-            return n - deleted_num;
+        // If n == 1, we should ensure single-threading
+        const size_t num_threads = (n == 1) ? getNumThreads() : 1;
+        if (num_threads > 1) {
+            setNumThreads(1);
         }
 
-        // Add new points to existing SVS index
-        impl_->add_points(points, ids);
+        if (!impl_) {
+            // SVS index instance cannot be empty, so we have to construct it at first rows
+            initImpl(points, ids);
+        } else {
+            // Add new points to existing SVS index
+            impl_->add_points(points, ids);
+        }
+
+        // Restore multi-threading if needed
+        if (num_threads > 1) {
+            setNumThreads(num_threads);
+        }
+
         return n - deleted_num;
     }
 
@@ -262,7 +274,19 @@ protected:
             return 0;
         }
 
+        // If entries_to_delete.size() == 1, we should ensure single-threading
+        const size_t num_threads = (entries_to_delete.size() == 1) ? getNumThreads() : 1;
+        if (num_threads > 1) {
+            setNumThreads(1);
+        }
+
         impl_->delete_entries(entries_to_delete);
+
+        // Restore multi-threading if needed
+        if (num_threads > 1) {
+            setNumThreads(num_threads);
+        }
+
         this->markIndexUpdate(entries_to_delete.size());
         return entries_to_delete.size();
     }
@@ -360,6 +384,7 @@ public:
         return deleteVectorsImpl(labels, n);
     }
 
+    size_t getNumThreads() const override { return threadpool_.size(); }
     void setNumThreads(size_t numThreads) override { threadpool_.resize(numThreads); }
 
     size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }

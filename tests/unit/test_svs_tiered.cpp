@@ -2325,129 +2325,45 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n);
 }
 
-// TODO: Uncomment tests below or remove if not relevant.
-/*
-TYPED_TEST(SVSTieredIndexTestBasic, deleteBothAsyncAndInplace) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
+TEST(SVSTieredIndexTest, testThreadPool) {
+    // Test VecSimSVSThreadPool
+    const size_t num_threads = 4;
+    auto pool = VecSimSVSThreadPool(num_threads);
+    ASSERT_EQ(pool.capacity(), num_threads);
+    ASSERT_EQ(pool.size(), num_threads);
 
-    SVSParams params = {
-        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
+    std::atomic_int counter(0);
+    auto task = [&counter](size_t i) { counter += i + 1; };
 
-    auto mock_thread_pool = tieredIndexMock();
+    // exeed the number of threads
+    ASSERT_THROW(pool.parallel_for(task, 10), svs::threads::ThreadingException);
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
-    auto allocator = tiered_index->getAllocator();
+    counter = 0;
+    pool.parallel_for(task, 4);
+    ASSERT_EQ(counter, 10); // 1+2+3+4 = 10
 
-    // Insert one vector to SVS.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 0);
-    // Add another vector and remove it. Expect that at SVS index one repair job will be created.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 1, 1);
-    ASSERT_EQ(tiered_index->deleteLabelFromSVS(1), 1);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    pool.resize(1);
+    ASSERT_EQ(pool.capacity(), 4);
+    ASSERT_EQ(pool.size(), 1);
+    // exeed the new pool size
+    ASSERT_THROW(pool.parallel_for(task, 4), svs::threads::ThreadingException);
 
-    // The first job should be a repair job of the first inserted node id (0) in level 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_TRUE(mock_thread_pool.jobQ.front().job->isValid);
-    ASSERT_EQ(((SVSRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 0);
-    ASSERT_EQ(((SVSRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
-    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
-    ASSERT_GE(tiered_index->idToRepairJobs.at(0).size(), 1);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs.size(), 1);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs[0]->deleted_id, 1);
+    counter = 0;
+    pool.parallel_for(task, 1);
+    ASSERT_EQ(counter, 1); // 0+1 = 1
 
-    // Add one more vector and remove it, expect that the same repair job for 0 would be created
-    // for repairing 0->2.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 2, 2);
-    ASSERT_EQ(tiered_index->deleteLabelFromSVS(2), 1);
-    ASSERT_TRUE(tiered_index->idToSwapJob.contains(2));
-    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs.size(), 2);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(0)[0]->associatedSwapJobs[1]->deleted_id, 2);
-    ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    pool.resize(0);
+    ASSERT_EQ(pool.capacity(), 4);
+    ASSERT_EQ(pool.size(), 1);
 
-    tiered_index->setWriteMode(VecSim_WriteInPlace);
-    // Delete inplace, expect that the repair job for 0->1 and 0->2 will not be valid anymore.
-    ASSERT_EQ(tiered_index->deleteVector(0), 1);
-    ASSERT_EQ(tiered_index->indexSize(), 2);
-    ASSERT_EQ(((SVSRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 0);
-    ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
+    pool.resize(5);
+    ASSERT_EQ(pool.capacity(), 4);
+    ASSERT_EQ(pool.size(), 4);
 
-    // Also expect that the swap job for 2 will not exist anymore, as 2 swapped with 0
-    ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 2);
-    ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
-    ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
-    ASSERT_FALSE(tiered_index->idToSwapJob.contains(2));
-    // Both ids 1 and 0 (previously was 2) are now ready due to the deletion of 0 and its associated
-    // jobs.
-    ASSERT_EQ(tiered_index->readySwapJobs, 2);
+    // Test VecSimSVSThreadPool for exception handling
+    auto err_task = [](size_t) { throw std::runtime_error("Test exception"); };
+
+    ASSERT_NO_THROW(pool.parallel_for(err_task, 0)); // no task - no err
+    ASSERT_THROW(pool.parallel_for(err_task, 1), svs::threads::ThreadingException);
+    ASSERT_THROW(pool.parallel_for(err_task, 4), svs::threads::ThreadingException);
 }
-
-TYPED_TEST(SVSTieredIndexTestBasic, deleteInplaceAvoidUpdatedMarkedDeleted) {
-    // Create TieredSVS index instance with a mock queue.
-    size_t dim = 4;
-    SVSParams params = {
-        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams svs_params = CreateParams(params);
-
-    auto mock_thread_pool = tieredIndexMock();
-
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
-    auto allocator = tiered_index->getAllocator();
-
-    // Insert three vector to SVS, expect a full graph to be created
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 0, 0);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 1, 1);
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 2, 2);
-
-    // Delete vector with id=0 asynchronously, expect to have a repair job for the other vectors.
-    ASSERT_EQ(tiered_index->deleteVector(0), 1);
-    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 2);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs.size(), 1);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
-
-    // Execute the repair job for 1->0. Now, 0->1 is unidirectional edge
-    ASSERT_TRUE(mock_thread_pool.jobQ.front().job->isValid);
-    mock_thread_pool.thread_iteration();
-    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
-    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
-
-    // Insert another vector with id=3, that should be connected to both 1 and 2.
-    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 3, -1);
-
-    // Delete in-place id=2, expect that upon repairing inplace 1 due to 1->2, there will *not* be
-    // a new edge 1->0 since 0 is deleted. Also the other repair job 2->0 should be invalidated.
-    // Also, expect that repairing 3 in-place will not create a new edge to marked deleted 0 and
-    // vice versa.
-    tiered_index->setWriteMode(VecSim_WriteInPlace);
-    ASSERT_EQ(tiered_index->deleteVector(2), 1);
-    ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
-    int **neighbours;
-    ASSERT_EQ(tiered_index->getSVSIndex()->getSVSElementNeighbors(1, &neighbours),
-              VecSimDebugCommandCode_OK);
-    // Expect 1 neighbors at level 0 (id=3) and that 0 is NOT a new neighbor for 1.
-    ASSERT_EQ(neighbours[0][0], 1);
-    ASSERT_EQ(neighbours[0][1], 3);
-    VecSimDebug_ReleaseElementNeighborsInSVSGraph(neighbours);
-
-    ASSERT_EQ(tiered_index->getSVSIndex()->getSVSElementNeighbors(3, &neighbours),
-              VecSimDebugCommandCode_OK);
-    ASSERT_EQ(neighbours[0][0], 1);
-    // Expect 1 neighbors at level 0 (id=1) and that 0 is NOT a new neighbor for 3.
-    ASSERT_EQ(neighbours[0][1], 1);
-    VecSimDebug_ReleaseElementNeighborsInSVSGraph(neighbours);
-
-    auto &level_data = tiered_index->getSVSIndex()->getElementLevelData((idType)0, 0);
-    // Expect 1 neighbors at level 0 (id=1) and that 3 is NOT a new neighbor for 0.
-    ASSERT_EQ(level_data.getNumLinks(), 1);
-    ASSERT_EQ(level_data.getLinkAtPos(0), 1);
-
-    // Expect that id=0 is a ready swap job and execute it.
-    ASSERT_EQ(tiered_index->readySwapJobs, 1);
-    ASSERT_TRUE(tiered_index->idToSwapJob.contains(0));
-    tiered_index->runGC();
-}
-
-*/
