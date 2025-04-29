@@ -9,6 +9,6 @@
 
 #pragma once
 
-#define VSS_VERSION_MAJOR 99
-#define VSS_VERSION_MINOR 99
-#define VSS_VERSION_PATCH 99
+#define VSS_VERSION_MAJOR 8
+#define VSS_VERSION_MINOR 0
+#define VSS_VERSION_PATCH 0
