@@ -5,6 +5,7 @@
 
 
 # VectorSimilarity
+Starting with version 8.0, RediSearch and this vector similarity library is an integral part of Redis. See https://github.com/redis/redis 
 
 This repo exposes C API for using vector similarity search.
 Allows Creating indices of vectors and searching for top K similar to some vector in two methods: brute force, and by using the hnsw algorithm (probabilistic).
