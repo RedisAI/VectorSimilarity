@@ -13,8 +13,9 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#if HAVE_SVS
 #include "VecSim/index_factories/svs_factory.h"
+
+#if HAVE_SVS
 #include "VecSim/algorithms/svs/svs_tiered.h"
 #endif
 
@@ -120,10 +121,8 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
 }
 } // namespace TieredHNSWFactory
 
-#if HAVE_SVS
 namespace TieredSVSFactory {
-
-static inline BFParams NewBFParams(const TieredIndexParams *params) {
+BFParams NewBFParams(const TieredIndexParams *params) {
     auto &svs_params = params->primaryIndexParams->algoParams.svsParams;
     return BFParams{.type = svs_params.type,
                     .dim = svs_params.dim,
@@ -132,6 +131,7 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
                     .blockSize = svs_params.blockSize};
 }
 
+#if HAVE_SVS
 template <typename DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
@@ -193,7 +193,7 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
-    // Tiered index that contains HNSW index as primary index
+    // Tiered index that contains SVS index as primary index
     VecSimType type = params->primaryIndexParams->algoParams.svsParams.type;
     switch (type) {
     case VecSimType_FLOAT32:
@@ -206,19 +206,25 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
     }
     return nullptr; // Invalid type.
 }
-} // namespace TieredSVSFactory
+
+// This is a temporary solution to avoid breaking the build when SVS is not available
+// and to allow the code to compile without SVS support.
+// TODO: remove HAVE_SVS when SVS will support all Redis platfoms and compilers
+#else // HAVE_SVS
+inline VecSimIndex *NewIndex(const TieredIndexParams *params) { return nullptr; }
+inline size_t EstimateInitialSize(const TieredIndexParams *params) { return 0; }
+inline size_t EstimateElementSize(const TieredIndexParams *params) { return 0; }
 #endif
+} // namespace TieredSVSFactory
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
     switch (params->primaryIndexParams->algo) {
     // Tiered index that contains HNSW index as primary index
     case VecSimAlgo_HNSWLIB:
         return TieredHNSWFactory::NewIndex(params);
-#if HAVE_SVS
-        // Tiered index that contains SVS index as primary index
+    // Tiered index that contains SVS index as primary index
     case VecSimAlgo_SVS:
         return TieredSVSFactory::NewIndex(params);
-#endif
     default:
         return nullptr; // Invalid algorithm.
     }
@@ -234,12 +240,10 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
         est += TieredHNSWFactory::EstimateInitialSize(params);
         bf_params = TieredHNSWFactory::NewBFParams(params);
         break;
-#if HAVE_SVS
     case VecSimAlgo_SVS:
         est += TieredSVSFactory::EstimateInitialSize(params);
         bf_params = TieredSVSFactory::NewBFParams(params);
         break;
-#endif
     default:
         assert(false && "Invalid algorithm");
     }
@@ -254,11 +258,9 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     case VecSimAlgo_HNSWLIB:
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
         break;
-#if HAVE_SVS
     case VecSimAlgo_SVS:
         est = SVSFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.svsParams);
         break;
-#endif
     default:
         assert(false && "Invalid algorithm");
     }

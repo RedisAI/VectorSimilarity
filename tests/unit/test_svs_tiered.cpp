@@ -1,6 +1,4 @@
 #include "VecSim/index_factories/tiered_factory.h"
-#include "VecSim/algorithms/svs/svs_tiered.h"
-#include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/vec_sim_debug.h"
 #include <string>
 #include <array>
@@ -8,54 +6,36 @@
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
 
+#if HAVE_SVS
 #include <thread>
-#include <cpuid.h>
-
 // For getAvailableCPUs():
-#if defined(__linux__)
 #include <sched.h>
-#elif defined(_WIN32)
-#include <windows.h>
-#elif defined(__APPLE__)
-#include <sys/sysctl.h>
-#endif
 
-// System helpers
-static bool checkCPU() {
-    uint32_t eax, ebx, ecx, edx;
-    __cpuid(0, eax, ebx, ecx, edx);
-    std::string vendor_id = std::string((const char *)&ebx, 4) +
-                            std::string((const char *)&edx, 4) + std::string((const char *)&ecx, 4);
-    return (vendor_id == "GenuineIntel");
-}
+#include "VecSim/algorithms/svs/svs.h"
+#include "VecSim/algorithms/svs/svs_tiered.h"
+
+// There are possible cases when SVS Index cannot be created with the requested quantization mode
+// due to platform and/or hardware limitations or combination of requested 'compression' modes.
+// This assert handle those cases and skip a test if the mode is not supported.
+// Elsewhere, test will fail if the index creation failed with no reason explained above.
+#define ASSERT_INDEX(index)                                                                        \
+    if (index == nullptr) {                                                                        \
+        if (std::get<1>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits()))) {      \
+            GTEST_FAIL() << "Failed to create SVS index";                                          \
+        } else {                                                                                   \
+            GTEST_SKIP() << "SVS LVQ is not supported.";                                           \
+        }                                                                                          \
+    }
 
 // Get available number of CPUs
 // Returns the number of logical processors on the process
 // Returns std::thread::hardware_concurrency() if the number of logical processors is not available
 static unsigned int getAvailableCPUs() {
-#if defined(__linux__)
     // On Linux, use sched_getaffinity to get the number of CPUs available to the current process.
     cpu_set_t cpu_set;
     if (sched_getaffinity(0, sizeof(cpu_set), &cpu_set) == 0) {
         return CPU_COUNT(&cpu_set);
     }
-
-#elif defined(_WIN32)
-    // On Windows, use GetProcessAffinityMask to get the number of CPUs available to the current
-    // process.
-    DWORD_PTR process_affinity, system_affinity;
-    if (GetProcessAffinityMask(GetCurrentProcess(), &process_affinity, &system_affinity)) {
-        return std::bitset<sizeof(DWORD_PTR) * 8>(process_affinity).count();
-    }
-
-#elif defined(__APPLE__)
-    // On macOS, use sysctl to get the number of CPUs available to the current process.
-    int num_cpus;
-    size_t size = sizeof(num_cpus);
-    if (sysctlbyname("hw.logicalcpu", &num_cpus, &size, nullptr, 0) == 0) {
-        return num_cpus;
-    }
-#endif
     // Fallback.
     return std::thread::hardware_concurrency();
 }
@@ -110,15 +90,6 @@ protected:
             svs_params, mock_thread_pool, update_job_threshold, flat_buffer_limit);
         return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
-
-    void SetUp() override {
-        // Reset VecSim index write mode to async
-        VecSim_SetWriteMode(VecSim_WriteAsync);
-        if constexpr (index_type_t::get_quant_bits() != VecSimSvsQuant_NONE)
-            if (!checkCPU()) {
-                GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
-            }
-    }
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -167,6 +138,7 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
 
     // Create TieredSVS index instance with a mock queue.
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
@@ -233,6 +205,7 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
@@ -267,6 +240,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
 
     auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 1);
     auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
@@ -321,6 +295,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     // Create a vector and add it to the tiered index.
@@ -364,6 +339,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -422,6 +398,7 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
     size_t cur_memory_usage;
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, k);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
@@ -623,6 +600,7 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     labelType vec_label = 0;
@@ -683,6 +661,7 @@ TYPED_TEST(SVSTieredIndexTest, manageIndexOwnership) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
@@ -761,6 +740,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelSearch) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
@@ -834,6 +814,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertSearch) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
@@ -953,6 +934,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertAdHoc) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
@@ -1032,6 +1014,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
         auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
         auto *svs = tiered_index->GetBackendIndex();
@@ -1098,6 +1081,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
         auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
         auto *svs = tiered_index->GetBackendIndex();
@@ -1188,6 +1172,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
         auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
         auto *svs = tiered_index->GetBackendIndex();
@@ -1252,6 +1237,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
         auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
         auto *svs = tiered_index->GetBackendIndex();
@@ -1362,6 +1348,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
         auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
         auto *svs = tiered_index->GetBackendIndex();
@@ -1449,6 +1436,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     auto *svs = tiered_index->GetBackendIndex();
@@ -1538,6 +1526,7 @@ TYPED_TEST(SVSTieredIndexTest, RangeSearch) {
     size_t cur_memory_usage;
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     ASSERT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
@@ -1752,6 +1741,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelRangeSearch) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
@@ -1813,6 +1803,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     TEST_DATA_T val = 1.0;
@@ -1865,6 +1856,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
 
         auto *tiered_index =
             this->CreateTieredSVSIndex(svs_params, mock_thread_pool, updateThreshold);
+        ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -1911,6 +1903,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1000);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
@@ -1999,6 +1992,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
@@ -2084,6 +2078,7 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     VecSim_SetWriteMode(VecSim_WriteInPlace);
@@ -2114,6 +2109,7 @@ TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     VecSim_SetWriteMode(VecSim_WriteAsync);
 
@@ -2204,6 +2200,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, preferAdHocOptimization) {
 
     // Create tiered index with buffer limit set to 0.
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     auto svs = tiered_index->GetBackendIndex();
@@ -2238,6 +2235,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, threshold);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     // Insert three block of vectors directly to SVS.
@@ -2287,6 +2285,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
 
     auto *tiered_index =
         this->CreateTieredSVSIndex(svs_params, mock_thread_pool, swap_job_threshold);
+    ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -2367,3 +2366,36 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     ASSERT_THROW(pool.parallel_for(err_task, 1), svs::threads::ThreadingException);
     ASSERT_THROW(pool.parallel_for(err_task, 4), svs::threads::ThreadingException);
 }
+
+#else // HAVE_SVS
+
+VecSimIndex *CreateTieredSVSIndex(VecSimParams &svs_params) {
+    TieredIndexParams tiered_params{.primaryIndexParams = &svs_params};
+    auto *tiered_index = TieredFactory::NewIndex(&tiered_params);
+    return tiered_index;
+}
+
+TEST(SVSTieredIndexTest, svs_not_supported) {
+    SVSParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 16,
+        .metric = VecSimMetric_IP,
+    };
+    auto svs_params = CreateParams(params);
+
+    TieredIndexParams tiered_params{.primaryIndexParams = &svs_params};
+    auto index_params = CreateParams(tiered_params);
+    auto index = VecSimIndex_New(&index_params);
+
+    ASSERT_EQ(index, nullptr);
+
+    auto bf_params = TieredFactory::TieredSVSFactory::NewBFParams(&tiered_params);
+    auto expected_size = BruteForceFactory::EstimateInitialSize(&bf_params, false);
+    auto size = VecSimIndex_EstimateInitialSize(&index_params);
+    ASSERT_EQ(size, expected_size);
+
+    auto size2 = VecSimIndex_EstimateElementSize(&index_params);
+    ASSERT_EQ(size2, -1);
+}
+
+#endif
