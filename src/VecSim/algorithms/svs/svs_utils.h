@@ -150,9 +150,13 @@ inline bool check_cpuid() {
 }
 // clang-format on
 
-// Check if the SVS implementation supports Qquantization mode
+// Check if the SVS implementation supports Quantization mode
 // @param quant_bits requested SVS quantization mode
 // @return pair<fallbackMode, bool>
+// @note even if VecSimSvsQuantBits is a simple enum value,
+//       in theory, it can be a complex type with a combination of modes:
+//       - primary bits, secondary/residual bits, dimesionality reduction, etc.
+//       which can be incompatible to each-other.
 inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuantBits quant_bits) {
     // If HAVE_SVS_LVQ is not defined, we don't support any quantization mode
     // else we check if the CPU supports SVS LVQ
@@ -163,9 +167,13 @@ inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuan
         ;
 
     // If the quantization mode is not supported, we fallback to non-quantized mode
+    // - this is temporary solution until we have a basic quantization mode in SVS
+    // TODO: use basic SVS quantization as a fallback for unsupported modes
     auto fallBack = supported ? quant_bits : VecSimSvsQuant_NONE;
 
-    // And always return true, as far as non-quantized mode is always supported
+    // And always return true, as far as fallback mode is always supported
+    // Upon further decision changes, some cases should treated as not-supported
+    // So we will need return false.
     return std::make_pair(fallBack, true);
 }
 } // namespace svs_details

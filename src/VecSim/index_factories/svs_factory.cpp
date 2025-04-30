@@ -181,6 +181,9 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 
 } // namespace SVSFactory
 
+// This is a temporary solution to avoid breaking the build when SVS is not available
+// and to allow the code to compile without SVS support.
+// TODO: remove HAVE_SVS when SVS will support all Redis platfoms and compilers
 #else  // HAVE_SVS
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }

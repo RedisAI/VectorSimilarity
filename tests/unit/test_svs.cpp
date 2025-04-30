@@ -6,6 +6,10 @@
 #if HAVE_SVS
 #include "VecSim/algorithms/svs/svs.h"
 
+// There are possible cases when SVS Index cannot be created with the requested quantization mode
+// due to platform and/or hardware limitations or combination of requested 'compression' modes.
+// This assert handle those cases and skip a test if the mode is not supported.
+// Elsewhere, test will fail if the index creation failed with no reason explained above.
 #define ASSERT_INDEX(index)                                                                        \
     if (index == nullptr) {                                                                        \
         if (std::get<1>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits()))) {      \
