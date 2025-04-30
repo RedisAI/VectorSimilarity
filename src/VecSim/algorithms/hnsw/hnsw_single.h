@@ -48,8 +48,23 @@ public:
         auto id = labelLookup.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
+        // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like the
+        // norm
+        memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
         vectors_output.push_back(vec);
+    }
+
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
+        std::vector<std::vector<char>> vectors_output;
+        auto id = labelLookup.at(label);
+        const char *data = this->getDataByInternalId(id);
+
+        // Create a vector with the full data (including any metadata like norms)
+        std::vector<char> vec(this->dataSize);
+        memcpy(vec.data(), data, this->dataSize);
+        vectors_output.push_back(std::move(vec));
+
+        return vectors_output;
     }
 #endif
     ~HNSWIndex_Single() = default;

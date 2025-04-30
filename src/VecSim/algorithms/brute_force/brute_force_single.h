@@ -39,16 +39,32 @@ public:
 
     // We call this when we KNOW that the label exists in the index.
     idType getIdOfLabel(labelType label) const { return labelToIdLookup.find(label)->second; }
-
+// #define BUILD_TESTS
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
-
         auto id = labelToIdLookup.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->getDataSize());
+        // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like the
+        // norm
+        memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
         vectors_output.push_back(vec);
+    }
+
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
+        std::vector<std::vector<char>> vectors_output;
+        auto id = labelToIdLookup.at(label);
+
+        // Get the data pointer - need to cast to char* for memcpy
+        const char *data = reinterpret_cast<const char *>(this->getDataByInternalId(id));
+
+        // Create a vector with the full data (including any metadata like norms)
+        std::vector<char> vec(this->getDataSize());
+        memcpy(vec.data(), data, this->getDataSize());
+        vectors_output.push_back(std::move(vec));
+
+        return vectors_output;
     }
 #endif
 protected:

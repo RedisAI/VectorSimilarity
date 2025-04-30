@@ -301,15 +301,41 @@ public:
 
 #ifdef BUILD_TESTS
     /**
-     * @brief Used for testing - store vector(s) data associated with a given label. This function
-     * copies the vector(s)' data buffer(s) and place it in the output vector
+     * @brief Used for testing - get only the vector elements associated with a given label.
+     * This function copies only the vector(s) elements into the output vector,
+     * without any additional metadata that might be stored with the vector.
      *
-     * @param label
-     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
-     * the label.
+     * Important: This method returns ONLY the vector elements, even if the stored vector contains
+     * additional metadata. For example, with int8_t/uint8_t vectors using cosine similarity,
+     * this method will NOT return the norm that is stored with the vector(s).
+     *
+     * If you need the complete data including any metadata, use getStoredVectorDataByLabel()
+     * instead.
+     *
+     * @param label The label to retrieve vector(s) elements for
+     * @param vectors_output Empty vector to be filled with vector(s)
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+
+    /**
+     * @brief Used for testing - get the complete raw data associated with a given label.
+     * This function returns the ENTIRE vector(s) data as stored in the index, including any
+     * additional metadata that might be stored alongside the vector elements.
+     *
+     * For example:
+     * - For int8_t/uint8_t vectors with cosine similarity, this includes the norm stored at the end
+     * - For other vector types or future implementations, this will include any additional data
+     *   that might be stored with the vector
+     *
+     * Use this method when you need access to the complete vector data as it is stored internally.
+     *
+     * @param label The label to retrieve data for
+     * @return A vector containing the complete vector data (elements + metadata) for the given
+     * label
+     */
+    virtual std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const = 0;
+
     void fitMemory() override {
         if (maxElements > 0) {
             idToMetaData.shrink_to_fit();
@@ -1559,7 +1585,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
             searchLayer(curr_element, vector_data, level, efConstruction);
-        // If the entry point was marked deleted between iterations, we may recieve an empty
+        // If the entry point was marked deleted between iterations, we may receive an empty
         // candidates set.
         if (!top_candidates.empty()) {
             curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);

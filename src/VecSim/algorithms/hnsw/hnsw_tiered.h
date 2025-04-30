@@ -235,6 +235,8 @@ public:
 
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
+
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const;
 #endif
 };
 
@@ -748,7 +750,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
 
     // writeMode is not protected since it is assumed to be called only from the "main thread"
-    // (that is the thread that is exculusively calling add/delete vector).
+    // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteInPlace) {
         // First, check if we need to overwrite the vector in-place for single (from both indexes).
         if (!this->backendIndex->isMultiValue()) {
@@ -885,7 +887,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     // Note that we may remove the same vector that has been removed from the flat index, if it was
     // being ingested at that time.
     // writeMode is not protected since it is assumed to be called only from the "main thread"
-    // (that is the thread that is exculusively calling add/delete vector).
+    // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteAsync) {
         num_deleted_vectors += this->deleteLabelFromHNSW(label);
         // Apply ready swap jobs if number of deleted vectors reached the threshold
@@ -1227,5 +1229,11 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::getDataByLabel(
     labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
     this->getHNSWIndex()->getDataByLabel(label, vectors_output);
+}
+
+template <typename DataType, typename DistType>
+std::vector<std::vector<char>>
+TieredHNSWIndex<DataType, DistType>::getStoredVectorDataByLabel(labelType label) const {
+    return this->getHNSWIndex()->getStoredVectorDataByLabel(label);
 }
 #endif

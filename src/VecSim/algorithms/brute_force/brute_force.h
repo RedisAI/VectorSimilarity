@@ -40,8 +40,8 @@ public:
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     std::unique_ptr<RawDataContainer::Iterator> getVectorsIterator() const;
-    DataType *getDataByInternalId(idType id) const {
-        return (DataType *)this->vectors->getElement(id);
+    const DataType *getDataByInternalId(idType id) const {
+        return reinterpret_cast<const DataType *>(this->vectors->getElement(id));
     }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
@@ -75,15 +75,41 @@ public:
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     /**
-     * @brief Used for testing - store vector(s) data associated with a given label. This function
-     * copies the vector(s)' data buffer(s) and place it in the output vector
+     * @brief Used for testing - get only the vector elements associated with a given label.
+     * This function copies only the vector(s) elements into the output vector,
+     * without any additional metadata that might be stored with the vector(s).
      *
-     * @param label
-     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
-     * the label.
+     * Important: This method returns ONLY the vector elements, even if the stored vector contains
+     * additional metadata. For example, with int8_t/uint8_t vectors using cosine similarity,
+     * this method will NOT return the norm that is stored with the vector.
+     *
+     * If you need the complete data including any metadata, use getStoredVectorDataByLabel()
+     * instead.
+     *
+     * @param label The label to retrieve vector(s) elements for
+     * @param vectors_output Empty vector to be filled with vector(s)
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+
+    /**
+     * @brief Used for testing - get the complete raw data associated with a given label.
+     * This function returns the ENTIRE vector(s) data as stored in the index, including any
+     * additional metadata that might be stored alongside the vector elements.
+     *
+     * For example:
+     * - For int8_t/uint8_t vectors with cosine similarity, this includes the norm stored at the end
+     * - For other vector types or future implementations, this will include any additional data
+     *   that might be stored with the vector
+     *
+     * Use this method when you need access to the complete vector data as it is stored internally.
+     *
+     * @param label The label to retrieve data for
+     * @return A vector containing the complete vector data (elements + metadata) for the given
+     * label
+     */
+    virtual std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const = 0;
+
     void fitMemory() override {
         if (count == 0) {
             return;
@@ -350,7 +376,9 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy =
         this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->getDataSize());
+    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+
+    // memcpy(queryBlobCopy, queryBlob, this->getDataSize());
     this->preprocessQueryInPlace(queryBlobCopy);
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);

@@ -101,6 +101,9 @@ public:
     inline VecSimIndexAbstract<DataType, DistType> *getFlatBufferIndex() {
         return this->frontendIndex;
     }
+    inline BruteForceIndex<DataType, DistType> *getFlatBufferIndexAsBruteForce() {
+        return this->frontendIndex;
+    }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
