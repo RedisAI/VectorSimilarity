@@ -2126,6 +2126,57 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     VecSimIndex_Free(index);
 }
 
+TEST(SVSTest, quant_modes) {
+    const size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+
+    for (auto quant_bits :
+         {VecSimSvsQuant_NONE, VecSimSvsQuant_8, VecSimSvsQuant_4, VecSimSvsQuant_4x4,
+          VecSimSvsQuant_4x8, VecSimSvsQuant_4x8_leanvec, VecSimSvsQuant_8x8_leanvec}) {
+        SVSParams params = {
+            .type = VecSimType_FLOAT32,
+            .dim = dim,
+            .metric = VecSimMetric_L2,
+            .quantBits = quant_bits,
+        };
+
+        VecSimParams index_params = CreateParams(params);
+        VecSimIndex *index = VecSimIndex_New(&index_params);
+        if (index == nullptr) {
+            if (std::get<1>(svs_details::isSVSQuantBitsSupported(quant_bits))) {
+                GTEST_FAIL() << "Failed to create SVS index";
+            } else {
+                GTEST_SKIP() << "SVS LVQ is not supported.";
+            }
+        }
+
+        EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
+
+        std::vector<float[dim]> v(n);
+        for (size_t i = 0; i < n; i++) {
+            GenerateVector<float>(v[i], dim, i);
+        }
+
+        std::vector<size_t> ids(n);
+        std::iota(ids.begin(), ids.end(), 0);
+
+        auto svs_index = dynamic_cast<SVSIndexBase *>(index);
+        ASSERT_NE(svs_index, nullptr);
+        svs_index->addVectors(v.data(), ids.data(), n);
+
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        float query[] = {50, 50, 50, 50};
+        auto verify_res = [&](size_t id, double score, size_t index) {
+            EXPECT_EQ(id, (index + 45));
+        };
+        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+        VecSimIndex_Free(index);
+    }
+}
+
 #else // HAVE_SVS
 
 TEST(SVSTest, svs_not_supported) {
