@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
@@ -33,7 +33,7 @@ struct ObjectWithSTL : public VecsimBaseObject {
 
 public:
     ObjectWithSTL(std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), test_vec(allocator){};
+        : VecsimBaseObject(allocator), test_vec(allocator) {};
 };
 
 struct NestedObject : public VecsimBaseObject {
@@ -42,7 +42,7 @@ struct NestedObject : public VecsimBaseObject {
 
 public:
     NestedObject(std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator){};
+        : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator) {};
 };
 
 TEST_F(AllocatorTest, test_simple_object) {
