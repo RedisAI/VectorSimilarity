@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
- */
+*/
 #pragma once
 
 #include "VecSim/vec_sim.h"
@@ -27,7 +27,7 @@ public:
     explicit VecSimBatchIterator(void *query_vector, void *tctx,
                                  std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0),
-          timeoutCtx(tctx) {};
+          timeoutCtx(tctx){};
 
     inline const void *getQueryBlob() const { return query_vector; }
 
