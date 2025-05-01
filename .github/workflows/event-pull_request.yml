@@ -25,6 +25,7 @@ jobs:
         run: sudo .install/install_script.sh
       - name: install python packages
         run: pip3 install -r requirements.txt
+      # revet this after license change PR is merged
       # - name: check format
       #   run: make check-format
       - name: unit tests
