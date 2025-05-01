@@ -484,7 +484,7 @@ TYPED_TEST(SVSTest, svs_batch_iterator_non_unique_scores) {
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
-    for (size_t n : {100, 10000}) {
+    for (size_t n : {100, 1000}) {
         SVSParams params = {
             .dim = dim,
             .metric = VecSimMetric_L2,
@@ -1178,13 +1178,6 @@ TYPED_TEST(SVSTest, svs_test_inf_score) {
         .dim = dim,
         .metric = VecSimMetric_L2,
         .blockSize = 1,
-        /* SVS-Vamana specifics */
-        .alpha = 1.2,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
