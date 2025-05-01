@@ -30,7 +30,7 @@ struct ObjectWithSTL : public VecsimBaseObject {
 
 public:
     ObjectWithSTL(std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), test_vec(allocator){};
+        : VecsimBaseObject(allocator), test_vec(allocator) {};
 };
 
 struct NestedObject : public VecsimBaseObject {
@@ -39,7 +39,7 @@ struct NestedObject : public VecsimBaseObject {
 
 public:
     NestedObject(std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator){};
+        : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator) {};
 };
 
 TEST_F(AllocatorTest, test_simple_object) {
