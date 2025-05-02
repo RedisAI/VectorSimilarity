@@ -28,7 +28,7 @@ jobs:
       - name: check format
         run: make check-format
       - name: unit tests
-        run: make unit_test
+        run: make unit_test VERBOSE=1
       - name: flow tests
         run: make flow_test VERBOSE=1
 
