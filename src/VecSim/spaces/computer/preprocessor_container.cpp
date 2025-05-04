@@ -36,6 +36,7 @@ MemoryUtils::unique_blob PreprocessorsContainerAbstract::maybeCopyToAlignedMem(
 
     if (needs_copy) {
         auto aligned_mem = this->allocator->allocate_aligned(blob_bytes_count, this->alignment);
+        // TODO: handle original_blob_size != processed_bytes_count
         memcpy(aligned_mem, original_blob, blob_bytes_count);
         return this->wrapAllocated(aligned_mem);
     }

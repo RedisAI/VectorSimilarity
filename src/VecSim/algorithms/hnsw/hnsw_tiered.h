@@ -538,7 +538,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // indexing the vector into HNSW index.
     size_t data_size = this->frontendIndex->getDataSize();
     auto blob_copy = this->getAllocator()->allocate_unique(data_size);
-
+    // Assuming the size of the blob stored in the frontend index matches the size of the blob
+    // stored in the HNSW index.
     memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
 
     this->insertVectorToHNSW<true>(hnsw_index, job->label, blob_copy.get());

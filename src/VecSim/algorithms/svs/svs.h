@@ -151,6 +151,7 @@ protected:
         auto processed_blob =
             MemoryUtils::unique_blob{this->allocator->allocate(data_size),
                                      [this](void *ptr) { this->allocator->free_allocation(ptr); }};
+        // Assuming original data size equals to processed data size
         memcpy(processed_blob.get(), original_data, data_size);
         // Preprocess each vector in place
         for (size_t i = 0; i < n; i++) {
