@@ -217,13 +217,14 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
-    auto queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->getDataSize());
-    this->preprocessQueryInPlace(queryBlobCopy);
+    // force_copy == true.
+    auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
+
+    // take ownership of the blob copy and pass it to the batch iterator.
+    auto *queryBlobCopyPtr = queryBlobCopy.release();
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
-        queryBlobCopy, this, queryParams, this->allocator);
+        queryBlobCopyPtr, this, queryParams, this->allocator);
 }
 
 /**

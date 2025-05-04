@@ -39,7 +39,7 @@ public:
 
     // We call this when we KNOW that the label exists in the index.
     idType getIdOfLabel(labelType label) const { return labelToIdLookup.find(label)->second; }
-// #define BUILD_TESTS
+
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {

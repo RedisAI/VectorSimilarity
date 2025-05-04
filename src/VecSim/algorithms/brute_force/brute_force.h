@@ -374,14 +374,13 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
-    auto *queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    // force_copy == true.
+    auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
 
-    // memcpy(queryBlobCopy, queryBlob, this->getDataSize());
-    this->preprocessQueryInPlace(queryBlobCopy);
+    // take ownership of the blob copy and pass it to the batch iterator.
+    auto *queryBlobCopyPtr = queryBlobCopy.release();
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return newBatchIterator_Instance(queryBlobCopy, queryParams);
+    return newBatchIterator_Instance(queryBlobCopyPtr, queryParams);
 }
 
 template <typename DataType, typename DistType>

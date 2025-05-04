@@ -37,11 +37,11 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursiveß
+          submodules: recursive
       - name: install dependencies
         run: sudo .install/install_script.sh
       - name: run codecov
-        run: make coverage VERBOSE=1
+        run: make coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

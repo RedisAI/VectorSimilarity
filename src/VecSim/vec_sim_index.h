@@ -143,10 +143,11 @@ public:
     /**
      * @brief Preprocess a blob for query.
      *
-     * @param queryBlob will be copied.
+     * @param queryBlob will be copied if preprocessing is required, or if force_copy is set to
+     * true.
      * @return unique_ptr of the processed blob.
      */
-    MemoryUtils::unique_blob preprocessQuery(const void *queryBlob) const;
+    MemoryUtils::unique_blob preprocessQuery(const void *queryBlob, bool force_copy = false) const;
 
     /**
      * @brief Preprocess a blob for storage.
@@ -289,8 +290,9 @@ ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *b
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
-VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob) const {
-    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize);
+VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
+                                                         bool force_copy) const {
+    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize, force_copy);
 }
 
 template <typename DataType, typename DistType>
