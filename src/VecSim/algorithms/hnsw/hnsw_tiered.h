@@ -63,8 +63,6 @@ struct HNSWRepairJob : public AsyncJob {
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
-    size_t bg_vector_indexing_count;
-    size_t main_vector_indexing_count;
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
     // In MULTI, we can have more than one insert job pending per label.
     // **This map is protected with the flat buffer lock**
@@ -199,7 +197,9 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->frontendIndex->getDataSize();
+        // Here the blob is expected to bo user's input, so it's size doesn't include preprocessing
+        // overhead, if any.
+        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
         void *queryBlobCopy = this->allocator->allocate(blobSize);
         memcpy(queryBlobCopy, queryBlob, blobSize);
         return new (this->allocator)
@@ -637,11 +637,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      const TieredIndexParams &tiered_index_params,
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
-      bg_vector_indexing_count(0), main_vector_indexing_count(0),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
       readySwapJobs(0) {
-
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
@@ -705,7 +703,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     this->mainIndexGuard.unlock();
     return output.size();
 }
-#include "VecSim/vec_sim_debug.h"
+
 // In the tiered index, we assume that the blobs are processed by the flat buffer
 // before being transferred to the HNSW index.
 // When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
@@ -715,40 +713,6 @@ template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
-    // if (label == 100000) {
-    //         std::string res("index connections: {");
-
-    //             res += "Entry Point Label: ";
-    //             res += std::to_string(hnsw_index->getEntryPointLabel()) + "\n";
-    //             TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-    //                 "%s", res.c_str());
-    //         for (idType id = 0; id < this->backendIndex->indexSize(); id++) {
-    //             std::string n_data("Node ");
-    //             labelType label = hnsw_index->getExternalLabel(id);
-    //             if (label == SIZE_MAX)
-    //                 continue; // The ID is not in the index
-    //             int **neighbors_output;
-    //             VecSimDebug_GetElementNeighborsInHNSWGraph(this->backendIndex, label,
-    //             &neighbors_output); n_data += std::to_string(label) + ": "; for (size_t l = 0;
-    //             neighbors_output[l]; l++) {
-    //                 n_data += "Level " + std::to_string(l) + " neighbors: ";
-    //                 auto &neighbours = neighbors_output[l];
-    //                 auto neighbours_count = neighbours[0];
-    //                 for (size_t j = 1; j <= neighbours_count; j++) {
-    //                     n_data += std::to_string(neighbours[j]) + ", ";
-    //                 }
-    //                 TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-    //                     "%s", n_data.c_str());
-    //             }
-    //             VecSimDebug_ReleaseElementNeighborsInHNSWGraph(neighbors_output);
-    //         }
-    // }
-    if (label == 999999) {
-        TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-                   "bg_vec_count: %zu, main_thread_vector_count: %zu",
-                   this->bg_vector_indexing_count, this->main_vector_indexing_count);
-    }
-
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteInPlace) {
@@ -773,11 +737,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
             // remove vector from the flat buffer and/or the HNSW index.
             ret -= this->deleteVector(label);
-            if (ret != 1) {
-                TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
-                           "removed a vector while trying to insert label %zu. ret: %d", label,
-                           ret);
-            }
         }
         if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
             // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
@@ -787,13 +746,11 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // index.
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
             this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
-            this->main_vector_indexing_count++;
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer
         // (since it is not full anymore after removing the previous vector stored under the label).
     }
-    this->bg_vector_indexing_count++;
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {

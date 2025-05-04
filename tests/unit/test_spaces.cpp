@@ -509,8 +509,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 // CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
-        ASSERT_EQ(false, true)
-            << "hello i am in FP32InnerProductTest::if (optimization.avx512f)  ";
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX512F(dim))
@@ -522,8 +520,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 #endif
 #ifdef OPT_AVX
     if (optimization.avx) {
-                ASSERT_EQ(false, true)
-            << "hello i am in FP32InnerProductTest::if (optimization.avx)  ";
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_AVX(dim))
@@ -535,8 +531,6 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 #endif
 #ifdef OPT_SSE
     if (optimization.sse) {
-                        ASSERT_EQ(false, true)
-            << "hello i am in FP32InnerProductTest::if (optimization.sse)  ";
         unsigned char alignment = 0;
         arch_opt_func = IP_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP32_IP_implementation_SSE(dim))
