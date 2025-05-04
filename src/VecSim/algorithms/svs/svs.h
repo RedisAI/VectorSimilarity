@@ -426,17 +426,18 @@ public:
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        auto *queryBlobCopy =
-            this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-        memcpy(queryBlobCopy, queryBlob, this->getDataSize());
-        this->preprocessQueryInPlace(queryBlobCopy);
+        // force_copy == true.
+        auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
+
+        // take ownership of the blob copy and pass it to the batch iterator.
+        auto *queryBlobCopyPtr = queryBlobCopy.release();
         // Ownership of queryBlobCopy moves to VecSimBatchIterator that will free it at the end.
         if (indexSize() == 0) {
             return new (this->getAllocator())
-                NullSVS_BatchIterator(queryBlobCopy, queryParams, this->getAllocator());
+                NullSVS_BatchIterator(queryBlobCopyPtr, queryParams, this->getAllocator());
         } else {
             return new (this->getAllocator()) SVS_BatchIterator<impl_type, data_type>(
-                queryBlobCopy, impl_.get(), queryParams, this->getAllocator());
+                queryBlobCopyPtr, impl_.get(), queryParams, this->getAllocator());
         }
     }
 
