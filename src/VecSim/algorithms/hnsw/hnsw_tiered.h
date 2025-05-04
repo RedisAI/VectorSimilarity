@@ -163,7 +163,7 @@ public:
         inline void filter_irrelevant_results(VecSimQueryResultContainer &);
 
     public:
-        TieredHNSW_BatchIterator(void *query_vector,
+        TieredHNSW_BatchIterator(const void *query_vector,
                                  const TieredHNSWIndex<DataType, DistType> *index,
                                  VecSimQueryParams *queryParams,
                                  std::shared_ptr<VecSimAllocator> allocator);
@@ -197,13 +197,9 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        // Here the blob is expected to bo user's input, so it's size doesn't include preprocessing
-        // overhead, if any.
-        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
-        void *queryBlobCopy = this->allocator->allocate(blobSize);
-        memcpy(queryBlobCopy, queryBlob, blobSize);
+        // The query blob will be processed and copied by the internal indexes's batch iterator.
         return new (this->allocator)
-            TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+            TieredHNSW_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
@@ -919,9 +915,10 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchIterator(
-    void *query_vector, const TieredHNSWIndex<DataType, DistType> *index,
+    const void *query_vector, const TieredHNSWIndex<DataType, DistType> *index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
+    // Tiered batch iterator doesn't hold its own copy of the query vector.
+    : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
       index(index), flat_results(this->allocator), hnsw_results(this->allocator),
       flat_iterator(this->index->frontendIndex->newBatchIterator(query_vector, queryParams)),
