@@ -90,6 +90,11 @@ protected:
             svs_params, mock_thread_pool, update_job_threshold, flat_buffer_limit);
         return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
+
+    void SetUp() override {
+        // Restore the write mode to default.
+        VecSim_SetWriteMode(VecSim_WriteAsync);
+    }
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -151,9 +156,10 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
         num_reserved_threads = num_threads;
     };
 
+    SVSMultiThreadJob::JobsRegistry registry(allocator);
     // Request 4 threads but just 1 thread is available
     auto jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                              tiered_index, 4, timeout);
+                                              tiered_index, 4, timeout, &registry);
     ASSERT_EQ(jobs.size(), 4);
     tiered_index->submitJobs(jobs);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 4);
@@ -169,21 +175,21 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
 
     // Request and run exact number of available threads
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                         tiered_index, num_threads, timeout);
+                                         tiered_index, num_threads, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     ASSERT_EQ(num_reserved_threads, num_threads);
 
     // Request and run 1 thread
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                         tiered_index, 1, timeout);
+                                         tiered_index, 1, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     ASSERT_EQ(num_reserved_threads, 1);
 
     // Request and run less threads than available
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                         tiered_index, num_threads - 1, timeout);
+                                         tiered_index, num_threads - 1, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     // The number of reserved threads should be equal to requested
@@ -191,7 +197,7 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
 
     // Request more threads than available
     jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
-                                         tiered_index, num_threads + 1, timeout);
+                                         tiered_index, num_threads + 1, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     // The number of reserved threads should be equal to the number of available threads
