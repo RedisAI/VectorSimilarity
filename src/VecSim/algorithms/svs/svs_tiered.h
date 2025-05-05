@@ -29,7 +29,37 @@
  * @note This class is designed to work with the AsyncJob framework.
  */
 class SVSMultiThreadJob : public AsyncJob {
+public:
+    class JobsRegistry {
+        vecsim_stl::unordered_set<AsyncJob *> jobs;
+        std::mutex m_jobs;
 
+    public:
+        JobsRegistry(const std::shared_ptr<VecSimAllocator> &allocator) : jobs(allocator) {}
+
+        ~JobsRegistry() {
+            std::lock_guard lock{m_jobs};
+            for (auto job : jobs) {
+                delete job;
+            }
+            jobs.clear();
+        }
+
+        void register_jobs(const vecsim_stl::vector<AsyncJob *> &jobs) {
+            std::lock_guard lock{m_jobs};
+            this->jobs.insert(jobs.begin(), jobs.end());
+        }
+
+        void delete_job(AsyncJob *job) {
+            {
+                std::lock_guard lock{m_jobs};
+                jobs.erase(job);
+            }
+            delete job;
+        }
+    };
+
+private:
     // Thread reservation control block shared between all threads
     // to reserve threads and wait for the job to be done
     // actual reserved threads can be less than requested if timeout is reached
@@ -86,6 +116,7 @@ class SVSMultiThreadJob : public AsyncJob {
     class ReserveThreadJob : public AsyncJob {
         std::weak_ptr<ControlBlock> controlBlock; // control block is owned by the main job and can
                                                   // be destroyed before this job is started
+        JobsRegistry *jobsRegistry;
 
         static void Execute_impl(AsyncJob *job) {
             auto *jobPtr = static_cast<ReserveThreadJob *>(job);
@@ -94,19 +125,21 @@ class SVSMultiThreadJob : public AsyncJob {
             if (controlBlock) {
                 controlBlock->reserveThreadAndWait();
             }
-            delete job;
+            jobPtr->jobsRegistry->delete_job(job);
         }
 
     public:
         ReserveThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
-                         VecSimIndex *index, std::weak_ptr<ControlBlock> controlBlock)
+                         VecSimIndex *index, std::weak_ptr<ControlBlock> controlBlock,
+                         JobsRegistry *registry)
             : AsyncJob(std::move(allocator), jobType, Execute_impl, index),
-              controlBlock(std::move(controlBlock)) {}
+              controlBlock(std::move(controlBlock)), jobsRegistry(registry) {}
     };
 
     using task_type = std::function<void(VecSimIndex *, size_t)>;
     task_type task;
     std::shared_ptr<ControlBlock> controlBlock;
+    JobsRegistry *jobsRegistry;
 
     static void Execute_impl(AsyncJob *job) {
         auto *jobPtr = static_cast<SVSMultiThreadJob *>(job);
@@ -120,32 +153,35 @@ class SVSMultiThreadJob : public AsyncJob {
         if (controlBlock) {
             jobPtr->controlBlock->markJobDone();
         }
-        delete job;
+        jobPtr->jobsRegistry->delete_job(job);
     }
 
     SVSMultiThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
                       task_type callback, VecSimIndex *index,
-                      std::shared_ptr<ControlBlock> controlBlock)
+                      std::shared_ptr<ControlBlock> controlBlock, JobsRegistry *registry)
         : AsyncJob(std::move(allocator), jobType, Execute_impl, index), task(std::move(callback)),
-          controlBlock(std::move(controlBlock)) {}
+          controlBlock(std::move(controlBlock)), jobsRegistry(registry) {}
 
 public:
     template <typename Rep, typename Period>
     static vecsim_stl::vector<AsyncJob *>
     createJobs(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
                std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
-               size_t num_threads, std::chrono::duration<Rep, Period> threads_wait_timeout) {
+               size_t num_threads, std::chrono::duration<Rep, Period> threads_wait_timeout,
+               JobsRegistry *registry) {
         assert(num_threads > 0);
         std::shared_ptr<ControlBlock> controlBlock =
             num_threads == 1 ? nullptr
                              : std::make_shared<ControlBlock>(num_threads, threads_wait_timeout);
 
         vecsim_stl::vector<AsyncJob *> jobs(num_threads, allocator);
-        jobs[0] =
-            new (allocator) SVSMultiThreadJob(allocator, jobType, callback, index, controlBlock);
+        jobs[0] = new (allocator)
+            SVSMultiThreadJob(allocator, jobType, callback, index, controlBlock, registry);
         for (size_t i = 1; i < num_threads; ++i) {
-            jobs[i] = new (allocator) ReserveThreadJob(allocator, jobType, index, controlBlock);
+            jobs[i] =
+                new (allocator) ReserveThreadJob(allocator, jobType, index, controlBlock, registry);
         }
+        registry->register_jobs(jobs);
         return jobs;
     }
 
@@ -173,6 +209,9 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     std::shared_mutex journal_mutex;
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
     std::mutex updateJobMutex;
+
+    // The reason of following container just to properly destroy jobs which not executed yet
+    SVSMultiThreadJob::JobsRegistry uncompletedJobs;
 
     /// <batch_iterator>
     ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -454,9 +493,9 @@ public:
         }
 
         auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
-        auto jobs = SVSMultiThreadJob::createJobs(this->allocator, HNSW_INSERT_VECTOR_JOB,
-                                                  updateSVSIndexWrapper, this, total_threads,
-                                                  std::chrono::microseconds(updateJobWaitTime));
+        auto jobs = SVSMultiThreadJob::createJobs(
+            this->allocator, HNSW_INSERT_VECTOR_JOB, updateSVSIndexWrapper, this, total_threads,
+            std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
 
@@ -536,7 +575,8 @@ public:
           updateJobWaitTime(
               tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
                   ? 1000 // default wait time: 1ms
-                  : tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime) {
+                  : tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime),
+          uncompletedJobs(this->allocator) {
         this->journal.reserve(this->updateJobThreshold * 2);
     }
 
