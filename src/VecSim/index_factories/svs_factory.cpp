@@ -8,6 +8,8 @@
  */
 
 #include "VecSim/index_factories/svs_factory.h"
+
+#if HAVE_SVS
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
@@ -44,7 +46,12 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 
 template <typename MetricType, typename DataType>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
-    switch (params->algoParams.svsParams.quantBits) {
+    // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
+    // elsewhere we got code coverage failure for the `supported==false` case
+    auto quantBits =
+        std::get<0>(svs_details::isSVSQuantBitsSupported(params->algoParams.svsParams.quantBits));
+
+    switch (quantBits) {
     case VecSimSvsQuant_NONE:
         return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
     case VecSimSvsQuant_8:
@@ -100,7 +107,11 @@ constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0) {
 
 template <typename DataType>
 size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0) {
-    switch (quant_bits) {
+    // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
+    // elsewhere we got code coverage failure for the `supported==false` case
+    auto quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits));
+
+    switch (quantBits) {
     case VecSimSvsQuant_NONE:
         return QuantizedVectorSize<DataType, 0>(dims, alignment);
     case VecSimSvsQuant_8:
@@ -178,3 +189,14 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 }
 
 } // namespace SVSFactory
+
+// This is a temporary solution to avoid breaking the build when SVS is not available
+// and to allow the code to compile without SVS support.
+// TODO: remove HAVE_SVS when SVS will support all Redis platfoms and compilers
+#else  // HAVE_SVS
+namespace SVSFactory {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
+size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) { return -1; }
+size_t EstimateElementSize(const SVSParams *params) { return -1; }
+}; // namespace SVSFactory
+#endif // HAVE_SVS
