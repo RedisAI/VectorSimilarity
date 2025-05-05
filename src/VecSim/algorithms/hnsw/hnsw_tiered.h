@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 
 #pragma once
 
@@ -240,8 +240,6 @@ public:
 
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
-
-    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const;
 #endif
 };
 
@@ -1195,9 +1193,4 @@ void TieredHNSWIndex<DataType, DistType>::getDataByLabel(
     this->getHNSWIndex()->getDataByLabel(label, vectors_output);
 }
 
-template <typename DataType, typename DistType>
-std::vector<std::vector<char>>
-TieredHNSWIndex<DataType, DistType>::getStoredVectorDataByLabel(labelType label) const {
-    return this->getHNSWIndex()->getStoredVectorDataByLabel(label);
-}
 #endif
