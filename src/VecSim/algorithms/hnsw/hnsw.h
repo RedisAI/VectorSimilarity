@@ -1667,11 +1667,7 @@ void HNSWIndex<DataType, DistType>::removeIncomingEdgesAndDelete(idType deletedI
     // Free the element's resources
     element->destroy(this->levelDataSize, this->allocator);
     // We can say now that the element has removed completely from index.
-    // --curElementCount;
 
-    if (numMarkedDeleted > 0) {
-        --numMarkedDeleted;
-    }
 }
 
 template <typename DataType, typename DistType>
@@ -1704,7 +1700,7 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType internalId) {
     removeAndSwap(internalId);
     // element is permanently removed from the index, it is no longer counted as marked deleted.
-    // --numMarkedDeleted;
+    --numMarkedDeleted;
 }
 
 template <typename DataType, typename DistType>
@@ -1797,11 +1793,6 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
                   "Error - allocating memory for new element failed due to low memory");
         throw e;
     }
-    for (size_t i = 0; i <= cur_egd->toplevel; i++) {
-        // Initialize the incoming edges set for the new element.
-        assert(getElementLevelData(cur_egd, i).copyLinks().empty() &&
-               "The incoming edges set should be empty");
-    }
 
     if (newElementId == this->vectors->size()) {
         if (indexSize() > indexCapacity()) {
@@ -1815,65 +1806,11 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
         // Insert the new element to the data block
         this->vectors->addElement(vector_data, newElementId);
         this->graphDataBlocks.back().addElement(cur_egd);
-
-        auto data = getGraphDataByInternalId(newElementId);
-        for (size_t i = 0; i <= data->toplevel; i++) {
-            // Initialize the incoming edges set for the new element.
-            assert(getElementLevelData(data, i).copyLinks().empty() &&
-                "The incoming edges set should be empty");
-        }
-
-        
-        
     }
     else {
-        auto old_data = getGraphDataByInternalId(newElementId);
-
-        this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                  "old data id %u", newElementId);
-        for (size_t i = 0; i <= old_data->toplevel; i++)
-        {
-            auto &old_level_data = getElementLevelData(old_data, i);
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                      "Level %zu: num links %u", i, old_level_data.getNumLinks());
-                      for (size_t j = 0; j < old_level_data.getNumLinks(); j++)
-                      {
-                          this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                                    "Level %zu: link %u", i, old_level_data.getLinkAtPos(j));
-                      }
-        }
-        
-        
-        this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                  "Before updating id %u", newElementId);
-        for (size_t i = 0; i <= cur_egd->toplevel; i++)
-        {
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                      "Level %zu: num links %u", i, getElementLevelData(cur_egd, i).getNumLinks());
-        }
-        
-
-
-
         // Insert the new element to the data block
         this->vectors->updateElement(newElementId, vector_data);
-        this->graphDataBlocks[newElementId / this->blockSize].updateElement(newElementId, cur_egd);
-        auto data = getGraphDataByInternalId(newElementId);
-
-        this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                  "new data id %u", newElementId);
-        for (size_t i = 0; i <= data->toplevel; i++)
-        {
-            auto &level_data = getElementLevelData(data, i);
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                      "Level %zu: num links %u", i, level_data.getNumLinks());
-                      for (size_t j = 0; j < level_data.getNumLinks(); j++)
-                      {
-                          this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                                    "Level %zu: link %u", i, level_data.getLinkAtPos(j));
-                      }
-        }
-
+        this->graphDataBlocks[newElementId / this->blockSize].updateElement(newElementId % this->blockSize, cur_egd);
     }
     
     
