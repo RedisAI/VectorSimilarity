@@ -1034,7 +1034,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
         // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
-        auto query = (TEST_DATA_T *)allocator->allocate(d * sizeof(TEST_DATA_T));
+        TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
@@ -1101,7 +1101,7 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
         // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
-        auto query = (TEST_DATA_T *)allocator->allocate(d * sizeof(TEST_DATA_T));
+        TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
