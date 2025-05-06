@@ -218,34 +218,28 @@ inline size_t EstimateElementSize(const TieredIndexParams *params) { return 0; }
 } // namespace TieredSVSFactory
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
-    switch (params->primaryIndexParams->algo) {
     // Tiered index that contains HNSW index as primary index
-    case VecSimAlgo_HNSWLIB:
+    if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         return TieredHNSWFactory::NewIndex(params);
-    // Tiered index that contains SVS index as primary index
-    case VecSimAlgo_SVS:
-        return TieredSVSFactory::NewIndex(params);
-    default:
-        return nullptr; // Invalid algorithm.
     }
+    // Tiered index that contains SVS index as primary index
+    if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {
+        return TieredSVSFactory::NewIndex(params);
+    }
+    return nullptr; // Invalid algorithm or type.
 }
-
 size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     size_t est = 0;
 
     BFParams bf_params{};
-    switch (params->primaryIndexParams->algo) {
-    case VecSimAlgo_HNSWLIB:
+    if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est += TieredHNSWFactory::EstimateInitialSize(params);
         bf_params = TieredHNSWFactory::NewBFParams(params);
-        break;
-    case VecSimAlgo_SVS:
+    }
+    if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {
         est += TieredSVSFactory::EstimateInitialSize(params);
         bf_params = TieredSVSFactory::NewBFParams(params);
-        break;
-    default:
-        assert(false && "Invalid algorithm");
     }
 
     est += BruteForceFactory::EstimateInitialSize(&bf_params, false);
@@ -254,15 +248,11 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
 
 size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
-    switch (params->primaryIndexParams->algo) {
-    case VecSimAlgo_HNSWLIB:
+    if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
-        break;
-    case VecSimAlgo_SVS:
+    }
+    if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {
         est = SVSFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.svsParams);
-        break;
-    default:
-        assert(false && "Invalid algorithm");
     }
     return est;
 }
