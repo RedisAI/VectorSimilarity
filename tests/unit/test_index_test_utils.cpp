@@ -231,7 +231,6 @@ void IndexTestUtilsTest::get_stored_vector_data_single_test() {
     // Get stored vector data for each label
     for (size_t i = 0; i < this->labels_count; i++) {
         auto stored_data = GetStoredVectorsData(i);
-        auto stored_vectors_elements = GetStoredVectorsData(i);
 
         // Should return a vector of vectors for each label
         ASSERT_EQ(stored_data.size(), vec_per_label);
