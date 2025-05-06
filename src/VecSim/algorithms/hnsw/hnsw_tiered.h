@@ -926,6 +926,10 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
     const void *query_vector, const TieredHNSWIndex<DataType, DistType> *index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     // Tiered batch iterator doesn't hold its own copy of the query vector.
+    // Instead, each internal batch iterators (flat_iterator and hnsw_iterator) create their own
+    // copies: flat_iterator copy is created during TieredHNSW_BatchIterator construction When
+    // TieredHNSW_BatchIterator::getNextResults() is called and hnsw_iterator is not initialized, it
+    // retrieves the blob from flat_iterator
     : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
       index(index), flat_results(this->allocator), hnsw_results(this->allocator),

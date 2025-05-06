@@ -107,12 +107,7 @@ public:
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
 #ifdef BUILD_TESTS
-    inline VecSimIndexAbstract<DataType, DistType> *getFlatBufferIndex() {
-        return this->frontendIndex;
-    }
-    inline BruteForceIndex<DataType, DistType> *getFlatBufferIndexAsBruteForce() {
-        return this->frontendIndex;
-    }
+    inline BruteForceIndex<DataType, DistType> *getFlatBufferIndex() { return this->frontendIndex; }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {

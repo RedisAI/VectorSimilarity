@@ -186,8 +186,7 @@ protected:
     virtual void TearDown() override {}
 
     virtual const void *GetDataByInternalId(idType id) override {
-        return CastIndex<BruteForceIndex<int8_t, float>>(GetFlatBufferIndex())
-            ->getDataByInternalId(id);
+        return CastToBruteForce()->getDataByInternalId(id);
     }
 
     virtual HNSWIndex<int8_t, float> *CastToHNSW() override {
@@ -199,14 +198,9 @@ protected:
         return CastIndex<HNSWIndex_Single<int8_t, float>>(CastToHNSW());
     }
 
-    VecSimIndexAbstract<int8_t, float> *GetFlatBufferIndex() {
-        auto tiered_index = dynamic_cast<TieredHNSWIndex<int8_t, float> *>(index);
-        return tiered_index->getFlatBufferIndex();
-    }
-
     BruteForceIndex<int8_t, float> *CastToBruteForce() {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<int8_t, float> *>(index);
-        return tiered_index->getFlatBufferIndexAsBruteForce();
+        return tiered_index->getFlatBufferIndex();
     }
 
     int GenerateRandomAndAddVector(size_t id) override {
@@ -747,7 +741,7 @@ void INT8TieredTest::test_info(bool is_multi) {
 
     VecSimIndexDebugInfo info = INT8Test::test_info(hnsw_params);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
-    VecSimIndexDebugInfo frontendIndexInfo = GetFlatBufferIndex()->debugInfo();
+    VecSimIndexDebugInfo frontendIndexInfo = CastToBruteForce()->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = CastToHNSW()->debugInfo();
 
     compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
@@ -855,7 +849,7 @@ void INT8TieredTest::test_info_iterator(VecSimMetric metric) {
     SetUp(params);
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
-    VecSimIndexDebugInfo frontendIndexInfo = GetFlatBufferIndex()->debugInfo();
+    VecSimIndexDebugInfo frontendIndexInfo = CastToBruteForce()->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = CastToHNSW()->debugInfo();
     VecSimDebugInfoIterator_Free(infoIter);
 }
