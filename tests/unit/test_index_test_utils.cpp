@@ -183,7 +183,7 @@ INSTANTIATE_TEST_SUITE_P(Int8IndexTestUtilsTest, Int8IndexTestUtilsTest,
                              bool is_multi = std::get<0>(info.param);
                              const char *metric = VecSimMetric_ToString(std::get<1>(info.param));
                              std::string test_name(is_multi ? "Multi_" : "Single_");
-                             return test_name + "_" + metric;
+                             return test_name + metric;
                          });
 
 TEST_P(Float32IndexTestUtilsTest, BF) {
