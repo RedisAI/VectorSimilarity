@@ -38,7 +38,6 @@ if(USE_SVS)
     message(STATUS "SVS support enabled")
     # Configure SVS build
     add_compile_definitions("HAVE_SVS=1")
-    set(svs_factory_file "index_factories/svs_factory.cpp")
 
     # detect if build environment is using glibc
     include(CheckSymbolExists)
