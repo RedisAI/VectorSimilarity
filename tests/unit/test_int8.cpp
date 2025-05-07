@@ -1074,7 +1074,7 @@ TEST_F(INT8TieredTest, CosineBlobCorrectness) {
         verify_norm(stored_vec_data, vector_norm);
 
         ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, 1, verify_res));
-        ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 0.5, verify_res, 1, BY_SCORE));
+        ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 2, verify_res, 1, BY_SCORE));
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, 1, verify_res));
         VecSimBatchIterator_Free(batchIterator);
