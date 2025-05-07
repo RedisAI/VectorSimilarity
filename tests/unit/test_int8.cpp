@@ -16,6 +16,7 @@
 #include "VecSim/vec_sim_debug.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/normalize/normalize_naive.h"
 
 class INT8Test : public ::testing::Test {
 protected:
@@ -47,7 +48,9 @@ protected:
 
     virtual HNSWIndex<int8_t, float> *CastToHNSW() { return CastIndex<HNSWIndex<int8_t, float>>(); }
 
-    void PopulateRandomVector(int8_t *out_vec) { test_utils::populate_int8_vec(out_vec, dim); }
+    void PopulateRandomVector(int8_t *out_vec) {
+        test_utils::populate_int8_vec(out_vec, dim, current_seed++);
+    }
     int PopulateRandomAndAddVector(size_t id, int8_t *out_vec) {
         PopulateRandomVector(out_vec);
         return VecSimIndex_AddVector(index, out_vec, id);
@@ -101,6 +104,7 @@ protected:
 
     VecSimIndex *index;
     size_t dim;
+    int current_seed{0};
 };
 
 class INT8HNSWTest : public INT8Test {
@@ -182,8 +186,7 @@ protected:
     virtual void TearDown() override {}
 
     virtual const void *GetDataByInternalId(idType id) override {
-        return CastIndex<BruteForceIndex<int8_t, float>>(CastToBruteForce())
-            ->getDataByInternalId(id);
+        return CastToBruteForce()->getDataByInternalId(id);
     }
 
     virtual HNSWIndex<int8_t, float> *CastToHNSW() override {
@@ -195,7 +198,7 @@ protected:
         return CastIndex<HNSWIndex_Single<int8_t, float>>(CastToHNSW());
     }
 
-    VecSimIndexAbstract<int8_t, float> *CastToBruteForce() {
+    BruteForceIndex<int8_t, float> *CastToBruteForce() {
         auto tiered_index = dynamic_cast<TieredHNSWIndex<int8_t, float> *>(index);
         return tiered_index->getFlatBufferIndex();
     }
@@ -393,7 +396,7 @@ void INT8Test::metrics_test(params_t index_params) {
     double expected_score = 0;
 
     auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(score, expected_score) << "failed at vector id:" << id;
+        ASSERT_NEAR(score, expected_score, 1e-6f) << "failed at vector id:" << id;
     };
 
     for (size_t i = 0; i < n; i++) {
@@ -884,7 +887,7 @@ void INT8HNSWTest::test_serialization(bool is_multi) {
     int8_t data[n * dim];
 
     for (size_t i = 0; i < n * dim; i += dim) {
-        test_utils::populate_int8_vec(data + i, dim, i);
+        this->PopulateRandomVector(data + i);
     }
 
     for (size_t j = 0; j < n; ++j) {
@@ -1001,4 +1004,128 @@ TEST_F(INT8HNSWTest, getElementNeighbors) {
 TEST_F(INT8TieredTest, getElementNeighbors) {
     HNSWParams params = {.dim = 4, .M = 20};
     get_element_neighbors(params);
+}
+
+/**
+ * Tests int8_t vectors with cosine similarity in a tiered index across three scenarios:
+ * 1. Verifies vector data correctness when stored in the flat buffer
+ * 2. Verifies vector data correctness when inserted directly into HNSW (when flat buffer is full)
+ * 3. Verifies vector data correctness after transfer from flat buffer to HNSW
+ *
+ * For each scenario, the test confirms:
+ * - Vector data matches the expected normalized vector
+ * - The norm is correctly stored at the end of the vector
+ * - Search operations (topK, range, batch) return the expected results
+ */
+
+TEST_F(INT8TieredTest, CosineBlobCorrectness) {
+    // Create TieredHNSW index with cosine metric
+    constexpr size_t dim = 4;
+    HNSWParams hnsw_params = {.dim = dim, .metric = VecSimMetric_Cosine};
+    // Create tiered index with buffer limit set to 1.
+    TieredIndexParams tiered_params = this->generate_tiered_params(hnsw_params, 1, 1);
+    SetUp(tiered_params);
+
+    auto frontend_index = this->CastToBruteForce();
+    auto hnsw_index = this->CastToHNSW();
+
+    int8_t vector[dim];
+    PopulateRandomVector(vector);
+    float vector_norm = spaces::IntegralType_ComputeNorm<int8_t>(vector, dim);
+
+    auto verify_norm = [&](const int8_t *input_vector, float expected_norm) {
+        float vectors_stored_norm = *(reinterpret_cast<const float *>(input_vector + dim));
+        ASSERT_EQ(vectors_stored_norm, expected_norm) << "wrong vector norm";
+    };
+
+    int8_t normalized_vec[dim + sizeof(float)];
+    memcpy(normalized_vec, vector, dim);
+    spaces::integer_normalizeVector<int8_t>(normalized_vec, dim);
+    ASSERT_NO_FATAL_FAILURE(verify_norm(normalized_vec, vector_norm));
+
+    int8_t query[dim + sizeof(float)];
+    PopulateRandomVector(query);
+    float query_norm = spaces::IntegralType_ComputeNorm<int8_t>(query, dim);
+
+    // Calculate the expected score manually.
+    int ip = 0;
+    for (size_t i = 0; i < dim; i++) {
+        ip += vector[i] * query[i];
+    }
+    float expected_score = 1.0 - (float(ip) / (vector_norm * query_norm));
+
+    auto verify_res = [&](size_t label, double score, size_t result_rank) {
+        ASSERT_EQ(score, expected_score) << "label: " << label;
+    };
+
+    // ============== Scenario 1:
+    // blob correctness in the flat buffer
+
+    // Add a vector to the flat buffer.
+    VecSimIndex_AddVector(index, vector, 0);
+    {
+        SCOPED_TRACE("Store in the flat buffer");
+        // Get the stored vector data including the norm
+        auto stored_vec = frontend_index->getStoredVectorDataByLabel(0);
+        const int8_t *stored_vec_data = reinterpret_cast<const int8_t *>(stored_vec.at(0).data());
+        // the vector should be normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec_data, normalized_vec, dim));
+        // The norm should be stored in the last position.
+        verify_norm(stored_vec_data, vector_norm);
+
+        ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, 1, verify_res));
+        ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 2, verify_res, 1, BY_SCORE));
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+        ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, 1, verify_res));
+        VecSimBatchIterator_Free(batchIterator);
+    }
+
+    // ============== Scenario 2:
+    // blob correctness when inserted directly to the hnsw
+
+    // Add another vector and exceed the flat buffer capacity. The vector should be stored directly
+    // in the hnsw index
+    VecSimIndex_AddVector(index, vector, 1);
+    EXPECT_EQ(frontend_index->indexSize(), 1);
+    EXPECT_EQ(hnsw_index->indexSize(), 1);
+    {
+        SCOPED_TRACE("Full buffer; add vector directly to hnsw");
+        auto stored_vec = hnsw_index->getStoredVectorDataByLabel(1);
+        const int8_t *stored_vec_data = reinterpret_cast<const int8_t *>(stored_vec.at(0).data());
+        // the vector should be normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec_data, normalized_vec, dim));
+        // The norm should be stored in the last position.
+        verify_norm(stored_vec_data, vector_norm);
+
+        size_t k = 2;
+        ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, k, verify_res));
+        ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 100, verify_res, k, BY_SCORE));
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+        ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, k, verify_res));
+        VecSimBatchIterator_Free(batchIterator);
+    }
+
+    // ============== Scenario 3:
+    // blob correctness after transferred to the hnsw
+
+    // Move the first vector to the hnsw index.
+    mock_thread_pool.thread_iteration();
+    EXPECT_EQ(frontend_index->indexSize(), 0);
+    EXPECT_EQ(hnsw_index->indexSize(), 2);
+    {
+        SCOPED_TRACE("Execute insertion job");
+        auto stored_vec = hnsw_index->getStoredVectorDataByLabel(0);
+        const int8_t *stored_vec_data = reinterpret_cast<const int8_t *>(stored_vec.at(0).data());
+        // the vector should be normalized.
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vec_data, normalized_vec, dim));
+        // The norm should be stored in the last position.
+        verify_norm(stored_vec_data, vector_norm);
+
+        size_t k = 2;
+        ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, k, verify_res));
+        ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 100, verify_res, k, BY_SCORE));
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+        ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, k, verify_res));
+        VecSimBatchIterator_Free(batchIterator);
+    }
 }

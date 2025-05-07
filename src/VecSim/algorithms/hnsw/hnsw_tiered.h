@@ -172,7 +172,7 @@ public:
         inline void filter_irrelevant_results(VecSimQueryResultContainer &);
 
     public:
-        TieredHNSW_BatchIterator(void *query_vector,
+        TieredHNSW_BatchIterator(const void *query_vector,
                                  const TieredHNSWIndex<DataType, DistType> *index,
                                  VecSimQueryParams *queryParams,
                                  std::shared_ptr<VecSimAllocator> allocator);
@@ -206,11 +206,9 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->frontendIndex->getDim() * sizeof(DataType);
-        void *queryBlobCopy = this->allocator->allocate(blobSize);
-        memcpy(queryBlobCopy, queryBlob, blobSize);
+        // The query blob will be processed and copied by the internal indexes's batch iterator.
         return new (this->allocator)
-            TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+            TieredHNSW_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
@@ -545,10 +543,11 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
     // Copy the vector blob from the flat buffer, so we can release the flat lock while we are
     // indexing the vector into HNSW index.
-    auto blob_copy = this->getAllocator()->allocate_unique(this->frontendIndex->getDataSize());
-
-    memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id),
-           this->frontendIndex->getDim() * sizeof(DataType));
+    size_t data_size = this->frontendIndex->getDataSize();
+    auto blob_copy = this->getAllocator()->allocate_unique(data_size);
+    // Assuming the size of the blob stored in the frontend index matches the size of the blob
+    // stored in the HNSW index.
+    memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
 
     this->insertVectorToHNSW<true>(hnsw_index, job->label, blob_copy.get());
 
@@ -719,7 +718,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
     // writeMode is not protected since it is assumed to be called only from the "main thread"
-    // (that is the thread that is exculusively calling add/delete vector).
+    // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteInPlace) {
         // First, check if we need to overwrite the vector in-place for single (from both indexes).
         if (!this->backendIndex->isMultiValue()) {
@@ -849,7 +848,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     // Note that we may remove the same vector that has been removed from the flat index, if it was
     // being ingested at that time.
     // writeMode is not protected since it is assumed to be called only from the "main thread"
-    // (that is the thread that is exculusively calling add/delete vector).
+    // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteAsync) {
         num_deleted_vectors += this->deleteLabelFromHNSW(label);
         // Apply ready swap jobs if number of deleted vectors reached the threshold
@@ -924,9 +923,14 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchIterator(
-    void *query_vector, const TieredHNSWIndex<DataType, DistType> *index,
+    const void *query_vector, const TieredHNSWIndex<DataType, DistType> *index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
+    // Tiered batch iterator doesn't hold its own copy of the query vector.
+    // Instead, each internal batch iterators (flat_iterator and hnsw_iterator) create their own
+    // copies: flat_iterator copy is created during TieredHNSW_BatchIterator construction When
+    // TieredHNSW_BatchIterator::getNextResults() is called and hnsw_iterator is not initialized, it
+    // retrieves the blob from flat_iterator
+    : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
       index(index), flat_results(this->allocator), hnsw_results(this->allocator),
       flat_iterator(this->index->frontendIndex->newBatchIterator(query_vector, queryParams)),
@@ -1192,4 +1196,5 @@ void TieredHNSWIndex<DataType, DistType>::getDataByLabel(
     labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
     this->getHNSWIndex()->getDataByLabel(label, vectors_output);
 }
+
 #endif

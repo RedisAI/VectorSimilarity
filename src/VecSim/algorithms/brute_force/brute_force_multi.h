@@ -47,10 +47,30 @@ public:
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
+            // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like
+            // the norm
             memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
             vectors_output.push_back(vec);
         }
     }
+
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
+        std::vector<std::vector<char>> vectors_output;
+        auto ids = labelToIdsLookup.find(label);
+
+        for (idType id : ids->second) {
+            // Get the data pointer - need to cast to char* for memcpy
+            const char *data = reinterpret_cast<const char *>(this->getDataByInternalId(id));
+
+            // Create a vector with the full data (including any metadata like norms)
+            std::vector<char> vec(this->getDataSize());
+            memcpy(vec.data(), data, this->getDataSize());
+            vectors_output.push_back(std::move(vec));
+        }
+
+        return vectors_output;
+    }
+
 #endif
 private:
     // inline definitions

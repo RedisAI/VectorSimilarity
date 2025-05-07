@@ -61,8 +61,8 @@ if(USE_SVS)
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
     else()
-        # This file is included from both CMakeLists.txt and python_bindings/CMakeLists.txt  
-        # Set `root` relative to this file, regardless of where it is included from. 
+        # This file is included from both CMakeLists.txt and python_bindings/CMakeLists.txt
+        # Set `root` relative to this file, regardless of where it is included from.
         get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
         add_subdirectory(
             ${root}/deps/ScalableVectorSearch

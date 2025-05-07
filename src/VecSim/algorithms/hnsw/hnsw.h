@@ -302,16 +302,6 @@ public:
     virtual int removeLabel(labelType label) = 0;
 
 #ifdef BUILD_TESTS
-    /**
-     * @brief Used for testing - store vector(s) data associated with a given label. This function
-     * copies the vector(s)' data buffer(s) and place it in the output vector
-     *
-     * @param label
-     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
-     * the label.
-     */
-    virtual void getDataByLabel(labelType label,
-                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
     void fitMemory() override {
         if (maxElements > 0) {
             idToMetaData.shrink_to_fit();
@@ -1561,7 +1551,7 @@ void HNSWIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
             searchLayer(curr_element, vector_data, level, efConstruction);
-        // If the entry point was marked deleted between iterations, we may recieve an empty
+        // If the entry point was marked deleted between iterations, we may receive an empty
         // candidates set.
         if (!top_candidates.empty()) {
             curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
