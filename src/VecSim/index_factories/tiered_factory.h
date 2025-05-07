@@ -58,6 +58,10 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
         hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 } // namespace TieredHNSWFactory
+
+namespace TieredSVSFactory {
+BFParams NewBFParams(const TieredIndexParams *params);
+}
 #endif
 
 }; // namespace TieredFactory

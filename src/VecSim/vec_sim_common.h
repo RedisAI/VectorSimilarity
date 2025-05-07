@@ -133,11 +133,13 @@ typedef struct {
 } BFParams;
 
 typedef enum {
-    VecSimSvsQuant_NONE = 0,            // No quantization.
-    VecSimSvsQuant_8 = 8,               // 8-bit quantization
-    VecSimSvsQuant_4 = 4,               // 4-bit quantization
-    VecSimSvsQuant_4x4 = 4 | (4 << 10), // 4-bit quantization with 4-bit residuals
-    VecSimSvsQuant_4x8 = 4 | (8 << 10)  // 4-bit quantization with 8-bit residuals
+    VecSimSvsQuant_NONE = 0,           // No quantization.
+    VecSimSvsQuant_4 = 4,              // 4-bit quantization
+    VecSimSvsQuant_8 = 8,              // 8-bit quantization
+    VecSimSvsQuant_4x4 = 4 | (4 << 8), // 4-bit quantization with 4-bit residuals
+    VecSimSvsQuant_4x8 = 4 | (8 << 8), // 4-bit quantization with 8-bit residuals
+    VecSimSvsQuant_4x8_leanvec = 4 | (8 << 8) | (1 << 16), // LeanVec 4x4 quantization
+    VecSimSvsQuant_8x8_leanvec = 8 | (8 << 8) | (1 << 16), // LeanVec 8x8 quantization
 } VecSimSvsQuantBits;
 
 typedef struct {
@@ -155,6 +157,7 @@ typedef struct {
     size_t prune_to;                 // Amount that candidates will be pruned.
     VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
+    size_t num_threads;                  // Maximum number of threads in threadpool.
     size_t search_window_size;           // Search window size to use during search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSParams;
@@ -164,6 +167,13 @@ typedef struct {
     size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
+
+// A struct that contains SVS tiered index specific params.
+typedef struct {
+    size_t updateJobThreshold; // The flat index size threshold to trigger the update job.
+    size_t updateJobWaitTime;  // The time (microseconds) to wait for threads reservation before
+                               // executing the update job.
+} TieredSVSParams;
 
 // A struct that contains the common tiered index params.
 typedef struct {
@@ -175,6 +185,7 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
+        TieredSVSParams tieredSVSParams;
     } specificParams;
 } TieredIndexParams;
 
