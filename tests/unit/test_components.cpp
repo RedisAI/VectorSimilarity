@@ -602,3 +602,20 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     }
     // The preprocessors should be released by the preprocessors container.
 }
+
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    // add cosine pp that changes the original blob size
+    // add a pp that preprocesses the normalized blob (same size)
+    // add a pp that changes the storage_blob size, but not changing the query_blob size
+}
+
+
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    // add a pp that changes the storage_blob size, but not changing the query_blob size
+    // add a pp that preprocesses the normalized blob (same size)
+    // add cosine pp that changes the original blob size
+}
+
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    // pp multi container where cosine is only needed for the query blob (not supported yet)
+}
