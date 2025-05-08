@@ -471,12 +471,15 @@ TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    // TODo: change this test so that original_blob_size != processed_bytes_count
+    constexpr size_t processed_bytes_count = sizeof(original_blob);
 
     auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     // adding cosine preprocessor
-    auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
+    auto cosine_preprocessor =
+        new (allocator) CosinePreprocessor<float>(allocator, dim, processed_bytes_count);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
@@ -536,6 +539,7 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    constexpr size_t processed_bytes_count = sizeof(original_blob);
 
     // Creating multi preprocessors container
     auto mixed_preprocessor = new (allocator)
@@ -568,7 +572,8 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     }
 
     // adding cosine preprocessor
-    auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
+    auto cosine_preprocessor =
+        new (allocator) CosinePreprocessor<float>(allocator, dim, processed_bytes_count);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
@@ -596,4 +601,21 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
         ASSERT_NE(query_blob, original_blob);
     }
     // The preprocessors should be released by the preprocessors container.
+}
+
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    // add cosine pp that changes the original blob size
+    // add a pp that preprocesses the normalized blob (same size)
+    // add a pp that changes the storage_blob size, but not changing the query_blob size
+}
+
+
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    // add a pp that changes the storage_blob size, but not changing the query_blob size
+    // add a pp that preprocesses the normalized blob (same size)
+    // add cosine pp that changes the original blob size
+}
+
+TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
+    // pp multi container where cosine is only needed for the query blob (not supported yet)
 }
