@@ -22,19 +22,17 @@ public:
     PreprocessorsContainerAbstract(std::shared_ptr<VecSimAllocator> allocator,
                                    unsigned char alignment)
         : VecsimBaseObject(allocator), alignment(alignment) {}
-    virtual ProcessedBlobs preprocess(const void *original_blob,
-                                      size_t processed_bytes_count) const;
+    virtual ProcessedBlobs preprocess(const void *original_blob, size_t original_blob_size) const;
 
     virtual MemoryUtils::unique_blob preprocessForStorage(const void *original_blob,
-                                                          size_t processed_bytes_count) const;
+                                                          size_t original_blob_size) const;
 
     virtual MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
-                                                     size_t processed_bytes_count,
+                                                     size_t original_blob_size,
                                                      bool force_copy = false) const;
 
-    virtual void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const;
-
-    virtual void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const;
+    virtual void preprocessQueryInPlace(void *blob, size_t input_blob_bytes_count) const;
+    virtual void preprocessStorageInPlace(void *blob, size_t input_blob_bytes_count) const;
 
     unsigned char getAlignment() const { return alignment; }
 
@@ -43,7 +41,7 @@ protected:
 
     // Allocate and copy the blob only if the original blob is not aligned.
     MemoryUtils::unique_blob maybeCopyToAlignedMem(const void *original_blob,
-                                                   size_t blob_bytes_count,
+                                                   size_t original_blob_size,
                                                    bool force_copy = false) const;
 
     MemoryUtils::unique_blob wrapAllocated(void *blob) const {
@@ -82,19 +80,17 @@ public:
      */
     int addPreprocessor(PreprocessorInterface *preprocessor);
 
-    ProcessedBlobs preprocess(const void *original_blob,
-                              size_t processed_bytes_count) const override;
+    ProcessedBlobs preprocess(const void *original_blob, size_t original_blob_size) const override;
 
     MemoryUtils::unique_blob preprocessForStorage(const void *original_blob,
-                                                  size_t processed_bytes_count) const override;
+                                                  size_t original_blob_size) const override;
 
-    MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
-                                             size_t processed_bytes_count,
+    MemoryUtils::unique_blob preprocessQuery(const void *original_blob, size_t original_blob_size,
                                              bool force_copy = false) const override;
 
-    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count) const override;
+    void preprocessQueryInPlace(void *blob, size_t input_blob_bytes_count) const override;
 
-    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override;
+    void preprocessStorageInPlace(void *blob, size_t input_blob_bytes_count) const override;
 
 #ifdef BUILD_TESTS
     std::array<PreprocessorInterface *, n_preprocessors> getPreprocessors() const {
@@ -160,11 +156,11 @@ int MultiPreprocessorsContainer<DataType, n_preprocessors>::addPreprocessor(
 
 template <typename DataType, size_t n_preprocessors>
 ProcessedBlobs MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocess(
-    const void *original_blob, size_t processed_bytes_count) const {
+    const void *original_blob, size_t original_blob_size) const {
     // No preprocessors were added yet.
     if (preprocessors[0] == nullptr) {
         // query might need to be aligned
-        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, processed_bytes_count);
+        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, original_blob_size);
         return ProcessedBlobs(
             std::move(Base::wrapWithDummyDeleter(const_cast<void *>(original_blob))),
             std::move(query_ptr));
@@ -175,7 +171,7 @@ ProcessedBlobs MultiPreprocessorsContainer<DataType, n_preprocessors>::preproces
     for (auto pp : preprocessors) {
         if (!pp)
             break;
-        pp->preprocess(original_blob, storage_blob, query_blob, processed_bytes_count,
+        pp->preprocess(original_blob, storage_blob, query_blob, original_blob_size,
                        this->alignment);
     }
     // At least one blob was allocated.
@@ -194,7 +190,7 @@ ProcessedBlobs MultiPreprocessorsContainer<DataType, n_preprocessors>::preproces
 
     if (query_blob == nullptr) { // we processed only the storage
         // query might need to be aligned
-        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, processed_bytes_count);
+        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, original_blob_size);
         return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)), std::move(query_ptr));
     }
 
@@ -206,13 +202,13 @@ ProcessedBlobs MultiPreprocessorsContainer<DataType, n_preprocessors>::preproces
 template <typename DataType, size_t n_preprocessors>
 MemoryUtils::unique_blob
 MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessForStorage(
-    const void *original_blob, size_t processed_bytes_count) const {
+    const void *original_blob, size_t original_blob_size) const {
 
     void *storage_blob = nullptr;
     for (auto pp : preprocessors) {
         if (!pp)
             break;
-        pp->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
+        pp->preprocessForStorage(original_blob, storage_blob, original_blob_size);
     }
 
     return storage_blob ? std::move(this->wrapAllocated(storage_blob))
@@ -221,40 +217,40 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessForStorage(
 
 template <typename DataType, size_t n_preprocessors>
 MemoryUtils::unique_blob MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessQuery(
-    const void *original_blob, size_t processed_bytes_count, bool force_copy) const {
+    const void *original_blob, size_t original_blob_size, bool force_copy) const {
 
     void *query_blob = nullptr;
     for (auto pp : preprocessors) {
         if (!pp)
             break;
         // modifies the memory in place
-        pp->preprocessQuery(original_blob, query_blob, processed_bytes_count, this->alignment);
+        pp->preprocessQuery(original_blob, query_blob, original_blob_size, this->alignment);
     }
     return query_blob ? std::move(this->wrapAllocated(query_blob))
-                      : std::move(this->maybeCopyToAlignedMem(original_blob, processed_bytes_count,
+                      : std::move(this->maybeCopyToAlignedMem(original_blob, original_blob_size,
                                                               force_copy));
 }
 
 template <typename DataType, size_t n_preprocessors>
 void MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessQueryInPlace(
-    void *blob, size_t processed_bytes_count) const {
+    void *blob, size_t input_blob_bytes_count) const {
 
     for (auto pp : preprocessors) {
         if (!pp)
             break;
         // modifies the memory in place
-        pp->preprocessQueryInPlace(blob, processed_bytes_count, this->alignment);
+        pp->preprocessQueryInPlace(blob, input_blob_bytes_count, this->alignment);
     }
 }
 
 template <typename DataType, size_t n_preprocessors>
 void MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessStorageInPlace(
-    void *blob, size_t processed_bytes_count) const {
+    void *blob, size_t input_blob_bytes_count) const {
 
     for (auto pp : preprocessors) {
         if (!pp)
             break;
         // modifies the memory in place
-        pp->preprocessStorageInPlace(blob, processed_bytes_count);
+        pp->preprocessStorageInPlace(blob, input_blob_bytes_count);
     }
 }

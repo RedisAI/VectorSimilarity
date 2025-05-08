@@ -471,12 +471,15 @@ TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    // TODo: change this test so that original_blob_size != processed_bytes_count
+    constexpr size_t processed_bytes_count = sizeof(original_blob);
 
     auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     // adding cosine preprocessor
-    auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
+    auto cosine_preprocessor =
+        new (allocator) CosinePreprocessor<float>(allocator, dim, processed_bytes_count);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
@@ -536,6 +539,7 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    constexpr size_t processed_bytes_count = sizeof(original_blob);
 
     // Creating multi preprocessors container
     auto mixed_preprocessor = new (allocator)
@@ -568,7 +572,8 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     }
 
     // adding cosine preprocessor
-    auto cosine_preprocessor = new (allocator) CosinePreprocessor<float>(allocator, dim);
+    auto cosine_preprocessor =
+        new (allocator) CosinePreprocessor<float>(allocator, dim, processed_bytes_count);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
