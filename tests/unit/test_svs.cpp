@@ -13,6 +13,8 @@
 #include <cmath>
 
 #if HAVE_SVS
+#include <sstream>
+#include "spdlog/sinks/ostream_sink.h"
 #include "VecSim/algorithms/svs/svs.h"
 
 // There are possible cases when SVS Index cannot be created with the requested quantization mode
@@ -34,11 +36,19 @@ public:
     using data_t = typename index_type_t::data_t;
 
 protected:
-    VecSimIndex *CreateNewIndex(SVSParams &params) {
+    void SetTypeParams(SVSParams &params) {
         params.quantBits = index_type_t::get_quant_bits();
         params.type = index_type_t::get_index_type();
-        VecSimParams index_params = CreateParams(params);
+    }
+
+    VecSimIndex *CreateNewIndex(const VecSimParams &index_params) {
         return VecSimIndex_New(&index_params);
+    }
+
+    VecSimIndex *CreateNewIndex(SVSParams &params) {
+        SetTypeParams(params);
+        VecSimParams index_params = CreateParams(params);
+        return CreateNewIndex(index_params);
     }
 
     SVSIndexBase *CastToSVS(VecSimIndex *index) {
@@ -2200,6 +2210,77 @@ TEST(SVSTest, quant_modes) {
 
         VecSimIndex_Free(index);
     }
+}
+
+void logCallback_ostream(void *ctx, const char *level, const char *message){
+    if (ctx == nullptr) {
+        return;
+    }
+    assert(level != nullptr);
+    assert(message != nullptr);
+    // Cast the context to the correct type
+    // and write the log message to the ostringstream
+    std::ostringstream *os = static_cast<std::ostringstream *>(ctx);
+    *os << level << ": " << message;
+}
+
+TYPED_TEST(SVSTest, logging_runtime_params) {
+    const size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+
+    std::ostringstream os_index;
+    std::ostringstream os_global;
+
+    VecSim_SetLogCallbackFunction(logCallback_ostream);
+
+    // Set the SVS global log context to the ostringstream
+    auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(os_global);
+    auto logger = std::make_shared<spdlog::logger>("GlobalLogger", sink);
+    // Trace all messages
+    logger->set_level(spdlog::level::trace);
+    logger->set_pattern("%@\n\t%+");
+    svs::logging::set(logger);
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2,};
+    this->SetTypeParams(params);
+    VecSimParams index_params = CreateParams(params);
+    index_params.logCtx = static_cast<void*>(&os_index); // Set the index log context to the ostringstream
+    VecSimIndex *index = this->CreateNewIndex(index_params);
+    ASSERT_INDEX(index);
+
+    std::vector<float[dim]> v(n);
+    for (size_t i = 0; i < n; i++) {
+        GenerateVector<float>(v[i], dim, i);
+    }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    auto svs_index = dynamic_cast<SVSIndexBase *>(index);
+    ASSERT_NE(svs_index, nullptr);
+    svs_index->addVectors(v.data(), ids.data(), n);
+
+    // Overrite vectors one-by-one
+    for (size_t i = 0; i < 10; i++) {
+        index->addVector(v[i], ids[i]);
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        EXPECT_EQ(id, (index + 45));
+    };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    VecSimIndex_Free(index);
+
+    auto index_log = os_index.view();
+    EXPECT_FALSE(index_log.empty()) << "Index log should not be empty";
+
+    auto global_log = os_global.view();
+    EXPECT_TRUE(global_log.empty()) << "Global log should be empty, but got: " << global_log;
 }
 
 #else // HAVE_SVS

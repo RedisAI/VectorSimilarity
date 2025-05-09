@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "svs/index/vamana/dynamic_index.h"
+#include "spdlog/sinks/callback_sink.h"
 
 #include "VecSim/algorithms/svs/svs_utils.h"
 #include "VecSim/algorithms/svs/svs_batch_iterator.h"
@@ -109,12 +110,51 @@ protected:
         // clang-format on
     }
 
+    svs::logging::logger_ptr makeLogger() {
+        spdlog::custom_log_callback callback = [this](const spdlog::details::log_msg &msg) {
+            if (!VecSimIndexInterface::logCallback) {
+                return; // No callback function provided
+            }
+            // Custom callback implementation
+            const char *vecsim_level = [msg]() {
+                switch (msg.level) {
+                case spdlog::level::trace:
+                    return VecSimCommonStrings::LOG_DEBUG_STRING;
+                case spdlog::level::debug:
+                    return VecSimCommonStrings::LOG_VERBOSE_STRING;
+                case spdlog::level::info:
+                    return VecSimCommonStrings::LOG_NOTICE_STRING;
+                case spdlog::level::warn:
+                case spdlog::level::err:
+                case spdlog::level::critical:
+                    return VecSimCommonStrings::LOG_WARNING_STRING;
+                default:
+                    return "UNKNOWN";
+                }
+            }();
+
+            std::string msg_str{msg.payload.data(), msg.payload.size()};
+            // Log the message using the custom callback
+            VecSimIndexInterface::logCallback(this->logCallbackCtx, vecsim_level, msg_str.c_str());
+        };
+
+        // Create a logger with the custom callback
+        auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>(callback);
+        auto logger = std::make_shared<spdlog::logger>("SVSIndex", sink);
+        // Sink all messages to VecSim
+        logger->set_level(spdlog::level::trace);
+        return logger;
+    }
+
     // Create SVS index instance with initial data
     // Data should not be empty
     template <svs::data::ImmutableMemoryDataset Dataset>
     void initImpl(const Dataset &points, std::span<const labelType> ids) {
         VecSimSVSThreadPool threadpool;
         svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool}};
+
+        auto logger = makeLogger();
+
         // Construct SVS index initial storage with compression if needed
         auto data = storage_traits_t::create_storage(points, this->blockSize, threadpool_handle,
                                                      this->getAllocator());
@@ -129,11 +169,11 @@ protected:
         // Construct initial Vamana Graph
         auto graph =
             graph_builder_t::build_graph(parameters, data, distance, threadpool, entry_point,
-                                         this->blockSize, this->getAllocator());
+                                         this->blockSize, this->getAllocator(), logger);
 
         // Create SVS MutableIndex instance
         impl_ = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
-                                            std::move(distance), ids, std::move(threadpool));
+                                            std::move(distance), ids, std::move(threadpool), logger);
 
         // Set SVS MutableIndex build parameters to be used in future updates
         impl_->set_construction_window_size(parameters.window_size);

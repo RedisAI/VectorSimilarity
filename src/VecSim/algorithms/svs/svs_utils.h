@@ -257,7 +257,7 @@ struct SVSGraphBuilder {
     static graph_type build_graph(const svs::index::vamana::VamanaBuildParameters &parameters,
                                   const Data &data, DistType distance, Pool &threadpool,
                                   SVSIdType entry_point, size_t block_size,
-                                  std::shared_ptr<VecSimAllocator> allocator) {
+                                  std::shared_ptr<VecSimAllocator> allocator, const svs::logging::logger_ptr& logger) {
         auto svs_bs =
             svs_details::SVSBlockSize(block_size, element_size(parameters.graph_max_degree));
         // Perform graph construction.
@@ -276,8 +276,8 @@ struct SVSGraphBuilder {
         // Specific to the Vamana algorithm:
         // It builds in two rounds, one with alpha=1 and the second time with the user/config
         // provided alpha value.
-        builder.construct(1.0f, entry_point);
-        builder.construct(parameters.alpha, entry_point);
+        builder.construct(1.0f, entry_point, svs::logging::Level::Trace, logger);
+        builder.construct(parameters.alpha, entry_point, svs::logging::Level::Trace, logger);
         return graph;
     }
 
