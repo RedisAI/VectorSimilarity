@@ -27,22 +27,23 @@ private:
     size_t dim;
     std::unique_ptr<impl_type> impl_;
     decltype(impl_->begin()) curr_it;
+    constexpr static size_t minimum_batch_size = svs::ITERATOR_EXTRA_BUFFER_CAPACITY_DEFAULT;
 
     static std::unique_ptr<impl_type> makeImpl(const Index *index, void *query_vector,
                                                VecSimQueryParams *queryParams) {
         auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams);
-        const size_t batch_size = queryParams && queryParams->batchSize
-                                      ? queryParams->batchSize
-                                      : sp.buffer_config_.get_search_window_size();
-        // Base search parameters for the iterator schedule.
-        auto schedule = svs::index::vamana::DefaultSchedule{sp, batch_size};
+        size_t batch_size = queryParams && queryParams->batchSize
+                                ? queryParams->batchSize
+                                : sp.buffer_config_.get_search_window_size();
+
+        // For proper SVS batch iterator searching, the batch size to be at least minimum_batch_size
+        batch_size = std::max(batch_size, minimum_batch_size);
+
         std::span<const DataType> query{reinterpret_cast<DataType *>(query_vector),
                                         index->dimensions()};
 
-        auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
-        auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
-        return std::make_unique<svs::index::vamana::BatchIterator<Index, DataType>>(
-            *index, query, schedule, cancel);
+        return std::make_unique<svs::index::vamana::BatchIterator<Index, DataType>>(*index, query,
+                                                                                    batch_size);
     }
 
     VecSimQueryReply *getNextResultsImpl(size_t n_res) {
@@ -56,9 +57,11 @@ private:
             return rep;
         }
 
+        auto batch_size = std::max(n_res, minimum_batch_size);
+
         for (size_t i = 0; i < n_res; i++) {
             if (curr_it == impl_->end()) {
-                impl_->next(cancel);
+                impl_->next(batch_size, cancel);
                 if (cancel()) {
                     rep->code = VecSim_QueryReply_TimedOut;
                     rep->results.clear();
@@ -97,9 +100,7 @@ public:
     void reset() override {
         std::span<const DataType> query{reinterpret_cast<const DataType *>(this->getQueryBlob()),
                                         dim};
-        auto timeoutCtx = this->getTimeoutCtx();
-        auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
-        impl_->update(query, cancel);
+        impl_->update(query);
         curr_it = impl_->begin();
     }
 };
