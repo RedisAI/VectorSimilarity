@@ -124,11 +124,11 @@ dist_func_t<float> Cosine_SQ8_GetDistFunc(size_t dim, unsigned char *alignment, 
         if (dim < 16) {
             return ret_dist_func;
         }
-    #ifdef OPT_AVX512_F_BW_VL_VNNI
-        if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+    #ifdef OPT_AVX512F
+        if (features.avx512f) {
             if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
                 *alignment = 16 * sizeof(float); // handles 16 floats
-            return Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+            return Choose_SQ8_Cosine_implementation_AVX512F(dim);
         }
     #endif
     // #ifdef OPT_AVX
