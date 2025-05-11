@@ -2157,6 +2157,19 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
         optimization.avx = 0;
     }
     #endif
+    #ifdef OPT_SSE
+    if (optimization.sse) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_L2_implementation_SSE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "SSE with dim " << dim;
+        // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
+        // Unset sse flag as well, so we'll choose the next optimization (default).
+        optimization.sse = 0;
+    }
+    #endif
 
     // Add other optimizations as needed (SVE2, SVE, NEON, etc.)
 

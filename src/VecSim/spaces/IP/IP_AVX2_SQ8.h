@@ -36,14 +36,14 @@ static inline void InnerProductStepSQ8(float *&pVect1, uint8_t *&pVect2, __m256 
 template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
-    uint8_t *quantized = (uint8_t *)pVect2v;
+    uint8_t *pVect2 = (uint8_t *)pVect2v;
 
     // Get dequantization parameters from the end of quantized vector
-    float min = *(float *)(quantized + dimension);
-    float delta = *(float *)(quantized + dimension + sizeof(float));
+    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
     
     // Create broadcast vectors for SIMD operations
-    __m256 min_val_vec = _mm256_set1_ps(min);
+    __m256 min_val_vec = _mm256_set1_ps(min_val);
     __m256 delta_vec = _mm256_set1_ps(delta);
 
     const float *pEnd1 = pVect1 + dimension;
@@ -60,19 +60,8 @@ float SQ8_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size
         pVect1 += residual % 8;
         
         // Load masked uint8 elements
-        __m128i v2_128;
-        if constexpr (residual % 8 <= 4) {
-            // Load 4 or fewer bytes
-            uint32_t temp = 0;
-            memcpy(&temp, quantized, residual % 8);
-            v2_128 = _mm_cvtsi32_si128(temp);
-        } else {
-            // Load 5-7 bytes
-            uint64_t temp = 0;
-            memcpy(&temp, quantized, residual % 8);
-            v2_128 = _mm_cvtsi64_si128(temp);
-        }
-        quantized += residual % 8;
+        __m128i v2_128 = _mm_loadl_epi64((__m128i*)pVect2);
+        pVect2 += residual % 8;
         
         // Zero-extend uint8 to int32 (AVX2 instruction)
         __m256i v2_256 = _mm256_cvtepu8_epi32(v2_128);
@@ -82,6 +71,7 @@ float SQ8_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size
         
         // Dequantize: (val * delta) + min (using FMA)
         __m256 v2_dequant = _mm256_fmadd_ps(v2_f, delta_vec, min_val_vec);
+        v2_dequant = _mm256_blend_ps(_mm256_setzero_ps(), v2_dequant, mask);
         
         // Compute dot product with masking
         sum256 = _mm256_mul_ps(v1, v2_dequant);
@@ -89,14 +79,14 @@ float SQ8_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size
 
     // If the reminder is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8(pVect1, quantized, sum256, min_val_vec, delta_vec);
+        InnerProductStepSQ8(pVect1, pVect2, sum256, min_val_vec, delta_vec);
     }
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
     while (pVect1 < pEnd1) {
-        InnerProductStepSQ8(pVect1, quantized, sum256, min_val_vec, delta_vec);
-        InnerProductStepSQ8(pVect1, quantized, sum256, min_val_vec, delta_vec);
+        InnerProductStepSQ8(pVect1, pVect2, sum256, min_val_vec, delta_vec);
+        InnerProductStepSQ8(pVect1, pVect2, sum256, min_val_vec, delta_vec);
     }
 
     // Horizontal sum - AVX2 can use more efficient reduction

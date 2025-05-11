@@ -80,13 +80,13 @@ namespace spaces {
             return Choose_SQ8_L2_implementation_AVX(dim);
         }
     #endif
-    // #ifdef OPT_SSE
-    //     if (features.sse) {
-    //         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
-    //             *alignment = 4 * sizeof(float); // handles 4 floats
-    //         return Choose_SQ8_L2_implementation_SSE(dim);
-    //     }
-    // #endif
+    #ifdef OPT_SSE
+        if (features.sse) {
+            if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
+                *alignment = 4 * sizeof(float); // handles 4 floats
+            return Choose_SQ8_L2_implementation_SSE(dim);
+        }
+    #endif
     #endif // __x86_64__
         return ret_dist_func;
     }
