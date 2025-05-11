@@ -91,7 +91,7 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductSIMD16_AVX512F(const void *pVec1v,
+float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v,
                                               const void *pVec2v,
                                               size_t dimension) {
     // Calculate inner product using common implementation
@@ -102,7 +102,7 @@ float SQ8_InnerProductSIMD16_AVX512F(const void *pVec1v,
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_CosineSIMD16_AVX512F(const void *pVec1v, const void *pVec2v,
+float SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                          size_t dimension) {
     // Get the inverse norm factor stored after min_val and delta
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
