@@ -10,6 +10,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include <cstring>
+#include <iostream>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -22,14 +23,17 @@ float SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // The last two values are used to dequantize the vector.
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
-    const float inv_norm = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        auto dequantized_normalized_V2 = (pVect2[i] * delta + min_val) * inv_norm;
-        float t = pVect1[i] - dequantized_normalized_V2;
+        auto dequantized_V2 = (pVect2[i] * delta + min_val);
+        std::cout << dequantized_V2 << " ";
+        float t = pVect1[i] - dequantized_V2;
         res += t * t;
     }
+    // The last value is used to normalize the vector.
+    // The normalization is done by multiplying the result by the inverse of the norm.
+    std::cout << std::endl;
     return res;
 }
 

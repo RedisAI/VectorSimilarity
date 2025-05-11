@@ -435,6 +435,7 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
     size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
     spaces::GetNormalizeFunc<float>()(v1_orig, dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig, dim);
     // Find min and max for quantization
     float min_val = v2_orig[0];
     float max_val = v2_orig[0];
@@ -2117,7 +2118,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
         v1_orig[i] = float(i + 1.5);
         v2_orig[i] = float(i * 0.75 + 1.0);
     }
-
+    
     // Create SQ8 compressed version of v2
     std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig.data(), dim);
 
@@ -2128,7 +2129,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_L2Sqr(v1_orig.data(), v2_compressed.data(), dim);
-
+    std::cout << "baseline: " << baseline << std::endl;
     // Test different optimizations based on CPU features
     #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
@@ -2141,6 +2142,19 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
         // ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
         optimization.avx512f = 0;
+    }
+    #endif
+    #ifdef OPT_AVX
+    if (optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_L2_implementation_AVX(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+            ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "AVX with dim " << dim;
+        // ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
+        // Unset avx flag as well, so we'll choose the next optimization (SSE).
+        optimization.avx = 0;
     }
     #endif
 

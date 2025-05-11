@@ -14,6 +14,7 @@ namespace spaces {
 
 dist_func_t<float> Choose_SQ8_IP_implementation_AVX(size_t dim);
 dist_func_t<float> Choose_SQ8_Cosine_implementation_AVX(size_t dim);
+dist_func_t<float> Choose_SQ8_L2_implementation_AVX(size_t dim);
 
 dist_func_t<float> Choose_FP32_IP_implementation_AVX(size_t dim);
 dist_func_t<double> Choose_FP64_IP_implementation_AVX(size_t dim);

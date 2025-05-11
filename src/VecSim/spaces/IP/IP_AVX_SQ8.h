@@ -67,6 +67,8 @@ float SQ8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimen
         
         // Dequantize: (val * delta) + min_val
         __m256 v2_dequant = _mm256_add_ps(_mm256_mul_ps(v2_f, delta_vec), min_val_vec);
+        v2_dequant = _mm256_blend_ps(_mm256_setzero_ps(), v2_dequant, mask);
+ 
         
         // Compute dot product with masking
         sum256 = _mm256_mul_ps(v1, v2_dequant);
