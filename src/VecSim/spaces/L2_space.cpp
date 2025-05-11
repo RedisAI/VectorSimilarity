@@ -38,31 +38,31 @@ namespace spaces {
         if (!alignment) {
             alignment = &dummy_alignment;
         }
-    
+
         dist_func_t<float> ret_dist_func = SQ8_L2Sqr;
-    
+
         [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-    // #ifdef CPU_FEATURES_ARCH_AARCH64
-    // #ifdef OPT_SVE2
-    //     if (features.sve2) {
-    //         return Choose_FP32_L2_implementation_SVE2(dim);
-    //     }
-    // #endif
-    // #ifdef OPT_SVE
-    //     if (features.sve) {
-    //         return Choose_FP32_L2_implementation_SVE(dim);
-    //     }
-    // #endif
-    // #ifdef OPT_NEON
-    //     if (features.asimd) {
-    //         return Choose_FP32_L2_implementation_NEON(dim);
-    //     }
-    // #endif
-    // #endif
-    
+    #ifdef CPU_FEATURES_ARCH_AARCH64
+    #ifdef OPT_SVE2
+        if (features.sve2) {
+            return Choose_SQ8_L2_implementation_SVE2(dim);
+        }
+    #endif
+    #ifdef OPT_SVE
+        if (features.sve) {
+            return Choose_SQ8_L2_implementation_SVE(dim);
+        }
+    #endif
+    #ifdef OPT_NEON
+        if (features.asimd) {
+            return Choose_SQ8_L2_implementation_NEON(dim);
+        }
+    #endif
+    #endif
+
     #ifdef CPU_FEATURES_ARCH_X86_64
         // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    
+
         if (dim < 16) {
             return ret_dist_func;
         }

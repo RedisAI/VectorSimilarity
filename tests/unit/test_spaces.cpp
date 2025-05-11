@@ -2171,7 +2171,32 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
     }
     #endif
 
-    // Add other optimizations as needed (SVE2, SVE, NEON, etc.)
+    #ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_L2_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+    #endif
+    #ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_L2_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+    #endif
 
     // Test default implementation
     unsigned char alignment = 0;
@@ -2254,6 +2279,32 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "SSE with dim " << dim;
         // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse = 0;
+    }
+    #endif
+    #ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+            ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
+    }
+    #endif
+    #ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
     }
     #endif
 
@@ -2376,84 +2427,3 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
-
-// Instantiate the test suite with dimensions to test
-INSTANTIATE_TEST_SUITE_P(SQ8CosineTest, SQ8SpacesOptimizationTest,
-    testing::Range(16UL, 16 * 2UL + 1));
-
-// TEST_P(SQ8SpacesOptimizationTest, SQ8_full_range_test) {
-//     auto optimization = getCpuOptimizationFeatures();
-//     constexpr size_t dim = 512;
-
-//     // Create vectors with full range of values
-//     std::vector<float> v1(dim);
-//     std::vector<float> v2(dim);
-
-//     // v1: 0..255 followed by 255..0
-//     for (size_t i = 0; i < 256; i++) {
-//         v1[i] = static_cast<float>(i) / 255.0f;
-//         v1[256 + i] = static_cast<float>(255 - i) / 255.0f;
-//     }
-
-//     // v2: 255..0 followed by 0..255
-//     for (size_t i = 0; i < 256; i++) {
-//         v2[i] = static_cast<float>(255 - i) / 255.0f;
-//         v2[256 + i] = static_cast<float>(i) / 255.0f;
-//     }
-
-//     // Create SQ8 compressed version of v2
-//     std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2.data(), dim, false);
-
-//     // Create normalized version of v1 for cosine
-//     std::vector<float> v1_norm(v1);
-//     spaces::GetNormalizeFunc<float>()(v1_norm.data(), dim);
-
-//     // Create normalized SQ8 compressed version of v2 for cosine
-//     std::vector<uint8_t> v2_compressed_norm = CreateSQ8CompressedVector(v2.data(), dim, true);
-
-//     float baseline_l2 = SQ8_L2Sqr(v1.data(), v2_compressed.data(), dim);
-//     float baseline_ip = SQ8_InnerProduct(v1.data(), v2_compressed.data(), dim);
-//     float baseline_cosine = SQ8_Cosine(v1_norm.data(), v2_compressed_norm.data(), dim);
-
-//     dist_func_t<float> arch_opt_func;
-
-//     // Test different optimizations for each metric
-//     #ifdef OPT_AVX512F
-//     if (optimization.avx512f) {
-//         // L2 test
-//         arch_opt_func = Choose_SQ8_L2_implementation_AVX512F(dim);
-//         ASSERT_NEAR(baseline_l2, arch_opt_func(v1.data(), v2_compressed.data(), dim), 0.01)
-//             << "L2 AVX512 with dim " << dim;
-
-//         // IP test
-//         arch_opt_func = Choose_SQ8_IP_implementation_AVX512F(dim);
-//         ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v2_compressed.data(), dim), 0.01)
-//             << "IP AVX512 with dim " << dim;
-
-//         // Cosine test
-//         arch_opt_func = Choose_SQ8_Cosine_implementation_AVX512F(dim);
-//         ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_compressed_norm.data(),
-//         dim), 0.01)
-//             << "Cosine AVX512 with dim " << dim;
-
-//         optimization.avx512f = 0;
-//     }
-//     #endif
-
-//     // Add other optimizations as needed (SVE2, SVE, NEON, etc.)
-
-
-// Instantiate the test suite with dimensions to test
-INSTANTIATE_TEST_SUITE_P(SQ8OptFuncs, SQ8SpacesOptimizationTest,
-                         testing::Range(16UL, 16 * 2UL + 1));
-
-// #endif // defined(OPT_AVX512_FP16_VL) || defined(CPU_FEATURES_ARCH_AARCH64)
-
-// class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
-
-// TEST_P(INT8SpacesOptimizationTest, INT8L2SqrTest) {
-//     auto optimization = getCpuOptimizationFeatures();
-//     size_t dim = GetParam();
-//     int8_t v1[dim];
-//     int8_t v2[dim];
-//     test_utils::populate_int8_vec(v1, dim

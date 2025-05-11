@@ -19,14 +19,11 @@ using float16 = vecsim_types::float16;
 float FLOAT_INTEGER_InnerProduct(const float *pVect1v, const uint8_t *pVect2v, size_t dimension, float min_val,
                          float delta, float inv_norm) {
     float res = 0;
-    std::cout << "\nQuantized values: ";
     for (size_t i = 0; i < dimension; i++) {
         float dequantized_V2 = (pVect2v[i] * delta + min_val) * inv_norm;
         std::cout << dequantized_V2 << ", ";
         res += pVect1v[i] * dequantized_V2;
     }
-    std::cout << "\n";
-    std::cout << "res before normalization: " << res << std::endl;
     return res;
 }
 
