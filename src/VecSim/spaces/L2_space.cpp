@@ -66,7 +66,7 @@ namespace spaces {
         if (dim < 16) {
             return ret_dist_func;
         }
-    #ifdef OPT_AVX512F_BW_VL_VNNI
+    #ifdef OPT_AVX512_F_BW_VL_VNNI
         if (features.avx512f && features.avx512bw && features.avx512vnni) {
             if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
                 *alignment = 16 * sizeof(float); // handles 16 floats
