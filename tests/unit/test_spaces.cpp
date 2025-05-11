@@ -2315,6 +2315,18 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
         optimization.avx512f = 0;
     }
     #endif
+    #ifdef OPT_AVX
+    if (optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_Cosine_implementation_AVX(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "AVX with dim " << dim;
+        // We don't align SQ8 vectors with cosine distance
+        // ASSERT_EQ(alignment, 0) << "AVX with dim " << dim;
+        optimization.avx = 0;
+    }
 
     #ifdef OPT_SSE
     if (optimization.sse) {
