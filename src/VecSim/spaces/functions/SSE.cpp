@@ -13,10 +13,23 @@
 
 #include "VecSim/spaces/IP/IP_SSE_FP32.h"
 #include "VecSim/spaces/IP/IP_SSE_FP64.h"
+#include "VecSim/spaces/IP/IP_SSE_SQ8.h"
 
 namespace spaces {
 
 #include "implementation_chooser.h"
+
+dist_func_t<float> Choose_SQ8_IP_implementation_SSE(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_InnerProductSIMD16_SSE);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_Cosine_implementation_SSE(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_CosineSIMD16_SSE);
+    return ret_dist_func;
+}
 
 dist_func_t<float> Choose_FP32_IP_implementation_SSE(size_t dim) {
     dist_func_t<float> ret_dist_func;

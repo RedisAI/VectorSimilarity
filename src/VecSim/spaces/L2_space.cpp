@@ -33,6 +33,64 @@ using float16 = vecsim_types::float16;
 
 namespace spaces {
 
+    dist_func_t<float> L2_SQ8_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
+        unsigned char dummy_alignment;
+        if (!alignment) {
+            alignment = &dummy_alignment;
+        }
+    
+        dist_func_t<float> ret_dist_func = SQ8_L2Sqr;
+    
+        [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+    // #ifdef CPU_FEATURES_ARCH_AARCH64
+    // #ifdef OPT_SVE2
+    //     if (features.sve2) {
+    //         return Choose_FP32_L2_implementation_SVE2(dim);
+    //     }
+    // #endif
+    // #ifdef OPT_SVE
+    //     if (features.sve) {
+    //         return Choose_FP32_L2_implementation_SVE(dim);
+    //     }
+    // #endif
+    // #ifdef OPT_NEON
+    //     if (features.asimd) {
+    //         return Choose_FP32_L2_implementation_NEON(dim);
+    //     }
+    // #endif
+    // #endif
+    
+    // #ifdef CPU_FEATURES_ARCH_X86_64
+    //     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+    
+    //     if (dim < 16) {
+    //         return ret_dist_func;
+    //     }
+    // #ifdef OPT_AVX512F
+    //     if (features.avx512f) {
+    //         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+    //             *alignment = 16 * sizeof(float); // handles 16 floats
+    //         return Choose_SQ8_L2_implementation_AVX512F(dim);
+    //     }
+    // #endif
+    // #ifdef OPT_AVX
+    //     if (features.avx) {
+    //         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
+    //             *alignment = 8 * sizeof(float); // handles 8 floats
+    //         return Choose_SQ8_L2_implementation_AVX(dim);
+    //     }
+    // #endif
+    // #ifdef OPT_SSE
+    //     if (features.sse) {
+    //         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
+    //             *alignment = 4 * sizeof(float); // handles 4 floats
+    //         return Choose_SQ8_L2_implementation_SSE(dim);
+    //     }
+    // #endif
+    // #endif // __x86_64__
+        return ret_dist_func;
+    }
+
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;
     if (!alignment) {

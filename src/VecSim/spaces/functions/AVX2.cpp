@@ -10,6 +10,7 @@
 
 #include "VecSim/spaces/IP/IP_AVX2_BF16.h"
 #include "VecSim/spaces/L2/L2_AVX2_BF16.h"
+#include "VecSim/spaces/IP/IP_AVX2_SQ8.h"
 
 namespace spaces {
 
@@ -24,6 +25,12 @@ dist_func_t<float> Choose_BF16_IP_implementation_AVX2(size_t dim) {
 dist_func_t<float> Choose_BF16_L2_implementation_AVX2(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, BF16_L2SqrSIMD32_AVX2);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_IP_implementation_AVX2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_InnerProductSIMD16_AVX2);
     return ret_dist_func;
 }
 

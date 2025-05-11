@@ -111,3 +111,134 @@ private:
     spaces::normalizeVector_f<DataType> normalize_func;
     const size_t dim;
 };
+
+template <typename DataType>
+class QuantPreprocessor : public PreprocessorInterface {
+public:
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim, size_t bits_per_dim = 8)
+        : PreprocessorInterface(allocator), dim(dim), bits_per_dim(bits_per_dim),
+          compressed_bytes_count(calculateCompressedSize(dim)) {}
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t processed_bytes_count, unsigned char alignment) const override {
+        // Case 1: Blobs are different (one might be null, or both are allocated and processed separately)
+        if (storage_blob != query_blob) {
+            // Process storage blob (compress)
+            if (storage_blob == nullptr) {
+                storage_blob = this->allocator->allocate(compressed_bytes_count);
+                quantize(original_blob, storage_blob);
+            }
+            
+            // Query blob remains uncompressed
+            if (query_blob == nullptr) {
+                query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+                memcpy(query_blob, original_blob, processed_bytes_count);
+            }
+        } else { // Case 2: Blobs are the same or both null
+            if (query_blob == nullptr) {
+                // For query, we keep the original format
+                query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+                memcpy(query_blob, original_blob, processed_bytes_count);
+                
+                // For storage, we compress
+                storage_blob = this->allocator->allocate(compressed_bytes_count);
+                quantize(original_blob, storage_blob);
+            } else {
+                // If both point to the same memory, we need to separate them
+                void* new_storage = this->allocator->allocate(compressed_bytes_count);
+                quantize(query_blob, new_storage);
+                storage_blob = new_storage;
+            }
+        }
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t processed_bytes_count) const override {
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(compressed_bytes_count);
+            quantize(original_blob, blob);
+        } else {
+            // If blob is already allocated, we need to compress in-place
+            void* temp = this->allocator->allocate(compressed_bytes_count);
+            quantize(blob, temp);
+            this->allocator->free_allocation(blob);
+            blob = temp;
+        }
+    }
+
+    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+                         unsigned char alignment) const override {
+        // For query, we keep the original format
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            memcpy(blob, original_blob, processed_bytes_count);
+        }
+    }
+
+    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
+                                unsigned char alignment) const override {
+        // No compression for query vectors
+        assert(blob);
+    }
+
+    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {
+        assert(blob);
+        // Create temporary storage for compressed data
+        void* temp = this->allocator->allocate(compressed_bytes_count);
+        quantize(blob, temp);
+        
+        // Copy compressed data back to original location
+        // Note: This assumes blob has enough space for the compressed data
+        memcpy(blob, temp, compressed_bytes_count);
+        this->allocator->free_allocation(temp);
+    }
+
+private:
+    const size_t dim;
+    const size_t bits_per_dim;
+    const size_t compressed_bytes_count;
+
+    // Calculate the size needed for the compressed vector
+    static size_t calculateCompressedSize(size_t dim) {
+        // Quantized values (int8 per dimension) + min (float32) + delta (float32)
+        return dim * sizeof(int8_t) + 2 * sizeof(float);
+    }
+
+    // Quantize the vector from original format to compressed format
+    void quantize(const void *src, void *dst) const {
+        const DataType* src_data = static_cast<const DataType*>(src);
+        
+        // Find min and max values in the vector
+        DataType min_val = src_data[0];
+        DataType max_val = src_data[0];
+        
+        for (size_t i = 0; i < dim; i++) {
+            DataType val = src_data[i];
+            min_val = val < min_val ? val : min_val;
+            max_val = val > max_val ? val : max_val;
+        }
+        
+        // Calculate delta (quantization step)
+        float delta = (max_val - min_val) / 255.0f;
+        if (delta == 0){
+            delta = 1.0f; // Avoid division by zero if all values are the same
+        }
+        
+        // Structure of compressed data:
+        // [quantized values (int8_t * dim)][min_val (float)][delta (float)]
+        int8_t* quant_values = static_cast<int8_t*>(dst); // convert to int8_t pointer
+        float* params = reinterpret_cast<float*>(quant_values + dim); // convert to float pointer starting after quantized values
+        
+        // Store min and delta values for dequantization
+        params[0] = static_cast<float>(min_val);
+        params[1] = delta;
+        
+        // Quantize each value
+        for (size_t i = 0; i < dim; i++) {
+            float normalized = (src_data[i] - min_val) / delta;
+            if (normalized < 0) normalized = 0;
+            if (normalized > 255) normalized = 255;
+            quant_values[i] = static_cast<int8_t>(normalized);
+        }
+    }
+};
