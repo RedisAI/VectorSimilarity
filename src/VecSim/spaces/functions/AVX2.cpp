@@ -28,12 +28,6 @@ dist_func_t<float> Choose_BF16_L2_implementation_AVX2(size_t dim) {
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_IP_implementation_AVX2(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_InnerProductSIMD16_AVX2);
-    return ret_dist_func;
-}
-
 #include "implementation_chooser_cleanup.h"
 
 } // namespace spaces

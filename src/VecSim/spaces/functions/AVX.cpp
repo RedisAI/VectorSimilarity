@@ -25,6 +25,12 @@ dist_func_t<float> Choose_SQ8_IP_implementation_AVX(size_t dim) {
     return ret_dist_func;
 }
 
+dist_func_t<float> Choose_SQ8_Cosine_implementation_AVX(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_CosineSIMD16_AVX);
+    return ret_dist_func;
+}
+
 dist_func_t<float> Choose_FP32_IP_implementation_AVX(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
