@@ -2169,9 +2169,8 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
         v2_orig[i] = float(i * 0.75 + 1.0);
     }
     spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
-    // spaces::GetNormalizeFunc<float>()(v2_orig.data(), dim);
     // print v1_orig
-    std::cout << "v1_orig: ";
+    std::cout << "v1_normalized: ";
     for (size_t i = 0; i < dim; i++) {
         std::cout << v1_orig[i] << ", ";
     }
@@ -2196,8 +2195,8 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
     float baseline = SQ8_InnerProduct(v1_orig.data(), v2_compressed.data(), dim);
 
     // Test different optimizations based on CPU features
-    #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl && optimization.avx512vnni) {
+    #ifdef OPT_AVX512F
+    if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2303,12 +2302,12 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     #endif
 
     // Test different optimizations based on CPU features
-    #ifdef OPT_AVX512_F_BW_VL_VNNI
+    #ifdef OPT_AVX512F
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
         optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_Cosine_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX512 with dim " << dim;
