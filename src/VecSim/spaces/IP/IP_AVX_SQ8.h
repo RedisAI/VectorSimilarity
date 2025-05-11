@@ -115,8 +115,9 @@ float SQ8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimen
     return my_mm256_reduce_add_ps(sum256);
 }
 
+template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return SQ8_InnerProductImp<0>(pVect1v, pVect2v, dimension);
+    return SQ8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
