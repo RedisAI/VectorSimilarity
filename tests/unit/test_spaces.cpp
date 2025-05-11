@@ -2327,6 +2327,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
         // ASSERT_EQ(alignment, 0) << "AVX with dim " << dim;
         optimization.avx = 0;
     }
+    #endif
 
     #ifdef OPT_SSE
     if (optimization.sse) {
