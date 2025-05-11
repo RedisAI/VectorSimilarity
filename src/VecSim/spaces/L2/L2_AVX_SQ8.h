@@ -109,7 +109,6 @@ float SQ8_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimen
         float t = pVect1_debug[i] - dequantized_V2;
         naive_sum += t * t;
     }
-    std::cout <<"residual: " << (int)residual << " " << naive_sum << " " << my_mm256_reduce_add_ps(sum) << std::endl;
     
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
