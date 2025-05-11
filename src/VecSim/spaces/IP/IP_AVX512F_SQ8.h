@@ -81,35 +81,13 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
         pVec2 += residual;
     }
     
-    // Print and compare the residual sums
-    float simd_residual_sum = _mm512_reduce_add_ps(sum);
-    std::cout << "Residual part - SIMD sum: " << simd_residual_sum 
-              << ", Naive sum: " << naive_sum 
-              << ", Difference: " << std::abs(simd_residual_sum - naive_sum) << std::endl;
-    
     // Process remaining full chunks of 16 elements
-    while (pVec2 <= pEnd2) {
+    do {
         SQ8_InnerProductStep(pVec1, pVec2, sum, min_val_vec, delta_vec);
-    }
-
-    // Horizontal sum
-    float result = _mm512_reduce_add_ps(sum);
-
-    // Calculate full naive sum for comparison
-    float full_naive_sum = naive_sum;
-    const float *orig_pVec1 = static_cast<const float *>(pVec1v) + residual;
-    const uint8_t *orig_pVec2 = static_cast<const uint8_t *>(pVec2v) + residual;
-    for (size_t i = 0; i < dimension - residual; i++) {
-        float dequantized = orig_pVec2[i] * delta + min_val;
-        full_naive_sum += orig_pVec1[i] * dequantized;
-    }
-    
-    std::cout << "Full calculation - SIMD sum: " << result 
-              << ", Naive sum: " << full_naive_sum 
-              << ", Difference: " << std::abs(result - full_naive_sum) << std::endl;
+    } while (pVec1 < pEnd2);
 
     // Return the raw inner product result
-    return result;
+    return _mm512_reduce_add_ps(sum);;
 }
 
 template <unsigned char residual> // 0..15
