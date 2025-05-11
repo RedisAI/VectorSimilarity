@@ -60,19 +60,19 @@ namespace spaces {
     // #endif
     // #endif
     
-    // #ifdef CPU_FEATURES_ARCH_X86_64
-    //     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+    #ifdef CPU_FEATURES_ARCH_X86_64
+        // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     
-    //     if (dim < 16) {
-    //         return ret_dist_func;
-    //     }
-    // #ifdef OPT_AVX512F
-    //     if (features.avx512f) {
-    //         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-    //             *alignment = 16 * sizeof(float); // handles 16 floats
-    //         return Choose_SQ8_L2_implementation_AVX512F(dim);
-    //     }
-    // #endif
+        if (dim < 16) {
+            return ret_dist_func;
+        }
+    #ifdef OPT_AVX512F_BW_VL_VNNI
+        if (features.avx512f && features.avx512bw && features.avx512vnni) {
+            if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+                *alignment = 16 * sizeof(float); // handles 16 floats
+            return Choose_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+        }
+    #endif
     // #ifdef OPT_AVX
     //     if (features.avx) {
     //         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
@@ -87,7 +87,7 @@ namespace spaces {
     //         return Choose_SQ8_L2_implementation_SSE(dim);
     //     }
     // #endif
-    // #endif // __x86_64__
+    #endif // __x86_64__
         return ret_dist_func;
     }
 

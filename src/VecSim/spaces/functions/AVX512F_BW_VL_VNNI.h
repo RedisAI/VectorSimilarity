@@ -24,5 +24,6 @@ dist_func_t<float> Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t 
 
 dist_func_t<float> Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 dist_func_t<float> Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim);
+dist_func_t<float> Choose_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 
 } // namespace spaces
