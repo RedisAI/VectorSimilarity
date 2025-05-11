@@ -2196,7 +2196,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
 
     // Test different optimizations based on CPU features
     #ifdef OPT_AVX512F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2303,7 +2303,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
 
     // Test different optimizations based on CPU features
     #ifdef OPT_AVX512F
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
