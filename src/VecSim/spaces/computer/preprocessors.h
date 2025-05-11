@@ -58,9 +58,11 @@ public:
             // If one of them is null, allocate memory for it and copy the original_blob to it.
             if (storage_blob == nullptr) {
                 storage_blob = this->allocator->allocate(processed_bytes_count);
+                // TODO: handle original_blob_size != processed_bytes_count
                 memcpy(storage_blob, original_blob, processed_bytes_count);
             } else if (query_blob == nullptr) {
                 query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+                // TODO: handle original_blob_size != processed_bytes_count
                 memcpy(query_blob, original_blob, processed_bytes_count);
             }
 
@@ -71,6 +73,7 @@ public:
             if (query_blob == nullptr) { // If both blobs are null, allocate query_blob and set
                                          // storage_blob to point to it.
                 query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+                // TODO: handle original_blob_size != processed_bytes_count
                 memcpy(query_blob, original_blob, processed_bytes_count);
                 storage_blob = query_blob;
             }
@@ -83,6 +86,7 @@ public:
                               size_t processed_bytes_count) const override {
         if (blob == nullptr) {
             blob = this->allocator->allocate(processed_bytes_count);
+            // TODO: handle original_blob_size != processed_bytes_count
             memcpy(blob, original_blob, processed_bytes_count);
         }
         normalize_func(blob, this->dim);
@@ -92,6 +96,7 @@ public:
                          unsigned char alignment) const override {
         if (blob == nullptr) {
             blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
+            // TODO: handle original_blob_size != processed_bytes_count
             memcpy(blob, original_blob, processed_bytes_count);
         }
         normalize_func(blob, this->dim);
