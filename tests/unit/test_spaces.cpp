@@ -2302,7 +2302,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     #endif
 
     // Test different optimizations based on CPU features
-    #ifdef OPT_AVX512F
+    #ifdef OPT_AVX512F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
