@@ -40,7 +40,7 @@ template <unsigned char residual> // 0..15
 float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimension, float inv_norm = 1.0f) {
     const float *pVec1 = static_cast<const float *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
-    const uint8_t *pEnd2 = pVec2 + dimension;
+    const uint8_t *pEnd1 = pVec1 + dimension;
 
     // Get dequantization parameters from the end of pVec2
     const float min_val = *reinterpret_cast<const float *>(pVec2 + dimension);
@@ -84,7 +84,7 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
     // Process remaining full chunks of 16 elements
     do {
         SQ8_InnerProductStep(pVec1, pVec2, sum, min_val_vec, delta_vec);
-    } while (pVec1 < pEnd2);
+    } while (pVec1 < pEnd1);
 
     // Return the raw inner product result
     return _mm512_reduce_add_ps(sum);;
