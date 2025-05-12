@@ -21,7 +21,6 @@ float FLOAT_INTEGER_InnerProduct(const float *pVect1v, const uint8_t *pVect2v, s
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
         float dequantized_V2 = (pVect2v[i] * delta + min_val) * inv_norm;
-        std::cout << dequantized_V2 << ", ";
         res += pVect1v[i] * dequantized_V2;
     }
     return res;
@@ -48,7 +47,6 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
     const float inv_norm = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
-    std::cout << "inv_norm: " << inv_norm << std::endl;
     // Compute inner product with dequantization
     const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta, inv_norm);
     return 1.0f - res;

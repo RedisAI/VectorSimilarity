@@ -19,12 +19,8 @@ static inline void InnerProductStep(float *&pVect1, uint8_t *&pVect2, size_t &of
     // Load float elements from pVect1
     svfloat32_t v1 = svld1_f32(pg, pVect1 + offset);
     
-    // Load uint8 elements from pVect2, convert to int32, then to float
-    svbool_t pg_b8 = svptrue_b8();
-    svuint8_t v2_u8 = svld1_u8(pg_b8, pVect2 + offset);
-    
     // Convert uint8 to uint32
-    svuint32_t v2_u32 = svzext_u32(svreinterpret_u32_u8(v2_u8));
+    svuint32_t v2_u32 = svld1ub_u32(pg, pVect2 + offset); // LD1UB: loa
     
     // Convert uint32 to float32
     svfloat32_t v2_f = svcvt_f32_u32_z(pg, v2_u32);
@@ -42,12 +38,12 @@ static inline void InnerProductStep(float *&pVect1, uint8_t *&pVect2, size_t &of
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
-    uint8_t *quantized = (uint8_t *)pVect2v;
+    uint8_t *pVect2 = (uint8_t *)pVect2v;
     size_t offset = 0;
 
     // Get dequantization parameters from the end of quantized vector
-    float min = *(float *)(quantized + dimension);
-    float delta = *(float *)(quantized + dimension + sizeof(float));
+    float min = *(float *)(pVect2 + dimension);
+    float delta = *(float *)(pVect2 + dimension + sizeof(float));
     
     // Create broadcast vectors for SIMD operations
     svbool_t pg = svptrue_b32();
@@ -68,17 +64,15 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
         size_t remaining = dimension % sve_word_count;
         if (remaining > 0) {
             // Create predicate for the remaining elements
-            svbool_t pg_partial = svwhilelt_b32(0, remaining);
-            
+            svbool_t pg_partial = svwhilelt_b32(static_cast<uint32_t>(0), static_cast<uint32_t>(remaining));
+
             // Load float elements from pVect1 with predicate
             svfloat32_t v1 = svld1_f32(pg_partial, pVect1);
             
-            // Load uint8 elements from pVect2 with predicate, convert to int32, then to float
-            svbool_t pg_b8_partial = svwhilelt_b8(0, remaining);
-            svuint8_t v2_u8 = svld1_u8(pg_b8_partial, quantized);
-            
-            // Convert uint8 to uint32
-            svuint32_t v2_u32 = svzext_u32(svreinterpret_u32_u8(v2_u8));
+
+            // load 8-bit bytes from pVect2+offset and zero-extend each into a 32-bit lane
+            svuint32_t v2_u32 = svld1ub_u32(pg_partial, pVect2 + offset);  // LD1UB: load 8-bit, zero-extend to 32-bit :contentReference[oaicite:0]{index=0}
+
             
             // Convert uint32 to float32
             svfloat32_t v2_f = svcvt_f32_u32_z(pg_partial, v2_u32);
@@ -90,8 +84,7 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
             sum0 = svmla_f32_z(pg_partial, sum0, v1, v2_dequant);
             
             // Move pointers past the partial chunk
-            pVect1 += remaining;
-            quantized += remaining;
+            offset += remaining;
         }
     }
 
@@ -100,21 +93,21 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
     const size_t number_of_chunks = (dimension - (partial_chunk ? dimension % sve_word_count : 0)) / chunk_size;
     
     for (size_t i = 0; i < number_of_chunks; i++) {
-        InnerProductStep(pVect1, quantized, offset, sum0, min_val_vec, delta_vec);
-        InnerProductStep(pVect1, quantized, offset, sum1, min_val_vec, delta_vec);
-        InnerProductStep(pVect1, quantized, offset, sum2, min_val_vec, delta_vec);
-        InnerProductStep(pVect1, quantized, offset, sum3, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum3, min_val_vec, delta_vec);
     }
     
     // Handle remaining steps (0-3)
     if constexpr (additional_steps > 0) {
-        InnerProductStep(pVect1, quantized, offset, sum0, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec);
     }
     if constexpr (additional_steps > 1) {
-        InnerProductStep(pVect1, quantized, offset, sum1, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec);
     }
     if constexpr (additional_steps > 2) {
-        InnerProductStep(pVect1, quantized, offset, sum2, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec);
     }
     
     // Combine the accumulators

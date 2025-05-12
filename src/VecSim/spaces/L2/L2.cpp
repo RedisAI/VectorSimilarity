@@ -27,13 +27,11 @@ float SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
         auto dequantized_V2 = (pVect2[i] * delta + min_val);
-        std::cout << dequantized_V2 << " ";
         float t = pVect1[i] - dequantized_V2;
         res += t * t;
     }
     // The last value is used to normalize the vector.
     // The normalization is done by multiplying the result by the inverse of the norm.
-    std::cout << std::endl;
     return res;
 }
 

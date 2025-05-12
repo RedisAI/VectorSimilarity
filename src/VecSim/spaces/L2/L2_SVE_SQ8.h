@@ -10,7 +10,7 @@
 #include <arm_sve.h>
 
 // Helper function to perform L2 squared distance calculation for a chunk of elements
-static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, size_t &offset,
+static inline void L2SqrStep(float *&pVect1, uint8_t *&pVect2, size_t &offset,
                             svfloat32_t &sum, const svfloat32_t &min_val_vec, 
                             const svfloat32_t &delta_vec) {
     svbool_t pg = svptrue_b32();
@@ -18,12 +18,8 @@ static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, size_
     // Load float elements from pVect1
     svfloat32_t v1 = svld1_f32(pg, pVect1 + offset);
     
-    // Load uint8 elements from pVect2, convert to int32, then to float
-    svbool_t pg_b8 = svptrue_b8();
-    svuint8_t v2_u8 = svld1_u8(pg_b8, pVect2 + offset);
-    
     // Convert uint8 to uint32
-    svuint32_t v2_u32 = svzext_u32(svreinterpret_u32_u8(v2_u8));
+    svuint32_t v2_u32 = svld1ub_u32(pg, pVect2 + offset);
     
     // Convert uint32 to float32
     svfloat32_t v2_f = svcvt_f32_u32_z(pg, v2_u32);
@@ -70,17 +66,13 @@ float SQ8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimensi
         size_t remaining = dimension % sve_word_count;
         if (remaining > 0) {
             // Create predicate for the remaining elements
-            svbool_t pg_partial = svwhilelt_b32(0, remaining);
+            svbool_t pg_partial = svwhilelt_b32(static_cast<uint32_t>(0), static_cast<uint32_t>(remaining));
             
             // Load float elements from pVect1 with predicate
             svfloat32_t v1 = svld1_f32(pg_partial, pVect1);
             
             // Load uint8 elements from pVect2 with predicate, convert to int32, then to float
-            svbool_t pg_b8_partial = svwhilelt_b8(0, remaining);
-            svuint8_t v2_u8 = svld1_u8(pg_b8_partial, pVect2);
-            
-            // Convert uint8 to uint32
-            svuint32_t v2_u32 = svzext_u32(svreinterpret_u32_u8(v2_u8));
+            svuint32_t v2_u32 = svld1ub_u32(pg_partial, pVect2 + offset);
             
             // Convert uint32 to float32
             svfloat32_t v2_f = svcvt_f32_u32_z(pg_partial, v2_u32);
