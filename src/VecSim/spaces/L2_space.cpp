@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
@@ -20,6 +20,7 @@
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/SSE3.h"
+#include "VecSim/spaces/functions/SSE4.h"
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
@@ -73,18 +74,18 @@ dist_func_t<float> L2_SQ8_GetDistFunc(size_t dim, unsigned char *alignment, cons
         return Choose_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
-#ifdef OPT_AVX
-    if (features.avx) {
+#ifdef OPT_AVX2
+    if (features.avx2) {
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(float); // handles 8 floats
-        return Choose_SQ8_L2_implementation_AVX(dim);
+        return Choose_SQ8_L2_implementation_AVX2(dim);
     }
 #endif
-#ifdef OPT_SSE
-    if (features.sse) {
+#ifdef OPT_SSE4
+    if (features.sse4_1) {
         if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 4 * sizeof(float); // handles 4 floats
-        return Choose_SQ8_L2_implementation_SSE(dim);
+        return Choose_SQ8_L2_implementation_SSE4(dim);
     }
 #endif
 #endif // __x86_64__

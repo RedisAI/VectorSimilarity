@@ -38,7 +38,7 @@ static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, __m25
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float *pVect1 = static_cast<const float *>(pVect1v);
     const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
     // Get dequantization parameters from the end of quantized vector

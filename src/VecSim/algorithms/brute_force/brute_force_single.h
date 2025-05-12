@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 #pragma once
 
 #include "brute_force.h"
@@ -49,8 +49,25 @@ public:
         auto id = labelToIdLookup.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
+        // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like the
+        // norm
         memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
         vectors_output.push_back(vec);
+    }
+
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
+        std::vector<std::vector<char>> vectors_output;
+        auto id = labelToIdLookup.at(label);
+
+        // Get the data pointer - need to cast to char* for memcpy
+        const char *data = reinterpret_cast<const char *>(this->getDataByInternalId(id));
+
+        // Create a vector with the full data (including any metadata like norms)
+        std::vector<char> vec(this->getDataSize());
+        memcpy(vec.data(), data, this->getDataSize());
+        vectors_output.push_back(std::move(vec));
+
+        return vectors_output;
     }
 #endif
 protected:

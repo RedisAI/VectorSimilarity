@@ -12,10 +12,7 @@ set(HEADER_LIST "${headers}")
 include_directories(../)
 
 set(SVS_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -march=native -mtune=native")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20")
 
 add_subdirectory(spaces)
 
@@ -29,7 +26,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/brute_force_factory.cpp
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
-    ${svs_factory_file}
+    index_factories/svs_factory.cpp
     index_factories/index_factory.cpp
     index_factories/components/components_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp

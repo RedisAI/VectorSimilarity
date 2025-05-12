@@ -74,6 +74,12 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		list(APPEND OPTIMIZATIONS functions/SSE3.cpp)
 	endif()
 
+	if(CXX_SSE4)
+		message("Building with SSE4")
+		set_source_files_properties(functions/SSE4.cpp PROPERTIES COMPILE_FLAGS -msse4.1)
+		list(APPEND OPTIMIZATIONS functions/SSE4.cpp)
+	endif()
+
 	if(CXX_SSE)
 		message("Building with SSE")
 		set_source_files_properties(functions/SSE.cpp PROPERTIES COMPILE_FLAGS -msse)

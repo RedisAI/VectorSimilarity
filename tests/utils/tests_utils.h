@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 #pragma once
 
 #include <random>
@@ -40,9 +40,12 @@ static void populate_uint8_vec(uint8_t *v, size_t dim, int seed = 1234) {
     }
 }
 
+// Assuming v is a memory allocation of size dim * sizeof(float)
 static void populate_float_vec(float *v, size_t dim, int seed = 1234) {
 
     std::mt19937 gen(seed); // Mersenne Twister engine initialized with the fixed seed
+
+    // Define a distribution range for float values between -1.0 and 1.0
     std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
 
     for (size_t i = 0; i < dim; i++) {

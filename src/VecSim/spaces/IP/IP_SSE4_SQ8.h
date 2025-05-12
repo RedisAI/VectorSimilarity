@@ -31,7 +31,7 @@ static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductSIMD16_SSE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float *pVect1 = static_cast<const float *>(pVect1v);
     const uint8_t *quantized = static_cast<const uint8_t *>(pVect2v);
 
@@ -104,12 +104,12 @@ float SQ8_InnerProductSIMD16_SSE_IMP(const void *pVect1v, const void *pVect2v, s
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1.0f - SQ8_InnerProductSIMD16_SSE_IMP<residual>(pVect1v, pVect2v, dimension);
+float SQ8_InnerProductSIMD16_SSE4(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ8_InnerProductSIMD16_SSE4_IMP<residual>(pVect1v, pVect2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_CosineSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_CosineSIMD16_SSE4(const void *pVect1v, const void *pVect2v, size_t dimension) {
 
     const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
     // Get quantization parameters
@@ -117,7 +117,7 @@ float SQ8_CosineSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
 
     // Compute inner product with dequantization using the common function
     // We need to cast away const for the inner product function, but it doesn't modify the vectors
-    const float res = SQ8_InnerProductSIMD16_SSE_IMP<residual>(pVect1v, pVect2v, dimension);
+    const float res = SQ8_InnerProductSIMD16_SSE4_IMP<residual>(pVect1v, pVect2v, dimension);
 
     // For cosine, we need to account for the vector norms
     // The inv_norm parameter is stored after min_val and delta in the quantized vector

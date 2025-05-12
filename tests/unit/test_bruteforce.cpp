@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
@@ -83,7 +83,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(bf_index->idToLabelMapping.size(), DEFAULT_BLOCK_SIZE);
 
     // Check update.
-    TEST_DATA_T *vector_data = bf_index->getDataByInternalId(0);
+    const TEST_DATA_T *vector_data = bf_index->getDataByInternalId(0);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 2.0);
         ++vector_data;
@@ -389,7 +389,7 @@ TYPED_TEST(BruteForceTest, test_delete_swap_block) {
     ASSERT_EQ(deleted_label_id_pair, bf_single_index->labelToIdLookup.end());
 
     // The vector in index1 should hold id5 data.
-    TEST_DATA_T *vector_data = bf_index->getDataByInternalId(1);
+    const TEST_DATA_T *vector_data = bf_index->getDataByInternalId(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
         ++vector_data;

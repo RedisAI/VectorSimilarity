@@ -5,7 +5,7 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 
 #pragma once
 #include "VecSim/vec_sim_index.h"
@@ -155,11 +155,12 @@ protected:
             return MemoryUtils::unique_blob{const_cast<void *>(original_data), [](void *) {}};
         }
 
-        const auto data_size = this->dim * sizeof(DataType) * n;
+        const auto data_size = this->getDataSize() * n;
 
         auto processed_blob =
             MemoryUtils::unique_blob{this->allocator->allocate(data_size),
                                      [this](void *ptr) { this->allocator->free_allocation(ptr); }};
+        // Assuming original data size equals to processed data size
         memcpy(processed_blob.get(), original_data, data_size);
         // Preprocess each vector in place
         for (size_t i = 0; i < n; i++) {
@@ -435,17 +436,18 @@ public:
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        auto *queryBlobCopy =
-            this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-        memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-        this->preprocessQueryInPlace(queryBlobCopy);
+        // force_copy == true.
+        auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
+
+        // take ownership of the blob copy and pass it to the batch iterator.
+        auto *queryBlobCopyPtr = queryBlobCopy.release();
         // Ownership of queryBlobCopy moves to VecSimBatchIterator that will free it at the end.
         if (indexSize() == 0) {
             return new (this->getAllocator())
-                NullSVS_BatchIterator(queryBlobCopy, queryParams, this->getAllocator());
+                NullSVS_BatchIterator(queryBlobCopyPtr, queryParams, this->getAllocator());
         } else {
             return new (this->getAllocator()) SVS_BatchIterator<impl_type, data_type>(
-                queryBlobCopy, impl_.get(), queryParams, this->getAllocator());
+                queryBlobCopyPtr, impl_.get(), queryParams, this->getAllocator());
         }
     }
 
@@ -479,6 +481,15 @@ public:
     }
 
 #ifdef BUILD_TESTS
-    virtual void fitMemory() {};
+    void fitMemory() override {}
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
+        assert(nullptr && "Not implemented");
+        return {};
+    }
+    void getDataByLabel(
+        labelType label,
+        std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
+        assert(nullptr && "Not implemented");
+    }
 #endif
 };

@@ -5,28 +5,31 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "unit_test_utils.h"
-#include "VecSim/algorithms/svs/svs.h"
-#include "cpu_features_macros.h"
 #include <cmath>
-#include <cpuid.h>
-#include <string>
+
+#if HAVE_SVS
+#include "VecSim/algorithms/svs/svs.h"
+
+// There are possible cases when SVS Index cannot be created with the requested quantization mode
+// due to platform and/or hardware limitations or combination of requested 'compression' modes.
+// This assert handle those cases and skip a test if the mode is not supported.
+// Elsewhere, test will fail if the index creation failed with no reason explained above.
+#define ASSERT_INDEX(index)                                                                        \
+    if (index == nullptr) {                                                                        \
+        if (std::get<1>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits()))) {      \
+            GTEST_FAIL() << "Failed to create SVS index";                                          \
+        } else {                                                                                   \
+            GTEST_SKIP() << "SVS LVQ is not supported.";                                           \
+        }                                                                                          \
+    }
 
 template <typename index_type_t>
 class SVSTest : public ::testing::Test {
-    bool _checkCPU() {
-        uint32_t eax, ebx, ecx, edx;
-        __cpuid(0, eax, ebx, ecx, edx);
-        std::string vendor_id = std::string((const char *)&ebx, 4) +
-                                std::string((const char *)&edx, 4) +
-                                std::string((const char *)&ecx, 4);
-        return (vendor_id == "GenuineIntel");
-    }
-
 public:
     using data_t = typename index_type_t::data_t;
 
@@ -43,13 +46,6 @@ protected:
         assert(indexBase != nullptr);
         return indexBase;
     }
-
-    void SetUp() override {
-        if constexpr (index_type_t::get_quant_bits() != VecSimSvsQuant_NONE)
-            if (!_checkCPU()) {
-                GTEST_SKIP() << "SVS LVQ is not supported on non-Intel hardware.";
-            }
-    }
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -63,9 +59,7 @@ struct SVSIndexType {
 
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
-#if HAVE_SVS_LVQ
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
-#endif
                                         >;
 // clang-format on
 
@@ -88,6 +82,7 @@ TYPED_TEST(SVSTest, svs_vector_add_test) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -115,6 +110,7 @@ TYPED_TEST(SVSTest, svs_vector_update_test) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     auto *svs_index = this->CastToSVS(index);
 
@@ -155,6 +151,7 @@ TYPED_TEST(SVSTest, svs_vector_search_by_id_test) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -186,6 +183,7 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     auto svs_index = this->CastToSVS(index); // CAST_TO_SVS(index, svs::distance::DistanceL2);
 
@@ -240,6 +238,7 @@ TYPED_TEST(SVSTest, svs_get_distance) {
     for (size_t i = 0; i < numIndex; i++) {
         params.metric = (VecSimMetric)i;
         index[i] = this->CreateNewIndex(params);
+        ASSERT_INDEX(index[i]);
         VecSimIndex_AddVector(index[i], v1, 1);
         VecSimIndex_AddVector(index[i], v2, 2);
         VecSimIndex_AddVector(index[i], v3, 3);
@@ -309,6 +308,7 @@ TYPED_TEST(SVSTest, svs_indexing_same_vector) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i,
@@ -344,6 +344,7 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // SVSIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
 
@@ -397,6 +398,7 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector_different_id) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i,
@@ -453,6 +455,8 @@ TYPED_TEST(SVSTest, svs_batch_iterator) {
         };
 
         VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
+
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         }
@@ -507,6 +511,7 @@ TYPED_TEST(SVSTest, svs_batch_iterator_non_unique_scores) {
         };
 
         VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
@@ -568,6 +573,7 @@ TYPED_TEST(SVSTest, svs_batch_iterator_reset) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
@@ -626,6 +632,7 @@ TYPED_TEST(SVSTest, svs_batch_iterator_corner_cases) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
     TEST_DATA_T query[dim];
@@ -695,6 +702,7 @@ TYPED_TEST(SVSTest, resizeIndex) {
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // Add up to n.
     for (size_t i = 0; i < n; i++) {
@@ -703,7 +711,10 @@ TYPED_TEST(SVSTest, resizeIndex) {
 
     // Initial capacity is rounded up to the block size.
     size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
-    if constexpr (TypeParam::get_quant_bits() > 0) {
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+    if (quantBits != VecSimSvsQuant_NONE) {
         // LVQDataset does not provide a capacity method
         extra_cap = 0;
     }
@@ -733,6 +744,7 @@ TYPED_TEST(SVSTest, svs_empty_index) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -781,6 +793,7 @@ TYPED_TEST(SVSTest, test_delete_vector) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // Delete from empty index
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 111), 0);
@@ -826,6 +839,7 @@ TYPED_TEST(SVSTest, sanity_reinsert_1280) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     auto *vectors = new TEST_DATA_T[n * d];
 
@@ -878,6 +892,7 @@ TYPED_TEST(SVSTest, test_svs_info) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
@@ -892,6 +907,7 @@ TYPED_TEST(SVSTest, test_svs_info) {
     params.blockSize = 1;
 
     index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     info = VecSimIndex_DebugInfo(index);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
@@ -937,6 +953,7 @@ TYPED_TEST(SVSTest, test_basic_svs_info_iterator) {
         };
 
         VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
@@ -963,6 +980,7 @@ TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
     VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
@@ -1049,6 +1067,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
         };
 
         VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
@@ -1094,6 +1113,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_l2) {
         };
 
         VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
@@ -1136,6 +1156,7 @@ TYPED_TEST(SVSTest, svs_search_empty_index) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -1190,6 +1211,7 @@ TYPED_TEST(SVSTest, svs_test_inf_score) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     TEST_DATA_T inf_val = GetInfVal(params.type);
     ASSERT_FALSE(std::isinf(inf_val));
@@ -1253,6 +1275,7 @@ TYPED_TEST(SVSTest, preferAdHocOptimization) {
             };
 
             VecSimIndex *index = this->CreateNewIndex(params);
+            ASSERT_INDEX(index);
 
             // Set the index size artificially to be the required one.
             // (this->CastToBF(index))->count = index_size;
@@ -1285,6 +1308,7 @@ TYPED_TEST(SVSTest, preferAdHocOptimization) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
@@ -1312,6 +1336,7 @@ TYPED_TEST(SVSTest, batchIteratorSwapIndices) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     TEST_DATA_T close_vec[] = {1.0, 1.0, 1.0, 1.0};
     TEST_DATA_T further_vec[] = {2.0, 2.0, 2.0, 2.0};
@@ -1380,6 +1405,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // To meet accurary in LVQ case we have to add bulk of vectors at once.
     std::vector<TEST_DATA_T[dim]> v(n);
@@ -1450,7 +1476,10 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    if (TypeParam::get_quant_bits() > 0) {
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+    if (quantBits != VecSimSvsQuant_NONE) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
         dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
@@ -1473,6 +1502,7 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
     // EstimateInitialSize is called after CreateNewIndex because params struct is
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
@@ -1510,6 +1540,7 @@ TYPED_TEST(SVSTest, testInitialSizeEstimation) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
     // EstimateInitialSize is called after CreateNewIndex because params struct is
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
@@ -1538,6 +1569,7 @@ TYPED_TEST(SVSTest, testTimeoutReturn_topK) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
@@ -1573,6 +1605,7 @@ TYPED_TEST(SVSTest, testTimeoutReturn_range) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
@@ -1610,6 +1643,7 @@ TYPED_TEST(SVSTest, testTimeoutReturn_batch_iterator) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -1668,6 +1702,7 @@ TYPED_TEST(SVSTest, rangeQuery) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -1737,6 +1772,7 @@ TYPED_TEST(SVSTest, rangeQueryCosine) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // To meet accurary in LVQ case we have to add bulk of vectors at once.
     std::vector<TEST_DATA_T[dim]> v(n);
@@ -1796,6 +1832,7 @@ TYPED_TEST(SVSTest, FitMemoryTest) {
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     size_t initial_memory = index->getAllocationSize();
     index->fitMemory();
@@ -1816,6 +1853,7 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     SVSParams params = {.dim = 4, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
@@ -1909,6 +1947,7 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
     SVSParams params = {.dim = 4, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
@@ -2017,6 +2056,7 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     SVSParams params = {.dim = 4, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
@@ -2087,3 +2127,24 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
 
     VecSimIndex_Free(index);
 }
+
+#else // HAVE_SVS
+
+TEST(SVSTest, svs_not_supported) {
+    SVSParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 16,
+        .metric = VecSimMetric_IP,
+    };
+    auto index_params = CreateParams(params);
+    auto index = VecSimIndex_New(&index_params);
+    ASSERT_EQ(index, nullptr);
+
+    auto size = VecSimIndex_EstimateInitialSize(&index_params);
+    ASSERT_EQ(size, -1);
+
+    auto size2 = VecSimIndex_EstimateElementSize(&index_params);
+    ASSERT_EQ(size2, -1);
+}
+
+#endif
