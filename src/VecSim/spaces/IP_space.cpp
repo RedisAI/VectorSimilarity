@@ -53,11 +53,11 @@ namespace spaces {
             return Choose_SQ8_IP_implementation_SVE(dim);
         }
     #endif
-    // #ifdef OPT_NEON
-    //     if (features.asimd) {
-    //         return Choose_SQ8_IP_implementation_NEON(dim);
-    //     }
-    // #endif
+    #ifdef OPT_NEON
+        if (features.asimd) {
+            return Choose_SQ8_IP_implementation_NEON(dim);
+        }
+    #endif
 
     #endif
 

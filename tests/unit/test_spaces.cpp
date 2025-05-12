@@ -2376,6 +2376,19 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
         optimization.sve = 0;
     }
     #endif
+    #ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_Cosine_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
+            << "NEON with dim " << dim;
+        // We don't align SQ8 vectors with cosine distance
+        // ASSERT_EQ(alignment, 0) << "NEON with dim " << dim;
+        optimization.asimd = 0;
+    }
+    #endif
 
     // Test different optimizations based on CPU features
     #ifdef OPT_AVX512_F_BW_VL_VNNI
