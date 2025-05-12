@@ -209,7 +209,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
 // This is a temporary solution to avoid breaking the build when SVS is not available
 // and to allow the code to compile without SVS support.
-// TODO: remove HAVE_SVS when SVS will support all Redis platfoms and compilers
+// TODO: remove HAVE_SVS when SVS will support all Redis platforms and compilers
 #else // HAVE_SVS
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) { return nullptr; }
 inline size_t EstimateInitialSize(const TieredIndexParams *params) { return 0; }
