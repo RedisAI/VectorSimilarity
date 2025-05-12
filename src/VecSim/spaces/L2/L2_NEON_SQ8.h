@@ -5,12 +5,12 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
-*/
+ */
 #include "VecSim/spaces/space_includes.h"
 #include <arm_neon.h>
 
 static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, float32x4_t &sum,
-                            const float32x4_t &min_val_vec, const float32x4_t &delta_vec) {
+                             const float32x4_t &min_val_vec, const float32x4_t &delta_vec) {
     // Load 4 float elements from pVect1
     float32x4_t v1 = vld1q_f32(pVect1);
     pVect1 += 4;

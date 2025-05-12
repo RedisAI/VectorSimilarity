@@ -18,7 +18,6 @@ namespace spaces {
 
 #include "implementation_chooser.h"
 
-
 dist_func_t<float> Choose_FP32_IP_implementation_AVX(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
