@@ -22,11 +22,13 @@ public:
     PreprocessorsContainerAbstract(std::shared_ptr<VecSimAllocator> allocator,
                                    unsigned char alignment)
         : VecsimBaseObject(allocator), alignment(alignment) {}
+    // It is assumed that the resulted query blob is aligned.
     virtual ProcessedBlobs preprocess(const void *original_blob, size_t original_blob_size) const;
 
     virtual MemoryUtils::unique_blob preprocessForStorage(const void *original_blob,
                                                           size_t original_blob_size) const;
 
+    // It is assumed that the resulted query blob is aligned.
     virtual MemoryUtils::unique_blob preprocessQuery(const void *original_blob,
                                                      size_t original_blob_size,
                                                      bool force_copy = false) const;

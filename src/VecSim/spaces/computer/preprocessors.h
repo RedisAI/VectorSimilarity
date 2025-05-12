@@ -29,15 +29,14 @@ public:
     // down the preprocessors pipeline (such as in quantization preprocessor that compresses the
     // vector).
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                            size_t original_blob_size, unsigned char alignment) const = 0;
+                            size_t input_blob_size, unsigned char alignment) const = 0;
     virtual void preprocessForStorage(const void *original_blob, void *&storage_blob,
-                                      size_t original_blob_size) const = 0;
+                                      size_t input_blob_size) const = 0;
     virtual void preprocessQuery(const void *original_blob, void *&query_blob,
-                                 size_t original_blob_size, unsigned char alignment) const = 0;
-    virtual void preprocessQueryInPlace(void *original_blob, size_t input_blob_bytes_count,
+                                 size_t input_blob_size, unsigned char alignment) const = 0;
+    virtual void preprocessQueryInPlace(void *original_blob, size_t input_blob_size,
                                         unsigned char alignment) const = 0;
-    virtual void preprocessStorageInPlace(void *original_blob,
-                                          size_t input_blob_bytes_count) const = 0;
+    virtual void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const = 0;
 };
 
 template <typename DataType>
@@ -54,7 +53,7 @@ public:
     // already allocated and processed it. So, we process it inplace. If it's null, we need to
     // allocate memory for it and copy the original_blob to it.
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t original_blob_size, unsigned char alignment) const override {
+                    size_t input_blob_size, unsigned char alignment) const override {
 
         // Case 1: Blobs are different (one might be null, or both are allocated and processed
         // separately).
@@ -62,10 +61,10 @@ public:
             // If one of them is null, allocate memory for it and copy the original_blob to it.
             if (storage_blob == nullptr) {
                 storage_blob = this->allocator->allocate(processed_bytes_count);
-                memcpy(storage_blob, original_blob, original_blob_size);
+                memcpy(storage_blob, original_blob, input_blob_size);
             } else if (query_blob == nullptr) {
                 query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
-                memcpy(query_blob, original_blob, original_blob_size);
+                memcpy(query_blob, original_blob, input_blob_size);
             }
 
             // Normalize both blobs.
@@ -75,7 +74,7 @@ public:
             if (query_blob == nullptr) { // If both blobs are null, allocate query_blob and set
                                          // storage_blob to point to it.
                 query_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
-                memcpy(query_blob, original_blob, original_blob_size);
+                memcpy(query_blob, original_blob, input_blob_size);
                 storage_blob = query_blob;
             }
             // normalize one of them (since they point to the same memory).
@@ -84,35 +83,35 @@ public:
     }
 
     void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t original_blob_size) const override {
+                              size_t input_blob_size) const override {
         if (blob == nullptr) {
             blob = this->allocator->allocate(processed_bytes_count);
-            memcpy(blob, original_blob, original_blob_size);
+            memcpy(blob, original_blob, input_blob_size);
         }
         normalize_func(blob, this->dim);
     }
 
-    void preprocessQuery(const void *original_blob, void *&blob, size_t original_blob_size,
+    void preprocessQuery(const void *original_blob, void *&blob, size_t input_blob_size,
                          unsigned char alignment) const override {
         if (blob == nullptr) {
             blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
-            memcpy(blob, original_blob, original_blob_size);
+            memcpy(blob, original_blob, input_blob_size);
         }
         normalize_func(blob, this->dim);
     }
 
-    void preprocessQueryInPlace(void *blob, size_t input_blob_bytes_count,
+    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
                                 unsigned char alignment) const override {
         assert(blob);
-        // TODO: replace with a debug assert and add values of input_blob_bytes_count and
+        // TODO: replace with a debug assert and add values of input_blob_size and
         // processed_bytes_count
-        assert(input_blob_bytes_count == this->processed_bytes_count);
+        assert(input_blob_size == this->processed_bytes_count);
         normalize_func(blob, this->dim);
     }
 
-    void preprocessStorageInPlace(void *blob, size_t input_blob_bytes_count) const override {
+    void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
         assert(blob);
-        assert(input_blob_bytes_count == this->processed_bytes_count);
+        assert(input_blob_size == this->processed_bytes_count);
         normalize_func(blob, this->dim);
     }
 
