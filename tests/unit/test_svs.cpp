@@ -60,7 +60,7 @@ struct SVSIndexType {
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
-                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8x8_leanvec>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8x8_LeanVec>
                                         >;
 // clang-format on
 
@@ -2135,7 +2135,7 @@ TEST(SVSTest, quant_modes) {
 
     for (auto quant_bits :
          {VecSimSvsQuant_NONE, VecSimSvsQuant_8, VecSimSvsQuant_4, VecSimSvsQuant_4x4,
-          VecSimSvsQuant_4x8, VecSimSvsQuant_4x8_leanvec, VecSimSvsQuant_8x8_leanvec}) {
+          VecSimSvsQuant_4x8, VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
         SVSParams params = {
             .type = VecSimType_FLOAT32,
             .dim = dim,
@@ -2152,6 +2152,13 @@ TEST(SVSTest, quant_modes) {
                 GTEST_SKIP() << "SVS LVQ is not supported.";
             }
         }
+
+        // Test initial size estimation
+        // EstimateInitialSize is called after CreateNewIndex because params struct is
+        // changed in CreateNewIndex.
+        size_t estimation = EstimateInitialSize(params);
+        size_t actual = index->getAllocationSize();
+        EXPECT_EQ(estimation, actual);
 
         EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
 

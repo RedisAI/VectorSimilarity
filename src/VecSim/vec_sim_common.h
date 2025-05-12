@@ -138,8 +138,8 @@ typedef enum {
     VecSimSvsQuant_8 = 8,              // 8-bit quantization
     VecSimSvsQuant_4x4 = 4 | (4 << 8), // 4-bit quantization with 4-bit residuals
     VecSimSvsQuant_4x8 = 4 | (8 << 8), // 4-bit quantization with 8-bit residuals
-    VecSimSvsQuant_4x8_leanvec = 4 | (8 << 8) | (1 << 16), // LeanVec 4x4 quantization
-    VecSimSvsQuant_8x8_leanvec = 8 | (8 << 8) | (1 << 16), // LeanVec 8x8 quantization
+    VecSimSvsQuant_4x8_LeanVec = 4 | (8 << 8) | (1 << 16), // LeanVec 4x4 quantization
+    VecSimSvsQuant_8x8_LeanVec = 8 | (8 << 8) | (1 << 16), // LeanVec 8x8 quantization
 } VecSimSvsQuantBits;
 
 typedef struct {
