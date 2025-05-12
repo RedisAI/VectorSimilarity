@@ -11,7 +11,7 @@
 #include <iostream>
 #include <string.h>
 
-static inline void InnerProductStep(float *&pVect1, uint8_t *&pVect2, size_t &offset,
+static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, size_t &offset,
                                     svfloat32_t &sum, const svfloat32_t &min_val_vec, 
                                     const svfloat32_t &delta_vec) {
     svbool_t pg = svptrue_b32();
@@ -37,8 +37,8 @@ static inline void InnerProductStep(float *&pVect1, uint8_t *&pVect2, size_t &of
 
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float *)pVect1v;
-    uint8_t *pVect2 = (uint8_t *)pVect2v;
+    const float *pVect1 = static_cast<const float *>(pVect1v);
+    const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
     size_t offset = 0;
 
     // Get dequantization parameters from the end of quantized vector

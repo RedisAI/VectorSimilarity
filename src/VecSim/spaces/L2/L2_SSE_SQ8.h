@@ -9,7 +9,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include <string.h>
 
-static inline void L2SqrStep(float *&pVect1, uint8_t *&pVect2, __m128 &sum,
+static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, __m128 &sum,
                             const __m128 &min_val_vec, const __m128 &delta_vec) {
     // Load 4 float elements from pVect1
     __m128 v1 = _mm_loadu_ps(pVect1);
@@ -34,8 +34,8 @@ static inline void L2SqrStep(float *&pVect1, uint8_t *&pVect2, __m128 &sum,
 
 template <unsigned char residual> // 0..15
 float SQ8_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float *)pVect1v;
-    uint8_t *pVect2 = (uint8_t *)pVect2v;
+    const float *pVect1 = static_cast<const float *>(pVect1v);
+    const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     // Get dequantization parameters from the end of quantized vector
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);

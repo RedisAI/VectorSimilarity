@@ -10,7 +10,7 @@
 #include <iostream>
 #include <string.h>
 
-static inline void InnerProductStep(float *&pVect1, uint8_t *&pVect2, __m128 &sum_prod,
+static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, __m128 &sum_prod,
                                     const __m128 &min_val_vec, const __m128 &delta_vec) {
     // Load 4 float elements from pVect1
     __m128 v1 = _mm_loadu_ps(pVect1);
@@ -32,8 +32,8 @@ static inline void InnerProductStep(float *&pVect1, uint8_t *&pVect2, __m128 &su
 
 template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_SSE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float *)pVect1v;
-    uint8_t *quantized = (uint8_t *)pVect2v;
+    const float *pVect1 = static_cast<const float *>(pVect1v);
+    const uint8_t *quantized = static_cast<const uint8_t *>(pVect2v);
 
     // Get dequantization parameters from the end of quantized vector
     float min = *(float *)(quantized + dimension);

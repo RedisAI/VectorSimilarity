@@ -9,8 +9,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
-// Helper function to perform L2 squared distance calculation for a chunk of elements
-static inline void L2SqrStep(float *&pVect1, uint8_t *&pVect2, size_t &offset,
+static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, size_t &offset,
                             svfloat32_t &sum, const svfloat32_t &min_val_vec, 
                             const svfloat32_t &delta_vec) {
     svbool_t pg = svptrue_b32();
@@ -39,8 +38,8 @@ static inline void L2SqrStep(float *&pVect1, uint8_t *&pVect2, size_t &offset,
 
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float *pVect1 = (float *)pVect1v;
-    uint8_t *pVect2 = (uint8_t *)pVect2v;
+    const float *pVect1 = static_cast<const float *>(pVect1v);
+    const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
     size_t offset = 0;
 
     // Get dequantization parameters from the end of quantized vector
