@@ -5,20 +5,19 @@
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
- */
+*/
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include <immintrin.h>
 #include <iostream>
 
-static inline void
-SQ8_InnerProductStep(const float *&pVec1, const uint8_t *&pVec2, __m512 &sum,
-                     const __m512 &min_val_vec, const __m512 &delta_vec) {
+static inline void SQ8_InnerProductStep(const float *&pVec1, const uint8_t *&pVec2, __m512 &sum,
+                                        const __m512 &min_val_vec, const __m512 &delta_vec) {
     // Load 16 float elements from pVec1
     __m512 v1 = _mm512_loadu_ps(pVec1);
 
     // Load 16 uint8 elements from pVec2 and convert to __m512i
-    __m128i v2_128 = _mm_loadu_si128((__m128i*)pVec2);
+    __m128i v2_128 = _mm_loadu_si128((__m128i *)pVec2);
     __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
 
     // Convert uint8 to float
@@ -37,7 +36,8 @@ SQ8_InnerProductStep(const float *&pVec1, const uint8_t *&pVec2, __m512 &sum,
 
 // Common implementation for both inner product and cosine similarity
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimension, float inv_norm = 1.0f) {
+float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimension,
+                          float inv_norm = 1.0f) {
     const float *pVec1 = static_cast<const float *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
     const float *pEnd1 = pVec1 + dimension;
@@ -62,56 +62,53 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
         __m512 v1 = _mm512_maskz_loadu_ps(mask, pVec1);
 
         // Load masked uint8 elements
-        __m128i v2_128 = _mm_maskz_loadu_epi8(mask, reinterpret_cast<const __m128i*>(pVec2));
+        __m128i v2_128 = _mm_maskz_loadu_epi8(mask, reinterpret_cast<const __m128i *>(pVec2));
         __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
         __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
 
-
         // Dequantize
         __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
-        
+
         // Compute dot product
         __m512 product = _mm512_mul_ps(v1, dequantized);
 
-        
         // Apply mask to product and add to sum
         sum = _mm512_mask_add_ps(sum, mask, sum, product);
-        
+
         pVec1 += residual;
         pVec2 += residual;
     }
-    
+
     // Process remaining full chunks of 16 elements
     do {
         SQ8_InnerProductStep(pVec1, pVec2, sum, min_val_vec, delta_vec);
     } while (pVec1 < pEnd1);
 
     // Return the raw inner product result
-    return _mm512_reduce_add_ps(sum);;
+    return _mm512_reduce_add_ps(sum);
+    ;
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v,
-                                              const void *pVec2v,
-                                              size_t dimension) {
+float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
+                                                size_t dimension) {
     // Calculate inner product using common implementation
     float ip = SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
-    
+
     // The inner product similarity is 1 - ip
     return 1.0f - ip;
 }
 
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
-                                         size_t dimension) {
+                                          size_t dimension) {
     // Get the inverse norm factor stored after min_val and delta
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
     const float inv_norm = *reinterpret_cast<const float *>(pVec2 + dimension + 2 * sizeof(float));
-    
+
     // Calculate inner product using common implementation with normalization
     float ip = SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension, inv_norm);
-    
+
     // The cosine similarity is 1 - ip
     return 1.0f - ip;
 }
-

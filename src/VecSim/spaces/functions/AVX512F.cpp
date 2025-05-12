@@ -16,7 +16,6 @@
 #include "VecSim/spaces/IP/IP_AVX512F_FP32.h"
 #include "VecSim/spaces/IP/IP_AVX512F_FP64.h"
 
-
 namespace spaces {
 
 #include "implementation_chooser.h"

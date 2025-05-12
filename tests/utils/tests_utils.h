@@ -89,7 +89,6 @@ static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
     quantize_float_vec_to_uint8(vec.data(), dim, v, seed);
 }
 
-
 template <typename datatype>
 float integral_compute_norm(const datatype *vec, size_t dim) {
     return spaces::IntegralType_ComputeNorm<datatype>(vec, dim);
