@@ -28,12 +28,14 @@ public:
     // TODO: handle a dynamic processed_bytes_count, as the allocation size of the blob might change
     // down the preprocessors pipeline (such as in quantization preprocessor that compresses the
     // vector).
+    // Note: input_blob_size is relevant for both storage blob and query blob, as we assume results
+    // are the same size.
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                            size_t input_blob_size, unsigned char alignment) const = 0;
+                            size_t &input_blob_size, unsigned char alignment) const = 0;
     virtual void preprocessForStorage(const void *original_blob, void *&storage_blob,
-                                      size_t input_blob_size) const = 0;
+                                      size_t &input_blob_size) const = 0;
     virtual void preprocessQuery(const void *original_blob, void *&query_blob,
-                                 size_t input_blob_size, unsigned char alignment) const = 0;
+                                 size_t &input_blob_size, unsigned char alignment) const = 0;
     virtual void preprocessQueryInPlace(void *original_blob, size_t input_blob_size,
                                         unsigned char alignment) const = 0;
     virtual void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const = 0;
@@ -53,8 +55,7 @@ public:
     // already allocated and processed it. So, we process it inplace. If it's null, we need to
     // allocate memory for it and copy the original_blob to it.
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t input_blob_size, unsigned char alignment) const override {
-
+                    size_t &input_blob_size, unsigned char alignment) const override {
         // Case 1: Blobs are different (one might be null, or both are allocated and processed
         // separately).
         if (storage_blob != query_blob) {
@@ -80,31 +81,35 @@ public:
             // normalize one of them (since they point to the same memory).
             normalize_func(query_blob, this->dim);
         }
+
+        input_blob_size = processed_bytes_count;
     }
 
     void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t input_blob_size) const override {
+                              size_t &input_blob_size) const override {
         if (blob == nullptr) {
             blob = this->allocator->allocate(processed_bytes_count);
             memcpy(blob, original_blob, input_blob_size);
         }
         normalize_func(blob, this->dim);
+        input_blob_size = processed_bytes_count;
     }
 
-    void preprocessQuery(const void *original_blob, void *&blob, size_t input_blob_size,
+    void preprocessQuery(const void *original_blob, void *&blob, size_t &input_blob_size,
                          unsigned char alignment) const override {
         if (blob == nullptr) {
             blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
             memcpy(blob, original_blob, input_blob_size);
         }
         normalize_func(blob, this->dim);
+        input_blob_size = processed_bytes_count;
     }
 
     void preprocessQueryInPlace(void *blob, size_t input_blob_size,
                                 unsigned char alignment) const override {
         assert(blob);
-        // TODO: replace with a debug assert and add values of input_blob_size and
-        // processed_bytes_count
+        // TODO: replace with a debug assert and log the exact values of input_blob_size and
+        // processed_bytes_count to improve observability
         assert(input_blob_size == this->processed_bytes_count);
         normalize_func(blob, this->dim);
     }

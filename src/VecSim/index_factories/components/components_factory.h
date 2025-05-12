@@ -31,7 +31,7 @@
  *
  * @details
  * If the metric is Cosine and the data type is integral, the processed bytes count may include
- * additional space for normalization (currently commented out). If the vectors are already
+ * additional space for normalization. If the vectors are already
  * normalized (is_normalized == true), the metric is adjusted to Inner Product (IP) to skip
  * redundant normalization during preprocessing.
  */
@@ -42,7 +42,6 @@ PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric met
     // By default the processed blob size is the same as the original blob size.
     size_t processed_bytes_count = dim * sizeof(DataType);
 
-    // If the index metric is Cosine, and
     VecSimMetric pp_metric = metric;
     if (metric == VecSimMetric_Cosine) {
         // if metric is cosine and DataType is integral, the processed_bytes_count includes the
