@@ -8,7 +8,6 @@
 */
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/AVX_utils.h"
-#include <iostream>
 
 static inline void L2SqrStep(float *&pVect1, uint8_t *&pVect2, __m256 &sum, 
                             const __m256 &min_val_vec, const __m256 &delta_vec) {
@@ -42,8 +41,6 @@ template <unsigned char residual> // 0..15
 float SQ8_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
-    float *pVect1_debug = (float *)pVect1v;
-    uint8_t *pVect2_debug = (uint8_t *)pVect2v; 
     // Get dequantization parameters from the end of quantized vector
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
@@ -78,38 +75,22 @@ float SQ8_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimen
         
         // Dequantize: (val * delta) + min_val
         __m256 v2_dequant = _mm256_add_ps(_mm256_mul_ps(v2_f, delta_vec), min_val_vec);
-        // print debug information
-        // std::cout << "v2_dequant before: ";
-        // for (size_t i = 0; i <  8; i++) {
-        //     std::cout <<  v2_dequant[i] << " ";
-        // }
-        // std::cout << std::endl;
+
         
         v2_dequant = _mm256_blend_ps(_mm256_setzero_ps(), v2_dequant, mask);
-        // std::cout << "v2_dequant after: ";
-        // for (size_t i = 0; i <  8; i++) {
-        //     std::cout <<  v2_dequant[i] << " ";
-        // }
-        // std::cout << std::endl;
 
         __m256 diff = _mm256_sub_ps(v1, v2_dequant);
 
 
         sum = _mm256_mul_ps(diff, diff);
-        // print sum
+
     }
 
     // If the reminder is >= 8, have another step of 8 floats
     if constexpr (residual >= 8) {
         L2SqrStep(pVect1, pVect2, sum, min_val_vec, delta_vec);
     }
-    float naive_sum = 0;
-    for (size_t i = 0; i < residual; i++) {
-        auto dequantized_V2 = (pVect2_debug[i] * delta + min_val);
-        float t = pVect1_debug[i] - dequantized_V2;
-        naive_sum += t * t;
-    }
-    
+
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
     do {

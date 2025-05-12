@@ -316,43 +316,16 @@ void common_ip_sq8(bool should_normalize, float expected_dist) {
         v2_orig[i] = float(i + 1.5);
     }
 
-    // Create SQ8 compressed version of v2
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
     size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    std::vector<uint8_t> v2_compressed(compressed_size);
     if (should_normalize) {
         spaces::GetNormalizeFunc<float>()(v1_orig, dim);
         spaces::GetNormalizeFunc<float>()(v2_orig, dim);
     }
-
-    // Find min and max for quantization
-    float min_val = v2_orig[0];
-    float max_val = v2_orig[0];
-    for (size_t i = 1; i < dim; i++) {
-        min_val = std::min(min_val, v2_orig[i]);
-        max_val = std::max(max_val, v2_orig[i]);
-    }
-
-    // Calculate delta and inverse norm
-    float delta = (max_val - min_val) / 255.0f;
-    if (delta == 0)
-        delta = 1.0f; // Avoid division by zero
-
-    std::vector<uint8_t> v2_compressed(compressed_size);
-
-    // Quantize v2
-    uint8_t *quant_values = reinterpret_cast<uint8_t *>(v2_compressed.data());
-    float *params = reinterpret_cast<float *>(quant_values + dim);
-
-    // Store parameters
-    params[0] = min_val;
-    params[1] = delta;
-
-    // Quantize each value
-    for (size_t i = 0; i < dim; i++) {
-        float normalized = (v2_orig[i] - min_val) / delta;
-        normalized = std::max(0.0f, std::min(255.0f, normalized));
-        quant_values[i] = static_cast<uint8_t>(std::round(normalized));
-    }
+    
+    // Create SQ8 compressed version of v2
+    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
+    test_utils::quantize_float_vec_to_uint8(v2_orig, dim, v2_compressed.data());
 
     float dist = SQ8_InnerProduct((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
 
@@ -380,47 +353,20 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
         v2_orig[i] = float(i + 1.5);
     }
 
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
     size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
-    spaces::GetNormalizeFunc<float>()(v1_orig, dim);
-    // Find min and max for quantization
-    float min_val = v2_orig[0];
-    float max_val = v2_orig[0];
-    for (size_t i = 1; i < dim; i++) {
-        min_val = std::min(min_val, v2_orig[i]);
-        max_val = std::max(max_val, v2_orig[i]);
-    }
-    // Calculate delta and inverse norm
-    float delta = (max_val - min_val) / 255.0f;
-    if (delta == 0)
-        delta = 1.0f; // Avoid division by zero
-
-    // Compress v2
     std::vector<uint8_t> v2_compressed(compressed_size);
-    uint8_t *quant_values = reinterpret_cast<uint8_t *>(v2_compressed.data());
-    float *params = reinterpret_cast<float *>(quant_values + dim);
 
-    // Quantize each value
-    for (size_t i = 0; i < dim; i++) {
-        float normalized = (v2_orig[i] - min_val) / delta;
-        normalized = std::max(0.0f, std::min(255.0f, normalized));
-        quant_values[i] = static_cast<uint8_t>(std::round(normalized));
-    }
-    // Calculate inverse norm from decompressed values
-    float inv_norm = 0.0f;
-    for (size_t i = 0; i < dim; i++) {
-        float decompressed_value = min_val + quant_values[i] * delta;
-        inv_norm += decompressed_value * decompressed_value;
-    }
-    inv_norm = 1.0f / std::sqrt(inv_norm);
-    // Store parameters
-    params[0] = min_val;
-    params[1] = delta;
-    params[2] = inv_norm;
+    spaces::GetNormalizeFunc<float>()(v1_orig, dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig, dim);
+
+    // Create SQ8 compressed version of v2
+    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
+    test_utils::quantize_float_vec_to_uint8(v2_orig, dim, v2_compressed.data());
 
     float dist = SQ8_Cosine((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
     ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_Cosine failed to match expected distance";
 }
+
 TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     // create a vector with extra space for the norm
     size_t dim = 5;

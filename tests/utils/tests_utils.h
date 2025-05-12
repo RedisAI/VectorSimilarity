@@ -50,44 +50,43 @@ static void populate_float_vec(float *v, size_t dim, int seed = 1234) {
     }
 }
 
-static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
+static void quantize_float_vec_to_uint8(float *v, size_t dim, uint8_t *qv, int seed = 1234) {
 
-    std::mt19937 gen(seed); // Mersenne Twister engine initialized with the fixed seed
-    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
-    std::vector<float> vec_copy(dim);
-    for (size_t i = 0; i < dim; i++) {
-        vec_copy[i] = dis(gen);
-    }
-
-    // Find min and max for quantization
-    float min_val = vec_copy[0];
-    float max_val = vec_copy[0];
+    float min_val = v[0];
+    float max_val = v[0];
     for (size_t i = 1; i < dim; i++) {
-        min_val = std::min(min_val, vec_copy[i]);
-        max_val = std::max(max_val, vec_copy[i]);
+        min_val = std::min(min_val, v[i]);
+        max_val = std::max(max_val, v[i]);
     }
-
     // Calculate delta
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
-
     float norm = 0.0f;
     // Quantize each value
     for (size_t i = 0; i < dim; i++) {
-        float normalized = (vec_copy[i] - min_val) / delta;
+        float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));
-        v[i] = static_cast<uint8_t>(std::round(normalized));
-        norm += (v[i] * delta + min_val) * (v[i] * delta + min_val);
+        qv[i] = static_cast<uint8_t>(std::round(normalized));
+        norm += (qv[i] * delta + min_val) * (qv[i] * delta + min_val);
     }
-
     float inv_norm = 1.0f / std::sqrt(norm);
     // Store parameters
-    float *params = reinterpret_cast<float *>(v + dim);
+    float *params = reinterpret_cast<float *>(qv + dim);
     params[0] = min_val;
     params[1] = delta;
     params[2] = inv_norm;
+}
 
+static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
+
+    std::mt19937 gen(seed); // Mersenne Twister engine initialized with the fixed seed
+    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    std::vector<float> vec(dim);
+    for (size_t i = 0; i < dim; i++) {
+        vec[i] = dis(gen);
+    }
+    quantize_float_vec_to_uint8(vec.data(), dim, v, seed);
 }
 
 
