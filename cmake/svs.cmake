@@ -14,6 +14,13 @@ endif()
 
 set(SVS_SUPPORTED 1)
 
+# Temporary disable SVS for CMAKE version >= 4 to cmake_required_version(3.1)
+# in robin-map v.1.0.1 (SVS dependency) which is incompatible with cmake v.4.0.0
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0.0")
+    message(STATUS "Skipping SVS: cmake v.4 is not supported by robin-map SVS dependency.")
+    set(SVS_SUPPORTED 0)
+endif()
+
 # GCC < v11 does not support C++20 features required for SVS
 # https://gcc.gnu.org/projects/cxx-status.html
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
