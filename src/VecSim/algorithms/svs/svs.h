@@ -426,15 +426,12 @@ public:
         // Base search parameters for the SVS iterator schedule.
         auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams);
         // SVS BatchIterator handles the search in batches
-        // The batch size is set to the index search window size or
-        // to svs::ITERATOR_EXTRA_BUFFER_CAPACITY_DEFAULT if it is smaller
-        const size_t batch_size = std::max(sp.buffer_config_.get_search_window_size(),
-                                           svs::ITERATOR_EXTRA_BUFFER_CAPACITY_DEFAULT);
+        // The batch size is set to the index search window size by default
+        const size_t batch_size = sp.buffer_config_.get_search_window_size();
 
         // Create SVS BatchIterator for range search
-        // SVS BatchIterator executes first batch of search at construction
         // Search result is cached in the iterator and can be accessed by the user
-        svs::index::vamana::BatchIterator<impl_type, data_type> svs_it{*impl_, query, batch_size};
+        svs::index::vamana::BatchIterator<impl_type, data_type> svs_it{*impl_, query};
         svs_it.next(batch_size, cancel);
         if (cancel()) {
             rep->code = VecSim_QueryReply_TimedOut;
