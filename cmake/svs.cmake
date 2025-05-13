@@ -12,12 +12,7 @@ if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
     set(SVS_NO_AVX512 ON)
 endif()
 
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "(x86_64)|(AMD64|amd64)")
-    set(SVS_SUPPORTED 1)
-else()
-    set(SVS_SUPPORTED 0)
-    message(STATUS "SVS is not supported on this architecture")
-endif()
+set(SVS_SUPPORTED 1)
 
 # GCC < v11 does not support C++20 features required for SVS
 # https://gcc.gnu.org/projects/cxx-status.html
@@ -39,6 +34,13 @@ if(USE_SVS)
     # Configure SVS build
     add_compile_definitions("HAVE_SVS=1")
 
+    if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "(x86_64)|(AMD64|amd64)")
+        set(SVS_LVQ_SUPPORTED 1)
+    else()
+        set(SVS_LVQ_SUPPORTED 0)
+        message(STATUS "SVS LVQ is not supported on this architecture")
+    endif()
+
     # detect if build environment is using glibc
     include(CheckSymbolExists)
     unset(GLIBC_FOUND CACHE)
@@ -47,7 +49,7 @@ if(USE_SVS)
         message(STATUS "GLIBC is not detected - SVS shared library is not supported")
     endif()
 
-    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND" OFF)
+    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
     set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250507-222.tar.gz" CACHE STRING "SVS URL")
 
     if(SVS_SHARED_LIB)
@@ -71,7 +73,7 @@ if(USE_SVS)
         set(SVS_LVQ_HEADER "svs/quantization/lvq/impl/lvq_impl.h")
     endif()
 
-    if(EXISTS "${svs_SOURCE_DIR}/include/${SVS_LVQ_HEADER}")
+    if(SVS_LVQ_SUPPORTED AND EXISTS "${svs_SOURCE_DIR}/include/${SVS_LVQ_HEADER}")
         message("SVS LVQ implementation found")
         add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=1" PUBLIC "SVS_LVQ_HEADER=\"${SVS_LVQ_HEADER}\"")
     else()
