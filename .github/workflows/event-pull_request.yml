@@ -61,7 +61,7 @@ jobs:
       - basic-tests
       - coverage
       - codeql-analysis
-      # - spellcheck
+      - spellcheck
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
