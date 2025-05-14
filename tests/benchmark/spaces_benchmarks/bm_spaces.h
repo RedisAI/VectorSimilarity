@@ -25,6 +25,7 @@
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/F16C.h"
+#include "VecSim/spaces/functions/SSE4.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/NEON.h"
