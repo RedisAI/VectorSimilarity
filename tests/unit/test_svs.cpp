@@ -71,6 +71,7 @@ struct SVSIndexType {
 
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_Scalar>
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8x8_LeanVec>
                                         >;
