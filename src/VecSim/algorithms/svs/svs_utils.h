@@ -44,74 +44,26 @@ using vecsim_dt = typename vecsim_dtype<T>::type;
 
 // SVS->VecSim distance conversion
 template <typename DistType>
-float toVecSimDistance(float);
+double toVecSimDistance(float);
 
 template <>
-inline float toVecSimDistance<svs::distance::DistanceL2>(float v) {
-    return v;
-}
-
-template <>
-inline float toVecSimDistance<svs::distance::DistanceIP>(float v) {
-    return 1.f - v;
+inline double toVecSimDistance<svs::distance::DistanceL2>(float v) {
+    return static_cast<double>(v);
 }
 
 template <>
-inline float toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
-    return 1.f - v;
+inline double toVecSimDistance<svs::distance::DistanceIP>(float v) {
+    return 1.0 - static_cast<double>(v);
 }
 
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceL2 dist, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    return toVecSimDistance<svs::distance::DistanceL2>(svs::distance::compute(dist, a, b));
-}
-
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceIP dist, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    return toVecSimDistance<svs::distance::DistanceIP>(svs::distance::compute(dist, a, b));
-}
-
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceCosineSimilarity /*dist*/, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    // VecSim uses IP for Cosine distance
-    return computeVecSimDistance(svs::distance::DistanceIP{}, a, b);
+template <>
+inline double toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
+    return 1.0 - static_cast<double>(v);
 }
 
 // VecSim allocator wrapper for SVS containers
 template <typename T>
-struct SVSAllocator {
-private:
-    std::shared_ptr<VecSimAllocator> allocator_;
-
-public:
-    // Type Aliases
-    using value_type = T;
-
-    // Constructor
-    SVSAllocator(std::shared_ptr<VecSimAllocator> vs_allocator)
-        : allocator_{std::move(vs_allocator)} {}
-
-    // Construct from another value type allocator.
-
-    // Allocation and Deallocation.
-    [[nodiscard]] constexpr value_type *allocate(std::size_t n) {
-        return static_cast<value_type *>(allocator_->allocate_aligned(n * sizeof(T), alignof(T)));
-    }
-
-    constexpr void deallocate(value_type *ptr, size_t count) noexcept {
-        allocator_->deallocate(ptr, count * sizeof(T));
-    }
-
-    // Support allocator type rebinding in LeanVec
-    template <typename U>
-    friend class SVSAllocator;
-
-    template <typename U>
-    SVSAllocator(SVSAllocator<U> other) : allocator_{other.allocator_} {}
-};
+using SVSAllocator = VecsimSTLAllocator<T>;
 
 // Join default SVS search parameters with VecSim query runtime parameters
 inline svs::index::vamana::VamanaSearchParameters

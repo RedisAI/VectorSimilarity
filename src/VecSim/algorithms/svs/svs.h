@@ -66,7 +66,7 @@ protected:
     // SVS Index implementation instance
     std::unique_ptr<impl_type> impl_;
 
-    static float toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
+    static double toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
 
     template <typename T, typename U>
     static T getOrDefault(T v, U def) {
@@ -519,13 +519,13 @@ public:
 #ifdef BUILD_TESTS
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
-        assert(nullptr && "Not implemented");
+        assert(false && "Not implemented");
         return {};
     }
     void getDataByLabel(
         labelType label,
         std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
-        assert(nullptr && "Not implemented");
+        assert(false && "Not implemented");
     }
 #endif
 };
