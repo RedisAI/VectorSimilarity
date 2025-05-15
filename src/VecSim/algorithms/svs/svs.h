@@ -401,7 +401,8 @@ public:
         rep->results.reserve(n_neighbors);
 
         for (size_t i = 0; i < n_neighbors; i++) {
-            rep->results.emplace_back(result.index(0, i), toVecSimDistance(result.distance(0, i)));
+            rep->results.push_back(
+                VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
         }
         return rep;
     }
@@ -452,7 +453,7 @@ public:
             for (auto &neighbor : svs_it) {
                 const auto dist = toVecSimDistance(neighbor.distance());
                 if (dist <= radius) {
-                    rep->results.emplace_back(neighbor.id(), dist);
+                    rep->results.push_back(VecSimQueryResult{neighbor.id(), dist});
                 } else if (dist > range_search_boundaries) {
                     keep_searching = false;
                 }
