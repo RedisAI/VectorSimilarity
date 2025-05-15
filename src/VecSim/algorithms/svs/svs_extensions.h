@@ -19,7 +19,7 @@
 // Scalar Quantization traits for SVS
 template <typename DataType>
 struct SVSStorageTraits<DataType, 1, 0, false> {
-    using element_type = std::uint8_t;
+    using element_type = std::int8_t;
     using allocator_type = svs_details::SVSAllocator<element_type>;
     using blocked_type = svs::data::Blocked<svs::AllocatorHandle<element_type>>;
     using index_storage_type =

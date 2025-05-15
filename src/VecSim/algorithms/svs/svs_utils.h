@@ -111,23 +111,25 @@ inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
 //       - primary bits, secondary/residual bits, dimesionality reduction, etc.
 //       which can be incompatible to each-other.
 inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuantBits quant_bits) {
-    // If HAVE_SVS_LVQ is not defined, we don't support any quantization mode
-    // else we check if the CPU supports SVS LVQ
-    bool supported = quant_bits == VecSimSvsQuant_NONE
+    switch (quant_bits) {
+    // non-quantized mode and scalar quantization are always supported
+    case VecSimSvsQuant_NONE:
+    case VecSimSvsQuant_Scalar:
+        return std::make_pair(quant_bits, true);
+    default:
+        // fallback to no quantization if we have no LVQ support in code
+        // or if the CPU doesn't support it
+        // TODO: fallback to scalar quantization
 #if HAVE_SVS_LVQ
-                     || svs::detail::intel_enabled() // Check if the CPU supports SVS LVQ
+        return svs::detail::intel_enabled() ? std::make_pair(quant_bits, true)
+                                            : std::make_pair(VecSimSvsQuant_NONE, true);
+#else
+        return std::make_pair(VecSimSvsQuant_NONE, true);
 #endif
-        ;
-
-    // If the quantization mode is not supported, we fallback to non-quantized mode
-    // - this is temporary solution until we have a basic quantization mode in SVS
-    // TODO: use basic SVS quantization as a fallback for unsupported modes
-    auto fallBack = supported ? quant_bits : VecSimSvsQuant_NONE;
-
-    // And always return true, as far as fallback mode is always supported
-    // Upon further decision changes, some cases should treated as not-supported
-    // So we will need return false.
-    return std::make_pair(fallBack, true);
+    }
+    assert(false && "Should never reach here");
+    // unreachable code, but to avoid compiler warning
+    return std::make_pair(VecSimSvsQuant_NONE, false);
 }
 } // namespace svs_details
 
