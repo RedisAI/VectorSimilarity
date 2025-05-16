@@ -12,6 +12,7 @@
 #include "unit_test_utils.h"
 #include <array>
 #include <cmath>
+#include <random>
 #include <vector>
 
 #if HAVE_SVS
@@ -61,7 +62,6 @@ struct SVSIndexType {
 
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
-                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_Scalar>
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
                                         >;
 // clang-format on
@@ -2129,6 +2129,86 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
               VecSimParamResolverErr_AlreadySet);
 
     VecSimIndex_Free(index);
+}
+
+/*    VecSimIndex *CreateNewIndex(SVSParams &params) {
+        params.quantBits = index_type_t::get_quant_bits();
+        params.type = index_type_t::get_index_type();
+        VecSimParams index_params = CreateParams(params);
+        return VecSimIndex_New(&index_params);
+    }
+
+    SVSIndexBase *CastToSVS(VecSimIndex *index) {
+        auto indexBase = dynamic_cast<SVSIndexBase *>(index);
+        assert(indexBase != nullptr);
+        return indexBase;
+    }
+*/
+
+TEST(SVSTest, scalar_quantization_query) {
+    const size_t dim = 32;
+    const size_t n = 100;
+    const size_t k = 10;
+    const double quant_precision = 1.0 / (1 << 7); // int8 quantization precision
+
+    std::default_random_engine gen;
+    std::uniform_real_distribution<float> dist(-1.0, 1.0);
+    std::vector<float> dataset(n * dim);
+    for (size_t i = 0; i < n * dim; i++) {
+        dataset[i] = dist(gen);
+    }
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    float query[dim];
+    GenerateVector<float>(query, dim, 0.1f);
+
+    VecSimQueryReply *fp_results = nullptr;
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        const auto &fp_result = fp_results->results[result_rank];
+        ASSERT_EQ(id, fp_result.id);
+        // Verify that relative difference between the actual and expected score is within 8-bit
+        // quantization precision.
+        auto expected_diff = std::abs(score * quant_precision);
+        ASSERT_NEAR(score, fp_result.score, expected_diff);
+    };
+
+    const std::pair<VecSimMetric, double> metrics[] = {
+        {VecSimMetric_L2, 30.},
+        {VecSimMetric_Cosine, 1.0},
+    };
+
+    for (auto [metric, radius] : metrics) {
+        SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = metric};
+        params.quantBits = VecSimSvsQuant_NONE;
+
+        auto index_params = CreateParams(params);
+        auto index_fp = VecSimIndex_New(&index_params);
+        ASSERT_NE(index_fp, nullptr);
+
+        dynamic_cast<SVSIndexBase *>(index_fp)->addVectors(dataset.data(), ids.data(), n);
+        ASSERT_EQ(VecSimIndex_IndexSize(index_fp), n);
+
+        params.quantBits = VecSimSvsQuant_Scalar;
+        index_params = CreateParams(params);
+        auto index_sq = VecSimIndex_New(&index_params);
+        ASSERT_NE(index_sq, nullptr);
+        dynamic_cast<SVSIndexBase *>(index_sq)->addVectors(dataset.data(), ids.data(), n);
+
+        // test topK search
+        fp_results = VecSimIndex_TopKQuery(index_fp, query, k, nullptr, BY_ID);
+        runTopKSearchTest(index_sq, query, k, verify_res, nullptr, BY_ID);
+        VecSimQueryReply_Free(fp_results);
+
+        // test range search
+        fp_results = VecSimIndex_RangeQuery(index_fp, query, radius, nullptr, BY_ID);
+        ASSERT_GT(fp_results->results.size(), 0);
+        runRangeQueryTest(index_sq, query, radius, verify_res, fp_results->results.size(), BY_ID);
+        VecSimQueryReply_Free(fp_results);
+
+        VecSimIndex_Free(index_sq);
+        VecSimIndex_Free(index_fp);
+    }
 }
 
 #else // HAVE_SVS
