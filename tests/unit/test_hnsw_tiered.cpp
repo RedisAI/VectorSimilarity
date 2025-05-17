@@ -4205,52 +4205,52 @@ public:
     PreprocessorDoubleValue(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t processed_bytes_count, unsigned char alignment) const override {
+                    size_t &input_blob_size, unsigned char alignment) const override {
 
         // One blob was already allocated by a previous preprocessor(s) that process both blobs the
         // same. The blobs are pointing to the same memory, we need to allocate another memory slot
         // to split them.
         if ((storage_blob == query_blob) && (query_blob != nullptr)) {
-            storage_blob = this->allocator->allocate(processed_bytes_count);
-            memcpy(storage_blob, query_blob, processed_bytes_count);
+            storage_blob = this->allocator->allocate(input_blob_size);
+            memcpy(storage_blob, query_blob, input_blob_size);
         }
 
         // Either both are nullptr or they are pointing to different memory slots. Both cases are
         // handled by the designated functions.
-        this->preprocessForStorage(original_blob, storage_blob, processed_bytes_count);
-        this->preprocessQuery(original_blob, query_blob, processed_bytes_count, alignment);
+        this->preprocessForStorage(original_blob, storage_blob, input_blob_size);
+        this->preprocessQuery(original_blob, query_blob, input_blob_size, alignment);
     }
 
     void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t processed_bytes_count) const override {
+                              size_t &input_blob_size) const override {
         // If the blob was not allocated yet, allocate it.
         if (blob == nullptr) {
-            blob = this->allocator->allocate(processed_bytes_count);
-            memcpy(blob, original_blob, processed_bytes_count);
+            blob = this->allocator->allocate(input_blob_size);
+            memcpy(blob, original_blob, input_blob_size);
         }
         for (size_t i = 0; i < dim; i++) {
             static_cast<DataType *>(blob)[i] *= 2;
         }
     }
-    void preprocessQueryInPlace(void *blob, size_t processed_bytes_count,
+    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
                                 unsigned char alignment) const override {
         for (size_t i = 0; i < dim; i++) {
             static_cast<DataType *>(blob)[i] *= 2;
         }
     }
 
-    void preprocessStorageInPlace(void *blob, size_t processed_bytes_count) const override {
+    void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
         for (size_t i = 0; i < dim; i++) {
             static_cast<DataType *>(blob)[i] *= 2;
         }
     }
 
-    void preprocessQuery(const void *original_blob, void *&blob, size_t processed_bytes_count,
+    void preprocessQuery(const void *original_blob, void *&blob, size_t &input_blob_size,
                          unsigned char alignment) const override {
         // If the blob was not allocated yet, allocate it.
         if (blob == nullptr) {
-            blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
-            memcpy(blob, original_blob, processed_bytes_count);
+            blob = this->allocator->allocate_aligned(input_blob_size, alignment);
+            memcpy(blob, original_blob, input_blob_size);
         }
         for (size_t i = 0; i < dim; i++) {
             static_cast<DataType *>(blob)[i] *= 2;

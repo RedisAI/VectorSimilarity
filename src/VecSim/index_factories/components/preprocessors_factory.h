@@ -15,6 +15,7 @@ struct PreprocessorsContainerParams {
     VecSimMetric metric;
     size_t dim;
     unsigned char alignment;
+    size_t processed_bytes_count;
 };
 
 template <typename DataType>
@@ -25,8 +26,8 @@ CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
     if (params.metric == VecSimMetric_Cosine) {
         auto multiPPContainer =
             new (allocator) MultiPreprocessorsContainer<DataType, 1>(allocator, params.alignment);
-        auto cosine_preprocessor =
-            new (allocator) CosinePreprocessor<DataType>(allocator, params.dim);
+        auto cosine_preprocessor = new (allocator)
+            CosinePreprocessor<DataType>(allocator, params.dim, params.processed_bytes_count);
         int next_valid_pp_index = multiPPContainer->addPreprocessor(cosine_preprocessor);
         UNUSED(next_valid_pp_index);
         assert(next_valid_pp_index != -1 && "Cosine preprocessor was not added correctly");

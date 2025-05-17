@@ -177,6 +177,7 @@ ifeq ($(VALGRIND),1)
 _CTEST_ARGS += \
 	-T memcheck \
 	--overwrite MemoryCheckCommandOptions="--leak-check=full --fair-sched=yes --error-exitcode=255"
+CMAKE_FLAGS += -DUSE_VALGRIND=ON
 endif
 
 unit_test:
