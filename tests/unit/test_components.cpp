@@ -719,7 +719,7 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
         // An assertion should be raised by the cosine preprocessor for unmatching blob sizes.
         // in valgrind the test continues, but the assertion appears in its log looking like an
         // error, so to avoid confusion we skip this line in valgrind.
-#ifndef RUNNING_ON_VALGRIND
+#if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
         EXPECT_EXIT(
             {
                 ProcessedBlobs processed_blobs = multiPPContainer.preprocess(
