@@ -44,18 +44,25 @@ public:
 template <typename DataType>
 class CosinePreprocessor : public PreprocessorInterface {
 public:
-    // This preprocessor assumes storage_blob and query_blob
-    // both are preprocessed in the same way, and yield a blob in the same size.
+    // This preprocessor requires that storage_blob and query_blob have identical memory sizes
+    // both before processing (as input) and after preprocessing completes.
     CosinePreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim,
                        size_t processed_bytes_count)
         : PreprocessorInterface(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim), processed_bytes_count(processed_bytes_count) {}
 
-    // If a blob (storage_blob or query_blob) is not nullptr, it means a previous preprocessor
-    // already allocated and processed it. So, we process it inplace. If it's null, we need to
-    // allocate memory for it and copy the original_blob to it.
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
+        // This assert verifies that if a blob was allocated by a previous preprocessor, its
+        // size matches our expected processed size. Therefore, it is safe to skip re-allocation and
+        // process it inplace. Supporting dynamic resizing would require additional size checks (if
+        // statements) and memory management logic, which could impact performance. Currently, no
+        // code path requires this capability. If resizing becomes necessary in the future, remove
+        // the assertions and implement appropriate allocation handling with performance
+        // considerations.
+        assert(storage_blob == nullptr || input_blob_size == processed_bytes_count);
+        assert(query_blob == nullptr || input_blob_size == processed_bytes_count);
+
         // Case 1: Blobs are different (one might be null, or both are allocated and processed
         // separately).
         if (storage_blob != query_blob) {
@@ -87,6 +94,9 @@ public:
 
     void preprocessForStorage(const void *original_blob, void *&blob,
                               size_t &input_blob_size) const override {
+        // see assert docs in preprocess
+        assert(blob == nullptr || input_blob_size == processed_bytes_count);
+
         if (blob == nullptr) {
             blob = this->allocator->allocate(processed_bytes_count);
             memcpy(blob, original_blob, input_blob_size);
@@ -97,6 +107,8 @@ public:
 
     void preprocessQuery(const void *original_blob, void *&blob, size_t &input_blob_size,
                          unsigned char alignment) const override {
+        // see assert docs in preprocess
+        assert(blob == nullptr || input_blob_size == processed_bytes_count);
         if (blob == nullptr) {
             blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
             memcpy(blob, original_blob, input_blob_size);

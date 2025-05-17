@@ -103,8 +103,8 @@ private:
 template <typename DataType>
 class DummyQueryPreprocessor : public PreprocessorInterface {
 public:
-    DummyQueryPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
-                           int _value_to_add_query = 0)
+    DummyQueryPreprocessor(std::shared_ptr<VecSimAllocator> allocator,
+                           DataType value_to_add_storage, DataType _value_to_add_query = 0)
         : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(_value_to_add_query) {
         if (!_value_to_add_query)
@@ -136,16 +136,16 @@ public:
     }
 
 private:
-    int value_to_add_storage;
-    int value_to_add_query;
+    DataType value_to_add_storage;
+    DataType value_to_add_query;
 };
 
 // Dummy mixed preprocessor (precesses the blobs  differently)
 template <typename DataType>
 class DummyMixedPreprocessor : public PreprocessorInterface {
 public:
-    DummyMixedPreprocessor(std::shared_ptr<VecSimAllocator> allocator, int value_to_add_storage,
-                           int value_to_add_query)
+    DummyMixedPreprocessor(std::shared_ptr<VecSimAllocator> allocator,
+                           DataType value_to_add_storage, DataType value_to_add_query)
         : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(value_to_add_query) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -189,8 +189,8 @@ public:
     }
 
 private:
-    int value_to_add_storage;
-    int value_to_add_query;
+    DataType value_to_add_storage;
+    DataType value_to_add_query;
 };
 
 // TODO: test increase allocation size ( we don't really need another pp class for this)
@@ -391,7 +391,7 @@ void MultiPreprocessorsContainerNoAlignment(dummyPreprocessors::pp_mode MODE) {
     int initial_value = 1;
     int value_to_add = 7;
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
-    size_t processed_bytes_count = sizeof(original_blob);
+    size_t original_blob_size = sizeof(original_blob);
 
     // Test computer with multiple preprocessors of the same type.
     auto multiPPContainer =
@@ -399,7 +399,7 @@ void MultiPreprocessorsContainerNoAlignment(dummyPreprocessors::pp_mode MODE) {
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, original_blob_size);
         // Original blob should not be changed
         ASSERT_EQ(original_blob[0], initial_value);
 
@@ -455,7 +455,7 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     int value_to_add_storage = 7;
     int value_to_add_query = 2;
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
-    size_t processed_bytes_count = sizeof(original_blob);
+    size_t original_blob_size = sizeof(original_blob);
 
     // Test multiple preprocessors of the same type.
     auto multiPPContainer =
@@ -472,7 +472,7 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     // scope this section so the blobs are released before the allocator.
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, original_blob_size);
         // Original blob should not be changed
         ASSERT_EQ(original_blob[0], initial_value);
 
@@ -497,7 +497,7 @@ void multiPPContainerMixedPreprocessorNoAlignment() {
     ASSERT_EQ(multiPPContainer.addPreprocessor(preprocessor2), 0);
     {
         ProcessedBlobs mixed_processed_blobs =
-            multiPPContainer.preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, original_blob_size);
 
         const void *mixed_pp_storage_blob = mixed_processed_blobs.getStorageBlob();
         const void *mixed_pp_query_blob = mixed_processed_blobs.getQueryBlob();
@@ -534,14 +534,14 @@ void multiPPContainerAlignment(dummyPreprocessors::pp_mode MODE) {
     int initial_value = 1;
     int value_to_add = 7;
     const int original_blob[4] = {initial_value, initial_value, initial_value, initial_value};
-    size_t processed_bytes_count = sizeof(original_blob);
+    size_t original_blob_size = sizeof(original_blob);
 
     auto multiPPContainer =
         MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
 
     auto verify_preprocess = [&](int expected_processed_value) {
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, processed_bytes_count);
+            multiPPContainer.preprocess(original_blob, original_blob_size);
 
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
@@ -594,19 +594,18 @@ TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
     float value_to_add_storage = 7.0f;
     float value_to_add_query = 2.0f;
     const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
-    // TODo: change this test so that original_blob_size != processed_bytes_count
-    constexpr size_t processed_bytes_count = sizeof(original_blob);
+    constexpr size_t original_blob_size = sizeof(original_blob);
 
     auto multiPPContainer =
-        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
+        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
 
     // adding cosine preprocessor
     auto cosine_preprocessor =
-        new (allocator) CosinePreprocessor<float>(allocator, dim, processed_bytes_count);
+        new (allocator) CosinePreprocessor<float>(allocator, dim, original_blob_size);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, original_blob_size);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to the same memory slot
@@ -626,7 +625,7 @@ TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
     multiPPContainer.addPreprocessor(mixed_preprocessor);
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, original_blob_size);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -649,6 +648,7 @@ TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
     // The preprocessors should be released by the preprocessors container.
 }
 
+// Cosine pp receives different allocation for the storage and query blobs.
 TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -657,23 +657,28 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
     constexpr size_t dim = 4;
     unsigned char alignment = 5;
 
-    float initial_value = 1.0f;
-    float normalized_value = 0.5f;
-    float value_to_add_storage = 7.0f;
-    float value_to_add_query = 2.0f;
-    const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
-    constexpr size_t processed_bytes_count = sizeof(original_blob);
+    // In this test the first preprocessor allocates the memory for both blobs, according to the
+    // size passed by the pp container. The second preprocessor expects that if the blobs are
+    // already allocated, their size matches its processed_bytes_count. Hence, the blob size should
+    // be sufficient for the cosine preprocessing.
+    constexpr int8_t normalized_blob_bytes_count = dim * sizeof(int8_t) + sizeof(float);
+    auto blob_alloc = allocator->allocate_unique(normalized_blob_bytes_count);
+    int8_t *original_blob = static_cast<int8_t *>(blob_alloc.get());
+    test_utils::populate_int8_vec(original_blob, dim);
 
+    // Processing params
+    int8_t value_to_add_storage = 7;
+    int8_t value_to_add_query = 4;
     // Creating multi preprocessors container
     auto mixed_preprocessor = new (allocator)
-        DummyMixedPreprocessor<float>(allocator, value_to_add_storage, value_to_add_query);
+        DummyMixedPreprocessor<int8_t>(allocator, value_to_add_storage, value_to_add_query);
     auto multiPPContainer =
-        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
+        MultiPreprocessorsContainer<int8_t, n_preprocessors>(allocator, alignment);
     multiPPContainer.addPreprocessor(mixed_preprocessor);
 
     {
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, normalized_blob_bytes_count);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -685,22 +690,46 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
         unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
         ASSERT_EQ(address_alignment, 0);
 
-        // They need to be processed by both processors.
-        ASSERT_EQ(((const float *)storage_blob)[0], initial_value + value_to_add_storage);
-        ASSERT_EQ(((const float *)query_blob)[0], initial_value + value_to_add_query);
+        // Both blobs were processed.
+        ASSERT_EQ(((const int8_t *)storage_blob)[0], original_blob[0] + value_to_add_storage);
+        ASSERT_EQ(((const int8_t *)query_blob)[0], original_blob[0] + value_to_add_query);
 
         // the original blob should not change
         ASSERT_NE(storage_blob, original_blob);
         ASSERT_NE(query_blob, original_blob);
     }
 
-    // adding cosine preprocessor
+    // Processed blob expected output
+    auto expected_processed_blob = [&](int8_t *blob, int8_t value_to_add) {
+        memcpy(blob, original_blob, normalized_blob_bytes_count);
+        blob[0] += value_to_add;
+        VecSim_Normalize(blob, dim, VecSimType_INT8);
+    };
+
+    int8_t expected_processed_storage[normalized_blob_bytes_count] = {0};
+    expected_processed_blob(expected_processed_storage, value_to_add_storage);
+    int8_t expected_processed_query[normalized_blob_bytes_count] = {0};
+    expected_processed_blob(expected_processed_query, value_to_add_query);
+
+    // normalize the original blob
     auto cosine_preprocessor =
-        new (allocator) CosinePreprocessor<float>(allocator, dim, processed_bytes_count);
+        new (allocator) CosinePreprocessor<int8_t>(allocator, dim, normalized_blob_bytes_count);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
     {
+        // An assertion should be raised by the cosine preprocessor for unmatching blob sizes.
+        // in valgrind the test continues, but the assertion appears in its log looking like an
+        // error, so to avoid confusion we skip this line in valgrind.
+#ifndef RUNNING_ON_VALGRIND
+        EXPECT_EXIT(
+            {
+                ProcessedBlobs processed_blobs = multiPPContainer.preprocess(
+                    original_blob, normalized_blob_bytes_count - sizeof(float));
+            },
+            testing::KilledBySignal(SIGABRT), "input_blob_size == processed_bytes_count");
+#endif
+        // Use the correct size
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, normalized_blob_bytes_count);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to a different memory slot
@@ -711,23 +740,106 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
         // They need to be allocated and processed
         ASSERT_NE(storage_blob, nullptr);
         ASSERT_NE(query_blob, nullptr);
-        float expected_processed_storage[dim] = {initial_value + value_to_add_storage,
-                                                 initial_value, initial_value, initial_value};
-        float expected_processed_query[dim] = {initial_value + value_to_add_query, initial_value,
-                                               initial_value, initial_value};
-        VecSim_Normalize(expected_processed_storage, dim, VecSimType_FLOAT32);
-        VecSim_Normalize(expected_processed_query, dim, VecSimType_FLOAT32);
-        ASSERT_EQ(((const float *)storage_blob)[0], expected_processed_storage[0]);
-        ASSERT_EQ(((const float *)query_blob)[0], expected_processed_query[0]);
         // the original blob should not change
         ASSERT_NE(storage_blob, original_blob);
         ASSERT_NE(query_blob, original_blob);
+
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<int8_t>(static_cast<const int8_t *>(storage_blob),
+                                                       expected_processed_storage,
+                                                       normalized_blob_bytes_count));
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<int8_t>(static_cast<const int8_t *>(query_blob),
+                                                       expected_processed_query,
+                                                       normalized_blob_bytes_count));
     }
     // The preprocessors should be released by the preprocessors container.
 }
-TEST(PreprocessorsTest, decrease_size_STORAGE_then_cosine_no_size_change) {}
-TEST(PreprocessorsTest, decrease_size_QUERY_then_cosine_no_size_change) {}
 
+template <typename PreprocessorType>
+void AsymmetricPPThenCosine(dummyPreprocessors::pp_mode MODE) {
+    using namespace dummyPreprocessors;
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    constexpr size_t n_preprocessors = 2;
+    constexpr size_t dim = 4;
+    unsigned char alignment = 5;
+
+    float original_blob[dim] = {0};
+    size_t original_blob_size = dim * sizeof(float);
+    test_utils::populate_float_vec(original_blob, dim);
+
+    // Processing params
+    float value_to_add_storage = 0;
+    float value_to_add_query = 0;
+    if (MODE == STORAGE_ONLY) {
+        value_to_add_storage = 7;
+    } else if (MODE == QUERY_ONLY) {
+        value_to_add_query = 4;
+    }
+
+    // Processed blob expected output
+    auto expected_processed_blob = [&](float *blob, float value_to_add) {
+        memcpy(blob, original_blob, original_blob_size);
+        blob[0] += value_to_add;
+        VecSim_Normalize(blob, dim, VecSimType_FLOAT32);
+    };
+
+    float expected_processed_storage[original_blob_size] = {0};
+    expected_processed_blob(expected_processed_storage, value_to_add_storage);
+    float expected_processed_query[original_blob_size] = {0};
+    expected_processed_blob(expected_processed_query, value_to_add_query);
+
+    auto multiPPContainer =
+        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
+    // will allocate either the storage or the query blob, depending on the preprocessor type.
+    // TODO : can we pass just value_to_add?
+    auto asymmetric_preprocessor =
+        new (allocator) PreprocessorType(allocator, value_to_add_storage, value_to_add_query);
+    auto cosine_preprocessor =
+        new (allocator) CosinePreprocessor<float>(allocator, dim, original_blob_size);
+
+    multiPPContainer.addPreprocessor(asymmetric_preprocessor);
+    multiPPContainer.addPreprocessor(cosine_preprocessor);
+
+    {
+        ProcessedBlobs processed_blobs =
+            multiPPContainer.preprocess(original_blob, original_blob_size);
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+        // blobs should point to a different memory slot
+        ASSERT_NE(storage_blob, query_blob);
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(query_blob, nullptr);
+
+        // query blob should be aligned
+        unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
+        ASSERT_EQ(address_alignment, 0);
+
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(static_cast<const float *>(storage_blob),
+                                                      expected_processed_storage, dim));
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(static_cast<const float *>(query_blob),
+                                                      expected_processed_query, dim));
+    }
+}
+// The first preprocessor in the chain allocates only the storage blob,
+// and the responsibility of allocating the query blob is delegated to the next preprocessor
+// in the chain (cosine preprocessor in this case).
+TEST(PreprocessorsTest, STORAGE_then_cosine_no_size_change) {
+    using namespace dummyPreprocessors;
+    EXPECT_NO_FATAL_FAILURE(
+        AsymmetricPPThenCosine<DummyStoragePreprocessor<float>>(pp_mode::STORAGE_ONLY));
+}
+
+TEST(PreprocessorsTest, QUERY_then_cosine_no_size_change) {
+    using namespace dummyPreprocessors;
+    EXPECT_NO_FATAL_FAILURE(
+        AsymmetricPPThenCosine<DummyQueryPreprocessor<float>>(pp_mode::QUERY_ONLY));
+}
+
+// A test where the value of input_blob_size is modified by the first pp.
+// The cosine pp processed_bytes_count should be set at initialization with the *modified* value,
+// otherwise, an assertion will be raised by it for an allocated blob that is smaller than the
+// expected size.
 TEST(PreprocessorsTest, DecreaseSizeThenFloatNormalize) {
     using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -761,7 +873,7 @@ TEST(PreprocessorsTest, DecreaseSizeThenFloatNormalize) {
         CosinePreprocessor<float>(allocator, new_elem_amount, new_processed_bytes_count);
     // Creating multi preprocessors container
     auto multiPPContainer =
-        MultiPreprocessorsContainer<DummyType, n_preprocessors>(allocator, alignment);
+        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
     multiPPContainer.addPreprocessor(decrease_size_preprocessor);
     multiPPContainer.addPreprocessor(cosine_preprocessor);
 
@@ -784,13 +896,17 @@ TEST(PreprocessorsTest, DecreaseSizeThenFloatNormalize) {
     }
 }
 
+// In this test the original blob size is smaller than the processed_bytes_count of the
+// cosine preprocessor. Before the bug fix, the cosine pp would try to copy processed_bytes_count
+// bytes of the original blob to the allocated memory, which would cause an out of bound read,
+// that should be detected by valgrind.
 TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
     using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 2;
     constexpr size_t alignment = 5;
-    constexpr size_t elements = 8;
+    constexpr size_t elements = 7;
 
     // valgrind detects out of bound reads only if the considered memory is allocated on the heap,
     // rather than on the stack.
@@ -806,7 +922,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
         normalized_blob_bytes_count + elements_addition * sizeof(unsigned char);
 
     // Processed blob expected output
-    int8_t expected_processed_blob[elements + sizeof(float) + 3] = {0};
+    int8_t expected_processed_blob[elements + sizeof(float) + elements_addition] = {0};
     memcpy(expected_processed_blob, original_blob, original_blob_size);
     // normalize the original blob
     VecSim_Normalize(expected_processed_blob, elements, VecSimType_INT8);
@@ -829,8 +945,9 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
     multiPPContainer.addPreprocessor(increase_size_preprocessor);
 
     {
+        // Note: we pass the original blob size to detect out of bound reads in the cosine pp.
         ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, sizeof(original_blob));
+            multiPPContainer.preprocess(original_blob, original_blob_size);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
         // blobs should point to the same memory slot
