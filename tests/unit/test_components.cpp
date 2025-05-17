@@ -765,7 +765,7 @@ void AsymmetricPPThenCosine(dummyPreprocessors::pp_mode MODE) {
     unsigned char alignment = 5;
 
     float original_blob[dim] = {0};
-    size_t original_blob_size = dim * sizeof(float);
+    constexpr size_t original_blob_size = dim * sizeof(float);
     test_utils::populate_float_vec(original_blob, dim);
 
     // Processing params
