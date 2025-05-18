@@ -75,7 +75,7 @@ INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8, SQ8, AVX2_FMA, 16, avx2_fma
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8, SQ8, AVX2_FMA, 16, avx2_fma3_supported);
 #endif // AVX2_FMA
 
-#ifdef AVX2
+#ifdef OPT_AVX2
 // AVX2 functions
 bool avx2_supported = opt.avx2;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8, SQ8, AVX2, 16, avx2_supported);
