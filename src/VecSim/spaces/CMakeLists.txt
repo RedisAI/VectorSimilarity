@@ -56,6 +56,12 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		list(APPEND OPTIMIZATIONS functions/AVX2.cpp)
 	endif()
 
+	if(CXX_AVX2 AND CXX_FMA)
+		message("Building with AVX2 and FMA")
+		set_source_files_properties(functions/AVX2_FMA.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+		list(APPEND OPTIMIZATIONS functions/AVX2_FMA.cpp)
+	endif()
+
 	if(CXX_F16C AND CXX_FMA AND CXX_AVX)
 		message("Building with CXX_F16C")
 		set_source_files_properties(functions/F16C.cpp PROPERTIES COMPILE_FLAGS "-mf16c -mfma -mavx")

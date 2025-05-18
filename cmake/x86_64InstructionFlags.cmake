@@ -61,6 +61,10 @@ if(CXX_AVX2)
 	add_compile_definitions(OPT_AVX2)
 endif()
 
+if(CXX_AVX2 AND CXX_FMA)
+	add_compile_definitions(OPT_AVX2_FMA)
+endif()
+
 if(CXX_AVX)
 	add_compile_definitions(OPT_AVX)
 endif()

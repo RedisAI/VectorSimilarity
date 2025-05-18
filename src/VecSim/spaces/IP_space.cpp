@@ -20,6 +20,7 @@
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/AVX2_FMA.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE4.h"
 #include "VecSim/spaces/functions/NEON.h"
@@ -72,6 +73,13 @@ dist_func_t<float> IP_SQ8_GetDistFunc(size_t dim, unsigned char *alignment, cons
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
         return Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (features.avx2 && features.fma3) {
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(float); // handles 16 floats
+        return Choose_SQ8_IP_implementation_AVX2_FMA(dim);
     }
 #endif
 #ifdef OPT_AVX2
@@ -131,6 +139,13 @@ dist_func_t<float> Cosine_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float); // handles 16 floats
         return Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (features.avx2 && features.fma3) {
+        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
+            *alignment = 16 * sizeof(float); // handles 16 floats
+        return Choose_SQ8_Cosine_implementation_AVX2_FMA(dim);
     }
 #endif
 #ifdef OPT_AVX2

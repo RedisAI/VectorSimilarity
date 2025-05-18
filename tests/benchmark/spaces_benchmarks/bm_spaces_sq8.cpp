@@ -69,6 +69,12 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8, SQ8, AVX512F_BW_VL_VNNI, 1
                                  avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI
 
+#ifdef OPT_AVX2_FMA
+bool avx2_fma3_supported = opt.avx2 && opt.fma3;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8, SQ8, AVX2_FMA, 16, avx2_fma3_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8, SQ8, AVX2_FMA, 16, avx2_fma3_supported);
+#endif // AVX2_FMA
+
 #ifdef AVX2
 // AVX2 functions
 bool avx2_supported = opt.avx2;

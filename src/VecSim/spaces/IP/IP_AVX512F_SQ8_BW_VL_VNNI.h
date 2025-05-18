@@ -61,8 +61,8 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
         // Load masked float elements
         __m512 v1 = _mm512_maskz_loadu_ps(mask, pVec1);
 
-        // Load masked uint8 elements
-        __m128i v2_128 = _mm_maskz_loadu_epi8(mask, reinterpret_cast<const __m128i *>(pVec2));
+        // Load full uint8 elements - we know that the first 16 elements are safe to load
+        __m128i v2_128 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pVec2));
         __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
         __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
 
@@ -73,7 +73,7 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
         __m512 product = _mm512_mul_ps(v1, dequantized);
 
         // Apply mask to product and add to sum
-        sum = _mm512_mask_add_ps(sum, mask, sum, product);
+        sum = _mm512_fmadd_ps(sum, sum, product);
 
         pVec1 += residual;
         pVec2 += residual;
@@ -86,7 +86,6 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
 
     // Return the raw inner product result
     return _mm512_reduce_add_ps(sum);
-    ;
 }
 
 template <unsigned char residual> // 0..15
