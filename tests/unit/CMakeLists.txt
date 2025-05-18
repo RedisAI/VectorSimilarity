@@ -31,7 +31,7 @@ endif()
 option(USE_VALGRIND "Building for Valgrind" OFF)
 if(USE_VALGRIND)
     add_definitions(-DRUNNING_ON_VALGRIND)
-    message(STATUS "Building with RUNNING_ON_VALGRIND definition for Valgrind compatibility")
+    message(STATUS "Building with RUNNING_ON_VALGRIND")
 endif()
 
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")

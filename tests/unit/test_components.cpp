@@ -193,7 +193,6 @@ private:
     DataType value_to_add_query;
 };
 
-// TODO: test increase allocation size ( we don't really need another pp class for this)
 // A preprocessor that changes the allocation size of the blobs in the same manner.
 // set excess bytes to (char)2
 template <typename DataType>

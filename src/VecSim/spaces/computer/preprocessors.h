@@ -17,17 +17,10 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/memory/memory_utils.h"
 
-// TODO: Handle processed_bytes_count that might change down the preprocessors pipeline.
-// The preprocess function calls a pipeline of preprocessors, one of which can be a quantization
-// preprocessor. In such cases, the quantization preprocessor compresses the vector, resulting in a
-// change in the allocation size.
 class PreprocessorInterface : public VecsimBaseObject {
 public:
     PreprocessorInterface(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {}
-    // TODO: handle a dynamic processed_bytes_count, as the allocation size of the blob might change
-    // down the preprocessors pipeline (such as in quantization preprocessor that compresses the
-    // vector).
     // Note: input_blob_size is relevant for both storage blob and query blob, as we assume results
     // are the same size.
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -120,8 +113,6 @@ public:
     void preprocessQueryInPlace(void *blob, size_t input_blob_size,
                                 unsigned char alignment) const override {
         assert(blob);
-        // TODO: replace with a debug assert and log the exact values of input_blob_size and
-        // processed_bytes_count to improve observability
         assert(input_blob_size == this->processed_bytes_count);
         normalize_func(blob, this->dim);
     }
