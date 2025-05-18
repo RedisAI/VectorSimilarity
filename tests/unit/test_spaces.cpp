@@ -2153,7 +2153,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
             << "AVX with dim " << dim;
         // ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         // Unset optimizations flag, so we'll choose the next optimization.
-        optimization.avx2 = optimization.fma3 = 0;
+        optimization.fma3 = 0;
     }
 #endif
 #ifdef OPT_AVX2
@@ -2280,7 +2280,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX with dim " << dim;
         // ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
-        optimization.avx2 = optimization.fma3 = 0;
+        optimization.fma3 = 0;
     }
 #endif
 #ifdef OPT_AVX2
@@ -2452,7 +2452,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "AVX with dim " << dim;
         // We don't align SQ8 vectors with cosine distance
         // ASSERT_EQ(alignment, 0) << "AVX with dim " << dim;
-        optimization.avx2 = optimization.fma3 = 0;
+        optimization.fma3 = 0;
     }
 #endif
 #ifdef OPT_AVX2
