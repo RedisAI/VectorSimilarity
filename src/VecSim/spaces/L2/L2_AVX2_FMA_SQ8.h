@@ -10,7 +10,7 @@
 #include "VecSim/spaces/AVX_utils.h"
 
 static inline void L2StepSQ8_FMA(const float *&pVect1, const uint8_t *&pVect2, __m256 &sum256,
-                             const __m256 &min_val_vec, const __m256 &delta_vec) {
+                                 const __m256 &min_val_vec, const __m256 &delta_vec) {
     // Load 8 float elements from pVect1
     __m256 v1 = _mm256_loadu_ps(pVect1);
     pVect1 += 8;
@@ -31,19 +31,19 @@ static inline void L2StepSQ8_FMA(const float *&pVect1, const uint8_t *&pVect2, _
     // Calculate squared difference using FMA
     // (v1 - v2_dequant)^2 = v1^2 - 2*v1*v2_dequant + v2_dequant^2
     // Using FMA: v1^2 - 2*v1*v2_dequant + v2_dequant^2
-    
+
     // First, compute v2_dequant^2
     __m256 v2_dequant_squared = _mm256_mul_ps(v2_dequant, v2_dequant);
-    
+
     // Then, compute v1^2
     __m256 v1_squared = _mm256_mul_ps(v1, v1);
-    
+
     // Finally, compute -2*v1*v2_dequant + v2_dequant^2 + v1^2 using FMA
     // -2*v1*v2_dequant + v2_dequant^2 = -2 * v1 * v2_dequant + v2_dequant^2
     __m256 neg_2_v1 = _mm256_mul_ps(v1, _mm256_set1_ps(-2.0f));
     __m256 diff_squared = _mm256_fmadd_ps(neg_2_v1, v2_dequant, v2_dequant_squared);
     diff_squared = _mm256_add_ps(diff_squared, v1_squared);
-    
+
     // Add to running sum
     sum256 = _mm256_add_ps(sum256, diff_squared);
 }

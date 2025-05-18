@@ -16,5 +16,4 @@ dist_func_t<float> Choose_SQ8_IP_implementation_AVX2_FMA(size_t dim);
 dist_func_t<float> Choose_SQ8_Cosine_implementation_AVX2_FMA(size_t dim);
 dist_func_t<float> Choose_SQ8_L2_implementation_AVX2_FMA(size_t dim);
 
-
 } // namespace spaces

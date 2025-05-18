@@ -9,8 +9,9 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/AVX_utils.h"
 
-static inline void InnerProductStepSQ8_FMA(const float *&pVect1, const uint8_t *&pVect2, __m256 &sum256,
-                                      const __m256 &min_val_vec, const __m256 &delta_vec) {
+static inline void InnerProductStepSQ8_FMA(const float *&pVect1, const uint8_t *&pVect2,
+                                           __m256 &sum256, const __m256 &min_val_vec,
+                                           const __m256 &delta_vec) {
     // Load 8 float elements from pVect1
     __m256 v1 = _mm256_loadu_ps(pVect1);
     pVect1 += 8;
