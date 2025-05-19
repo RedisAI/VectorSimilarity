@@ -33,6 +33,17 @@
         }                                                                                          \
     }
 
+// Log callback function to print non-debug log messages
+static void svsTestLogCallBackNoDebug(void *ctx, const char *level, const char *message) {
+    if (level == nullptr || message == nullptr) {
+        return; // Skip null messages
+    }
+    if (std::string_view{level} == VecSimCommonStrings::LOG_DEBUG_STRING) {
+        return; // Skip debug messages
+    }
+    // Print other log levels
+    std::cout << level << ": " << message << std::endl;
+}
 template <typename index_type_t>
 class SVSTest : public ::testing::Test {
 public:
@@ -58,6 +69,11 @@ protected:
         auto indexBase = dynamic_cast<SVSIndexBase *>(index);
         assert(indexBase != nullptr);
         return indexBase;
+    }
+
+    void SetUp() override {
+        // Limit VecSim log level to avoid printing too much information
+        VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
     }
 };
 
@@ -2215,18 +2231,6 @@ TEST(SVSTest, quant_modes) {
     }
 }
 
-void logCallback_ostream(void *ctx, const char *level, const char *message){
-    if (ctx == nullptr) {
-        return;
-    }
-    assert(level != nullptr);
-    assert(message != nullptr);
-    // Cast the context to the correct type
-    // and write the log message to the ostringstream
-    std::ostringstream *os = static_cast<std::ostringstream *>(ctx);
-    *os << level << ": " << message;
-}
-
 TYPED_TEST(SVSTest, logging_runtime_params) {
     const size_t dim = 4;
     const size_t n = 100;
@@ -2235,7 +2239,17 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     std::ostringstream os_index;
     std::ostringstream os_global;
 
-    VecSim_SetLogCallbackFunction(logCallback_ostream);
+    VecSim_SetLogCallbackFunction([](void *ctx, const char *level, const char *message) {
+        if (ctx == nullptr) {
+            return;
+        }
+        assert(level != nullptr);
+        assert(message != nullptr);
+        // Cast the context to the correct type
+        // and write the log message to the ostringstream
+        std::ostringstream *os = static_cast<std::ostringstream *>(ctx);
+        *os << level << ": " << message;
+    });
 
     // Set the SVS global log context to the ostringstream
     auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(os_global);
@@ -2245,10 +2259,14 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     logger->set_pattern("%@\n\t%+");
     svs::logging::set(logger);
 
-    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2,};
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
     this->SetTypeParams(params);
     VecSimParams index_params = CreateParams(params);
-    index_params.logCtx = static_cast<void*>(&os_index); // Set the index log context to the ostringstream
+    index_params.logCtx =
+        static_cast<void *>(&os_index); // Set the index log context to the ostringstream
     VecSimIndex *index = this->CreateNewIndex(index_params);
     ASSERT_INDEX(index);
 
@@ -2272,9 +2290,7 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](size_t id, double score, size_t index) {
-        EXPECT_EQ(id, (index + 45));
-    };
+    auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
@@ -2287,6 +2303,9 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
 }
 
 TEST(SVSTest, scalar_quantization_query) {
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+
     const size_t dim = 32;
     const size_t n = 100;
     const size_t k = 10;

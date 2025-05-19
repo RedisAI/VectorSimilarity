@@ -203,7 +203,8 @@ struct SVSGraphBuilder {
     static graph_type build_graph(const svs::index::vamana::VamanaBuildParameters &parameters,
                                   const Data &data, DistType distance, Pool &threadpool,
                                   SVSIdType entry_point, size_t block_size,
-                                  std::shared_ptr<VecSimAllocator> allocator, const svs::logging::logger_ptr& logger) {
+                                  std::shared_ptr<VecSimAllocator> allocator,
+                                  const svs::logging::logger_ptr &logger) {
         auto svs_bs =
             svs_details::SVSBlockSize(block_size, element_size(parameters.graph_max_degree));
         // Perform graph construction.

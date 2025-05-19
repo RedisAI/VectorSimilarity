@@ -172,8 +172,9 @@ protected:
                                          this->blockSize, this->getAllocator(), logger);
 
         // Create SVS MutableIndex instance
-        impl_ = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
-                                            std::move(distance), ids, std::move(threadpool), logger);
+        impl_ =
+            std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
+                                        std::move(distance), ids, std::move(threadpool), logger);
 
         // Set SVS MutableIndex build parameters to be used in future updates
         impl_->set_construction_window_size(parameters.window_size);
