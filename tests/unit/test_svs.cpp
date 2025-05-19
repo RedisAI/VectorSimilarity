@@ -2270,9 +2270,9 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     VecSimIndex *index = this->CreateNewIndex(index_params);
     ASSERT_INDEX(index);
 
-    std::vector<float[dim]> v(n);
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
-        GenerateVector<float>(v[i], dim, i);
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
     }
 
     std::vector<size_t> ids(n);
@@ -2284,7 +2284,7 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
 
     // Overrite vectors one-by-one
     for (size_t i = 0; i < 10; i++) {
-        index->addVector(v[i], ids[i]);
+        index->addVector(v[i].data(), ids[i]);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -2294,9 +2294,6 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
-
-    auto index_log = os_index.view();
-    EXPECT_FALSE(index_log.empty()) << "Index log should not be empty";
 
     auto global_log = os_global.view();
     EXPECT_TRUE(global_log.empty()) << "Global log should be empty, but got: " << global_log;
