@@ -2395,7 +2395,7 @@ TEST(SVSTieredIndexTest, svs_not_supported) {
 
     ASSERT_EQ(index, nullptr);
 
-    // Althogh nothing is actually been allocated we calcualte a brute force index size to align
+    // Although nothing is actually been allocated we calculate a brute force index size to align
     // with the logic of the tiered index function, which currently doesn’t have a verification of
     // the backend index algorithm. This to be changed once a proper verification is introduced.
     auto bf_params = TieredFactory::TieredSVSFactory::NewBFParams(&tiered_params);
