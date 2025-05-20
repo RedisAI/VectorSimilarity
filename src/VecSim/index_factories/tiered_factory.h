@@ -59,7 +59,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
 }
 } // namespace TieredHNSWFactory
 
-// The function below is exported to calcualte a brute force index size in tests to align
+// The function below is exported to calculate a brute force index size in tests to align
 // with the logic of the TieredFactory::EstimateInitialSize(), which currently doesn’t have a
 // verification of the backend index algorithm. To be removed once a proper verification is
 // introduced.

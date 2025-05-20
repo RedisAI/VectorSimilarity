@@ -544,14 +544,14 @@ private:
                                   labels_to_add.size());
 
             // clean-up frontend index
-            { // avoid deleting modified vectors
+            { // avoid deleting vectors updated/modified in the meantime
                 std::shared_lock<std::shared_mutex> journal_lock{this->journal_mutex};
                 for (auto &p : this->journal) {
                     to_add.erase(p.first);
                 }
             }
 
-            // erase moved vectors
+            // delete vectors from the frontend index
             size_t deleted = 0;
             for (auto &label : to_add) {
                 deleted += this->frontendIndex->deleteVector(label);
