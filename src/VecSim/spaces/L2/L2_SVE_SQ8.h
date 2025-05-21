@@ -21,16 +21,16 @@ static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, size_
     svuint32_t v2_u32 = svld1ub_u32(pg, pVect2 + offset);
 
     // Convert uint32 to float32
-    svfloat32_t v2_f = svcvt_f32_u32_z(pg, v2_u32);
+    svfloat32_t v2_f = svcvt_f32_u32_x(pg, v2_u32);
 
     // Dequantize: (val * delta) + min_val
-    svfloat32_t v2_dequant = svadd_f32_z(pg, svmul_f32_z(pg, v2_f, delta_vec), min_val_vec);
+    svfloat32_t v2_dequant = svmla_f32_x(pg, min_val_vec, v2_f, delta_vec);
 
     // Compute difference
-    svfloat32_t diff = svsub_f32_z(pg, v1, v2_dequant);
+    svfloat32_t diff = svsub_f32_x(pg, v1, v2_dequant);
 
     // Square difference and add to sum
-    sum = svmla_f32_z(pg, sum, diff, diff);
+    sum = svmla_f32_x(pg, sum, diff, diff);
 
     // Move to the next set of elements
     offset += svcntw();

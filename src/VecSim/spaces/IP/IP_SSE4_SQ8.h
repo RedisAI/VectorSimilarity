@@ -10,24 +10,26 @@
 #include <iostream>
 #include <string.h>
 
-static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, __m128 &sum_prod,
-                                    const __m128 &min_val_vec, const __m128 &delta_vec) {
-    // Load 4 float elements from pVect1
-    __m128 v1 = _mm_loadu_ps(pVect1);
-    pVect1 += 4;
+static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, 
+                                   __m128 &sum_prod1, __m128 &sum_prod2,
+                                   const __m128 &min_val_vec, const __m128 &delta_vec) {
+    // Load first 4 elements
+    __m128 v1a = _mm_loadu_ps(pVect1);
+    __m128i v2a_i = _mm_cvtepu8_epi32(_mm_loadu_si32(pVect2));
+    
+    // Load next 4 elements
+    __m128 v1b = _mm_loadu_ps(pVect1 + 4);
+    __m128i v2b_i = _mm_cvtepu8_epi32(_mm_loadu_si32(pVect2 + 4));
+    
+    pVect1 += 8;
+    pVect2 += 8;
 
-    // Load 4 uint8 elements from pVect2, convert to int32, then to float
-    __m128i v2_i = _mm_cvtepu8_epi32(_mm_castps_si128(_mm_load_ss((float *)pVect2)));
-    pVect2 += 4;
-
-    // Convert int32 to float
-    __m128 v2_f = _mm_cvtepi32_ps(v2_i);
-
-    // Dequantize: (val * delta) + min_val
-    __m128 v2_dequant = _mm_add_ps(_mm_mul_ps(v2_f, delta_vec), min_val_vec);
-
-    // Compute dot product and add to sum
-    sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(v1, v2_dequant));
+    // Process both sets
+    __m128 v2a_dequant = _mm_add_ps(_mm_mul_ps(_mm_cvtepi32_ps(v2a_i), delta_vec), min_val_vec);
+    __m128 v2b_dequant = _mm_add_ps(_mm_mul_ps(_mm_cvtepi32_ps(v2b_i), delta_vec), min_val_vec);
+    
+    sum_prod1 = _mm_add_ps(sum_prod1, _mm_mul_ps(v1a, v2a_dequant));
+    sum_prod2 = _mm_add_ps(sum_prod2, _mm_mul_ps(v1b, v2b_dequant));
 }
 
 template <unsigned char residual> // 0..15
@@ -45,7 +47,9 @@ float SQ8_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVect2v, 
 
     const float *pEnd1 = pVect1 + dimension;
 
-    __m128 sum = _mm_setzero_ps();
+    // Initialize two sum accumulators
+    __m128 sum1 = _mm_setzero_ps();
+    __m128 sum2 = _mm_setzero_ps();
 
     // Process residual elements if needed
     if constexpr (residual) {
@@ -86,14 +90,17 @@ float SQ8_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVect2v, 
 
             pVect1 += residual % 4;
             quantized += residual % 4;
-            sum = _mm_mul_ps(v1, v2_dequant);
+            sum1 = _mm_mul_ps(v1, v2_dequant); // Use sum1 for residual
         }
     }
 
-    // Process 4 elements at a time
+    // Process 8 elements at a time
     while (pVect1 < pEnd1) {
-        InnerProductStep(pVect1, quantized, sum, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, quantized, sum1, sum2, min_val_vec, delta_vec);
     }
+
+    // Combine the two sums
+    __m128 sum = _mm_add_ps(sum1, sum2);
 
     // TmpRes must be 16 bytes aligned.
     float PORTABLE_ALIGN16 TmpRes[4];

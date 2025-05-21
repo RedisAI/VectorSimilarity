@@ -23,13 +23,13 @@ static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2
     svuint32_t v2_u32 = svld1ub_u32(pg, pVect2 + offset); // LD1UB: loa
 
     // Convert uint32 to float32
-    svfloat32_t v2_f = svcvt_f32_u32_z(pg, v2_u32);
+    svfloat32_t v2_f = svcvt_f32_u32_x(pg, v2_u32);
 
     // Dequantize: (val * delta) + min_val
-    svfloat32_t v2_dequant = svadd_f32_z(pg, svmul_f32_z(pg, v2_f, delta_vec), min_val_vec);
+    svfloat32_t v2_dequant = svmla_f32_x(pg, min_val_vec, v2_f, delta_vec);
 
     // Compute dot product and add to sum
-    sum = svmla_f32_z(pg, sum, v1, v2_dequant);
+    sum = svmla_f32_x(pg, sum, v1, v2_dequant);
 
     // Move to the next set of elements
     offset += svcntw();
@@ -80,7 +80,7 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
 
             // Dequantize: (val * delta) + min_val
             svfloat32_t v2_dequant =
-                svadd_f32_z(pg_partial, svmul_f32_z(pg_partial, v2_f, delta_vec), min_val_vec);
+                svmla_f32_z(pg_partial, min_val_vec, v2_f, delta_vec);
 
             // Compute dot product and add to sum
             sum0 = svmla_f32_z(pg_partial, sum0, v1, v2_dequant);
