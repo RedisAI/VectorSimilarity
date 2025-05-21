@@ -698,7 +698,8 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<SVSRuntimeParams>(queryParams, "SVSRuntimeParams")
         .def(py::init<>())
         .def_readwrite("windowSize", &SVSRuntimeParams::windowSize)
-        .def_readwrite("searchHistory", &SVSRuntimeParams::searchHistory);
+        .def_readwrite("searchHistory", &SVSRuntimeParams::searchHistory)
+        .def_readwrite("epsilon", &SVSRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
         .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
