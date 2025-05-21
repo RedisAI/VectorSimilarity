@@ -462,6 +462,7 @@ public:
                                         VecSimQueryParams *query_params) override {
 
         py::array query(input);
+        py::gil_scoped_release py_gil;
         // Passing indexGuardPtr by value, so that the refCount of the mutex
         auto del = [indexGuardPtr = this->indexGuard](VecSimBatchIterator *pyBatchIter) {
             VecSimBatchIterator_Free(pyBatchIter);
