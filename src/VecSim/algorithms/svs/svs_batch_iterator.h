@@ -24,6 +24,7 @@ class SVS_BatchIterator : public VecSimBatchIterator {
 private:
     using impl_type = svs::index::vamana::BatchIterator<Index, DataType>;
     using dist_type = typename Index::distance_type;
+    bool done;
     size_t dim;
     impl_type impl_;
     typename impl_type::const_iterator curr_it;
@@ -52,6 +53,7 @@ private:
                 }
                 curr_it = impl_.begin();
                 if (impl_.size() == 0) {
+                    this->done = true;
                     return rep;
                 }
             }
@@ -67,7 +69,7 @@ public:
                       std::shared_ptr<VecSimAllocator> allocator)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
-          dim{index->dimensions()},
+          done{false}, dim{index->dimensions()},
           impl_{*index, std::span{static_cast<DataType *>(query_vector), dim}},
           curr_it{impl_.begin()} {
         auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams);
@@ -83,7 +85,7 @@ public:
         return rep;
     }
 
-    bool isDepleted() override { return curr_it == impl_.end() && impl_.done(); }
+    bool isDepleted() override { return curr_it == impl_.end() && (this->done || impl_.done()); }
 
     void reset() override {
         impl_.update(std::span{static_cast<const DataType *>(this->getQueryBlob()), dim});
