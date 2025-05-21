@@ -258,9 +258,10 @@ private:
                 if (ind >= n_queries) {
                     break;
                 }
-                indexGuard.lock_shared();
-                results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
-                indexGuard.unlock_shared();
+                {
+                    std::shared_lock<std::shared_mutex> lock(indexGuard);
+                    results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
+                }
             }
         };
         std::thread thread_objs[n_threads];
@@ -395,23 +396,21 @@ public:
             [&](const py::array &data,
                 const py::array_t<labelType, py::array::c_style | py::array::forcecast> &labels) {
                 while (true) {
-                    bool exclusive = true;
-                    barrier.lock();
+                    std::lock_guard<std::mutex> barrier_guard(barrier);
                     int ind = global_counter++;
                     if (ind >= n_vectors) {
-                        barrier.unlock();
                         break;
                     }
+                    // Use RAII for shared mutex with appropriate lock type
                     if (ind % block_size != 0) {
-                        indexGuard.lock_shared();
-                        exclusive = false;
+                        // Read lock for normal operations
+                        std::shared_lock<std::shared_mutex> index_guard(indexGuard);
+                        this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
                     } else {
-                        // Lock exclusively if we are performing resizing due to a new block.
-                        indexGuard.lock();
+                        // Exclusive lock for block resizing operations
+                        std::unique_lock<std::shared_mutex> index_guard(indexGuard);
+                        this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
                     }
-                    barrier.unlock();
-                    this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
-                    exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
                 }
             };
         std::thread thread_objs[n_threads];
