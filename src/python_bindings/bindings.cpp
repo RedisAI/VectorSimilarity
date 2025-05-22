@@ -236,8 +236,10 @@ public:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
-    std::shared_ptr<std::shared_mutex> indexGuard; // to protect parallel operations on the index.
-    template <typename search_param_t>             // size_t/double for KNN/range queries.
+    std::shared_ptr<std::shared_mutex>
+        indexGuard; // to protect parallel operations on the index. Make sure to release the GIL
+                    // while locking the mutex.
+    template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
         std::function<VecSimQueryReply *(const char *, search_param_t, VecSimQueryParams *)>;
 
