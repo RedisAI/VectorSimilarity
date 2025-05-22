@@ -236,7 +236,9 @@ public:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
-    std::shared_mutex indexGuard;      // to protect parallel operations on the index.
+    std::shared_ptr<std::shared_mutex>
+        indexGuard; // to protect parallel operations on the index. Make sure to release the GIL
+                    // while locking the mutex.
     template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
         std::function<VecSimQueryReply *(const char *, search_param_t, VecSimQueryParams *)>;
@@ -258,9 +260,10 @@ private:
                 if (ind >= n_queries) {
                     break;
                 }
-                indexGuard.lock_shared();
-                results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
-                indexGuard.unlock_shared();
+                {
+                    std::shared_lock<std::shared_mutex> lock(*indexGuard);
+                    results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
+                }
             }
         };
         std::thread thread_objs[n_threads];
@@ -281,12 +284,14 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                                .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
     // @params is required only in V1.
     explicit PyHNSWLibIndex(const std::string &location) {
         this->index =
             std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
+        this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
     void setDefaultEf(size_t ef) {
@@ -403,15 +408,16 @@ public:
                         break;
                     }
                     if (ind % block_size != 0) {
-                        indexGuard.lock_shared();
+                        // Read lock for normal operations
+                        indexGuard->lock_shared();
                         exclusive = false;
                     } else {
-                        // Lock exclusively if we are performing resizing due to a new block.
-                        indexGuard.lock();
+                        // Exclusive lock for block resizing operations
+                        indexGuard->lock();
                     }
                     barrier.unlock();
                     this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
-                    exclusive ? indexGuard.unlock() : indexGuard.unlock_shared();
+                    exclusive ? indexGuard->unlock() : indexGuard->unlock_shared();
                 }
             };
         std::thread thread_objs[n_threads];
@@ -459,12 +465,15 @@ public:
     }
     PyBatchIterator createBatchIterator(const py::object &input,
                                         VecSimQueryParams *query_params) override {
+
         py::array query(input);
-        auto del = [&](VecSimBatchIterator *pyBatchIter) {
+        py::gil_scoped_release py_gil;
+        // Passing indexGuardPtr by value, so that the refCount of the mutex
+        auto del = [indexGuardPtr = this->indexGuard](VecSimBatchIterator *pyBatchIter) {
             VecSimBatchIterator_Free(pyBatchIter);
-            this->indexGuard.unlock_shared();
+            indexGuardPtr->unlock_shared();
         };
-        indexGuard.lock_shared();
+        indexGuard->lock_shared();
         auto py_batch_ptr = std::shared_ptr<VecSimBatchIterator>(
             VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params), del);
         return PyBatchIterator(index, py_batch_ptr);
