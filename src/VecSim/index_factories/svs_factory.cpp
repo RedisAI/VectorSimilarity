@@ -27,7 +27,7 @@ AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
             .dataSize = dataSize,
             .metric = svsParams.metric,
             .blockSize = svsParams.blockSize,
-            .multi = false,
+            .multi = svsParams.multi,
             .logCtx = params->logCtx};
 }
 
@@ -42,9 +42,15 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
         nullptr, preprocessors}; // calculator is not in use in svs.
     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
-    return new (abstractInitParams.allocator)
-        SVSIndex<MetricType, DataType, QuantBits, ResidualBits, IsLeanVec>(
-            svsParams, abstractInitParams, components, forcePreprocessing);
+    if (svsParams.multi) {
+        return new (abstractInitParams.allocator)
+            SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>(
+                svsParams, abstractInitParams, components, forcePreprocessing);
+    } else {
+        return new (abstractInitParams.allocator)
+            SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>(
+                svsParams, abstractInitParams, components, forcePreprocessing);
+    }
 }
 
 template <typename MetricType, typename DataType>
@@ -159,6 +165,21 @@ size_t QuantizedVectorSize(VecSimType data_type, VecSimSvsQuantBits quant_bits, 
     }
 }
 
+size_t EstimateSVSIndexSize(const SVSParams *params) {
+    // SVSindex class has no fields which size depend on template specialization
+    // when VecSimIndexAbstract may depend on DataType template parameter
+    switch (params->type) {
+    case VecSimType_FLOAT32:
+        return sizeof(SVSIndex<svs::distance::DistanceL2, float, false, 0, 0, false>);
+    case VecSimType_FLOAT16:
+        return sizeof(SVSIndex<svs::distance::DistanceL2, svs::Float16, false, 0, 0, false>);
+    default:
+        // If we got here something is wrong.
+        assert(false && "Unsupported data type");
+        return 0;
+    }
+}
+
 size_t EstimateComponentsMemorySVS(VecSimType type, VecSimMetric metric, bool is_normalized) {
     // SVS index only includes a preprocessor container.
     switch (type) {
@@ -193,11 +214,7 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
-    // Assume all non-quant floats have same initial size
-    // Assume quantBits>0 cases have same sizes
-    est += (params->quantBits == 0)
-               ? sizeof(SVSIndex<svs::distance::DistanceL2, float, 0, 0, false>)
-               : sizeof(SVSIndex<svs::distance::DistanceL2, float, 8, 0, false>);
+    est += EstimateSVSIndexSize(params);
     est += EstimateComponentsMemorySVS(params->type, params->metric, is_normalized);
     est += sizeof(DataBlocksContainer) + allocations_overhead;
     return est;
