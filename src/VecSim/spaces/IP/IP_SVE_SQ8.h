@@ -79,8 +79,7 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
             svfloat32_t v2_f = svcvt_f32_u32_z(pg_partial, v2_u32);
 
             // Dequantize: (val * delta) + min_val
-            svfloat32_t v2_dequant =
-                svmla_f32_z(pg_partial, min_val_vec, v2_f, delta_vec);
+            svfloat32_t v2_dequant = svmla_f32_z(pg_partial, min_val_vec, v2_f, delta_vec);
 
             // Compute dot product and add to sum
             sum0 = svmla_f32_z(pg_partial, sum0, v1, v2_dequant);

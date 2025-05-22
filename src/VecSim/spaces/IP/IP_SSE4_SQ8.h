@@ -10,24 +10,24 @@
 #include <iostream>
 #include <string.h>
 
-static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, 
-                                   __m128 &sum_prod1, __m128 &sum_prod2,
-                                   const __m128 &min_val_vec, const __m128 &delta_vec) {
+static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, __m128 &sum_prod1,
+                                    __m128 &sum_prod2, const __m128 &min_val_vec,
+                                    const __m128 &delta_vec) {
     // Load first 4 elements
     __m128 v1a = _mm_loadu_ps(pVect1);
     __m128i v2a_i = _mm_cvtepu8_epi32(_mm_loadu_si32(pVect2));
-    
+
     // Load next 4 elements
     __m128 v1b = _mm_loadu_ps(pVect1 + 4);
     __m128i v2b_i = _mm_cvtepu8_epi32(_mm_loadu_si32(pVect2 + 4));
-    
+
     pVect1 += 8;
     pVect2 += 8;
 
     // Process both sets
     __m128 v2a_dequant = _mm_add_ps(_mm_mul_ps(_mm_cvtepi32_ps(v2a_i), delta_vec), min_val_vec);
     __m128 v2b_dequant = _mm_add_ps(_mm_mul_ps(_mm_cvtepi32_ps(v2b_i), delta_vec), min_val_vec);
-    
+
     sum_prod1 = _mm_add_ps(sum_prod1, _mm_mul_ps(v1a, v2a_dequant));
     sum_prod2 = _mm_add_ps(sum_prod2, _mm_mul_ps(v1b, v2b_dequant));
 }
