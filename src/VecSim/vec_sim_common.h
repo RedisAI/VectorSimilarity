@@ -147,6 +147,7 @@ typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t blockSize;
 
     /* SVS-Vamana specifics. See Intel ScalableVectorSearch documentation */
