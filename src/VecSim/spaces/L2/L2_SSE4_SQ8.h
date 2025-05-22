@@ -16,7 +16,7 @@ static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, __m12
     pVect1 += 4;
 
     // Load 4 uint8 elements from pVect2, convert to int32, then to float
-    __m128i v2_i = _mm_cvtepu8_epi32(_mm_castps_si128(_mm_load_ss((float *)pVect2)));
+    __m128i v2_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(*(int32_t *)pVect2));
     pVect2 += 4;
 
     // Convert int32 to float
