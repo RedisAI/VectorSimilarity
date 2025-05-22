@@ -236,8 +236,8 @@ public:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
-    std::shared_ptr<std::shared_mutex> indexGuard;      // to protect parallel operations on the index.
-    template <typename search_param_t> // size_t/double for KNN/range queries.
+    std::shared_ptr<std::shared_mutex> indexGuard; // to protect parallel operations on the index.
+    template <typename search_param_t>             // size_t/double for KNN/range queries.
     using QueryFunc =
         std::function<VecSimQueryReply *(const char *, search_param_t, VecSimQueryParams *)>;
 
@@ -398,21 +398,24 @@ public:
             [&](const py::array &data,
                 const py::array_t<labelType, py::array::c_style | py::array::forcecast> &labels) {
                 while (true) {
-                    std::lock_guard<std::mutex> barrier_guard(barrier);
+                    bool exclusive = true;
+                    barrier.lock();
                     int ind = global_counter++;
                     if (ind >= n_vectors) {
+                        barrier.unlock();
                         break;
                     }
-                    // Use RAII for shared mutex with appropriate lock type
                     if (ind % block_size != 0) {
                         // Read lock for normal operations
-                        std::shared_lock<std::shared_mutex> index_guard(*indexGuard);
-                        this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
+                        indexGuard->lock_shared();
+                        exclusive = false;
                     } else {
                         // Exclusive lock for block resizing operations
-                        std::unique_lock<std::shared_mutex> index_guard(*indexGuard);
-                        this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
+                        indexGuard->lock();
                     }
+                    barrier.unlock();
+                    this->addVectorInternal((const char *)data.data(ind), labels.at(ind));
+                    exclusive ? indexGuard->unlock() : indexGuard->unlock_shared();
                 }
             };
         std::thread thread_objs[n_threads];
