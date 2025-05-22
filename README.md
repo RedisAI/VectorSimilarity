@@ -43,9 +43,10 @@ Modified implementation of [hnswlib](https://github.com/nmslib/hnswlib). Modifie
 For building you will need:
 1. Python 3 as `python` (either by creating a virtual environment or setting your system python to point to the right python distribution)
 2. gcc >= 10
-3. cmake version >= 3.10
+3. cmake version >= 3.10. (To build the `python bindings` you will need cmake < 3.26 due to `pybind11` policy version handling).
 
-To build the main library, unit tests, and Python bindings in one command run
+To build the main library and unit tests in one command run
+
 ```
 make
 ```
@@ -56,6 +57,7 @@ To execute unit tests run
 ```
 make unit_test
 ```
+
 ## Memory check
 
 To run the unit tests with Valgrind run
