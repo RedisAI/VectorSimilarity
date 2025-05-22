@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "svs/index/vamana/dynamic_index.h"
+#include "svs/index/vamana/multi.h"
 #include "spdlog/sinks/callback_sink.h"
 
 #include "VecSim/algorithms/svs/svs_utils.h"
@@ -31,7 +32,8 @@ struct SVSIndexBase {
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
 };
 
-template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits = 0>
 class SVSIndex : public VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>,
                  public SVSIndexBase {
 protected:
@@ -46,8 +48,10 @@ protected:
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
     using graph_type = typename graph_builder_t::graph_type;
 
-    using impl_type =
-        svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>;
+    using impl_type = std::conditional_t<
+        isMulti,
+        svs::index::vamana::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
+        svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
 
     bool forcePreprocessing;
 
@@ -217,9 +221,12 @@ protected:
             return 0;
         }
 
-        // SVS index does not support adding vectors with the same label
-        // so we have to delete them first
-        const auto deleted_num = deleteVectorsImpl(labels, n);
+        int deleted_num = 0;
+        if constexpr (!isMulti) {
+            // SVS index does not support overriding vectors with the same label
+            // so we have to delete them first if needed
+            deleted_num = deleteVectorsImpl(labels, n);
+        }
 
         std::span<const labelType> ids(labels, n);
         auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
@@ -256,9 +263,9 @@ protected:
             return 0;
         }
 
-        impl_->delete_entries(entries_to_delete);
-        this->markIndexUpdate(entries_to_delete.size());
-        return entries_to_delete.size();
+        const auto deleted_num = impl_->delete_entries(entries_to_delete);
+        this->markIndexUpdate(deleted_num);
+        return deleted_num;
     }
 
     // Count severe index changes (currently deletions only) and consolidate index if needed
@@ -300,7 +307,13 @@ public:
         return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 0;
     }
 
-    size_t indexLabelCount() const override { return indexSize(); }
+    size_t indexLabelCount() const override {
+        if constexpr (isMulti) {
+            return impl_ ? impl_->labelcount() : 0;
+        } else {
+            return indexSize();
+        }
+    }
 
     VecSimIndexBasicInfo basicInfo() const override {
         VecSimIndexBasicInfo info = this->getBasicInfo();
@@ -356,17 +369,8 @@ public:
             return std::numeric_limits<double>::quiet_NaN();
         };
 
-        // SVS distance function wrapper to cover LVQ/LeanVec cases
-        auto dist_f = svs::index::vamana::extensions::single_search_setup(
-            impl_->view_data(), impl_->distance_function());
-
         auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
-
-        // SVS distance function may require to fix/pre-process one of arguments
-        svs::distance::maybe_fix_argument(dist_f, query_datum);
-
-        auto my_datum = impl_->get_datum(label);
-        auto dist = svs::distance::compute(dist_f, query_datum, my_datum);
+        auto dist = impl_->get_distance(label, query_datum);
         return toVecSimDistance(dist);
     }
 
@@ -379,7 +383,7 @@ public:
         }
 
         // limit result size to index size
-        k = std::min(k, this->indexSize());
+        k = std::min(k, this->indexLabelCount());
 
         auto processed_query_ptr = this->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
@@ -435,7 +439,7 @@ public:
 
         // Create SVS BatchIterator for range search
         // Search result is cached in the iterator and can be accessed by the user
-        svs::index::vamana::BatchIterator<impl_type, data_type> svs_it{*impl_, query};
+        auto svs_it = impl_->make_batch_iterator(query);
         svs_it.next(batch_size, cancel);
         if (cancel()) {
             rep->code = VecSim_QueryReply_TimedOut;
