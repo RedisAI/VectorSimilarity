@@ -29,6 +29,9 @@ struct SVSIndexBase {
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+#ifdef BUILD_TESTS
+    virtual svs::logging::logger_ptr getLogger() const = 0;
+#endif
 };
 
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
@@ -528,6 +531,10 @@ public:
         labelType label,
         std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
         assert(false && "Not implemented");
+    }
+
+    svs::logging::logger_ptr getLogger() const override {
+        return impl_ ? impl_->get_logger() : nullptr;
     }
 #endif
 };

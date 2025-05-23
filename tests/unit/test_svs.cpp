@@ -2270,6 +2270,9 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     VecSimIndex *index = this->CreateNewIndex(index_params);
     ASSERT_INDEX(index);
 
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
     std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
         GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
@@ -2278,8 +2281,6 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     std::vector<size_t> ids(n);
     std::iota(ids.begin(), ids.end(), 0);
 
-    auto svs_index = dynamic_cast<SVSIndexBase *>(index);
-    ASSERT_NE(svs_index, nullptr);
     svs_index->addVectors(v.data(), ids.data(), n);
 
     // Overrite vectors one-by-one
@@ -2293,6 +2294,25 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
+    // Write custom logging info
+    auto index_logger = svs_index->getLogger();
+    ASSERT_NE(index_logger, nullptr);
+    index_logger->trace("Custom log trace");
+    index_logger->debug("Custom log debug");
+    index_logger->info("Custom log info");
+    index_logger->warn("Custom log warn");
+    index_logger->error("Custom log error");
+    index_logger->critical("Custom log critical");
+    index_logger->flush();
+    // Check that the log messages are written to the ostringstream
+    auto index_log = os_index.view();
+    EXPECT_NE(index_log.find("Custom log trace"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log debug"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log info"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log warn"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log critical"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log error"), std::string::npos);
+
     VecSimIndex_Free(index);
 
     auto global_log = os_global.view();
@@ -2304,6 +2324,7 @@ TEST(SVSTest, scalar_quantization_query) {
     VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
 
     const size_t dim = 32;
+    const size_t bs = 1024;
     const size_t n = 100;
     const size_t k = 10;
     const double quant_precision = 1.0 / (1 << 7); // int8 quantization precision
@@ -2336,7 +2357,17 @@ TEST(SVSTest, scalar_quantization_query) {
     };
 
     for (auto [metric, radius] : metrics) {
-        SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = metric};
+        SVSParams params = {
+            .dim = dim,
+            .metric = metric,
+            .blockSize = bs,
+            /* SVS-Vamana specifics */
+            .graph_max_degree = 63, // x^2-1 to round the graph block size
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
         params.quantBits = VecSimSvsQuant_NONE;
 
         auto index_params = CreateParams(params);
@@ -2350,7 +2381,20 @@ TEST(SVSTest, scalar_quantization_query) {
         index_params = CreateParams(params);
         auto index_sq = VecSimIndex_New(&index_params);
         ASSERT_NE(index_sq, nullptr);
+
+        auto estimation = EstimateInitialSize(params);
+        auto actual = index_sq->getAllocationSize();
+        ASSERT_EQ(estimation, actual);
+
         dynamic_cast<SVSIndexBase *>(index_sq)->addVectors(dataset.data(), ids.data(), n);
+        ASSERT_EQ(VecSimIndex_IndexSize(index_sq), n);
+        ASSERT_EQ(index_sq->indexCapacity(), n);
+
+        estimation = EstimateElementSize(params) * params.blockSize;
+        actual = index_sq->getAllocationSize() - actual; // get the delta
+        ASSERT_GT(actual, 0);
+        ASSERT_GE(estimation * 1.01, actual);
+        ASSERT_LE(estimation * 0.99, actual);
 
         // test topK search
         fp_results = VecSimIndex_TopKQuery(index_fp, query, k, nullptr, BY_ID);
