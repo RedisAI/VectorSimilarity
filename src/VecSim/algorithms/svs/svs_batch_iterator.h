@@ -90,6 +90,7 @@ public:
     void reset() override {
         impl_.update(std::span{static_cast<const DataType *>(this->getQueryBlob()), dim});
         curr_it = impl_.begin();
+        this->done = false;
     }
 };
 
