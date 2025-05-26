@@ -68,3 +68,4 @@ Enforceability
 stackoverflow
 semantical
 PRs
+RedisSearch
