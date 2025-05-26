@@ -68,15 +68,22 @@ struct ElementMetaData {
     ElementMetaData(labelType label, size_t topLevel) noexcept : label(label), topLevel(topLevel) {}
 };
 
-#pragma pack(1)
+static constexpr char* GraphKeyPrefix = "GK";
+// #pragma pack(1)
 struct GraphKey {
-    uint8_t version;
-    graphNodeType node;
+    constexpr char keyPrefix[2] = GraphKeyPrefix;
+    // uint8_t version;
+    uint16_t level;
+    idType id;
 
-    GraphKey(uint8_t version, idType id, size_t level) : version(version), node(id, level) {}
+    GraphKey(idType id, size_t level) : level(level), id(id) {}
 
     rocksdb::Slice asSlice() const {
         return rocksdb::Slice(reinterpret_cast<const char *>(this), sizeof(*this));
+    }
+
+    graphNodeType node() const {
+        return graphNodeType(id, level);
     }
 };
 #pragma pack()
@@ -107,7 +114,7 @@ protected:
     // size_t elementGraphDataSize;
     // size_t levelDataSize;
     double mult;
-    uint8_t version; // version of the graph.
+    // uint8_t version; // version of the graph.
 
     // Index level generator of the top level for a new element
     std::default_random_engine levelGenerator;
@@ -121,6 +128,7 @@ protected:
     // Index data
     // vecsim_stl::vector<DataBlock> graphDataBlocks;
     vecsim_stl::vector<ElementMetaData> idToMetaData;
+    vecsim_stl::vector<const void *> quantizedData; // quantized data for the elements
     vecsim_stl::unordered_map<labelType, idType> labelToIdMap;
     rocksdb::DB *db;                 // RocksDB database, not owned by the index
     rocksdb::ColumnFamilyHandle *cf; // RocksDB column family handle, not owned by the index
@@ -142,14 +150,14 @@ protected:
                                            vecsim_stl::vector<idType> *removed_candidates) const;
 
     std::unordered_map<idType, idType> pruneDeleted(
-        size_t newVersion, const std::vector<idType> &deleted_ids,
+        const std::vector<idType> &deleted_ids,
         const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods);
     void addVector(labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
                    vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
                    std::unordered_map<idType, std::vector<idType>> &delta_list);
     void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
                         vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
-                        std::unordered_map<idType, idType> &new_ids_mapping, uint8_t newVersion);
+                        std::unordered_map<idType, idType> &new_ids_mapping);
 
     size_t getRandomLevel() const {
         std::uniform_real_distribution<double> distribution;
@@ -241,15 +249,13 @@ void HNSWDiskIndex<DataType, DistType>::batchUpdate(
 
     // Phase 0: fetch and cache the deleted labels neighbors (before reaching here?)
     auto deleted_neighborhoods = getNeighborhoods(deleted_ids);
-    // Increment the version for the next write, maintaining parity
-    uint8_t nextVersion = this->version + 2;
 
     // Phase 1: Delete elements
     // iterate over the graph nodes and delete the deleted labels
     // 1. for each not-deleted label with a deleted neighbor, re-choose the neighbors
     //    from the remaining nodes + the deleted nodes neighbors (by the heuristic)
     // 2. for each not-deleted label, write it to the new graph
-    auto new_ids_mapping = pruneDeleted(nextVersion, deleted_ids, deleted_neighborhoods);
+    auto new_ids_mapping = pruneDeleted(deleted_ids, deleted_neighborhoods);
     auto curMaxLevel = maxLevel;
     auto curEntryPoint = entrypointNode; // Address the case where the entry point is deleted
 
@@ -267,11 +273,10 @@ void HNSWDiskIndex<DataType, DistType>::batchUpdate(
     // Phase 3: Patch the graph
     // 1. Iterate over the entire graph
     // 2. for each id in the delta list, re-choose the neighbors (by the heuristic)
-    patchDeltaList(delta_list, new_elements_meta_data, new_ids_mapping, nextVersion);
+    patchDeltaList(delta_list, new_elements_meta_data, new_ids_mapping);
 
     // Phase 4: Set new version, entry point and max level
     // TODO: some lock
-    this->version = nextVersion;
     this->entrypointNode = curEntryPoint;
     this->maxLevel = curMaxLevel;
     this->curElementCount += new_elements.size() - deleted_labels.size();
@@ -360,7 +365,7 @@ auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const std::vector<idTyp
     for (const auto &id : ids) {
         const size_t curMaxLevel = idToMetaData[id].topLevel;
         for (size_t level = 0; level <= curMaxLevel; ++level) {
-            graphKeys.emplace_back(version, id, level);
+            graphKeys.emplace_back(id, level);
             keys.emplace_back(graphKeys.back().asSlice());
         }
     }
@@ -461,7 +466,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
 
 template <typename DataType, typename DistType>
 std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDeleted(
-    size_t newVersion, const std::vector<idType> &deleted_ids,
+    const std::vector<idType> &deleted_ids,
     const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods) {
 
     // Higher ids will reuse the deleted ids
@@ -475,15 +480,13 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
     writeOptions.disableWAL = true;
 
     auto it = this->db->NewIterator(readOptions, cf);
-    it->Seek(this->version);
-    while (it->Valid()) {
+    for (it->Seek(GraphKeyPrefix); it->Valid(); it->Next()) {
         auto key = it->key();
         auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
 
-        if (deleted_neighborhoods.find(graphKey->node) != deleted_neighborhoods.end()) {
+        if (deleted_neighborhoods.find(graphKey->node()) != deleted_neighborhoods.end()) {
             // TODO: handle entry point
             // Skip deleted nodes
-            it->Next();
             continue;
         }
         auto neighborsSlice = it->value();
@@ -491,15 +494,20 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
         size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
         std::vector<idType> neighbors(neighborsData, neighborsData + num_neighbors);
 
-        auto &[node_id, level] = graphKey->node;
         bool has_deleted_neighbors = false;
+        bool has_moving_neighbors = false;
         for (auto &neighbor : neighbors) {
-            graphNodeType neighbor_node{neighbor, level};
+            graphNodeType neighbor_node{neighbor, graphKey->level};
             if (deleted_neighborhoods.find(neighbor_node) != deleted_neighborhoods.end()) {
                 has_deleted_neighbors = true;
-                break;
+                if (has_moving_neighbors) break;
+            }
+            if (neighbor >= newElementCount) {
+                has_moving_neighbors = true;
+                if (has_deleted_neighbors) break;
             }
         }
+        auto new_id = graphKey->id < newElementCount ? graphKey->id : deleted_ids[graphKey->id - newElementCount];
         if (has_deleted_neighbors) {
             // Collect candidates for the new neighbors
             candidatesList<DistType> new_neighbors(this->allocator);
@@ -507,12 +515,12 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
             auto add_candidate = [&](idType id) {
                 if (neighbors_set.insert(id).second) {
                     DistType dist =
-                        this->calcDistance(getDataByInternalId(id), getDataByInternalId(node_id));
+                        this->calcDistance(getDataByInternalId(id), getDataByInternalId(graphKey->id));
                     new_neighbors.emplace_back(dist, id);
                 }
             };
             for (size_t i = 0; i < num_neighbors; ++i) {
-                graphNodeType neighbor_node{neighbors[i], level};
+                graphNodeType neighbor_node{neighbors[i], graphKey->level};
                 auto it = deleted_neighborhoods.find(neighbor_node);
                 if (it != deleted_neighborhoods.end()) {
                     // Add the deleted node's neighbors to the new candidate list, if they are not
@@ -528,30 +536,31 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
                     add_candidate(neighbors[i]);
                 }
             }
-            getNeighborsByHeuristic2(new_neighbors, level == 0 ? M0 : M);
+            getNeighborsByHeuristic2(new_neighbors, graphKey->level == 0 ? M0 : M);
 
             // Extract the ids from the new_neighbors list
             neighbors.resize(new_neighbors.size());
             for (size_t i = 0; i < new_neighbors.size(); ++i) {
                 neighbors[i] = new_neighbors[i].second;
             }
+            // Write new node to the new version, after fixing the deleted ids
         }
-        // Write new node to the new version, after fixing the deleted ids
-        auto new_id = node_id < newElementCount ? node_id : deleted_ids[node_id - newElementCount];
-        auto newKey = GraphKey(newVersion, new_id, level);
-        for (auto &neighbor : neighbors) {
-            if (neighbor >= newElementCount) {
-                neighbor = deleted_ids[neighbor - newElementCount];
+        if (has_moving_neighbors || has_deleted_neighbors) {
+            for (auto &neighbor : neighbors) {
+                if (neighbor >= newElementCount) {
+                    neighbor = deleted_ids[neighbor - newElementCount];
+                }
             }
         }
-        // Create a new slice for the new neighbors
-        size_t bytes = neighbors.size() * sizeof(idType);
-        auto neighbors_slice =
-            rocksdb::Slice(reinterpret_cast<const char *>(neighbors.data()), bytes);
-        this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
-
-        // Move to the next key
-        it->Next();
+        if (has_moving_neighbors || has_deleted_neighbors || graphKey->id < newElementCount) {
+            // Create a new key for the new node
+            auto newKey = GraphKey(new_id, graphKey->level);
+            // Create a new slice for the new neighbors
+            size_t bytes = neighbors.size() * sizeof(idType);
+            auto neighbors_slice =
+                rocksdb::Slice(reinterpret_cast<const char *>(neighbors.data()), bytes);
+            this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
+        }
     }
 
     delete it;
@@ -582,7 +591,7 @@ void HNSWDiskIndex<DataType, DistType>::addVector(
         // The new element is the first one in the new level. Add an empty list for all the
         // new levels.
         for (size_t i = curMaxLevel + 1; i <= new_element.topLevel; ++i) {
-            auto newKey = GraphKey(newVersion, id, i);
+            auto newKey = GraphKey(id, i);
             auto emptySlice = rocksdb::Slice();
             this->db->Put(writeOptions, cf, newKey.asSlice(), emptySlice);
         }
@@ -607,7 +616,7 @@ void HNSWDiskIndex<DataType, DistType>::addVector(
     // Insert the new element to all the levels from the common level to the bottom level
     for (int level = commonLevel; level >= 0; --level) {
         candidatesMaxHeap<DistType> top_candidates =
-            searchLayer(curStartNode, vector, newVersion, level, efConstruction);
+            searchLayer(curStartNode, vector, level, efConstruction);
 
         candidatesList<DistType> new_neighbors(this->allocator);
         new_neighbors.reserve(top_candidates.size());
@@ -615,7 +624,7 @@ void HNSWDiskIndex<DataType, DistType>::addVector(
         curStartNode = getNeighborsByHeuristic2(new_neighbors, level == 0 ? M0 : M);
 
         // Add the new element to the graph
-        auto newKey = GraphKey(newVersion, id, level);
+        auto newKey = GraphKey(id, level);
         std::vector<idType> neighbor_ids(new_neighbors.size());
         for (size_t i = 0; i < new_neighbors.size(); ++i) {
             neighbor_ids[i] = new_neighbors[i].second;
@@ -636,7 +645,7 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
     std::unordered_map<idType, std::vector<idType>> &delta_list,
     vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
-    std::unordered_map<idType, idType> &new_ids_mapping, uint8_t newVersion) {
+    std::unordered_map<idType, idType> &new_ids_mapping) {
 
     constexpr auto readOptions = rocksdb::ReadOptions();
     readOptions.fill_cache = false;
@@ -646,24 +655,21 @@ void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
     writeOptions.disableWAL = true;
 
     auto it = this->db->NewIterator(readOptions, cf);
-    it->Seek(newVersion);
-    while (it->Valid()) {
+    for (it->Seek(GraphKeyPrefix); it->Valid(); it->Next()) {
         auto key = it->key();
         auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
 
-        auto it2 = delta_list.find(graphKey->node);
+        auto it2 = delta_list.find(graphKey->node());
         if (it2 == delta_list.end()) {
             // No need to update this node, move to the next one
-            it->Next();
             continue;
         }
-        auto &[node_id, level] = graphKey->node;
         auto neighborsSlice = it->value();
         auto neighborsData = reinterpret_cast<const idType *>(neighborsSlice.data());
         size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
         candidatesList<DistType> new_neighbors(this->allocator);
         new_neighbors.reserve(num_neighbors + it2->second.size());
-        auto vector = getDataByInternalId(node_id);
+        auto vector = getDataByInternalId(graphKey->id);
         for (const auto &neighbor : it2->second) {
             DistType dist = this->calcDistance(getDataByInternalId(neighbor), vector);
             new_neighbors.emplace_back(dist, neighbor);
@@ -672,7 +678,7 @@ void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
             DistType dist = this->calcDistance(getDataByInternalId(neighborsData[i]), vector);
             new_neighbors.emplace_back(dist, neighborsData[i]);
         }
-        getNeighborsByHeuristic2(new_neighbors, level == 0 ? M0 : M);
+        getNeighborsByHeuristic2(new_neighbors, graphKey->level == 0 ? M0 : M);
 
         // Extract the ids from the new_neighbors list
         std::vector<idType> neighbors(new_neighbors.size());
@@ -685,8 +691,6 @@ void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
             rocksdb::Slice(reinterpret_cast<const char *>(neighbors.data()), bytes);
         this->db->Put(writeOptions, cf, it->key(), neighbors_slice);
 
-        // Move to the next key
-        it->Next();
     }
 
     delete it;
