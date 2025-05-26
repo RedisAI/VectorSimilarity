@@ -51,7 +51,6 @@ jobs:
       - focal
 #      - bionic
       - bullseye
-      - bullseye-gcc11
 #      - amazonlinux2
       - mariner2
       - rocky8
