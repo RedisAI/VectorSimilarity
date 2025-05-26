@@ -28,6 +28,8 @@ jobs:
   #    needs: [check-if-docs-only]
   #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
   #    uses: ./.github/workflows/amazon2.yml
+  bullseye-gcc11:
+    uses: ./.github/workflows/debian-bullseye-gcc11.yml
   mariner2:
     uses: ./.github/workflows/mariner2.yml
   rocky8:
