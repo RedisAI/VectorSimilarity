@@ -76,8 +76,9 @@ float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
         svuint8_t v1_ui8 = svld1_u8(pg, pVect1 + offset); // Load uint8 vectors from pVect1
         svuint8_t v2_ui8 = svld1_u8(pg, pVect2 + offset); // Load uint8 vectors from pVect2
 
-        svuint8_t abs_diff = svabd_u8_x(pg, v1_ui8, v2_ui8);
+        svuint8_t abs_diff = svabd_u8_x(all, v1_ui8, v2_ui8);
 
+        // Can sum with taking into account pg because svld1 will set inactive lanes to 0
         sum3 = svdot_u32(sum3, abs_diff, abs_diff);
     }
 
