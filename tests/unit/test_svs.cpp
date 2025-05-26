@@ -2140,7 +2140,14 @@ TEST(SVSTest, quant_modes) {
             .type = VecSimType_FLOAT32,
             .dim = dim,
             .metric = VecSimMetric_L2,
+            .blockSize = 1024,
+            /* SVS-Vamana specifics */
             .quantBits = quant_bits,
+            .graph_max_degree = 63, // x^2-1 to round the graph block size
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
         };
 
         VecSimParams index_params = CreateParams(params);
@@ -2175,6 +2182,14 @@ TEST(SVSTest, quant_modes) {
         svs_index->addVectors(v.data(), ids.data(), n);
 
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        estimation = EstimateElementSize(params) * params.blockSize;
+        actual = index->getAllocationSize() - actual; // get the delta
+        ASSERT_GT(actual, 0);
+        // LVQ element size estimation accuracy is low
+        double estimation_accuracy = (quant_bits != VecSimSvsQuant_NONE) ? 0.11 : 0.01;
+        ASSERT_GE(estimation * (1.0 + estimation_accuracy), actual);
+        ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 
         float query[] = {50, 50, 50, 50};
         auto verify_res = [&](size_t id, double score, size_t index) {
