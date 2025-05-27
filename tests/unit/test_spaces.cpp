@@ -421,7 +421,7 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
     params[2] = inv_norm;
 
     float dist = SQ8_Cosine((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
-    ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_Cosine failed to match expected distance";
+    ASSERT_NEAR(dist, 0.0f, 0.000001f) << "SQ8_Cosine failed to match expected distance";
 }
 TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     // create a vector with extra space for the norm
@@ -474,7 +474,7 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     params[2] = inv_norm;
 
     float dist = SQ8_L2Sqr((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
-    ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_Cosine failed to match expected distance";
+    ASSERT_NEAR(dist, 0.0f, 0.00001f) << "SQ8_Cosine failed to match expected distance";
 }
 
 /* ======================== Test Getters ======================== */
