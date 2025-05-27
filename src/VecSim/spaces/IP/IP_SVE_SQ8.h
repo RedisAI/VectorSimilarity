@@ -13,7 +13,7 @@
 
 static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2, size_t &offset,
                                     svfloat32_t &sum, const svfloat32_t &min_val_vec,
-                                    const svfloat32_t &delta_vec) {
+                                    const svfloat32_t &delta_vec, const size_t chunk) {
     svbool_t pg = svptrue_b32();
 
     // Load float elements from pVect1
@@ -32,7 +32,7 @@ static inline void InnerProductStep(const float *&pVect1, const uint8_t *&pVect2
     sum = svmla_f32_x(pg, sum, v1, v2_dequant);
 
     // Move to the next set of elements
-    offset += svcntw();
+    offset += chunk;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -51,7 +51,7 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
     svfloat32_t delta_vec = svdup_f32(delta);
 
     // Get the number of 32-bit elements per vector at runtime
-    uint64_t sve_word_count = svcntw();
+    uint64_t chunk = svcntw();
 
     // Multiple accumulators to increase instruction-level parallelism
     svfloat32_t sum0 = svdup_f32(0.0f);
@@ -61,7 +61,7 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
 
     // Handle partial chunk if needed
     if constexpr (partial_chunk) {
-        size_t remaining = dimension % sve_word_count;
+        size_t remaining = dimension % chunk;
         if (remaining > 0) {
             // Create predicate for the remaining elements
             svbool_t pg_partial =
@@ -90,26 +90,26 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
     }
 
     // Process 4 chunks at a time in the main loop
-    auto chunk_size = 4 * sve_word_count;
+    auto chunk_size = 4 * chunk;
     const size_t number_of_chunks =
-        (dimension - (partial_chunk ? dimension % sve_word_count : 0)) / chunk_size;
+        (dimension - (partial_chunk ? dimension % chunk : 0)) / chunk_size;
 
     for (size_t i = 0; i < number_of_chunks; i++) {
-        InnerProductStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec);
-        InnerProductStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec);
-        InnerProductStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec);
-        InnerProductStep(pVect1, pVect2, offset, sum3, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec, chunk);
+        InnerProductStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec, chunk);
+        InnerProductStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec, chunk);
+        InnerProductStep(pVect1, pVect2, offset, sum3, min_val_vec, delta_vec, chunk);
     }
 
     // Handle remaining steps (0-3)
     if constexpr (additional_steps > 0) {
-        InnerProductStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec, chunk);
     }
     if constexpr (additional_steps > 1) {
-        InnerProductStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec, chunk);
     }
     if constexpr (additional_steps > 2) {
-        InnerProductStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec);
+        InnerProductStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec, chunk);
     }
 
     // Combine the accumulators

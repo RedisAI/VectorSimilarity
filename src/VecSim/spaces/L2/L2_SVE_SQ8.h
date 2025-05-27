@@ -11,7 +11,7 @@
 
 static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, size_t &offset,
                              svfloat32_t &sum, const svfloat32_t &min_val_vec,
-                             const svfloat32_t &delta_vec) {
+                             const svfloat32_t &delta_vec, const size_t chunk) {
     svbool_t pg = svptrue_b32();
 
     // Load float elements from pVect1
@@ -33,7 +33,7 @@ static inline void L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, size_
     sum = svmla_f32_x(pg, sum, diff, diff);
 
     // Move to the next set of elements
-    offset += svcntw();
+    offset += chunk;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -52,7 +52,7 @@ float SQ8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimensi
     svfloat32_t delta_vec = svdup_f32(delta);
 
     // Get the number of 32-bit elements per vector at runtime
-    uint64_t sve_word_count = svcntw();
+    uint64_t chunk = svcntw();
 
     // Multiple accumulators to increase instruction-level parallelism
     svfloat32_t sum0 = svdup_f32(0.0f);
@@ -62,7 +62,7 @@ float SQ8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimensi
 
     // Handle partial chunk if needed
     if constexpr (partial_chunk) {
-        size_t remaining = dimension % sve_word_count;
+        size_t remaining = dimension % chunk;
         if (remaining > 0) {
             // Create predicate for the remaining elements
             svbool_t pg_partial =
@@ -93,24 +93,24 @@ float SQ8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimensi
     }
     // Handle remaining steps (0-3)
     if constexpr (additional_steps > 0) {
-        L2SqrStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec);
+        L2SqrStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec, chunk);
     }
     if constexpr (additional_steps > 1) {
-        L2SqrStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec);
+        L2SqrStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec, chunk);
     }
     if constexpr (additional_steps > 2) {
-        L2SqrStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec);
+        L2SqrStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec, chunk);
     }
 
     // Process 4 chunks at a time in the main loop
-    auto chunk_size = 4 * sve_word_count;
+    auto chunk_size = 4 * chunk;
     size_t number_of_chunks = dimension / chunk_size;
 
     for (size_t i = 0; i < number_of_chunks; i++) {
-        L2SqrStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec);
-        L2SqrStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec);
-        L2SqrStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec);
-        L2SqrStep(pVect1, pVect2, offset, sum3, min_val_vec, delta_vec);
+        L2SqrStep(pVect1, pVect2, offset, sum0, min_val_vec, delta_vec, chunk);
+        L2SqrStep(pVect1, pVect2, offset, sum1, min_val_vec, delta_vec, chunk);
+        L2SqrStep(pVect1, pVect2, offset, sum2, min_val_vec, delta_vec, chunk);
+        L2SqrStep(pVect1, pVect2, offset, sum3, min_val_vec, delta_vec, chunk);
     }
 
     // Combine the accumulators
