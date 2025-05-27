@@ -925,7 +925,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
     // add the values of the pp that increases the blob size
     unsigned char added_value = DummyChangeAllocSizePreprocessor<int8_t>::getExcessValue();
     for (size_t i = 0; i < elements_addition; i++) {
-        expected_processed_blob[elements + sizeof(float) + i] = added_value;
+        expected_processed_blob[elements + sizeof(float) + i] = static_cast<int8_t>(added_value);
     }
 
     // A normalize pp - will allocate the blob + sizeof(float)
