@@ -218,9 +218,9 @@ public:
         }
         // The blobs are not equal
 
-        // If the input blob size is not enough
-        if (input_blob_size < processed_bytes_count) {
-            auto alloc_and_process = [&](void *&blob) {
+        auto alloc_and_process = [&](void *&blob) {
+            // If the input blob size is not enough
+            if (input_blob_size < processed_bytes_count) {
                 auto new_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
                 if (blob == nullptr) {
                     memcpy(new_blob, original_blob, input_blob_size);
@@ -232,12 +232,7 @@ public:
                 blob = new_blob;
                 memset((char *)blob + input_blob_size, excess_value,
                        processed_bytes_count - input_blob_size);
-            };
-
-            alloc_and_process(storage_blob);
-            alloc_and_process(query_blob);
-        } else {
-            auto alloc_and_process = [&](void *&blob) {
+            } else {
                 if (blob == nullptr) {
                     blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
                     memcpy(blob, original_blob, processed_bytes_count);
@@ -245,11 +240,11 @@ public:
                     memset((char *)blob + processed_bytes_count, excess_value,
                            input_blob_size - processed_bytes_count);
                 }
-            };
+            }
+        };
 
-            alloc_and_process(storage_blob);
-            alloc_and_process(query_blob);
-        }
+        alloc_and_process(storage_blob);
+        alloc_and_process(query_blob);
 
         // update the input blob size
         input_blob_size = processed_bytes_count;
@@ -690,8 +685,10 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
         ASSERT_EQ(address_alignment, 0);
 
         // Both blobs were processed.
-        ASSERT_EQ(((const int8_t *)storage_blob)[0], original_blob[0] + value_to_add_storage);
-        ASSERT_EQ(((const int8_t *)query_blob)[0], original_blob[0] + value_to_add_query);
+        ASSERT_EQ((static_cast<const int8_t *>(storage_blob))[0],
+                  original_blob[0] + value_to_add_storage);
+        ASSERT_EQ((static_cast<const int8_t *>(query_blob))[0],
+                  original_blob[0] + value_to_add_query);
 
         // the original blob should not change
         ASSERT_NE(storage_blob, original_blob);
@@ -783,9 +780,9 @@ void AsymmetricPPThenCosine(dummyPreprocessors::pp_mode MODE) {
         VecSim_Normalize(blob, dim, VecSimType_FLOAT32);
     };
 
-    float expected_processed_storage[original_blob_size] = {0};
+    float expected_processed_storage[dim] = {0};
     expected_processed_blob(expected_processed_storage, value_to_add_storage);
-    float expected_processed_query[original_blob_size] = {0};
+    float expected_processed_query[dim] = {0};
     expected_processed_blob(expected_processed_query, value_to_add_query);
 
     auto multiPPContainer =
@@ -963,29 +960,3 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
                                                        final_blob_bytes_count));
     }
 }
-
-TEST(PreprocessorsTest, cosine_then_change_size) {
-    // cosine (not changing)
-    // pp that changes the blob size
-}
-
-TEST(PreprocessorsTest, cosine_change_then_pp_change) {
-    // cosine ( changing)
-    // pp that also changes the blob size
-}
-
-// TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
-//     // add cosine pp that changes the original blob size
-//     // add a pp that preprocesses the normalized blob (same size)
-//     // add a pp that changes the storage_blob size, but not changing the query_blob size
-// }
-
-// TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
-//     // add a pp that changes the storage_blob size, but not changing the query_blob size
-//     // add a pp that preprocesses the normalized blob (same size)
-//     // add cosine pp that changes the original blob size
-// }
-
-// TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
-//     // pp multi container where cosine is only needed for the query blob (not supported yet)
-// }
