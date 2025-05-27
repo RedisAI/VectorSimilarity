@@ -31,7 +31,7 @@ static inline void L2StepSQ8_FMA(const float *&pVect1, const uint8_t *&pVect2, _
 
     // Calculate squared difference - simple and efficient approach
     __m256 diff = _mm256_sub_ps(v1, v2_dequant);
-    
+
     // Use FMA for diff² + sum in one instruction
     sum256 = _mm256_fmadd_ps(diff, diff, sum256);
 }
