@@ -58,13 +58,8 @@ float SQ8_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dime
         __m256 v1 = my_mm256_maskz_loadu_ps<mask>(pVect1);
         pVect1 += residual % 8;
 
-        uint8_t temp_buf[8] = {0};
-        // Manually copy elements
-        for (size_t i = 0; i < residual % 8; i++) {
-            temp_buf[i] = pVect2[i];
-        }
-        // Load from buffer
-        __m128i v2_128 = _mm_loadl_epi64((__m128i *)temp_buf);
+        // Direct load - safe because we only process the masked elements
+        __m128i v2_128 = _mm_loadl_epi64((__m128i *)pVect2);
         pVect2 += residual % 8;
 
         // Zero-extend uint8 to int32
@@ -76,10 +71,10 @@ float SQ8_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dime
         // Dequantize: (val * delta) + min_val
         __m256 v2_dequant = _mm256_add_ps(_mm256_mul_ps(v2_f, delta_vec), min_val_vec);
 
+        // Apply mask to zero out unused elements
         v2_dequant = _mm256_blend_ps(_mm256_setzero_ps(), v2_dequant, mask);
 
         __m256 diff = _mm256_sub_ps(v1, v2_dequant);
-
         sum = _mm256_mul_ps(diff, diff);
     }
 

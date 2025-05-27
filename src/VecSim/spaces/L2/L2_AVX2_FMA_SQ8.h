@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
@@ -28,21 +29,9 @@ static inline void L2StepSQ8_FMA(const float *&pVect1, const uint8_t *&pVect2, _
     // Dequantize: v2_dequant = v2_f * delta_vec + min_val_vec
     __m256 v2_dequant = _mm256_fmadd_ps(v2_f, delta_vec, min_val_vec);
 
-    // Calculate squared difference using FMA
-    // (v1 - v2_dequant)^2 = v1^2 - 2*v1*v2_dequant + v2_dequant^2
-    // Using FMA: v1^2 - 2*v1*v2_dequant + v2_dequant^2
-
-    // First, compute v2_dequant^2
-    __m256 v2_dequant_squared = _mm256_mul_ps(v2_dequant, v2_dequant);
-
-    // Then, compute v1^2
-    __m256 v1_squared = _mm256_mul_ps(v1, v1);
-
-    // Finally, compute -2*v1*v2_dequant + v2_dequant^2 + v1^2 using FMA
-    // -2*v1*v2_dequant + v2_dequant^2 = -2 * v1 * v2_dequant + v2_dequant^2
-    __m256 neg_2_v1 = _mm256_mul_ps(v1, _mm256_set1_ps(-2.0f));
-    __m256 diff_squared = _mm256_fmadd_ps(neg_2_v1, v2_dequant, v2_dequant_squared);
-    diff_squared = _mm256_add_ps(diff_squared, v1_squared);
+    // Calculate squared difference - simple and efficient approach
+    __m256 diff = _mm256_sub_ps(v1, v2_dequant);
+    __m256 diff_squared = _mm256_mul_ps(diff, diff);
 
     // Add to running sum
     sum256 = _mm256_add_ps(sum256, diff_squared);
