@@ -316,10 +316,9 @@ def test_range_query():
     radius = 13.0
     recalls = {}
 
-    for window_size in [128, 256, 512]:
+    for epsilon_rt in [0.001, 0.01, 0.1]:
         query_params = VecSimQueryParams()
-        query_params.svsRuntimeParams.windowSize = window_size
-        query_params.svsRuntimeParams.searchHistory = VecSimOption_AUTO
+        query_params.svsRuntimeParams.epsilon = epsilon_rt
         start = time.time()
         redis_labels, redis_distances = index.range_query(query_data, radius=radius, query_param=query_params)
         end = time.time()
@@ -328,17 +327,17 @@ def test_range_query():
         actual_results = compute_range_euclidean(vectors, query_data.flat, radius)
 
         print(
-            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={window_size},'
+            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
         assert np.all(np.isin(redis_labels, np.array([label for _, label in actual_results])))
 
         assert max(redis_distances[0]) <= radius
-        recalls[window_size] = res_num / len(actual_results)
+        recalls[epsilon_rt] = res_num / len(actual_results)
 
     # Expect higher recalls for higher epsilon values.
-    assert recalls[128] <= recalls[256] <= recalls[512]
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
 
     # Expect zero results for radius==0
     redis_labels, redis_distances = index.range_query(query_data, radius=0)
