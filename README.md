@@ -7,8 +7,8 @@
 # VectorSimilarity
 Starting with version 8.0, RediSearch and this vector similarity library is an integral part of Redis. See https://github.com/redis/redis
 
-This repo exposes C API for using vector similarity search.
-Allows Creating indices of vectors and searching for top K similar to some vector in two methods: brute force, and by using the hnsw algorithm (probabilistic).
+This repo exposes a C API for using vector similarity search.
+Allows creating indices of vectors and searching for top K similar to some vector in two methods: brute force, and by using the hnsw algorithm (probabilistic).
 
 The API header files are `vec_sim.h` and `query_results.h`, which are located in `src/VecSim`.
 
@@ -24,7 +24,7 @@ All of the algorithms in this library are designed to work inside RediSearch and
 
 ### Flat (Brute Force)
 
-Brute force comparison of the query vector `q` with the stored vectors. Vectors are stored in vector blocks, which are contiguous memory blocks, with configurable size.
+Brute force comparison of the query vector `q` with the stored vectors. Vectors are stored in vector blocks, which are contiguous memory blocks with a configurable size.
 
 
 ### HNSW
@@ -33,18 +33,18 @@ Modified implementation of [hnswlib](https://github.com/nmslib/hnswlib). Modifie
 ## Metrics
 We support three popular distance metrics to measure the degree of similarity between two vectors:
 
-| Distance metric | Description                                                    | Mathematical representation                               | Value range      |
-|-----------------|----------------------------------------------------------------|------------------------------------------------------------|------------------|
-| L2              | Euclidean distance between two vectors.                        | \( \|x - y\|_2 \)                                           | \([0, +\infty)\) |
-| IP              | Inner product distance (vectors are assumed to be normalized). | \( 1 - (x \cdot y) \)                                       | \([0, 2]\)       |
-| COSINE          | Cosine distance of two vectors.                                | \( 1 - \frac{x \cdot y}{\|x\| \cdot \|y\|} \)               | \([0, 2]\)       |
+| Distance metric | Description                                                    | Value range      |
+|-----------------|----------------------------------------------------------------|------------------|
+| L2              | Euclidean distance between two vectors.                        | [0, +∞)          |
+| IP              | Inner product distance (vectors are assumed to be normalized). | [0, 2]           |
+| COSINE          | Cosine distance of two vectors.                                | [0, 2]           |
 
 The above metrics calculate distance between two vectors, where smaller values indicate that the vectors are closer in the vector space.
 
 ## Datatypes SIMD support
 
 ### x86_64 SIMD Support
-| Operation          | Instruction Sets                                                   |
+| Operation          | CPU flags                                                   |
 |--------------------|---------------------------------------------------------------------|
 | FP32 IP & Cosine   | SSE, AVX, AVX512F                                                  |
 | FP32 L2 distance   | SSE, AVX, AVX512F                                                  |
@@ -60,7 +60,7 @@ The above metrics calculate distance between two vectors, where smaller values i
 | UINT8 L2 distance  | AVX512F+AVX512BW+AVX512VL+AVX512VNNI                               |
 
 ### ARM SIMD Support (arm64v8 & Apple Silicon)
-| Operation          | arm64v8                              | Apple Silicon     |
+| Operation          | arm64v8 flags                              | Apple Silicon     |
 |--------------------|---------------------------------------|-------------------|
 | FP32 IP & Cosine   | NEON, SVE, SVE2                       | No SIMD support   |
 | FP32 L2 distance   | NEON, SVE, SVE2                       | No SIMD support   |
@@ -69,11 +69,11 @@ The above metrics calculate distance between two vectors, where smaller values i
 | FP16 IP & Cosine   | NEON_HP, SVE, SVE2                    | No SIMD support   |
 | FP16 L2 distance   | NEON_HP, SVE, SVE2                    | No SIMD support   |
 | BF16 IP & Cosine   | NEON_BF16, SVE_BF16                   | No SIMD support   |
-| BF16 L2 distance   | NEON, SVE                  | No SIMD support   |
-| INT8 IP & Cosine   | NEON, NEON_DOTPROD, SVE         | No SIMD support   |
-| INT8 L2 distance   | NEON, NEON_DOTPROD, SVE         | No SIMD support   |
-| UINT8 IP & Cosine  | NEON, NEON_DOTPROD, SVE         | No SIMD support   |
-| UINT8 L2 distance  | NEON, NEON_DOTPROD, SVE         | No SIMD support   |
+| BF16 L2 distance   | NEON_BF16, SVE_BF16                  | No SIMD support   |
+| INT8 IP & Cosine   | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
+| INT8 L2 distance   | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
+| UINT8 IP & Cosine  | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
+| UINT8 L2 distance  | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
 
 ## Build
 For building you will need:
