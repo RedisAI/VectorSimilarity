@@ -69,3 +69,13 @@ stackoverflow
 semantical
 PRs
 RedisSearch
+BW
+FMA
+UINT
+VBMI
+VL
+VNNI
+CPUs
+DOTPROD
+SVE
+UINT
