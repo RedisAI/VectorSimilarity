@@ -42,18 +42,18 @@ We support three popular distance metrics to measure the degree of similarity be
 The above metrics calculate the distance between two vectors, where smaller values indicate that the vectors are closer in the vector space.
 
 ### Datatypes and SIMD support
-The library supports the following data types for distance computation: 
+The library supports the following data types for distance computation:
 * `float32`
 * `float64`
 * `bfloat16`
 * `float16`
 * `int8`
 * `uint8`
-  
-To accelerate performance, we leverage SIMD instructions on both x86 and ARM CPUs.  
+
+To accelerate performance, we leverage SIMD instructions on both x86 and ARM CPUs.
 The tables below detail the supported SIMD instruction sets (CPU flags) used for each data type on each architecture.
 
-
+<!-- spell-check-disable -->
 #### x86_64 SIMD Support
 | Operation          | CPU flags                                                   |
 |--------------------|---------------------------------------------------------------------|
@@ -85,7 +85,7 @@ The tables below detail the supported SIMD instruction sets (CPU flags) used for
 | INT8 L2 distance    | NEON, NEON_DOTPROD, SVE, SVE2            |
 | UINT8 IP & Cosine   | NEON, NEON_DOTPROD, SVE, SVE2            |
 | UINT8 L2 distance   | NEON, NEON_DOTPROD, SVE, SVE2            |
-
+<!-- spell-check-enable -->
 ## Build
 For building you will need:
 1. Python 3 as `python` (either by creating a virtual environment or setting your system python to point to the right python distribution)
