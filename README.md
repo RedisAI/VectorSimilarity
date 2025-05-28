@@ -41,9 +41,20 @@ We support three popular distance metrics to measure the degree of similarity be
 
 The above metrics calculate distance between two vectors, where smaller values indicate that the vectors are closer in the vector space.
 
-## Datatypes SIMD support
+### Datatypes and SIMD support
+The library supports the following data types for distance computation: 
+* `float32`
+* `float64`
+* `bfloat16`
+* `float16`
+* `int8`
+* `uint8`
+  
+To accelerate performance, we leverage SIMD instructions on both x86 and ARM CPUs.  
+The tables below detail the supported SIMD instruction sets (CPU flags) used for each data type on each architecture.
 
-### x86_64 SIMD Support
+
+#### x86_64 SIMD Support
 | Operation          | CPU flags                                                   |
 |--------------------|---------------------------------------------------------------------|
 | FP32 IP & Cosine   | SSE, AVX, AVX512F                                                  |
@@ -59,7 +70,7 @@ The above metrics calculate distance between two vectors, where smaller values i
 | UINT8 IP & Cosine  | AVX512F+AVX512BW+AVX512VL+AVX512VNNI                               |
 | UINT8 L2 distance  | AVX512F+AVX512BW+AVX512VL+AVX512VNNI                               |
 
-### ARM SIMD Support (arm64v8 & Apple Silicon)
+#### ARM SIMD Support (arm64v8 & Apple Silicon)
 | Operation          | arm64v8 flags                              | Apple Silicon     |
 |--------------------|---------------------------------------|-------------------|
 | FP32 IP & Cosine   | NEON, SVE, SVE2                       | No SIMD support   |
