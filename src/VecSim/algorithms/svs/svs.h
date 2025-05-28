@@ -30,7 +30,8 @@ struct SVSIndexBase {
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
 };
 
-template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits = 0>
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
 class SVSIndex : public VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>,
                  public SVSIndexBase {
 protected:
@@ -39,7 +40,7 @@ protected:
     using Base = VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>;
     using index_component_t = IndexComponents<svs_details::vecsim_dt<DataType>, float>;
 
-    using storage_traits_t = SVSStorageTraits<DataType, QuantBits, ResidualBits>;
+    using storage_traits_t = SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>;
     using index_storage_type = typename storage_traits_t::index_storage_type;
 
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
@@ -315,17 +316,14 @@ public:
             return std::numeric_limits<double>::quiet_NaN();
         };
 
-        // SVS distance function wrapper to cover LVQ/LeanVec cases
-        auto dist_f = svs::index::vamana::extensions::single_search_setup(
-            impl_->view_data(), impl_->distance_function());
+        // Get SVS distance function
+        auto dist_f = impl_->distance_function();
+        size_t id = impl_->translate_external_id(label);
+        auto query = std::span{static_cast<const DataType *>(vector_data), this->dim};
 
-        auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
-
-        // SVS distance function may require to fix/pre-process one of arguments
-        svs::distance::maybe_fix_argument(dist_f, query_datum);
-
-        auto my_datum = impl_->get_datum(label);
-        auto dist = svs::distance::compute(dist_f, query_datum, my_datum);
+        // Depending on LVQ/LeanVec, SVS distance function may need special treatment
+        float dist =
+            storage_traits_t::compute_distance_by_id(impl_->view_data(), dist_f, id, query);
         return toVecSimDistance(dist);
     }
 

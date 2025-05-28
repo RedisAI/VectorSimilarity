@@ -187,7 +187,8 @@ inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuan
 }
 } // namespace svs_details
 
-template <typename DataType, size_t QuantBits, size_t ResidualBits, class Enable = void>
+template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec,
+          class Enable = void>
 struct SVSStorageTraits {
     using allocator_type = svs_details::SVSAllocator<DataType>;
     // In SVS, the default allocator is designed for static indices,
@@ -226,6 +227,19 @@ struct SVSStorageTraits {
     }
 
     static size_t storage_capacity(const index_storage_type &storage) { return storage.capacity(); }
+
+    template <typename Distance, typename E, size_t N>
+    static float compute_distance_by_id(const index_storage_type &storage, const Distance &distance,
+                                        size_t id, std::span<E, N> query) {
+        auto dist_f = svs::index::vamana::extensions::single_search_setup(storage, distance);
+
+        // SVS distance function may require to fix/pre-process one of arguments
+        svs::distance::maybe_fix_argument(dist_f, query);
+
+        // Get the datum from the storage using the storage ID
+        auto datum = storage.get_datum(id);
+        return svs::distance::compute(dist_f, query, datum);
+    }
 };
 
 template <typename SVSIdType>
