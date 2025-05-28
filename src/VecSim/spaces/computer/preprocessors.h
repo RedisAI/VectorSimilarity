@@ -44,9 +44,8 @@ public:
         : PreprocessorInterface(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim), processed_bytes_count(processed_bytes_count) {}
 
-    // TODO: add storage_blob_size and query_blob_size parameters
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &storage_blob_size,  unsigned char alignment) const override {
+                    size_t &input_blob_size, unsigned char alignment) const override {
         // This assert verifies that if a blob was allocated by a previous preprocessor, its
         // size matches our expected processed size. Therefore, it is safe to skip re-allocation and
         // process it inplace. Supporting dynamic resizing would require additional size checks (if
