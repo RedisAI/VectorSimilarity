@@ -39,7 +39,7 @@ We support three popular distance metrics to measure the degree of similarity be
 | IP              | Inner product distance (vectors are assumed to be normalized). | [0, 2]           |
 | COSINE          | Cosine distance of two vectors.                                | [0, 2]           |
 
-The above metrics calculate distance between two vectors, where smaller values indicate that the vectors are closer in the vector space.
+The above metrics calculate the distance between two vectors, where smaller values indicate that the vectors are closer in the vector space.
 
 ### Datatypes and SIMD support
 The library supports the following data types for distance computation: 
@@ -71,20 +71,20 @@ The tables below detail the supported SIMD instruction sets (CPU flags) used for
 | UINT8 L2 distance  | AVX512F+AVX512BW+AVX512VL+AVX512VNNI                               |
 
 #### ARM SIMD Support (arm64v8 & Apple Silicon)
-| Operation          | arm64v8 flags                              | Apple Silicon     |
-|--------------------|---------------------------------------|-------------------|
-| FP32 IP & Cosine   | NEON, SVE, SVE2                       | No SIMD support   |
-| FP32 L2 distance   | NEON, SVE, SVE2                       | No SIMD support   |
-| FP64 IP & Cosine   | NEON, SVE, SVE2                       | No SIMD support   |
-| FP64 L2 distance   | NEON, SVE, SVE2                       | No SIMD support   |
-| FP16 IP & Cosine   | NEON_HP, SVE, SVE2                    | No SIMD support   |
-| FP16 L2 distance   | NEON_HP, SVE, SVE2                    | No SIMD support   |
-| BF16 IP & Cosine   | NEON_BF16, SVE_BF16                   | No SIMD support   |
-| BF16 L2 distance   | NEON_BF16, SVE_BF16                  | No SIMD support   |
-| INT8 IP & Cosine   | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
-| INT8 L2 distance   | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
-| UINT8 IP & Cosine  | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
-| UINT8 L2 distance  | NEON, NEON_DOTPROD, SVE, SVE2         | No SIMD support   |
+| Operation           | CPU flags                             |
+|---------------------|-------------------------------------------|
+| FP32 IP & Cosine    | NEON, SVE, SVE2                           |
+| FP32 L2 distance    | NEON, SVE, SVE2                           |
+| FP64 IP & Cosine    | NEON, SVE, SVE2                           |
+| FP64 L2 distance    | NEON, SVE, SVE2                           |
+| FP16 IP & Cosine    | NEON_HP, SVE, SVE2                        |
+| FP16 L2 distance    | NEON_HP, SVE, SVE2                        |
+| BF16 IP & Cosine    | NEON_BF16, SVE_BF16                       |
+| BF16 L2 distance    | NEON_BF16, SVE_BF16                       |
+| INT8 IP & Cosine    | NEON, NEON_DOTPROD, SVE, SVE2            |
+| INT8 L2 distance    | NEON, NEON_DOTPROD, SVE, SVE2            |
+| UINT8 IP & Cosine   | NEON, NEON_DOTPROD, SVE, SVE2            |
+| UINT8 L2 distance   | NEON, NEON_DOTPROD, SVE, SVE2            |
 
 ## Build
 For building you will need:
