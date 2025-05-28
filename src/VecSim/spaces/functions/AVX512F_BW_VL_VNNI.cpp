@@ -14,6 +14,9 @@
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_UINT8.h"
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_UINT8.h"
 
+#include "VecSim/spaces/IP/IP_AVX512F_SQ8_BW_VL_VNNI.h"
+#include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8.h"
+
 namespace spaces {
 
 #include "implementation_chooser.h"
@@ -51,6 +54,22 @@ dist_func_t<float> Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim)
 dist_func_t<float> Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI);
+    return ret_dist_func;
+}
+dist_func_t<float> Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI);
+    return ret_dist_func;
+}
+dist_func_t<float> Choose_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_L2SqrSIMD16_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
 

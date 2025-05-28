@@ -20,6 +20,8 @@
 #include "VecSim/spaces/IP/IP_SVE_INT8.h"  // SVE2 implementation is identical to SVE
 #include "VecSim/spaces/L2/L2_SVE_UINT8.h" // SVE2 implementation is identical to SVE
 #include "VecSim/spaces/IP/IP_SVE_UINT8.h" // SVE2 implementation is identical to SVE
+#include "VecSim/spaces/IP/IP_SVE_SQ8.h"   // SVE2 implementation is identical to SVE
+#include "VecSim/spaces/L2/L2_SVE_SQ8.h"   // SVE2 implementation is identical to SVE
 
 namespace spaces {
 
@@ -91,6 +93,24 @@ dist_func_t<float> Choose_UINT8_IP_implementation_SVE2(size_t dim) {
 dist_func_t<float> Choose_UINT8_Cosine_implementation_SVE2(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_CosineSIMD_SVE, dim, svcntb);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_IP_implementation_SVE2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_InnerProductSIMD_SVE, dim, svcntw);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_Cosine_implementation_SVE2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_CosineSIMD_SVE, dim, svcntw);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_L2_implementation_SVE2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_L2SqrSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
 

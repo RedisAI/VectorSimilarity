@@ -10,9 +10,11 @@
 
 #include "VecSim/spaces/L2/L2_SSE_FP32.h"
 #include "VecSim/spaces/L2/L2_SSE_FP64.h"
+#include "VecSim/spaces/L2/L2_SSE4_SQ8.h"
 
 #include "VecSim/spaces/IP/IP_SSE_FP32.h"
 #include "VecSim/spaces/IP/IP_SSE_FP64.h"
+#include "VecSim/spaces/IP/IP_SSE4_SQ8.h"
 
 namespace spaces {
 
