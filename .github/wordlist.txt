@@ -68,3 +68,13 @@ Enforceability
 stackoverflow
 semantical
 PRs
+BW
+FMA
+UINT
+VBMI
+VL
+VNNI
+CPUs
+DOTPROD
+SVE
+UINT
