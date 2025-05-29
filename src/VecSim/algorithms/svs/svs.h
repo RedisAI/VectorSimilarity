@@ -557,7 +557,11 @@ public:
 
     void runGC() override {
         if (impl_) {
+            // There is documentation for consolidate():
+            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
             impl_->consolidate();
+            // There is documentation for compact():
+            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
             impl_->compact();
         }
         changes_num = 0;

@@ -203,7 +203,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     // Add: true, Delete: false
     using journal_record = std::pair<labelType, bool>;
-    size_t updateJobThreshold;
+    size_t trainingTriggerThreshold;
     size_t updateJobWaitTime;
     std::vector<journal_record> journal;
     std::shared_mutex journal_mutex;
@@ -250,7 +250,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         // because of the approximate nature of the algorithm.
         vecsim_stl::unordered_set<labelType> returned_results_set;
 
-    private:
         VecSimQueryReply *compute_current_batch(size_t n_res) {
             // Merge results
             // This call will update `svs_res` and `bf_res` to point to the end of the merged
@@ -451,7 +450,7 @@ public:
 private:
     void TakeSnapshot(std::set<labelType> *to_delete, std::set<labelType> *to_add) {
         std::vector<journal_record> journal_snapshot;
-        journal_snapshot.reserve(this->updateJobThreshold * 2);
+        journal_snapshot.reserve(this->trainingTriggerThreshold * 2);
 
         { // Get current journal and replace with empty
             std::scoped_lock journal_lock{journal_mutex};
@@ -565,17 +564,18 @@ public:
                    const TieredIndexParams &tiered_index_params,
                    std::shared_ptr<VecSimAllocator> allocator)
         : Base(svs_index, bf_index, tiered_index_params, allocator),
-          updateJobThreshold(
-              tiered_index_params.specificParams.tieredSVSParams.updateJobThreshold == 0
+          trainingTriggerThreshold(
+              tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold == 0
                   ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
-                  : std::min(tiered_index_params.specificParams.tieredSVSParams.updateJobThreshold,
-                             MAX_PENDING_SWAP_JOBS_THRESHOLD)),
+                  : std::min(
+                        tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold,
+                        MAX_PENDING_SWAP_JOBS_THRESHOLD)),
           updateJobWaitTime(
               tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
                   ? 1000 // default wait time: 1ms
                   : tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime),
           uncompletedJobs(this->allocator) {
-        this->journal.reserve(this->updateJobThreshold * 2);
+        this->journal.reserve(this->trainingTriggerThreshold * 2);
     }
 
     int addVector(const void *blob, labelType label) override {
@@ -595,7 +595,7 @@ public:
                     journal.emplace_back(label, true);
                     // If frontend size exeeds the update job threshold, ...
                     index_update_needed =
-                        this->frontendIndex->indexSize() >= this->updateJobThreshold;
+                        this->frontendIndex->indexSize() >= this->trainingTriggerThreshold;
                 }
                 // ... move vectors to the backend index.
                 if (index_update_needed) {
@@ -624,11 +624,11 @@ public:
             ret = this->frontendIndex->addVector(blob, label);
             ret = std::max(ret - svs_index->deleteVectors(&label, 1), 0);
             journal.emplace_back(label, true);
-            // If backend index is empty, we need to initialize it with 'updateJobThreshold'
+            // If backend index is empty, we need to initialize it with 'trainingTriggerThreshold'
             // vectors, elsewhere, make sure that update job is scheduled for every one vector
             // added.
             index_update_needed = this->backendIndex->indexSize() > 0 ||
-                                  this->journal.size() >= this->updateJobThreshold;
+                                  this->journal.size() >= this->trainingTriggerThreshold;
         }
 
         if (index_update_needed) {

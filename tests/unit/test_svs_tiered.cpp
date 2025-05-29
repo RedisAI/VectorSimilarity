@@ -66,8 +66,8 @@ protected:
             .submitCb = tieredIndexMock::submit_callback,
             .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &svs_params,
-            .specificParams = {.tieredSVSParams =
-                                   TieredSVSParams{.updateJobThreshold = update_job_threshold}}};
+            .specificParams = {.tieredSVSParams = TieredSVSParams{.trainingTriggerThreshold =
+                                                                      update_job_threshold}}};
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
