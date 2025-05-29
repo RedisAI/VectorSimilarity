@@ -2078,32 +2078,38 @@ TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
 TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
+    const size_t updateThreshold = 2;
 
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, updateThreshold);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
     VecSim_SetWriteMode(VecSim_WriteInPlace);
-    // Validate that the vector was inserted directly to the SVS index.
+    // Validate that the first vector was buffered in flat index.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 10, 10);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+
+    // Validate that the second vector causes moving to the SVS index.
     labelType vec_label = 0;
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 
     // Overwrite inplace
     TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
     tiered_index->addVector(overwritten_vec, vec_label);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
 
     // Validate that the vector is removed in place.
     tiered_index->deleteVector(vec_label);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
 }
 
 TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
