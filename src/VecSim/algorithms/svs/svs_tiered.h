@@ -678,17 +678,23 @@ public:
     }
 
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override {
-        double flat_dist = std::numeric_limits<double>::quiet_NaN();
-        {
-            std::shared_lock<decltype(this->flatIndexGuard)> lock(this->flatIndexGuard);
-            flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
-        }
-        if (!std::isnan(flat_dist)) {
+        // Try to get the distance from the flat buffer.
+        // If the label doesn't exist, the distance will be NaN.
+        auto flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
+
+        // Optimization. TODO: consider having different implementations for single and multi
+        // indexes, to avoid checking the index type on every query.
+        if (!this->backendIndex->isMultiValue() && !std::isnan(flat_dist)) {
+            // If the index is single value, and we got a valid distance from the flat buffer,
+            // we can return the distance without querying the Main index.
             return flat_dist;
-        } else {
-            std::shared_lock<decltype(this->mainIndexGuard)> lock(this->mainIndexGuard);
-            return this->backendIndex->getDistanceFrom_Unsafe(label, blob);
         }
+
+        // Try to get the distance from the Main index.
+        auto hnsw_dist = this->backendIndex->getDistanceFrom_Unsafe(label, blob);
+
+        // Return the minimum distance that is not NaN.
+        return std::fmin(flat_dist, hnsw_dist);
     }
 
     VecSimIndexDebugInfo debugInfo() const override {
