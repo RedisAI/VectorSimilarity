@@ -191,8 +191,8 @@ protected:
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
         // If n == 1, we should ensure single-threading
-        const size_t num_threads = (n == 1) ? getNumThreads() : 1;
-        if (num_threads > 1) {
+        const size_t current_num_threads = getNumThreads();
+        if (n == 1 && current_num_threads > 1) {
             setNumThreads(1);
         }
 
@@ -205,8 +205,8 @@ protected:
         }
 
         // Restore multi-threading if needed
-        if (num_threads > 1) {
-            setNumThreads(num_threads);
+        if (n == 1 && current_num_threads > 1) {
+            setNumThreads(current_num_threads);
         }
 
         return n - deleted_num;
@@ -231,16 +231,16 @@ protected:
         }
 
         // If entries_to_delete.size() == 1, we should ensure single-threading
-        const size_t num_threads = (entries_to_delete.size() == 1) ? getNumThreads() : 1;
-        if (num_threads > 1) {
+        const size_t current_num_threads = getNumThreads();
+        if (n == 1 && current_num_threads > 1) {
             setNumThreads(1);
         }
 
         impl_->delete_entries(entries_to_delete);
 
         // Restore multi-threading if needed
-        if (num_threads > 1) {
-            setNumThreads(num_threads);
+        if (n == 1 && current_num_threads > 1) {
+            setNumThreads(current_num_threads);
         }
 
         this->markIndexUpdate(entries_to_delete.size());

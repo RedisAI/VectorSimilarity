@@ -623,24 +623,18 @@ public:
             return this->frontendIndex->isLabelExists(label);
         }();
 
-        bool index_update_needed = false;
         if (label_exists) {
             std::scoped_lock lock(this->flatIndexGuard, this->mainIndexGuard, this->journal_mutex);
             if (this->frontendIndex->isLabelExists(label)) {
                 ret = this->frontendIndex->deleteVector(label);
                 assert(ret == 1 && "unexpected deleteVector result");
+                journal.emplace_back(label, false);
             }
             ret += svs_index->deleteVectors(&label, 1);
             assert(ret < 2 && "deleteVector: vector duplication in both indices");
-            journal.emplace_back(label, false);
-            index_update_needed = this->journal.size() >= this->updateJobThreshold;
         } else {
             std::scoped_lock lock(this->mainIndexGuard);
             ret += svs_index->deleteVectors(&label, 1);
-        }
-
-        if (index_update_needed) {
-            scheduleSVSIndexUpdate();
         }
         return ret;
     }
