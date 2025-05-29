@@ -4204,6 +4204,17 @@ private:
 public:
     PreprocessorDoubleValue(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim) {}
+    
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                            size_t &storage_blob_size, size_t &query_blob_size,
+                            unsigned char alignment) const override {
+        // This assert makes sure the current use of the preprocessor is valid,
+        // i.e., both blobs are of the same size.
+        // In order to use different sizes, the preprocessor should be modified.
+        assert(storage_blob_size == query_blob_size);
+        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
+    }
+
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
 
