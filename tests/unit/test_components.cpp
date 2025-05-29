@@ -70,8 +70,8 @@ public:
                     size_t &storage_blob_size, size_t &query_blob_size,
                     unsigned char alignment) const override {
         // This assert verifies that there's no use for this function for now - different sizes for
-        // storage and query blobs. If such a use case arises, we can remove the assert and implement
-        // the logic to handle different sizes.
+        // storage and query blobs. If such a use case arises, we can remove the assert and
+        // implement the logic to handle different sizes.
         assert(storage_blob_size == query_blob_size);
 
         preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
@@ -122,11 +122,11 @@ public:
     }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                            size_t &storage_blob_size, size_t &query_blob_size,
-                            unsigned char alignment) const override {
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
         // This assert verifies that there's no use for this function for now - different sizes for
-        // storage and query blobs. If such a use case arises, we can remove the assert and implement
-        // the logic to handle different sizes.
+        // storage and query blobs. If such a use case arises, we can remove the assert and
+        // implement the logic to handle different sizes.
         assert(storage_blob_size == query_blob_size);
 
         preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
@@ -170,8 +170,8 @@ public:
         : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(value_to_add_query) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                            size_t &storage_blob_size, size_t &query_blob_size,
-                            unsigned char alignment) const override {
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
         preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
     }
 
@@ -236,8 +236,8 @@ public:
     static constexpr unsigned char getExcessValue() { return excess_value; }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                            size_t &storage_blob_size, size_t &query_blob_size,
-                            unsigned char alignment) const override {
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
         // if the blobs are equal,
         if (storage_blob == query_blob) {
             preprocessGeneral(original_blob, storage_blob, storage_blob_size, alignment);
@@ -247,7 +247,7 @@ public:
         }
     }
 
-            // If the input blob size is not enough
+    // If the input blob size is not enough
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
         // if the blobs are equal,
@@ -1015,7 +1015,7 @@ TEST(PreprocessorsTest, QuantizationTest) {
     for (size_t i = 0; i < elements; i++) {
         original_blob[i] = static_cast<float>(i);
     }
-    
+
     auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
     auto multiPPContainer =
         MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
@@ -1030,15 +1030,14 @@ TEST(PreprocessorsTest, QuantizationTest) {
         ASSERT_NE(storage_blob, nullptr);
         ASSERT_NE(storage_blob, query_blob);
 
-        constexpr size_t quantized_blob_bytes_count = elements * sizeof(uint8_t) + 2 * sizeof(float);
+        constexpr size_t quantized_blob_bytes_count =
+            elements * sizeof(uint8_t) + 2 * sizeof(float);
         uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
         quant_preprocessor->quantize(original_blob, expected_processed_blob);
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
-                                                       expected_processed_blob,
-                                                       quantized_blob_bytes_count));
-
+                                                        expected_processed_blob,
+                                                        quantized_blob_bytes_count));
     }
-
 }
 
 // Tests the quantization preprocessor with a cosine preprocessor in the chain.
@@ -1054,7 +1053,7 @@ TEST(PreprocessorsTest, QuantizationTestWithCosine) {
     for (size_t i = 0; i < elements; i++) {
         original_blob[i] = static_cast<float>(i);
     }
-    
+
     auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
     auto cosine_preprocessor =
         new (allocator) CosinePreprocessor<float>(allocator, elements, original_blob_size);
@@ -1081,11 +1080,8 @@ TEST(PreprocessorsTest, QuantizationTestWithCosine) {
         quant_preprocessor->quantize(expected_processed_blob, quantized_blob);
         // compare the storage blob to the expected processed blob
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
-                                                       quantized_blob,
-                                                       elements));
-
+                                                        quantized_blob, elements));
     }
-
 }
 
 // Tests the quantization preprocessor with a single preprocessor in the chain.
@@ -1102,9 +1098,9 @@ TEST(PreprocessorsTest, ReallocateVectorQuantizationTest) {
     auto original_blob_alloc = allocator->allocate_unique(original_blob_size);
     float *original_blob = static_cast<float *>(original_blob_alloc.get());
     for (size_t i = 0; i < elements; i++) {
-        original_blob[i] = static_cast<float>(i+10);
+        original_blob[i] = static_cast<float>(i + 10);
     }
-    
+
     auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
     auto multiPPContainer =
         MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
@@ -1118,19 +1114,20 @@ TEST(PreprocessorsTest, ReallocateVectorQuantizationTest) {
         ASSERT_NE(storage_blob, nullptr);
         ASSERT_NE(storage_blob, query_blob);
 
-        constexpr size_t quantized_blob_bytes_count = elements * sizeof(uint8_t) + 2 * sizeof(float);
+        constexpr size_t quantized_blob_bytes_count =
+            elements * sizeof(uint8_t) + 2 * sizeof(float);
         uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
         quant_preprocessor->quantize(original_blob, expected_processed_blob);
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
-                                                       expected_processed_blob,
-                                                       quantized_blob_bytes_count));
+                                                        expected_processed_blob,
+                                                        quantized_blob_bytes_count));
     }
-
 }
 
 // Tests the quantization preprocessor with a cosine preprocessor in the chain.
-// The QuantPreprocessor receives an allocated blob from the cosine preprocessor, and needs to reallocate it.
-// because the original blob size is smaller than the processed_bytes_count of the cosine preprocessor.
+// The QuantPreprocessor receives an allocated blob from the cosine preprocessor, and needs to
+// reallocate it. because the original blob size is smaller than the processed_bytes_count of the
+// cosine preprocessor.
 TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
     // Checks that if not enough memory was allocated by a previous preprocessor, the quantization
     // preprocessor will reallocate it.
@@ -1142,9 +1139,9 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
     auto original_blob_alloc = allocator->allocate_unique(original_blob_size);
     float *original_blob = static_cast<float *>(original_blob_alloc.get());
     for (size_t i = 0; i < elements; i++) {
-        original_blob[i] = static_cast<float>(i+2.5f);
+        original_blob[i] = static_cast<float>(i + 2.5f);
     }
-    
+
     auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
     auto cosine_preprocessor =
         new (allocator) CosinePreprocessor<float>(allocator, elements, original_blob_size);
@@ -1171,13 +1168,9 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
         quant_preprocessor->quantize(expected_processed_blob, quantized_blob);
         // compare the storage blob to the expected processed blob
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
-                                                       quantized_blob,
-                                                       elements));
-
+                                                        quantized_blob, elements));
     }
-
 }
-
 
 // TEST(PreprocessorsTest, CosineThenQuantizeTest) {
 //     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -1198,10 +1191,7 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
 //     auto processed_blobs = multiPPContainer.preprocess(input, input_blob_size);
 //     const void* quantized_blob = processed_blobs.getStorageBlob();
 
-
 // }
-    
-
 
 // TEST(QuantPreprocessorTest, UniformValuesQuantizationTest) {
 //     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -1363,7 +1353,8 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
 //     void* query_blob = nullptr;
 
 //     // Test dual parameter interface (different storage and query sizes)
-//     preprocessor.preprocess(input, storage_blob, query_blob, storage_blob_size, query_blob_size, alignment);
+//     preprocessor.preprocess(input, storage_blob, query_blob, storage_blob_size, query_blob_size,
+//     alignment);
 
 //     // Verify storage blob was quantized with correct size
 //     ASSERT_NE(storage_blob, nullptr);
@@ -1457,7 +1448,8 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
 //     constexpr size_t n_preprocessors = 1;
 //     unsigned char alignment = 32;
 
-//     auto multiPPContainer = MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
+//     auto multiPPContainer = MultiPreprocessorsContainer<float, n_preprocessors>(allocator,
+//     alignment);
 
 //     // Add QuantPreprocessor to the container
 //     auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, dim);
@@ -1581,4 +1573,3 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
 //     EXPECT_FLOAT_EQ(delta, 1.0f);
 //     EXPECT_EQ(quantized[0], 0);  // Single value quantizes to 0
 // }
-
