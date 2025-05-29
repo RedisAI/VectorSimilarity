@@ -701,7 +701,7 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<TieredSVSParams>(m, "TieredSVSParams")
         .def(py::init())
-        .def_readwrite("updateJobThreshold", &TieredSVSParams::updateJobThreshold)
+        .def_readwrite("trainingTriggerThreshold", &TieredSVSParams::trainingTriggerThreshold)
         .def_readwrite("updateJobWaitTime", &TieredSVSParams::updateJobWaitTime);
 
     py::class_<AlgoParams>(m, "AlgoParams")
