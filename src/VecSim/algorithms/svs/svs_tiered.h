@@ -306,10 +306,15 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         }
 
     public:
-        TieredSVS_BatchIterator(void *query_vector, const Index *index,
+        TieredSVS_BatchIterator(const void *query_vector, const Index *index,
                                 VecSimQueryParams *queryParams,
                                 std::shared_ptr<VecSimAllocator> allocator)
-            : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
+            // Tiered batch iterator doesn't hold its own copy of the query vector.
+            // Instead, each internal batch iterators (flat_iterator and hnsw_iterator) create their
+            // own copies: flat_iterator copy is created during TieredHNSW_BatchIterator
+            // construction When TieredHNSW_BatchIterator::getNextResults() is called and
+            // hnsw_iterator is not initialized, it retrieves the blob from flat_iterator
+            : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                                   std::move(allocator)),
               index(index), flat_results(this->allocator), svs_results(this->allocator),
               flat_iterator(index->frontendIndex->newBatchIterator(query_vector, queryParams)),
@@ -699,6 +704,7 @@ public:
 
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
+        // TODO: Add SVS specific info.
         return info;
     }
 
@@ -713,16 +719,15 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         //  Get the base tiered fields.
         auto *infoIterator = Base::debugInfoIterator();
+        // TODO: Add SVS specific info.
         return infoIterator;
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
-        void *queryBlobCopy = this->allocator->allocate(blobSize);
-        memcpy(queryBlobCopy, queryBlob, blobSize);
+        // The query blob will be processed and copied by the internal indexes's batch iterator.
         return new (this->allocator)
-            TieredSVS_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+            TieredSVS_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
 
     void setLastSearchMode(VecSearchMode mode) override {
