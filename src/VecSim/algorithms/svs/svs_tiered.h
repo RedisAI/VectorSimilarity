@@ -737,7 +737,6 @@ public:
     }
 
     void runGC() override {
-        // Run no more than pendingSwapJobsThreshold value jobs.
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered SVS index");
         std::unique_lock<std::shared_mutex> backend_lock{this->mainIndexGuard};
