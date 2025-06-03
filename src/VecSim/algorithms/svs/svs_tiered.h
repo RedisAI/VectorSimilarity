@@ -667,8 +667,21 @@ public:
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        return topKQueryImp<true>(queryBlob, k, queryParams);
+        // To avoid duplicates in the final result, we must use withSet=true because backend vectors
+        // are quantized,
+        // and may produce different scores than the flat index for the same label.
+        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
     }
+
+    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                 VecSimQueryParams *queryParams,
+                                 VecSimQueryReply_Order order) const override {
+        // To avoid duplicates in the final result, we must use withSet=true because backend vectors
+        // are quantized,
+        // and may produce different scores than the flat index for the same label.
+        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
+    }
+
     size_t indexSize() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);

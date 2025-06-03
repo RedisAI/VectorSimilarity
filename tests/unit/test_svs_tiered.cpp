@@ -386,11 +386,16 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     }
 }
 
-TYPED_TEST(SVSTieredIndexTest, KNNSearchDifferentScores) {
+/**
+ * This test verifies that a tiered index correctly returns the closest vectors when querying data
+ * distributed across both the flat and SVS indices, specifically when duplicate labels exist in
+ * both indices with different distances. It adds vectors with known scores, including such
+ * duplicates, and ensures that only the closer instance is returned. The test covers both top-K and
+ * range queries, validating result ordering by score and by ID.
+ */
+TYPED_TEST(SVSTieredIndexTest, SearchDifferentScores) {
     size_t dim = 4;
-    size_t k = 3;
-
-    size_t n = k * 3;
+    size_t constexpr k = 3;
 
     // Create TieredSVS index instance with a mock queue.
     SVSParams params = {
@@ -406,25 +411,75 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearchDifferentScores) {
     auto svs_index = tiered_index->GetBackendIndex();
     auto flat_index = tiered_index->GetFlatIndex();
 
-    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, 100, 2);
-    // label 101, *fourth* closes
-    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, 101, 5);
-    // some more far vectors
-    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, 110, 100);
+    // Define IDs and distance values for test vectors
+    // ids are intentionally in random order to verify sorting works correctly
+    size_t constexpr ids[k] = {54, 4, 15};
+    double constexpr res_values[k] = {2, 3, 100};
+    // Define a type for our result pair
+    using ResultPair = std::pair<size_t, double>; // (id, score)
 
+    // Create a vector of expected results - these are the scores we expect
+    // when querying with a zero vector (L2 distance = value²*dim)
+    std::vector<ResultPair> expected_results_by_score(k);
 
-    // label 101, second closes
-    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 101, 3);
-    // label 100 third closest
-    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 100, 4);
+    for (size_t i = 0; i < k; i++) {
+        expected_results_by_score[i] = {ids[i], res_values[i] * res_values[i] * dim};
+    }
 
-    // some more far vectors
-    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 110, 100);
+    // Insert duplicate vectors with same ID but different distances across the two indices.
+    // The index should return only the closer of the two.
+
+    // ID 54: closer in SVS, farther in flat — expect to return SVS version
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, ids[0], res_values[0]);
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, ids[0], 4);
+
+    // ID 4: closer in flat, farther in SVS — expect to return flat version
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, ids[1], 5);
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, ids[1], res_values[1]);
+
+    // ID 15: identical in both indices — distance is large, should still return one instance
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, ids[2], res_values[2]);
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, ids[2], res_values[2]);
+
+    // Create a zero vector for querying - this makes scores directly proportional to vector values
     TEST_DATA_T query_0[dim];
     GenerateVector<TEST_DATA_T>(query_0, dim, 0);
 
-    // Search for vectors when the index is empty.
-    runTopKSearchTest(tiered_index, query_0, k, nullptr);
+    // Verify results ordered by increasing score (distance).
+    double prev_score = 0; // all scores are positive
+    auto verify_by_score = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(prev_score, score); // prev_score < score
+        prev_score = score;
+        ASSERT_EQ(id, expected_results_by_score[res_index].first);
+        ASSERT_EQ(score, expected_results_by_score[res_index].second);
+    };
+
+    runTopKSearchTest(tiered_index, query_0, k, verify_by_score, nullptr, BY_SCORE);
+    // Reset score tracking for range query
+    prev_score = 0;
+    // Use the largest score as the range to include all vectors
+    double range = expected_results_by_score.back().second;
+    runRangeQueryTest(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
+
+    // Now verify result ordering by ascending ID instead of score
+    auto expected_results_by_id = expected_results_by_score;
+    // Sort by id (ascending)
+    std::sort(expected_results_by_id.begin(), expected_results_by_id.end(),
+              [](const ResultPair &a, const ResultPair &b) { return a.first < b.first; });
+
+    size_t prev_id = 0; // all ids are positive
+    auto verify_by_id = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(prev_id, id); // prev_score < score
+        prev_id = id;
+        ASSERT_EQ(id, expected_results_by_id[res_index].first);
+        ASSERT_EQ(score, expected_results_by_id[res_index].second);
+    };
+    // Test top-K search with results ordered by ID
+    runTopKSearchTest(tiered_index, query_0, k, verify_by_id, nullptr, BY_ID);
+    // Reset ID tracking for range query
+    prev_id = 0;
+    // Test range query with results ordered by ID
+    runRangeQueryTest(tiered_index, query_0, range, verify_by_id, k, BY_ID);
 }
 
 TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
