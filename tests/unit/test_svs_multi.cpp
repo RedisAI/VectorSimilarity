@@ -823,7 +823,7 @@ TYPED_TEST(SVSMultiTest, svs_batch_iterator_reset) {
     ASSERT_INDEX(index);
 
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i / 10);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
