@@ -591,20 +591,22 @@ public:
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
             std::shared_lock backend_shared_lock(this->mainIndexGuard);
-            // Backend index initialization data have to buffered for proper compression/training.
+            // Backend index initialization data have to be buffered for proper
+            // compression/training.
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index size is 0, first collect vectors in frontend index
                 {
                     std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
                     ret = this->frontendIndex->addVector(blob, label);
                     journal.emplace_back(label, true);
-                    // If frontend size exeeds the update job threshold, ...
+                    // If frontend size exceeds the update job threshold, ...
                     index_update_needed =
                         this->frontendIndex->indexSize() >= this->trainingTriggerThreshold;
                 }
                 // ... move vectors to the backend index.
                 if (index_update_needed) {
-                    indexUpdateScheduled.test_and_set(); // set the flag to prevent parallel updates
+                    indexUpdateScheduled
+                        .test_and_set(); // set the flag to prevent sceduling of parallel updates
                     // backend index will be locked in the updateSVSIndexWrapper()
                     backend_shared_lock.unlock();
                     // initialize the SVS index synchonously
@@ -613,8 +615,8 @@ public:
                 return ret;
             } else {
                 // backend index is initialized - we can add the vector directly
-                auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
                 backend_shared_lock.unlock();
+                auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
                 std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
@@ -650,7 +652,7 @@ public:
         // elsewhere there is the risk of labels duplication in both indices which can lead to wrong
         // results of topK queries. In such case we should behave as if InPlace mode is always set.
 
-        // Write mode is not syncronized, so it is possible that the vector could be added/updated
+        // Write mode is not synchronized, so it is possible that the vector could be added/updated
         // in both flat index and backend index in parallel to current thread using different write
         // modes. To keep data consistency, we have to lock everything at once.
         std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex, this->mainIndexGuard,
