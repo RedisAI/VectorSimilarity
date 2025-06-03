@@ -66,6 +66,10 @@ protected:
                                 jobs.size());
     }
 
+    template <bool WithSet>
+    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
+                                   VecSimQueryParams *queryParams) const;
+
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
@@ -116,10 +120,12 @@ public:
     }
 #endif
 };
+
 template <typename DataType, typename DistType>
+template <bool withSet>
 VecSimQueryReply *
-VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                                 VecSimQueryParams *queryParams) const {
+VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -165,10 +171,21 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 
         // Merge the results and return, avoiding duplicates.
         if (this->backendIndex->isMultiValue()) {
-            return merge_result_lists<true>(main_results, flat_results, k);
+            return merge_result_lists<withSet>(main_results, flat_results, k);
         } else {
-            return merge_result_lists<false>(main_results, flat_results, k);
+            return merge_result_lists<withSet>(main_results, flat_results, k);
         }
+    }
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryReply *
+VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                                 VecSimQueryParams *queryParams) const {
+    if (this->backendIndex->isMultiValue()) {
+        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
+    } else {
+        return this->topKQueryImp<false>(queryBlob, k, queryParams);
     }
 }
 

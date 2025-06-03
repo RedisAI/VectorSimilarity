@@ -386,6 +386,47 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     }
 }
 
+TYPED_TEST(SVSTieredIndexTest, KNNSearchDifferentScores) {
+    size_t dim = 4;
+    size_t k = 3;
+
+    size_t n = k * 3;
+
+    // Create TieredSVS index instance with a mock queue.
+    SVSParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, k);
+    ASSERT_INDEX(tiered_index);
+
+    auto svs_index = tiered_index->GetBackendIndex();
+    auto flat_index = tiered_index->GetFlatIndex();
+
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, 100, 2);
+    // label 101, *fourth* closes
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, 101, 5);
+    // some more far vectors
+    GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, 110, 100);
+
+
+    // label 101, second closes
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 101, 3);
+    // label 100 third closest
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 100, 4);
+
+    // some more far vectors
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 110, 100);
+    TEST_DATA_T query_0[dim];
+    GenerateVector<TEST_DATA_T>(query_0, dim, 0);
+
+    // Search for vectors when the index is empty.
+    runTopKSearchTest(tiered_index, query_0, k, nullptr);
+}
+
 TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
     size_t dim = 4;
     size_t k = 10;

@@ -665,6 +665,10 @@ public:
         return ret;
     }
 
+    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                VecSimQueryParams *queryParams) const override {
+        return topKQueryImp<true>(queryBlob, k, queryParams);
+    }
     size_t indexSize() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
