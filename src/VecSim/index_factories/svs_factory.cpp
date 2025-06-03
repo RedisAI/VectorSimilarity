@@ -54,6 +54,8 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     switch (quantBits) {
     case VecSimSvsQuant_NONE:
         return NewIndexImpl<MetricType, DataType, 0>(params, is_normalized);
+    case VecSimSvsQuant_Scalar:
+        return NewIndexImpl<MetricType, DataType, 1>(params, is_normalized);
     case VecSimSvsQuant_8:
         return NewIndexImpl<MetricType, DataType, 8>(params, is_normalized);
     case VecSimSvsQuant_4:
@@ -114,6 +116,8 @@ size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t al
     switch (quantBits) {
     case VecSimSvsQuant_NONE:
         return QuantizedVectorSize<DataType, 0>(dims, alignment);
+    case VecSimSvsQuant_Scalar:
+        return QuantizedVectorSize<DataType, 1>(dims, alignment);
     case VecSimSvsQuant_8:
         return QuantizedVectorSize<DataType, 8>(dims, alignment);
     case VecSimSvsQuant_4:

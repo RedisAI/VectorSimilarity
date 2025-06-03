@@ -134,6 +134,7 @@ typedef struct {
 
 typedef enum {
     VecSimSvsQuant_NONE = 0,            // No quantization.
+    VecSimSvsQuant_Scalar = 1,          // 8-bit scalar quantization
     VecSimSvsQuant_8 = 8,               // 8-bit quantization
     VecSimSvsQuant_4 = 4,               // 4-bit quantization
     VecSimSvsQuant_4x4 = 4 | (4 << 10), // 4-bit quantization with 4-bit residuals
