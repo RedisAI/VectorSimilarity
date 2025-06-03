@@ -60,8 +60,8 @@ public:
         assert(storage_blob_size == query_blob_size);
 
         preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
-        query_blob_size =
-            storage_blob_size; // Ensure both blobs have the same size after processing.
+        // Ensure both blobs have the same size after processing.
+        query_blob_size = storage_blob_size;
     }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -168,18 +168,14 @@ public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(uint8_t) + 2 * sizeof(float)) {
-    } // quantized + min + delta + inverted_norm {}
+    } // quantized + min + delta{}
 
-    // Helper function to perform quantization
+    // Helper function to perform quantization. This function is used by both preprocess and
+    // supports in-place quantization of the storage blob.
     void quantize(const float *input, uint8_t *quantized) const {
-        assert(dim > 0);
+        assert(input && quantized);
         // Find min and max values
-        float min_val = input[0];
-        float max_val = input[0];
-        for (size_t i = 1; i < this->dim; i++) {
-            min_val = std::min(min_val, input[i]);
-            max_val = std::max(max_val, input[i]);
-        }
+        auto [min_val, max_val] = find_min_max(input);
 
         // Calculate scaling factor
         const float diff = (max_val - min_val);
@@ -191,18 +187,16 @@ public:
             quantized[i] = static_cast<uint8_t>(std::round((input[i] - min_val) * inv_delta));
         }
 
-        // Reserve space for metadata at the end of the blob
-        // [quantized values, min_val, delta, inverted_norm]
         float *metadata = reinterpret_cast<float *>(quantized + this->dim);
 
-        // Store min_val, delta, and inverted_norm in the metadata
+        // Store min_val, delta, in the metadata
         metadata[0] = min_val;
         metadata[1] = delta;
     }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
-        // For backward compatibility - both blobs have the same size
+        // For backward compatibility - delegate to the two-size version with identical sizes
         preprocess(original_blob, storage_blob, query_blob, input_blob_size, input_blob_size,
                    alignment);
     }
@@ -210,30 +204,56 @@ public:
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
                     unsigned char alignment) const override {
+        // CASE 1: STORAGE BLOB NEEDS ALLOCATION
+        if (!storage_blob) {
+            // Allocate aligned memory for the quantized storage blob
+            storage_blob = static_cast<uint8_t *>(
+                this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
 
-        if (storage_blob) {
-            if (storage_blob == query_blob) {
-                storage_blob =
-                    this->allocator->allocate_aligned(this->storage_bytes_count, alignment);
-            } else if (storage_blob_size < storage_bytes_count) {
-                // Check if the blob allocated by a previous preprocessor is big enough, otherwise,
-                // realloc it. Can happen when the dim is smaller than the quantization metadata.
-                // For example, din size is 2 so the storage_blob_size is 2 * sizeof(float) = 8
-                // bytes. But the quantized blob size is 2 * sizeof(uint8_t) + 2 * sizeof(float) =
-                // 10 bytes.
-                storage_blob = this->allocator->reallocate(storage_blob, this->storage_bytes_count);
-            }
-
-        } else {
-            // storage_blob is nullptr, so we need to allocate new memory
-            storage_blob = this->allocator->allocate_aligned(this->storage_bytes_count, alignment);
+            // Quantize directly from original data
+            const float *input = static_cast<const float *>(original_blob);
+            quantize(input, static_cast<uint8_t *>(storage_blob));
         }
-        storage_blob_size = this->storage_bytes_count;
+        // CASE 2: STORAGE BLOB EXISTS
+        else {
+            // CASE 2A: STORAGE AND QUERY SHARE MEMORY
+            if (storage_blob == query_blob) {
+                // Need to allocate a separate storage blob since query remains float32
+                // while storage needs to be quantized
+                void *new_storage =
+                    this->allocator->allocate_aligned(this->storage_bytes_count, alignment);
 
-        // Cast to appropriate types
-        const float *input = static_cast<const float *>(original_blob);
-        uint8_t *quantized = static_cast<uint8_t *>(storage_blob);
-        quantize(input, quantized);
+                // Quantize from the shared blob (query_blob) to the new storage blob
+                quantize(static_cast<const float *>(query_blob),
+                         static_cast<uint8_t *>(new_storage));
+
+                // Update storage_blob to point to the new memory
+                storage_blob = new_storage;
+            }
+            // CASE 2B: SEPARATE STORAGE AND QUERY BLOBS
+            else {
+                // Check if storage blob needs resizing
+                if (storage_blob_size < this->storage_bytes_count) {
+                    // Allocate new storage with correct size
+                    uint8_t *new_storage = static_cast<uint8_t *>(
+                        this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
+
+                    // Quantize from old storage to new storage
+                    quantize(static_cast<const float *>(storage_blob),
+                             static_cast<uint8_t *>(new_storage));
+
+                    // Free old storage and update pointer
+                    this->allocator->free_allocation(storage_blob);
+                    storage_blob = new_storage;
+                } else {
+                    // Storage blob is large enough, quantize in-place
+                    quantize(static_cast<const float *>(storage_blob),
+                             static_cast<uint8_t *>(storage_blob));
+                }
+            }
+        }
+
+        storage_blob_size = this->storage_bytes_count;
     }
 
     void preprocessForStorage(const void *original_blob, void *&blob,
@@ -267,12 +287,42 @@ public:
     }
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
-        // This function is unused for this preprocessor.
         assert(original_blob);
         assert(input_blob_size >= storage_bytes_count);
+
+        // Only quantize in-place if input buffer is large enough
+        if (input_blob_size >= storage_bytes_count) {
+            quantize(static_cast<const float *>(original_blob),
+                     static_cast<uint8_t *>(original_blob));
+        } else {
+            // Fallback: this shouldn't happen if caller allocated correctly
+            assert(false && "Input buffer too small for in-place quantization");
+        }
     }
 
 private:
+    std::pair<float, float> find_min_max(const float *input) const {
+        float min_val = input[0];
+        float max_val = input[0];
+
+        size_t i = 1;
+        // Process 4 elements at a time for better performance
+        for (; i + 3 < dim; i += 4) {
+            const float v0 = input[i];
+            const float v1 = input[i + 1];
+            const float v2 = input[i + 2];
+            const float v3 = input[i + 3];
+            min_val = std::min({min_val, v0, v1, v2, v3});
+            max_val = std::max({max_val, v0, v1, v2, v3});
+        }
+        // Handle remaining elements
+        for (; i < dim; i++) {
+            min_val = std::min(min_val, input[i]);
+            max_val = std::max(max_val, input[i]);
+        }
+        return {min_val, max_val};
+    }
+
     const size_t dim;
     const size_t storage_bytes_count;
 };
