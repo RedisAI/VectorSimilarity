@@ -95,6 +95,12 @@ protected:
         // Restore the write mode to default.
         VecSim_SetWriteMode(VecSim_WriteAsync);
     }
+
+    bool isFallbackToNoLVQ() {
+        // Get the fallback quantization mode and compare it to the NONE quantization mode.
+        return VecSimSvsQuant_NONE ==
+               std::get<0>(svs_details::isSVSQuantBitsSupported(index_type_t::get_quant_bits()));
+    }
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -108,9 +114,7 @@ struct SVSIndexType {
 
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
-#if 0
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
-#endif
                                         >;
 // clang-format on
 
@@ -275,10 +279,6 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(vec_label, vector), 0);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
-    // Validate that the job was created properly
-    // ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
-    // ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
-    // ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->id, 0);
 
     // Account for the allocation of a new block due to the vector insertion.
     expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
@@ -325,19 +325,13 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     // block.
     // LVQDataset does not provide a capacity method
     const size_t expected_capacity =
-        TypeParam::get_quant_bits() > 0 ? tiered_index->indexSize() : DEFAULT_BLOCK_SIZE;
+        this->isFallbackToNoLVQ() ? DEFAULT_BLOCK_SIZE : tiered_index->indexSize();
     ASSERT_EQ(tiered_index->indexCapacity(), expected_capacity);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, vector), 0);
 }
 
 TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
-    // LVQ vectors representation do not allow to always get exact distance==0 for big range of
-    // values
-    if (TypeParam::get_quant_bits() != VecSimSvsQuant_NONE) {
-        GTEST_SKIP() << "LVQ is not precise enough";
-    }
-    // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
     size_t n = 5000;
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
@@ -352,7 +346,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     mock_thread_pool.init_threads();
     // Insert vectors
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i / (TEST_DATA_T)n);
     }
 
     mock_thread_pool.thread_pool_wait();
@@ -362,11 +356,15 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     auto sz_b = tiered_index->GetBackendIndex()->indexSize();
     EXPECT_EQ(sz_f + sz_b, n);
 
-    // Verify that the vectors were inserted to SVS as expected
+    // Quantization has limited accuaracy, so we need to check the relative error.
+    // If quantization is enabled, we allow a larger relative error.
+    double abs_err = TypeParam::get_quant_bits() != VecSimSvsQuant_NONE ? 1e-2 : 1e-6;
+
+    // Verify that the vectors were inserted to Flat/SVS as expected
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T expected_vector[dim];
-        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
-        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0)
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i / (TEST_DATA_T)n);
+        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0, abs_err)
             << "Vector label: " << i;
     }
 
@@ -380,8 +378,8 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     // Verify that the vectors were inserted to SVS as expected
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T expected_vector[dim];
-        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
-        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0)
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i / (TEST_DATA_T)n);
+        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0, abs_err)
             << "Vector label: " << i;
     }
 }
@@ -595,6 +593,57 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
 }
 
+TYPED_TEST(SVSTieredIndexTest, KNNSearchCosine) {
+    const size_t dim = 128;
+    const size_t n = 100;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_Cosine};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n);
+    ASSERT_INDEX(index);
+    auto allocator = index->getAllocator();
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    for (size_t i = 1; i <= n; i++) {
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0;
+        }
+        VecSimIndex_AddVector(index, f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    mock_thread_pool.thread_pool_join();
+    // Verify that all vectors were moved to SVS as expected
+    auto sz_f = index->GetFlatIndex()->indexSize();
+    auto sz_b = index->GetBackendIndex()->indexSize();
+    EXPECT_EQ(sz_f, 0);
+    EXPECT_EQ(sz_b, n);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, (n - result_rank));
+        TEST_DATA_T expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
+        // Verify that abs difference between the actual and expected score is at most 1/10^5.
+        ASSERT_NEAR((TEST_DATA_T)score, expected_score, 1e-5f);
+    };
+    runTopKSearchTest(index, query, 10, verify_res);
+}
+
 TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
@@ -637,7 +686,6 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->indexSize(), 0);
-    // ASSERT_EQ(tiered_index->getSVSIndex()->getNumMarkedDeleted(), 1);
 
     // Re-insert a deleted label with a different vector.
     TEST_DATA_T new_vec_val = 2.0;
@@ -1837,8 +1885,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
     ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    // Swap job should be executed for the overwritten vector since limit is 1, and we are calling
-    // swap job execution prior to insert jobs.
+    // Overriding vector in tiered index should remove the vector from SVS to avoid duplicates.
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
@@ -2173,13 +2220,16 @@ TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
             }
             labelType cur_label = i % n_labels + n_labels;
             EXPECT_EQ(tiered_index->addVector(vector, cur_label), 1 - overwrite);
+            // Quantization has limited accuaracy, so we need to check the relative error.
+            // If quantization is enabled, we allow a larger relative error.
+            double abs_err = TypeParam::get_quant_bits() != VecSimSvsQuant_NONE ? 1e-2 : 1.e-6;
             // Run a query over svs index and see that we only receive ids with label < n_labels+i
             // (the label that we just inserted), and the first result should be this vector
             // (unless it is unreachable)
             auto ver_res = [&](size_t res_label, double score, size_t index) {
                 if (index == 0) {
                     if (res_label == cur_label) {
-                        EXPECT_DOUBLE_EQ(score, 0);
+                        EXPECT_NEAR(score, 0, abs_err);
                     } else {
                         tiered_index->acquireSharedLocks();
                         ASSERT_EQ(svs_index->getDistanceFrom_Unsafe(cur_label, vector), 0);
