@@ -172,8 +172,8 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocess(const void *o
     void *storage_blob = nullptr;
     void *query_blob = nullptr;
 
-    // Sepreated variables for the storage blob size and query_blob_size,
-    // in case we need to change their sizes to different values.
+    // Use of separate variables for the storage_blob_size and query_blob_size, in case we need to
+    // change their sizes to different values.
     size_t storage_blob_size = input_blob_size;
     size_t query_blob_size = input_blob_size;
 

@@ -168,10 +168,10 @@ public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(uint8_t) + 2 * sizeof(float)) {
-    } // quantized + min + delta{}
+    } // quantized + min + delta
 
     // Helper function to perform quantization. This function is used by both preprocess and
-    // supports in-place quantization of the storage blob.
+    // preprocessQuery and supports in-place quantization of the storage blob.
     void quantize(const float *input, uint8_t *quantized) const {
         assert(input && quantized);
         // Find min and max values
@@ -274,10 +274,6 @@ public:
     void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
                          unsigned char alignment) const override {
         // No-op: queries remain as float32
-        if (blob == nullptr) {
-            blob = this->allocator->allocate_aligned(query_blob_size, alignment);
-            memcpy(blob, original_blob, query_blob_size);
-        }
     }
 
     void preprocessQueryInPlace(void *blob, size_t input_blob_size,
@@ -288,15 +284,13 @@ public:
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
         assert(original_blob);
-        assert(input_blob_size >= storage_bytes_count);
+        assert(input_blob_size >= storage_bytes_count &&
+               "Input buffer too small for in-place quantization");
 
         // Only quantize in-place if input buffer is large enough
         if (input_blob_size >= storage_bytes_count) {
             quantize(static_cast<const float *>(original_blob),
                      static_cast<uint8_t *>(original_blob));
-        } else {
-            // Fallback: this shouldn't happen if caller allocated correctly
-            assert(false && "Input buffer too small for in-place quantization");
         }
     }
 

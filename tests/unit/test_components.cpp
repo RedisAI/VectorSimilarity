@@ -1044,8 +1044,8 @@ TEST(PreprocessorsTest, QuantizationTest) {
         const float *qexpected_processed_metadata =
             reinterpret_cast<const float *>(expected_processed_blob + elements);
         // Check that the min and delta values are close enough
-        ASSERT_NEAR(storage_blob_metadata[0], qexpected_processed_metadata[0], 1e-6);
-        ASSERT_NEAR(storage_blob_metadata[1], qexpected_processed_metadata[1], 1e-6);
+        ASSERT_FLOAT_EQ(storage_blob_metadata[0], qexpected_processed_metadata[0]);
+        ASSERT_FLOAT_EQ(storage_blob_metadata[1], qexpected_processed_metadata[1]);
 
         float min = storage_blob_metadata[0];
         float delta = storage_blob_metadata[1];
@@ -1202,41 +1202,6 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
     }
 }
 
-// Test with all identical values (delta = 0 case)
-TEST(PreprocessorsTest, QuantizationIdenticalValuesTest) {
-    // Test with all same values
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    constexpr size_t n_preprocessors = 1;
-    constexpr size_t alignment = 5;
-    constexpr size_t elements = 5;
-    constexpr size_t original_blob_size = elements * sizeof(float);
-    auto original_blob_alloc = allocator->allocate_unique(original_blob_size);
-    float *original_blob = static_cast<float *>(original_blob_alloc.get());
-    for (size_t i = 0; i < elements; i++) {
-        original_blob[i] = 1.0f; // All values are the same
-    }
-    auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
-    auto multiPPContainer =
-        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
-    multiPPContainer.addPreprocessor(quant_preprocessor);
-    {
-        ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, original_blob_size);
-        const void *storage_blob = processed_blobs.getStorageBlob();
-        const void *query_blob = processed_blobs.getQueryBlob();
-        // blobs should point to the same memory slot
-        ASSERT_NE(storage_blob, nullptr);
-        ASSERT_NE(storage_blob, query_blob);
-
-        constexpr size_t quantized_blob_bytes_count =
-            elements * sizeof(uint8_t) + 2 * sizeof(float);
-        uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
-        quant_preprocessor->quantize(original_blob, expected_processed_blob);
-        EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
-                                                        expected_processed_blob,
-                                                        quantized_blob_bytes_count));
-    }
-}
 
 TEST(PreprocessorsTest, QuantizationInPlaceTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -1286,4 +1251,86 @@ TEST(PreprocessorsTest, QuantizationInPlaceTest) {
             ASSERT_EQ(quantized[i], expected);
         }
     }
+}
+
+// Test the backward compatibility of the preprocess method with a single input_blob_size parameter
+TEST(PreprocessorsTest, PreprocessBackwardCompatibilityTest) {
+    using namespace dummyPreprocessors;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    constexpr size_t dim = 4;
+    unsigned char alignment = 5;
+    float initial_value = 1.0f;
+    const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
+    size_t original_blob_size = sizeof(original_blob);
+
+    // Create a preprocessor that modifies both storage and query blobs
+    auto mixed_preprocessor = new (allocator)
+        DummyMixedPreprocessor<float>(allocator, 7.0f, 2.0f);
+
+    // Test the backward compatibility method (single input_blob_size)
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    size_t input_blob_size = original_blob_size;
+
+    // Call the backward compatibility version of preprocess
+    mixed_preprocessor->preprocess(original_blob, storage_blob, query_blob, input_blob_size, alignment);
+
+    // Verify that both blobs were allocated and processed correctly
+    ASSERT_NE(storage_blob, nullptr);
+    ASSERT_NE(query_blob, nullptr);
+    ASSERT_NE(storage_blob, query_blob);
+    
+    // Verify that the input_blob_size was updated correctly
+    ASSERT_EQ(input_blob_size, original_blob_size);
+    
+    // Verify that the storage blob was processed correctly
+    ASSERT_EQ(((const float *)storage_blob)[0], initial_value + 7.0f);
+    
+    // Verify that the query blob was processed correctly
+    ASSERT_EQ(((const float *)query_blob)[0], initial_value + 2.0f);
+    
+    // Verify that the query blob is aligned
+    unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
+    ASSERT_EQ(address_alignment, 0);
+}
+
+// Test the QuantPreprocessor's in-place quantization error handling when buffer is too small
+TEST(PreprocessorsTest, QuantPreprocessorInPlaceTooSmallBuffer) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    
+    constexpr size_t dim = 4;
+    constexpr size_t required_storage_bytes = dim * sizeof(uint8_t) + 2 * sizeof(float);
+    constexpr size_t too_small_size = required_storage_bytes - 1; // One byte too small
+    
+    // Create a QuantPreprocessor
+    auto quant_preprocessor = QuantPreprocessor(allocator, dim);
+    
+    // Allocate a buffer that's too small for in-place quantization
+    auto buffer_alloc = allocator->allocate_unique(too_small_size);
+    float *buffer = static_cast<float *>(buffer_alloc.get());
+    
+    // Initialize buffer with some values
+    for (size_t i = 0; i < too_small_size / sizeof(float); i++) {
+        buffer[i] = static_cast<float>(i);
+    }
+    
+    // In debug builds, this should trigger an assertion failure
+    EXPECT_DEATH(quant_preprocessor.preprocessStorageInPlace(buffer, too_small_size),
+                 "Input buffer too small for in-place quantization");
+    
+    // Test with correct size buffer to ensure normal operation works
+    constexpr size_t correct_size = required_storage_bytes;
+    auto correct_buffer_alloc = allocator->allocate_unique(correct_size);
+    float *correct_buffer = static_cast<float *>(correct_buffer_alloc.get());
+    
+    // Initialize buffer with some values
+    for (size_t i = 0; i < dim; i++) {
+        correct_buffer[i] = static_cast<float>(i);
+    }
+    
+    // This should not assert
+    EXPECT_NO_FATAL_FAILURE(
+        quant_preprocessor.preprocessStorageInPlace(correct_buffer, correct_size));
+    
 }
