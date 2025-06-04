@@ -258,9 +258,6 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     BFParams bf_params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
 
-    // Validate that memory upon creating the tiered index is as expected (no more than 2%
-    // above te expected, since in different platforms there are some minor additional
-    // allocations).
     size_t expected_mem = TieredFactory::EstimateInitialSize(&tiered_params);
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
     ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
