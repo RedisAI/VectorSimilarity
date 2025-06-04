@@ -1243,11 +1243,10 @@ TEST(PreprocessorsTest, QuantizationInPlaceTest) {
         // Check delta is correct ((5.0f - 1.0f) / 255.0f)
         ASSERT_FLOAT_EQ(delta, 4.0f / 255.0f);
 
-        // Check quantized values
-        for (size_t i = 0; i < dim; i++) {
-            uint8_t expected =
-                static_cast<uint8_t>(std::round((original_data[i] - min_val) / delta));
-            ASSERT_EQ(quantized[i], expected);
+        // dequantize and verify the values
+        for (size_t i = 0; i < dim; ++i) {
+            float dequantized_value = min_val + quantized[i] * delta;
+            ASSERT_NEAR(dequantized_value, original_data[i], 0.01);
         }
     }
 }

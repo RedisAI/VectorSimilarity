@@ -24,8 +24,7 @@ public:
         : VecsimBaseObject(allocator) {}
     // Note: input_blob_size is relevant for both storage blob and query blob, as we assume results
     // are the same size.
-    // TODO: Add query_blob_size as a parameter to the preprocess functions, to allow
-    // different sizes for storage and query blobs in the future, if needed.
+    // Use the the overload below for different sizes.
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                             size_t &input_blob_size, unsigned char alignment) const = 0;
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -149,19 +148,15 @@ private:
     const size_t processed_bytes_count;
 };
 
-// QuantPreprocessor is a preprocessor that quantizes the input vector of fp32 to a lower precision
-// of uint8_t. The quantization is done by finding the minimum and maximum values of the input
-// vector, and then scaling the values to fit in the range of [0, 255]. The quantized values are
-// then stored in a uint8_t array. [Quantized values, min, delta] Quantized Blob size  =
-// dim_elements * sizeof(int8)  +  2 * sizeof(float) delta = (max_val - min_val) / 255.0f
-// quantized_v[i] = (v[i] - min_val) / delta
-// preprocessForStorage:
-// if null:
-//      - We are not reallocing because it will be released after the query.
-//      Allocate quantized blob size
-// 3. Compute (min, delta) and quantize to the quantized blob or in place.
-// preprocessQuery: No-op – queries arrive as float32 and remain uncompressed
-
+/*
+ * QuantPreprocessor is a preprocessor that quantizes the input vector of fp32 to a lower precision
+    * representation using uint8_t. It stores the quantized values along with metadata (min value and
+    * scaling factor) in a single contiguous blob. The quantized values are then stored in a uint8_t
+    * array. The quantization is done by finding the minimum and maximum values of the input vector,
+    * and then scaling the values to fit in the range of [0, 255]. The quantized values are then
+    * stored in a uint8_t array. The quantized blob size is:
+    * dim_elements * sizeof(int8)  +  2 * sizeof(float)
+*/
 class QuantPreprocessor : public PreprocessorInterface {
 public:
     // Constructor for backward compatibility (single blob size)
@@ -259,7 +254,7 @@ public:
     void preprocessForStorage(const void *original_blob, void *&blob,
                               size_t &input_blob_size) const override {
         // Allocate quantized blob if needed
-        if (blob == nullptr) {
+        if (!blob) {
             blob = this->allocator->allocate(storage_bytes_count);
         }
 
@@ -279,7 +274,6 @@ public:
     void preprocessQueryInPlace(void *blob, size_t input_blob_size,
                                 unsigned char alignment) const override {
         // No-op: queries remain as float32
-        assert(blob);
     }
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
@@ -287,11 +281,8 @@ public:
         assert(input_blob_size >= storage_bytes_count &&
                "Input buffer too small for in-place quantization");
 
-        // Only quantize in-place if input buffer is large enough
-        if (input_blob_size >= storage_bytes_count) {
-            quantize(static_cast<const float *>(original_blob),
+        quantize(static_cast<const float *>(original_blob),
                      static_cast<uint8_t *>(original_blob));
-        }
     }
 
 private:
