@@ -253,14 +253,14 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         VecSimQueryReply *compute_current_batch(size_t n_res) {
             // Merge results
             // This call will update `svs_res` and `bf_res` to point to the end of the merged
-            // results. results.
+            // results.
             auto batch_res = new VecSimQueryReply(allocator);
             auto [from_svs, from_flat] =
                 merge_results<false>(batch_res->results, svs_results, flat_results, n_res);
 
             // We're on a single-value index, update the set of results returned from the FLAT index
             // before popping them, to prevent them to be returned from the SVS index in later
-            // batches. batches.
+            // batches.
             for (size_t i = 0; i < from_flat; ++i) {
                 returned_results_set.insert(flat_results[i].id);
             }
@@ -310,10 +310,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                                 VecSimQueryParams *queryParams,
                                 std::shared_ptr<VecSimAllocator> allocator)
             // Tiered batch iterator doesn't hold its own copy of the query vector.
-            // Instead, each internal batch iterators (flat_iterator and hnsw_iterator) create their
-            // own copies: flat_iterator copy is created during TieredHNSW_BatchIterator
-            // construction When TieredHNSW_BatchIterator::getNextResults() is called and
-            // hnsw_iterator is not initialized, it retrieves the blob from flat_iterator
+            // Instead, each internal batch iterators (flat_iterator and svs_iterator) create their
+            // own copies: flat_iterator copy is created during TieredSVS_BatchIterator
+            // construction When TieredSVS_BatchIterator::getNextResults() is called and
+            // svs_iterator is not initialized, it retrieves the blob from flat_iterator
             : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                                   std::move(allocator)),
               index(index), flat_results(this->allocator), svs_results(this->allocator),
@@ -408,8 +408,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         // DISCLAIMER: After the last batch, one of the iterators may report that it is not
         // depleted, while all of its remaining results were already returned from the other
         // iterator. (On single-value indexes, this can happen to the svs iterator only, on
-        // multi-value
-        //  indexes, this can happen to both iterators).
+        // multi-value indexes, this can happen to both iterators).
         // The next call to `getNextResults` will return an empty batch, and then the iterators will
         // correctly report that they are depleted.
         bool isDepleted() override {
