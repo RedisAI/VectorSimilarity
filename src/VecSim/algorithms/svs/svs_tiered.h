@@ -282,11 +282,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         }
 
         void acquire_svs_iterator() {
-            if (svs_iterator == nullptr) {
-                this->index->mainIndexGuard.lock_shared();
-                svs_iterator = index->backendIndex->newBatchIterator(
-                    this->flat_iterator->getQueryBlob(), queryParams);
-            }
+            assert(svs_iterator == nullptr);
+            this->index->mainIndexGuard.lock_shared();
+            svs_iterator = index->backendIndex->newBatchIterator(
+                this->flat_iterator->getQueryBlob(), queryParams);
         }
 
         void release_svs_iterator() {
