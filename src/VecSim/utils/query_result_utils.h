@@ -86,6 +86,10 @@ std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
 }
 
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
+// Use withSet=false if you can guarantee that shared ids between the two lists
+// will also have identical scores. In this case, any duplicates will naturally align
+// at the front of both lists during the merge, so they can be removed without explicitly
+// tracking seen ids — enabling a more efficient merge.
 template <bool withSet>
 VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *second,
                                      size_t limit) {
