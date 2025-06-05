@@ -473,7 +473,21 @@ private:
         }
     }
 
+    /**
+     * @brief Updates the SVS index in a thread-safe manner.
+     *
+     * This static wrapper function performs the following actions:
+     * - Acquires a lock on the index's updateJobMutex to prevent concurrent updates.
+     * - Clears the indexUpdateScheduled flag to allow future scheduling.
+     * - Configures the number of threads for the underlying SVS index update operation.
+     * - Calls the updateSVSIndex method to perform the actual index update.
+     *
+     * @param idx Pointer to the VecSimIndex to be updated.
+     * @param availableThreads The number of threads available for the update operation. Current
+     * thread us used as well, so the minimal value is 1.
+     */
     static void updateSVSIndexWrapper(VecSimIndex *idx, size_t availableThreads) {
+        assert(availableThreads > 0);
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
         // prevent parallel updates
