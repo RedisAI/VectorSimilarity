@@ -2169,9 +2169,9 @@ TEST(SVSTest, quant_modes) {
 
         EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
 
-        std::vector<float[dim]> v(n);
+        std::vector<std::array<float, dim>> v(n);
         for (size_t i = 0; i < n; i++) {
-            GenerateVector<float>(v[i], dim, i);
+            GenerateVector<float>(v[i].data(), dim, i);
         }
 
         std::vector<size_t> ids(n);
@@ -2187,7 +2187,8 @@ TEST(SVSTest, quant_modes) {
         actual = index->getAllocationSize() - actual; // get the delta
         ASSERT_GT(actual, 0);
         // LVQ element size estimation accuracy is low
-        double estimation_accuracy = (quant_bits != VecSimSvsQuant_NONE) ? 0.11 : 0.01;
+        auto quant_bits_fallback = std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits));
+        double estimation_accuracy = (quant_bits_fallback != VecSimSvsQuant_NONE) ? 0.11 : 0.01;
         ASSERT_GE(estimation * (1.0 + estimation_accuracy), actual);
         ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 
