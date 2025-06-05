@@ -155,7 +155,7 @@ private:
  * are then stored in an OUTPUT_TYPE array. The quantization is done by finding the minimum and
  * maximum values of the input vector, and then scaling the values to fit in the range of [0, 255].
  * The quantized blob size is: dim_elements * sizeof(OUTPUT_TYPE)  +  2 * sizeof(float)
-*/
+ */
 class QuantPreprocessor : public PreprocessorInterface {
     using INPUT_TYPE = float;
     using OUTPUT_TYPE = uint8_t;
