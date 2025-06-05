@@ -2267,7 +2267,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX512 with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
 #endif
@@ -2279,7 +2278,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.fma3 = 0;
     }
 #endif
@@ -2291,7 +2289,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(256, dim)) << "AVX with dim " << dim;
         optimization.avx2 = 0;
     }
 #endif
@@ -2303,7 +2300,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "SSE with dim " << dim;
-        // ASSERT_EQ(alignment, expected_alignment(128, dim)) << "SSE with dim " << dim;
         optimization.sse4_1 = 0;
     }
 #endif
@@ -2315,8 +2311,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "SVE2 with dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
-        // Unset sve2 flag as well, so we'll choose the next option (default).
         optimization.sve2 = 0;
     }
 #endif
@@ -2328,8 +2322,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "SVE with dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
-        // Unset sve flag as well, so we'll choose the next option (default).
         optimization.sve = 0;
     }
 #endif
@@ -2341,8 +2333,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "NEON with dim " << dim;
-        ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
-        // Unset optimizations flag, so we'll choose the next optimization.
         optimization.asimd = 0;
     }
 #endif
@@ -2396,8 +2386,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "SVE2 with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "SVE2 with dim " << dim;
         optimization.sve2 = 0;
     }
 #endif
@@ -2409,8 +2397,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "SVE with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "SVE with dim " << dim;
         optimization.sve = 0;
     }
 #endif
@@ -2422,8 +2408,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "NEON with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "NEON with dim " << dim;
         optimization.asimd = 0;
     }
 #endif
@@ -2437,8 +2421,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX512 with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "AVX512 with dim " << dim;
         optimization.avx512f = 0;
     }
 #endif
@@ -2450,8 +2432,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "AVX with dim " << dim;
         optimization.fma3 = 0;
     }
 #endif
@@ -2463,8 +2443,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "AVX with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "AVX with dim " << dim;
         optimization.avx2 = 0;
     }
 #endif
@@ -2477,8 +2455,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_compressed.data(), dim), 0.01)
             << "SSE with dim " << dim;
-        // We don't align SQ8 vectors with cosine distance
-        // ASSERT_EQ(alignment, 0) << "SSE with dim " << dim;
         optimization.sse4_1 = 0;
     }
 #endif

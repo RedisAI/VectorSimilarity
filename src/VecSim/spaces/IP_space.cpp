@@ -70,29 +70,21 @@ dist_func_t<float> IP_SQ8_GetDistFunc(size_t dim, unsigned char *alignment, cons
     }
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vnni) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float); // handles 16 floats
         return Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
 #ifdef OPT_AVX2_FMA
     if (features.avx2 && features.fma3) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float); // handles 16 floats
         return Choose_SQ8_IP_implementation_AVX2_FMA(dim);
     }
 #endif
 #ifdef OPT_AVX2
     if (features.avx2) {
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 8 * sizeof(float); // handles 8 floats
         return Choose_SQ8_IP_implementation_AVX2(dim);
     }
 #endif
 #ifdef OPT_SSE4
     if (features.sse4_1) {
-        if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 4 * sizeof(float); // handles 4 floats
         return Choose_SQ8_IP_implementation_SSE4(dim);
     }
 #endif
@@ -136,29 +128,21 @@ dist_func_t<float> Cosine_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vnni) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float); // handles 16 floats
         return Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
 #ifdef OPT_AVX2_FMA
     if (features.avx2 && features.fma3) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float); // handles 16 floats
         return Choose_SQ8_Cosine_implementation_AVX2_FMA(dim);
     }
 #endif
 #ifdef OPT_AVX2
     if (features.avx2) {
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 8 * sizeof(float); // handles 8 floats
         return Choose_SQ8_Cosine_implementation_AVX2(dim);
     }
 #endif
 #ifdef OPT_SSE4
     if (features.sse4_1) {
-        if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 4 * sizeof(float); // handles 4 floats
         return Choose_SQ8_Cosine_implementation_SSE4(dim);
     }
 #endif
