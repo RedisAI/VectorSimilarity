@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <memory>
 #include <cassert>
+#include <cmath>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
@@ -23,8 +24,12 @@ public:
         : VecsimBaseObject(allocator) {}
     // Note: input_blob_size is relevant for both storage blob and query blob, as we assume results
     // are the same size.
+    // Use the the overload below for different sizes.
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                             size_t &input_blob_size, unsigned char alignment) const = 0;
+    virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                            size_t &storage_blob_size, size_t &query_blob_size,
+                            unsigned char alignment) const = 0;
     virtual void preprocessForStorage(const void *original_blob, void *&storage_blob,
                                       size_t &input_blob_size) const = 0;
     virtual void preprocessQuery(const void *original_blob, void *&query_blob,
@@ -43,6 +48,20 @@ public:
                        size_t processed_bytes_count)
         : PreprocessorInterface(allocator), normalize_func(spaces::GetNormalizeFunc<DataType>()),
           dim(dim), processed_bytes_count(processed_bytes_count) {}
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        // This assert verifies that that the current use of this function is for blobs of the same
+        // size, which is the case for the Cosine preprocessor. If we ever need to support different
+        // sizes for storage and query blobs, we can remove the assert and implement the logic to
+        // handle different sizes.
+        assert(storage_blob_size == query_blob_size);
+
+        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
+        // Ensure both blobs have the same size after processing.
+        query_blob_size = storage_blob_size;
+    }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
@@ -127,4 +146,170 @@ private:
     spaces::normalizeVector_f<DataType> normalize_func;
     const size_t dim;
     const size_t processed_bytes_count;
+};
+
+/*
+ * QuantPreprocessor is a preprocessor that quantizes the input vector of INPUT_TYPE (float) to a
+ * lower precision representation using OUTPUT_TYPE (uint8_t). It stores the quantized values along
+ * with metadata (min value and scaling factor) in a single contiguous blob. The quantized values
+ * are then stored in an OUTPUT_TYPE array. The quantization is done by finding the minimum and
+ * maximum values of the input vector, and then scaling the values to fit in the range of [0, 255].
+ * The quantized blob size is: dim_elements * sizeof(OUTPUT_TYPE)  +  2 * sizeof(float)
+ */
+class QuantPreprocessor : public PreprocessorInterface {
+    using INPUT_TYPE = float;
+    using OUTPUT_TYPE = uint8_t;
+
+public:
+    // Constructor for backward compatibility (single blob size)
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        : PreprocessorInterface(allocator), dim(dim),
+          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) + 2 * sizeof(float)) {
+    } // quantized + min + delta
+
+    // Helper function to perform quantization. This function is used by both preprocess and
+    // preprocessQuery and supports in-place quantization of the storage blob.
+    void quantize(const INPUT_TYPE *input, OUTPUT_TYPE *quantized) const {
+        assert(input && quantized);
+        // Find min and max values
+        auto [min_val, max_val] = find_min_max(input);
+
+        // Calculate scaling factor
+        const float diff = (max_val - min_val);
+        const float delta = diff == 0.0f ? 1.0f : diff / 255.0f;
+        const float inv_delta = 1.0f / delta;
+
+        // Quantize the values
+        for (size_t i = 0; i < this->dim; i++) {
+            quantized[i] = static_cast<OUTPUT_TYPE>(std::round((input[i] - min_val) * inv_delta));
+        }
+
+        float *metadata = reinterpret_cast<float *>(quantized + this->dim);
+
+        // Store min_val, delta, in the metadata
+        metadata[0] = min_val;
+        metadata[1] = delta;
+    }
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &input_blob_size, unsigned char alignment) const override {
+        // For backward compatibility - delegate to the two-size version with identical sizes
+        preprocess(original_blob, storage_blob, query_blob, input_blob_size, input_blob_size,
+                   alignment);
+    }
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        // CASE 1: STORAGE BLOB NEEDS ALLOCATION
+        if (!storage_blob) {
+            // Allocate aligned memory for the quantized storage blob
+            storage_blob = static_cast<OUTPUT_TYPE *>(
+                this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
+
+            // Quantize directly from original data
+            const INPUT_TYPE *input = static_cast<const INPUT_TYPE *>(original_blob);
+            quantize(input, static_cast<OUTPUT_TYPE *>(storage_blob));
+        }
+        // CASE 2: STORAGE BLOB EXISTS
+        else {
+            // CASE 2A: STORAGE AND QUERY SHARE MEMORY
+            if (storage_blob == query_blob) {
+                // Need to allocate a separate storage blob since query remains float32
+                // while storage needs to be quantized
+                void *new_storage =
+                    this->allocator->allocate_aligned(this->storage_bytes_count, alignment);
+
+                // Quantize from the shared blob (query_blob) to the new storage blob
+                quantize(static_cast<const INPUT_TYPE *>(query_blob),
+                         static_cast<OUTPUT_TYPE *>(new_storage));
+
+                // Update storage_blob to point to the new memory
+                storage_blob = new_storage;
+            }
+            // CASE 2B: SEPARATE STORAGE AND QUERY BLOBS
+            else {
+                // Check if storage blob needs resizing
+                if (storage_blob_size < this->storage_bytes_count) {
+                    // Allocate new storage with correct size
+                    OUTPUT_TYPE *new_storage = static_cast<OUTPUT_TYPE *>(
+                        this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
+
+                    // Quantize from old storage to new storage
+                    quantize(static_cast<const INPUT_TYPE *>(storage_blob),
+                             static_cast<OUTPUT_TYPE *>(new_storage));
+
+                    // Free old storage and update pointer
+                    this->allocator->free_allocation(storage_blob);
+                    storage_blob = new_storage;
+                } else {
+                    // Storage blob is large enough, quantize in-place
+                    quantize(static_cast<const INPUT_TYPE *>(storage_blob),
+                             static_cast<OUTPUT_TYPE *>(storage_blob));
+                }
+            }
+        }
+
+        storage_blob_size = this->storage_bytes_count;
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t &input_blob_size) const override {
+        // Allocate quantized blob if needed
+        if (!blob) {
+            blob = this->allocator->allocate(storage_bytes_count);
+        }
+
+        // Cast to appropriate types
+        const INPUT_TYPE *input = static_cast<const INPUT_TYPE *>(original_blob);
+        OUTPUT_TYPE *quantized = static_cast<OUTPUT_TYPE *>(blob);
+        quantize(input, quantized);
+
+        input_blob_size = storage_bytes_count;
+    }
+
+    void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
+                         unsigned char alignment) const override {
+        // No-op: queries remain as float32
+    }
+
+    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
+                                unsigned char alignment) const override {
+        // No-op: queries remain as float32
+    }
+
+    void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
+        assert(original_blob);
+        assert(input_blob_size >= storage_bytes_count &&
+               "Input buffer too small for in-place quantization");
+
+        quantize(static_cast<const INPUT_TYPE *>(original_blob),
+                 static_cast<OUTPUT_TYPE *>(original_blob));
+    }
+
+private:
+    std::pair<float, float> find_min_max(const INPUT_TYPE *input) const {
+        float min_val = input[0];
+        float max_val = input[0];
+
+        size_t i = 1;
+        // Process 4 elements at a time for better performance
+        for (; i + 3 < dim; i += 4) {
+            const float v0 = input[i];
+            const float v1 = input[i + 1];
+            const float v2 = input[i + 2];
+            const float v3 = input[i + 3];
+            min_val = std::min({min_val, v0, v1, v2, v3});
+            max_val = std::max({max_val, v0, v1, v2, v3});
+        }
+        // Handle remaining elements
+        for (; i < dim; i++) {
+            min_val = std::min(min_val, input[i]);
+            max_val = std::max(max_val, input[i]);
+        }
+        return {min_val, max_val};
+    }
+
+    const size_t dim;
+    const size_t storage_bytes_count;
 };
