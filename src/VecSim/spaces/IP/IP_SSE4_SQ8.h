@@ -59,19 +59,16 @@ float SQ8_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVect2v, 
                 v1 = _mm_set_ps(0.0f, pVect1[2], pVect1[1], pVect1[0]);
 
                 // Dequantize and set 3 values
-                v2_dequant = _mm_set_ps(0.0f,
-                                       quantized[2] * delta + min,
-                                       quantized[1] * delta + min,
-                                       quantized[0] * delta + min);
+                v2_dequant = _mm_set_ps(0.0f, quantized[2] * delta + min,
+                                        quantized[1] * delta + min, quantized[0] * delta + min);
 
             } else if constexpr (residual % 4 == 2) {
                 // Set 2 floats and the last two to 0
                 v1 = _mm_set_ps(0.0f, 0.0f, pVect1[1], pVect1[0]);
 
                 // Dequantize and set 2 values
-                v2_dequant = _mm_set_ps(0.0f, 0.0f,
-                                       quantized[1] * delta + min,
-                                       quantized[0] * delta + min);
+                v2_dequant =
+                    _mm_set_ps(0.0f, 0.0f, quantized[1] * delta + min, quantized[0] * delta + min);
 
             } else if constexpr (residual % 4 == 1) {
                 // Set 1 float and the last three to 0
