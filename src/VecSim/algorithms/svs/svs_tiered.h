@@ -554,7 +554,6 @@ private:
         { // lock both indicies for writing - these changes to be synchronized
             std::scoped_lock lock(this->flatIndexGuard, this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
-            svs_index->deleteVectors(labels_to_delete.data(), labels_to_delete.size());
             assert(labels_to_add.size() == vectors_to_add.size() / this->frontendIndex->getDim());
             svs_index->addVectors(vectors_to_add.data(), labels_to_add.data(),
                                   labels_to_add.size());
