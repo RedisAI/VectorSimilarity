@@ -599,14 +599,20 @@ public:
         int ret = 0;
         auto svs_index = GetSVSIndex();
         bool index_update_needed = false;
+        size_t update_threshold = 0;
 
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
+            // It is ok to lock everything at once for in-place mode,
+            // but we will have to unlock averything before calling updateSVSIndexWrapper()
+            // so make the minimal needed lock here.
             std::shared_lock backend_shared_lock(this->mainIndexGuard);
             // Backend index initialization data have to be buffered for proper
             // compression/training.
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index size is 0, first collect vectors in frontend index
+                // lock in scope to ensure that these will be released before
+                // updateSVSIndexWrapper() is called.
                 {
                     std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
                     ret = this->frontendIndex->addVector(blob, label);
@@ -617,11 +623,9 @@ public:
                 }
                 // ... move vectors to the backend index.
                 if (index_update_needed) {
-                    indexUpdateScheduled
-                        .test_and_set(); // set the flag to prevent sceduling of parallel updates
-                    // backend index will be locked in the updateSVSIndexWrapper()
+                    // updateSVSIndexWrapper() accures it's own locks
                     backend_shared_lock.unlock();
-                    // initialize the SVS index synchonously
+                    // initialize the SVS index synchonously using current thread only
                     updateSVSIndexWrapper(this, 1);
                 }
                 return ret;
@@ -638,18 +642,22 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        {
-            std::scoped_lock lock(this->flatIndexGuard, this->mainIndexGuard, this->journal_mutex);
-            ret = this->frontendIndex->addVector(blob, label);
-            ret = std::max(ret - svs_index->deleteVectors(&label, 1), 0);
-            journal.emplace_back(label, true);
-            // If backend index is empty, we need to initialize it with 'trainingTriggerThreshold'
-            // vectors, elsewhere, make sure that update job is scheduled for every one vector
-            // added.
-            index_update_needed = this->backendIndex->indexSize() > 0 ||
-                                  this->journal.size() >= this->trainingTriggerThreshold;
+        {   // Remove vector from the backend index if it exists.
+            std::scoped_lock lock(this->mainIndexGuard);
+            ret -= svs_index->deleteVectors(&label, 1);
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is 1.
+            update_threshold = this->backendIndex->indexSize() == 0
+                                   ? this->trainingTriggerThreshold
+                                   : 1; // schedule update job for every vector added
         }
-
+        {   // Add vector to the frontend index and journal.
+            std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
+            ret = std::max(ret + this->frontendIndex->addVector(blob, label), 0);
+            journal.emplace_back(label, true);
+            // Check frontend index size to determine if an update job schedule is needed.
+            index_update_needed = this->frontendIndex->indexSize() >= update_threshold;
+        }
         if (index_update_needed) {
             scheduleSVSIndexUpdate();
         }
@@ -663,19 +671,24 @@ public:
         // Backend index deletions to be synchronized with the frontend index,
         // elsewhere there is the risk of labels duplication in both indices which can lead to wrong
         // results of topK queries. In such case we should behave as if InPlace mode is always set.
+        bool label_exists = [&]() {
+            std::shared_lock lock(this->flatIndexGuard);
+            return this->frontendIndex->isLabelExists(label);
+        }();
 
-        // Write mode is not synchronized, so it is possible that the vector could be added/updated
-        // in both flat index and backend index in parallel to current thread using different write
-        // modes. To keep data consistency, we have to lock everything at once.
-        std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex, this->mainIndexGuard,
-                              this->updateJobMutex);
-        if (this->frontendIndex->isLabelExists(label)) {
-            ret = this->frontendIndex->deleteVector(label);
-            assert(ret == 1 && "unexpected deleteVector result");
-            journal.emplace_back(label, false);
+        if (label_exists) {
+            std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
+            if (this->frontendIndex->isLabelExists(label)) {
+                ret = this->frontendIndex->deleteVector(label);
+                assert(ret == 1 && "unexpected deleteVector result");
+                journal.emplace_back(label, false);
+            }
         }
-        ret += svs_index->deleteVectors(&label, 1);
-        assert(ret < 2 && "deleteVector: vector duplication in both indices");
+        {
+            std::scoped_lock lock(this->mainIndexGuard);
+            ret += svs_index->deleteVectors(&label, 1);
+        }
+        assert(ret <= 2 && "unexpected deleteVector result");
         return ret;
     }
 
