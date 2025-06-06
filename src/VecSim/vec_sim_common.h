@@ -171,7 +171,8 @@ typedef struct {
 
 // A struct that contains SVS tiered index specific params.
 typedef struct {
-    size_t trainingTriggerThreshold; // The flat index size threshold to trigger the initialization of backend index.
+    size_t trainingTriggerThreshold; // The flat index size threshold to trigger the initialization
+                                     // of backend index.
     size_t updateJobWaitTime; // The time (microseconds) to wait for Redis threads reservation
                               // before executing the scheduled SVS Index update job.
 } TieredSVSParams;
