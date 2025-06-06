@@ -26,6 +26,7 @@ struct LVQSelector<4> {
 };
 } // namespace svs_details
 
+// LVQDataset traits for SVS
 template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
                         std::enable_if_t<(QuantBits > 0)>> {
@@ -75,6 +76,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
     }
 };
 
+// LeanVec dataset traits for SVS
 template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
     using allocator_type = svs_details::SVSAllocator<std::byte>;
@@ -91,8 +93,6 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
         const auto dims = data.dimensions();
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dims));
 
-        // allocator_type data_allocator{std::move(allocator)};
-        // blocked_type blocked_alloc{{svs_bs}, data_allocator};
         allocator_type data_allocator{std::move(allocator)};
         auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
 
@@ -125,7 +125,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
         // SVS distance function may require to fix/pre-process one of arguments
         svs::distance::maybe_fix_argument(dist_f, query);
 
-        // Get the datum from the second LeavVec storage using the storage ID
+        // Get the datum from the second LeanVec storage using the storage ID
         auto datum = storage.get_secondary(id);
         return svs::distance::compute(dist_f, query, datum);
     }
