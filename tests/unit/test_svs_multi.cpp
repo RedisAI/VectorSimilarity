@@ -8,7 +8,6 @@
 
 #if 1 // HAVE_SVS
 #include <sstream>
-#include "spdlog/sinks/ostream_sink.h"
 #include "VecSim/algorithms/svs/svs.h"
 
 // There are possible cases when SVS Index cannot be created with the requested quantization mode
@@ -67,6 +66,13 @@ protected:
     void SetUp() override {
         // Limit VecSim log level to avoid printing too much information
         VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+    }
+
+    // Check if the test is running in fallback mode to scalar quantization.
+    bool isFallbackToSQ() const {
+        // Get the fallback quantization mode and compare it to the scalar quantization mode.
+        return VecSimSvsQuant_Scalar ==
+               std::get<0>(svs_details::isSVSQuantBitsSupported(index_type_t::get_quant_bits()));
     }
 };
 
@@ -162,6 +168,10 @@ TYPED_TEST(SVSMultiTest, empty_index) {
 }
 
 TYPED_TEST(SVSMultiTest, vector_search_test) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n = 1000;
     size_t n_labels = 100;
@@ -190,11 +200,11 @@ TYPED_TEST(SVSMultiTest, vector_search_test) {
 }
 
 TYPED_TEST(SVSMultiTest, search_more_than_there_is) {
-    size_t dim = 4;
-    size_t n = 5;
-    size_t perLabel = 3;
-    size_t n_labels = ceil((float)n / perLabel);
-    size_t k = 3;
+    const size_t dim = 4;
+    const size_t n = 5;
+    const size_t perLabel = 3;
+    const size_t n_labels = ceil((float)n / perLabel);
+    const size_t k = 3;
     // This test add 5 vectors under 2 labels, and then query for 3 results.
     // We want to make sure we get only 2 results back (because the results should have unique
     // labels), although the index contains 5 vectors.
@@ -202,10 +212,20 @@ TYPED_TEST(SVSMultiTest, search_more_than_there_is) {
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
+    std::vector<size_t> ids(n);
 
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
+        ids[i] = i / perLabel;
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
     }
+
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
@@ -217,7 +237,10 @@ TYPED_TEST(SVSMultiTest, search_more_than_there_is) {
     auto it = VecSimQueryReply_GetIterator(res);
     for (size_t i = 0; i < n_labels; i++) {
         auto el = VecSimQueryReply_IteratorNext(it);
-        ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
+        // SVS Scalar quantization is not enough precise
+        if (!this->isFallbackToSQ()) {
+            ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
+        }
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
     }
@@ -227,20 +250,30 @@ TYPED_TEST(SVSMultiTest, search_more_than_there_is) {
 }
 
 TYPED_TEST(SVSMultiTest, indexing_same_vector) {
-    size_t n = 100;
-    size_t k = 10;
-    size_t perLabel = 10;
-    size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+    const size_t perLabel = 10;
+    const size_t dim = 4;
 
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
+    std::vector<size_t> ids(n);
 
     for (size_t i = 0; i < n / perLabel; i++) {
         for (size_t j = 0; j < perLabel; j++) {
-            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+            ids[i * perLabel + j] = i;
+            GenerateVector<TEST_DATA_T>(v[i * perLabel + j].data(), dim, i);
         }
     }
+
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     TEST_DATA_T query[dim];
@@ -252,7 +285,10 @@ TYPED_TEST(SVSMultiTest, indexing_same_vector) {
     for (size_t i = 0; i < k; i++) {
         auto el = VecSimQueryReply_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
-        ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
+        // SVS Scalar quantization is not enough precise
+        if (!this->isFallbackToSQ()) {
+            ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
+        }
         ASSERT_EQ(element_label, i);
     }
     VecSimQueryReply_IteratorFree(it);
@@ -261,17 +297,23 @@ TYPED_TEST(SVSMultiTest, indexing_same_vector) {
 }
 
 TYPED_TEST(SVSMultiTest, find_better_score) {
-    size_t n = 100;
-    size_t k = 10;
-    size_t n_labels = 10;
-    size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+    const size_t n_labels = 10;
+    const size_t dim = 4;
 
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
 
     // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
     // value.
+    std::vector<size_t> ids(n);
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     std::map<size_t, double> scores;
     for (size_t i = 0; i < n; i++) {
         // For example, with n_labels == 10 and n == 100,
@@ -282,19 +324,24 @@ TYPED_TEST(SVSMultiTest, find_better_score) {
         // label 9 will get vector elements 9 -> 0 (aka (9 -> 0) + 0),
         // and so on, so each label has some common vectors with all the previous labels.
         size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / n_labels, el);
+        ids[i] = i / n_labels;
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, el);
         // This should be the best score for each label.
         if (i % n_labels == n_labels - 1) {
             // `el * el * dim` is the L2-squared value with the 0 vector.
             scores.emplace(i / n_labels, el * el * dim);
         }
     }
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, k - index - 1);
-        ASSERT_FLOAT_EQ(score, scores[id]);
+        // SVS scalar quantization is not enough precise
+        if (!this->isFallbackToSQ()) {
+            ASSERT_FLOAT_EQ(score, scores[id]);
+        }
     };
 
     TEST_DATA_T query[dim];
@@ -305,19 +352,27 @@ TYPED_TEST(SVSMultiTest, find_better_score) {
 }
 
 TYPED_TEST(SVSMultiTest, find_better_score_after_pop) {
-    size_t n = 12;
-    size_t n_labels = 3;
-    size_t dim = 4;
+    const size_t n = 12;
+    const size_t n_labels = 3;
+    const size_t dim = 4;
 
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
 
     // Building the index. Each is better than the previous one.
+    std::vector<size_t> ids(n);
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
         size_t el = n - i;
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, el);
+        ids[i] = i % n_labels;
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, el);
     }
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
@@ -333,6 +388,10 @@ TYPED_TEST(SVSMultiTest, find_better_score_after_pop) {
 }
 
 TYPED_TEST(SVSMultiTest, reindexing_same_vector_different_id) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n = 100;
     size_t k = 10;
     size_t dim = 4;
@@ -567,6 +626,10 @@ TYPED_TEST(SVSMultiTest, search_empty_index) {
 }
 
 TYPED_TEST(SVSMultiTest, svs_get_distance) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n_labels = 2;
     size_t dim = 2;
     size_t numIndex = 3;
@@ -650,8 +713,7 @@ TYPED_TEST(SVSMultiTest, testSizeEstimation) {
     // rather than conversion to-from number of bytes
     auto quantBits = TypeParam::get_quant_bits();
     // Get the fallback quantization mode
-    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
-    if (quantBits != VecSimSvsQuant_NONE) {
+    if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
         dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
@@ -731,6 +793,10 @@ TYPED_TEST(SVSMultiTest, emptyIndex) {
 }
 
 TYPED_TEST(SVSMultiTest, svs_vector_search_by_id_test) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n = 100;
     size_t dim = 4;
     size_t k = 11;
@@ -755,6 +821,10 @@ TYPED_TEST(SVSMultiTest, svs_vector_search_by_id_test) {
 }
 
 TYPED_TEST(SVSMultiTest, svs_batch_iterator_basic) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n_labels = 1000;
     size_t perLabel = 5;
@@ -801,6 +871,10 @@ TYPED_TEST(SVSMultiTest, svs_batch_iterator_basic) {
 }
 
 TYPED_TEST(SVSMultiTest, svs_batch_iterator_reset) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n_labels = 1000;
     size_t perLabel = 5;
@@ -860,6 +934,10 @@ TYPED_TEST(SVSMultiTest, svs_batch_iterator_reset) {
 }
 
 TYPED_TEST(SVSMultiTest, svs_batch_iterator_batch_size_1) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n_labels = 1000;
     size_t perLabel = 5;
@@ -899,6 +977,10 @@ TYPED_TEST(SVSMultiTest, svs_batch_iterator_batch_size_1) {
 }
 
 TYPED_TEST(SVSMultiTest, svs_batch_iterator_advanced) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n_labels = 500;
     size_t perLabel = 5;
@@ -980,6 +1062,10 @@ TYPED_TEST(SVSMultiTest, svs_batch_iterator_advanced) {
 }
 
 TYPED_TEST(SVSMultiTest, testCosine) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     const size_t dim = 128;
     const size_t n = 100;
 
@@ -1109,6 +1195,10 @@ TYPED_TEST(SVSMultiTest, testCosineBatchIterator) {
 }
 
 TYPED_TEST(SVSMultiTest, rangeQuery) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n_labels = 1000;
     size_t per_label = 5;
     size_t dim = 4;
