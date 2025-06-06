@@ -48,7 +48,7 @@ if(USE_SVS)
     endif()
 
     cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND" OFF)
-    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250423.tar.gz" CACHE STRING "SVS URL")
+    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250505.tar.gz" CACHE STRING "SVS URL")
 
     if(SVS_SHARED_LIB)
         include(FetchContent)

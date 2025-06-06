@@ -179,7 +179,7 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
-    // Assume all floats have same cases
+    // Assume all non-quant floats have same initial size
     // Assume quantBits>0 cases have same sizes
     est += (params->quantBits == 0) ? sizeof(SVSIndex<svs::distance::DistanceL2, float, 0>)
                                     : sizeof(SVSIndex<svs::distance::DistanceL2, float, 8>);
@@ -192,7 +192,7 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 
 // This is a temporary solution to avoid breaking the build when SVS is not available
 // and to allow the code to compile without SVS support.
-// TODO: remove HAVE_SVS when SVS will support all Redis platfoms and compilers
+// TODO: remove HAVE_SVS when SVS will support all Redis platforms and compilers
 #else  // HAVE_SVS
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
