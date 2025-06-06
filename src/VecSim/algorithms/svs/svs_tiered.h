@@ -641,7 +641,7 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        {   // Remove vector from the backend index if it exists.
+        { // Remove vector from the backend index if it exists.
             std::scoped_lock lock(this->mainIndexGuard);
             ret -= svs_index->deleteVectors(&label, 1);
             // If main index is empty then update_threshold is trainingTriggerThreshold,
@@ -650,7 +650,7 @@ public:
                                    ? this->trainingTriggerThreshold
                                    : 1; // schedule update job for every vector added
         }
-        {   // Add vector to the frontend index and journal.
+        { // Add vector to the frontend index and journal.
             std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
             ret = std::max(ret + this->frontendIndex->addVector(blob, label), 0);
             journal.emplace_back(label, true);
