@@ -38,6 +38,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Print CPU information
+        run: |
+          echo "=== CPU Information ==="
+          if command -v lscpu >/dev/null 2>&1; then
+            echo "--- lscpu output ---"
+            lscpu
+          else
+            echo "--- Fallback CPU info ---"
+            cat /proc/cpuinfo 2>/dev/null || echo "CPU info not available"
+          fi
+          echo "Runner OS: $RUNNER_OS"
+          echo "Runner Architecture: ${{ runner.arch }}"
+          echo "========================"
       - name: install dependencies
         run: sudo .install/install_script.sh
       - name: run codecov
