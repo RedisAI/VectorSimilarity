@@ -61,17 +61,17 @@ float SQ8_L2SqrSIMD16_SSE4(const void *pVect1v, const void *pVect2v, size_t dime
                 v1 = _mm_set_ps(0.0f, pVect1[2], pVect1[1], pVect1[0]);
 
                 // Dequantize and set 3 values
-                v2_dequant = _mm_set_ps(0.0f, quantized[2] * delta + min_val,
-                                                  quantized[1] * delta + min_val, quantized[0] * delta + min_val);
+                v2_dequant =
+                    _mm_set_ps(0.0f, quantized[2] * delta + min_val, quantized[1] * delta + min_val,
+                               quantized[0] * delta + min_val);
 
             } else if constexpr (residual % 4 == 2) {
                 // Set 2 floats and the last two to 0
                 v1 = _mm_set_ps(0.0f, 0.0f, pVect1[1], pVect1[0]);
 
                 // Dequantize and set 2 valuesAdd commentMore actions
-                v2_dequant = _mm_set_ps(0.0f, 0.0f,
-                                       quantized[1] * delta + min_val,
-                                       quantized[0] * delta + min_val);
+                v2_dequant = _mm_set_ps(0.0f, 0.0f, quantized[1] * delta + min_val,
+                                        quantized[0] * delta + min_val);
 
             } else if constexpr (residual % 4 == 1) {
                 // Set 1 float and the last three to 0Add commentMore actions
