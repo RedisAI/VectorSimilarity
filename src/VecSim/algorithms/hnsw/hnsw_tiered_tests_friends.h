@@ -64,6 +64,7 @@ INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTestBasic_deleteInplaceMultiSwapId_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTestBasic_deleteInplaceAvoidUpdatedMarkedDeleted_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTestBasic_switchDeleteModes_Test)
 
+friend class CommonAPITest_SearchDifferentScores_Test;
 friend class BF16TieredTest;
 friend class FP16TieredTest;
 friend class INT8TieredTest;

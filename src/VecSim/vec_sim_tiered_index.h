@@ -65,7 +65,8 @@ protected:
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 jobs.size());
     }
-
+#ifdef BUILD_TESTS
+public:
     // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
     // two lists will also have identical scores. In this case, any duplicates will naturally align
     // at the front of both lists during the merge, so they can be removed without explicitly
@@ -79,6 +80,7 @@ protected:
                                     VecSimQueryParams *queryParams,
                                     VecSimQueryReply_Order order) const;
 
+#endif
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,

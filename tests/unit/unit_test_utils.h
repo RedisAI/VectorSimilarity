@@ -135,14 +135,20 @@ VecSimQueryParams CreateQueryParams(const SVSRuntimeParams &RuntimeParams);
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
 inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2); }
-void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_res_num,
-                       std::function<void(size_t, double, size_t)> ResCB,
-                       VecSimQueryParams *params = nullptr,
-                       VecSimQueryReply_Order order = BY_SCORE);
+
+void validateTopKSearchTest(VecSimIndex *index, VecSimQueryReply *res, size_t k,
+                            std::function<void(size_t, double, size_t)> ResCB);
+
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
                        VecSimQueryReply_Order order = BY_SCORE);
+
+template <bool withSet, typename data_t, typename dist_t>
+void runTopKTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
+                                  size_t k, std::function<void(size_t, double, size_t)> ResCB,
+                                  VecSimQueryParams *params = nullptr,
+                                  VecSimQueryReply_Order order = BY_SCORE);
 
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(size_t, double, size_t)> ResCB,
@@ -166,6 +172,13 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);
+
+template <bool withSet, typename data_t = float, typename dist_t = float>
+void runRangeTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
+                                   double radius,
+                                   const std::function<void(size_t, double, size_t)> &ResCB,
+                                   size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
+                                   VecSimQueryParams *params = nullptr);
 
 size_t getLabelsLookupNodeSize();
 
