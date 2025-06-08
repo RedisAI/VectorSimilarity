@@ -25,7 +25,7 @@ struct ElementLevelData {
     idType links[];
 
     explicit ElementLevelData(std::shared_ptr<VecSimAllocator> allocator)
-        : incomingUnidirectionalEdges(new (allocator) vecsim_stl::vector<idType>(allocator)),
+        : incomingUnidirectionalEdges(new(allocator) vecsim_stl::vector<idType>(allocator)),
           numLinks(0) {}
 
     linkListSize getNumLinks() const { return this->numLinks; }

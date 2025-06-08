@@ -735,8 +735,7 @@ TEST(CommonAPITest, SearchDifferentScores) {
         ASSERT_EQ(score, expected_results_by_score[res_index].second);
     };
 
-    runTopKTieredIndexSearchTest<true>(tiered_index, query_0, k, verify_by_score, nullptr,
-                                       BY_SCORE);
+    runTopKTieredIndexSearchTest<true>(tiered_index, query_0, k, verify_by_score, nullptr);
     // Reset score tracking for range query
     prev_score = 0;
     // Use the largest score as the range to include all vectors

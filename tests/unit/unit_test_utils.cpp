@@ -103,7 +103,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
 template <bool withSet, typename data_t, typename dist_t>
 void runTopKTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
                                   size_t k, std::function<void(size_t, double, size_t)> ResCB,
-                                  VecSimQueryParams *params, VecSimQueryReply_Order order) {
+                                  VecSimQueryParams *params) {
     ASSERT_NE(index, nullptr);
     VecSimQueryReply *res = index->template topKQueryImp<withSet>(query, k, params);
     validateTopKSearchTest(index, res, k, ResCB);
@@ -112,11 +112,7 @@ void runTopKTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, cons
 // Explicit template instantiations for float, float
 template void runTopKTieredIndexSearchTest<true, float, float>(
     VecSimTieredIndex<float, float> *, const void *, size_t,
-    std::function<void(size_t, double, size_t)>, VecSimQueryParams *, VecSimQueryReply_Order);
-
-template void runTopKTieredIndexSearchTest<false, float, float>(
-    VecSimTieredIndex<float, float> *, const void *, size_t,
-    std::function<void(size_t, double, size_t)>, VecSimQueryParams *, VecSimQueryReply_Order);
+    std::function<void(size_t, double, size_t)>, VecSimQueryParams *);
 
 /*
  * helper function to run batch search iteration, and iterate over the results. ResCB is a callback
@@ -172,8 +168,7 @@ void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2) {
  */
 void validateRangeQueryTest(VecSimQueryReply *res,
                             const std::function<void(size_t, double, size_t)> &ResCB,
-                            size_t expected_res_num, VecSimQueryReply_Order order,
-                            VecSimQueryParams *params) {
+                            size_t expected_res_num) {
 
     EXPECT_EQ(VecSimQueryReply_Len(res), expected_res_num);
     EXPECT_TRUE(allUniqueResults(res));
@@ -196,7 +191,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        VecSimQueryParams *params) {
     VecSimQueryReply *res =
         VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
-    validateRangeQueryTest(res, ResCB, expected_res_num, order, params);
+    validateRangeQueryTest(res, ResCB, expected_res_num);
 }
 
 template <bool withSet, typename data_t, typename dist_t>
@@ -207,7 +202,7 @@ void runRangeTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, con
                                    VecSimQueryParams *params) {
 
     VecSimQueryReply *res = index->template rangeQueryImp<withSet>(query, radius, params, order);
-    validateRangeQueryTest(res, ResCB, expected_res_num, order, params);
+    validateRangeQueryTest(res, ResCB, expected_res_num);
 }
 
 // Explicit template instantiations for float, float
