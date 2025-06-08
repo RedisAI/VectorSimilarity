@@ -71,9 +71,7 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
         log_file << log_entry << std::endl;
         log_file.close();
     }
-    
-    // Always output to console for visibility
-    std::cerr << log_entry << std::endl;
+
 }
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
