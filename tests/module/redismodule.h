@@ -855,10 +855,10 @@ RedisModuleString *(*RedisModule_HoldString)(RedisModuleCtx *ctx,
 REDISMODULE_API int (*RedisModule_StringCompare)(RedisModuleString *a,
                                                  RedisModuleString *b) REDISMODULE_ATTR;
 REDISMODULE_API RedisModuleCtx *(*RedisModule_GetContextFromIO)(RedisModuleIO *io)REDISMODULE_ATTR;
-REDISMODULE_API const
-    RedisModuleString *(*RedisModule_GetKeyNameFromIO)(RedisModuleIO *io)REDISMODULE_ATTR;
-REDISMODULE_API const
-    RedisModuleString *(*RedisModule_GetKeyNameFromModuleKey)(RedisModuleKey *key)REDISMODULE_ATTR;
+REDISMODULE_API const RedisModuleString *(*RedisModule_GetKeyNameFromIO)(RedisModuleIO *io)
+    REDISMODULE_ATTR;
+REDISMODULE_API const RedisModuleString *(*RedisModule_GetKeyNameFromModuleKey)(RedisModuleKey *key)
+    REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromModuleKey)(RedisModuleKey *key) REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromIO)(RedisModuleIO *io) REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromOptCtx)(RedisModuleKeyOptCtx *ctx) REDISMODULE_ATTR;
@@ -874,8 +874,8 @@ REDISMODULE_API void (*RedisModule_DigestAddLongLong)(RedisModuleDigest *md,
                                                       long long ele) REDISMODULE_ATTR;
 REDISMODULE_API void (*RedisModule_DigestEndSequence)(RedisModuleDigest *md) REDISMODULE_ATTR;
 REDISMODULE_API int (*RedisModule_GetDbIdFromDigest)(RedisModuleDigest *dig) REDISMODULE_ATTR;
-REDISMODULE_API const
-    RedisModuleString *(*RedisModule_GetKeyNameFromDigest)(RedisModuleDigest *dig)REDISMODULE_ATTR;
+REDISMODULE_API const RedisModuleString *(*RedisModule_GetKeyNameFromDigest)(RedisModuleDigest *dig)
+    REDISMODULE_ATTR;
 REDISMODULE_API RedisModuleDict *(*RedisModule_CreateDict)(RedisModuleCtx *ctx)REDISMODULE_ATTR;
 REDISMODULE_API void (*RedisModule_FreeDict)(RedisModuleCtx *ctx,
                                              RedisModuleDict *d) REDISMODULE_ATTR;
