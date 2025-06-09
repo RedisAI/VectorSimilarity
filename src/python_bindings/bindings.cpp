@@ -763,12 +763,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("reset", &PyBatchIterator::reset);
 
     m.def("set_log_context", [](const std::string& context) {
-        // Store the context in a global or static variable that your logging function can access
-        static std::string current_context;
-        current_context = context;
-        
-        // You might need to set up a way for the Vecsim_Log function to access this
-        // For example, by setting a global pointer or using a singleton
-//         VecSim_SetLogContext(current_context.c_str());
+        // Call the C++ function to set the global context
+        VecSim_SetLogContext(context.c_str());
     }, "Set the context (test name) for logging");
 }

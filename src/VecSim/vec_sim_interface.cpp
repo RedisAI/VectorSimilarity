@@ -16,10 +16,17 @@
 #include <filesystem>
 
 // Global variable to store the current log context
+static std::string g_log_context_str;
 static const char* g_log_context = nullptr;
 
-void VecSim_SetLogContext(const char* context) {
-    g_log_context = context;
+extern "C" void VecSim_SetLogContext(const char* context) {
+    if (context) {
+        g_log_context_str = std::string(context);
+        g_log_context = g_log_context_str.c_str();
+    } else {
+        g_log_context_str.clear();
+        g_log_context = nullptr;
+    }
 }
 
 // writes the logs to a file
@@ -42,29 +49,16 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
     
     // Use provided context or fall back to global context
     const char* log_context = ctx ? static_cast<const char*>(ctx) : g_log_context;
-    
-    // Default log path if no context is provided
-    std::string log_path = "logs/tests/flow/vecsim.log";
-    
-    if (log_context && strlen(log_context) > 0) {
-        std::string context_str(log_context);
-        
-        // Extract just the filename without extension from the full path
-        size_t last_slash = context_str.find_last_of("/\\");
-        size_t filename_start = (last_slash == std::string::npos) ? 0 : last_slash + 1;
-        
-        size_t extension_pos = context_str.find_last_of(".");
-        std::string filename;
-        
-        if (extension_pos != std::string::npos && extension_pos > filename_start) {
-            filename = context_str.substr(filename_start, extension_pos - filename_start);
-        } else {
-            filename = context_str.substr(filename_start);
-        }
-        
-        log_path = "logs/tests/flow/" + filename + ".log";
+
+    // If no context is provided, don't log to avoid creating unwanted files
+    if (!log_context || strlen(log_context) == 0) {
+        return;
     }
-    
+
+    std::string context_str(log_context);
+    // Use the context directly as the filename (it should be like "test_hnsw.py_test_serialization")
+    std::string log_path = "logs/tests/flow/" + context_str + ".log";
+
     // Write to file
     std::ofstream log_file(log_path, std::ios::app);
     if (log_file.is_open()) {

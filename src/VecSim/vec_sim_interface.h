@@ -217,3 +217,14 @@ public:
     virtual void fitMemory() = 0;
 #endif
 };
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Function to set log context for logging
+void VecSim_SetLogContext(const char* context);
+
+#ifdef __cplusplus
+}
+#endif

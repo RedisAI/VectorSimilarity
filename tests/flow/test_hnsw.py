@@ -70,7 +70,7 @@ def test_sanity_hnswlib_index_cosine():
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
 # deterministic, but should be above a certain threshold. Note that recall is highly impacted by changing
 # index parameters.
-def test_recall_for_hnswlib_index_with_deletion():
+def test_recall_for_hnswlib_index_with_deletion(test_logger):
     dim = 16
     num_elements = 10000
     M = 16
@@ -113,11 +113,11 @@ def test_recall_for_hnswlib_index_with_deletion():
 
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert (recall > 0.9)
 
 
-def test_batch_iterator():
+def test_batch_iterator(test_logger):
     dim = 100
     num_elements = 100000
     M = 26
@@ -197,8 +197,7 @@ def test_batch_iterator():
         recall = float(correct) / total_res
         assert recall >= 0.89
         total_recall += recall
-    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
-          total_recall / num_queries)
+    test_logger.info(f'Avg recall for {total_res} results in index of size {num_elements} with dim={dim} is: {total_recall / num_queries}')
 
     # Run again a single query in batches until it is depleted.
     batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
@@ -212,7 +211,7 @@ def test_batch_iterator():
         assert len(accumulated_labels.intersection(set(labels[0]))) == 0
         accumulated_labels = accumulated_labels.union(set(labels[0]))
     assert len(accumulated_labels) >= 0.95 * num_elements
-    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+    test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
 def test_serialization():
