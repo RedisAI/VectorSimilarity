@@ -9,7 +9,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
-static inline void L2SquareStep(float *&pVect1, float *&pVect2, size_t &offset, svfloat32_t &sum) {
+static inline void L2SquareStep(float *&pVect1, float *&pVect2, size_t &offset, svfloat32_t &sum,
+                                const size_t chunk) {
     // Load vectors
     svfloat32_t v1 = svld1_f32(svptrue_b32(), pVect1 + offset);
     svfloat32_t v2 = svld1_f32(svptrue_b32(), pVect2 + offset);
@@ -21,7 +22,7 @@ static inline void L2SquareStep(float *&pVect1, float *&pVect2, size_t &offset, 
     sum = svmla_f32_z(svptrue_b32(), sum, diff, diff);
 
     // Advance pointers by the vector length
-    offset += svcntw();
+    offset += chunk;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -31,7 +32,7 @@ float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
     size_t offset = 0;
 
     // Get the number of 32-bit elements per vector at runtime
-    uint64_t sve_word_count = svcntw();
+    uint64_t chunk = svcntw();
 
     // Multiple accumulators to increase instruction-level parallelism
     svfloat32_t sum0 = svdup_f32(0.0f);
@@ -40,27 +41,27 @@ float FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimens
     svfloat32_t sum3 = svdup_f32(0.0f);
 
     // Process vectors in chunks, with unrolling for better pipelining
-    auto chunk_size = 4 * sve_word_count;
+    auto chunk_size = 4 * chunk;
     size_t number_of_chunks = dimension / chunk_size;
     for (size_t i = 0; i < number_of_chunks; ++i) {
         // Process 4 chunks with separate accumulators
-        L2SquareStep(pVect1, pVect2, offset, sum0);
-        L2SquareStep(pVect1, pVect2, offset, sum1);
-        L2SquareStep(pVect1, pVect2, offset, sum2);
-        L2SquareStep(pVect1, pVect2, offset, sum3);
+        L2SquareStep(pVect1, pVect2, offset, sum0, chunk);
+        L2SquareStep(pVect1, pVect2, offset, sum1, chunk);
+        L2SquareStep(pVect1, pVect2, offset, sum2, chunk);
+        L2SquareStep(pVect1, pVect2, offset, sum3, chunk);
     }
 
     // Process remaining complete SVE vectors that didn't fit into the main loop
     // These are full vector operations (0-3 elements)
     if constexpr (additional_steps > 0) {
         if constexpr (additional_steps >= 1) {
-            L2SquareStep(pVect1, pVect2, offset, sum0);
+            L2SquareStep(pVect1, pVect2, offset, sum0, chunk);
         }
         if constexpr (additional_steps >= 2) {
-            L2SquareStep(pVect1, pVect2, offset, sum1);
+            L2SquareStep(pVect1, pVect2, offset, sum1, chunk);
         }
         if constexpr (additional_steps >= 3) {
-            L2SquareStep(pVect1, pVect2, offset, sum2);
+            L2SquareStep(pVect1, pVect2, offset, sum2, chunk);
         }
     }
 
