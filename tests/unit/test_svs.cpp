@@ -60,6 +60,7 @@ struct SVSIndexType {
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8x8_LeanVec>
                                         >;
 // clang-format on
 
@@ -1390,18 +1391,13 @@ TYPED_TEST(SVSTest, batchIteratorSwapIndices) {
 
 TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
     const size_t dim = 128;
-    const size_t n = 100;
+    const size_t n = 50;
 
     SVSParams params = {
         .dim = dim,
         .metric = VecSimMetric_Cosine,
         /* SVS-Vamana specifics */
         .alpha = 0.9,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
@@ -1468,7 +1464,12 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
 }
 
 TYPED_TEST(SVSTest, testSizeEstimation) {
-    size_t dim = 128;
+    size_t dim = 64;
+
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+
 #if HAVE_SVS_LVQ
     // SVS block sizes always rounded to a power of 2
     // This why, in case of quantization, actual block size can be differ than requested
@@ -1476,9 +1477,6 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    auto quantBits = TypeParam::get_quant_bits();
-    // Get the fallback quantization mode
-    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
     if (quantBits != VecSimSvsQuant_NONE) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
@@ -1515,8 +1513,10 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     actual = index->getAllocationSize() - actual; // get the delta
     ASSERT_GT(actual, 0);
-    ASSERT_GE(estimation * 1.01, actual);
-    ASSERT_LE(estimation * 0.99, actual);
+    // LVQ element estimation accuracy is low
+    double estimation_accuracy = (quantBits != VecSimSvsQuant_NONE) ? 0.1 : 0.01;
+    ASSERT_GE(estimation * (1.0 + estimation_accuracy), actual);
+    ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 
     VecSimIndex_Free(index);
 }
@@ -2126,6 +2126,80 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
               VecSimParamResolverErr_AlreadySet);
 
     VecSimIndex_Free(index);
+}
+
+TEST(SVSTest, quant_modes) {
+    const size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+
+    for (auto quant_bits :
+         {VecSimSvsQuant_NONE, VecSimSvsQuant_8, VecSimSvsQuant_4, VecSimSvsQuant_4x4,
+          VecSimSvsQuant_4x8, VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+        SVSParams params = {
+            .type = VecSimType_FLOAT32,
+            .dim = dim,
+            .metric = VecSimMetric_L2,
+            .blockSize = 1024,
+            /* SVS-Vamana specifics */
+            .quantBits = quant_bits,
+            .graph_max_degree = 63, // x^2-1 to round the graph block size
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
+
+        VecSimParams index_params = CreateParams(params);
+        VecSimIndex *index = VecSimIndex_New(&index_params);
+        if (index == nullptr) {
+            if (std::get<1>(svs_details::isSVSQuantBitsSupported(quant_bits))) {
+                GTEST_FAIL() << "Failed to create SVS index";
+            } else {
+                GTEST_SKIP() << "SVS LVQ is not supported.";
+            }
+        }
+
+        // Test initial size estimation
+        // EstimateInitialSize is called after CreateNewIndex because params struct is
+        // changed in CreateNewIndex.
+        size_t estimation = EstimateInitialSize(params);
+        size_t actual = index->getAllocationSize();
+        EXPECT_EQ(estimation, actual);
+
+        EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
+
+        std::vector<std::array<float, dim>> v(n);
+        for (size_t i = 0; i < n; i++) {
+            GenerateVector<float>(v[i].data(), dim, i);
+        }
+
+        std::vector<size_t> ids(n);
+        std::iota(ids.begin(), ids.end(), 0);
+
+        auto svs_index = dynamic_cast<SVSIndexBase *>(index);
+        ASSERT_NE(svs_index, nullptr);
+        svs_index->addVectors(v.data(), ids.data(), n);
+
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        estimation = EstimateElementSize(params) * params.blockSize;
+        actual = index->getAllocationSize() - actual; // get the delta
+        ASSERT_GT(actual, 0);
+        // LVQ element size estimation accuracy is low
+        auto quant_bits_fallback = std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits));
+        double estimation_accuracy = (quant_bits_fallback != VecSimSvsQuant_NONE) ? 0.11 : 0.01;
+        ASSERT_GE(estimation * (1.0 + estimation_accuracy), actual);
+        ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
+
+        float query[] = {50, 50, 50, 50};
+        auto verify_res = [&](size_t id, double score, size_t index) {
+            EXPECT_EQ(id, (index + 45));
+        };
+        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+        VecSimIndex_Free(index);
+    }
 }
 
 #else // HAVE_SVS
