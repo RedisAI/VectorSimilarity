@@ -118,7 +118,7 @@ private:
                                                   // be destroyed before this job is started
         JobsRegistry *jobsRegistry;
 
-        static void Execute_impl(AsyncJob *job) {
+        static void ExecuteReserveThreadImpl(AsyncJob *job) {
             auto *jobPtr = static_cast<ReserveThreadJob *>(job);
             // if control block is already destroyed by the update job, just delete the job
             auto controlBlock = jobPtr->controlBlock.lock();
@@ -132,7 +132,7 @@ private:
         ReserveThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
                          VecSimIndex *index, std::weak_ptr<ControlBlock> controlBlock,
                          JobsRegistry *registry)
-            : AsyncJob(std::move(allocator), jobType, Execute_impl, index),
+            : AsyncJob(std::move(allocator), jobType, ExecuteReserveThreadImpl, index),
               controlBlock(std::move(controlBlock)), jobsRegistry(registry) {}
     };
 
@@ -141,7 +141,7 @@ private:
     std::shared_ptr<ControlBlock> controlBlock;
     JobsRegistry *jobsRegistry;
 
-    static void Execute_impl(AsyncJob *job) {
+    static void ExecuteMultiThreadJobImpl(AsyncJob *job) {
         auto *jobPtr = static_cast<SVSMultiThreadJob *>(job);
         auto controlBlock = jobPtr->controlBlock;
         size_t num_threads = 1;
@@ -159,8 +159,9 @@ private:
     SVSMultiThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
                       task_type callback, VecSimIndex *index,
                       std::shared_ptr<ControlBlock> controlBlock, JobsRegistry *registry)
-        : AsyncJob(std::move(allocator), jobType, Execute_impl, index), task(std::move(callback)),
-          controlBlock(std::move(controlBlock)), jobsRegistry(registry) {}
+        : AsyncJob(std::move(allocator), jobType, ExecuteMultiThreadJobImpl, index),
+          task(std::move(callback)), controlBlock(std::move(controlBlock)), jobsRegistry(registry) {
+    }
 
 public:
     template <typename Rep, typename Period>
@@ -207,7 +208,11 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     size_t updateJobWaitTime;
     std::vector<journal_record> journal;
     std::shared_mutex journal_mutex;
+    // Used to prevent scheduling multiple index update jobs at the same time.
+    // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
+    // Used to prevent running multiple index update jobs in parallel.
+    // Even if update jobs scheduled sequentially, they can be started in parallel.
     std::mutex updateJobMutex;
 
     // The reason of following container just to properly destroy jobs which not executed yet
@@ -453,6 +458,9 @@ public:
 private:
     void TakeSnapshot(std::set<labelType> *to_delete, std::set<labelType> *to_add) {
         std::vector<journal_record> journal_snapshot;
+        // Reserve space for journal to avoid it's reallocation.
+        // We reserve twice the trainingTriggerThreshold to ensure we have enough space for both
+        // additions and deletions, as the journal can contain both types of records.
         journal_snapshot.reserve(this->trainingTriggerThreshold * 2);
 
         { // Get current journal and replace with empty
@@ -510,7 +518,7 @@ public:
 
         auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
         auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, HNSW_INSERT_VECTOR_JOB, updateSVSIndexWrapper, this, total_threads,
+            this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
@@ -519,9 +527,10 @@ private:
     void updateSVSIndex() {
         std::set<labelType> to_delete;
         std::set<labelType> to_add;
+        // Take a snapshot of the journal to determine which vectors to delete and add.
+        // std::set inserting might be pretty expensive, so minimize locks at this moment
         TakeSnapshot(&to_delete, &to_add);
 
-        std::vector<labelType> labels_to_delete;
         std::vector<labelType> labels_to_add;
         std::vector<DataType> vectors_to_add;
 
@@ -531,14 +540,13 @@ private:
             auto flat_index = this->GetFlatIndex();
             const size_t dim = flat_index->getDim();
 
-            // Update snapshot to sync with current frontend index status
+            // Update snapshot to sync with current frontend index status could me changed
+            // since first call to TakeSnapshot()
             TakeSnapshot(&to_delete, &to_add);
 
-            labels_to_delete.reserve(to_delete.size());
             labels_to_add.reserve(to_add.size());
             vectors_to_add.reserve(to_add.size() * dim);
 
-            labels_to_delete.insert(labels_to_delete.end(), to_delete.begin(), to_delete.end());
             labels_to_add.insert(labels_to_add.end(), to_add.begin(), to_add.end());
             for (auto label : labels_to_add) {
                 if (this->frontendIndex->isLabelExists(label)) {
@@ -551,21 +559,20 @@ private:
             }
         } // release frontend index
 
-        { // lock both indicies for writing - these changes to be synchronized
-            std::scoped_lock lock(this->flatIndexGuard, this->mainIndexGuard);
+        { // lock backend index for writing and add vectors there
+            std::scoped_lock lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_add.size() == vectors_to_add.size() / this->frontendIndex->getDim());
             svs_index->addVectors(vectors_to_add.data(), labels_to_add.data(),
                                   labels_to_add.size());
-
-            // clean-up frontend index
-            { // avoid deleting vectors updated/modified in the meantime
-                std::shared_lock<std::shared_mutex> journal_lock{this->journal_mutex};
-                for (auto &p : this->journal) {
-                    to_add.erase(p.first);
-                }
+        }
+        // clean-up frontend index
+        { // lock frontend index for writing and delete moved vectors
+            std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
+            // avoid deleting vectors from frontend which are updated/modified in the meantime
+            for (auto &p : this->journal) {
+                to_add.erase(p.first);
             }
-
             // delete vectors from the frontend index
             size_t deleted = 0;
             for (auto &label : to_add) {
@@ -582,10 +589,10 @@ public:
         : Base(svs_index, bf_index, tiered_index_params, allocator),
           trainingTriggerThreshold(
               tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold == 0
-                  ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
+                  ? SVS_DEFAULT_TRAINING_THRESHOLD
                   : std::min(
                         tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold,
-                        MAX_PENDING_SWAP_JOBS_THRESHOLD)),
+                        SVS_MAX_TRAINING_THRESHOLD)),
           updateJobWaitTime(
               tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
                   ? 1000 // default wait time: 1ms
@@ -597,8 +604,8 @@ public:
     int addVector(const void *blob, labelType label) override {
         int ret = 0;
         auto svs_index = GetSVSIndex();
-        bool index_update_needed = false;
         size_t update_threshold = 0;
+        size_t frontend_index_size = 0;
 
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
@@ -617,11 +624,10 @@ public:
                     ret = this->frontendIndex->addVector(blob, label);
                     journal.emplace_back(label, true);
                     // If frontend size exceeds the update job threshold, ...
-                    index_update_needed =
-                        this->frontendIndex->indexSize() >= this->trainingTriggerThreshold;
+                    frontend_index_size = this->frontendIndex->indexSize();
                 }
                 // ... move vectors to the backend index.
-                if (index_update_needed) {
+                if (frontend_index_size >= this->trainingTriggerThreshold) {
                     // updateSVSIndexWrapper() accures it's own locks
                     backend_shared_lock.unlock();
                     // initialize the SVS index synchonously using current thread only
@@ -655,9 +661,10 @@ public:
             ret = std::max(ret + this->frontendIndex->addVector(blob, label), 0);
             journal.emplace_back(label, true);
             // Check frontend index size to determine if an update job schedule is needed.
-            index_update_needed = this->frontendIndex->indexSize() >= update_threshold;
+            frontend_index_size = this->frontendIndex->indexSize();
         }
-        if (index_update_needed) {
+
+        if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
         }
 
@@ -722,10 +729,10 @@ public:
         }
 
         // Try to get the distance from the Main index.
-        auto hnsw_dist = this->backendIndex->getDistanceFrom_Unsafe(label, blob);
+        auto svs_dist = this->backendIndex->getDistanceFrom_Unsafe(label, blob);
 
         // Return the minimum distance that is not NaN.
-        return std::fmin(flat_dist, hnsw_dist);
+        return std::fmin(flat_dist, svs_dist);
     }
 
     VecSimIndexDebugInfo debugInfo() const override {

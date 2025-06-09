@@ -24,6 +24,12 @@
 #include <string>
 #include <utility>
 
+// NOTE: optimal training threshold may depend on the SVSIndex compression mode.
+// it might be good to implement an utility to compute default threshold based on index parameters
+constexpr size_t SVS_DEFAULT_TRAINING_THRESHOLD = 10240; // 10K vectors
+// Maximum training threshold for SVS index, used to limit the size of training data
+constexpr size_t SVS_MAX_TRAINING_THRESHOLD = 102400; // 100K vectors
+
 namespace svs_details {
 // VecSim->SVS data type conversion
 template <typename T>

@@ -162,7 +162,7 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
 
     SVSMultiThreadJob::JobsRegistry registry(allocator);
     // Request 4 threads but just 1 thread is available
-    auto jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+    auto jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, update_job_mock,
                                               tiered_index, 4, timeout, &registry);
     ASSERT_EQ(jobs.size(), 4);
     tiered_index->submitJobs(jobs);
@@ -178,21 +178,21 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Request and run exact number of available threads
-    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+    jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, update_job_mock,
                                          tiered_index, num_threads, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     ASSERT_EQ(num_reserved_threads, num_threads);
 
     // Request and run 1 thread
-    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+    jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, update_job_mock,
                                          tiered_index, 1, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
     ASSERT_EQ(num_reserved_threads, 1);
 
     // Request and run less threads than available
-    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+    jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, update_job_mock,
                                          tiered_index, num_threads - 1, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
@@ -200,7 +200,7 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     ASSERT_EQ(num_reserved_threads, num_threads - 1);
 
     // Request more threads than available
-    jobs = SVSMultiThreadJob::createJobs(allocator, HNSW_INSERT_VECTOR_JOB, update_job_mock,
+    jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, update_job_mock,
                                          tiered_index, num_threads + 1, timeout, &registry);
     tiered_index->submitJobs(jobs);
     mock_thread_pool.thread_pool_wait();
@@ -312,7 +312,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     // Execute the insert job manually (in a synchronous manner).
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
     auto *insertion_job = mock_thread_pool.jobQ.front().job;
-    ASSERT_EQ(insertion_job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(insertion_job->jobType, SVS_BATCH_UPDATE_JOB);
 
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 1);
@@ -731,10 +731,8 @@ TYPED_TEST(SVSTieredIndexTest, manageIndexOwnership) {
     };
 
     std::atomic_int successful_executions(0);
-    auto job1 =
-        new (allocator) AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
-    auto job2 =
-        new (allocator) AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
+    auto job1 = new (allocator) AsyncJob(allocator, SVS_BATCH_UPDATE_JOB, dummy_job, tiered_index);
+    auto job2 = new (allocator) AsyncJob(allocator, SVS_BATCH_UPDATE_JOB, dummy_job, tiered_index);
 
     // Wrap this job with an array and submit the jobs to the queue.
     tiered_index->submitSingleJob(job1);
@@ -908,6 +906,22 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertSearch) {
 
 TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     size_t dim = 128;
+#if HAVE_SVS_LVQ
+    // SVS block sizes always rounded to a power of 2
+    // This why, in case of quantization, actual block size can be differ than requested
+    // In addition, block size to be passed to graph and dataset counted in bytes,
+    // converted then to a number of elements.
+    // IMHO, would be better to always interpret block size to a number of elements
+    // rather than conversion to-from number of bytes
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+    if (quantBits != VecSimSvsQuant_NONE) {
+        // Extra data in LVQ vector
+        const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
+        dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
+    }
+#endif
     size_t n = DEFAULT_BLOCK_SIZE;
     size_t graph_degree = 31; // power of 2 - 1
     size_t bs = DEFAULT_BLOCK_SIZE;
@@ -916,16 +930,13 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
         .type = TypeParam::get_index_type(),
         .dim = dim,
         .metric = VecSimMetric_L2,
+        .blockSize = bs,
         .graph_max_degree = graph_degree,
     };
     VecSimParams vecsim_svs_params = CreateParams(svs_params);
 
     auto mock_thread_pool = tieredIndexMock();
-    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
-                                       .jobQueueCtx = mock_thread_pool.ctx,
-                                       .submitCb = tieredIndexMock::submit_callback,
-                                       .flatBufferLimit = SIZE_MAX,
-                                       .primaryIndexParams = &vecsim_svs_params};
+    auto tiered_params = this->CreateTieredSVSParams(vecsim_svs_params, mock_thread_pool, n);
     VecSimParams params = CreateParams(tiered_params);
     auto *index = VecSimIndex_New(&params);
     mock_thread_pool.ctx->index_strong_ref.reset(index);
@@ -1871,7 +1882,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     // Validate that jobs were created properly - first job should be invalid after overwrite,
     // the second should be a pending insert job.
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_BATCH_UPDATE_JOB);
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, true);
     mock_thread_pool.thread_iteration();
 
