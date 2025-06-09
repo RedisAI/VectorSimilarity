@@ -64,7 +64,7 @@ class IndexCtx:
         self.data = self.create_data_func(data_shape)
         if self.data_type in self.array_conversion_func.keys():
             self.data = self.array_conversion_func[self.data_type](self.data)
-        print("data type = ", self.data.dtype)
+        # Note: data type logging moved to test functions that use this class
         assert self.data.dtype == self.type_to_dtype[self.data_type]
 
         self.hnsw_params = create_hnsw_params(dim = self.dim,
@@ -141,8 +141,9 @@ class IndexCtx:
         }
         return bytes_to_mega(self.num_vectors * self.dim * memory_size[self.data_type])
 
-def create_tiered_index(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
+def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
     indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label, data_type=data_type, create_data_func=create_data_func)
+    test_logger.info(f"data type = {indices_ctx.data.dtype}")
     num_elements = indices_ctx.num_labels
 
     index = indices_ctx.tiered_index
@@ -156,21 +157,21 @@ def create_tiered_index(is_multi: bool, num_per_label=1, data_type=VecSimType_FL
     assert index.hnsw_label_count() == num_elements
 
     # Measure insertion to tiered index.
-    print(f"Insert {num_elements} vectors into the flat buffer took {round_ms(bf_dur)} ms")
-    print(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num}"
-          f" threads took {round_ms(tiered_index_time)} ms")
+    test_logger.info(f"Insert {num_elements} vectors into the flat buffer took {round_ms(bf_dur)} ms")
+    test_logger.info(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num}"
+                     f" threads took {round_ms(tiered_index_time)} ms")
 
     # Measure total memory of the tiered index.
     tiered_memory = bytes_to_mega(index.index_memory())
 
-    print(f"total memory of tiered index = {tiered_memory} MB")
+    test_logger.info(f"total memory of tiered index = {tiered_memory} MB")
 
     hnsw_index = HNSWIndex(indices_ctx.hnsw_params)
     _, hnsw_index_time, _ = indices_ctx.populate_index(hnsw_index)
 
-    print(f"Insert {num_elements} vectors directly to HNSW index (one by one) took {round_(hnsw_index_time)} s")
+    test_logger.info(f"Insert {num_elements} vectors directly to HNSW index (one by one) took {round_(hnsw_index_time)} s")
     hnsw_memory = bytes_to_mega(hnsw_index.index_memory())
-    print(f"total memory of hnsw index = {hnsw_memory} MB")
+    test_logger.info(f"total memory of hnsw index = {hnsw_memory} MB")
 
     # The index memory should be at least as the total memory of the vectors.
     assert hnsw_memory > indices_ctx.get_vectors_memory_size()
@@ -178,10 +179,10 @@ def create_tiered_index(is_multi: bool, num_per_label=1, data_type=VecSimType_FL
     # Tiered index memory should be greater than HNSW index memory.
     assert tiered_memory > hnsw_memory
     execution_time_ratio = hnsw_index_time / tiered_index_time
-    print(f"with {threads_num} threads, insertion runtime is {round_(execution_time_ratio)} times better \n")
+    test_logger.info(f"with {threads_num} threads, insertion runtime is {round_(execution_time_ratio)} times better")
 
 
-def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
+def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
     data_size = 100000
     indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
                            flat_buffer_size=data_size, M=64, data_type=data_type, create_data_func=create_data_func)
@@ -189,7 +190,7 @@ def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32,
 
     num_labels = indices_ctx.num_labels
 
-    print(f'''Insert total of {num_labels} {indices_ctx.data.dtype} vectors of dim = {indices_ctx.dim},
+    test_logger.info(f'''Insert total of {num_labels} {indices_ctx.data.dtype} vectors of dim = {indices_ctx.dim},
           {num_per_label} vectors in each label. Total labels = {num_labels}''')
 
     query_data = indices_ctx.generate_queries(num_queries=1)
@@ -208,11 +209,11 @@ def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32,
     prev_bf_size = num_labels
     cur_hnsw_label_count = index.hnsw_label_count()
     if cur_hnsw_label_count == num_labels:
-        print("All vectors were already indexed into HNSW - cannot test search while indexing")
+        test_logger.info("All vectors were already indexed into HNSW - cannot test search while indexing")
         assert False
 
-    print("Start running queries while indexing is done in the background")
-    print(f"HNSW labels number = {cur_hnsw_label_count}")
+    test_logger.info("Start running queries while indexing is done in the background")
+    test_logger.info(f"HNSW labels number = {cur_hnsw_label_count}")
     while cur_hnsw_label_count < num_labels:
         # For each run get the current hnsw size and the query time.
         bf_curr_size = index.get_curr_bf_size()
@@ -221,10 +222,10 @@ def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32,
         query_dur = time.time() - query_start
         total_tiered_search_time += query_dur
 
-        print(f"query time = {round_ms(query_dur)} ms")
+        test_logger.info(f"query time = {round_ms(query_dur)} ms")
 
         # BF size should decrease.
-        print(f"bf size = {bf_curr_size}")
+        test_logger.info(f"bf size = {bf_curr_size}")
         assert bf_curr_size < prev_bf_size
 
         # Run the query also in the bf index to get the ground truth results.
@@ -238,62 +239,62 @@ def search_insert(is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32,
     # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
     index.wait_for_index(1)
     index_dur = time.time() - index_start
-    print(f"Indexing during searching in the tiered index took {round_(index_dur)} s")
+    test_logger.info(f"Indexing during searching in the tiered index took {round_(index_dur)} s")
 
     # Measure recall.
     recall = float(correct)/(k*searches_number)
-    print("Average recall is:", round_(recall, 3))
-    print("tiered query per seconds: ", round_(searches_number/total_tiered_search_time))
+    test_logger.info(f"Average recall is: {round_(recall, 3)}")
+    test_logger.info(f"tiered query per seconds: {round_(searches_number/total_tiered_search_time)}")
 
 
-def test_create_tiered():
-    print("\nTest create tiered hnsw index")
-    create_tiered_index(is_multi=False)
+def test_create_tiered(test_logger):
+    test_logger.info("Test create tiered hnsw index")
+    create_tiered_index(test_logger, is_multi=False)
 
-def test_create_multi():
-    print("Test create multi label tiered hnsw index")
-    create_tiered_index(is_multi=True, num_per_label=5)
+def test_create_multi(test_logger):
+    test_logger.info("Test create multi label tiered hnsw index")
+    create_tiered_index(test_logger, is_multi=True, num_per_label=5)
 
-def test_create_bf16():
-    print("Test create BFLOAT16 tiered hnsw index")
-    create_tiered_index(is_multi=False, data_type=VecSimType_BFLOAT16)
+def test_create_bf16(test_logger):
+    test_logger.info("Test create BFLOAT16 tiered hnsw index")
+    create_tiered_index(test_logger, is_multi=False, data_type=VecSimType_BFLOAT16)
 
-def test_create_fp16():
-    print("Test create FLOAT16 tiered hnsw index")
-    create_tiered_index(is_multi=False, data_type=VecSimType_FLOAT16)
+def test_create_fp16(test_logger):
+    test_logger.info("Test create FLOAT16 tiered hnsw index")
+    create_tiered_index(test_logger, is_multi=False, data_type=VecSimType_FLOAT16)
 
-def test_create_int8():
-    print("Test create INT8 tiered hnsw index")
-    create_tiered_index(is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
+def test_create_int8(test_logger):
+    test_logger.info("Test create INT8 tiered hnsw index")
+    create_tiered_index(test_logger, is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
 
-def test_create_uint8():
-    print("Test create UINT8 tiered hnsw index")
-    create_tiered_index(is_multi=False, data_type=VecSimType_UINT8, create_data_func=create_uint8_vectors)
+def test_create_uint8(test_logger):
+    test_logger.info("Test create UINT8 tiered hnsw index")
+    create_tiered_index(test_logger, is_multi=False, data_type=VecSimType_UINT8, create_data_func=create_uint8_vectors)
 
-def test_search_insert():
-    print(f"\nStart insert & search test")
-    search_insert(is_multi=False)
+def test_search_insert(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False)
 
-def test_search_insert_bf16():
-    print(f"\nStart insert & search test")
-    search_insert(is_multi=False, data_type=VecSimType_BFLOAT16)
+def test_search_insert_bf16(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_BFLOAT16)
 
-def test_search_insert_fp16():
-    print(f"\nStart insert & search test")
-    search_insert(is_multi=False, data_type=VecSimType_FLOAT16)
+def test_search_insert_fp16(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16)
 
-def test_search_insert_int8():
-    print(f"\nStart insert & search test")
-    search_insert(is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
+def test_search_insert_int8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_INT8, create_data_func=create_int8_vectors)
 
-def test_search_insert_uint8():
-    print(f"\nStart insert & search test")
-    search_insert(is_multi=False, data_type=VecSimType_UINT8, create_data_func=create_uint8_vectors)
+def test_search_insert_uint8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_UINT8, create_data_func=create_uint8_vectors)
 
-def test_search_insert_multi_index():
-    print(f"\nStart insert & search test for multi index")
+def test_search_insert_multi_index(test_logger):
+    test_logger.info("Start insert & search test for multi index")
 
-    search_insert(is_multi=True, num_per_label=5)
+    search_insert(test_logger, is_multi=True, num_per_label=5)
 
 # In this test we insert the vectors one by one to the tiered index (call wait_for_index after each add vector)
 # We expect to get the same index as if we were inserting the vector to the sync hnsw index.
