@@ -65,6 +65,21 @@ protected:
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 jobs.size());
     }
+#ifdef BUILD_TESTS
+public:
+#endif
+    // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
+    // two lists will also have identical scores. In this case, any duplicates will naturally align
+    // at the front of both lists during the merge, so they can be removed without explicitly
+    // tracking seen ids — enabling a more efficient merge.
+    template <bool WithSet>
+    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
+                                   VecSimQueryParams *queryParams) const;
+
+    template <bool WithSet>
+    VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
+                                    VecSimQueryParams *queryParams,
+                                    VecSimQueryReply_Order order) const;
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
@@ -116,10 +131,12 @@ public:
     }
 #endif
 };
+
 template <typename DataType, typename DistType>
+template <bool withSet>
 VecSimQueryReply *
-VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                                 VecSimQueryParams *queryParams) const {
+VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -163,12 +180,20 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
             return main_results;
         }
 
-        // Merge the results and return, avoiding duplicates.
-        if (this->backendIndex->isMultiValue()) {
-            return merge_result_lists<true>(main_results, flat_results, k);
-        } else {
-            return merge_result_lists<false>(main_results, flat_results, k);
-        }
+        return merge_result_lists<withSet>(main_results, flat_results, k);
+    }
+}
+template <typename DataType, typename DistType>
+VecSimQueryReply *
+VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                                 VecSimQueryParams *queryParams) const {
+    if (this->backendIndex->isMultiValue()) {
+        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
+    } else {
+        // Calling with withSet=false for optimized performance, assuming that shared IDs across
+        // lists also have identical scores — in which case duplicates are implicitly avoided by the
+        // merge logic.
+        return this->topKQueryImp<false>(queryBlob, k, queryParams);
     }
 }
 
@@ -177,6 +202,23 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
+    if (this->backendIndex->isMultiValue()) {
+        return this->rangeQueryImp<true>(queryBlob, radius, queryParams,
+                                         order); // Multi-value index
+    } else {
+        // Calling with withSet=false for optimized performance, assuming that shared IDs across
+        // lists also have identical scores — in which case duplicates are implicitly avoided by the
+        // merge logic.
+        return this->rangeQueryImp<false>(queryBlob, radius, queryParams, order);
+    }
+}
+
+template <typename DataType, typename DistType>
+template <bool withSet>
+VecSimQueryReply *
+VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryReply_Order order) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -225,12 +267,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryReply *ret;
-            if (this->backendIndex->isMultiValue()) {
-                ret = merge_result_lists<true>(main_results, flat_results, -1);
-            } else {
-                ret = merge_result_lists<false>(main_results, flat_results, -1);
-            }
+            VecSimQueryReply *ret = merge_result_lists<withSet>(main_results, flat_results, -1);
             // Restore the return code and return.
             ret->code = code;
             return ret;
@@ -238,11 +275,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         } else { // BY_ID
             // Notice that we don't modify the return code of the main index in any step.
             concat_results(main_results, flat_results);
-            if (this->backendIndex->isMultiValue()) {
-                filter_results_by_id<true>(main_results);
-            } else {
-                filter_results_by_id<false>(main_results);
-            }
+            filter_results_by_id<withSet>(main_results);
             return main_results;
         }
     }
