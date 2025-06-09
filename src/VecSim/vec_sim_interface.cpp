@@ -55,8 +55,6 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
     }
 
     std::string context_str(log_context);
-    // Use the context directly as the filename (it should be like
-    // "test_hnsw.py_test_serialization")
     std::string log_path = "logs/tests/flow/" + context_str + ".log";
 
     // Write to file
