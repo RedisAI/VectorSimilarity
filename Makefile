@@ -199,7 +199,7 @@ endif
 flow_test:
 	$(SHOW)poetry install $(POETRY_ARGS)
 	$(SHOW)mkdir -p logs/tests/flow
-	$(SHOW)poetry run pytest tests/flow/$(TEST) -v -s --log-file=logs/tests/flow/$(TEST).log
+	$(SHOW)poetry run pytest tests/flow/$(TEST) -v -s
 
 .PHONY: flow_test
 
