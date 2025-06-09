@@ -223,7 +223,7 @@ extern "C" {
 #endif
 
 // Function to set log context for logging
-void VecSim_SetLogContext(const char* context);
+void VecSim_SetLogContext(const char *context);
 
 #ifdef __cplusplus
 }

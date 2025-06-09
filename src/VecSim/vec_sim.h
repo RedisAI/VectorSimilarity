@@ -246,7 +246,7 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
  *
  * @param context A string context that will be used for logging purposes.
  */
-void VecSim_SetLogContext(const char* context);
+void VecSim_SetLogContext(const char *context);
 
 /**
  * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
