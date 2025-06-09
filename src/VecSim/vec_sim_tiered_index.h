@@ -67,6 +67,7 @@ protected:
     }
 #ifdef BUILD_TESTS
 public:
+#endif
     // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
     // two lists will also have identical scores. In this case, any duplicates will naturally align
     // at the front of both lists during the merge, so they can be removed without explicitly
@@ -80,7 +81,6 @@ public:
                                     VecSimQueryParams *queryParams,
                                     VecSimQueryReply_Order order) const;
 
-#endif
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,

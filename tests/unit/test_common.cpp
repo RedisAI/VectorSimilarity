@@ -714,9 +714,11 @@ TEST(CommonAPITest, SearchDifferentScores) {
 
     // ID 54: closer in HNSW, farther in flat — expect to return HNSW version
     GenerateAndAddVector<float>(hnsw_index, dim, ids[0], res_values[0]);
-    GenerateAndAddVector<float>(flat_index, dim, ids[0], 4);
-    GenerateAndAddVector<float>(hnsw_index, dim, ids[1], 5);
+    GenerateAndAddVector<float>(flat_index, dim, ids[0], res_values[0] + 1);
+
+    // ID 4: closer in flat, farther in HNSW — expect to return flat version
     GenerateAndAddVector<float>(flat_index, dim, ids[1], res_values[1]);
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[1], res_values[1] + 1);
 
     // ID 15: identical in both indices — distance is large, should still return one instance
     GenerateAndAddVector<float>(hnsw_index, dim, ids[2], res_values[2]);
