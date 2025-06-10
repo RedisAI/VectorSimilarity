@@ -38,10 +38,10 @@ jobs:
         run: sudo .install/install_script.sh
       - name: install python packages
         run: pip3 install -r requirements.txt
-      # - name: check format
-      #   run: make check-format
-      # - name: unit tests
-      #   run: make unit_test
+      - name: check format
+        run: make check-format
+      - name: unit tests
+        run: make unit_test
       - name: flow tests
         run: make flow_test VERBOSE=1
             # Using version 4 if node20 is supported, since it is MUCH faster (15m vs 25s)
