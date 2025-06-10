@@ -60,7 +60,7 @@ def test_sanity_bf(test_logger):
         assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
         test_logger.info(f"sanity test for {test_data.metric} and {test_data.type} pass")
 
-def test_bf_cosine():
+def test_bf_cosine(test_logger):
     dim = 128
     num_elements = 1000000
     k=10
@@ -89,7 +89,7 @@ def test_bf_cosine():
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
     end = time.time()
-    logger.info(f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)

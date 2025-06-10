@@ -114,14 +114,6 @@ def setup_test_logging(request):
     logger.info(f"=== Finished test: {test_name} ===")
     file_handler.close()
     logger.removeHandler(file_handler)
-    
-    # # Reset the log context
-    # try:
-    #     from VecSim import set_log_context
-    #     set_log_context("")
-    # except (ImportError, AttributeError):
-    #     print("VecSim logging context reset failed, likely not imported.")
-
 
 @pytest.fixture
 def test_logger(setup_test_logging):
