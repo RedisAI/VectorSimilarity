@@ -214,7 +214,7 @@ def test_batch_iterator(test_logger):
     test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
-def test_serialization():
+def test_serialization(test_logger):
     dim = 16
     num_elements = 10000
     M = 16
@@ -253,7 +253,7 @@ def test_serialization():
                     break
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
 
     # Persist, delete and restore index.
     file_name = os.getcwd() + "/dump"
@@ -276,11 +276,11 @@ def test_serialization():
 
     # Compare recall after reloading the index
     recall_after = float(correct_after) / (k * num_queries)
-    print("\nrecall after is: \n", recall_after)
+    test_logger.info(f"recall after is: {recall_after}")
     assert recall == recall_after
 
 
-def test_range_query():
+def test_range_query(test_logger):
     dim = 100
     num_elements = 100000
     epsilon = 0.01
@@ -311,8 +311,8 @@ def test_range_query():
         dists = sorted([(key, spatial.distance.sqeuclidean(query_data.flat, vec)) for key, vec in vectors])
         actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
-        print(
-            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+        test_logger.info(
+            f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
@@ -329,7 +329,7 @@ def test_range_query():
     assert len(hnsw_labels[0]) == 0
 
 
-def test_recall_for_hnsw_multi_value():
+def test_recall_for_hnsw_multi_value(test_logger):
     dim = 16
     num_labels = 1000
     num_per_label = 16
@@ -380,11 +380,11 @@ def test_recall_for_hnsw_multi_value():
 
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert (recall > 0.9)
 
 
-def test_multi_range_query():
+def test_multi_range_query(test_logger):
     dim = 100
     num_labels = 20000
     per_label = 5
@@ -423,8 +423,8 @@ def test_multi_range_query():
         end = time.time()
         res_num = len(hnsw_labels[0])
 
-        print(
-            f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+        test_logger.info(
+            f'lookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(keys)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
@@ -466,7 +466,7 @@ class TestBfloat16():
     num_queries = 10
     query_data = vec_to_bfloat16(rng.random((num_queries, dim)))
 
-    def test_serialization(self):
+    def test_serialization(self, test_logger):
         hnsw_index = self.hnsw_index
         k = 10
 
@@ -488,7 +488,7 @@ class TestBfloat16():
                         break
         # Measure recall
         recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
 
         # Persist, delete and restore index.
         file_name = os.getcwd() + "/dump"
@@ -512,10 +512,10 @@ class TestBfloat16():
 
         # Compare recall after reloading the index
         recall_after = float(correct_after) / (k * self.num_queries)
-        print("\nrecall after is: \n", recall_after)
+        test_logger.info(f"recall after is: {recall_after}")
         assert recall == recall_after
 
-    def test_bfloat16_L2(self):
+    def test_bfloat16_L2(self, test_logger):
         hnsw_index = self.hnsw_index
         k = 10
 
@@ -533,7 +533,7 @@ class TestBfloat16():
 
         # Measure recall
         recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
         assert (recall > 0.9)
 
     def test_batch_iterator(self):
@@ -566,7 +566,7 @@ class TestBfloat16():
         # Verify that accuracy is worse with the new lower ef_runtime.
         assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
 
-    def test_range_query(self):
+    def test_range_query(self, test_logger):
         index = self.hnsw_index
 
         radius = 7.0
@@ -583,8 +583,8 @@ class TestBfloat16():
             dists = sorted([(key, spatial.distance.sqeuclidean(self.query_data[0], vec)) for key, vec in self.vectors])
             actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
-            print(
-                f'\nlookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            test_logger.info(
+                f'lookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
                 f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
             # Compare the number of vectors that are actually within the range to the returned results.
@@ -600,7 +600,7 @@ class TestBfloat16():
         hnsw_labels, hnsw_distances = index.range_query(self.query_data[0], radius=0)
         assert len(hnsw_labels[0]) == 0
 
-def test_hnsw_bfloat16_multi_value():
+def test_hnsw_bfloat16_multi_value(test_logger):
     num_labels = 1_000
     num_per_label = 5
     num_elements = num_labels * num_per_label
@@ -650,7 +650,7 @@ def test_hnsw_bfloat16_multi_value():
 
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert (recall > 0.9)
 
 class TestFloat16():
@@ -676,7 +676,7 @@ class TestFloat16():
     num_queries = 10
     query_data = vec_to_float16(rng.random((num_queries, dim)))
 
-    def test_serialization(self):
+    def test_serialization(self, test_logger):
         hnsw_index = self.hnsw_index
         k = 10
 
@@ -698,7 +698,7 @@ class TestFloat16():
                         break
         # Measure recall
         recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
 
         # Persist, delete and restore index.
         file_name = os.getcwd() + "/dump"
@@ -722,10 +722,10 @@ class TestFloat16():
 
         # Compare recall after reloading the index
         recall_after = float(correct_after) / (k * self.num_queries)
-        print("\nrecall after is: \n", recall_after)
+        test_logger.info(f"recall after is: {recall_after}")
         assert recall == recall_after
 
-    def test_float16_L2(self):
+    def test_float16_L2(self, test_logger):
         hnsw_index = self.hnsw_index
         k = 10
 
@@ -743,7 +743,7 @@ class TestFloat16():
 
         # Measure recall
         recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
         assert (recall > 0.9)
 
     def test_batch_iterator(self):
@@ -776,7 +776,7 @@ class TestFloat16():
         # Verify that accuracy is worse with the new lower ef_runtime.
         assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
 
-    def test_range_query(self):
+    def test_range_query(self, test_logger):
         index = self.hnsw_index
 
         radius = 7.0
@@ -793,8 +793,8 @@ class TestFloat16():
             dists = sorted([(key, spatial.distance.sqeuclidean(self.query_data[0], vec)) for key, vec in self.vectors])
             actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
-            print(
-                f'\nlookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            test_logger.info(
+                f'lookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
                 f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
             # Compare the number of vectors that are actually within the range to the returned results.
@@ -810,7 +810,7 @@ class TestFloat16():
         hnsw_labels, hnsw_distances = index.range_query(self.query_data[0], radius=0)
         assert len(hnsw_labels[0]) == 0
 
-def test_hnsw_float16_multi_value():
+def test_hnsw_float16_multi_value(test_logger):
     num_labels = 1_000
     num_per_label = 5
     num_elements = num_labels * num_per_label
@@ -860,7 +860,7 @@ def test_hnsw_float16_multi_value():
 
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert (recall > 0.9)
 
 '''
@@ -927,7 +927,7 @@ class GeneralTest():
         return correct
 
     @classmethod
-    def knn(cls, hnsw_index, label_vec_list, dist_func):
+    def knn(cls, hnsw_index, label_vec_list, dist_func, test_logger):
         k = 10
 
         correct = 0
@@ -939,10 +939,10 @@ class GeneralTest():
 
         # Measure recall
         recall = recall = float(correct) / (k * cls.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
         assert (recall > 0.9)
 
-    def test_serialization(self):
+    def test_serialization(self, test_logger):
         assert self.data_type is not None
         hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
         k = 10
@@ -958,7 +958,7 @@ class GeneralTest():
 
         # Measure recall
         recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
 
         # Persist, delete and restore index.
         file_name = os.getcwd() + "/dump"
@@ -983,12 +983,12 @@ class GeneralTest():
 
         # Compare recall after reloading the index
         recall_after = float(correct_after) / (k * self.num_queries)
-        print("\nrecall after is: \n", recall_after)
+        test_logger.info(f"recall after is: {recall_after}")
         assert recall == recall_after
 
-    def test_L2(self):
+    def test_L2(self, test_logger):
         hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
-        self.knn(hnsw_index, label_to_vec_list, spatial.distance.sqeuclidean)
+        self.knn(hnsw_index, label_to_vec_list, spatial.distance.sqeuclidean, test_logger)
 
     def test_batch_iterator(self):
         hnsw_index, _ = self.get_cached_single_L2_index()
@@ -1027,7 +1027,7 @@ class GeneralTest():
 
     ##### Should be explicitly called #####
 
-    def range_query(self, dist_func):
+    def range_query(self, dist_func, test_logger):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
         radius = hnsw_index.knn_query(self.query_data[0], k=100)[1][0][-1] # get the distance of the 100th closest vector as the radius
@@ -1044,8 +1044,8 @@ class GeneralTest():
             dists = sorted([(key, dist_func(self.query_data[0], vec)) for key, vec in label_to_vec_list])
             actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
-            print(
-                f'\nlookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            test_logger.info(
+                f'lookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
                 f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
             # Compare the number of vectors that are actually within the range to the returned results.
@@ -1063,7 +1063,7 @@ class GeneralTest():
         hnsw_labels, hnsw_distances = hnsw_index.range_query(self.query_data[0], radius=0)
         assert len(hnsw_labels[0]) == 0
 
-    def multi_value(self, create_data_func, num_per_label = 5):
+    def multi_value(self, create_data_func, test_logger, num_per_label = 5):
         num_per_label = 5
         num_labels = self.num_elements // num_per_label
         k = 10
@@ -1105,7 +1105,7 @@ class GeneralTest():
 
         # Measure recall
         recall = float(correct) / (k * self.num_queries)
-        print("\nrecall is: \n", recall)
+        test_logger.info(f"recall is: {recall}")
         assert (recall > 0.9)
 
 class TestINT8(GeneralTest):
@@ -1118,17 +1118,17 @@ class TestINT8(GeneralTest):
     #### Create queries
     query_data = create_int8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
 
-    def test_Cosine(self):
+    def test_Cosine(self, test_logger):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
 
-        self.knn(hnsw_index, label_to_vec_list, fp32_expand_and_calc_cosine_dist)
+        self.knn(hnsw_index, label_to_vec_list, fp32_expand_and_calc_cosine_dist, test_logger)
 
-    def test_range_query(self):
-        self.range_query(fp32_expand_and_calc_cosine_dist)
+    def test_range_query(self, test_logger):
+        self.range_query(fp32_expand_and_calc_cosine_dist, test_logger)
 
-    def test_multi_value(self):
-        self.multi_value(create_int8_vectors)
+    def test_multi_value(self, test_logger):
+        self.multi_value(create_int8_vectors, test_logger)
 
 class TestUINT8(GeneralTest):
 
@@ -1140,14 +1140,14 @@ class TestUINT8(GeneralTest):
     #### Create queries
     query_data = create_uint8_vectors((GeneralTest.num_queries, GeneralTest.dim), GeneralTest.rng)
 
-    def test_Cosine(self):
+    def test_Cosine(self, test_logger):
         hnsw_index = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(hnsw_index)
 
-        self.knn(hnsw_index, label_to_vec_list, fp32_expand_and_calc_cosine_dist)
+        self.knn(hnsw_index, label_to_vec_list, fp32_expand_and_calc_cosine_dist, test_logger)
 
-    def test_range_query(self):
-        self.range_query(fp32_expand_and_calc_cosine_dist)
+    def test_range_query(self, test_logger):
+        self.range_query(fp32_expand_and_calc_cosine_dist, test_logger)
 
-    def test_multi_value(self):
-        self.multi_value(create_uint8_vectors)
+    def test_multi_value(self, test_logger):
+        self.multi_value(create_uint8_vectors, test_logger)
