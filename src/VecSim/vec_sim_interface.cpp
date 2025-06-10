@@ -17,9 +17,17 @@
 #include <sstream>
 
 // Global variable to store the current log context
-static const char *g_log_context = nullptr;
+struct TestNameLogContext {
+    const char *test_name;
+    const char *test_type;
+};
 
-extern "C" void VecSim_SetLogContext(const char *context) { g_log_context = context; }
+static TestNameLogContext test_name_log_context = TestNameLogContext{nullptr, nullptr};
+
+extern "C" void VecSim_SetTestLogContext(const char *test_name, const char *test_type) 
+{ 
+    test_name_log_context = TestNameLogContext{test_name, test_type};
+}
 
 static std::string createLogString(const char *level, const char *message) {
     // Get current timestamp
@@ -46,15 +54,15 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
     std::string log_entry = createLogString(level, message);
 
     // Use provided context or fall back to global context
-    const char *log_context = ctx ? static_cast<const char *>(ctx) : g_log_context;
-
+    
+    // If test name context is not provided, write it to stdout
+    if (!test_name_log_context.test_name || !test_name_log_context.test_type) {
+        std::cout << log_entry << std::endl;
+        return;
+    } 
+    
     std::ostringstream path_stream;
-    // If no context is provided, write it to debug output file
-    if (!log_context || strlen(log_context) == 0) {
-        path_stream << "logs/tests/flow/debug.log";
-    } else {
-        path_stream << "logs/tests/flow/" << log_context << ".log";
-    }
+    path_stream << "logs/tests/" << test_name_log_context.test_type << "/" << test_name_log_context.test_name << ".log";
 
     // Write to file
     std::ofstream log_file(path_stream.str(), std::ios::app);

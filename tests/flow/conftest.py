@@ -74,7 +74,7 @@ def setup_test_logging(request):
         # Extract just the filename without path and extension for the C++ context
         log_basename = os.path.splitext(os.path.basename(log_filename))[0]
         print(f"Setting log context for VecSim: {log_basename}")
-        set_log_context(log_basename)
+        set_log_context(log_basename, "flow")
         print("VecSim logging context set successfully.")
     except (ImportError, AttributeError):
         print("VecSim logging context not set, likely not imported.")

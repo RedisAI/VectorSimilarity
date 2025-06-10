@@ -764,9 +764,10 @@ PYBIND11_MODULE(VecSim, m) {
 
     m.def(
         "set_log_context",
-        [](const std::string &context) {
+        [](const std::string &test_name, const std::string &test_type) {
             // Call the C++ function to set the global context
-            VecSim_SetLogContext(context.c_str());
+            VecSim_SetTestLogContext(test_name.c_str(),
+                                     test_type.c_str());
         },
         "Set the context (test name) for logging");
 }
