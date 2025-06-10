@@ -300,13 +300,13 @@ def test_search_insert_multi_index(test_logger):
 # We expect to get the same index as if we were inserting the vector to the sync hnsw index.
 # To check that, we perform a knn query with k = vectors number and compare the results' labels
 # to pass the test all the labels and distances should be the same.
-def test_sanity():
+def test_sanity(test_logger):
 
     indices_ctx = IndexCtx()
     index = indices_ctx.tiered_index
     k = indices_ctx.num_labels
 
-    print(f"\nadd {indices_ctx.num_labels} vectors to the tiered index one by one")
+    test_logger.info(f"add {indices_ctx.num_labels} vectors to the tiered index one by one")
     # Add vectors to the tiered index one by one.
     for i, vector in enumerate(indices_ctx.data):
         index.add_vector(vector, i)
@@ -329,14 +329,14 @@ def test_sanity():
     for i, hnsw_res_label in enumerate(hnsw_labels[0]):
         if hnsw_res_label != tiered_labels[0][i]:
             has_diff = True
-            print(f"hnsw label = {hnsw_res_label}, tiered label = {tiered_labels[0][i]}")
-            print(f"hnsw dist = {hnsw_dist[0][i]}, tiered dist = {tiered_dist[0][i]}")
+            test_logger.info(f"hnsw label = {hnsw_res_label}, tiered label = {tiered_labels[0][i]}")
+            test_logger.info(f"hnsw dist = {hnsw_dist[0][i]}, tiered dist = {tiered_dist[0][i]}")
 
     assert not has_diff
-    print(f"hnsw graph is identical to the tiered index graph")
+    test_logger.info(f"hnsw graph is identical to the tiered index graph")
 
 
-def test_recall_after_deletion():
+def test_recall_after_deletion(test_logger):
 
     indices_ctx = IndexCtx(ef_r=30)
     index = indices_ctx.tiered_index
@@ -346,7 +346,7 @@ def test_recall_after_deletion():
     # Create hnsw index.
     hnsw_index = indices_ctx.init_and_populate_hnsw_index()
 
-    print(f"\nadd {indices_ctx.num_labels} vectors to the tiered index one by one")
+    test_logger.info(f"add {indices_ctx.num_labels} vectors to the tiered index one by one")
 
     # Populate tiered index.
     vectors = []
@@ -356,7 +356,7 @@ def test_recall_after_deletion():
 
     index.wait_for_index()
 
-    print(f"Deleting half of the index")
+    test_logger.info(f"Deleting half of the index")
     # Delete half of the index.
     for i in range(0, num_elements, 2):
         index.delete_vector(i)
@@ -364,7 +364,7 @@ def test_recall_after_deletion():
 
     # Wait for all repair jobs to be done.
     index.wait_for_index(5)
-    print(f"Done deleting half of the index")
+    test_logger.info(f"Done deleting half of the index")
     assert index.hnsw_label_count() == (num_elements / 2)
     assert hnsw_index.index_size() == (num_elements / 2)
 
@@ -404,12 +404,12 @@ def test_recall_after_deletion():
     # Measure recall.
     recall_tiered = float(correct_tiered) / (k * num_queries)
     recall_hnsw = float(correct_hnsw) / (k * num_queries)
-    print("HNSW tiered recall is: \n", recall_tiered)
-    print("HNSW recall is: \n", recall_hnsw)
+    test_logger.info(f"HNSW tiered recall is: {recall_tiered}")
+    test_logger.info(f"HNSW recall is: {recall_hnsw}")
     assert (recall_tiered >= 0.9)
 
 
-def test_batch_iterator():
+def test_batch_iterator(test_logger):
     num_elements = 100000
     dim = 100
     M = 26
@@ -427,7 +427,7 @@ def test_batch_iterator():
     index = indices_ctx.tiered_index
     data = indices_ctx.data
 
-    print(f"\n Test batch iterator in tiered index")
+    test_logger.info(f"Test batch iterator in tiered index")
 
     vectors = []
     # Add 100k random vectors to the index.
@@ -485,8 +485,7 @@ def test_batch_iterator():
         recall = float(correct) / total_res
         assert recall >= 0.89
         total_recall += recall
-    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
-          round_(total_recall / num_queries))
+    test_logger.info(f'Avg recall for {total_res} results in index of size {num_elements} with dim={dim} is: {round_(total_recall / num_queries)}')
 
     # Run again a single query in batches until it is depleted.
     batch_iterator = index.create_batch_iterator(query_data[0])
@@ -500,10 +499,10 @@ def test_batch_iterator():
         assert len(accumulated_labels.intersection(set(labels[0]))) == 0
         accumulated_labels = accumulated_labels.union(set(labels[0]))
     assert len(accumulated_labels) >= 0.95 * num_elements
-    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+    test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
-def test_range_query():
+def test_range_query(test_logger):
     num_elements = 100000
     dim = 100
     efConstruction = 200
@@ -540,8 +539,8 @@ def test_range_query():
         dists = sorted([(key, spatial.distance.sqeuclidean(query_data.flat, vec)) for key, vec in vectors])
         actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
-        print(
-            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+        test_logger.info(
+            f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
@@ -555,7 +554,7 @@ def test_range_query():
     assert len(tiered_labels[0]) == 0
 
 
-def test_multi_range_query():
+def test_multi_range_query(test_logger):
     num_labels = 20000
     per_label = 5
     num_elements = num_labels * per_label
@@ -603,8 +602,8 @@ def test_multi_range_query():
         end = time.time()
         res_num = len(tiered_labels[0])
 
-        print(
-            f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+        test_logger.info(
+            f'lookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(keys)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
