@@ -260,8 +260,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             // This call will update `svs_res` and `bf_res` to point to the end of the merged
             // results.
             auto batch_res = new VecSimQueryReply(allocator);
+            // VecSim and SVS distance computation is implemented differently, so we always have to
+            // merge results with set.
             auto [from_svs, from_flat] =
-                merge_results<false>(batch_res->results, svs_results, flat_results, n_res);
+                merge_results<true>(batch_res->results, svs_results, flat_results, n_res);
 
             // We're on a single-value index, update the set of results returned from the FLAT index
             // before popping them, to prevent them to be returned from the SVS index in later
@@ -442,7 +444,7 @@ public:
         return result;
     }
 
-    svs_index_t *GetSVSIndex() {
+    svs_index_t *GetSVSIndex() const {
         auto result = dynamic_cast<svs_index_t *>(this->backendIndex);
         assert(result);
         return result;
@@ -705,10 +707,20 @@ public:
     }
 
     size_t indexLabelCount() const override {
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-        return this->frontendIndex->indexLabelCount() + this->backendIndex->indexLabelCount();
+        auto [flat_labels, svs_labels] = [this] {
+            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+            return std::make_pair(this->frontendIndex->getLabelsSet(),
+                                  this->GetSVSIndex()->getLabelsSet());
+        }();
+
+        std::vector<size_t> labels_union;
+        labels_union.reserve(flat_labels.size() + svs_labels.size());
+        std::set_union(flat_labels.begin(), flat_labels.end(), svs_labels.begin(), svs_labels.end(),
+                       std::back_inserter(labels_union));
+        return labels_union.size();
     }
+
     size_t indexCapacity() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
@@ -754,6 +766,21 @@ public:
         auto *infoIterator = Base::debugInfoIterator();
         // TODO: Add SVS specific info.
         return infoIterator;
+    }
+
+    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                VecSimQueryParams *queryParams) const override {
+        // VecSim and SVS distance computation is implemented differently, so we always have to
+        // merge results with set.
+        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
+    }
+
+    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                 VecSimQueryParams *queryParams,
+                                 VecSimQueryReply_Order order) const override {
+        // VecSim and SVS distance computation is implemented differently, so we always have to
+        // merge results with set.
+        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,

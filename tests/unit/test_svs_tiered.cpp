@@ -495,8 +495,8 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
 
     // Search for more vectors than the index size.
     k = n + 1;
-    runTopKSearchTest(tiered_index, query_0, k, n, ver_res_0);
-    runTopKSearchTest(tiered_index, query_n, k, n, ver_res_n);
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
 
     // Search for less vectors than the index size, but more than the flat and main index sizes.
     k = n * 5 / 6;

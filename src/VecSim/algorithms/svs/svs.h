@@ -33,6 +33,7 @@ struct SVSIndexBase {
     virtual size_t getNumThreads() const = 0;
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -334,6 +335,14 @@ public:
     }
 
     size_t indexLabelCount() const override { return indexSize(); }
+
+    vecsim_stl::set<size_t> getLabelsSet() const override {
+        vecsim_stl::set<size_t> labels(this->allocator);
+        if (impl_) {
+            impl_->on_ids([&labels](size_t label) { labels.insert(label); });
+        }
+        return labels;
+    }
 
     VecSimIndexBasicInfo basicInfo() const override {
         VecSimIndexBasicInfo info = this->getBasicInfo();
