@@ -14,23 +14,14 @@
 #include <ctime>
 #include <iomanip>
 #include <filesystem>
+#include <sstream>
 
 // Global variable to store the current log context
-static std::string g_log_context_str;
 static const char *g_log_context = nullptr;
 
-extern "C" void VecSim_SetLogContext(const char *context) {
-    if (context) {
-        g_log_context_str = std::string(context);
-        g_log_context = g_log_context_str.c_str();
-    } else {
-        g_log_context_str.clear();
-        g_log_context = nullptr;
-    }
-}
+extern "C" void VecSim_SetLogContext(const char *context) { g_log_context = context; }
 
-// writes the logs to a file
-void Vecsim_Log(void *ctx, const char *level, const char *message) {
+static std::string createLogString(const char *level, const char *message) {
     // Get current timestamp
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -42,23 +33,31 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
     std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
 
     // Format log entry
-    std::string log_entry = "[" + std::string(timestamp) + "." +
-                            std::string(3 - std::to_string(ms.count()).length(), '0') +
-                            std::to_string(ms.count()) + "] [" + level + "] " + message;
+    std::ostringstream oss;
+    oss << "[" << timestamp << "." << std::setw(3) << std::setfill('0') << ms.count() << "] ["
+        << level << "] " << message;
+    return oss.str();
+}
+
+// writes the logs to a file
+void Vecsim_Log(void *ctx, const char *level, const char *message) {
+    // Get current timestamp
+
+    std::string log_entry = createLogString(level, message);
 
     // Use provided context or fall back to global context
     const char *log_context = ctx ? static_cast<const char *>(ctx) : g_log_context;
 
-    // If no context is provided, don't log to avoid creating unwanted files
+    std::ostringstream path_stream;
+    // If no context is provided, write it to debug output file
     if (!log_context || strlen(log_context) == 0) {
-        return;
+        path_stream << "logs/tests/flow/debug.log";
+    } else {
+        path_stream << "logs/tests/flow/" << log_context << ".log";
     }
 
-    std::string context_str(log_context);
-    std::string log_path = "logs/tests/flow/" + context_str + ".log";
-
     // Write to file
-    std::ofstream log_file(log_path, std::ios::app);
+    std::ofstream log_file(path_stream.str(), std::ios::app);
     if (log_file.is_open()) {
         log_file << log_entry << std::endl;
         log_file.close();

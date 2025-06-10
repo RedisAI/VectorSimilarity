@@ -141,7 +141,7 @@ def test_parallel_insert(test_logger):
     start = time.time()
     parallel_index.add_vector_parallel(g_test_index.data, np.array(range(num_elements)), n_threads)
     parallel_insert_time = time.time() - start
-    assert parallel_index.index_size() != num_elements
+    assert parallel_index.index_size() == num_elements
     assert parallel_index.check_integrity()
     # Validate that the parallel index contains the same vectors as the sequential one.
     for label in range(num_elements):

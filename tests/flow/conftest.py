@@ -5,6 +5,24 @@ import sys
 from datetime import datetime
 
 
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    # Execute all other hooks to obtain the report object
+    outcome = yield
+    rep = outcome.get_result()
+
+    # We only look at actual failing test calls, not setup/teardown
+    if rep.when == "call" and rep.failed:
+        # Get the test logger
+        test_name = item.name
+        logger = logging.getLogger(f"test_{test_name}")
+        
+        # Log the failure details
+        logger.error(f"TEST FAILED: {rep.nodeid}")
+        if hasattr(rep, "longrepr"):
+            logger.error(f"Failure details:\n{rep.longreprtext}")
+
+
 def pytest_addoption(parser):
     """Add command line options for logging configuration."""
     parser.addoption("--log-file-prefix", action="store", default="vecsim",
