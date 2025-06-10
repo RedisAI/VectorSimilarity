@@ -11,11 +11,15 @@
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
 
+#define EPSILON (10e-6)
+
+inline bool double_eq(double a, double b) { return fabs(a - b) < EPSILON; }
+
 // Compare two results by score, and if the scores are equal, by id.
 inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
                                              const VecSimQueryResultContainer::iterator res2) {
-    return (res1->score != res2->score) ? (res1->score > res2->score ? 1 : -1)
-                                        : (int)(res1->id - res2->id);
+    return !double_eq(res1->score, res2->score) ? (res1->score > res2->score ? 1 : -1)
+                                                : (int)(res1->id - res2->id);
 }
 
 // Append the current result to the merged results, after verifying that it did not added yet (if
