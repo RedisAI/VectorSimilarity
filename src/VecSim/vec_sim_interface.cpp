@@ -24,8 +24,7 @@ struct TestNameLogContext {
 
 static TestNameLogContext test_name_log_context = TestNameLogContext{nullptr, nullptr};
 
-extern "C" void VecSim_SetTestLogContext(const char *test_name, const char *test_type) 
-{ 
+extern "C" void VecSim_SetTestLogContext(const char *test_name, const char *test_type) {
     test_name_log_context = TestNameLogContext{test_name, test_type};
 }
 
@@ -54,15 +53,16 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
     std::string log_entry = createLogString(level, message);
 
     // Use provided context or fall back to global context
-    
+
     // If test name context is not provided, write it to stdout
     if (!test_name_log_context.test_name || !test_name_log_context.test_type) {
         std::cout << log_entry << std::endl;
         return;
-    } 
-    
+    }
+
     std::ostringstream path_stream;
-    path_stream << "logs/tests/" << test_name_log_context.test_type << "/" << test_name_log_context.test_name << ".log";
+    path_stream << "logs/tests/" << test_name_log_context.test_type << "/"
+                << test_name_log_context.test_name << ".log";
 
     // Write to file
     std::ofstream log_file(path_stream.str(), std::ios::app);

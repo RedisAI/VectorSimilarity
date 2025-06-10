@@ -912,8 +912,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(CommonAPITest, testSetTestLogContext) {
     // Create an index with the log context
     BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
-    VecSimParams params = {
-        .algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bfParams}}};
+    VecSimParams params = {.algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bfParams}}};
     auto *index =
         dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
 
@@ -924,12 +923,12 @@ TEST(CommonAPITest, testSetTestLogContext) {
     }
     index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", "printed before setting context");
     // Set the log context
-    const char* testContext = "test_context";
+    const char *testContext = "test_context";
     VecSim_SetTestLogContext(testContext, "unit");
     std::string msg = "Test message with context";
     // Trigger a log message
     index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", msg.c_str());
-    
+
     // check if the log message was written to the log file
     std::string log_file = log_dir + "/test_context.log";
     std::ifstream file(log_file);
@@ -942,7 +941,7 @@ TEST(CommonAPITest, testSetTestLogContext) {
             break;
         }
     }
-    
+
     // Clean up
     VecSim_SetTestLogContext(nullptr, nullptr);
     delete index;
