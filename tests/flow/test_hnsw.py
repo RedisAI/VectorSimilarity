@@ -214,7 +214,7 @@ def test_batch_iterator(test_logger):
     test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
-def test_serialization():
+def test_serialization(test_logger):
     dim = 16
     num_elements = 10000
     M = 16
@@ -253,7 +253,7 @@ def test_serialization():
                     break
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    logger.info(f"recall is: {recall}")
+    tetst_logger.info(f"recall is: {recall}")
 
     # Persist, delete and restore index.
     file_name = os.getcwd() + "/dump"
