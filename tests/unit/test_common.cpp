@@ -16,6 +16,7 @@
 #include "unit_test_utils.h"
 #include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "mock_thread_pool.h"
 #include "tests_utils.h"
@@ -666,6 +667,82 @@ TEST(CommonAPITest, NormalizeUint8) {
     }
 
     ASSERT_FLOAT_EQ(norm, 1.0);
+}
+
+/**
+ * This test verifies that a tiered index correctly returns the closest vectors when querying data
+ * distributed across both the flat and the backend indices, specifically when duplicate labels
+ * exist in both indices with different distances. It adds vectors with known scores, including such
+ * duplicates, and ensures that only the closer instance is returned. The test covers both top-K and
+ * range queries, validating result ordering by score and by ID.
+ */
+TEST(CommonAPITest, SearchDifferentScores) {
+    size_t dim = 4;
+    size_t constexpr k = 3;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = dynamic_cast<TieredHNSWIndex<float, float> *>(
+        test_utils::CreateNewTieredHNSWIndex(params, mock_thread_pool));
+    ASSERT_NE(tiered_index, nullptr);
+
+    auto hnsw_index = tiered_index->getHNSWIndex();
+    auto flat_index = tiered_index->frontendIndex;
+
+    // Define IDs and distance values for test vectors
+    // ids are intentionally in random order to verify sorting works correctly
+    size_t constexpr ids[k] = {54, 4, 15};
+    double constexpr res_values[k] = {2, 3, 100};
+    // Define a type for our result pair
+    using ResultPair = std::pair<size_t, double>; // (id, score)
+
+    // Create a vector of expected results - these are the scores we expect
+    // when querying with a zero vector (L2 distance = value²*dim)
+    std::vector<ResultPair> expected_results_by_score(k);
+
+    for (size_t i = 0; i < k; i++) {
+        expected_results_by_score[i] = {ids[i], res_values[i] * res_values[i] * dim};
+    }
+
+    // Insert duplicate vectors with same ID but different distances across the two indices.
+    // The index should return only the closer of the two.
+
+    // ID 54: closer in HNSW, farther in flat — expect to return HNSW version
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[0], res_values[0]);
+    GenerateAndAddVector<float>(flat_index, dim, ids[0], res_values[0] + 1);
+
+    // ID 4: closer in flat, farther in HNSW — expect to return flat version
+    GenerateAndAddVector<float>(flat_index, dim, ids[1], res_values[1]);
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[1], res_values[1] + 1);
+
+    // ID 15: identical in both indices — distance is large, should still return one instance
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[2], res_values[2]);
+    GenerateAndAddVector<float>(flat_index, dim, ids[2], res_values[2]);
+
+    // Create a zero vector for querying - this makes scores directly proportional to vector values
+    float query_0[dim];
+    GenerateVector<float>(query_0, dim, 0);
+
+    // Verify results ordered by increasing score (distance).
+    double prev_score = 0; // all scores are positive
+    auto verify_by_score = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(prev_score, score); // prev_score < score
+        prev_score = score;
+        ASSERT_EQ(id, expected_results_by_score[res_index].first);
+        ASSERT_EQ(score, expected_results_by_score[res_index].second);
+    };
+
+    runTopKTieredIndexSearchTest<true>(tiered_index, query_0, k, verify_by_score, nullptr);
+    // Reset score tracking for range query
+    prev_score = 0;
+    // Use the largest score as the range to include all vectors
+    double range = expected_results_by_score.back().second;
+    runRangeTieredIndexSearchTest<true>(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
 }
 
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
