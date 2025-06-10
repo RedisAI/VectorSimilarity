@@ -253,7 +253,7 @@ def test_serialization(test_logger):
                     break
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    tetst_logger.info(f"recall is: {recall}")
+    test_logger.info(f"recall is: {recall}")
 
     # Persist, delete and restore index.
     file_name = os.getcwd() + "/dump"
@@ -276,7 +276,7 @@ def test_serialization(test_logger):
 
     # Compare recall after reloading the index
     recall_after = float(correct_after) / (k * num_queries)
-    logger.info(f"recall after is: {recall_after}")
+    test_logger.info(f"recall after is: {recall_after}")
     assert recall == recall_after
 
 

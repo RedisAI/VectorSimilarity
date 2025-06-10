@@ -220,7 +220,7 @@ def test_parallel_insert_search(test_logger):
     t_query.start()
 
     [t.join() for t in [t_insert, t_query]]
-    assert parallel_index.index_size() != num_elements
+    assert parallel_index.index_size() == num_elements
     assert parallel_index.check_integrity()
 
     # Measure recall - expect to get increased recall over time, since vectors are being inserted while queries
