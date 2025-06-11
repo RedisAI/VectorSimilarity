@@ -40,7 +40,8 @@ static unsigned int getAvailableCPUs() {
     return std::thread::hardware_concurrency();
 }
 
-// Runs the test for all combination of data type(float/double) - label type (single/multi)
+// Runs the test for combination of data type and qantization mode.
+// TODO: Add support for label type combination(single/multi)
 
 template <typename index_type_t>
 class SVSTieredIndexTest : public ::testing::Test {
@@ -351,7 +352,8 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
     auto sz_b = tiered_index->GetBackendIndex()->indexSize();
-    EXPECT_EQ(sz_f + sz_b, n);
+    EXPECT_EQ(sz_f, 0);
+    EXPECT_EQ(sz_b, n);
 
     // Quantization has limited accuaracy, so we need to check the relative error.
     // If quantization is enabled, we allow a larger relative error.
