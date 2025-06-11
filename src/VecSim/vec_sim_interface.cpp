@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/vec_sim_interface.h"
+#include <cassert>
 #include <cstdarg>
 #include <iostream>
 #include <fstream>
@@ -15,19 +16,26 @@
 #include <iomanip>
 #include <filesystem>
 #include <sstream>
+#include <string>
+#include <string_view>
 
 // Global variable to store the current log context
 struct TestNameLogContext {
-    const char *test_name;
-    const char *test_type;
+    std::string test_name = "";
+    std::string test_type = "";
 };
 
-static TestNameLogContext test_name_log_context = TestNameLogContext{nullptr, nullptr};
+static TestNameLogContext test_name_log_context;
 
 extern "C" void VecSim_SetTestLogContext(const char *test_name, const char *test_type) {
-    test_name_log_context = TestNameLogContext{test_name, test_type};
+    test_name_log_context.test_name = std::string(test_name);
+    test_name_log_context.test_type = std::string(test_type);
 }
 
+/* Example:
+ *   createLogString("ERROR", "Failed to open file");
+ *   → "[2025-06-11 09:13:47.237] [ERROR] Failed to open file"
+ */
 static std::string createLogString(const char *level, const char *message) {
     // Get current timestamp
     auto now = std::chrono::system_clock::now();
@@ -48,14 +56,9 @@ static std::string createLogString(const char *level, const char *message) {
 
 // writes the logs to a file
 void Vecsim_Log(void *ctx, const char *level, const char *message) {
-    // Get current timestamp
-
     std::string log_entry = createLogString(level, message);
-
-    // Use provided context or fall back to global context
-
     // If test name context is not provided, write it to stdout
-    if (!test_name_log_context.test_name || !test_name_log_context.test_type) {
+    if (test_name_log_context.test_name.empty() || test_name_log_context.test_type.empty()) {
         std::cout << log_entry << std::endl;
         return;
     }

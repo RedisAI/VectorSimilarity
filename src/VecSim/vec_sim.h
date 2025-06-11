@@ -251,7 +251,8 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
 /**
  * @brief Set the context for logging (e.g., test name or file name).
  *
- * @param context A string context that will be used for logging purposes.
+ * @param test_name the name of the test.
+ * @param test_type the type of the test (e.g., "unit" or "flow").
  */
 void VecSim_SetTestLogContext(const char *test_name, const char *test_type);
 

@@ -13,7 +13,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/index_factories/index_factory.h"
 #include "VecSim/vec_sim_index.h"
-#include "VecSim/vec_sim_interface.h"
 #include "VecSim/types/bfloat16.h"
 #include <cassert>
 #include "memory.h"

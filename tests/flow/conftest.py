@@ -1,43 +1,13 @@
 import pytest
 import os
 import logging
-import sys
 from datetime import datetime
 
-
-@pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    # Execute all other hooks to obtain the report object
-    outcome = yield
-    rep = outcome.get_result()
-
-    # We only look at actual failing test calls, not setup/teardown
-    if rep.when == "call" and rep.failed:
-        # Get the test logger
-        test_name = item.name
-        logger = logging.getLogger(f"test_{test_name}")
-        
-        # Log the failure details
-        logger.error(f"TEST FAILED: {rep.nodeid}")
-        if hasattr(rep, "longrepr"):
-            logger.error(f"Failure details:\n{rep.longreprtext}")
-
-
-def pytest_addoption(parser):
-    """Add command line options for logging configuration."""
-    parser.addoption("--log-file-prefix", action="store", default="vecsim",
-                    help="Prefix for log files")
-    parser.addoption("--log-dir", action="store", default="logs/tests/flow",
-                    help="Directory to store log files")
-    parser.addoption("--per-test-logs", action="store_true", default=True,
-                    help="Create separate log file for each test")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_global_logging(request):
-    """Session-level logging setup."""
-    log_dir = request.config.getoption("--log-dir")
-    print(f"Log directory from command line: {log_dir}")
+def pytest_configure(config):
+    """Set up initial logging before any tests run."""
+    # Get log directory from command line or use default
+    log_dir = config.getoption("--log-dir", default="logs/tests/flow")
+    print(f"Using log directory========================================================================: {log_dir}")
     # Convert relative path to absolute
     if not os.path.isabs(log_dir):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,19 +15,51 @@ def setup_global_logging(request):
     
     os.makedirs(log_dir, exist_ok=True)
     
-    # Store log directory in session for other fixtures
-    request.config._log_dir = log_dir
+    # Create a global log file for initialization logs
+    init_log_file = os.path.join(log_dir, "pytest_init.log")
     
-    return log_dir
-
+    # Set up a basic file logger for initialization
+    init_logger = logging.getLogger("pytest_init")
+    init_logger.setLevel(logging.INFO)
+    
+    # Remove any existing handlers
+    for handler in init_logger.handlers[:]:
+        init_logger.removeHandler(handler)
+    
+    # Create file handler
+    file_handler = logging.FileHandler(init_log_file)
+    file_handler.setLevel(logging.INFO)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '[%(asctime)s.%(msecs)03d] [%(levelname)s] [%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Add handler to logger
+    init_logger.addHandler(file_handler)
+    
+    # Set VecSim log context for C++ logging integration at initialization
+    try:
+        from VecSim import set_log_context
+        init_logger.info("Setting initial VecSim log context")
+        print("Setting initial VecSim log context")
+        set_log_context("pytest_init", "flow")
+        init_logger.info("VecSim initial logging context set successfully")
+    except (ImportError, AttributeError):
+        init_logger.error("Failed to set VecSim logging context, likely not imported")
+    
+    # Store log directory in config for other fixtures
+    config._log_dir = log_dir
+    
+    init_logger.info("Pytest initialization complete")
 
 @pytest.fixture(autouse=True)
 def setup_test_logging(request):
     """Per-test logging setup that works with both Makefile and direct pytest calls."""
     
     # Get configuration
-    # per_test_logs = request.config.getoption("--per-test-logs")
-    # log_prefix = request.config.getoption("--log-file-prefix")
     log_dir = getattr(request.config, '_log_dir', 'logs/tests/flow')
     
     # Get test name for logging
@@ -78,38 +80,35 @@ def setup_test_logging(request):
         print("VecSim logging context set successfully.")
     except (ImportError, AttributeError):
         print("VecSim logging context not set, likely not imported.")
-    # else:
-    #     # Use single log file (compatible with Makefile --log-file option)
-    #     log_filename = os.path.join(log_dir, f"{log_prefix}.log")
-    
+
     # Set up Python logging for this test
     logger = logging.getLogger(f"test_{test_name}")
     logger.setLevel(logging.DEBUG)
-    
+
     # Remove any existing handlers
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
-    
+
     # Create file handler
     file_handler = logging.FileHandler(log_filename)
     file_handler.setLevel(logging.DEBUG)
-    
+
     # Create formatter
     formatter = logging.Formatter(
         '[%(asctime)s.%(msecs)03d] [%(levelname)s] [%(name)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     file_handler.setFormatter(formatter)
-    
+
     # Add handler to logger
     logger.addHandler(file_handler)
-    
+
     # Log test start
     logger.info(f"=== Starting test: {test_name} ===")
     logger.info(f"Log file: {log_filename}")
-    
+
     yield logger
-    
+
     # Log test end and cleanup
     logger.info(f"=== Finished test: {test_name} ===")
     file_handler.close()
@@ -119,6 +118,3 @@ def setup_test_logging(request):
 def test_logger(setup_test_logging):
     """Convenience fixture to get the test logger."""
     return setup_test_logging
-
-
-
