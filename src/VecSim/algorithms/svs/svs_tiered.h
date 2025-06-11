@@ -205,6 +205,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // Add: true, Delete: false
     using journal_record = std::pair<labelType, bool>;
     size_t trainingTriggerThreshold;
+    size_t updateTriggerThreshold;
     size_t updateJobWaitTime;
     std::vector<journal_record> journal;
     std::shared_mutex journal_mutex;
@@ -595,6 +596,12 @@ public:
                   : std::min(
                         tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold,
                         SVS_MAX_TRAINING_THRESHOLD)),
+          updateTriggerThreshold(
+              tiered_index_params.specificParams.tieredSVSParams.updateTriggerThreshold == 0
+                  ? SVS_DEFAULT_UPDATE_THRESHOLD
+                  : std::min(
+                        tiered_index_params.specificParams.tieredSVSParams.updateTriggerThreshold,
+                        SVS_MAX_UPDATE_THRESHOLD)),
           updateJobWaitTime(
               tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
                   ? 100 // default wait time: 0.1ms
@@ -654,9 +661,8 @@ public:
             ret -= svs_index->deleteVectors(&label, 1);
             // If main index is empty then update_threshold is trainingTriggerThreshold,
             // overwise it is 1.
-            update_threshold = this->backendIndex->indexSize() == 0
-                                   ? this->trainingTriggerThreshold
-                                   : 1; // schedule update job for every vector added
+            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                                    : this->updateTriggerThreshold;
         }
         { // Add vector to the frontend index and journal.
             std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);

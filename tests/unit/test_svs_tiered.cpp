@@ -68,8 +68,8 @@ protected:
 
     TieredIndexParams CreateTieredSVSParams(VecSimParams &svs_params,
                                             tieredIndexMock &mock_thread_pool,
-                                            size_t update_job_threshold = 512,
-                                            size_t flat_buffer_limit = SIZE_MAX) {
+                                            size_t training_threshold = 1024,
+                                            size_t update_threshold = 16) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         if (svs_params.algoParams.svsParams.num_threads == 0) {
             svs_params.algoParams.svsParams.num_threads = mock_thread_pool.thread_pool_size;
@@ -78,10 +78,10 @@ protected:
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
             .submitCb = tieredIndexMock::submit_callback,
-            .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &svs_params,
-            .specificParams = {.tieredSVSParams = TieredSVSParams{.trainingTriggerThreshold =
-                                                                      update_job_threshold}}};
+            .specificParams = {.tieredSVSParams =
+                                   TieredSVSParams{.trainingTriggerThreshold = training_threshold,
+                                                   .updateTriggerThreshold = update_threshold}}};
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
@@ -97,11 +97,11 @@ protected:
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(VecSimParams &svs_params,
                                                  tieredIndexMock &mock_thread_pool,
-                                                 size_t update_job_threshold = 512,
-                                                 size_t flat_buffer_limit = SIZE_MAX) {
+                                                 size_t training_threshold = 1024,
+                                                 size_t update_threshold = 16) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params = CreateTieredSVSParams(
-            svs_params, mock_thread_pool, update_job_threshold, flat_buffer_limit);
+            svs_params, mock_thread_pool, training_threshold, update_threshold);
         return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
 
@@ -265,7 +265,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
 
     auto mock_thread_pool = tieredIndexMock();
 
-    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 1);
+    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 1, 1);
     auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     ASSERT_INDEX(tiered_index);
 
@@ -314,7 +314,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -349,11 +349,14 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
 TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     size_t dim = 4;
     size_t n = 1000;
+    size_t training_threshold = 1024;
+    size_t update_threshold = 16;
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                    training_threshold, update_threshold);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -369,8 +372,9 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
     auto sz_b = tiered_index->GetBackendIndex()->indexSize();
-    EXPECT_EQ(sz_f, 0);
-    EXPECT_EQ(sz_b, n);
+    EXPECT_LE(sz_f, update_threshold);
+    EXPECT_GE(sz_b, n - update_threshold);
+    EXPECT_EQ(sz_f + sz_b, n);
 
     // Quantization has limited accuaracy, so we need to check the relative error.
     // If quantization is enabled, we allow a larger relative error.
@@ -407,7 +411,7 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
 
     size_t cur_memory_usage;
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, k);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, k, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
@@ -664,7 +668,7 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -955,7 +959,7 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     VecSimParams vecsim_svs_params = CreateParams(svs_params);
 
     auto mock_thread_pool = tieredIndexMock();
-    auto tiered_params = this->CreateTieredSVSParams(vecsim_svs_params, mock_thread_pool, n);
+    auto tiered_params = this->CreateTieredSVSParams(vecsim_svs_params, mock_thread_pool, n, 1);
     VecSimParams params = CreateParams(tiered_params);
     auto *index = VecSimIndex_New(&params);
     mock_thread_pool.ctx->index_strong_ref.reset(index);
@@ -1915,7 +1919,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -1966,8 +1970,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
     for (size_t updateThreshold : {n, size_t{1}}) {
         auto mock_thread_pool = tieredIndexMock();
 
-        auto *tiered_index =
-            this->CreateTieredSVSIndex(svs_params, mock_thread_pool, updateThreshold);
+        auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                        updateThreshold, updateThreshold);
         ASSERT_INDEX(tiered_index);
         auto allocator = tiered_index->getAllocator();
 
@@ -2001,7 +2005,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
 
         mock_thread_pool.thread_pool_join();
 
-        EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_LE(tiered_index->GetFlatIndex()->indexSize(), updateThreshold);
         EXPECT_EQ(tiered_index->indexLabelCount(), n);
     }
 }
@@ -2014,7 +2018,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1000);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -2039,7 +2043,6 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
-    EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
 
     // Validate that Static info returns the right restricted info as well.
     VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
@@ -2103,7 +2106,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -2190,7 +2193,8 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, updateThreshold);
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, updateThreshold, updateThreshold);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -2226,7 +2230,7 @@ TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
     VecSim_SetWriteMode(VecSim_WriteAsync);
@@ -2408,8 +2412,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index =
-        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, swap_job_threshold);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                    swap_job_threshold, swap_job_threshold);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
