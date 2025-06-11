@@ -942,7 +942,5 @@ TEST(CommonAPITest, testSetTestLogContext) {
         }
     }
 
-    // Clean up
-    VecSim_SetTestLogContext(nullptr, nullptr);
     delete index;
 }
