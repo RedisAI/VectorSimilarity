@@ -15,7 +15,10 @@
 #include "svs/lib/float16.h"
 #include "svs/index/vamana/dynamic_index.h"
 
-#include <cpuid.h>
+#if HAVE_SVS_LVQ
+#include "svs/cpuid.h"
+#endif
+
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -41,74 +44,26 @@ using vecsim_dt = typename vecsim_dtype<T>::type;
 
 // SVS->VecSim distance conversion
 template <typename DistType>
-float toVecSimDistance(float);
+double toVecSimDistance(float);
 
 template <>
-inline float toVecSimDistance<svs::distance::DistanceL2>(float v) {
-    return v;
-}
-
-template <>
-inline float toVecSimDistance<svs::distance::DistanceIP>(float v) {
-    return 1.f - v;
+inline double toVecSimDistance<svs::distance::DistanceL2>(float v) {
+    return static_cast<double>(v);
 }
 
 template <>
-inline float toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
-    return 1.f - v;
+inline double toVecSimDistance<svs::distance::DistanceIP>(float v) {
+    return 1.0 - static_cast<double>(v);
 }
 
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceL2 dist, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    return toVecSimDistance<svs::distance::DistanceL2>(svs::distance::compute(dist, a, b));
-}
-
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceIP dist, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    return toVecSimDistance<svs::distance::DistanceIP>(svs::distance::compute(dist, a, b));
-}
-
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceCosineSimilarity /*dist*/, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    // VecSim uses IP for Cosine distance
-    return computeVecSimDistance(svs::distance::DistanceIP{}, a, b);
+template <>
+inline double toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
+    return 1.0 - static_cast<double>(v);
 }
 
 // VecSim allocator wrapper for SVS containers
 template <typename T>
-struct SVSAllocator {
-private:
-    std::shared_ptr<VecSimAllocator> allocator_;
-
-public:
-    // Type Aliases
-    using value_type = T;
-
-    // Constructor
-    SVSAllocator(std::shared_ptr<VecSimAllocator> vs_allocator)
-        : allocator_{std::move(vs_allocator)} {}
-
-    // Construct from another value type allocator.
-
-    // Allocation and Deallocation.
-    [[nodiscard]] constexpr value_type *allocate(std::size_t n) {
-        return static_cast<value_type *>(allocator_->allocate_aligned(n * sizeof(T), alignof(T)));
-    }
-
-    constexpr void deallocate(value_type *ptr, size_t count) noexcept {
-        allocator_->deallocate(ptr, count * sizeof(T));
-    }
-
-    // Support allocator type rebinding in LeanVec
-    template <typename U>
-    friend class SVSAllocator;
-
-    template <typename U>
-    SVSAllocator(SVSAllocator<U> other) : allocator_{other.allocator_} {}
-};
+using SVSAllocator = VecsimSTLAllocator<T>;
 
 // Join default SVS search parameters with VecSim query runtime parameters
 inline svs::index::vamana::VamanaSearchParameters
@@ -148,17 +103,6 @@ inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
     return svs_bs;
 }
 
-// clang-format off
-inline bool check_cpuid() {
-    uint32_t eax, ebx, ecx, edx;
-    __cpuid(0, eax, ebx, ecx, edx);
-    std::string vendor_id = std::string((const char*)&ebx, 4) +
-                            std::string((const char*)&edx, 4) +
-                            std::string((const char*)&ecx, 4);
-    return (vendor_id == "GenuineIntel");
-}
-// clang-format on
-
 // Check if the SVS implementation supports Quantization mode
 // @param quant_bits requested SVS quantization mode
 // @return pair<fallbackMode, bool>
@@ -167,23 +111,25 @@ inline bool check_cpuid() {
 //       - primary bits, secondary/residual bits, dimesionality reduction, etc.
 //       which can be incompatible to each-other.
 inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuantBits quant_bits) {
-    // If HAVE_SVS_LVQ is not defined, we don't support any quantization mode
-    // else we check if the CPU supports SVS LVQ
-    bool supported = quant_bits == VecSimSvsQuant_NONE
+    switch (quant_bits) {
+    // non-quantized mode and scalar quantization are always supported
+    case VecSimSvsQuant_NONE:
+    case VecSimSvsQuant_Scalar:
+        return std::make_pair(quant_bits, true);
+    default:
+        // fallback to no quantization if we have no LVQ support in code
+        // or if the CPU doesn't support it
+        // TODO: fallback to scalar quantization
 #if HAVE_SVS_LVQ
-                     || check_cpuid() // Check if the CPU supports SVS LVQ
+        return svs::detail::intel_enabled() ? std::make_pair(quant_bits, true)
+                                            : std::make_pair(VecSimSvsQuant_Scalar, true);
+#else
+        return std::make_pair(VecSimSvsQuant_Scalar, true);
 #endif
-        ;
-
-    // If the quantization mode is not supported, we fallback to non-quantized mode
-    // - this is temporary solution until we have a basic quantization mode in SVS
-    // TODO: use basic SVS quantization as a fallback for unsupported modes
-    auto fallBack = supported ? quant_bits : VecSimSvsQuant_NONE;
-
-    // And always return true, as far as fallback mode is always supported
-    // Upon further decision changes, some cases should treated as not-supported
-    // So we will need return false.
-    return std::make_pair(fallBack, true);
+    }
+    assert(false && "Should never reach here");
+    // unreachable code, but to avoid compiler warning
+    return std::make_pair(VecSimSvsQuant_NONE, false);
 }
 } // namespace svs_details
 
@@ -257,7 +203,8 @@ struct SVSGraphBuilder {
     static graph_type build_graph(const svs::index::vamana::VamanaBuildParameters &parameters,
                                   const Data &data, DistType distance, Pool &threadpool,
                                   SVSIdType entry_point, size_t block_size,
-                                  std::shared_ptr<VecSimAllocator> allocator) {
+                                  std::shared_ptr<VecSimAllocator> allocator,
+                                  const svs::logging::logger_ptr &logger) {
         auto svs_bs =
             svs_details::SVSBlockSize(block_size, element_size(parameters.graph_max_degree));
         // Perform graph construction.
@@ -276,8 +223,8 @@ struct SVSGraphBuilder {
         // Specific to the Vamana algorithm:
         // It builds in two rounds, one with alpha=1 and the second time with the user/config
         // provided alpha value.
-        builder.construct(1.0f, entry_point);
-        builder.construct(parameters.alpha, entry_point);
+        builder.construct(1.0f, entry_point, svs::logging::Level::Trace, logger);
+        builder.construct(parameters.alpha, entry_point, svs::logging::Level::Trace, logger);
         return graph;
     }
 
