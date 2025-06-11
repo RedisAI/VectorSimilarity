@@ -9,11 +9,58 @@
 
 #pragma once
 #include "VecSim/algorithms/svs/svs_utils.h"
+#include "svs/extensions/vamana/scalar.h"
 
 #if HAVE_SVS_LVQ
 #include SVS_LVQ_HEADER
 #include "svs/extensions/vamana/leanvec.h"
+#endif // HAVE_SVS_LVQ
 
+// Scalar Quantization traits for SVS
+template <typename DataType>
+struct SVSStorageTraits<DataType, 1, 0, false> {
+    using element_type = std::int8_t;
+    using allocator_type = svs_details::SVSAllocator<element_type>;
+    using blocked_type = svs::data::Blocked<svs::AllocatorHandle<element_type>>;
+    using index_storage_type =
+        svs::quantization::scalar::SQDataset<element_type, svs::Dynamic, blocked_type>;
+
+    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
+    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
+                                             std::shared_ptr<VecSimAllocator> allocator) {
+        const auto dim = data.dimensions();
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+
+        allocator_type data_allocator{std::move(allocator)};
+        auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+
+        return index_storage_type::compress(data, pool, blocked_alloc);
+    }
+
+    static constexpr size_t element_size(size_t dims, size_t alignment = 0) {
+        return dims * sizeof(element_type);
+    }
+
+    static size_t storage_capacity(const index_storage_type &storage) {
+        // SQDataset does not provide a capacity method
+        return storage.size();
+    }
+
+    template <typename Distance, typename E, size_t N>
+    static float compute_distance_by_id(const index_storage_type &storage, const Distance &distance,
+                                        size_t id, std::span<E, N> query) {
+        auto dist_f = svs::index::vamana::extensions::single_search_setup(storage, distance);
+
+        // SVS distance function may require to fix/pre-process one of arguments
+        svs::distance::maybe_fix_argument(dist_f, query);
+
+        // Get the datum from the storage using the storage ID
+        auto datum = storage.get_datum(id);
+        return svs::distance::compute(dist_f, query, datum);
+    }
+};
+
+#if HAVE_SVS_LVQ
 namespace svs_details {
 template <size_t Primary>
 struct LVQSelector {
@@ -29,7 +76,7 @@ struct LVQSelector<4> {
 // LVQDataset traits for SVS
 template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
-                        std::enable_if_t<(QuantBits > 0)>> {
+                        std::enable_if_t<(QuantBits > 1)>> {
     using allocator_type = svs_details::SVSAllocator<std::byte>;
     using blocked_type = svs::data::Blocked<svs::AllocatorHandle<std::byte>>;
     using strategy_type = typename svs_details::LVQSelector<QuantBits>::strategy;

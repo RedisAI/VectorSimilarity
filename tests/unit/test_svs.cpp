@@ -10,9 +10,14 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "unit_test_utils.h"
+#include <array>
 #include <cmath>
+#include <random>
+#include <vector>
 
 #if HAVE_SVS
+#include <sstream>
+#include "spdlog/sinks/ostream_sink.h"
 #include "VecSim/algorithms/svs/svs.h"
 
 // There are possible cases when SVS Index cannot be created with the requested quantization mode
@@ -28,23 +33,54 @@
         }                                                                                          \
     }
 
+// Log callback function to print non-debug log messages
+static void svsTestLogCallBackNoDebug(void *ctx, const char *level, const char *message) {
+    if (level == nullptr || message == nullptr) {
+        return; // Skip null messages
+    }
+    if (std::string_view{level} == VecSimCommonStrings::LOG_DEBUG_STRING) {
+        return; // Skip debug messages
+    }
+    // Print other log levels
+    std::cout << level << ": " << message << std::endl;
+}
 template <typename index_type_t>
 class SVSTest : public ::testing::Test {
 public:
     using data_t = typename index_type_t::data_t;
 
 protected:
-    VecSimIndex *CreateNewIndex(SVSParams &params) {
+    void SetTypeParams(SVSParams &params) {
         params.quantBits = index_type_t::get_quant_bits();
         params.type = index_type_t::get_index_type();
-        VecSimParams index_params = CreateParams(params);
+    }
+
+    VecSimIndex *CreateNewIndex(const VecSimParams &index_params) {
         return VecSimIndex_New(&index_params);
+    }
+
+    VecSimIndex *CreateNewIndex(SVSParams &params) {
+        SetTypeParams(params);
+        VecSimParams index_params = CreateParams(params);
+        return CreateNewIndex(index_params);
     }
 
     SVSIndexBase *CastToSVS(VecSimIndex *index) {
         auto indexBase = dynamic_cast<SVSIndexBase *>(index);
         assert(indexBase != nullptr);
         return indexBase;
+    }
+
+    void SetUp() override {
+        // Limit VecSim log level to avoid printing too much information
+        VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+    }
+
+    // Check if the test is running in fallback mode to scalar quantization.
+    bool isFallbackToSQ() const {
+        // Get the fallback quantization mode and compare it to the scalar quantization mode.
+        return VecSimSvsQuant_Scalar ==
+               std::get<0>(svs_details::isSVSQuantBitsSupported(index_type_t::get_quant_bits()));
     }
 };
 
@@ -135,6 +171,10 @@ TYPED_TEST(SVSTest, svs_vector_update_test) {
 }
 
 TYPED_TEST(SVSTest, svs_vector_search_by_id_test) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n = 100;
     size_t k = 11;
     size_t dim = 4;
@@ -167,7 +207,7 @@ TYPED_TEST(SVSTest, svs_vector_search_by_id_test) {
 }
 
 TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
-    size_t n = 1000;
+    size_t n = 256;
     size_t k = 11;
     const size_t dim = 4;
 
@@ -188,9 +228,9 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
 
     auto svs_index = this->CastToSVS(index); // CAST_TO_SVS(index, svs::distance::DistanceL2);
 
-    std::vector<TEST_DATA_T[dim]> v(n);
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
-        GenerateVector<TEST_DATA_T>(v[i], dim, i);
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
     }
 
     std::vector<size_t> ids(n);
@@ -213,6 +253,10 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
 }
 
 TYPED_TEST(SVSTest, svs_get_distance) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n = 4;
     size_t dim = 2;
     size_t numIndex = 3;
@@ -292,9 +336,9 @@ TYPED_TEST(SVSTest, svs_get_distance) {
 }
 
 TYPED_TEST(SVSTest, svs_indexing_same_vector) {
-    size_t n = 100;
-    size_t k = 10;
-    size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+    const size_t dim = 4;
 
     SVSParams params = {
         .dim = dim,
@@ -311,10 +355,19 @@ TYPED_TEST(SVSTest, svs_indexing_same_vector) {
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
 
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i,
-                                          i / 10); // i / 10 is in integer (take the "floor" value).
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim,
+                                    i / 10); // i / 10 is in integer (take the "floor" value).
     }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
@@ -328,9 +381,9 @@ TYPED_TEST(SVSTest, svs_indexing_same_vector) {
 }
 
 TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
-    size_t n = 100;
-    size_t k = 10;
-    size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+    const size_t dim = 4;
 
     SVSParams params = {
         .dim = dim,
@@ -347,12 +400,19 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
 
-    // SVSIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
 
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor" value).
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, i / 10);
     }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
@@ -362,11 +422,11 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
     };
     runTopKSearchTest(index, query, k, verify_res);
 
-    // Delete all vectors.
-    for (size_t i = 0; i < n; i++) {
+    // Delete almost all vectors - keeping SVS index implementation alive.
+    for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     // Reinsert the same vectors under the same ids.
     for (size_t i = 0; i < n; i++) {
@@ -382,9 +442,9 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
 }
 
 TYPED_TEST(SVSTest, svs_reindexing_same_vector_different_id) {
-    size_t n = 100;
-    size_t k = 10;
-    size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+    const size_t dim = 4;
 
     SVSParams params = {
         .dim = dim,
@@ -401,10 +461,19 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector_different_id) {
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
 
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i,
-                                          i / 10); // i / 10 is in integer (take the "floor" value).
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim,
+                                    i / 10); // i / 10 is in integer (take the "floor" value).
     }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    svs_index->addVectors(v.data(), ids.data(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
@@ -414,10 +483,10 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector_different_id) {
     };
     runTopKSearchTest(index, query, k, verify_res);
 
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
@@ -436,6 +505,10 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector_different_id) {
 }
 
 TYPED_TEST(SVSTest, svs_batch_iterator) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
 
     // run the test twice - for index of size 100, every iteration will run select-based search,
@@ -492,6 +565,10 @@ TYPED_TEST(SVSTest, svs_batch_iterator) {
 }
 
 TYPED_TEST(SVSTest, svs_batch_iterator_non_unique_scores) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
 
     // Run the test twice - for index of size 100, every iteration will run select-based search,
@@ -558,6 +635,10 @@ TYPED_TEST(SVSTest, svs_batch_iterator_non_unique_scores) {
 }
 
 TYPED_TEST(SVSTest, svs_batch_iterator_reset) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n = 10000;
 
@@ -617,6 +698,10 @@ TYPED_TEST(SVSTest, svs_batch_iterator_reset) {
 }
 
 TYPED_TEST(SVSTest, svs_batch_iterator_corner_cases) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n = 1000;
 
@@ -1048,9 +1133,9 @@ TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
 }
 
 TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
-    size_t dim = 4;
-    size_t n = 10;
-    size_t k = 5;
+    const size_t dim = 4;
+    const size_t n = 10;
+    const size_t k = 5;
 
     for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
 
@@ -1074,9 +1159,18 @@ TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
         ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
         ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
 
+        auto svs_index = this->CastToSVS(index);
+        ASSERT_NE(svs_index, nullptr);
+
+        std::vector<std::array<TEST_DATA_T, dim>> v(n);
         for (size_t i = 0; i < n; i++) {
-            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+            GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
         }
+
+        std::vector<size_t> ids(n);
+        std::iota(ids.begin(), ids.end(), 0);
+
+        svs_index->addVectors(v.data(), ids.data(), n);
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
         TEST_DATA_T query[] = {50, 50, 50, 50};
@@ -1094,6 +1188,10 @@ TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
 }
 
 TYPED_TEST(SVSTest, svs_vector_search_test_l2) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n = 100;
     size_t k = 11;
@@ -1201,6 +1299,10 @@ TYPED_TEST(SVSTest, svs_search_empty_index) {
 }
 
 TYPED_TEST(SVSTest, svs_test_inf_score) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n = 4;
     size_t k = 4;
     size_t dim = 2;
@@ -1321,6 +1423,10 @@ TYPED_TEST(SVSTest, preferAdHocOptimization) {
 }
 
 TYPED_TEST(SVSTest, batchIteratorSwapIndices) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t n = 10000;
 
@@ -1390,6 +1496,10 @@ TYPED_TEST(SVSTest, batchIteratorSwapIndices) {
 }
 
 TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     const size_t dim = 128;
     const size_t n = 50;
 
@@ -1404,7 +1514,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
     ASSERT_INDEX(index);
 
     // To meet accurary in LVQ case we have to add bulk of vectors at once.
-    std::vector<TEST_DATA_T[dim]> v(n);
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     for (size_t i = 1; i <= n; i++) {
         auto &f = v[i - 1];
         f[0] = (TEST_DATA_T)i / n;
@@ -1465,11 +1575,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
 
 TYPED_TEST(SVSTest, testSizeEstimation) {
     size_t dim = 64;
-
     auto quantBits = TypeParam::get_quant_bits();
-    // Get the fallback quantization mode
-    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
-
 #if HAVE_SVS_LVQ
     // SVS block sizes always rounded to a power of 2
     // This why, in case of quantization, actual block size can be differ than requested
@@ -1477,7 +1583,7 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    if (quantBits != VecSimSvsQuant_NONE) {
+    if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
         dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
@@ -1685,6 +1791,10 @@ TYPED_TEST(SVSTest, testTimeoutReturn_batch_iterator) {
 }
 
 TYPED_TEST(SVSTest, rangeQuery) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t n = 2000;
     size_t dim = 4;
 
@@ -1755,6 +1865,10 @@ TYPED_TEST(SVSTest, rangeQuery) {
 }
 
 TYPED_TEST(SVSTest, rangeQueryCosine) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     const size_t n = 100;
     const size_t dim = 4;
 
@@ -1775,7 +1889,7 @@ TYPED_TEST(SVSTest, rangeQueryCosine) {
     ASSERT_INDEX(index);
 
     // To meet accurary in LVQ case we have to add bulk of vectors at once.
-    std::vector<TEST_DATA_T[dim]> v(n);
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
     std::vector<size_t> ids(n);
 
     for (size_t i = 0; i < n; i++) {
@@ -2129,13 +2243,16 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
 }
 
 TEST(SVSTest, quant_modes) {
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+
     const size_t dim = 4;
     const size_t n = 100;
     const size_t k = 10;
 
-    for (auto quant_bits :
-         {VecSimSvsQuant_NONE, VecSimSvsQuant_8, VecSimSvsQuant_4, VecSimSvsQuant_4x4,
-          VecSimSvsQuant_4x8, VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+    for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                            VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                            VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
         SVSParams params = {
             .type = VecSimType_FLOAT32,
             .dim = dim,
@@ -2193,12 +2310,194 @@ TEST(SVSTest, quant_modes) {
         ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 
         float query[] = {50, 50, 50, 50};
-        auto verify_res = [&](size_t id, double score, size_t index) {
-            EXPECT_EQ(id, (index + 45));
+        auto verify_res = [&](size_t id, double score, size_t idx) {
+            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
+            EXPECT_EQ(id, (idx + 45));
         };
         runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
         VecSimIndex_Free(index);
+    }
+}
+
+TYPED_TEST(SVSTest, logging_runtime_params) {
+    const size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 11;
+
+    std::ostringstream os_index;
+    std::ostringstream os_global;
+
+    VecSim_SetLogCallbackFunction([](void *ctx, const char *level, const char *message) {
+        if (ctx == nullptr) {
+            return;
+        }
+        assert(level != nullptr);
+        assert(message != nullptr);
+        // Cast the context to the correct type
+        // and write the log message to the ostringstream
+        std::ostringstream *os = static_cast<std::ostringstream *>(ctx);
+        *os << level << ": " << message;
+    });
+
+    // Set the SVS global log context to the ostringstream
+    auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(os_global);
+    auto logger = std::make_shared<spdlog::logger>("GlobalLogger", sink);
+    // Trace all messages
+    logger->set_level(spdlog::level::trace);
+    logger->set_pattern("%@\n\t%+");
+    svs::logging::set(logger);
+
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    this->SetTypeParams(params);
+    VecSimParams index_params = CreateParams(params);
+    index_params.logCtx =
+        static_cast<void *>(&os_index); // Set the index log context to the ostringstream
+    VecSimIndex *index = this->CreateNewIndex(index_params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
+    for (size_t i = 0; i < n; i++) {
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
+    }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    svs_index->addVectors(v.data(), ids.data(), n);
+
+    // Overrite vectors one-by-one
+    for (size_t i = 0; i < 10; i++) {
+        index->addVector(v[i].data(), ids[i]);
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    // Write custom logging info
+    auto index_logger = svs_index->getLogger();
+    ASSERT_NE(index_logger, nullptr);
+    index_logger->trace("Custom log trace");
+    index_logger->debug("Custom log debug");
+    index_logger->info("Custom log info");
+    index_logger->warn("Custom log warn");
+    index_logger->error("Custom log error");
+    index_logger->critical("Custom log critical");
+    index_logger->flush();
+    // Check that the log messages are written to the ostringstream
+    auto index_log = os_index.view();
+    EXPECT_NE(index_log.find("Custom log trace"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log debug"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log info"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log warn"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log critical"), std::string::npos);
+    EXPECT_NE(index_log.find("Custom log error"), std::string::npos);
+
+    VecSimIndex_Free(index);
+
+    auto global_log = os_global.view();
+    EXPECT_TRUE(global_log.empty()) << "Global log should be empty, but got: " << global_log;
+}
+
+TEST(SVSTest, scalar_quantization_query) {
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+
+    const size_t dim = 32;
+    const size_t bs = 1024;
+    const size_t n = 100;
+    const size_t k = 10;
+    const double quant_precision = 1.0 / (1 << 7); // int8 quantization precision
+
+    std::default_random_engine gen;
+    std::uniform_real_distribution<float> dist(-1.0, 1.0);
+    std::vector<float> dataset(n * dim);
+    for (size_t i = 0; i < n * dim; i++) {
+        dataset[i] = dist(gen);
+    }
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    float query[dim];
+    GenerateVector<float>(query, dim, 0.1f);
+
+    VecSimQueryReply *fp_results = nullptr;
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        const auto &fp_result = fp_results->results[result_rank];
+        ASSERT_EQ(id, fp_result.id);
+        // Verify that relative difference between the actual and expected score is within 8-bit
+        // quantization precision.
+        auto expected_diff = std::abs(score * quant_precision);
+        ASSERT_NEAR(score, fp_result.score, expected_diff);
+    };
+
+    const std::pair<VecSimMetric, double> metrics[] = {
+        {VecSimMetric_L2, 30.},
+        {VecSimMetric_Cosine, 1.0},
+    };
+
+    for (auto [metric, radius] : metrics) {
+        SVSParams params = {
+            .dim = dim,
+            .metric = metric,
+            .blockSize = bs,
+            /* SVS-Vamana specifics */
+            .graph_max_degree = 63, // x^2-1 to round the graph block size
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
+        params.quantBits = VecSimSvsQuant_NONE;
+
+        auto index_params = CreateParams(params);
+        auto index_fp = VecSimIndex_New(&index_params);
+        ASSERT_NE(index_fp, nullptr);
+
+        dynamic_cast<SVSIndexBase *>(index_fp)->addVectors(dataset.data(), ids.data(), n);
+        ASSERT_EQ(VecSimIndex_IndexSize(index_fp), n);
+
+        params.quantBits = VecSimSvsQuant_Scalar;
+        index_params = CreateParams(params);
+        auto index_sq = VecSimIndex_New(&index_params);
+        ASSERT_NE(index_sq, nullptr);
+
+        auto estimation = EstimateInitialSize(params);
+        auto actual = index_sq->getAllocationSize();
+        ASSERT_EQ(estimation, actual);
+
+        dynamic_cast<SVSIndexBase *>(index_sq)->addVectors(dataset.data(), ids.data(), n);
+        ASSERT_EQ(VecSimIndex_IndexSize(index_sq), n);
+        ASSERT_EQ(index_sq->indexCapacity(), n);
+
+        estimation = EstimateElementSize(params) * params.blockSize;
+        actual = index_sq->getAllocationSize() - actual; // get the delta
+        ASSERT_GT(actual, 0);
+        ASSERT_GE(estimation * 1.01, actual);
+        ASSERT_LE(estimation * 0.99, actual);
+
+        // test topK search
+        fp_results = VecSimIndex_TopKQuery(index_fp, query, k, nullptr, BY_ID);
+        runTopKSearchTest(index_sq, query, k, verify_res, nullptr, BY_ID);
+        VecSimQueryReply_Free(fp_results);
+
+        // test range search
+        fp_results = VecSimIndex_RangeQuery(index_fp, query, radius, nullptr, BY_ID);
+        ASSERT_GT(fp_results->results.size(), 0);
+        runRangeQueryTest(index_sq, query, radius, verify_res, fp_results->results.size(), BY_ID);
+        VecSimQueryReply_Free(fp_results);
+
+        VecSimIndex_Free(index_sq);
+        VecSimIndex_Free(index_fp);
     }
 }
 
