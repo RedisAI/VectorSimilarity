@@ -217,4 +217,3 @@ public:
     virtual void fitMemory() = 0;
 #endif
 };
-
