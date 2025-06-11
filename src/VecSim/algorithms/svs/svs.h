@@ -34,6 +34,7 @@ struct SVSIndexBase {
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
+    virtual bool isCompressed() const = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -398,6 +399,8 @@ public:
 
     size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
 
+    bool isCompressed() const override { return storage_traits_t::is_compressed(); }
+
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         if (!impl_ || !impl_->has_id(label)) {
             return std::numeric_limits<double>::quiet_NaN();
@@ -451,6 +454,10 @@ public:
             rep->results.push_back(
                 VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
         }
+        // Workaround for VecSim merge_results() that expects results to be sorted
+        // by score, then by id from both indices.
+        // TODO: remove this workaround when merge_results() is fixed.
+        sort_results_by_score_then_id(rep);
         return rep;
     }
 
@@ -515,6 +522,10 @@ public:
                 }
             }
         }
+        // Workaround for VecSim merge_results() that expects results to be sorted
+        // by score, then by id from both indices.
+        // TODO: remove this workaround when merge_results() is fixed.
+        sort_results_by_score_then_id(rep);
         return rep;
     }
 

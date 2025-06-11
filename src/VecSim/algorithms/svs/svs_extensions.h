@@ -84,6 +84,8 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
         svs::quantization::lvq::LVQDataset<QuantBits, ResidualBits, svs::Dynamic, strategy_type,
                                            blocked_type>;
 
+    static constexpr bool is_compressed() { return true; }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator) {
@@ -133,6 +135,8 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
                                                          svs::Dynamic, svs::Dynamic, blocked_type>;
 
     static size_t leanvec_dims(size_t dims) { return dims / 2; }
+
+    static constexpr bool is_compressed() { return true; }
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
