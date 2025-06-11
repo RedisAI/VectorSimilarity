@@ -822,7 +822,7 @@ public:
     }
 
     void releaseSharedLocks() override {
-        this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
+        this->flatIndexGuard.unlock_shared();
     }
 };

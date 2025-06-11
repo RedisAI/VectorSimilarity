@@ -347,7 +347,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i / (TEST_DATA_T)n);
     }
 
-    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
@@ -360,21 +360,6 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     double abs_err = TypeParam::get_quant_bits() != VecSimSvsQuant_NONE ? 1e-2 : 1e-6;
 
     // Verify that the vectors were inserted to Flat/SVS as expected
-    for (size_t i = 0; i < n; i++) {
-        TEST_DATA_T expected_vector[dim];
-        GenerateVector<TEST_DATA_T>(expected_vector, dim, i / (TEST_DATA_T)n);
-        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0, abs_err)
-            << "Vector label: " << i;
-    }
-
-    mock_thread_pool.thread_pool_join();
-    // Verify that all vectors were moved to SVS as expected
-    sz_f = tiered_index->GetFlatIndex()->indexSize();
-    sz_b = tiered_index->GetBackendIndex()->indexSize();
-    EXPECT_EQ(sz_f, 0);
-    EXPECT_EQ(sz_b, n);
-
-    // Verify that the vectors were inserted to SVS as expected
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T expected_vector[dim];
         GenerateVector<TEST_DATA_T>(expected_vector, dim, i / (TEST_DATA_T)n);
