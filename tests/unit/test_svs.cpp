@@ -2243,13 +2243,16 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
 }
 
 TEST(SVSTest, quant_modes) {
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+
     const size_t dim = 4;
     const size_t n = 100;
     const size_t k = 10;
 
-    for (auto quant_bits :
-         {VecSimSvsQuant_NONE, VecSimSvsQuant_8, VecSimSvsQuant_4, VecSimSvsQuant_4x4,
-          VecSimSvsQuant_4x8, VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+    for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                            VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                            VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
         SVSParams params = {
             .type = VecSimType_FLOAT32,
             .dim = dim,
@@ -2307,8 +2310,9 @@ TEST(SVSTest, quant_modes) {
         ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 
         float query[] = {50, 50, 50, 50};
-        auto verify_res = [&](size_t id, double score, size_t index) {
-            EXPECT_EQ(id, (index + 45));
+        auto verify_res = [&](size_t id, double score, size_t idx) {
+            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
+            EXPECT_EQ(id, (idx + 45));
         };
         runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
