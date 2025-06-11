@@ -40,7 +40,7 @@ static unsigned int getAvailableCPUs() {
     return std::thread::hardware_concurrency();
 }
 
-// Runs the test for combination of data type and qantization mode.
+// Runs the test for combination of data type and quantization mode.
 // TODO: Add support for label type combination(single/multi)
 
 template <typename index_type_t>
@@ -2334,11 +2334,15 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     ASSERT_EQ(tiered_index->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    auto size_before_gc = tiered_index->getAllocationSize();
 
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
     ASSERT_EQ(tiered_index->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n - threshold);
+    auto size_after_gc = tiered_index->getAllocationSize();
+    // Expect that the size of the index was reduced.
+    ASSERT_LT(size_after_gc, size_before_gc);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
