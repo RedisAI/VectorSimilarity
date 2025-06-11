@@ -942,5 +942,6 @@ TEST(CommonAPITest, testSetTestLogContext) {
         }
     }
 
+    ASSERT_TRUE(found) << "Log message not found in log file: " << log_file;
     delete index;
 }
