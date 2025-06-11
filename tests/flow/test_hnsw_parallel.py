@@ -12,7 +12,6 @@ from concurrent.futures import ThreadPoolExecutor, wait
 
 from common import *
 
-
 # Helper class for creating a "baseline" HNSW index that was built by inserting vectors one by one and a corresponding
 # flat index for given params, to compare the parallel operation against it
 class IndexTest:

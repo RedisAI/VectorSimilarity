@@ -13,6 +13,10 @@ def pytest_configure(config):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         log_dir = os.path.join(project_root, log_dir)
     
+    if os.path.exists(log_dir) and os.path.isdir(log_dir):
+        # remove it if it exists
+        import shutil
+        shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
     
     # Create a global log file for initialization logs
