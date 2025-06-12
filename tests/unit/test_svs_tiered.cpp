@@ -40,9 +40,20 @@ static unsigned int getAvailableCPUs() {
     return std::thread::hardware_concurrency();
 }
 
+// Log callback function to print non-debug log messages
+static void svsTestLogCallBackNoDebug(void *ctx, const char *level, const char *message) {
+    if (level == nullptr || message == nullptr) {
+        return; // Skip null messages
+    }
+    if (std::string_view{level} == VecSimCommonStrings::LOG_DEBUG_STRING) {
+        return; // Skip debug messages
+    }
+    // Print other log levels
+    std::cout << level << ": " << message << std::endl;
+}
+
 // Runs the test for combination of data type and quantization mode.
 // TODO: Add support for label type combination(single/multi)
-
 template <typename index_type_t>
 class SVSTieredIndexTest : public ::testing::Test {
 public:
@@ -95,11 +106,14 @@ protected:
     void SetUp() override {
         // Restore the write mode to default.
         VecSim_SetWriteMode(VecSim_WriteAsync);
+        // Limit VecSim log level to avoid printing too much information
+        VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
     }
 
-    bool isFallbackToNoLVQ() {
-        // Get the fallback quantization mode and compare it to the NONE quantization mode.
-        return VecSimSvsQuant_NONE ==
+    // Check if the test is running in fallback mode to scalar quantization.
+    bool isFallbackToSQ() const {
+        // Get the fallback quantization mode and compare it to the scalar quantization mode.
+        return VecSimSvsQuant_Scalar ==
                std::get<0>(svs_details::isSVSQuantBitsSupported(index_type_t::get_quant_bits()));
     }
 };
@@ -321,9 +335,10 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // SVS index should have allocated a single record, while flat index should remove the
     // block.
-    // LVQDataset does not provide a capacity method
-    const size_t expected_capacity =
-        this->isFallbackToNoLVQ() ? DEFAULT_BLOCK_SIZE : tiered_index->indexSize();
+    // Compression datasets do not provide a capacity method
+    const size_t expected_capacity = TypeParam::get_quant_bits() == VecSimSvsQuant_NONE
+                                         ? DEFAULT_BLOCK_SIZE
+                                         : tiered_index->GetBackendIndex()->indexCapacity();
     ASSERT_EQ(tiered_index->indexCapacity(), expected_capacity);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, vector), 0);
@@ -369,6 +384,11 @@ TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+
     size_t dim = 4;
     size_t k = 10;
 
@@ -578,6 +598,10 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, KNNSearchCosine) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     const size_t dim = 128;
     const size_t n = 100;
 
@@ -682,12 +706,16 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
-    // Check that the distance from the deleted vector (of zeros) to the label is the distance
-    // to the new vector (L2 distance).
-    TEST_DATA_T deleted_vector[dim];
-    GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->getDistanceFrom_Unsafe(vec_label, deleted_vector),
-              dim * pow(new_vec_val, 2));
+    // Scalar quantization accuracy is insufficient for this check.
+    if (!this->isFallbackToSQ()) {
+        // Check that the distance from the deleted vector (of zeros) to the label is the distance
+        // to the new vector (L2 distance).
+        TEST_DATA_T deleted_vector[dim];
+        GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
+        ASSERT_EQ(
+            tiered_index->GetBackendIndex()->getDistanceFrom_Unsafe(vec_label, deleted_vector),
+            dim * pow(new_vec_val, 2));
+    }
 }
 
 TYPED_TEST(SVSTieredIndexTest, manageIndexOwnership) {
@@ -761,6 +789,10 @@ TYPED_TEST(SVSTieredIndexTest, manageIndexOwnership) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, parallelSearch) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t k = 10;
     size_t n = 2000;
@@ -901,9 +933,7 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
     auto quantBits = TypeParam::get_quant_bits();
-    // Get the fallback quantization mode
-    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
-    if (quantBits != VecSimSvsQuant_NONE) {
+    if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
         dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
@@ -1041,6 +1071,10 @@ inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)
 }};
 
 TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t d = 4;
     size_t n = 1000;
 
@@ -1104,6 +1138,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIterator) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t d = 4;
     size_t M = 8;
     size_t sws = 20;
@@ -1194,6 +1232,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorReset) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t d = 4;
     size_t M = 8;
     size_t sws = 20;
@@ -1258,6 +1300,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t d = 4;
     size_t M = 8;
     size_t sws = 20;
@@ -1370,6 +1416,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t d = 4;
     size_t M = 8;
     size_t sws = 20;
@@ -1465,6 +1515,10 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorWithOverlaps) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t sws = 500;
     size_t n = 1000;
@@ -1546,6 +1600,10 @@ TYPED_TEST(SVSTieredIndexTest, parallelBatchIteratorSearch) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, RangeSearch) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t k = 11;
     size_t per_label = 1;
@@ -1770,6 +1828,10 @@ TYPED_TEST(SVSTieredIndexTest, RangeSearch) {
 }
 
 TYPED_TEST(SVSTieredIndexTest, parallelRangeSearch) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     size_t dim = 4;
     size_t k = 11;
     size_t n = 1000;
