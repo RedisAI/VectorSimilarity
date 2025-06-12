@@ -249,6 +249,14 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
 
 /**
+ * @brief Set the context for logging (e.g., test name or file name).
+ *
+ * @param test_name the name of the test.
+ * @param test_type the type of the test (e.g., "unit" or "flow").
+ */
+void VecSim_SetTestLogContext(const char *test_name, const char *test_type);
+
+/**
  * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
  * background jobs, or insert/delete inplace.
  * @note In tiered index scenario, should be called from main thread only !! (that is, the thread

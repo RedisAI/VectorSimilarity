@@ -44,6 +44,17 @@ jobs:
         run: make unit_test
       - name: flow tests
         run: make flow_test VERBOSE=1
+            # Using version 4 if node20 is supported, since it is MUCH faster (15m vs 25s)
+      - name: Upload Logs
+        # Upload artifacts only if flow tests failed 
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Test Logs
+          path: | 
+            logs/tests/flow/*.log*
+          if-no-files-found: ignore
+
 
   coverage:
     needs: [basic-tests]

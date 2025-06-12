@@ -60,7 +60,7 @@ def count_correctness(actual_labels, desired_labels):
 
 
 # compare results with the original version of hnswlib - do not use elements deletion.
-def test_sanity_svs_index_L2():
+def test_sanity_svs_index_L2(test_logger):
     dim = 16
     num_elements = 10000
     k = 10
@@ -80,11 +80,11 @@ def test_sanity_svs_index_L2():
     desired_labels = [key for _, key in desired]
     count = count_correctness(desired_labels, redis_labels[0])
     recall = float(count) / k
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert(recall > 0.9)
 
 
-def test_sanity_svs_index_cosine():
+def test_sanity_svs_index_cosine(test_logger):
     dim = 16
     num_elements = 10000
     k = 10
@@ -104,14 +104,14 @@ def test_sanity_svs_index_cosine():
     desired_labels = [key for _, key in desired]
     count = count_correctness(desired_labels, redis_labels[0])
     recall = float(count) / k
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert(recall > 0.9)
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
 # deterministic, but should be above a certain threshold. Note that recall is highly impacted by changing
 # index parameters.
-def test_recall_for_svs_index_with_deletion():
+def test_recall_for_svs_index_with_deletion(test_logger):
     dim = 16
     num_elements = 10000
 
@@ -143,11 +143,11 @@ def test_recall_for_svs_index_with_deletion():
 
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert (recall > 0.9)
 
 
-def test_batch_iterator():
+def test_batch_iterator(test_logger):
     dim = 100
     num_elements = 10000
     num_queries = 10
@@ -223,8 +223,7 @@ def test_batch_iterator():
         recall = float(correct) / total_res
         assert recall >= 0.89
         total_recall += recall
-    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
-          total_recall / num_queries)
+    test_logger.info(f'Avg recall for {total_res} results in index of size {num_elements} with dim={dim} is: {total_recall / num_queries}')
 
     # Run again a single query in batches until it is depleted.
     batch_iterator = index.create_batch_iterator(query_data[0])
@@ -238,10 +237,10 @@ def test_batch_iterator():
         assert len(accumulated_labels.intersection(set(labels[0]))) == 0
         accumulated_labels = accumulated_labels.union(set(labels[0]))
     assert len(accumulated_labels) >= 0.95 * num_elements
-    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+    test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
-def test_topk_query():
+def test_topk_query(test_logger):
     dim = 128
     num_elements = 100000
 
@@ -250,14 +249,14 @@ def test_topk_query():
     np.random.seed(47)
     start = time.time()
     data = np.float32(np.random.random((num_elements, dim)))
-    print(f'Sample data generated in {time.time() - start} seconds')
+    test_logger.info(f'Sample data generated in {time.time() - start} seconds')
     vectors = []
     start = time.time()
     for i, vector in enumerate(data):
         vectors.append((i, vector))
 
     index.add_vector_parallel(data, np.array(range(num_elements)))
-    print(f'Index built in {time.time() - start} seconds')
+    test_logger.info(f'Index built in {time.time() - start} seconds')
 
     query_data = np.float32(np.random.random((1, dim)))
 
@@ -279,8 +278,8 @@ def test_topk_query():
         keys = extract_labels(actual_results)
         correct = count_correctness(redis_labels[0], keys)
 
-        print(
-            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={window_size},'
+        test_logger.info(
+            f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={window_size},'
             f' got {correct} correct results, which are {correct / k} of the entire results in the range.')
 
         recalls[window_size] = correct / k
@@ -293,7 +292,7 @@ def test_topk_query():
     assert len(redis_labels[0]) == 0
 
 
-def test_range_query():
+def test_range_query(test_logger):
     dim = 100
     num_elements = 100000
 
@@ -302,14 +301,14 @@ def test_range_query():
     np.random.seed(47)
     start = time.time()
     data = np.float32(np.random.random((num_elements, dim)))
-    print(f'Sample data generated in {time.time() - start} seconds')
+    test_logger.info(f'Sample data generated in {time.time() - start} seconds')
     vectors = []
     start = time.time()
     for i, vector in enumerate(data):
         vectors.append((i, vector))
 
     index.add_vector_parallel(data, np.array(range(num_elements)))
-    print(f'Index built in {time.time() - start} seconds')
+    test_logger.info(f'Index built in {time.time() - start} seconds')
 
     query_data = np.float32(np.random.random((1, dim)))
 
@@ -326,7 +325,7 @@ def test_range_query():
 
         actual_results = compute_range_euclidean(vectors, query_data.flat, radius)
 
-        print(
+        test_logger.info(
             f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 

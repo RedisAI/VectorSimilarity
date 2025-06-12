@@ -762,4 +762,12 @@ PYBIND11_MODULE(VecSim, m) {
         .def("has_next", &PyBatchIterator::hasNext)
         .def("get_next_results", &PyBatchIterator::getNextResults)
         .def("reset", &PyBatchIterator::reset);
+
+    m.def(
+        "set_log_context",
+        [](const std::string &test_name, const std::string &test_type) {
+            // Call the C++ function to set the global context
+            VecSim_SetTestLogContext(test_name.c_str(), test_type.c_str());
+        },
+        "Set the context (test name) for logging");
 }
