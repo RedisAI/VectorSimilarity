@@ -146,12 +146,24 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     mock_thread_pool.init_threads();
 
     // Add the same vectors to Flat index.
-    for (size_t i = 0; i < n_vectors; ++i) {
-        const char *blob = GetHNSWDataByInternalId(i);
-        // Fot multi value indices, the internal id is not necessarily equal the label.
-        size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
-        VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
-    }
+    // for (size_t i = 0; i < n_vectors; ++i) {
+    //     const char *blob = GetHNSWDataByInternalId(i);
+    //     // Fot multi value indices, the internal id is not necessarily equal the label.
+    //     size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
+    //     VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
+    // }
+
+    SVSParams svs_params = {
+        .type = type,
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+        /* SVS-Vamana specifics */
+        .quantBits = VecSimSvsQuant_NONE,
+        .graph_max_degree = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getM(),
+        .construction_window_size = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getEf(),
+    };
+
+    indices.push_back(CreateNewIndex(svs_params));
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);
