@@ -597,7 +597,7 @@ public:
                         SVS_MAX_TRAINING_THRESHOLD)),
           updateJobWaitTime(
               tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
-                  ? 1000 // default wait time: 1ms
+                  ? 100 // default wait time: 0.1ms
                   : tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime),
           uncompletedJobs(this->allocator) {
         this->journal.reserve(this->trainingTriggerThreshold * 2);
