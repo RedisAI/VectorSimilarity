@@ -28,6 +28,17 @@ public:
     // per iteration, for single index adds one vector per iteration.
     static void AddLabel(benchmark::State &st);
 
+    static void Build_SVS(benchmark::State &st) {
+        // Add vectors to svs
+        auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_HNSWLIB]);
+        for (auto _ : st) {
+            for (size_t i = 0; i < N_VECTORS; ++i) {
+                const char *blob = hnsw_index->getDataByInternalId(i);
+                VecSimIndex_AddVector(INDICES[VecSimAlgo_SVS], blob, i);
+            }
+        }
+    }
+
     static void AddLabel_AsyncIngest(benchmark::State &st);
 
     static void DeleteLabel_AsyncRepair(benchmark::State &st);

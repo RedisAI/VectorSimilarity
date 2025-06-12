@@ -157,6 +157,26 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             VecSimIndex_AddVector(indices[INDEX_BF], blob, label);
         }
     }
+    auto *tiered_index =
+        TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+    indices.push_back(tiered_index);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    SVSParams svs_params = {
+        .type = type,
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+        /* SVS-Vamana specifics */
+        .quantBits = VecSimSvsQuant_NONE,
+        .graph_max_degree = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getM(),
+        .construction_window_size = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getEf(),
+    };
+
+    indices.push_back(CreateNewIndex(svs_params));
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);
