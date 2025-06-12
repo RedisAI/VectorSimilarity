@@ -912,22 +912,21 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(CommonAPITest, testSetTestLogContext) {
     // Create an index with the log context
     BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
-    VecSimParams params = {.algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bfParams}}};
-    auto *index =
-        dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
+    VecSimIndex *index = test_utils::CreateNewIndex(bfParams, VecSimType_FLOAT32);
+    auto *bf_index = dynamic_cast<BruteForceIndex<float, float> *>(index);
 
     std::string log_dir = "logs/tests/unit";
     std::cout << "Log directory: " << log_dir << std::endl;
     if (!std::filesystem::exists(log_dir)) {
         std::filesystem::create_directories(log_dir);
     }
-    index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", "printed before setting context");
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", "printed before setting context");
     // Set the log context
     const char *testContext = "test_context";
     VecSim_SetTestLogContext(testContext, "unit");
     std::string msg = "Test message with context";
     // Trigger a log message
-    index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", msg.c_str());
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", msg.c_str());
 
     // check if the log message was written to the log file
     std::string log_file = log_dir + "/test_context.log";
@@ -943,5 +942,5 @@ TEST(CommonAPITest, testSetTestLogContext) {
     }
 
     ASSERT_TRUE(found) << "Log message not found in log file: " << log_file;
-    delete index;
+    VecSimIndex_Free(index);
 }
