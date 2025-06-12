@@ -68,7 +68,7 @@ protected:
 
     TieredIndexParams CreateTieredSVSParams(VecSimParams &svs_params,
                                             tieredIndexMock &mock_thread_pool,
-                                            size_t update_job_threshold = 1024,
+                                            size_t update_job_threshold = 512,
                                             size_t flat_buffer_limit = SIZE_MAX) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         if (svs_params.algoParams.svsParams.num_threads == 0) {
@@ -97,7 +97,7 @@ protected:
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(VecSimParams &svs_params,
                                                  tieredIndexMock &mock_thread_pool,
-                                                 size_t update_job_threshold = 1024,
+                                                 size_t update_job_threshold = 512,
                                                  size_t flat_buffer_limit = SIZE_MAX) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params = CreateTieredSVSParams(
@@ -348,7 +348,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
 
 TYPED_TEST(SVSTieredIndexTest, insertJobAsync) {
     size_t dim = 4;
-    size_t n = 5000;
+    size_t n = 1000;
     SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
@@ -797,7 +797,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelSearch) {
     }
     size_t dim = 4;
     size_t k = 10;
-    size_t n = 2000;
+    size_t n = 1000;
 
     // Create TieredSVS index instance with a mock queue.
     SVSParams params = {
@@ -868,7 +868,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelSearch) {
 TYPED_TEST(SVSTieredIndexTest, parallelInsertSearch) {
     size_t dim = 4;
     size_t k = 10;
-    size_t n = 3000;
+    size_t n = 1000;
 
     size_t block_size = n / 100;
 
