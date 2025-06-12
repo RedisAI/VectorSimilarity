@@ -158,6 +158,7 @@ typedef struct {
     size_t prune_to;                 // Amount that candidates will be pruned.
     VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
+    size_t num_threads;                  // Maximum number of threads in threadpool.
     size_t search_window_size;           // Search window size to use during search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSParams;
@@ -167,6 +168,14 @@ typedef struct {
     size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
+
+// A struct that contains SVS tiered index specific params.
+typedef struct {
+    size_t trainingTriggerThreshold; // The flat index size threshold to trigger the initialization
+                                     // of backend index.
+    size_t updateJobWaitTime; // The time (microseconds) to wait for Redis threads reservation
+                              // before executing the scheduled SVS Index update job.
+} TieredSVSParams;
 
 // A struct that contains the common tiered index params.
 typedef struct {
@@ -178,6 +187,7 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
+        TieredSVSParams tieredSVSParams;
     } specificParams;
 } TieredIndexParams;
 
@@ -202,6 +212,7 @@ typedef enum {
     HNSW_REPAIR_NODE_CONNECTIONS_JOB,
     HNSW_SEARCH_JOB,
     HNSW_SWAP_JOB,
+    SVS_BATCH_UPDATE_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 

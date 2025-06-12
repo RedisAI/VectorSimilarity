@@ -29,6 +29,12 @@ struct SVSIndexBase {
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual size_t indexStorageSize() const = 0;
+    virtual size_t getNumThreads() const = 0;
+    virtual void setNumThreads(size_t numThreads) = 0;
+    virtual size_t getThreadPoolCapacity() const = 0;
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
+    virtual bool isCompressed() const = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -66,6 +72,8 @@ protected:
     size_t search_window_size;
     double epsilon;
 
+    // SVS thread pool
+    VecSimSVSThreadPool threadpool_;
     // SVS Index implementation instance
     std::unique_ptr<impl_type> impl_;
 
@@ -153,8 +161,7 @@ protected:
     // Data should not be empty
     template <svs::data::ImmutableMemoryDataset Dataset>
     void initImpl(const Dataset &points, std::span<const labelType> ids) {
-        VecSimSVSThreadPool threadpool;
-        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool}};
+        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
 
         auto logger = makeLogger();
 
@@ -171,13 +178,12 @@ protected:
 
         // Construct initial Vamana Graph
         auto graph =
-            graph_builder_t::build_graph(parameters, data, distance, threadpool, entry_point,
+            graph_builder_t::build_graph(parameters, data, distance, threadpool_, entry_point,
                                          this->blockSize, this->getAllocator(), logger);
 
         // Create SVS MutableIndex instance
-        impl_ =
-            std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
-                                        std::move(distance), ids, std::move(threadpool), logger);
+        impl_ = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
+                                            std::move(distance), ids, threadpool_, logger);
 
         // Set SVS MutableIndex build parameters to be used in future updates
         impl_->set_construction_window_size(parameters.window_size);
@@ -217,7 +223,6 @@ protected:
 
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
-            assert(false && "Empty batch of vectors"); // This case to be enabled for TieredSVS
             return 0;
         }
 
@@ -231,14 +236,25 @@ protected:
         // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
-        // SVS index instance cannot be empty, so we have to construct it at first rows
-        if (!impl_) {
-            initImpl(points, ids);
-            return n;
+        // If n == 1, we should ensure single-threading
+        const size_t current_num_threads = getNumThreads();
+        if (n == 1 && current_num_threads > 1) {
+            setNumThreads(1);
         }
 
-        // Add new points to existing SVS index
-        impl_->add_points(points, ids);
+        if (!impl_) {
+            // SVS index instance cannot be empty, so we have to construct it at first rows
+            initImpl(points, ids);
+        } else {
+            // Add new points to existing SVS index
+            impl_->add_points(points, ids);
+        }
+
+        // Restore multi-threading if needed
+        if (n == 1 && current_num_threads > 1) {
+            setNumThreads(current_num_threads);
+        }
+
         return n - deleted_num;
     }
 
@@ -260,7 +276,19 @@ protected:
             return 0;
         }
 
+        // If entries_to_delete.size() == 1, we should ensure single-threading
+        const size_t current_num_threads = getNumThreads();
+        if (n == 1 && current_num_threads > 1) {
+            setNumThreads(1);
+        }
+
         impl_->delete_entries(entries_to_delete);
+
+        // Restore multi-threading if needed
+        if (n == 1 && current_num_threads > 1) {
+            setNumThreads(current_num_threads);
+        }
+
         this->markIndexUpdate(entries_to_delete.size());
         return entries_to_delete.size();
     }
@@ -294,17 +322,28 @@ public:
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{makeVamanaBuildParameters(params)},
           search_window_size{getOrDefault(params.search_window_size, 10)},
-          epsilon{getOrDefault(params.epsilon, 0.01)}, impl_{nullptr} {}
+          epsilon{getOrDefault(params.epsilon, 0.01)},
+          threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{nullptr} {}
 
     ~SVSIndex() = default;
 
     size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
+
+    size_t indexStorageSize() const override { return impl_ ? impl_->view_data().size() : 0; }
 
     size_t indexCapacity() const override {
         return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 0;
     }
 
     size_t indexLabelCount() const override { return indexSize(); }
+
+    vecsim_stl::set<size_t> getLabelsSet() const override {
+        vecsim_stl::set<size_t> labels(this->allocator);
+        if (impl_) {
+            impl_->on_ids([&labels](size_t label) { labels.insert(label); });
+        }
+        return labels;
+    }
 
     VecSimIndexBasicInfo basicInfo() const override {
         VecSimIndexBasicInfo info = this->getBasicInfo();
@@ -354,6 +393,13 @@ public:
     int deleteVectors(const labelType *labels, size_t n) override {
         return deleteVectorsImpl(labels, n);
     }
+
+    size_t getNumThreads() const override { return threadpool_.size(); }
+    void setNumThreads(size_t numThreads) override { threadpool_.resize(numThreads); }
+
+    size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
+
+    bool isCompressed() const override { return storage_traits_t::is_compressed(); }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         if (!impl_ || !impl_->has_id(label)) {
@@ -408,6 +454,10 @@ public:
             rep->results.push_back(
                 VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
         }
+        // Workaround for VecSim merge_results() that expects results to be sorted
+        // by score, then by id from both indices.
+        // TODO: remove this workaround when merge_results() is fixed.
+        sort_results_by_score_then_id(rep);
         return rep;
     }
 
@@ -472,6 +522,10 @@ public:
                 }
             }
         }
+        // Workaround for VecSim merge_results() that expects results to be sorted
+        // by score, then by id from both indices.
+        // TODO: remove this workaround when merge_results() is fixed.
+        sort_results_by_score_then_id(rep);
         return rep;
     }
 
@@ -519,6 +573,18 @@ public:
         this->lastMode =
             res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
         return res;
+    }
+
+    void runGC() override {
+        if (impl_) {
+            // There is documentation for consolidate():
+            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
+            impl_->consolidate();
+            // There is documentation for compact():
+            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
+            impl_->compact();
+        }
+        changes_num = 0;
     }
 
 #ifdef BUILD_TESTS
