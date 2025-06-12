@@ -13,6 +13,25 @@ import time
 import math
 from ml_dtypes import bfloat16
 
+# alpha = 0 means the default value, which is 1.2 for L2 and 0.9 for other metrics.
+def create_svs_params (dim, num_elements, data_type, metric, alpha = 0, graph_max_degree = 32,
+                       construction_window_size = 200, search_window_size = 10, epsilon = 0.01):
+    svs_params = SVSParams()
+
+    svs_params.dim = dim
+    svs_params.type = data_type
+    svs_params.metric = metric
+    svs_params.alpha = alpha
+    svs_params.graph_max_degree = graph_max_degree
+    svs_params.construction_window_size = construction_window_size
+    svs_params.max_candidate_pool_size = 0 # 0 means use the default value
+    svs_params.prune_to = 0 # 0 means use the default value
+    svs_params.use_search_history = VecSimOption_AUTO # VecSimOption_AUTO means use the default value
+    svs_params.search_window_size = search_window_size
+    svs_params.epsilon = epsilon
+
+    return svs_params
+
 def create_hnsw_params(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
                       is_multi=False):
     hnsw_params = HNSWParams()
