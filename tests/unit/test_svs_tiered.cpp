@@ -31,11 +31,13 @@
 // Returns the number of logical processors on the process
 // Returns std::thread::hardware_concurrency() if the number of logical processors is not available
 static unsigned int getAvailableCPUs() {
+#ifdef __linux__
     // On Linux, use sched_getaffinity to get the number of CPUs available to the current process.
     cpu_set_t cpu_set;
     if (sched_getaffinity(0, sizeof(cpu_set), &cpu_set) == 0) {
         return CPU_COUNT(&cpu_set);
     }
+#endif
     // Fallback.
     return std::thread::hardware_concurrency();
 }
