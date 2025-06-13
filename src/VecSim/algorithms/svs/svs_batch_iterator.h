@@ -14,6 +14,7 @@
 #include "VecSim/query_results.h"
 
 #include <memory>
+#include <type_traits>
 
 #include "svs/index/vamana/iterator.h"
 
@@ -22,7 +23,10 @@
 template <typename Index, typename DataType>
 class SVS_BatchIterator : public VecSimBatchIterator {
 private:
-    using impl_type = svs::index::vamana::BatchIterator<Index, DataType>;
+    using query_type = std::span<const DataType>;
+    using mkbi_t = decltype(&Index::template make_batch_iterator<DataType>);
+    using impl_type = std::invoke_result_t<mkbi_t, Index, query_type, size_t>;
+
     using dist_type = typename Index::distance_type;
     bool done;
     size_t dim;
@@ -71,8 +75,8 @@ public:
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
           done{false}, dim{index->dimensions()}, index_{index},
-          impl_{std::make_unique<impl_type>(*index_,
-                                            std::span{static_cast<DataType *>(query_vector), dim})},
+          impl_{std::make_unique<impl_type>(index->make_batch_iterator(
+              std::span{static_cast<const DataType *>(query_vector), dim}))},
           curr_it{impl_->begin()} {
         auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams);
         batch_size = queryParams && queryParams->batchSize
