@@ -41,8 +41,8 @@ struct SVSIndexBase {
 #endif
 };
 
-template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits, size_t ResidualBits,
-          bool IsLeanVec>
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
 class SVSIndex : public VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>,
                  public SVSIndexBase {
 protected:
@@ -287,8 +287,8 @@ public:
           search_window_size{svs_details::getOrDefault(params.search_window_size, 10)},
           epsilon{svs_details::getOrDefault(params.epsilon, 0.01)},
           threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{nullptr} {
-            logger_ = makeLogger();
-          }
+        logger_ = makeLogger();
+    }
 
     ~SVSIndex() = default;
 
@@ -564,8 +564,6 @@ public:
         assert(false && "Not implemented");
     }
 
-    svs::logging::logger_ptr getLogger() const override {
-        return logger_;
-    }
+    svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 };
