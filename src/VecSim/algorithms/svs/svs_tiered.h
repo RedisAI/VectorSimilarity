@@ -205,6 +205,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // Add: true, Delete: false
     using journal_record = std::pair<labelType, bool>;
     size_t trainingTriggerThreshold;
+    size_t updateTriggerThreshold;
     size_t updateJobWaitTime;
     std::vector<journal_record> journal;
     std::shared_mutex journal_mutex;
@@ -589,17 +590,32 @@ public:
                    const TieredIndexParams &tiered_index_params,
                    std::shared_ptr<VecSimAllocator> allocator)
         : Base(svs_index, bf_index, tiered_index_params, allocator),
-          trainingTriggerThreshold(
-              tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold == 0
-                  ? SVS_DEFAULT_TRAINING_THRESHOLD
-                  : std::min(
-                        tiered_index_params.specificParams.tieredSVSParams.trainingTriggerThreshold,
-                        SVS_MAX_TRAINING_THRESHOLD)),
-          updateJobWaitTime(
-              tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime == 0
-                  ? 100 // default wait time: 0.1ms
-                  : tiered_index_params.specificParams.tieredSVSParams.updateJobWaitTime),
           uncompletedJobs(this->allocator) {
+        const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
+
+        this->trainingTriggerThreshold =
+            tiered_svs_params.trainingTriggerThreshold == 0
+                ? SVS_DEFAULT_TRAINING_THRESHOLD
+                : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
+
+        // If flatBufferLimit is not initialized (0), use the default update threshold.
+        const size_t flat_buffer_bound = tiered_index_params.flatBufferLimit == 0
+                                             ? SVS_DEFAULT_UPDATE_THRESHOLD
+                                             : tiered_index_params.flatBufferLimit;
+
+        this->updateTriggerThreshold =
+            tiered_svs_params.updateTriggerThreshold == 0
+                ? SVS_DEFAULT_UPDATE_THRESHOLD
+                : std::min({tiered_svs_params.updateTriggerThreshold, flat_buffer_bound,
+                            SVS_DEFAULT_UPDATE_THRESHOLD});
+
+        this->updateJobWaitTime = tiered_svs_params.updateJobWaitTime == 0
+                                      ? SVS_DEFAULT_UPDATE_JOB_WAIT_TIME
+                                      : tiered_svs_params.updateJobWaitTime;
+
+        // Reserve space for the journal to avoid reallocation.
+        // We reserve twice the trainingTriggerThreshold to ensure we have enough space for both
+        // additions and deletions, as the journal can contain both types of records.
         this->journal.reserve(this->trainingTriggerThreshold * 2);
     }
 
@@ -654,9 +670,8 @@ public:
             ret -= svs_index->deleteVectors(&label, 1);
             // If main index is empty then update_threshold is trainingTriggerThreshold,
             // overwise it is 1.
-            update_threshold = this->backendIndex->indexSize() == 0
-                                   ? this->trainingTriggerThreshold
-                                   : 1; // schedule update job for every vector added
+            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                                    : this->updateTriggerThreshold;
         }
         { // Add vector to the frontend index and journal.
             std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
