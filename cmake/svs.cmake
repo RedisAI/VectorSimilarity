@@ -49,7 +49,8 @@ if(USE_SVS)
         message(STATUS "GLIBC is not detected - SVS shared library is not supported")
     endif()
 
-    cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
+    #cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
+    set(SVS_SHARED_LIB OFF CACHE BOOL "FIXME: Temporary disable SVS shared library until SVS PR#136 added to" FORCE)
     set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250602-268.tar.gz" CACHE STRING "SVS URL")
 
     if(SVS_SHARED_LIB)
