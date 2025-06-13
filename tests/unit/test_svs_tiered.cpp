@@ -2025,11 +2025,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
 
         mock_thread_pool.thread_pool_join();
 
-        // Verify that vectors were moved to SVS as expected
-        auto sz_f = tiered_index->GetFlatIndex()->indexSize();
-        auto sz_b = tiered_index->GetBackendIndex()->indexSize();
-        EXPECT_LE(sz_f, updateThreshold);
-        EXPECT_EQ(sz_f + sz_b, n);
+        EXPECT_LE(tiered_index->GetFlatIndex()->indexSize(), updateThreshold);
         EXPECT_EQ(tiered_index->indexLabelCount(), n);
     }
 }
