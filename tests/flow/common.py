@@ -15,7 +15,8 @@ from ml_dtypes import bfloat16
 
 # alpha = 0 means the default value, which is 1.2 for L2 and 0.9 for other metrics.
 def create_svs_params (dim, num_elements, data_type, metric, alpha = 0, graph_max_degree = 32,
-                       construction_window_size = 200, search_window_size = 10, epsilon = 0.01):
+                       construction_window_size = 200, search_window_size = 10,
+                       max_candidate_pool_size = 0, prune_to = 0, epsilon = 0.01, num_threads = 0):
     svs_params = SVSParams()
 
     svs_params.dim = dim
@@ -24,11 +25,12 @@ def create_svs_params (dim, num_elements, data_type, metric, alpha = 0, graph_ma
     svs_params.alpha = alpha
     svs_params.graph_max_degree = graph_max_degree
     svs_params.construction_window_size = construction_window_size
-    svs_params.max_candidate_pool_size = 0 # 0 means use the default value
-    svs_params.prune_to = 0 # 0 means use the default value
+    svs_params.max_candidate_pool_size = max_candidate_pool_size
+    svs_params.prune_to = prune_to
     svs_params.use_search_history = VecSimOption_AUTO # VecSimOption_AUTO means use the default value
     svs_params.search_window_size = search_window_size
     svs_params.epsilon = epsilon
+    svs_params.num_threads = num_threads
 
     return svs_params
 
