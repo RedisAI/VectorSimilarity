@@ -75,7 +75,8 @@ public:
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
           done{false}, dim{index->dimensions()}, index_{index},
-          impl_{std::make_unique<impl_type>(index->make_batch_iterator(std::span{static_cast<const DataType *>(query_vector), dim}))},
+          impl_{std::make_unique<impl_type>(index->make_batch_iterator(
+              std::span{static_cast<const DataType *>(query_vector), dim}))},
           curr_it{impl_->begin()} {
         auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams);
         batch_size = queryParams && queryParams->batchSize
