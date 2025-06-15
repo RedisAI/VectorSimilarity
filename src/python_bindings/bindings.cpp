@@ -213,6 +213,8 @@ public:
         return PyBatchIterator(index, py_batch_ptr);
     }
 
+    void runGC() { VecSimTieredIndex_GC(index.get()); }
+
     py::object getVector(labelType label) {
         VecSimIndexBasicInfo info = index->basicInfo();
         size_t dim = info.dim;
@@ -586,6 +588,30 @@ public:
         svs_index->addVectors(vectors_data.data(), labels.data(), n_vectors);
     }
 };
+
+class PyTiered_SVSIndex : public PyTieredIndex {
+public:
+    explicit PyTiered_SVSIndex(const SVSParams &svs_params,
+                               const TieredSVSParams &tiered_svs_params, size_t buffer_limit) {
+
+        // Create primaryIndexParams and specific params for hnsw tiered index.
+        VecSimParams primary_index_params = {.algo = VecSimAlgo_SVS,
+                                             .algoParams = {.svsParams = svs_params}};
+
+        auto tiered_params = this->getTieredIndexParams(buffer_limit);
+        tiered_params.primaryIndexParams = &primary_index_params;
+        tiered_params.specificParams.tieredSVSParams = tiered_svs_params;
+
+        // Create VecSimParams for TieredIndexParams
+        VecSimParams params = {.algo = VecSimAlgo_TIERED,
+                               .algoParams = {.tieredParams = tiered_params}};
+
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+
+        // Set the created tiered index in the index external context.
+        this->mock_thread_pool.ctx->index_strong_ref = this->index;
+    }
+};
 #endif
 
 PYBIND11_MODULE(VecSim, m) {
@@ -666,11 +692,17 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("prune_to", &SVSParams::prune_to)
         .def_readwrite("use_search_history", &SVSParams::use_search_history)
         .def_readwrite("search_window_size", &SVSParams::search_window_size)
-        .def_readwrite("epsilon", &SVSParams::epsilon);
+        .def_readwrite("epsilon", &SVSParams::epsilon)
+        .def_readwrite("num_threads", &SVSParams::num_threads);
 
     py::class_<TieredHNSWParams>(m, "TieredHNSWParams")
         .def(py::init())
         .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold);
+
+    py::class_<TieredSVSParams>(m, "TieredSVSParams")
+        .def(py::init())
+        .def_readwrite("trainingTriggerThreshold", &TieredSVSParams::trainingTriggerThreshold)
+        .def_readwrite("updateJobWaitTime", &TieredSVSParams::updateJobWaitTime);
 
     py::class_<AlgoParams>(m, "AlgoParams")
         .def(py::init())
@@ -698,7 +730,8 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<SVSRuntimeParams>(queryParams, "SVSRuntimeParams")
         .def(py::init<>())
         .def_readwrite("windowSize", &SVSRuntimeParams::windowSize)
-        .def_readwrite("searchHistory", &SVSRuntimeParams::searchHistory);
+        .def_readwrite("searchHistory", &SVSRuntimeParams::searchHistory)
+        .def_readwrite("epsilon", &SVSRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
         .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
@@ -714,7 +747,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
-        .def("get_vector", &PyVecSimIndex::getVector);
+        .def("get_vector", &PyVecSimIndex::getVector)
+        .def("run_gc", &PyVecSimIndex::runGC);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
@@ -756,9 +790,24 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("params"))
         .def("add_vector_parallel", &PySVSIndex::addVectorsParallel, py::arg("vectors"),
              py::arg("labels"));
+    py::class_<PyTiered_SVSIndex, PyTieredIndex>(m, "Tiered_SVSIndex")
+        .def(py::init([](const SVSParams &svs_params, const TieredSVSParams &tiered_svs_params,
+                         size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {
+                 return new PyTiered_SVSIndex(svs_params, tiered_svs_params, flat_buffer_size);
+             }),
+             py::arg("svs_params"), py::arg("tiered_svs_params"), py::arg("flat_buffer_size"));
 #endif
+
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
         .def("get_next_results", &PyBatchIterator::getNextResults)
         .def("reset", &PyBatchIterator::reset);
+
+    m.def(
+        "set_log_context",
+        [](const std::string &test_name, const std::string &test_type) {
+            // Call the C++ function to set the global context
+            VecSim_SetTestLogContext(test_name.c_str(), test_type.c_str());
+        },
+        "Set the context (test name) for logging");
 }

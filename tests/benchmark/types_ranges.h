@@ -11,7 +11,8 @@
 #include <array>
 #include "bm_definitions.h"
 
-#define DEFAULT_RANGE_RADII    {20, 35, 50}
+#define DEFAULT_RANGE_RADII {20, 35, 50}
+
 #define DEFAULT_RANGE_EPSILONS {1, 10, 11}
 
 // This template struct methods returns the default values for radii and epsilons
@@ -34,6 +35,7 @@ struct benchmark_range<int8_index_t> {
 
 // UINT8 ranges
 #define UINT8_RANGE_RADII {4, 5, 7}
+
 template <>
 struct benchmark_range<uint8_index_t> {
     static std::array<unsigned int, 3> get_radii() { return UINT8_RANGE_RADII; }

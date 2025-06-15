@@ -53,7 +53,7 @@ add_executable(test_fp16 ../utils/mock_thread_pool.cpp test_fp16.cpp unit_test_u
 add_executable(test_int8 ../utils/mock_thread_pool.cpp test_int8.cpp unit_test_utils.cpp)
 add_executable(test_uint8 ../utils/mock_thread_pool.cpp test_uint8.cpp unit_test_utils.cpp)
 add_executable(test_index_test_utils ../utils/mock_thread_pool.cpp test_index_test_utils.cpp unit_test_utils.cpp)
-add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp unit_test_utils.cpp)
+add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp unit_test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)
@@ -85,4 +85,5 @@ gtest_discover_tests(test_fp16 TEST_PREFIX FP16UNIT_)
 gtest_discover_tests(test_int8 TEST_PREFIX INT8UNIT_)
 gtest_discover_tests(test_uint8 TEST_PREFIX UINT8UNIT_)
 gtest_discover_tests(test_index_test_utils)
-gtest_discover_tests(test_svs)
+# SVS Tiered tests are slow in debug mode, so we set a longer timeout
+gtest_discover_tests(test_svs PROPERTIES TIMEOUT 3000)

@@ -30,6 +30,7 @@
 #include <cmath>
 #include <random>
 #include <cstdarg>
+#include <filesystem>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -907,3 +908,39 @@ INSTANTIATE_TEST_SUITE_P(
         std::string test_name(type);
         return test_name + "_" + metric;
     });
+
+TEST(CommonAPITest, testSetTestLogContext) {
+    // Create an index with the log context
+    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
+    VecSimIndex *index = test_utils::CreateNewIndex(bfParams, VecSimType_FLOAT32);
+    auto *bf_index = dynamic_cast<BruteForceIndex<float, float> *>(index);
+
+    std::string log_dir = "logs/tests/unit";
+    std::cout << "Log directory: " << log_dir << std::endl;
+    if (!std::filesystem::exists(log_dir)) {
+        std::filesystem::create_directories(log_dir);
+    }
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", "printed before setting context");
+    // Set the log context
+    const char *testContext = "test_context";
+    VecSim_SetTestLogContext(testContext, "unit");
+    std::string msg = "Test message with context";
+    // Trigger a log message
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", msg.c_str());
+
+    // check if the log message was written to the log file
+    std::string log_file = log_dir + "/test_context.log";
+    std::ifstream file(log_file);
+    ASSERT_TRUE(file.is_open()) << "Log file not found: " << log_file;
+    std::string line;
+    bool found = false;
+    while (std::getline(file, line)) {
+        if (line.find(msg) != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(found) << "Log message not found in log file: " << log_file;
+    VecSimIndex_Free(index);
+}
