@@ -81,7 +81,7 @@ static T getOrDefault(T v, U def) {
     return v != T{} ? v : static_cast<T>(def);
 }
 
-static svs::index::vamana::VamanaBuildParameters
+inline svs::index::vamana::VamanaBuildParameters
 makeVamanaBuildParameters(const SVSParams &params) {
     // clang-format off
     // evaluate optimal default parameters; current assumption:
