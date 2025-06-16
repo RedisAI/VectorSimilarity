@@ -74,6 +74,9 @@ public:
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
+    // Unsafe (assume index data guard is held in MT mode).
+    virtual vecsim_stl::vector<idType> getElementIds(size_t label) const = 0;
+
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     void fitMemory() override {
