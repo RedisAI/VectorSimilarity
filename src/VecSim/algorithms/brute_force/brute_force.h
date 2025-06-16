@@ -71,6 +71,9 @@ public:
     // Check if a certain label exists in the index.
     virtual bool isLabelExists(labelType label) = 0;
 
+    // Unsafe (assume index data guard is held in MT mode).
+    virtual vecsim_stl::vector<idType> getElementIds(size_t label) const = 0;
+
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     void fitMemory() override {
