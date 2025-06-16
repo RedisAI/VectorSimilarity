@@ -215,8 +215,8 @@ protected:
         memcpy(processed_blob.get(), original_data, data_size);
         // Preprocess each vector in place
         for (size_t i = 0; i < n; i++) {
-            this->preprocessQueryInPlace(static_cast<DataType *>(processed_blob.get()) +
-                                         i * this->dim);
+            this->preprocessStorageInPlace(static_cast<DataType *>(processed_blob.get()) +
+                                           i * this->dim);
         }
         return processed_blob;
     }
