@@ -78,7 +78,7 @@ using SVSAllocator = VecsimSTLAllocator<T>;
 
 template <typename T, typename U>
 static T getOrDefault(T v, U def) {
-    return v ? v : static_cast<T>(def);
+    return v != T{} ? v : static_cast<T>(def);
 }
 
 static svs::index::vamana::VamanaBuildParameters
