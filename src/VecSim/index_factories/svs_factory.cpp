@@ -182,8 +182,9 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 
 size_t EstimateElementSize(const SVSParams *params) {
     using graph_idx_type = uint32_t;
-    const auto graph_node_size =
-        SVSGraphBuilder<graph_idx_type>::element_size(params->graph_max_degree);
+    // Assuming that the graph_max_degree can be unset in params.
+    const auto graph_max_degree = svs_details::makeVamanaBuildParameters(*params).graph_max_degree;
+    const auto graph_node_size = SVSGraphBuilder<graph_idx_type>::element_size(graph_max_degree);
     const auto vector_size = QuantizedVectorSize(params->type, params->quantBits, params->dim);
 
     return vector_size + graph_node_size;
