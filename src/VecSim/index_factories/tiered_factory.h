@@ -14,6 +14,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/svs/svs_tiered.h"
 
 namespace TieredFactory {
 
@@ -65,7 +66,35 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
 // introduced.
 namespace TieredSVSFactory {
 BFParams NewBFParams(const TieredIndexParams *params);
-}
+// Build tiered index from existing SVS index - for internal benchmarks purposes
+// template <typename DataType, typename DistType, typename MetricType,  size_t QuantBits, size_t ResidualBits,
+//           bool IsLeanVec>
+// VecSimIndex *NewIndex(const TieredIndexParams *params, SVSIndex<MetricType, DataType, QuantBits,
+//                                                                ResidualBits, IsLeanVec> *svs_index) {
+//     // Initialize brute force index.
+//     BFParams bf_params = NewBFParams(params);
+
+//     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
+//     size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+
+//     AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
+//                                                   .dim = bf_params.dim,
+//                                                   .vecType = bf_params.type,
+//                                                   .dataSize = dataSize,
+//                                                   .metric = bf_params.metric,
+//                                                   .blockSize = bf_params.blockSize,
+//                                                   .multi = bf_params.multi,
+//                                                   .logCtx = nullptr};
+//     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
+//         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
+
+//     // Create new tiered svs index
+//     std::shared_ptr<VecSimAllocator> management_layer_allocator =
+//         VecSimAllocator::newVecsimAllocator();
+//     return new (management_layer_allocator) TieredSVSIndex<DataType>(
+//         svs_index, frontendIndex, *params, management_layer_allocator);
+// }
+} // namespace TieredSVSFactory
 #endif
 
 }; // namespace TieredFactory

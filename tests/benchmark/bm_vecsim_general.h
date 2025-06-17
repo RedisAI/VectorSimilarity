@@ -49,6 +49,7 @@ protected:
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;
+    static tiered_type_t tiered_type;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
@@ -61,6 +62,11 @@ protected:
 protected:
     static inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
         VecSimQueryParams QueryParams = {.hnswRuntimeParams = RuntimeParams};
+        return QueryParams;
+    }
+
+    static inline VecSimQueryParams CreateQueryParams(const SVSRuntimeParams &RuntimeParams) {
+        VecSimQueryParams QueryParams = {.svsRuntimeParams = RuntimeParams};
         return QueryParams;
     }
 
