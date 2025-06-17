@@ -1,6 +1,7 @@
 #include "benchmark/bm_batch_iterator.h"
 
 bool BM_VecSimGeneral::is_multi = true;
+tiered_type_t BM_VecSimGeneral::tiered_type = tiered_type_t::TIERED_INDEX_HNSW;
 
 // Global benchmark data
 size_t BM_VecSimGeneral::n_vectors = 1111025;

@@ -42,6 +42,7 @@ public:
     static void AddLabel_AsyncIngest(benchmark::State &st);
 
     static void DeleteLabel_AsyncRepair(benchmark::State &st);
+    static void DeleteLabel_AsyncRepair_SVS(benchmark::State &st);
 
     // We pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
     // which is not known to VecSimIndex class.
@@ -52,6 +53,7 @@ public:
 
     static void Range_BF(benchmark::State &st);
     static void Range_HNSW(benchmark::State &st);
+    static void Range_SVS(benchmark::State &st);
 
 private:
     // Vectors of vector to store deleted labels' data.
@@ -201,6 +203,75 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
 
+
+// TODO - Create function for svs that here:
+//    auto start = high_resolution_clock::now();
+//    tiered_index->pendingSwapJobsThreshold = 1;
+//    tiered_index->executeReadySwapJobs();
+//    tiered_index->pendingSwapJobsThreshold = DEFAULT_PENDING_SWAP_JOBS_THRESHOLD;
+//    auto end = high_resolution_clock::now();
+//    st.counters["cleanup_time"] = (double)duration_cast<milliseconds>(end - start).count();
+// tiered_index->runGC
+// 
+
+template <typename index_type_t>
+void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair_SVS(benchmark::State &st) {
+    // Remove a different vector in every execution.
+    size_t label_to_remove = 0;
+    auto *tiered_index =
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
+
+    tiered_index->fitMemory();
+    double memory_before = tiered_index->getAllocationSize();
+    size_t removed_vectors_count = 0;
+    std::vector<LabelData> removed_labels_data;
+    tiered_index->pendingSwapJobsThreshold = st.range(0);
+
+    for (auto _ : st) {
+        st.PauseTiming();
+        LabelData data(0);
+        // Get label id(s) data.
+        tiered_index->getDataByLabel(label_to_remove, data);
+
+        removed_labels_data.push_back(data);
+
+        removed_vectors_count += data.size();
+        st.ResumeTiming();
+
+        // Delete label
+        VecSimIndex_DeleteVector(tiered_index, label_to_remove++);
+        if (label_to_remove == BM_VecSimGeneral::block_size) {
+            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+        }
+    }
+
+    // Avg. memory delta per vector equals the total memory delta divided by the number
+    // of deleted vectors.
+    double memory_delta = tiered_index->getAllocationSize() - memory_before;
+    st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
+    st.counters["num_zombies"] = tiered_index->idToSwapJob.size();
+
+    // Remove the rest of the vectors that hadn't been swapped yet.
+    auto start = high_resolution_clock::now();
+    VecSimTieredIndex_GC(tiered_index);
+    auto end = high_resolution_clock::now();
+    st.counters["cleanup_time"] = (double)duration_cast<milliseconds>(end - start).count();
+
+    // Restore index state.
+    // For each label in removed_labels_data
+    for (size_t label_idx = 0; label_idx < removed_labels_data.size(); label_idx++) {
+        size_t vec_count = removed_labels_data[label_idx].size();
+        // Reinsert all the deleted vectors under this label.
+        for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
+            VecSimIndex_AddVector(tiered_index, removed_labels_data[label_idx][vec_idx].data(),
+                                  label_idx);
+        }
+    }
+    BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+    assert(VecSimIndex_IndexSize(tiered_index) == N_VECTORS);
+}
+// run the gc and measures
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st) {
     // Remove a different vector in every execution.
@@ -307,6 +378,43 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
+template <typename index_type_t>
+void BM_VecSimBasics<index_type_t>::Range_SVS(benchmark::State &st) {
+    double radius = (1.0 / 100.0) * (double)st.range(0);
+    double epsilon = (1.0 / 1000.0) * (double)st.range(1);
+    size_t windowSize = st.range(2);
+    VecSimOptionMode searchHistory = static_cast<VecSimOptionMode>(st.range(3));
+    size_t iter = 0;
+    size_t total_res = 0;
+    size_t total_res_bf = 0;
+    SVSRuntimeParams svsRuntimeParams = {
+        .windowSize = windowSize,
+        .searchHistory = searchHistory,
+        .epsilon = epsilon
+    };
+    auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
+
+    for (auto _ : st) {
+        auto svs_results =
+            VecSimIndex_RangeQuery(INDICES[VecSimAlgo_SVS], QUERIES[iter % N_QUERIES].data(),
+                                   radius, &query_params, BY_ID);
+        st.PauseTiming();
+        total_res += VecSimQueryReply_Len(svs_results);
+
+        // Measure recall:
+        auto bf_results = VecSimIndex_RangeQuery(
+            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
+        total_res_bf += VecSimQueryReply_Len(bf_results);
+
+        VecSimQueryReply_Free(bf_results);
+        VecSimQueryReply_Free(svs_results);
+        iter++;
+        st.ResumeTiming();
+    }
+    st.counters["Avg. results number"] = (double)total_res / iter;
+    st.counters["Recall"] = (float)total_res / total_res_bf;
+}
+
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
 
 // These macros are used to make sure the expansion of other macros happens when needed
@@ -340,6 +448,28 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->Apply(MACRO_CONCATENATE(BM_FUNC, _Args))                                                 \
         ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
+        ->Iterations(10)                                                                           \
+        ->Unit(benchmark::kMillisecond)
+
+// {radius*100, epsilon*1000, window_size, search_history}
+// The actual radius will be the given arg divided by 100, and the actual epsilon values
+// will be the given arg divided by 1000.
+// search_history: 0=AUTO, 1=ENABLE, 2=DISABLE
+#define REGISTER_Range_SVS(BM_FUNC, TYPENAME)                                                      \
+    static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark * b) {            \
+        for (int radius : benchmark_range<TYPENAME>::get_radii()) {                                \
+            for (int epsilon : benchmark_range<TYPENAME>::get_epsilons()) {                        \
+                for (int window_size : {10, 100, 200, 500}) {                                     \
+                    for (int search_history : {0, 1, 2}) {                                        \
+                        b->Args({radius, epsilon, window_size, search_history});                   \
+                    }                                                                              \
+                }                                                                                  \
+            }                                                                                      \
+        }                                                                                          \
+    }                                                                                              \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
+        ->Apply(MACRO_CONCATENATE(BM_FUNC, _Args))                                                 \
+        ->ArgNames({"radiusX100", "epsilonX1000", "window_size", "search_history"})                \
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 

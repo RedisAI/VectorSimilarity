@@ -26,6 +26,9 @@ public:
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
                              std::atomic_int &correct, unsigned short index_offset = 0,
                              bool is_tiered = false);
+    static void RunTopK_SVS(benchmark::State &st, size_t ws, VecSimOptionMode searchHistory,
+                            double epsilon, size_t iter, size_t k, std::atomic_int &correct,
+                            unsigned short index_offset = 0, bool is_tiered = false);
 
     // Search for the K closest vectors to the query in the index. K is defined in the
     // test registration (initialization file).
@@ -34,6 +37,7 @@ public:
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
+    static void TopK_SVS(benchmark::State &st, unsigned short index_offset = 0);
 
     // Does nothing but returning the index memory.
     static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
@@ -42,6 +46,10 @@ public:
     static void Memory_SVS(benchmark::State &st, unsigned short index_offset = 0);
 };
 
+// for the svs HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+// for svs change to SVSRuntimeParams svsRuntimeParams = {.ws = ef};
+// run once with history and once without history
+// mix congiguration with and without history
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                                  size_t k, std::atomic_int &correct,
@@ -63,6 +71,35 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
     VecSimQueryReply_Free(hnsw_results);
     st.ResumeTiming();
 }
+
+// runtopk svs
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::RunTopK_SVS(benchmark::State &st, size_t ws,
+                                                 VecSimOptionMode searchHistory, double epsilon,
+                                                 size_t iter, size_t k, std::atomic_int &correct,
+                                                 unsigned short index_offset, bool is_tiered) {
+    SVSRuntimeParams svsRuntimeParams = {
+        .windowSize = ws,
+        .searchHistory = searchHistory,
+        .epsilon = epsilon
+    };
+    auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
+    auto svs_results = VecSimIndex_TopKQuery(
+        INDICES[VecSimAlgo_SVS + index_offset], QUERIES[iter % N_QUERIES].data(), k, &query_params,
+        BY_SCORE);
+    st.PauseTiming();
+
+    // Measure recall:
+    auto bf_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+                                            QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+
+    BM_VecSimGeneral::MeasureRecall(svs_results, bf_results, correct);
+
+    VecSimQueryReply_Free(bf_results);
+    VecSimQueryReply_Free(svs_results);
+    st.ResumeTiming();
+}
+
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned short index_offset) {
@@ -117,12 +154,13 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
     }
 }
 
+// TODO - implement tor svs with all params
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned short index_offset) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
     std::atomic_int correct = 0;
-    size_t iter = 0;
+    size_t iter = 0;    
     for (auto _ : st) {
         RunTopK_HNSW(st, ef, iter, k, correct, index_offset);
         iter++;
@@ -178,6 +216,21 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
 }
 
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_SVS(benchmark::State &st, unsigned short index_offset) {
+    size_t ws = st.range(0);
+    size_t k = st.range(1);
+    VecSimOptionMode searchHistory = static_cast<VecSimOptionMode>(st.range(2));
+    double epsilon = static_cast<double>(st.range(3)) / 100.0; // Convert from int percentage to double
+    std::atomic_int correct = 0;
+    size_t iter = 0;
+    for (auto _ : st) {
+        RunTopK_SVS(st, ws, searchHistory, epsilon, iter, k, correct, index_offset, false);
+        iter++;
+    }
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
+}
+
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Arg(10)                                                                                  \
@@ -209,4 +262,19 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({500, 500})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
         ->Iterations(50)                                                                           \
+        ->Unit(benchmark::kMillisecond)
+
+// {window_size, k, search_history, epsilon_percent}
+// search_history: 0=AUTO, 1=ENABLE, 2=DISABLE
+// epsilon_percent: epsilon value * 100 (e.g., 1 = 0.01, 5 = 0.05)
+#define REGISTER_TopK_SVS(BM_CLASS, BM_FUNC)                                                       \
+    BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
+        ->ArgsProduct({                                                                            \
+            benchmark::CreateRange(10, 500, /*multiplier=*/10),     /* window_size: 10,100,500 */ \
+            benchmark::CreateRange(10, 500, /*multiplier=*/10),     /* k: 10,100,500 */           \
+            benchmark::CreateDenseRange(0, 2, /*step=*/1),          /* search_history: 0,1,2 */   \
+            {1, 5, 10}                                              /* epsilon_percent: 1,5,10 */ \
+        })                                                                                         \
+        ->ArgNames({"window_size", "k", "search_history", "epsilon_percent"})                      \
+        ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)

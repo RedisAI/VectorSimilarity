@@ -21,6 +21,12 @@ struct IndexType {
     typedef DistType dist_t;
 };
 
+typedef enum {
+    TIERED_INDEX_NONE,  // Don't create any tiered index
+    TIERED_INDEX_HNSW,  // Create TieredHNSWIndex
+    TIERED_INDEX_SVS    // Create TieredSVSIndex
+} tiered_type_t;
+
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
 using bf16_index_t = IndexType<VecSimType_BFLOAT16, vecsim_types::bfloat16, float>;

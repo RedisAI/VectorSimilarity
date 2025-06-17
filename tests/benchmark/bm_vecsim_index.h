@@ -143,7 +143,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     indices.push_back(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    mock_thread_pool.init_threads();
 
     // Add the same vectors to Flat index.
     // for (size_t i = 0; i < n_vectors; ++i) {
@@ -152,7 +151,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     //     size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
     //     VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
     // }
-
     SVSParams svs_params = {
         .type = type,
         .dim = dim,
@@ -162,8 +160,32 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         .graph_max_degree = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getM(),
         .construction_window_size = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getEf(),
     };
+    
+    if (tiered_type == TIERED_INDEX_SVS) {
+        // Create tiered index from the loaded SVS index.
+        TieredIndexParams tiered_svs_params = {
+            .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = block_size,
+            .primaryIndexParams = nullptr,
+            .specificParams = {.tieredSVSParams = {
+                .trainingTriggerThreshold = 0,
+                .updateTriggerThreshold = 0,
+                .updateJobWaitTime = 0,
+            }}};
+        auto *tiered_svs_index =
+            TieredFactory::NewIndex(&tiered_svs_params);
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
+        indices.push_back(tiered_svs_index);
+    }
+    else {
+        auto *svs_index = CreateNewIndex(svs_params);
+        indices.push_back(svs_index);
+    }
 
-    indices.push_back(CreateNewIndex(svs_params));
+    // Add the SVS index to the indices vector.
+    
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);

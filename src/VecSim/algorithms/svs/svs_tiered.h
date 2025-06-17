@@ -445,6 +445,12 @@ public:
         return result;
     }
 
+    const flat_index_t *GetFlatIndex() const {
+        auto result = dynamic_cast<const flat_index_t *>(this->frontendIndex);
+        assert(result);
+        return result;
+    }
+
     svs_index_t *GetSVSIndex() const {
         auto result = dynamic_cast<svs_index_t *>(this->backendIndex);
         assert(result);
@@ -840,4 +846,12 @@ public:
         this->mainIndexGuard.unlock_shared();
         this->flatIndexGuard.unlock_shared();
     }
+
+#ifdef BUILD_TESTS
+    void getDataByLabel(labelType label,
+                        std::vector<std::vector<DataType>> &vectors_output) const {
+        // Delegate to the flat index (frontend) which has the getDataByLabel implementation
+        this->GetFlatIndex()->getDataByLabel(label, vectors_output);
+    }
+#endif
 };

@@ -22,7 +22,42 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC_NAME(Build, SVS))
     ->Iterations(1)
     ->Unit(benchmark::kSecond);
 
-// memory
+// Memory
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, SVS), fp32_index_t)
 (benchmark::State &st) { Memory_SVS(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, SVS))->Iterations(1);
+
+// AddLabel
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
+(benchmark::State &st) { AddLabel(st); }
+REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_SVS);
+
+REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, SVS));
+
+// TopK SVS
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, SVS), fp32_index_t)
+(benchmark::State &st) { TopK_SVS(st); }
+REGISTER_TopK_SVS(BM_VecSimCommon, BM_FUNC_NAME(TopK, SVS));
+
+// // Range SVS
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, SVS), fp32_index_t)
+(benchmark::State &st) { Range_SVS(st); }
+REGISTER_Range_SVS(BM_FUNC_NAME(Range, SVS), fp32_index_t);
+
+// Tiered HNSW add/delete benchmarks
+REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
+REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, Tiered));
+
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
+(benchmark::State &st) { AddLabel_AsyncIngest(st); }
+BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
+    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
+    ->ArgName("VecSimAlgo_TIERED");
+
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC, fp32_index_t)
+(benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
+BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC)
+    ->UNIT_AND_ITERATIONS->Arg(1)
+    ->Arg(100)
+    ->Arg(BM_VecSimGeneral::block_size)
+    ->ArgName("SwapJobsThreshold");
