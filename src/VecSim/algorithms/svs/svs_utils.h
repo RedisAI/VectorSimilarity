@@ -76,6 +76,48 @@ inline double toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v)
 template <typename T>
 using SVSAllocator = VecsimSTLAllocator<T>;
 
+template <typename T, typename U>
+static T getOrDefault(T v, U def) {
+    return v != T{} ? v : static_cast<T>(def);
+}
+
+inline svs::index::vamana::VamanaBuildParameters
+makeVamanaBuildParameters(const SVSParams &params) {
+    // clang-format off
+    // evaluate optimal default parameters; current assumption:
+    // * alpha (1.2 or 0.95) depends on metric: L2: > 1.0, IP, Cosine: < 1.0
+    //      In the Vamana algorithm implementation in SVS, the choice of alpha value
+    //      depends on the type of similarity measure used. For L2, which minimizes distance,
+    //      an alpha value greater than 1 is needed, typically around 1.2.
+    //      For Inner Product and Cosine, which maximize similarity or distance,
+    //      the alpha value should be less than 1, usually 0.9 or 0.95 works.
+    // * construction_window_size (200): similar to HNSW_EF_CONSTRUCTION
+    // * graph_max_degree (32): similar to HNSW_M * 2
+    // * max_candidate_pool_size (600): =~ construction_window_size * 3
+    // * prune_to (28): < graph_max_degree, optimal = graph_max_degree - 4
+    //      The prune_to parameter is a performance feature designed to enhance build time
+    //      by setting a small difference between this value and the maximum graph degree.
+    //      This acts as a threshold for how much pruning can reduce the number of neighbors.
+    //      Typically, a small gap of 4 or 8 is sufficient to improve build time
+    //      without compromising the quality of the graph.
+    // * use_search_history (true): now: is enabled if not disabled explicitly
+    //                              future: default value based on other index parameters
+    const auto construction_window_size = getOrDefault(params.construction_window_size, 200);
+    const auto graph_max_degree = getOrDefault(params.graph_max_degree, 32);
+
+    // More info about VamanaBuildParameters can be found there:
+    // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
+    return svs::index::vamana::VamanaBuildParameters{
+        getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.95f)),
+        graph_max_degree,
+        construction_window_size,
+        getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
+        getOrDefault(params.prune_to, graph_max_degree - 4),
+        params.use_search_history != VecSimOption_DISABLE
+    };
+    // clang-format on
+}
+
 // Join default SVS search parameters with VecSim query runtime parameters
 inline svs::index::vamana::VamanaSearchParameters
 joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
