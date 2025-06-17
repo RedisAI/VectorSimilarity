@@ -21,7 +21,8 @@ using TieredSVSIndex_Single = TieredSVSIndex<DataType>;
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
-tiered_type_t BM_VecSimGeneral::tiered_type = tiered_type_t::TIERED_INDEX_NONE;
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_SVS |
+                                                 IndexTypeFlags::INDEX_TYPE_TIERED_SVS;
 
 size_t BM_VecSimGeneral::n_queries = 100;
 size_t BM_VecSimGeneral::n_vectors = 1000;

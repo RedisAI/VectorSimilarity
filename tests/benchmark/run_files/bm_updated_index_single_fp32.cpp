@@ -24,9 +24,8 @@ template <>
 const char *BM_VecSimUpdatedIndex<fp32_index_t>::updated_hnsw_index_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-M65-efc512-n500k-updated.hnsw_v3";
 
-#define BM_BEFORE_FUNC_NAME(bm_func, algo)                                                         \
-    CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, before, Single)
-#define BM_UPDATED_FUNC_NAME(bm_func, algo) bm_func##_##algo##_updated_Single
+#define BM_BEFORE_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(algo, bm_func, before, Single)
+#define BM_UPDATED_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(algo, bm_func, updated, Single)
 
 #include "benchmark/bm_initialization/bm_updated_initialize_fp32.h"
 BENCHMARK_MAIN();
