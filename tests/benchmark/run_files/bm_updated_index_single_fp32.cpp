@@ -4,7 +4,8 @@
   Basic tests for updated single value index.
 ***************************************/
 bool BM_VecSimGeneral::is_multi = false;
-tiered_type_t BM_VecSimGeneral::tiered_type = tiered_type_t::TIERED_INDEX_HNSW;
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_HNSW |
+                                                 IndexTypeFlags::INDEX_TYPE_TIERED_HNSW;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::dim = 768;
@@ -22,9 +23,8 @@ template <>
 const char *BM_VecSimUpdatedIndex<fp32_index_t>::updated_hnsw_index_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-M65-efc512-n500k-updated.hnsw_v3";
 
-#define BM_BEFORE_FUNC_NAME(bm_func, algo)                                                         \
-    CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, before, Single)
-#define BM_UPDATED_FUNC_NAME(bm_func, algo) bm_func##_##algo##_updated_Single
+#define BM_BEFORE_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(algo, bm_func, before, Single)
+#define BM_UPDATED_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(algo, bm_func, updated, Single)
 
 #include "benchmark/bm_initialization/bm_updated_initialize_fp32.h"
 BENCHMARK_MAIN();

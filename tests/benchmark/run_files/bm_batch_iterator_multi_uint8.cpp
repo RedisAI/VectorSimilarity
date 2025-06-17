@@ -1,7 +1,8 @@
 #include "benchmark/bm_batch_iterator.h"
 
 bool BM_VecSimGeneral::is_multi = true;
-tiered_type_t BM_VecSimGeneral::tiered_type = tiered_type_t::TIERED_INDEX_HNSW;
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_HNSW |
+                                                 IndexTypeFlags::INDEX_TYPE_TIERED_HNSW;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
@@ -16,7 +17,7 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/wipedia_multi_uint8-cosine-dim1024-uint8-test_vectors.raw";
 
-#define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Multi
+#define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(algo, bm_func, Multi)
 
 #include "benchmark/bm_initialization/bm_batch_initialize_uint8.h"
 

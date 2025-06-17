@@ -204,8 +204,47 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
         assert(false && "Unsupported data type");
         return nullptr; // Invalid type.
     }
-    return nullptr; // Invalid type.
 }
+
+template <typename DataType>
+VecSimIndex *NewIndex(const TieredIndexParams *params, VecSimIndexAbstract<DataType, float> *svs_index) {
+    // initialize brute force index
+    auto bf_params = NewBFParams(params);
+    std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
+    size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+
+    AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
+                                                  .dim = bf_params.dim,
+                                                  .vecType = bf_params.type,
+                                                  .dataSize = dataSize,
+                                                  .metric = bf_params.metric,
+                                                  .blockSize = bf_params.blockSize,
+                                                  .multi = bf_params.multi,
+                                                  .logCtx = params->primaryIndexParams->logCtx};
+    auto frontendIndex = static_cast<BruteForceIndex_Single<DataType, float> *>(
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
+
+    // Create new tiered svs index
+    std::shared_ptr<VecSimAllocator> management_layer_allocator =
+        VecSimAllocator::newVecsimAllocator();
+
+    return new (management_layer_allocator)
+        TieredSVSIndex<DataType>(svs_index, frontendIndex, *params, management_layer_allocator);
+}
+
+VecSimIndex *NewIndex(const TieredIndexParams *params, VecSimIndex *svs_index) {
+    VecSimType type = params->primaryIndexParams->algoParams.svsParams.type;
+    switch (type) {
+    case VecSimType_FLOAT32:
+        return TieredSVSFactory::NewIndex<float>(params, static_cast<VecSimIndexAbstract<float, float> *>(svs_index));
+    case VecSimType_FLOAT16:
+        return TieredSVSFactory::NewIndex<float16>(params, static_cast<VecSimIndexAbstract<float16, float> *>(svs_index));
+    default:
+        assert(false && "Unsupported data type");
+        return nullptr; // Invalid type.
+    }
+}
+
 
 // This is a temporary solution to avoid breaking the build when SVS is not available
 // and to allow the code to compile without SVS support.

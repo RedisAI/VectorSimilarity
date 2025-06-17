@@ -21,11 +21,26 @@ struct IndexType {
     typedef DistType dist_t;
 };
 
-typedef enum {
-    TIERED_INDEX_NONE,  // Don't create any tiered index
-    TIERED_INDEX_HNSW,  // Create TieredHNSWIndex
-    TIERED_INDEX_SVS    // Create TieredSVSIndex
-} tiered_type_t;
+// if you add a new index type, please update the following enum and MAX_INDEX_COUNT accordingly.
+enum IndexTypeFlags {
+    INDEX_TYPE_BF = 1 << 0,
+    INDEX_TYPE_HNSW = 1 << 1,
+    INDEX_TYPE_TIERED_HNSW = 1 << 2,
+    INDEX_TYPE_SVS = 1 << 3,
+    INDEX_TYPE_TIERED_SVS = 1 << 4,
+    INDEX_TYPE_SVS_QUANTIZED = 1 << 5
+};
+
+enum IndexTypeIndex {
+    INDEX_VecSimAlgo_BF = 0,
+    INDEX_VecSimAlgo_HNSWLIB = 1,
+    INDEX_VecSimAlgo_TIERED = 2,
+    INDEX_VecSimAlgo_SVS = 3,
+    INDEX_VecSimAlgo_TIERED_SVS = 4,
+    INDEX_VecSimAlgo_SVS_QUANTIZED = 5
+};
+
+static constexpr size_t MAX_INDEX_COUNT = 6;
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
