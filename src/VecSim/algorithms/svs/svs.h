@@ -79,48 +79,6 @@ protected:
 
     static double toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
 
-    template <typename T, typename U>
-    static T getOrDefault(T v, U def) {
-        return v ? v : static_cast<T>(def);
-    }
-
-    static svs::index::vamana::VamanaBuildParameters
-    makeVamanaBuildParameters(const SVSParams &params) {
-        // clang-format off
-        // evaluate optimal default parameters; current assumption:
-        // * alpha (1.2 or 0.9) depends on metric: L2: > 1.0, IP, Cosine: < 1.0
-        //      In the Vamana algorithm implementation in SVS, the choice of alpha value
-        //      depends on the type of similarity measure used. For L2, which minimizes distance,
-        //      an alpha value greater than 1 is needed, typically around 1.2.
-        //      For Inner Product and Cosine, which maximize similarity or distance,
-        //      the alpha value should be less than 1, usually 0.9 or 0.95 works.
-        // * construction_window_size (250): similar to HNSW_EF_CONSTRUCTION
-        // * graph_max_degree (64): similar to HNSW_M * 2
-        // * max_candidate_pool_size (750): =~ construction_window_size * 3
-        // * prune_to (60): < graph_max_degree, optimal = graph_max_degree - 4
-        //      The prune_to parameter is a performance feature designed to enhance build time
-        //      by setting a small difference between this value and the maximum graph degree.
-        //      This acts as a threshold for how much pruning can reduce the number of neighbors.
-        //      Typically, a small gap of 4 or 8 is sufficient to improve build time
-        //      without compromising the quality of the graph.
-        // * use_search_history (true): now: is enabled if not disabled explicitly
-        //                              future: default value based on other index parameters
-        const auto construction_window_size = getOrDefault(params.construction_window_size, 250);
-        const auto graph_max_degree = getOrDefault(params.graph_max_degree, 64);
-
-        // More info about VamanaBuildParameters can be found there:
-        // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
-        return svs::index::vamana::VamanaBuildParameters{
-            getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.9f)),
-            graph_max_degree,
-            construction_window_size,
-            getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
-            getOrDefault(params.prune_to, graph_max_degree - 4),
-            params.use_search_history != VecSimOption_DISABLE
-        };
-        // clang-format on
-    }
-
     svs::logging::logger_ptr makeLogger() {
         spdlog::custom_log_callback callback = [this](const spdlog::details::log_msg &msg) {
             if (!VecSimIndexInterface::logCallback) {
@@ -320,9 +278,9 @@ public:
     SVSIndex(const SVSParams &params, const AbstractIndexInitParams &abstractInitParams,
              const index_component_t &components, bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
-          changes_num{0}, buildParams{makeVamanaBuildParameters(params)},
-          search_window_size{getOrDefault(params.search_window_size, 10)},
-          epsilon{getOrDefault(params.epsilon, 0.01)},
+          changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
+          search_window_size{svs_details::getOrDefault(params.search_window_size, 10)},
+          epsilon{svs_details::getOrDefault(params.epsilon, 0.01)},
           threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{nullptr} {}
 
     ~SVSIndex() = default;
