@@ -37,8 +37,10 @@ template <typename MetricType, typename DataType, size_t QuantBits, size_t Resid
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     auto abstractInitParams = NewAbstractInitParams(params);
     auto &svsParams = params->algoParams.svsParams;
-    auto components = CreateIndexComponents<svs_details::vecsim_dt<DataType>, float>(
-        abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized);
+    auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
+        abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
+    IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
+        nullptr, preprocessors}; // calculator is not in use in svs.
     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
     return new (abstractInitParams.allocator)
         SVSIndex<MetricType, DataType, QuantBits, ResidualBits, IsLeanVec>(
@@ -157,17 +159,14 @@ size_t QuantizedVectorSize(VecSimType data_type, VecSimSvsQuantBits quant_bits, 
     }
 }
 
-template <typename DataType>
-size_t EstimateComponentsMemorySVS(VecSimMetric metric, bool is_normalized) {
-    return EstimateComponentsMemory<svs_details::vecsim_dt<DataType>, float>(metric, is_normalized);
-}
-
 size_t EstimateComponentsMemorySVS(VecSimType type, VecSimMetric metric, bool is_normalized) {
+    // SVS index only includes a preprocessor container.
     switch (type) {
     case VecSimType_FLOAT32:
-        return EstimateComponentsMemorySVS<float>(metric, is_normalized);
+        return EstimatePreprocessorsContainerMemory<float>(metric, is_normalized);
     case VecSimType_FLOAT16:
-        return EstimateComponentsMemorySVS<svs::Float16>(metric, is_normalized);
+        return EstimatePreprocessorsContainerMemory<svs_details::vecsim_dt<svs::Float16>>(
+            metric, is_normalized);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported data type");
