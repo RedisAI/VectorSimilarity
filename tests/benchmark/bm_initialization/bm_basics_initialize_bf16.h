@@ -32,8 +32,8 @@ BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered))->Iterations(
 // AddLabel
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, bf16_index_t)
 (benchmark::State &st) { AddLabel(st); }
-REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
-REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_BF);
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW);
 
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
@@ -65,14 +65,14 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), bf16_ind
 REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW), bf16_index_t);
 
 // Tiered HNSW add/delete benchmarks
-REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_TIERED_HNSW);
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, Tiered));
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, bf16_index_t)
 (benchmark::State &st) { AddLabel_AsyncIngest(st); }
 BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
-    ->ArgName("VecSimAlgo_TIERED");
+    ->UNIT_AND_ITERATIONS->Arg(INDEX_TIERED_HNSW)
+    ->ArgName("INDEX_TIERED_HNSW");
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC, bf16_index_t)
 (benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
