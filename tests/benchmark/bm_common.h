@@ -47,9 +47,9 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
                                                  unsigned short index_offset, bool is_tiered) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
-    auto hnsw_results = VecSimIndex_TopKQuery(
-        INDICES.at(is_tiered ? INDEX_TIERED_HNSW : INDEX_HNSW + index_offset),
-        QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
+    auto hnsw_results =
+        VecSimIndex_TopKQuery(INDICES.at(is_tiered ? INDEX_TIERED_HNSW : INDEX_HNSW + index_offset),
+                              QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
@@ -101,8 +101,8 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(INDICES.at(INDEX_BF + index_offset),
-                              QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(INDICES.at(INDEX_BF + index_offset), QUERIES[iter % N_QUERIES].data(),
+                              k, nullptr, BY_SCORE);
         iter++;
     }
 }
@@ -136,9 +136,9 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         size_t cur_iter = search_job->iter;
-        auto hnsw_results =
-            VecSimIndex_TopKQuery(INDICES.at(INDEX_TIERED_HNSW), QUERIES[cur_iter % N_QUERIES].data(),
-                                  search_job->k, &query_params, BY_SCORE);
+        auto hnsw_results = VecSimIndex_TopKQuery(INDICES.at(INDEX_TIERED_HNSW),
+                                                  QUERIES[cur_iter % N_QUERIES].data(),
+                                                  search_job->k, &query_params, BY_SCORE);
         search_job->all_results[cur_iter] = hnsw_results;
         delete job;
     };

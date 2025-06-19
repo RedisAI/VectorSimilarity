@@ -114,10 +114,10 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // index type benchmarks.
     if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_BF) {
         BFParams bf_params = {.type = type,
-                            .dim = dim,
-                            .metric = VecSimMetric_Cosine,
-                            .multi = is_multi,
-                            .blockSize = block_size};
+                              .dim = dim,
+                              .metric = VecSimMetric_Cosine,
+                              .multi = is_multi,
+                              .blockSize = block_size};
         indices[INDEX_BF] = CreateNewIndex(bf_params);
     }
     if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_HNSW) {
@@ -130,25 +130,26 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         // Create tiered index from the loaded HNSW index.
         if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_TIERED_HNSW) {
             auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
-            TieredIndexParams tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-                                               .jobQueueCtx = mock_thread_pool.ctx,
-                                               .submitCb = tieredIndexMock::submit_callback,
-                                               .flatBufferLimit = block_size,
-                                               .primaryIndexParams = nullptr,
-                                               .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
-            
-            auto *tiered_index =
-                TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
+            TieredIndexParams tiered_params = {
+                .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                .jobQueueCtx = mock_thread_pool.ctx,
+                .submitCb = tieredIndexMock::submit_callback,
+                .flatBufferLimit = block_size,
+                .primaryIndexParams = nullptr,
+                .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+
+            auto *tiered_index = TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(
+                &tiered_params, hnsw_index);
             mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-    
+
             indices[INDEX_TIERED_HNSW] = tiered_index;
-    
+
             // Launch the BG threads loop that takes jobs from the queue and executes them.
             mock_thread_pool.init_threads();
         }
     }
 
-    if (indices[INDEX_HNSW] && indices[INDEX_BF]){
+    if (indices[INDEX_HNSW] && indices[INDEX_BF]) {
         // Add the same vectors to Flat index.
         for (size_t i = 0; i < n_vectors; ++i) {
             const char *blob = GetHNSWDataByInternalId(i);

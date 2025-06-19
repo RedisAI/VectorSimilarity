@@ -44,8 +44,8 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     benchmark::State &st, std::atomic_int &correct, size_t iter, size_t num_batches,
     size_t batch_size, size_t &total_res_num, size_t batch_increase_factor, size_t index_memory,
     double &memory_delta) {
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
-        INDICES.at(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), nullptr);
+    VecSimBatchIterator *batchIterator =
+        VecSimBatchIterator_New(INDICES.at(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), nullptr);
     VecSimQueryReply *accumulated_results[num_batches];
     size_t batch_num = 0;
     total_res_num = 0;
@@ -67,8 +67,8 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     VecSimBatchIterator_Free(batchIterator);
 
     // Measure recall - compare every result that was collected in some batch to the BF results.
-    auto bf_results = VecSimIndex_TopKQuery(
-        INDICES.at(INDEX_BF), QUERIES[iter % N_QUERIES].data(), total_res_num, nullptr, BY_SCORE);
+    auto bf_results = VecSimIndex_TopKQuery(INDICES.at(INDEX_BF), QUERIES[iter % N_QUERIES].data(),
+                                            total_res_num, nullptr, BY_SCORE);
     for (size_t i = 0; i < batch_num; i++) {
         auto hnsw_results = accumulated_results[i];
         BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);

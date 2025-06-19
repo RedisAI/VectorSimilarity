@@ -276,9 +276,8 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
 
     for (auto _ : st) {
-        auto hnsw_results =
-            VecSimIndex_RangeQuery(INDICES.at(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(),
-                                   radius, &query_params, BY_ID);
+        auto hnsw_results = VecSimIndex_RangeQuery(
+            INDICES.at(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(hnsw_results);
 
