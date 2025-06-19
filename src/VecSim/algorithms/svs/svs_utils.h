@@ -24,10 +24,6 @@
 #include <string>
 #include <utility>
 
-// NOTE: optimal training threshold may depend on the SVSIndex compression mode.
-// it might be good to implement an utility to compute default threshold based on index parameters
-// DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
-constexpr size_t SVS_DEFAULT_TRAINING_THRESHOLD = 10 * DEFAULT_BLOCK_SIZE; // 10 * 1024 vectors
 // Maximum training threshold for SVS index, used to limit the size of training data
 constexpr size_t SVS_MAX_TRAINING_THRESHOLD = 100 * DEFAULT_BLOCK_SIZE; // 100 * 1024 vectors
 // Default batch update threshold for SVS index.
@@ -102,18 +98,20 @@ makeVamanaBuildParameters(const SVSParams &params) {
     //      without compromising the quality of the graph.
     // * use_search_history (true): now: is enabled if not disabled explicitly
     //                              future: default value based on other index parameters
-    const auto construction_window_size = getOrDefault(params.construction_window_size, 200);
-    const auto graph_max_degree = getOrDefault(params.graph_max_degree, 32);
+    const auto construction_window_size = getOrDefault(params.construction_window_size, SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE);
+    const auto graph_max_degree = getOrDefault(params.graph_max_degree, SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE);
 
     // More info about VamanaBuildParameters can be found there:
     // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
     return svs::index::vamana::VamanaBuildParameters{
-        getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.95f)),
+        getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ?
+            SVS_VAMANA_DEFAULT_ALPHA_L2 : SVS_VAMANA_DEFAULT_ALPHA_IP)),
         graph_max_degree,
         construction_window_size,
         getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
         getOrDefault(params.prune_to, graph_max_degree - 4),
-        params.use_search_history != VecSimOption_DISABLE
+        params.use_search_history == VecSimOption_AUTO ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY :
+        (params.use_search_history == VecSimOption_ENABLE)
     };
     // clang-format on
 }

@@ -279,9 +279,11 @@ public:
              const index_component_t &components, bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
-          search_window_size{svs_details::getOrDefault(params.search_window_size, 10)},
-          epsilon{svs_details::getOrDefault(params.epsilon, 0.01)},
-          threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{nullptr} {}
+          search_window_size{svs_details::getOrDefault(params.search_window_size,
+                                                       SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE)},
+          epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
+          threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
+          impl_{nullptr} {}
 
     ~SVSIndex() = default;
 

@@ -17,20 +17,36 @@ extern "C" {
 #include <stdbool.h>
 
 // Common definitions
-#define INVALID_ID    UINT_MAX
-#define INVALID_LABEL SIZE_MAX
-#define UNUSED(x)     (void)(x)
+#define DEFAULT_BLOCK_SIZE 1024
+#define INVALID_ID         UINT_MAX
+#define INVALID_LABEL      SIZE_MAX
+#define UNUSED(x)          (void)(x)
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
 #define HNSW_DEFAULT_EF_RT   10
 #define HNSW_DEFAULT_EPSILON 0.01
-#define DEFAULT_BLOCK_SIZE   1024
 
 #define HNSW_INVALID_LEVEL SIZE_MAX
 #define INVALID_JOB_ID     UINT_MAX
 #define INVALID_INFO       UINT_MAX
+
+// SVS-Vamana default parameters
+#define SVS_VAMANA_DEFAULT_ALPHA_L2                 1.2f
+#define SVS_VAMANA_DEFAULT_ALPHA_IP                 0.95f
+#define SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE         32
+#define SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE 200
+#define SVS_VAMANA_DEFAULT_MAX_CANDIDATE_POOL_SIZE  (3 * SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE)
+#define SVS_VAMANA_DEFAULT_PRUNE_TO                 (SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4)
+#define SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY       true
+#define SVS_VAMANA_DEFAULT_NUM_THREADS              1
+// NOTE: optimal training threshold may depend on the SVSIndex compression mode.
+// it might be good to implement a utility to compute default threshold based on index parameters
+// DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
+#define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
+#define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
+#define SVS_VAMANA_DEFAULT_EPSILON            0.01f
 
 // Datatypes for indexing.
 typedef enum {

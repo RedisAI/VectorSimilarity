@@ -1,4 +1,5 @@
 #pragma once
+#include "VecSim/vec_sim_common.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "VecSim/algorithms/svs/svs.h"
@@ -595,7 +596,7 @@ public:
 
         this->trainingTriggerThreshold =
             tiered_svs_params.trainingTriggerThreshold == 0
-                ? SVS_DEFAULT_TRAINING_THRESHOLD
+                ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
                 : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
