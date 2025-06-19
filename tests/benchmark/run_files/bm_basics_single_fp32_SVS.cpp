@@ -15,16 +15,15 @@ using SVSIndex_Single = SVSIndex<svs::distance::DistanceIP, DataType, 0, 0, fals
 template <typename DataType, typename DistType>
 using TieredSVSIndex_Single = TieredSVSIndex<DataType>;
 
-
 /**************************************
   Basic tests for single value index with fp32 data type.
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
-uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_BF |
-                                                 IndexTypeFlags::INDEX_TYPE_HNSW | // For now the HNSW index is required 
-                                                 IndexTypeFlags::INDEX_TYPE_SVS |
-                                                 IndexTypeFlags::INDEX_TYPE_TIERED_SVS;
+uint32_t BM_VecSimGeneral::enabled_index_types =
+    IndexTypeFlags::INDEX_TYPE_BF |
+    IndexTypeFlags::INDEX_TYPE_HNSW | // For now the HNSW index is required
+    IndexTypeFlags::INDEX_TYPE_SVS | IndexTypeFlags::INDEX_TYPE_TIERED_SVS;
 
 size_t BM_VecSimGeneral::n_queries = 1;
 size_t BM_VecSimGeneral::n_vectors = 20;
@@ -43,11 +42,10 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Async, SVS, Single)
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, SVS, Single)
 
-DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, SVS), fp32_index_t, SVSIndex_Single, float,
-                    float, INDEX_VecSimAlgo_SVS)
-DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredSVSIndex_Single, float, float,
-                    INDEX_VecSimAlgo_TIERED_SVS)
-
+DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, SVS), fp32_index_t, SVSIndex_Single, float, float,
+                        INDEX_VecSimAlgo_SVS)
+DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredSVSIndex_Single,
+                        float, float, INDEX_VecSimAlgo_TIERED_SVS)
 
 #include "benchmark/bm_initialization/SVS_bm_basics_initialize_fp32.h"
 BENCHMARK_MAIN();

@@ -848,8 +848,7 @@ public:
     }
 
 #ifdef BUILD_TESTS
-    void getDataByLabel(labelType label,
-                        std::vector<std::vector<DataType>> &vectors_output) const {
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
         // Delegate to the flat index (frontend) which has the getDataByLabel implementation
         this->GetFlatIndex()->getDataByLabel(label, vectors_output);
     }

@@ -76,18 +76,15 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 // runtopk svs
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_SVS(benchmark::State &st, size_t ws,
-                                                 VecSimOptionMode searchHistory, double epsilon,
-                                                 size_t iter, size_t k, std::atomic_int &correct,
-                                                 unsigned short index_offset, bool is_tiered) {
+                                                VecSimOptionMode searchHistory, double epsilon,
+                                                size_t iter, size_t k, std::atomic_int &correct,
+                                                unsigned short index_offset, bool is_tiered) {
     SVSRuntimeParams svsRuntimeParams = {
-        .windowSize = ws,
-        .searchHistory = searchHistory,
-        .epsilon = epsilon
-    };
+        .windowSize = ws, .searchHistory = searchHistory, .epsilon = epsilon};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
-    auto svs_results = VecSimIndex_TopKQuery(
-        INDICES[INDEX_VecSimAlgo_SVS + index_offset], QUERIES[iter % N_QUERIES].data(), k, &query_params,
-        BY_SCORE);
+    auto svs_results =
+        VecSimIndex_TopKQuery(INDICES[INDEX_VecSimAlgo_SVS + index_offset],
+                              QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
@@ -100,7 +97,6 @@ void BM_VecSimCommon<index_type_t>::RunTopK_SVS(benchmark::State &st, size_t ws,
     VecSimQueryReply_Free(svs_results);
     st.ResumeTiming();
 }
-
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned short index_offset) {
@@ -135,7 +131,7 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_Tiered_SVS(benchmark::State &st,
-                                                  unsigned short index_offset) {
+                                                      unsigned short index_offset) {
     auto index = INDICES[INDEX_VecSimAlgo_TIERED_SVS + index_offset];
     index->fitMemory();
     for (auto _ : st) {
@@ -172,7 +168,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned sho
     size_t ef = st.range(0);
     size_t k = st.range(1);
     std::atomic_int correct = 0;
-    size_t iter = 0;    
+    size_t iter = 0;
     for (auto _ : st) {
         RunTopK_HNSW(st, ef, iter, k, correct, index_offset);
         iter++;
@@ -233,7 +229,8 @@ void BM_VecSimCommon<index_type_t>::TopK_SVS(benchmark::State &st, unsigned shor
     size_t ws = st.range(0);
     size_t k = st.range(1);
     VecSimOptionMode searchHistory = static_cast<VecSimOptionMode>(st.range(2));
-    double epsilon = static_cast<double>(st.range(3)) / 100.0; // Convert from int percentage to double
+    double epsilon =
+        static_cast<double>(st.range(3)) / 100.0; // Convert from int percentage to double
     std::atomic_int correct = 0;
     size_t iter = 0;
     for (auto _ : st) {
@@ -282,10 +279,10 @@ void BM_VecSimCommon<index_type_t>::TopK_SVS(benchmark::State &st, unsigned shor
 #define REGISTER_TopK_SVS(BM_CLASS, BM_FUNC)                                                       \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->ArgsProduct({                                                                            \
-            benchmark::CreateRange(10, 500, /*multiplier=*/10),     /* window_size: 10,100,500 */ \
-            benchmark::CreateRange(10, 500, /*multiplier=*/10),     /* k: 10,100,500 */           \
-            benchmark::CreateDenseRange(0, 2, /*step=*/1),          /* search_history: 0,1,2 */   \
-            {1, 5, 10}                                              /* epsilon_percent: 1,5,10 */ \
+            benchmark::CreateRange(10, 500, /*multiplier=*/10), /* window_size: 10,100,500 */      \
+            benchmark::CreateRange(10, 500, /*multiplier=*/10), /* k: 10,100,500 */                \
+            benchmark::CreateDenseRange(0, 2, /*step=*/1),      /* search_history: 0,1,2 */        \
+            {1, 5, 10}                                          /* epsilon_percent: 1,5,10 */      \
         })                                                                                         \
         ->ArgNames({"window_size", "k", "search_history", "epsilon_percent"})                      \
         ->Iterations(10)                                                                           \

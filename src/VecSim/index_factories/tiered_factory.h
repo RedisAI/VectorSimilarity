@@ -70,8 +70,6 @@ BFParams NewBFParams(const TieredIndexParams *params);
 VecSimIndex *NewIndex(const TieredIndexParams *params);
 VecSimIndex *NewIndex(const TieredIndexParams *params, VecSimIndex *svs_index);
 
-
-
 } // namespace TieredSVSFactory
 #endif
 

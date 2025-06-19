@@ -35,7 +35,7 @@ protected:
         return dynamic_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
     static inline const char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
-        return CastToHNSW(indices[INDEX_HNSW + index_offset])->getDataByInternalId(id);
+        return CastToHNSW(indices.at(INDEX_HNSW + index_offset))->getDataByInternalId(id);
     }
 
 private:
@@ -224,7 +224,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         }
     }
 
-    // Add the SVS index to the indices vector.
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);

@@ -37,7 +37,6 @@ REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, SVS));
 // (benchmark::State &st) { Range_SVS(st); }
 // REGISTER_Range_SVS(BM_FUNC_NAME(Range, SVS), fp32_index_t);
 
-
 REGISTER_AddLabel(BM_ADD_LABEL, INDEX_VecSimAlgo_TIERED_SVS);
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, Tiered));
 
