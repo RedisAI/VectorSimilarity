@@ -554,7 +554,9 @@ public:
     void getDataByLabel(
         labelType label,
         std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
-        assert(false && "Not implemented");
+        if (!impl_ || !impl_->has_id(label)) {
+            return;
+        }
     }
 
     svs::logging::logger_ptr getLogger() const override {

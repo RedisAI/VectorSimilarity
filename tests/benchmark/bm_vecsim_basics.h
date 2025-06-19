@@ -121,6 +121,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     auto index = INDICES.at(st.range(0));
     size_t index_size = N_VECTORS;
     size_t initial_label_count = index->indexLabelCount();
+    std::cout << "Initial label count: " << initial_label_count << std::endl;
 
     // In a single vector per label index, index size should equal label count.
     size_t vec_per_label = index_size % initial_label_count == 0
