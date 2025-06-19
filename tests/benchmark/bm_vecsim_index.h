@@ -214,44 +214,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         }
     }
 
-    if (IndexTypeFlags::INDEX_TYPE_HNSW & enabled_index_types) {
-        // Initialize and load HNSW index for DBPedia data set.
-        std::cout << "Creating HNSW index." << std::endl;
-        indices.at(INDEX_HNSW) =
-            (HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
-    }
-    if (IndexTypeFlags::INDEX_TYPE_TIERED_HNSW & enabled_index_types) {
-        // Initialize and load HNSW index for DBPedia data set.
-        std::cout << "Creating tiered HNSW index." << std::endl;
-        auto *hnsw_index = CastToHNSW(INDICES.at(INDEX_HNSW));
-        size_t ef_r = 10;
-        hnsw_index->setEf(ef_r);
-
-        // Create tiered index from the loaded HNSW index.
-        auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-            .jobQueueCtx = mock_thread_pool.ctx,
-            .submitCb = tieredIndexMock::submit_callback,
-            .flatBufferLimit = block_size,
-            .primaryIndexParams = nullptr,
-            .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
-
-        auto *tiered_index =
-            TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
-        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-        INDICES.at(INDEX_TIERED_HNSW) = tiered_index;
-    }
-
-    if (IndexTypeFlags::INDEX_TYPE_BF & enabled_index_types) {
-        // Add the same vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            const char *blob = GetHNSWDataByInternalId(i);
-            // Fot multi value indices, the internal id is not necessarily equal the label.
-            size_t label = CastToHNSW(INDICES.at(INDEX_HNSW))->getExternalLabel(i);
-            VecSimIndex_AddVector(INDICES.at(INDEX_BF), blob, label);
-        }
-    }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);
