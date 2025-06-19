@@ -111,7 +111,7 @@ makeVamanaBuildParameters(const SVSParams &params) {
         getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
         getOrDefault(params.prune_to, graph_max_degree - 4),
         params.use_search_history == VecSimOption_AUTO ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY :
-        (params.use_search_history == VecSimOption_ENABLE)
+        !SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY
     };
     // clang-format on
 }
