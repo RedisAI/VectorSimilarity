@@ -32,12 +32,11 @@ public:
 
     static void Build_SVS(benchmark::State &st) {
         // Add vectors to svs
-        auto hnsw_index =
-            dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES[INDEX_VecSimAlgo_HNSWLIB]);
+        auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
         for (auto _ : st) {
             for (size_t i = 0; i < N_VECTORS; ++i) {
                 const char *blob = hnsw_index->getDataByInternalId(i);
-                VecSimIndex_AddVector(INDICES[INDEX_VecSimAlgo_SVS], blob, i);
+                VecSimIndex_AddVector(INDICES.at(INDEX_SVS), blob, i);
             }
         }
     }
@@ -69,7 +68,7 @@ private:
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel_SVS(benchmark::State &st) {
 
-    auto index = INDICES[st.range(0)];
+    auto index = INDICES.at(st.range(0));
     std::cout << "Index type blu blu: " << st.range(0) << std::endl;
     std::cout << VecSimIndex_IndexSize(index) << " vectors in the index." << std::endl;
     size_t index_size = N_VECTORS;
@@ -103,25 +102,17 @@ void BM_VecSimBasics<index_type_t>::AddLabel_SVS(benchmark::State &st) {
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
     size_t new_label_count = index->indexLabelCount();
-    std::cout << "New label count hiy: " << new_label_count << std::endl;
     for (size_t label = initial_label_count; label < new_label_count; label++) {
         // If index is tiered HNSW, remove directly from the underline HNSW.
         auto index_algo = st.range(0);
-        std::cout << "count before delete: " << index->indexLabelCount() << std::endl;
-        VecSimIndex_DeleteVector(INDICES[index_algo], label);
-        std::cout << "count after delete: " << index->indexLabelCount() << std::endl;
-        if (st.range(0) == INDEX_VecSimAlgo_TIERED_SVS) {
-            VecSimTieredIndex_GC(INDICES[INDEX_VecSimAlgo_TIERED_SVS]);
+        VecSimIndex_DeleteVector(INDICES.at(index_algo), label);
+        if (st.range(0) == INDEX_TIERED_SVS) {
+            VecSimTieredIndex_GC(INDICES.at(INDEX_TIERED_SVS));
         } else {
             index->runGC();
         }
-        std::cout << "count after gc: " << index->indexLabelCount() << std::endl;
     }
-
-    std::cout << "New label count asdas: " << index->indexLabelCount() << std::endl;
-
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
-    std::cout << "New label count asdas2: " << index->indexLabelCount() << std::endl;
 }
 
 template <typename index_type_t>
@@ -130,7 +121,6 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     auto index = INDICES.at(st.range(0));
     size_t index_size = N_VECTORS;
     size_t initial_label_count = index->indexLabelCount();
-    std::cout << "Initial label count: " << initial_label_count << std::endl;
 
     // In a single vector per label index, index size should equal label count.
     size_t vec_per_label = index_size % initial_label_count == 0
@@ -173,7 +163,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest_SVS(benchmark::State &st) {
-    auto index = INDICES[st.range(0)];
+    auto index = INDICES.at(st.range(0));
     size_t index_size = N_VECTORS;
     size_t initial_label_count = index->indexLabelCount();
 
@@ -275,7 +265,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_SVS(algo_t *index, benchmark::St
     double memory_before = index->getAllocationSize();
     size_t removed_vectors_count = 0;
     std::vector<LabelData> removed_labels_data;
-    auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES[INDEX_VecSimAlgo_HNSWLIB]);
+    auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
     for (auto _ : st) {
         st.PauseTiming();
         LabelData data(0);
@@ -362,8 +352,7 @@ template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair_SVS(benchmark::State &st) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
-    auto *tiered_index =
-        dynamic_cast<TieredSVSIndex<data_t> *>(INDICES[INDEX_VecSimAlgo_TIERED_SVS]);
+    auto *tiered_index = dynamic_cast<TieredSVSIndex<data_t> *>(INDICES.at(INDEX_TIERED_SVS));
 
     double memory_before = tiered_index->getAllocationSize();
     size_t removed_vectors_count = 0;
@@ -530,15 +519,14 @@ void BM_VecSimBasics<index_type_t>::Range_SVS(benchmark::State &st) {
     auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
 
     for (auto _ : st) {
-        auto svs_results =
-            VecSimIndex_RangeQuery(INDICES[INDEX_VecSimAlgo_SVS], QUERIES[iter % N_QUERIES].data(),
-                                   radius, &query_params, BY_ID);
+        auto svs_results = VecSimIndex_RangeQuery(
+            INDICES.at(INDEX_SVS), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(svs_results);
 
         // Measure recall:
         auto bf_results = VecSimIndex_RangeQuery(
-            INDICES[INDEX_VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
+            INDICES.at(INDEX_BF), QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
         total_res_bf += VecSimQueryReply_Len(bf_results);
 
         VecSimQueryReply_Free(bf_results);

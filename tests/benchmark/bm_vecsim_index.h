@@ -105,6 +105,7 @@ BM_VecSimIndex<index_type_t>::BM_VecSimIndex() {
     ref_count++;
 }
 
+template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
     std::cout << "Initializing BM_VecSimIndex for "
               << VecSimType_ToString(index_type_t::get_index_type())
@@ -121,40 +122,40 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     if (IndexTypeFlags::INDEX_TYPE_BF & enabled_index_types) {
         // Create a new BF index.
-        indices[INDEX_VecSimAlgo_BF] = CreateNewIndex(bf_params);
+        INDICES.at(INDEX_BF) = CreateNewIndex(bf_params);
     }
 
     if (IndexTypeFlags::INDEX_TYPE_HNSW & enabled_index_types) {
         // Initialize and load HNSW index for DBPedia data set.
         std::cout << "Creating HNSW index." << std::endl;
-        indices.at(INDEX_HNSW) =
-            (HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
-    
-    if (IndexTypeFlags::INDEX_TYPE_TIERED_HNSW & enabled_index_types) {
-        // Initialize and load HNSW index for DBPedia data set.
-        std::cout << "Creating tiered HNSW index." << std::endl;
-        auto *hnsw_index = CastToHNSW(INDICES.at(INDEX_HNSW));
-        size_t ef_r = 10;
-        hnsw_index->setEf(ef_r);
+        indices.at(INDEX_HNSW) = (HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
 
-        // Create tiered index from the loaded HNSW index.
-        auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-            .jobQueueCtx = mock_thread_pool.ctx,
-            .submitCb = tieredIndexMock::submit_callback,
-            .flatBufferLimit = block_size,
-            .primaryIndexParams = nullptr,
-            .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+        if (IndexTypeFlags::INDEX_TYPE_TIERED_HNSW & enabled_index_types) {
+            // Initialize and load HNSW index for DBPedia data set.
+            std::cout << "Creating tiered HNSW index." << std::endl;
+            auto *hnsw_index = CastToHNSW(INDICES.at(INDEX_HNSW));
+            size_t ef_r = 10;
+            hnsw_index->setEf(ef_r);
 
-        auto *tiered_index =
-            TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
-        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-        INDICES.at(INDEX_TIERED_HNSW) = tiered_index;
+            // Create tiered index from the loaded HNSW index.
+            auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
+            TieredIndexParams tiered_params = {
+                .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                .jobQueueCtx = mock_thread_pool.ctx,
+                .submitCb = tieredIndexMock::submit_callback,
+                .flatBufferLimit = block_size,
+                .primaryIndexParams = nullptr,
+                .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+
+            auto *tiered_index = TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(
+                &tiered_params, hnsw_index);
+            mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+            INDICES.at(INDEX_TIERED_HNSW) = tiered_index;
+        }
     }
-}
 
-    if (IndexTypeFlags::INDEX_TYPE_BF & enabled_index_types && IndexTypeFlags::INDEX_TYPE_HNSW & enabled_index_types) {
+    if (IndexTypeFlags::INDEX_TYPE_BF & enabled_index_types &&
+        IndexTypeFlags::INDEX_TYPE_HNSW & enabled_index_types) {
         // Add the same vectors to Flat index.
         for (size_t i = 0; i < n_vectors; ++i) {
             const char *blob = GetHNSWDataByInternalId(i);
@@ -176,43 +177,34 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
         };
         INDICES.at(INDEX_SVS) = CreateNewIndex(svs_params);
-        auto hnsw_index =
-            dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
+
+        auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
         for (size_t i = 0; i < N_VECTORS; ++i) {
             const char *blob = hnsw_index->getDataByInternalId(i);
             VecSimIndex_AddVector(INDICES.at(INDEX_SVS), blob, i);
         }
-    
 
         if (IndexTypeFlags::INDEX_TYPE_TIERED_SVS & enabled_index_types) {
             std::cout << "Creating tiered SVS index." << std::endl;
-            // Create SVS parameters for the tiered index
-            SVSParams svs_params = {
-                .type = type,
-                .dim = dim,
-                .metric = VecSimMetric_Cosine,
-                .quantBits = VecSimSvsQuant_NONE,
-                .graph_max_degree = CastToHNSW(INDICES.at(INDEX_HNSW))->getM(),
-                .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
-            };
 
             VecSimParams primary_params = {.algo = VecSimAlgo_SVS,
-                                        .algoParams = {.svsParams = svs_params}};
+                                           .algoParams = {.svsParams = svs_params}};
 
             // Create tiered index parameters with proper SVS primary index params
-            TieredIndexParams tiered_svs_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-                                                .jobQueueCtx = mock_thread_pool.ctx,
-                                                .submitCb = tieredIndexMock::submit_callback,
-                                                .flatBufferLimit = block_size,
-                                                .primaryIndexParams = &primary_params,
-                                                .specificParams = {.tieredSVSParams = {
-                                                                        .trainingTriggerThreshold = 0,
-                                                                        .updateTriggerThreshold = 0,
-                                                                        .updateJobWaitTime = 0,
-                                                                    }}};
+            TieredIndexParams tiered_svs_params = {
+                .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                .jobQueueCtx = mock_thread_pool.ctx,
+                .submitCb = tieredIndexMock::submit_callback,
+                .flatBufferLimit = block_size,
+                .primaryIndexParams = &primary_params,
+                .specificParams = {.tieredSVSParams = {
+                                       .trainingTriggerThreshold = 0,
+                                       .updateTriggerThreshold = 0,
+                                       .updateJobWaitTime = 0,
+                                   }}};
 
-            std::cout << INDICES.at(INDEX_SVS)->indexLabelCount()
-                    << " vectors in the SVS index." << std::endl;
+            std::cout << INDICES.at(INDEX_SVS)->indexLabelCount() << " vectors in the SVS index."
+                      << std::endl;
             std::cout << "Using existing SVS index for tiered SVS." << std::endl;
             auto *tiered_svs_index = TieredFactory::TieredSVSFactory::NewIndex(
                 &tiered_svs_params, INDICES.at(INDEX_SVS));
@@ -220,10 +212,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
             INDICES.at(INDEX_TIERED_SVS) = tiered_svs_index;
             std::cout << "number of vectors in the tiered SVS index: "
-                    << INDICES.at(INDEX_TIERED_SVS)->indexLabelCount() << std::endl;
+                      << INDICES.at(INDEX_TIERED_SVS)->indexLabelCount() << std::endl;
         }
     }
-
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);

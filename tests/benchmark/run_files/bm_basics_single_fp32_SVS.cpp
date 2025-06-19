@@ -25,8 +25,8 @@ uint32_t BM_VecSimGeneral::enabled_index_types =
     IndexTypeFlags::INDEX_TYPE_HNSW | // For now the HNSW index is required
     IndexTypeFlags::INDEX_TYPE_SVS | IndexTypeFlags::INDEX_TYPE_TIERED_SVS;
 
-size_t BM_VecSimGeneral::n_queries = 1;
-size_t BM_VecSimGeneral::n_vectors = 20;
+size_t BM_VecSimGeneral::n_queries = 100;
+size_t BM_VecSimGeneral::n_vectors = 10000;
 size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
@@ -43,9 +43,9 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, SVS, Single)
 
 DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, SVS), fp32_index_t, SVSIndex_Single, float, float,
-                        INDEX_VecSimAlgo_SVS)
+                        INDEX_SVS)
 DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredSVSIndex_Single,
-                        float, float, INDEX_VecSimAlgo_TIERED_SVS)
+                        float, float, INDEX_TIERED_SVS)
 
 #include "benchmark/bm_initialization/SVS_bm_basics_initialize_fp32.h"
 BENCHMARK_MAIN();

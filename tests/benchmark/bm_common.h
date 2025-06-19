@@ -83,12 +83,12 @@ void BM_VecSimCommon<index_type_t>::RunTopK_SVS(benchmark::State &st, size_t ws,
         .windowSize = ws, .searchHistory = searchHistory, .epsilon = epsilon};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
     auto svs_results =
-        VecSimIndex_TopKQuery(INDICES[INDEX_VecSimAlgo_SVS + index_offset],
+        VecSimIndex_TopKQuery(INDICES.at(INDEX_SVS + index_offset),
                               QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(INDICES[INDEX_VecSimAlgo_BF + index_offset],
+    auto bf_results = VecSimIndex_TopKQuery(INDICES.at(INDEX_BF + index_offset),
                                             QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
 
     BM_VecSimGeneral::MeasureRecall(svs_results, bf_results, correct);
@@ -132,7 +132,7 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_Tiered_SVS(benchmark::State &st,
                                                       unsigned short index_offset) {
-    auto index = INDICES[INDEX_VecSimAlgo_TIERED_SVS + index_offset];
+    auto index = INDICES.at(INDEX_TIERED_SVS + index_offset);
     index->fitMemory();
     for (auto _ : st) {
         // Do nothing...
@@ -142,7 +142,7 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered_SVS(benchmark::State &st,
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_SVS(benchmark::State &st, unsigned short index_offset) {
-    auto index = INDICES[INDEX_VecSimAlgo_SVS + index_offset];
+    auto index = INDICES.at(INDEX_SVS + index_offset);
     index->fitMemory();
     for (auto _ : st) {
         // Do nothing...
