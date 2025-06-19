@@ -160,13 +160,6 @@ public:
     MemoryUtils::unique_blob preprocessForStorage(const void *original_blob) const;
 
     /**
-     * @brief Preprocess a blob for query in place.
-     *
-     * @param blob will be directly modified, not copied.
-     */
-    void preprocessQueryInPlace(void *blob) const;
-
-    /**
      * @brief Preprocess a blob for storage in place.
      *
      * @param blob will be directly modified, not copied.
@@ -337,11 +330,6 @@ template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
     return this->preprocessors->preprocessForStorage(original_blob, this->dataSize);
-}
-
-template <typename DataType, typename DistType>
-void VecSimIndexAbstract<DataType, DistType>::preprocessQueryInPlace(void *blob) const {
-    this->preprocessors->preprocessQueryInPlace(blob, this->dataSize);
 }
 
 template <typename DataType, typename DistType>

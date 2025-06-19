@@ -33,7 +33,6 @@ public:
                                                      size_t input_blob_size,
                                                      bool force_copy = false) const;
 
-    virtual void preprocessQueryInPlace(void *blob, size_t input_blob_size) const;
     virtual void preprocessStorageInPlace(void *blob, size_t input_blob_size) const;
 
     unsigned char getAlignment() const { return alignment; }
@@ -89,8 +88,6 @@ public:
 
     MemoryUtils::unique_blob preprocessQuery(const void *original_blob, size_t input_blob_size,
                                              bool force_copy = false) const override;
-
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size) const override;
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override;
 
@@ -231,18 +228,6 @@ MemoryUtils::unique_blob MultiPreprocessorsContainer<DataType, n_preprocessors>:
     return query_blob
                ? std::move(this->wrapAllocated(query_blob))
                : std::move(this->maybeCopyToAlignedMem(original_blob, input_blob_size, force_copy));
-}
-
-template <typename DataType, size_t n_preprocessors>
-void MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessQueryInPlace(
-    void *blob, size_t input_blob_size) const {
-
-    for (auto pp : preprocessors) {
-        if (!pp)
-            break;
-        // modifies the memory in place
-        pp->preprocessQueryInPlace(blob, input_blob_size, this->alignment);
-    }
 }
 
 template <typename DataType, size_t n_preprocessors>

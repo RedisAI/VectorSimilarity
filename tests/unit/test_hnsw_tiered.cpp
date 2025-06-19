@@ -4232,12 +4232,6 @@ public:
             static_cast<DataType *>(blob)[i] *= 2;
         }
     }
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {
-        for (size_t i = 0; i < dim; i++) {
-            static_cast<DataType *>(blob)[i] *= 2;
-        }
-    }
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
         for (size_t i = 0; i < dim; i++) {
