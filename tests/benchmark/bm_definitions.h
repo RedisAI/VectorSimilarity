@@ -21,6 +21,29 @@ struct IndexType {
     typedef DistType dist_t;
 };
 
+enum IndexTypeIndex {
+    INDEX_BF = 0,
+    INDEX_BF_UPDATED,
+    INDEX_HNSW,
+    INDEX_HNSW_UPDATED,
+    INDEX_TIERED_HNSW,
+    INDEX_SVS,
+    INDEX_TIERED_SVS,
+    INDEX_SVS_QUANTIZED,
+    NUMBER_OF_INDEX_TYPES
+};
+
+enum IndexTypeFlags {
+    INDEX_TYPE_BF = 1 << 0,
+    INDEX_TYPE_BF_UPDATED = 1 << 1,
+    INDEX_TYPE_HNSW = 1 << 2,
+    INDEX_TYPE_HNSW_UPDATED = 1 << 3,
+    INDEX_TYPE_TIERED_HNSW = 1 << 4,
+    INDEX_TYPE_SVS = 1 << 5,
+    INDEX_TYPE_TIERED_SVS = 1 << 6,
+    INDEX_TYPE_SVS_QUANTIZED = 1 << 7
+};
+
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
 using bf16_index_t = IndexType<VecSimType_BFLOAT16, vecsim_types::bfloat16, float>;

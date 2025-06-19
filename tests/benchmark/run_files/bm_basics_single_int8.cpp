@@ -7,6 +7,9 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_BF |
+                                                 IndexTypeFlags::INDEX_TYPE_HNSW |
+                                                 IndexTypeFlags::INDEX_TYPE_TIERED_HNSW;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
@@ -26,11 +29,11 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel, Async, Single)
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), int8_index_t, BruteForceIndex_Single, int8_t,
-                    float, VecSimAlgo_BF)
+                    float, INDEX_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), int8_index_t, HNSWIndex_Single, int8_t, float,
-                    VecSimAlgo_HNSWLIB)
+                    INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), int8_index_t, TieredHNSWIndex, int8_t, float,
-                    VecSimAlgo_TIERED)
+                    INDEX_TIERED_HNSW)
 #include "benchmark/bm_initialization/bm_basics_initialize_int8.h"
 
 BENCHMARK_MAIN();
