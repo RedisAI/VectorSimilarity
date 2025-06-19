@@ -88,7 +88,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     for (size_t label = initial_label_count; label < new_label_count; label++) {
         // If index is tiered HNSW, remove directly from the underline HNSW.
         VecSimIndex_DeleteVector(
-            INDICES[st.range(0) == VecSimAlgo_TIERED ? VecSimAlgo_HNSWLIB : st.range(0)], label);
+            INDICES[st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)], label);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
@@ -137,7 +137,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     size_t new_label_count = index->indexLabelCount();
     // Remove directly inplace from the underline HNSW index.
     for (size_t label_ = initial_label_count; label_ < new_label_count; label_++) {
-        VecSimIndex_DeleteVector(INDICES[VecSimAlgo_HNSWLIB], label_);
+        VecSimIndex_DeleteVector(INDICES[INDEX_HNSW], label_);
     }
 
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
@@ -195,7 +195,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
     auto *tiered_index =
-        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[INDEX_TIERED_HNSW]);
 
     tiered_index->fitMemory();
     double memory_before = tiered_index->getAllocationSize();
@@ -257,7 +257,7 @@ void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
     size_t total_res = 0;
 
     for (auto _ : st) {
-        auto res = VecSimIndex_RangeQuery(INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(),
+        auto res = VecSimIndex_RangeQuery(INDICES[INDEX_BF], QUERIES[iter % N_QUERIES].data(),
                                           radius, nullptr, BY_ID);
         total_res += VecSimQueryReply_Len(res);
         iter++;
@@ -277,14 +277,14 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 
     for (auto _ : st) {
         auto hnsw_results =
-            VecSimIndex_RangeQuery(INDICES[VecSimAlgo_HNSWLIB], QUERIES[iter % N_QUERIES].data(),
+            VecSimIndex_RangeQuery(INDICES[INDEX_HNSW], QUERIES[iter % N_QUERIES].data(),
                                    radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(hnsw_results);
 
         // Measure recall:
         auto bf_results = VecSimIndex_RangeQuery(
-            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
+            INDICES[INDEX_BF], QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
         total_res_bf += VecSimQueryReply_Len(bf_results);
 
         VecSimQueryReply_Free(bf_results);

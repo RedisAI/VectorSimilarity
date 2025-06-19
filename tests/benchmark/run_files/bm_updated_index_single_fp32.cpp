@@ -4,6 +4,10 @@
   Basic tests for updated single value index.
 ***************************************/
 bool BM_VecSimGeneral::is_multi = false;
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_BF |
+                                                         IndexTypeFlags::INDEX_TYPE_HNSW |
+                                                         IndexTypeFlags::INDEX_TYPE_HNSW_UPDATED |
+                                                         IndexTypeFlags::INDEX_TYPE_TIERED_HNSW;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::dim = 768;

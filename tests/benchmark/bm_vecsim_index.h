@@ -24,7 +24,7 @@ public:
 
     static std::vector<std::vector<data_t>> queries;
 
-    static std::vector<VecSimIndex *> indices;
+    static std::array<VecSimIndex *, IndexTypeIndex::NUMBER_OF_INDEX_TYPES> indices;
 
     BM_VecSimIndex();
 
@@ -35,7 +35,7 @@ protected:
         return dynamic_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
     static inline const char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
-        return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
+        return CastToHNSW(indices[INDEX_HNSW + index_offset])->getDataByInternalId(id);
     }
 
 private:
@@ -67,28 +67,28 @@ template <>
 std::vector<std::vector<uint8_t>> BM_VecSimIndex<uint8_index_t>::queries{};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
+std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<fp32_index_t>::indices{nullptr};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<fp64_index_t>::indices{};
+std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<fp64_index_t>::indices{nullptr};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<bf16_index_t>::indices{};
+std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<bf16_index_t>::indices{nullptr};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<fp16_index_t>::indices{};
+std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<fp16_index_t>::indices{nullptr};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<int8_index_t>::indices{};
+std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<int8_index_t>::indices{nullptr};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<uint8_index_t>::indices{};
+std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<uint8_index_t>::indices{nullptr};
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     ref_count--;
     if (ref_count == 0) {
-        VecSimIndex_Free(indices[VecSimAlgo_BF]);
+        VecSimIndex_Free(indices[INDEX_BF]);
         /* Note that VecSimAlgo_HNSW will be destroyed as part of the tiered index release, and
          * the VecSimAlgo_Tiered index ptr will be deleted when the mock thread pool ctx object is
          * destroyed.
@@ -112,45 +112,50 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // dim, block_size, M, EF_C, n_vectors, is_multi, n_queries, hnsw_index_file and
     // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
     // index type benchmarks.
-    BFParams bf_params = {.type = type,
-                          .dim = dim,
-                          .metric = VecSimMetric_Cosine,
-                          .multi = is_multi,
-                          .blockSize = block_size};
+    if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_BF) {
+        BFParams bf_params = {.type = type,
+                            .dim = dim,
+                            .metric = VecSimMetric_Cosine,
+                            .multi = is_multi,
+                            .blockSize = block_size};
+        indices[INDEX_BF] = CreateNewIndex(bf_params);
+    }
+    if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_HNSW) {
+        // Initialize and load HNSW index for DBPedia data set.
+        indices[INDEX_HNSW] = HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file));
 
-    indices.push_back(CreateNewIndex(bf_params));
+        auto *hnsw_index = CastToHNSW(indices[INDEX_HNSW]);
+        size_t ef_r = 10;
+        hnsw_index->setEf(ef_r);
+        // Create tiered index from the loaded HNSW index.
+        if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_TIERED_HNSW) {
+            auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
+            TieredIndexParams tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                                               .jobQueueCtx = mock_thread_pool.ctx,
+                                               .submitCb = tieredIndexMock::submit_callback,
+                                               .flatBufferLimit = block_size,
+                                               .primaryIndexParams = nullptr,
+                                               .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+            
+            auto *tiered_index =
+                TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
+            mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+    
+            indices[INDEX_TIERED_HNSW] = tiered_index;
+    
+            // Launch the BG threads loop that takes jobs from the queue and executes them.
+            mock_thread_pool.init_threads();
+        }
+    }
 
-    // Initialize and load HNSW index for DBPedia data set.
-    indices.push_back(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
-
-    auto *hnsw_index = CastToHNSW(indices[VecSimAlgo_HNSWLIB]);
-    size_t ef_r = 10;
-    hnsw_index->setEf(ef_r);
-
-    // Create tiered index from the loaded HNSW index.
-    auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
-    TieredIndexParams tiered_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-                                       .jobQueueCtx = mock_thread_pool.ctx,
-                                       .submitCb = tieredIndexMock::submit_callback,
-                                       .flatBufferLimit = block_size,
-                                       .primaryIndexParams = nullptr,
-                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
-
-    auto *tiered_index =
-        TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
-    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-
-    indices.push_back(tiered_index);
-
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    mock_thread_pool.init_threads();
-
-    // Add the same vectors to Flat index.
-    for (size_t i = 0; i < n_vectors; ++i) {
-        const char *blob = GetHNSWDataByInternalId(i);
-        // Fot multi value indices, the internal id is not necessarily equal the label.
-        size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
-        VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
+    if (indices[INDEX_HNSW] && indices[INDEX_BF]){
+        // Add the same vectors to Flat index.
+        for (size_t i = 0; i < n_vectors; ++i) {
+            const char *blob = GetHNSWDataByInternalId(i);
+            // Fot multi value indices, the internal id is not necessarily equal the label.
+            size_t label = CastToHNSW(indices[INDEX_HNSW])->getExternalLabel(i);
+            VecSimIndex_AddVector(indices[INDEX_BF], blob, label);
+        }
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
