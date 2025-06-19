@@ -32,7 +32,7 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), int8_index_t, BruteForceIndex
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), int8_index_t, HNSWIndex_Multi, int8_t, float,
                     INDEX_VecSimAlgo_HNSWLIB)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), int8_index_t, TieredHNSWIndex, int8_t, float,
-                    INDEX_VecSimAlgo_TIERED)
+                    INDEX_VecSimAlgo_TIERED_HNSW)
 #include "benchmark/bm_initialization/bm_basics_initialize_int8.h"
 
 BENCHMARK_MAIN();

@@ -32,7 +32,7 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp64_index_t, BruteForceIndex
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp64_index_t, HNSWIndex_Multi, double, double,
                     INDEX_VecSimAlgo_HNSWLIB)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp64_index_t, TieredHNSWIndex, double,
-                    double, INDEX_VecSimAlgo_TIERED)
+                    double, INDEX_VecSimAlgo_TIERED_HNSW)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp64.h"
 
 BENCHMARK_MAIN();

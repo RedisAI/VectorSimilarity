@@ -21,26 +21,34 @@ struct IndexType {
     typedef DistType dist_t;
 };
 
+// This enum is used to index the indices array in BM_VecSimIndex.
 // if you add a new index type, please update the following enum and MAX_INDEX_COUNT accordingly.
-enum IndexTypeFlags {
-    INDEX_TYPE_BF = 1 << 0,
-    INDEX_TYPE_HNSW = 1 << 1,
-    INDEX_TYPE_TIERED_HNSW = 1 << 2,
-    INDEX_TYPE_SVS = 1 << 3,
-    INDEX_TYPE_TIERED_SVS = 1 << 4,
-    INDEX_TYPE_SVS_QUANTIZED = 1 << 5
-};
-
+// updated_index_offset is 1, so the updated indices will be at index + 1.
 enum IndexTypeIndex {
     INDEX_VecSimAlgo_BF = 0,
-    INDEX_VecSimAlgo_HNSWLIB = 1,
-    INDEX_VecSimAlgo_TIERED = 2,
-    INDEX_VecSimAlgo_SVS = 3,
-    INDEX_VecSimAlgo_TIERED_SVS = 4,
-    INDEX_VecSimAlgo_SVS_QUANTIZED = 5
+    INDEX_VecSimAlgo_BF_UPDATED,
+    INDEX_VecSimAlgo_HNSWLIB,
+    INDEX_VecSimAlgo_HNSWLIB_UPDATED,
+    INDEX_VecSimAlgo_TIERED_HNSW,
+    INDEX_VecSimAlgo_SVS,
+    INDEX_VecSimAlgo_TIERED_SVS,
+    INDEX_VecSimAlgo_SVS_QUANTIZED,
+    NUMBER_OF_INDEX_TYPES
 };
 
-static constexpr size_t MAX_INDEX_COUNT = 6;
+enum IndexTypeFlags {
+    INDEX_TYPE_BF = 1 << 0,
+    INDEX_TYPE_BF_UPDATED = 1 << 1,
+    INDEX_TYPE_HNSW = 1 << 2,
+    INDEX_TYPE_HNSW_UPDATED = 1 << 3,
+    INDEX_TYPE_TIERED_HNSW = 1 << 4,
+    INDEX_TYPE_SVS = 1 << 5,
+    INDEX_TYPE_TIERED_SVS = 1 << 6,
+    INDEX_TYPE_SVS_QUANTIZED = 1 << 7
+};
+
+
+// static constexpr size_t MAX_INDEX_COUNT = 6;
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
