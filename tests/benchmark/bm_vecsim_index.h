@@ -151,15 +151,15 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         indices[INDEX_VecSimAlgo_TIERED_HNSW] = tiered_index;
     }
 
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-
-    // Add the same vectors to Flat index.
-    // for (size_t i = 0; i < n_vectors; ++i) {
-    //     const char *blob = GetHNSWDataByInternalId(i);
-    //     // Fot multi value indices, the internal id is not necessarily equal the label.
-    //     size_t label = CastToHNSW(indices[VecSimAlgo_HNSW])->getExternalLabel(i);
-    //     VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
-    // }
+    if (IndexTypeFlags::INDEX_TYPE_BF & enabled_index_types) {
+        // Add the same vectors to Flat index.
+        for (size_t i = 0; i < n_vectors; ++i) {
+            const char *blob = GetHNSWDataByInternalId(i);
+            // Fot multi value indices, the internal id is not necessarily equal the label.
+            size_t label = CastToHNSW(indices[INDEX_VecSimAlgo_HNSWLIB])->getExternalLabel(i);
+            VecSimIndex_AddVector(indices[INDEX_VecSimAlgo_BF], blob, label);
+        }
+    }
     if (IndexTypeFlags::INDEX_TYPE_SVS & enabled_index_types) {
         std::cout << "Creating SVS index YAS." << std::endl;
         // Initialize and load HNSW index for DBPedia data set.
