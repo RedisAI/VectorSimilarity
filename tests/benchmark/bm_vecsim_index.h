@@ -184,45 +184,45 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         }
     
 
-    if (IndexTypeFlags::INDEX_TYPE_TIERED_SVS & enabled_index_types) {
-        std::cout << "Creating tiered SVS index." << std::endl;
-        // Create SVS parameters for the tiered index
-        SVSParams svs_params = {
-            .type = type,
-            .dim = dim,
-            .metric = VecSimMetric_Cosine,
-            .quantBits = VecSimSvsQuant_NONE,
-            .graph_max_degree = CastToHNSW(indices[INDEX_VecSimAlgo_HNSWLIB])->getM(),
-            .construction_window_size = CastToHNSW(indices[INDEX_VecSimAlgo_HNSWLIB])->getEf(),
-        };
+        if (IndexTypeFlags::INDEX_TYPE_TIERED_SVS & enabled_index_types) {
+            std::cout << "Creating tiered SVS index." << std::endl;
+            // Create SVS parameters for the tiered index
+            SVSParams svs_params = {
+                .type = type,
+                .dim = dim,
+                .metric = VecSimMetric_Cosine,
+                .quantBits = VecSimSvsQuant_NONE,
+                .graph_max_degree = CastToHNSW(INDICES.at(INDEX_HNSW))->getM(),
+                .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
+            };
 
-        VecSimParams primary_params = {.algo = VecSimAlgo_SVS,
-                                       .algoParams = {.svsParams = svs_params}};
+            VecSimParams primary_params = {.algo = VecSimAlgo_SVS,
+                                        .algoParams = {.svsParams = svs_params}};
 
-        // Create tiered index parameters with proper SVS primary index params
-        TieredIndexParams tiered_svs_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-                                               .jobQueueCtx = mock_thread_pool.ctx,
-                                               .submitCb = tieredIndexMock::submit_callback,
-                                               .flatBufferLimit = block_size,
-                                               .primaryIndexParams = &primary_params,
-                                               .specificParams = {.tieredSVSParams = {
-                                                                      .trainingTriggerThreshold = 0,
-                                                                      .updateTriggerThreshold = 0,
-                                                                      .updateJobWaitTime = 0,
-                                                                  }}};
+            // Create tiered index parameters with proper SVS primary index params
+            TieredIndexParams tiered_svs_params = {.jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                                                .jobQueueCtx = mock_thread_pool.ctx,
+                                                .submitCb = tieredIndexMock::submit_callback,
+                                                .flatBufferLimit = block_size,
+                                                .primaryIndexParams = &primary_params,
+                                                .specificParams = {.tieredSVSParams = {
+                                                                        .trainingTriggerThreshold = 0,
+                                                                        .updateTriggerThreshold = 0,
+                                                                        .updateJobWaitTime = 0,
+                                                                    }}};
 
-        std::cout << INDICES.at(INDEX_SVS)->indexLabelCount()
-                  << " vectors in the SVS index." << std::endl;
-        std::cout << "Using existing SVS index for tiered SVS." << std::endl;
-        auto *tiered_svs_index = TieredFactory::TieredSVSFactory::NewIndex(
-            &tiered_svs_params, INDICES.at(INDEX_SVS));
+            std::cout << INDICES.at(INDEX_SVS)->indexLabelCount()
+                    << " vectors in the SVS index." << std::endl;
+            std::cout << "Using existing SVS index for tiered SVS." << std::endl;
+            auto *tiered_svs_index = TieredFactory::TieredSVSFactory::NewIndex(
+                &tiered_svs_params, INDICES.at(INDEX_SVS));
 
-        mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
-        INDICES.at(INDEX_TIERED_SVS) = tiered_svs_index;
-        std::cout << "number of vectors in the tiered SVS index: "
-                  << INDICES.at(INDEX_TIERED_SVS)->indexLabelCount() << std::endl;
+            mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
+            INDICES.at(INDEX_TIERED_SVS) = tiered_svs_index;
+            std::cout << "number of vectors in the tiered SVS index: "
+                    << INDICES.at(INDEX_TIERED_SVS)->indexLabelCount() << std::endl;
+        }
     }
-}
 
     // Add the SVS index to the indices vector.
 
