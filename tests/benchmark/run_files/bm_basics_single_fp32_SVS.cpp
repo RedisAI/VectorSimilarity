@@ -25,8 +25,8 @@ uint32_t BM_VecSimGeneral::enabled_index_types =
     IndexTypeFlags::INDEX_TYPE_HNSW | // For now the HNSW index is required
     IndexTypeFlags::INDEX_TYPE_SVS | IndexTypeFlags::INDEX_TYPE_TIERED_SVS;
 
-size_t BM_VecSimGeneral::n_queries = 100;
-size_t BM_VecSimGeneral::n_vectors = 10000;
+size_t BM_VecSimGeneral::n_queries = 10000;
+size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
