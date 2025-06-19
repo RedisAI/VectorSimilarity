@@ -1,8 +1,8 @@
 #include "benchmark/bm_batch_iterator.h"
 
 bool BM_VecSimGeneral::is_multi = false;
-uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_TYPE_HNSW |
-                                                 IndexTypeFlags::INDEX_TYPE_TIERED_HNSW;
+uint32_t BM_VecSimGeneral::enabled_index_types =
+    IndexTypeFlags::INDEX_TYPE_HNSW | IndexTypeFlags::INDEX_TYPE_TIERED_HNSW;
 
 // Global benchmark data
 size_t BM_VecSimGeneral::n_vectors = 1000000;

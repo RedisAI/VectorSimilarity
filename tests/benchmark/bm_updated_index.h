@@ -78,7 +78,8 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
         const char *blob = BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i);
         size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(INDICES[INDEX_VecSimAlgo_HNSWLIB])
                            ->getExternalLabel(i);
-        VecSimIndex_AddVector(INDICES[INDEX_VecSimAlgo_HNSWLIB + updated_index_offset], blob, label);
+        VecSimIndex_AddVector(INDICES[INDEX_VecSimAlgo_HNSWLIB + updated_index_offset], blob,
+                              label);
     }
 
     // Generate index from file.
@@ -100,6 +101,7 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
         size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(
                            INDICES[INDEX_VecSimAlgo_HNSWLIB + updated_index_offset])
                            ->getExternalLabel(i);
-        VecSimIndex_AddVector(INDICES[INDEX_VecSimAlgo_HNSWLIB + updated_index_offset], blob, label);
+        VecSimIndex_AddVector(INDICES[INDEX_VecSimAlgo_HNSWLIB + updated_index_offset], blob,
+                              label);
     }
 }

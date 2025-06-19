@@ -32,7 +32,8 @@ public:
 
     static void Build_SVS(benchmark::State &st) {
         // Add vectors to svs
-        auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES[INDEX_VecSimAlgo_HNSWLIB]);
+        auto hnsw_index =
+            dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES[INDEX_VecSimAlgo_HNSWLIB]);
         for (auto _ : st) {
             for (size_t i = 0; i < N_VECTORS; ++i) {
                 const char *blob = hnsw_index->getDataByInternalId(i);
@@ -107,17 +108,14 @@ void BM_VecSimBasics<index_type_t>::AddLabel_SVS(benchmark::State &st) {
         // If index is tiered HNSW, remove directly from the underline HNSW.
         auto index_algo = st.range(0);
         std::cout << "count before delete: " << index->indexLabelCount() << std::endl;
-        VecSimIndex_DeleteVector(
-            INDICES[index_algo], label);
+        VecSimIndex_DeleteVector(INDICES[index_algo], label);
         std::cout << "count after delete: " << index->indexLabelCount() << std::endl;
         if (st.range(0) == INDEX_VecSimAlgo_TIERED_SVS) {
             VecSimTieredIndex_GC(INDICES[INDEX_VecSimAlgo_TIERED_SVS]);
-        }
-        else {
+        } else {
             index->runGC();
         }
         std::cout << "count after gc: " << index->indexLabelCount() << std::endl;
-
     }
 
     std::cout << "New label count asdas: " << index->indexLabelCount() << std::endl;
@@ -125,7 +123,6 @@ void BM_VecSimBasics<index_type_t>::AddLabel_SVS(benchmark::State &st) {
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
     std::cout << "New label count asdas2: " << index->indexLabelCount() << std::endl;
 }
-
 
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
@@ -169,7 +166,9 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     for (size_t label = initial_label_count; label < new_label_count; label++) {
         // If index is tiered HNSW, remove directly from the underline HNSW.
         VecSimIndex_DeleteVector(
-            INDICES[st.range(0) == INDEX_VecSimAlgo_TIERED_HNSW ? INDEX_VecSimAlgo_HNSWLIB : st.range(0)], label);
+            INDICES[st.range(0) == INDEX_VecSimAlgo_TIERED_HNSW ? INDEX_VecSimAlgo_HNSWLIB
+                                                                : st.range(0)],
+            label);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
@@ -202,7 +201,6 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest_SVS(benchmark::State &s
     // run GC to ensure all threads finish indexing.
     VecSimTieredIndex_GC(index);
 
-
     size_t memory_delta = index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
@@ -220,7 +218,6 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest_SVS(benchmark::State &s
     VecSimTieredIndex_GC(index);
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
-
 
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
@@ -315,7 +312,6 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_SVS(algo_t *index, benchmark::St
     size_t cur_index_size = VecSimIndex_IndexSize(index);
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
-
 
 template <typename index_type_t>
 template <typename algo_t>
@@ -484,8 +480,8 @@ void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
     size_t total_res = 0;
 
     for (auto _ : st) {
-        auto res = VecSimIndex_RangeQuery(INDICES[INDEX_VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(),
-                                          radius, nullptr, BY_ID);
+        auto res = VecSimIndex_RangeQuery(INDICES[INDEX_VecSimAlgo_BF],
+                                          QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
         total_res += VecSimQueryReply_Len(res);
         iter++;
     }
@@ -504,8 +500,8 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 
     for (auto _ : st) {
         auto hnsw_results =
-            VecSimIndex_RangeQuery(INDICES[INDEX_VecSimAlgo_HNSWLIB], QUERIES[iter % N_QUERIES].data(),
-                                   radius, &query_params, BY_ID);
+            VecSimIndex_RangeQuery(INDICES[INDEX_VecSimAlgo_HNSWLIB],
+                                   QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(hnsw_results);
 
@@ -533,10 +529,7 @@ void BM_VecSimBasics<index_type_t>::Range_SVS(benchmark::State &st) {
     size_t total_res = 0;
     size_t total_res_bf = 0;
     SVSRuntimeParams svsRuntimeParams = {
-        .windowSize = windowSize,
-        .searchHistory = searchHistory,
-        .epsilon = epsilon
-    };
+        .windowSize = windowSize, .searchHistory = searchHistory, .epsilon = epsilon};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
 
     for (auto _ : st) {
@@ -604,8 +597,8 @@ void BM_VecSimBasics<index_type_t>::Range_SVS(benchmark::State &st) {
     static void MACRO_CONCATENATE(BM_FUNC, _Args)(benchmark::internal::Benchmark * b) {            \
         for (int radius : benchmark_range<TYPENAME>::get_radii()) {                                \
             for (int epsilon : benchmark_range<TYPENAME>::get_epsilons()) {                        \
-                for (int window_size : {10, 100, 200, 500}) {                                     \
-                    for (int search_history : {0, 1, 2}) {                                        \
+                for (int window_size : {10, 100, 200, 500}) {                                      \
+                    for (int search_history : {0, 1, 2}) {                                         \
                         b->Args({radius, epsilon, window_size, search_history});                   \
                     }                                                                              \
                 }                                                                                  \
@@ -631,9 +624,9 @@ void BM_VecSimBasics<index_type_t>::Range_SVS(benchmark::State &st) {
                 BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
             st);                                                                                   \
     }
-#define DEFINE_DELETE_LABEL_SVS(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)     \
+#define DEFINE_DELETE_LABEL_SVS(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo) \
     BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
-        DeleteLabel_SVS<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                             \
+        DeleteLabel_SVS<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                         \
             dynamic_cast<INDEX_NAME<DATA_TYPE, DIST_TYPE> *>(                                      \
                 BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
             st);                                                                                   \

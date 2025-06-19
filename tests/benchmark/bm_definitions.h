@@ -47,7 +47,6 @@ enum IndexTypeFlags {
     INDEX_TYPE_SVS_QUANTIZED = 1 << 7
 };
 
-
 // static constexpr size_t MAX_INDEX_COUNT = 6;
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
