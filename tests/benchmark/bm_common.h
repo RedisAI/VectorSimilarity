@@ -44,6 +44,7 @@ public:
     static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_Tiered(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_SVS(benchmark::State &st, unsigned short index_offset = 0);
+    static void Memory_Tiered_SVS(benchmark::State &st, unsigned short index_offset = 0);
 };
 
 // for the svs HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
@@ -85,12 +86,12 @@ void BM_VecSimCommon<index_type_t>::RunTopK_SVS(benchmark::State &st, size_t ws,
     };
     auto query_params = BM_VecSimGeneral::CreateQueryParams(svsRuntimeParams);
     auto svs_results = VecSimIndex_TopKQuery(
-        INDICES[VecSimAlgo_SVS + index_offset], QUERIES[iter % N_QUERIES].data(), k, &query_params,
+        INDICES[INDEX_VecSimAlgo_SVS + index_offset], QUERIES[iter % N_QUERIES].data(), k, &query_params,
         BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+    auto bf_results = VecSimIndex_TopKQuery(INDICES[INDEX_VecSimAlgo_BF + index_offset],
                                             QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
 
     BM_VecSimGeneral::MeasureRecall(svs_results, bf_results, correct);
@@ -131,9 +132,21 @@ void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
     }
     st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
 }
+
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::Memory_Tiered_SVS(benchmark::State &st,
+                                                  unsigned short index_offset) {
+    auto index = INDICES[INDEX_VecSimAlgo_TIERED_SVS + index_offset];
+    index->fitMemory();
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
+}
+
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory_SVS(benchmark::State &st, unsigned short index_offset) {
-    auto index = INDICES[VecSimAlgo_SVS + index_offset];
+    auto index = INDICES[INDEX_VecSimAlgo_SVS + index_offset];
     index->fitMemory();
     for (auto _ : st) {
         // Do nothing...
@@ -154,7 +167,6 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
     }
 }
 
-// TODO - implement tor svs with all params
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned short index_offset) {
     size_t ef = st.range(0);
