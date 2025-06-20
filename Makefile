@@ -8,12 +8,12 @@ ifneq ($(filter coverage show-cov upload-cov,$(MAKECMDGOALS)),)
 COV=1
 endif
 
-ifneq ($(VG),)
-VALGRIND=$(VG)
-endif
-
-ifeq ($(VALGRIND),1)
+ifneq ($(ASAN),1)
+# ASAN is not enabled
+else
+# ASAN is enabled - force debug build and set SAN=address
 override DEBUG ?= 1
+override SAN = address
 endif
 
 ifeq ($(COV),1)
@@ -60,7 +60,7 @@ make build
   DEBUG=1          # build debug variant
   COV=1			   # build for code coverage
   VERBOSE=1        # print detailed build info
-  VG|VALGRIND=1    # build for Valgrind
+  ASAN=1           # build with AddressSanitizer (clang)
   SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
   SLOW=1           # don't run build in parallel (for diagnostics)
   PROFILE=1		   # enable profiling compile flags (and debug symbols) for release type.
@@ -70,9 +70,9 @@ make clean         # remove binary files
 
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
-  VG|VALGRIND=1      # run tests with valgrind
+  ASAN=1             # run tests with AddressSanitizer
   FP_64=1			# run tests with 64-bit floating point
-make valgrind      # build for Valgrind and run tests
+make asan          # build with AddressSanitizer and run tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
   VERBOSE=1        # print detailed bindings build info
@@ -173,12 +173,7 @@ ifeq ($(VERBOSE),1)
 _CTEST_ARGS += -V
 endif
 
-ifeq ($(VALGRIND),1)
-_CTEST_ARGS += \
-	-T memcheck \
-	--overwrite MemoryCheckCommandOptions="--leak-check=full --fair-sched=yes --error-exitcode=255"
-CMAKE_FLAGS += -DUSE_VALGRIND=ON
-endif
+# AddressSanitizer is handled via SAN=address in cmake/san.cmake
 
 unit_test:
 	$(SHOW)mkdir -p $(BINDIR)
@@ -186,10 +181,10 @@ unit_test:
 	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
-valgrind:
-	$(SHOW)$(MAKE) VG=1 unit_test
+asan:
+	$(SHOW)$(MAKE) ASAN=1 unit_test
 
-.PHONY: unit_test valgrind
+.PHONY: unit_test asan
 
 #----------------------------------------------------------------------------------------------
 ifeq ($(VERBOSE),1)

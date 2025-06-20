@@ -4,11 +4,11 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-# Valgrind does not support AVX512 and Valgrind in running in Debug
+# AddressSanitizer and debug builds may have issues with AVX512
 # so disable it if we are in Debug mode
 string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
 if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-    message(STATUS "SVS: Disabling AVX512 support in Debug mode due to Valgrind")
+    message(STATUS "SVS: Disabling AVX512 support in Debug mode for compatibility")
     set(SVS_NO_AVX512 ON)
 endif()
 

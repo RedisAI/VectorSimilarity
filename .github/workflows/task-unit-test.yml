@@ -13,8 +13,8 @@ on:
       pre-checkout-script:
         description: 'Script to run before checkout'
         type: string
-      run-valgrind:
-        description: 'Run valgrind tests'
+      run-asan:
+        description: 'Run AddressSanitizer tests'
         type: boolean
         default: true
 
@@ -67,12 +67,12 @@ jobs:
 
       - name: unit tests
         run: make unit_test
-      - name: valgrind
-        if: ${{ inputs.run-valgrind }}
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        if: ${{ inputs.run-valgrind && failure() }}
+      - name: AddressSanitizer tests
+        if: ${{ inputs.run-asan }}
+        run: make asan
+      - name: Archive AddressSanitizer test reports
+        if: ${{ inputs.run-asan && failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: valgrind tests reports on ${{ steps.artifact-name.outputs.name }}
+          name: AddressSanitizer test reports on ${{ steps.artifact-name.outputs.name }}
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
