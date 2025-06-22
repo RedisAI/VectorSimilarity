@@ -27,6 +27,8 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
 
     static constexpr bool is_compressed() { return true; }
 
+    static constexpr VecSimSvsQuantBits get_compression_mode() { return VecSimSvsQuant_Scalar; }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator) {
@@ -88,6 +90,21 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
 
     static constexpr bool is_compressed() { return true; }
 
+    static constexpr VecSimSvsQuantBits get_compression_mode() {
+        if constexpr (QuantBits == 4 && ResidualBits == 0) {
+            return VecSimSvsQuant_4;
+        } else if constexpr (QuantBits == 8 && ResidualBits == 0) {
+            return VecSimSvsQuant_8;
+        } else if constexpr (QuantBits == 4 && ResidualBits == 4) {
+            return VecSimSvsQuant_4x4;
+        } else if constexpr (QuantBits == 4 && ResidualBits == 8) {
+            return VecSimSvsQuant_4x8;
+        } else {
+            assert(false && "Unsupported quantization mode");
+            return VecSimSvsQuant_NONE; // Unsupported case
+        }
+    }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator) {
@@ -139,6 +156,17 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
     static size_t leanvec_dims(size_t dims) { return dims / 2; }
 
     static constexpr bool is_compressed() { return true; }
+
+    static constexpr auto get_compression_mode() {
+        if constexpr (QuantBits == 4 && ResidualBits == 8) {
+            return VecSimSvsQuant_4x8_LeanVec;
+        } else if constexpr (QuantBits == 8 && ResidualBits == 8) {
+            return VecSimSvsQuant_8x8_LeanVec;
+        } else {
+            assert(false && "Unsupported quantization mode");
+            return VecSimSvsQuant_NONE; // Unsupported case
+        }
+    }
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,

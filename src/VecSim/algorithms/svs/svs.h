@@ -316,7 +316,19 @@ public:
         VecSimIndexDebugInfo info;
         info.commonInfo = this->getCommonInfo();
         info.commonInfo.basicInfo.algo = VecSimAlgo_SVS;
-        info.commonInfo.basicInfo.isTiered = false;
+
+        info.svsInfo =
+            svsInfoStruct{.quantBits = getCompressionMode(),
+                          .alpha = this->buildParams.alpha,
+                          .graphMaxDegree = this->buildParams.graph_max_degree,
+                          .constructionWindowSize = this->buildParams.window_size,
+                          .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
+                          .pruneTo = this->buildParams.prune_to,
+                          .useSearchHistory = this->buildParams.use_full_search_history,
+                          .numThreads = this->getNumThreads(),
+                          .numberOfMarkedDeletedNodes = this->changes_num,
+                          .searchWindowSize = this->search_window_size,
+                          .epsilon = this->epsilon};
         return info;
     }
 
@@ -360,6 +372,10 @@ public:
     size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
+
+    VecSimSvsQuantBits getCompressionMode() const {
+        return storage_traits_t::get_compression_mode();
+    }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         if (!impl_ || !impl_->has_id(label)) {

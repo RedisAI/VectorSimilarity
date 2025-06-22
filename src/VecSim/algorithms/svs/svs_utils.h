@@ -110,8 +110,8 @@ makeVamanaBuildParameters(const SVSParams &params) {
         construction_window_size,
         getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
         getOrDefault(params.prune_to, graph_max_degree - 4),
-        params.use_search_history != VecSimOption_AUTO ? params.use_search_history != VecSimOption_ENABLE :
-        SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY
+        params.use_search_history == VecSimOption_AUTO ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY :
+            params.use_search_history == VecSimOption_ENABLE,
     };
     // clang-format on
 }
@@ -198,6 +198,10 @@ struct SVSStorageTraits {
     using index_storage_type = svs::data::BlockedData<DataType, svs::Dynamic, allocator_type>;
 
     static constexpr bool is_compressed() { return false; }
+
+    static constexpr VecSimSvsQuantBits get_compression_mode() {
+        return VecSimSvsQuant_NONE; // No compression for this storage
+    }
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,

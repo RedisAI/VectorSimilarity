@@ -327,6 +327,21 @@ typedef struct {
     char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
+typedef struct {
+    VecSimSvsQuantBits quantBits;  // Quantization flavor.
+    float alpha;                   // The pruning parameter.
+    size_t graphMaxDegree;         // Maximum degree in the graph.
+    size_t constructionWindowSize; // Search window size to use during graph construction.
+    size_t maxCandidatePoolSize;   // Limit on the number of neighbors considered during pruning.
+    size_t pruneTo;                // Amount that candidates will be pruned.
+    bool useSearchHistory;         // Either the contents of the search buffer can be used or
+                                   // the entire search history.
+    size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
+    size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
+    double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
+} svsInfoStruct;
+
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
 } HnswTieredInfo;
@@ -336,6 +351,7 @@ typedef struct {
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
+        svsInfoStruct svsInfo;
     } backendInfo; // The backend index info.
     union {
         HnswTieredInfo hnswTieredInfo;
@@ -359,6 +375,7 @@ typedef struct {
     union {
         bfInfoStruct bfInfo;
         hnswInfoStruct hnswInfo;
+        svsInfoStruct svsInfo;
         tieredInfoStruct tieredInfo;
     };
 } VecSimIndexDebugInfo;
