@@ -170,7 +170,6 @@ inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuan
     default:
         // fallback to no quantization if we have no LVQ support in code
         // or if the CPU doesn't support it
-        // TODO: fallback to scalar quantization
 #if HAVE_SVS_LVQ
         return svs::detail::intel_enabled() ? std::make_pair(quant_bits, true)
                                             : std::make_pair(VecSimSvsQuant_Scalar, true);

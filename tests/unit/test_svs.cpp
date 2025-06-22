@@ -106,7 +106,8 @@ protected:
         EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
 
         // Validate all SVS-specific parameters through debugInfo
-        EXPECT_EQ(info.svsInfo.quantBits, expected.quant_bits);
+        EXPECT_EQ(info.svsInfo.quantBits,
+                  std::get<0>(svs_details::isSVSQuantBitsSupported(expected.quant_bits)));
         EXPECT_FLOAT_EQ(info.svsInfo.alpha, expected.alpha);
         EXPECT_EQ(info.svsInfo.graphMaxDegree, expected.graph_max_degree);
         EXPECT_EQ(info.svsInfo.constructionWindowSize, expected.construction_window_size);
