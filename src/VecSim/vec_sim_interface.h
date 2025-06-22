@@ -81,6 +81,8 @@ public:
 
     /**
      * @brief Return the number of unique labels in the index (which are not deleted).
+     * !!! Note: this should only be called in debug mode, as in tiered indexes it may require
+     * locking the indexes and going over the labels sets, which is time-consuming. !!!
      *
      * @return index label count.
      */

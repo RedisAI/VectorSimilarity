@@ -301,12 +301,23 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     VecSimIndexDebugInfo info;
     this->flatIndexGuard.lock_shared();
     this->mainIndexGuard.lock_shared();
+
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
+    {
+        // Compute the union of the labels from both indices.
+        std::vector<size_t> labels_union;
+        auto flat_labels = this->frontendIndex->getLabelsSet();
+        auto main_labels = this->backendIndex->getLabelsSet();
+        labels_union.reserve(flat_labels.size() + main_labels.size());
+        std::set_union(flat_labels.begin(), flat_labels.end(), main_labels.begin(),
+                       main_labels.end(), std::back_inserter(labels_union));
+        info.commonInfo.indexLabelCount = labels_union.size();
+    }
+
     this->flatIndexGuard.unlock_shared();
     this->mainIndexGuard.unlock_shared();
 
-    info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize =
         frontendInfo.commonInfo.indexSize + backendInfo.commonInfo.indexSize;
     info.commonInfo.memory = this->getAllocationSize();
@@ -328,6 +339,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
         break;
     case VecSimAlgo_SVS:
+        info.tieredInfo.backendInfo.svsInfo = backendInfo.svsInfo;
         break;
     case VecSimAlgo_BF:
     case VecSimAlgo_TIERED:

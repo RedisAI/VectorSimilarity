@@ -2058,11 +2058,18 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
     compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
     compareCommonInfo(info.tieredInfo.backendCommonInfo, backendIndexInfo.commonInfo);
+    compareSVSInfo(info.tieredInfo.backendInfo.svsInfo, backendIndexInfo.svsInfo);
 
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    // Validate tiered svs info fields
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold, 1);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold, 1);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime,
+              SVS_DEFAULT_UPDATE_JOB_WAIT_TIME);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.indexUpdateScheduled, false);
 
     // Validate that Static info returns the right restricted info as well.
     VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
@@ -2087,6 +2094,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.indexUpdateScheduled, true);
 
     mock_thread_pool.thread_iteration();
     info = tiered_index->debugInfo();

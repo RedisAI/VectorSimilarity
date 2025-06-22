@@ -107,6 +107,8 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 /**
  * @brief Return the number of unique labels in the index.
+ * !!! Note: this should only be called in debug mode, as in tiered indexes it may require locking
+ * the indexes and going over the labels sets, which is time-consuming. !!!
  * @param index the index whose label count is requested.
  * @return index label count.
  */

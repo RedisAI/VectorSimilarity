@@ -452,9 +452,10 @@ public:
         return result;
     }
 
+    backend_index_t *GetBackendIndex() const { return this->backendIndex; }
+
 #ifdef BUILD_TESTS
 public:
-    backend_index_t *GetBackendIndex() { return this->backendIndex; }
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
 #endif
@@ -727,7 +728,7 @@ public:
             std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
             return std::make_pair(this->frontendIndex->getLabelsSet(),
-                                  this->GetSVSIndex()->getLabelsSet());
+                                  this->GetBackendIndex()->getLabelsSet());
         }();
 
         std::vector<size_t> labels_union;
@@ -765,7 +766,12 @@ public:
 
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
-        // TODO: Add SVS specific info.
+        SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
+                                       .updateTriggerThreshold = this->updateTriggerThreshold,
+                                       .updateJobWaitTime = this->updateJobWaitTime,
+                                       .indexUpdateScheduled =
+                                           static_cast<bool>(this->indexUpdateScheduled.test())};
+        info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
         return info;
     }
 

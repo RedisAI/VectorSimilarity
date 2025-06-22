@@ -305,8 +305,14 @@ public:
      * label
      */
     virtual std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const = 0;
-
 #endif
+
+    /**
+     * Virtual functions that access the label lookup which is implemented in the derived classes
+     * Return all the labels in the index - this should be used for computing the number of distinct
+     * labels in a tiered index, and caller should hold the appropriate guards.
+     */
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
 protected:
     void runGC() override {}              // Do nothing, relevant for tiered index only.

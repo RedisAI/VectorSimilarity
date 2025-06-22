@@ -346,6 +346,14 @@ typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
 } HnswTieredInfo;
 
+typedef struct SvsTieredInfo {
+    size_t trainingTriggerThreshold;
+    size_t updateTriggerThreshold;
+    size_t updateJobWaitTime; // The time (microseconds) to wait for Redis threads reservation
+                              // before executing the scheduled SVS Index update job.
+    bool indexUpdateScheduled;
+} SvsTieredInfo;
+
 typedef struct {
 
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
@@ -355,6 +363,7 @@ typedef struct {
     } backendInfo; // The backend index info.
     union {
         HnswTieredInfo hnswTieredInfo;
+        SvsTieredInfo svsTieredInfo;
     } specificTieredBackendInfo;   // Info relevant for tiered index with a specific backend.
     CommonInfo backendCommonInfo;  // Common index info.
     CommonInfo frontendCommonInfo; // Common index info.

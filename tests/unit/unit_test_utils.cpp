@@ -162,6 +162,17 @@ void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2) {
     ASSERT_EQ(info1.visitedNodesPoolSize, info2.visitedNodesPoolSize);
 }
 
+void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
+    ASSERT_EQ(info1.alpha, info2.alpha);
+    ASSERT_EQ(info1.constructionWindowSize, info2.constructionWindowSize);
+    ASSERT_EQ(info1.graphMaxDegree, info2.graphMaxDegree);
+    ASSERT_EQ(info1.maxCandidatePoolSize, info2.maxCandidatePoolSize);
+    ASSERT_EQ(info1.pruneTo, info2.pruneTo);
+    ASSERT_EQ(info1.quantBits, info2.quantBits);
+    ASSERT_EQ(info1.searchWindowSize, info2.searchWindowSize);
+    ASSERT_EQ(info1.useSearchHistory, info2.useSearchHistory);
+}
+
 /*
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
