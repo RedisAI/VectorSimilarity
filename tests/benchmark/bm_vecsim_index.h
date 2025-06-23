@@ -98,6 +98,7 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::BM_VecSimIndex() {
+    VecSim_SetTestLogContext("benchmark", "benchmark");
     if (ref_count == 0) {
         // Initialize the static members.
         Initialize();
@@ -156,11 +157,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                 VecSimIndex_AddVector(INDICES.at(INDEX_BF), blob, label);
             }
         }
-
     }
 
     if (IndexTypeFlags::INDEX_TYPE_SVS & enabled_index_types) {
-        std::cout << "Creating SVS index YAS." << std::endl;
         // Initialize and load HNSW index for DBPedia data set.
         SVSParams svs_params = {
             .type = type,
@@ -172,17 +171,14 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
         };
         INDICES.at(INDEX_SVS) = CreateNewIndex(svs_params);
-        
+
         auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
         for (size_t i = 0; i < N_VECTORS; ++i) {
             const char *blob = hnsw_index->getDataByInternalId(i);
             VecSimIndex_AddVector(INDICES.at(INDEX_SVS), blob, i);
         }
 
-
         if (IndexTypeFlags::INDEX_TYPE_TIERED_SVS & enabled_index_types) {
-            std::cout << "Creating tiered SVS index." << std::endl;
-
             VecSimParams primary_params = {.algo = VecSimAlgo_SVS,
                                            .algoParams = {.svsParams = svs_params}};
 
@@ -199,21 +195,13 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                                        .updateJobWaitTime = 0,
                                    }}};
 
-            std::cout << INDICES.at(INDEX_SVS)->indexLabelCount() << " vectors in the SVS index."
-                      << std::endl;
-            
-            // auto* svs_indes = dynamic_cast<SVSIndex<>(INDICES.at(INDEX_SVS));
-            std::cout << "Using existing SVS index for tiered SVS." << std::endl;
             auto *tiered_svs_index = TieredFactory::TieredSVSFactory::NewIndex(
                 &tiered_svs_params, INDICES.at(INDEX_SVS));
 
             mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
             INDICES.at(INDEX_TIERED_SVS) = tiered_svs_index;
-            std::cout << "number of vectors in the tiered SVS index: "
-                      << INDICES.at(INDEX_TIERED_SVS)->indexLabelCount() << std::endl;
         }
     }
-
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);

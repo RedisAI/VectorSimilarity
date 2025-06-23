@@ -224,6 +224,7 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
+	$(SHOW)mkdir -p $(ROOT)/logs/tests/benchmark
 	$(SHOW)mkdir -p $(BINDIR)
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
 	@make --no-print-directory -C $(BINDIR) $(MAKE_J)

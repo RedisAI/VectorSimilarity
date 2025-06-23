@@ -209,8 +209,6 @@ template <typename DataType>
 VecSimIndex *NewIndex(const TieredIndexParams *params,
                       VecSimIndexAbstract<DataType, float> *svs_index) {
     // initialize brute force index
-
-    std::cout << "Creating tiered SVS index2." << std::endl;
     auto bf_params = NewBFParams(params);
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
     size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
@@ -238,7 +236,6 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, VecSimIndex *svs_index) {
     VecSimType type = params->primaryIndexParams->algoParams.svsParams.type;
     switch (type) {
     case VecSimType_FLOAT32:
-        std::cout << "Creating tiered SVS index.1" << std::endl;
         return TieredSVSFactory::NewIndex<float>(
             params, static_cast<VecSimIndexAbstract<float, float> *>(svs_index));
     case VecSimType_FLOAT16:

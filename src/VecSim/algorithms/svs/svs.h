@@ -84,7 +84,6 @@ protected:
             if (!VecSimIndexInterface::logCallback) {
                 return; // No callback function provided
             }
-            std::cout << "There is alogCallback" << std::endl;
             // Custom callback implementation
             const char *vecsim_level = [msg]() {
                 switch (msg.level) {
@@ -111,8 +110,7 @@ protected:
         // Create a logger with the custom callback
         auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>(callback);
         auto logger = std::make_shared<spdlog::logger>("SVSIndex", sink);
-        // Sink all messages to VecSim
-        logger->set_level(spdlog::level::err);
+        logger->set_level(spdlog::level::trace);
         return logger;
     }
 
