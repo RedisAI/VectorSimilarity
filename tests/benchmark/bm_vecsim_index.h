@@ -170,7 +170,12 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             .graph_max_degree = CastToHNSW(INDICES.at(INDEX_HNSW))->getM(),
             .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
         };
-        INDICES.at(INDEX_SVS) = CreateNewIndex(svs_params);
+        VecSimParams svs_index_params = CreateParams(svs_params);
+
+        // TODO - read svs params from file
+        // TODO - Create SVS new index that recives path to folders and svs params
+    
+        INDICES.at(INDEX_SVS) = SVSFactory::NewIndex(std::string("svs_folder"), &svs_index_params);
 
         auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
         for (size_t i = 0; i < N_VECTORS; ++i) {

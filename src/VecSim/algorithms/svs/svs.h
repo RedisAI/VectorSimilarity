@@ -545,6 +545,19 @@ public:
     }
 
 #ifdef BUILD_TESTS
+    // Constructor that takes a loaded impl_ for testing purposes
+    SVSIndex(const std::string &folder_path, const SVSParams &params,
+             const AbstractIndexInitParams &abstractInitParams,
+             const index_component_t &components, bool force_preprocessing)
+        : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
+          changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
+          search_window_size{svs_details::getOrDefault(params.search_window_size, 10)},
+          epsilon{svs_details::getOrDefault(params.epsilon, 0.01)},
+          threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{} {
+
+        // TODO - read svs params from file
+    }
+
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         assert(false && "Not implemented");
