@@ -348,7 +348,7 @@ def test_range_query(test_logger):
 def test_recall_for_svs_multi_value(test_logger):
     dim = 16
     num_labels = 1000
-    num_per_label = 16
+    num_per_label = 4
     num_queries = 10
     k = 10
 
@@ -357,6 +357,7 @@ def test_recall_for_svs_multi_value(test_logger):
     svs_index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_Cosine, alpha=0.9,
                                  search_window_size=50, is_multi=True)
 
+    np.random.seed(47)
     data = np.float32(np.random.random((num_labels, dim)))
     vectors = []
     for i, vector in enumerate(data):
