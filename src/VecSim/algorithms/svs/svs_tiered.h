@@ -371,7 +371,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                 // calculating all the distances and access the BF index. We take the lock on this
                 // call.
                 auto cur_flat_results = [this, n_res]() {
-                    std::shared_lock<std::shared_mutex> flat_lock{index->flatIndexGuard};
+                    std::shared_lock flat_lock{index->flatIndexGuard};
                     return flat_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
                 }();
                 // This is also the only time `getNextResults` on the BF iterator can fail.
@@ -538,20 +538,20 @@ private:
         std::vector<DataType> vectors_to_move;
 
         { // lock frontendIndex from modifications
-            std::shared_lock<std::shared_mutex> frontend_lock{this->flatIndexGuard};
+            std::shared_lock flat_lock{this->flatIndexGuard};
 
             auto flat_index = this->GetFlatIndex();
-            auto frontend_index_size = this->frontendIndex->indexSize();
+            const auto frontend_index_size = this->frontendIndex->indexSize();
             const size_t dim = flat_index->getDim();
             labels_to_move.reserve(frontend_index_size);
             vectors_to_move.reserve(frontend_index_size * dim);
 
-            for (idType i = 0; i < frontend_index_size; ++i) {
+            for (idType i = 0; i < frontend_index_size; i++) {
                 labels_to_move.push_back(flat_index->getVectorLabel(i));
                 auto data = flat_index->getDataByInternalId(i);
                 vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
             }
-            // restart journal from current frontend index state
+            // reset journal to the current frontend index state
             swaps_journal.clear();
         } // release frontend index
 
@@ -590,6 +590,8 @@ private:
                 }
             }
             // delete vectors from the frontend index in reverse order
+            // it increases the chance of avoiding swaps in the frontend index and performance
+            // improvement
             size_t deleted = 0;
             for (idType i = labels_to_move.size(); i > 0; --i) {
                 auto label = labels_to_move[i - 1];
@@ -679,13 +681,13 @@ public:
         // Async mode - add vector to the frontend index and schedule an update job if needed.
         if (!this->backendIndex->isMultiValue()) {
             // Remove vector from the backend index if it exists in case of non-MULTI.
-            std::scoped_lock lock(this->mainIndexGuard);
+            std::lock_guard lock(this->mainIndexGuard);
             ret -= svs_index->deleteVectors(&label, 1);
             // If main index is empty then update_threshold is trainingTriggerThreshold,
             // overwise it is 1.
         }
         {
-            std::shared_lock<std::shared_mutex> lock(this->mainIndexGuard);
+            std::shared_lock lock(this->mainIndexGuard);
             update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
                                                                     : this->updateTriggerThreshold;
         }
@@ -866,7 +868,7 @@ public:
     void runGC() override {
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered SVS index");
-        std::unique_lock<std::shared_mutex> backend_lock{this->mainIndexGuard};
+        std::lock_guard lock{this->mainIndexGuard};
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
     }

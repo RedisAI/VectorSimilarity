@@ -59,9 +59,6 @@ public:
 
     const RawDataContainer *getVectorsContainer() const { return this->vectors; }
 
-    const labelType getLabelByInternalId(idType internal_id) const {
-        return idToLabelMapping.at(internal_id);
-    }
     // Remove a specific vector that is stored under a label from the index by its internal id.
     virtual int deleteVectorById(labelType label, idType id) = 0;
     // Remove a vector and return a map between internal ids and the original internal ids of the
