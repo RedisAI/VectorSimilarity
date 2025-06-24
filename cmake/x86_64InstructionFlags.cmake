@@ -31,6 +31,13 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 		message(STATUS "Compiling on Ubuntu 18.04, turning off CXX_AVX512BF16 flag.")
 		set(CXX_AVX512BF16 FALSE)
 	endif()
+    # Detect Amazon Linux version via /etc/system-release
+    file(READ "/etc/system-release" AMZN_RELEASE_CONTENT)
+
+    if(AMZN_RELEASE_CONTENT MATCHES "Amazon Linux release 2")
+        message(STATUS "Compiling on Amazon Linux 2, turning off CXX_AVX512FP16 flag.")
+        set(CXX_AVX512FP16 FALSE)
+    endif()
 endif()
 
 if(CXX_AVX512VL AND CXX_AVX512BF16)
