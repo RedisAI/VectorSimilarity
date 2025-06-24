@@ -6,7 +6,7 @@
 #include <random>
 #include <vector>
 
-#if 1 // HAVE_SVS
+#if HAVE_SVS
 #include <sstream>
 #include "VecSim/algorithms/svs/svs.h"
 
@@ -88,6 +88,7 @@ struct SVSIndexType {
 // clang-format off
 using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_NONE>
                                        ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8>
+                                       ,SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8x8_LeanVec>
                                         >;
 // clang-format on
 
@@ -159,7 +160,7 @@ TYPED_TEST(SVSMultiTest, empty_index) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove it again.
-    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 0);
 
     // Size should be still zero.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -716,7 +717,7 @@ TYPED_TEST(SVSMultiTest, testSizeEstimation) {
     if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
         // Extra data in LVQ vector
         const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
-        dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
+        dim -= (lvq_vector_extra * 8) / (TypeParam::get_quant_bits() & 0xf);
     }
 #endif
     size_t n = 0;
@@ -765,7 +766,6 @@ TYPED_TEST(SVSMultiTest, emptyIndex) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-    size_t curr_capacity = index->indexCapacity();
 
     // Try to remove from an empty index - should fail because label doesn't exist.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 0), 0);
@@ -1066,8 +1066,8 @@ TYPED_TEST(SVSMultiTest, testCosine) {
     if (this->isFallbackToSQ()) {
         GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
     }
-    const size_t dim = 128;
-    const size_t n = 100;
+    const size_t dim = 256;
+    const size_t n = 50;
 
     SVSParams params = {.dim = dim, .metric = VecSimMetric_Cosine};
 
@@ -1123,8 +1123,8 @@ TYPED_TEST(SVSMultiTest, testCosine) {
 }
 
 TYPED_TEST(SVSMultiTest, testCosineBatchIterator) {
-    const size_t dim = 128;
-    const size_t n = 100;
+    const size_t dim = 256;
+    const size_t n = 50;
 
     SVSParams params = {.dim = dim, .metric = VecSimMetric_Cosine};
 

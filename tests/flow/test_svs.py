@@ -355,7 +355,7 @@ def test_recall_for_svs_multi_value(test_logger):
     num_elements = num_labels * num_per_label
 
     svs_index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_Cosine, alpha=0.9,
-                                 search_window_size=50, is_multi=False)
+                                 search_window_size=50, is_multi=True)
 
     data = np.float32(np.random.random((num_labels, dim)))
     vectors = []
