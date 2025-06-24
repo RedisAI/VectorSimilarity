@@ -19,7 +19,9 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 
+// MAX_POOL_SIZE and pool_execution_mask_t to be adjusted to each other.
 static const size_t MAX_POOL_SIZE = 16;
+using pool_execution_mask_t = std::atomic_uint_fast16_t;
 
 class tieredIndexMock {
 
@@ -31,7 +33,7 @@ private:
     // from the queue and the execution starts.
     // We turn the bit off after the execute callback returns to mark the job is done.
     class ExecutionsStatus {
-        std::atomic_uint_fast16_t executions_status = 0; // Using atomic for thread safety
+        pool_execution_mask_t executions_status = 0; // Using atomic for thread safety
     public:
         void MarkInProcess(size_t thread_index) {
             executions_status.fetch_or(1 << thread_index, std::memory_order_relaxed);
