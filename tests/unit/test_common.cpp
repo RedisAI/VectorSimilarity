@@ -948,7 +948,8 @@ TEST(CommonAPITest, testSetTestLogContext) {
 TEST(UtilsTests, testMockThreadPool) {
     const size_t num_repeats = 20;
     const size_t num_submissions = 100;
-    std::chrono::seconds test_timeout(10); // 10 seconds timeout for the test
+    // 100 seconds timeout for the test should be enough for CI MemoryChecks
+    std::chrono::seconds test_timeout(100);
 
     auto TestBody = [=]() {
         // Protection against test deadlock is implemented by a thread which exits process if
