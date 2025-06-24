@@ -1096,7 +1096,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertSearch) {
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
     auto sz_b = tiered_index->GetBackendIndex()->indexSize();
     EXPECT_LE(sz_f, this->getUpdateThreshold());
-    EXPECT_EQ(sz_f + sz_b, n) << "Flat index size: " << sz_f << ", Backend index size: " << sz_b;
+    EXPECT_EQ(sz_f + sz_b, n);
     EXPECT_EQ(successful_searches, n);
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
