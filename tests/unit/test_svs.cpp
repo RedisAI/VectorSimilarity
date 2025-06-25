@@ -1455,7 +1455,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .dim = dim, .metric = VecSimMetric_L2,
              // All other parameters left as default (0/unset)
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
           .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
           .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
@@ -1473,7 +1473,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .dim = dim,
              .metric = VecSimMetric_Cosine,
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = SVS_VAMANA_DEFAULT_ALPHA_IP, // Cosine uses same as IP
           .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
           .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
@@ -1492,7 +1492,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .metric = VecSimMetric_L2,
              .alpha = 1.5f,
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = 1.5f,
           .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
           .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
@@ -1512,7 +1512,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .graph_max_degree = 48,
              .construction_window_size = 150,
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
           .graphMaxDegree = 48,
           .constructionWindowSize = 150,
@@ -1540,7 +1540,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .search_window_size = 20,
              .epsilon = 0.05,
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = 0.8f,
           .graphMaxDegree = 64,
           .constructionWindowSize = 100,
@@ -1559,7 +1559,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .metric = VecSimMetric_L2,
              .use_search_history = VecSimOption_AUTO,
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
           .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
           .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
@@ -1577,7 +1577,7 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .metric = VecSimMetric_L2,
              .use_search_history = VecSimOption_ENABLE,
          },
-         {.quantBits = TypeParam::get_quant_bits(),
+         {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
           .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
           .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
           .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
@@ -2516,7 +2516,8 @@ TEST(SVSTest, quant_modes) {
         EXPECT_EQ(estimation, actual);
 
         EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
-        EXPECT_EQ(index->debugInfo().svsInfo.quantBits, quant_bits);
+        EXPECT_EQ(index->debugInfo().svsInfo.quantBits,
+                  std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits)));
 
         std::vector<std::array<float, dim>> v(n);
         for (size_t i = 0; i < n; i++) {
