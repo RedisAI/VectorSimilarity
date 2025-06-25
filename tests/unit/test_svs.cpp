@@ -53,6 +53,7 @@ protected:
     void SetTypeParams(SVSParams &params) {
         params.quantBits = index_type_t::get_quant_bits();
         params.type = index_type_t::get_index_type();
+        params.multi = false;
     }
 
     VecSimIndex *CreateNewIndex(const VecSimParams &index_params) {
