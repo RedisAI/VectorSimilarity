@@ -35,6 +35,8 @@ struct SVSIndexBase {
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
     virtual bool isCompressed() const = 0;
+    virtual void saveIndex(const std::string &folder_path) const = 0;
+    virtual void loadIndex(const std::string &folder_path) = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -544,11 +546,10 @@ public:
         changes_num = 0;
     }
 
-#ifdef BUILD_TESTS
     // Constructor that takes a loaded impl_ for testing purposes
     SVSIndex(const std::string &folder_path, const SVSParams &params,
-             const AbstractIndexInitParams &abstractInitParams,
-             const index_component_t &components, bool force_preprocessing)
+             const AbstractIndexInitParams &abstractInitParams, const index_component_t &components,
+             bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
           search_window_size{svs_details::getOrDefault(params.search_window_size, 10)},
@@ -558,6 +559,32 @@ public:
         // TODO - read svs params from file
     }
 
+    // Virtual method implementations for SVSIndexBase interface
+    void saveIndex(const std::string &folder_path) const override {
+        assert(impl_ && "Index is not initialized");
+        if (impl_) {
+            impl_->save(folder_path + "/config", folder_path + "/graph", folder_path + "/data");
+        }
+    }
+
+    void loadIndex(const std::string &folder_path) override {
+
+
+        impl_type index = svs::index::vamana::auto_dynamic_assemble(
+            folder_path + "/config",
+            svs::GraphLoader(folder_path + "/graph"),
+            svs::VectorDataLoader<data_type>(folder_path + "/data"),
+            distance_f{},
+            threadpool_
+        );
+
+        // impl_ gets exactly the right type
+        impl_ = std::make_unique<impl_type>(std::move(index));
+
+
+    }
+
+#ifdef BUILD_TESTS
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         assert(false && "Not implemented");

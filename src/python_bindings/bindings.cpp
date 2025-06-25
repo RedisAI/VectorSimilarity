@@ -587,6 +587,22 @@ public:
         assert(svs_index);
         svs_index->addVectors(vectors_data.data(), labels.data(), n_vectors);
     }
+
+    void saveIndex(const std::string &folder_path) {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        if (!svs_index) {
+            throw std::runtime_error("Invalid SVS index");
+        }
+        svs_index->saveIndex(folder_path);
+    }
+
+    void loadIndex(const std::string &folder_path) {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        if (!svs_index) {
+            throw std::runtime_error("Invalid SVS index");
+        }
+        svs_index->loadIndex(folder_path);
+    }
 };
 
 class PyTiered_SVSIndex : public PyTieredIndex {
@@ -789,7 +805,9 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init([](const SVSParams &params) { return new PySVSIndex(params); }),
              py::arg("params"))
         .def("add_vector_parallel", &PySVSIndex::addVectorsParallel, py::arg("vectors"),
-             py::arg("labels"));
+             py::arg("labels"))
+        .def("save_index", &PySVSIndex::saveIndex, py::arg("folder_path"))
+        .def("load_index", &PySVSIndex::loadIndex, py::arg("folder_path"));
     py::class_<PyTiered_SVSIndex, PyTieredIndex>(m, "Tiered_SVSIndex")
         .def(py::init([](const SVSParams &svs_params, const TieredSVSParams &tiered_svs_params,
                          size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {
