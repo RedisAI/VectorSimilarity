@@ -121,6 +121,38 @@ public:
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
+    /**
+     * @brief Return the number of unique labels in the index (which are not deleted).
+     * This is a debug-only method for tiered indexes that computes the union of labels
+     * from both frontend and backend indexes. It may require locking and is time-consuming.
+     * !!! Note: this should only be called in debug mode for tiered indexes !!!
+     *
+     * @return index label count for debug purposes.
+     */
+    virtual size_t computeUnifiedIndexLabelCount() const {
+        // Compute the union of both labels set in both tiers of the index.
+        // This is the expensive debug-only implementation
+        auto [flat_labels, svs_labels] = [this] {
+            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+            return std::make_pair(this->frontendIndex->getLabelsSet(),
+                                  this->backendIndex->getLabelsSet());
+        }();
+
+        std::vector<size_t> labels_union;
+        labels_union.reserve(flat_labels.size() + svs_labels.size());
+        std::set_union(flat_labels.begin(), flat_labels.end(), svs_labels.begin(), svs_labels.end(),
+                       std::back_inserter(labels_union));
+        return labels_union.size();
+    }
+
+    size_t indexLabelCount() const override {
+        // This is a debug-only method for tiered indexes that computes the union of labels
+        // from both frontend and backend indexes. It may require locking and is time-consuming.
+        // !!! Note: this should only be called in debug mode for tiered indexes !!!
+        return computeUnifiedIndexLabelCount();
+    }
+
 #ifdef BUILD_TESTS
     inline BruteForceIndex<DataType, DistType> *getFlatBufferIndex() { return this->frontendIndex; }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }

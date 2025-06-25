@@ -83,43 +83,17 @@ protected:
                std::get<0>(svs_details::isSVSQuantBitsSupported(index_type_t::get_quant_bits()));
     }
 
-    // Expected values structure for parameter validation
-    struct ExpectedSVSValues {
-        float alpha;
-        size_t graph_max_degree;
-        size_t construction_window_size;
-        size_t max_candidate_pool_size;
-        size_t prune_to;
-        bool use_search_history;
-        size_t search_window_size;
-        double epsilon;
-        size_t num_threads;
-        VecSimSvsQuantBits quant_bits;
-    };
+    // Use svsInfoStruct for parameter validation (ignoring additional runtime fields)
+    using ExpectedSVSValues = svsInfoStruct;
 
     // Helper method to validate SVS parameters using debugInfo
-    void validateSVSParameters(VecSimIndex *index, const ExpectedSVSValues &expected) {
+    static void validateSVSParameters(VecSimIndex *index, const ExpectedSVSValues &expected) {
         // Get debug info to validate all parameters
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
 
         // Validate basic index properties
         EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
-
-        // Validate all SVS-specific parameters through debugInfo
-        EXPECT_EQ(info.svsInfo.quantBits,
-                  std::get<0>(svs_details::isSVSQuantBitsSupported(expected.quant_bits)));
-        EXPECT_FLOAT_EQ(info.svsInfo.alpha, expected.alpha);
-        EXPECT_EQ(info.svsInfo.graphMaxDegree, expected.graph_max_degree);
-        EXPECT_EQ(info.svsInfo.constructionWindowSize, expected.construction_window_size);
-        EXPECT_EQ(info.svsInfo.maxCandidatePoolSize, expected.max_candidate_pool_size);
-        EXPECT_EQ(info.svsInfo.pruneTo, expected.prune_to);
-        EXPECT_EQ(info.svsInfo.useSearchHistory, expected.use_search_history);
-        EXPECT_EQ(info.svsInfo.numThreads, expected.num_threads);
-        EXPECT_EQ(info.svsInfo.searchWindowSize, expected.search_window_size);
-        EXPECT_DOUBLE_EQ(info.svsInfo.epsilon, expected.epsilon);
-
-        // numberOfMarkedDeletedNodes should be 0 for a newly created index
-        EXPECT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, 0);
+        compareSVSInfo(info.svsInfo, expected);
     }
 };
 
@@ -1480,16 +1454,17 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .dim = dim, .metric = VecSimMetric_L2,
              // All other parameters left as default (0/unset)
          },
-         {.alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
-          .graph_max_degree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
-          .construction_window_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
-          .max_candidate_pool_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
-          .prune_to = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
-          .use_search_history = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
-          .search_window_size = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
-          .epsilon = SVS_VAMANA_DEFAULT_EPSILON,
-          .num_threads = SVS_VAMANA_DEFAULT_NUM_THREADS,
-          .quant_bits = TypeParam::get_quant_bits()}},
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
+          .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
+          .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
+          .maxCandidatePoolSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
+          .pruneTo = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
+          .useSearchHistory = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
+          .numberOfMarkedDeletedNodes = 0,
+          .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: Cosine metric with defaults
         {"cosine_metric_defaults",
@@ -1497,16 +1472,17 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .dim = dim,
              .metric = VecSimMetric_Cosine,
          },
-         {.alpha = SVS_VAMANA_DEFAULT_ALPHA_IP, // Cosine uses same as IP
-          .graph_max_degree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
-          .construction_window_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
-          .max_candidate_pool_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
-          .prune_to = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
-          .use_search_history = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
-          .search_window_size = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
-          .epsilon = SVS_VAMANA_DEFAULT_EPSILON,
-          .num_threads = SVS_VAMANA_DEFAULT_NUM_THREADS,
-          .quant_bits = TypeParam::get_quant_bits()}},
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = SVS_VAMANA_DEFAULT_ALPHA_IP, // Cosine uses same as IP
+          .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
+          .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
+          .maxCandidatePoolSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
+          .pruneTo = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
+          .useSearchHistory = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
+          .numberOfMarkedDeletedNodes = 0,
+          .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: Custom alpha parameter
         {"custom_alpha",
@@ -1515,16 +1491,17 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .metric = VecSimMetric_L2,
              .alpha = 1.5f,
          },
-         {.alpha = 1.5f,
-          .graph_max_degree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
-          .construction_window_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
-          .max_candidate_pool_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
-          .prune_to = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
-          .use_search_history = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
-          .search_window_size = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
-          .epsilon = SVS_VAMANA_DEFAULT_EPSILON,
-          .num_threads = SVS_VAMANA_DEFAULT_NUM_THREADS,
-          .quant_bits = TypeParam::get_quant_bits()}},
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = 1.5f,
+          .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
+          .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
+          .maxCandidatePoolSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
+          .pruneTo = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
+          .useSearchHistory = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
+          .numberOfMarkedDeletedNodes = 0,
+          .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: Custom graph parameters
         {"custom_graph_params",
@@ -1534,16 +1511,18 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .graph_max_degree = 48,
              .construction_window_size = 150,
          },
-         {.alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
-          .graph_max_degree = 48,
-          .construction_window_size = 150,
-          .max_candidate_pool_size = 150 * 3, // Should be construction_window_size * 3
-          .prune_to = 48 - 4,                 // Should be graph_max_degree - 4
-          .use_search_history = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
-          .search_window_size = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
-          .epsilon = SVS_VAMANA_DEFAULT_EPSILON,
-          .num_threads = SVS_VAMANA_DEFAULT_NUM_THREADS,
-          .quant_bits = TypeParam::get_quant_bits()}},
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
+          .graphMaxDegree = 48,
+          .constructionWindowSize = 150,
+          .maxCandidatePoolSize = 150 * 3, // Should be construction_window_size * 3
+          .pruneTo = 48 - 4,               // Should be graph_max_degree - 4
+          .useSearchHistory = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY,
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
+          .numberOfMarkedDeletedNodes = 0,
+
+          .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: All custom parameters
         {"all_custom_params",
@@ -1560,16 +1539,17 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .search_window_size = 20,
              .epsilon = 0.05,
          },
-         {.alpha = 0.8f,
-          .graph_max_degree = 64,
-          .construction_window_size = 100,
-          .max_candidate_pool_size = 500,
-          .prune_to = 55,
-          .use_search_history = false, // VecSimOption_DISABLE
-          .search_window_size = 20,
-          .epsilon = 0.05,
-          .num_threads = 4,
-          .quant_bits = TypeParam::get_quant_bits()}},
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = 0.8f,
+          .graphMaxDegree = 64,
+          .constructionWindowSize = 100,
+          .maxCandidatePoolSize = 500,
+          .pruneTo = 55,
+          .useSearchHistory = false, // VecSimOption_DISABLE
+          .numThreads = 4,
+          .numberOfMarkedDeletedNodes = 0,
+          .searchWindowSize = 20,
+          .epsilon = 0.05}},
 
         // Test: Search history AUTO mode
         {"search_history_auto",
@@ -1578,16 +1558,17 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .metric = VecSimMetric_L2,
              .use_search_history = VecSimOption_AUTO,
          },
-         {.alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
-          .graph_max_degree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
-          .construction_window_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
-          .max_candidate_pool_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
-          .prune_to = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
-          .use_search_history = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY, // AUTO resolves to default
-          .search_window_size = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
-          .epsilon = SVS_VAMANA_DEFAULT_EPSILON,
-          .num_threads = SVS_VAMANA_DEFAULT_NUM_THREADS,
-          .quant_bits = TypeParam::get_quant_bits()}},
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
+          .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
+          .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
+          .maxCandidatePoolSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
+          .pruneTo = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
+          .useSearchHistory = SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY, // AUTO resolves to default
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
+          .numberOfMarkedDeletedNodes = 0,
+          .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
         // Test: Search history AUTO mode
         {"search_history_enable",
          {
@@ -1595,16 +1576,17 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .metric = VecSimMetric_L2,
              .use_search_history = VecSimOption_ENABLE,
          },
-         {.alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
-          .graph_max_degree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
-          .construction_window_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
-          .max_candidate_pool_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
-          .prune_to = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
-          .use_search_history = true,
-          .search_window_size = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
-          .epsilon = SVS_VAMANA_DEFAULT_EPSILON,
-          .num_threads = SVS_VAMANA_DEFAULT_NUM_THREADS,
-          .quant_bits = TypeParam::get_quant_bits()}}};
+         {.quantBits = TypeParam::get_quant_bits(),
+          .alpha = SVS_VAMANA_DEFAULT_ALPHA_L2,
+          .graphMaxDegree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE,
+          .constructionWindowSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE,
+          .maxCandidatePoolSize = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE * 3,
+          .pruneTo = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE - 4,
+          .useSearchHistory = true,
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
+          .numberOfMarkedDeletedNodes = 0,
+          .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .epsilon = SVS_VAMANA_DEFAULT_EPSILON}}};
 
     // Run tests for each parameter combination
     for (const auto &testCase : testCases) {
@@ -2533,6 +2515,7 @@ TEST(SVSTest, quant_modes) {
         EXPECT_EQ(estimation, actual);
 
         EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
+        EXPECT_EQ(index->debugInfo().svsInfo.quantBits, quant_bits);
 
         std::vector<std::array<float, dim>> v(n);
         for (size_t i = 0; i < n; i++) {

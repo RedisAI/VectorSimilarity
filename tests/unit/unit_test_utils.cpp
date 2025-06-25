@@ -68,7 +68,7 @@ static bool is_async_index(VecSimIndex *index) {
 
 void validateTopKSearchTest(VecSimIndex *index, VecSimQueryReply *res, size_t k,
                             std::function<void(size_t, double, size_t)> ResCB) {
-    const size_t expected_num_res = std::min(VecSimIndex_IndexLabelCount(index), k);
+    const size_t expected_num_res = std::min(index->indexLabelCount(), k);
     if (is_async_index(index)) {
         // Async index may return more or less than the expected number of results,
         // depending on the number of results that were available at the time of the query.
@@ -171,6 +171,9 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
     ASSERT_EQ(info1.quantBits, info2.quantBits);
     ASSERT_EQ(info1.searchWindowSize, info2.searchWindowSize);
     ASSERT_EQ(info1.useSearchHistory, info2.useSearchHistory);
+    ASSERT_EQ(info1.epsilon, info2.epsilon);
+    ASSERT_EQ(info1.numThreads, info2.numThreads);
+    ASSERT_EQ(info1.numberOfMarkedDeletedNodes, info2.numberOfMarkedDeletedNodes);
 }
 
 /*

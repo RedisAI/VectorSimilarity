@@ -107,9 +107,10 @@ size_t HNSWIndex_Single<DataType, DistType>::indexLabelCount() const {
  */
 
 // Return all the labels in the index - this should be used for computing the number of distinct
-// labels in a tiered index, and caller should hold the index data guard.
+// labels in a tiered index.
 template <typename DataType, typename DistType>
 vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
+    std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
     vecsim_stl::set<labelType> keys(this->allocator);
     for (auto &it : labelLookup) {
         keys.insert(it.first);

@@ -452,10 +452,9 @@ public:
         return result;
     }
 
-    backend_index_t *GetBackendIndex() const { return this->backendIndex; }
-
 #ifdef BUILD_TESTS
 public:
+    backend_index_t *GetBackendIndex() { return this->backendIndex; }
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
 #endif
@@ -721,21 +720,6 @@ public:
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
         return this->frontendIndex->indexSize() + this->backendIndex->indexSize();
-    }
-
-    size_t indexLabelCount() const override {
-        auto [flat_labels, svs_labels] = [this] {
-            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-            return std::make_pair(this->frontendIndex->getLabelsSet(),
-                                  this->GetBackendIndex()->getLabelsSet());
-        }();
-
-        std::vector<size_t> labels_union;
-        labels_union.reserve(flat_labels.size() + svs_labels.size());
-        std::set_union(flat_labels.begin(), flat_labels.end(), svs_labels.begin(), svs_labels.end(),
-                       std::back_inserter(labels_union));
-        return labels_union.size();
     }
 
     size_t indexCapacity() const override {
