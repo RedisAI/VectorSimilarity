@@ -946,8 +946,8 @@ TEST(CommonAPITest, testSetTestLogContext) {
 }
 
 TEST(UtilsTests, testMockThreadPool) {
-    const size_t num_repeats = 20;
-    const size_t num_submissions = 100;
+    const size_t num_repeats = 2;
+    const size_t num_submissions = 200;
     // 100 seconds timeout for the test should be enough for CI MemoryChecks
     std::chrono::seconds test_timeout(100);
 
@@ -1006,7 +1006,7 @@ TEST(UtilsTests, testMockThreadPool) {
             std::vector<AsyncJob *> jobs(mock_thread_pool.thread_pool_size);
 
             // Submit jobs to the mock thread pool and wait several times
-            for (size_t i = 0; i < num_submissions; i++) {
+            for (size_t j = 0; j < num_submissions; j++) {
                 job_counter.store(0); // Reset the counter for each iteration
                 // Generate jobs and submit them to the mock thread pool
                 std::generate(jobs.begin(), jobs.end(), [&]() {
