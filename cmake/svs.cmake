@@ -4,14 +4,6 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-# Valgrind does not support AVX512 and Valgrind in running in Debug
-# so disable it if we are in Debug mode
-string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
-if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-    message(STATUS "SVS: Disabling AVX512 support in Debug mode due to Valgrind")
-    set(SVS_NO_AVX512 ON)
-endif()
-
 set(SVS_SUPPORTED 1)
 
 # GCC < v11 does not support C++20 features required for SVS
@@ -36,6 +28,13 @@ if(USE_SVS)
 
     if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "(x86_64)|(AMD64|amd64)")
         set(SVS_LVQ_SUPPORTED 1)
+        # Valgrind does not support AVX512 and Valgrind in running in Debug
+        # so disable it if we are in Debug mode
+        string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
+        if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+            message(STATUS "SVS: Disabling AVX512 support in Debug mode due to Valgrind")
+            set(SVS_NO_AVX512 ON)
+        endif()
     else()
         set(SVS_LVQ_SUPPORTED 0)
         message(STATUS "SVS LVQ is not supported on this architecture")
