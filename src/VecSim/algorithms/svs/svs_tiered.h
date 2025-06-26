@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <tuple>
@@ -204,12 +206,22 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     using backend_index_t = VecSimIndexAbstract<DataType, float>;
     using svs_index_t = SVSIndexBase;
 
-    // label, oldId, newId
+    // swaps_journal is used by updateSVSIndex() to track vectors swap operations that were done in
+    // the Flat index during SVS index updating.
+    // The journal contains tuples of (label, oldId, newId).
+    // oldId is the index of the label in flat index before the swap.
+    // newId is the index of the label in flat index after the swap.
+    // if oldId == newId, it means that the vector was not moved in the Flat index, but was removed
+    // at the end of the Flat index.
+    // if label == SKIP_LABEL, it means that the vector was not moved/removed in the Flat index, but
+    // updated in-place
     using swap_record = std::tuple<labelType, idType, idType>;
+    constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
+    std::vector<swap_record> swaps_journal;
+
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
     size_t updateJobWaitTime;
-    std::vector<swap_record> swaps_journal;
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
@@ -487,6 +499,22 @@ public:
     backend_index_t *GetBackendIndex() { return this->backendIndex; }
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
+
+    // Tracing helpers can be used to trace/inject code in the index update process.
+    std::map<std::string, std::function<void()>> tracingCallbacks;
+    void registerTracingCallback(const std::string &name, std::function<void()> callback) {
+        tracingCallbacks[name] = std::move(callback);
+    }
+    void executeTracingCallback(const std::string &name) const {
+        auto it = tracingCallbacks.find(name);
+        if (it != tracingCallbacks.end()) {
+            it->second();
+        }
+    }
+#else
+    void executeTracingCallback(const std::string &) const {
+        // In production, we do nothing.
+    }
 #endif
 
 private:
@@ -555,6 +583,7 @@ private:
             swaps_journal.clear();
         } // release frontend index
 
+        executeTracingCallback("UpdateJob::before_add_to_svs");
         { // lock backend index for writing and add vectors there
             std::lock_guard lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
@@ -562,25 +591,43 @@ private:
             svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                   labels_to_move.size());
         }
+        executeTracingCallback("UpdateJob::after_add_to_svs");
         // clean-up frontend index
         { // lock frontend index for writing and delete moved vectors
             std::lock_guard lock(this->flatIndexGuard);
 
-            // Enumerate journal and swap label in labels_to_move to newId position.
+            // Enumerate journal and reflect swaps in the labels_to_move.
+            // The journal contains tuples of (label, oldId, newId).
+            // oldId is the index of the label in flat index before the swap.
+            // newId is the index of the label in flat index after the swap.
             for (const auto &p : this->swaps_journal) {
                 auto label = std::get<0>(p);
                 auto oldId = std::get<1>(p);
                 auto newId = std::get<2>(p);
-                if (oldId >= labels_to_move.size()) {
-                    continue; // Skip if oldId is out of bounds
-                }
-                assert(label == labels_to_move[oldId] &&
-                       "Journal label does not match the label in labels_to_move");
 
-                // TODO: verify the assumption asserted below
-                // Expecting oldId and label at the end of labels_to_move vectors.
-                assert(oldId == labels_to_move.size() - 1 &&
-                       "Old ID is not at the end of labels_to_move vector");
+                // If oldId is out of bounds - skip,
+                // but if newId is in - do no delete on newId.
+                if (oldId >= labels_to_move.size()) {
+                    if (newId < labels_to_move.size()) {
+                        labels_to_move[newId] = SKIP_LABEL;
+                    }
+                    continue; // Next record.
+                }
+
+                // If label is SKIP_LABEL, it means that the vector was not moved but updated
+                // in-place. We do not need to remove it from labels_to_move, just skip it in
+                // deleteVector().
+                if (label == SKIP_LABEL) {
+                    labels_to_move[oldId] = SKIP_LABEL;
+                    continue; // Next record.
+                }
+
+                // If recorded label does not match the label in labels_to_move,
+                // it means that another vector was moved to the old position - do not delete it.
+                if (label != labels_to_move[oldId]) {
+                    labels_to_move[oldId] = SKIP_LABEL;
+                    continue;
+                }
 
                 // remove the old label from labels_to_move at position oldId
                 labels_to_move.erase(labels_to_move.begin() + oldId);
@@ -592,13 +639,17 @@ private:
             // delete vectors from the frontend index in reverse order
             // it increases the chance of avoiding swaps in the frontend index and performance
             // improvement
-            size_t deleted = 0;
+            int deleted = 0;
             for (idType i = labels_to_move.size(); i > 0; --i) {
                 auto label = labels_to_move[i - 1];
-                // Delete the vector from the frontend index
-                deleted += this->frontendIndex->deleteVectorById(label, i - 1);
+                // Delete the vector from the frontend index if not in-place updated.
+                if (label != SKIP_LABEL) {
+                    deleted += this->frontendIndex->deleteVectorById(label, i - 1);
+                }
             }
-            assert(deleted == labels_to_move.size());
+            assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
+                                            [](labelType label) { return label != SKIP_LABEL; }) &&
+                   "Deleted vectors count does not match the number of labels to delete");
         }
     }
 
@@ -693,7 +744,14 @@ public:
         }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
-            ret = std::max(ret + this->frontendIndex->addVector(blob, label), 0);
+            const auto ft_ret = this->frontendIndex->addVector(blob, label);
+
+            if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
+                for (auto id : this->frontendIndex->getElementIds(label)) {
+                    this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
+                }
+            }
+            ret = std::max(ret + ft_ret, 0);
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }

@@ -336,7 +336,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
 
     if constexpr (TypeParam::isMulti()) {
-        // Add another vector under the same label (create another insert job)
+        // Add another vector under the same label
         VecSimIndex_AddVector(tiered_index, vector, vec_label);
         ASSERT_EQ(tiered_index->indexSize(), 2);
         ASSERT_EQ(tiered_index->indexLabelCount(), 1);
@@ -420,7 +420,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, insertJobAsync) {
     EXPECT_LE(sz_f, this->getUpdateThreshold());
     EXPECT_EQ(sz_f + sz_b, n);
 
-    // Quantization has limited accuaracy, so we need to check the relative error.
+    // Quantization has limited accuracy, so we need to check the relative error.
     // If quantization is enabled, we allow a larger relative error.
     double abs_err = TypeParam::get_quant_bits() != VecSimSvsQuant_NONE ? 1e-2 : 1e-6;
 
@@ -2837,6 +2837,163 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
     auto sz_b = tiered_index->GetBackendIndex()->indexSize();
     EXPECT_LE(sz_f, update_threshold);
     EXPECT_EQ(sz_f + sz_b, n);
+}
+
+TYPED_TEST(SVSTieredIndexTest, testSwapJournal) {
+    // Create TieredSVS index instance with a mock queue.
+    const size_t dim = 4;
+    const size_t n = 15;
+    const bool is_multi = TypeParam::isMulti();
+
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = is_multi};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Forcibly set the training threshold to a value that will trigger the update job
+    // for first vector only.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, n * 100);
+    ASSERT_INDEX(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    // Add n vectors to the index.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i);
+        tiered_index->addVector(vector, i);
+    }
+
+    // Pause the update job after svs index update
+    std::mutex mtx;
+    bool added_to_svs = false;
+    bool continue_job = false;
+    std::condition_variable cv;
+
+    auto tracing_callback = [&]() {
+        {
+            std::unique_lock lock(mtx);
+            added_to_svs = true; // Indicate that we are waiting for the update job to start.
+        }
+        cv.notify_one(); // Notify that the update job has started.
+        {
+            std::unique_lock lock(mtx);
+            cv.wait(lock, [&] { return continue_job; }); // Wait until we continue.
+        }
+    };
+    tiered_index->registerTracingCallback("UpdateJob::after_add_to_svs", tracing_callback);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    {
+        // IMPORTANT!: Do not use ASSERT here, as it will not release the mutex and will cause a
+        // deadlock. Use EXPECT instead, so we can continue the test even if the condition is not
+        // met.
+
+        // Wait for the update job to start.
+        std::unique_lock lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(100), [&] { return added_to_svs; }));
+
+        // update job paused, we have vectors 0-(n-1) in the index, let's do index modifications
+
+        // For single-value index, we expect to override the vector.
+        // For multi-value index, we expect to add a new vector.
+        const int update_count = is_multi ? 1 : 0;
+
+        // Remove vector label=n-2, it is copied to backend index.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 2), 2);
+        // Add/update vector label=1.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 10), update_count);
+        // Add a new vector
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n, n), 1);
+        // Add another one
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n + 1, n + 1), 1);
+        // Remove vector label=0, it is copied to backend index.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 2);
+        // Remove the last vector copied to backend index
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 2);
+        // Add/update vector label=2.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 20), update_count);
+        // Remove vector label=2: for multi: old is copied to backend , old + new are in flat
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 2), 1 + 2 * update_count);
+        // Remove vector label=n - in flat only
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n), 1);
+        // Add vector (n-1) again
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n - 1, (n - 1) * 10), 1);
+
+        continue_job = true; // Indicate that we can continue the update job.
+    }
+
+    // continue the update job
+    cv.notify_all(); // Notify that we can continue.
+
+    mock_thread_pool.thread_pool_join();
+
+    if (is_multi) {
+        // For multi-value index, following vectors should be in the index:
+        // 0: deleted, 1: (1,10), 2: deleted, 3:3, ..., n-2: deleted n-1: 10(n-1), n+1: n+1;
+        // total: n-2 labels, n-1 vectors
+        ASSERT_EQ(tiered_index->indexSize(), n - 1);
+        ASSERT_EQ(tiered_index->indexLabelCount(), n - 2);
+
+        // Backend index: 0:deleted, 1:1, 2:deleted, 3:3, ..., n-2:deleted, n-1:deleted; total: n-4
+        EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 4);
+        // Frontend index: 1:10, n-1:10(n-1), n+1:n+1
+        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 3);
+    } else {
+        // For single-value index, following vectors should be in the index:
+        // 0:deleted, 1: 10, 2: deleted, 3:3, ..., n-2:deleted n-1: 10(n-1), n+1: n+1;
+        // total: n-2 vectors and labels
+        ASSERT_EQ(tiered_index->indexSize(), n - 2);
+        ASSERT_EQ(tiered_index->indexLabelCount(), n - 2);
+
+        // Backend index: 0:deleted, 1:deleted, 2:deleted, 3:3, ..., n-2:deleted, n-1:deleted;
+        // total: n-5
+        EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 5);
+        // Frontend index: 1:10, n-1:10(n-1), n+1:n+1
+        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 3);
+    }
+
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+
+    // Vector label 0 - deleted
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 0);
+    ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(0, expected_vector)));
+
+    // Vector label n-2 - deleted
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 0);
+    ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(n - 2, expected_vector)));
+
+    // Vector label=1, with value 10 should be in the flat index.
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+    if (is_multi) {
+        // For multi-value index, there is vector label=1 kept in the backend.
+        // We expect the minimal distance for the query 1.0 to be taken from backend
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, 1);
+        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+    }
+
+    // Vector label 2 - deleted
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 2);
+    ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(2, expected_vector)));
+
+    // Vectors labels [3,n-3] - unchanged
+    for (size_t i = 3; i < n - 2; i++) {
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
+        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0, abs_err);
+    }
+
+    // Vector label n-1 - deleted and re-added
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, (n - 1) * 10);
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(n - 1, expected_vector), 0, abs_err);
+
+    // Vector label n+1 - added
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, (n + 1));
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(n + 1, expected_vector), 0, abs_err);
 }
 
 TEST(SVSTieredIndexTest, testThreadPool) {
