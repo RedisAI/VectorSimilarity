@@ -23,6 +23,8 @@ public:
     BM_VecSimCommon() = default;
     ~BM_VecSimCommon() = default;
 
+    // index_offset: Offset added to base index types to access variants (0=original, 1=updated)
+
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
                              std::atomic_int &correct, unsigned short index_offset = 0,
                              bool is_tiered = false);

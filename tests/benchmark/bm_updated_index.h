@@ -25,6 +25,8 @@
 template <typename index_type_t>
 class BM_VecSimUpdatedIndex : public BM_VecSimCommon<index_type_t> {
 public:
+    // Offset to access updated index variants in indices array (e.g., INDEX_BF + 1 =
+    // INDEX_BF_UPDATED)
     const static unsigned short updated_index_offset = 1;
     // The constructor is called after we have already registered the tests residing in
     // BM_VecSimCommon, (and not in this class) so `ref_count` is not zero at the first time

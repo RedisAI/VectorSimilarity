@@ -21,6 +21,9 @@ struct IndexType {
     typedef DistType dist_t;
 };
 
+// Array indices for accessing different index types in the indices array
+// Note: Updated variants are offset by 1 from their base types (e.g., INDEX_BF_UPDATED = INDEX_BF +
+// 1)
 enum IndexTypeIndex {
     INDEX_BF = 0,
     INDEX_BF_UPDATED,
@@ -33,6 +36,9 @@ enum IndexTypeIndex {
     NUMBER_OF_INDEX_TYPES
 };
 
+// Bit flags for selectively enabling index types in benchmarks via
+// BM_VecSimGeneral::enabled_index_types bitmask Limited to 32 index types because IndexTypeFlags is
+// stored in a 32-bit mask (uint32_t)
 enum IndexTypeFlags {
     INDEX_TYPE_BF = 1 << 0,
     INDEX_TYPE_BF_UPDATED = 1 << 1,

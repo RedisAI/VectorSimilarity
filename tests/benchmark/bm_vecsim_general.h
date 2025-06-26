@@ -43,6 +43,7 @@ protected:
     static size_t n_vectors;
 
     static bool is_multi;
+    // Bitmask controlling which index types to include in benchmarks (uses IndexTypeFlags)
     static uint32_t enabled_index_types;
     static tieredIndexMock mock_thread_pool;
 

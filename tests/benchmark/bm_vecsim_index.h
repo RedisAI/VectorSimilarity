@@ -24,6 +24,9 @@ public:
 
     static std::vector<std::vector<data_t>> queries;
 
+    // Static array holding all index instances, indexed by IndexTypeIndex values
+    // Elements are initialized to nullptr and populated in Initialize() method
+    // Only indices corresponding to BM_VecSimGeneral::enabled_index_types bitmask will be non-null
     static std::array<VecSimIndex *, NUMBER_OF_INDEX_TYPES> indices;
 
     BM_VecSimIndex();

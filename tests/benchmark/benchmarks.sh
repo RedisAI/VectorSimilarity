@@ -83,7 +83,7 @@ elif [ "$BM_TYPE" = "bm-batch-iter-uint8-multi" ] ; then
 
 # Updated index benchmarks
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
-    echo bm_updated_index_single_fp32
+    echo updated_index_single_fp32
 
 # Spaces benchmarks
 elif [ "$BM_TYPE" = "bm-spaces" ] ; then
