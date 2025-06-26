@@ -175,14 +175,6 @@ public:
     inline size_t getBlockSize() const { return blockSize; }
     inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
 
-    /**
-     * @brief Return the number of unique labels in the index (which are not deleted).
-     * Default implementation for non-tiered indexes.
-     *
-     * @return index label count.
-     */
-    virtual size_t indexLabelCount() const { return getLabelsSet().size(); }
-
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
