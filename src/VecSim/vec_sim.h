@@ -106,13 +106,6 @@ void VecSim_Normalize(void *blob, size_t dim, VecSimType type);
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 /**
- * @brief Return the number of unique labels in the index.
- * @param index the index whose label count is requested.
- * @return index label count.
- */
-size_t VecSimIndex_IndexLabelCount(VecSimIndex *index);
-
-/**
  * @brief Resolves VecSimRawParam array and generate VecSimQueryParams struct.
  * @param index the index whose size is requested.
  * @param rparams array of raw params to resolve.

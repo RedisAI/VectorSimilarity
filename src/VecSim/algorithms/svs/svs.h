@@ -34,7 +34,6 @@ struct SVSIndexBase {
     virtual size_t getNumThreads() const = 0;
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
-    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
     virtual bool isCompressed() const = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
@@ -284,9 +283,11 @@ public:
              const index_component_t &components, bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
           changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
-          search_window_size{svs_details::getOrDefault(params.search_window_size, 10)},
-          epsilon{svs_details::getOrDefault(params.epsilon, 0.01)},
-          threadpool_{std::max(size_t{1}, params.num_threads)}, impl_{nullptr} {
+          search_window_size{svs_details::getOrDefault(params.search_window_size,
+                                                       SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE)},
+          epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
+          threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
+          impl_{nullptr} {
         logger_ = makeLogger();
     }
 
@@ -327,7 +328,19 @@ public:
         VecSimIndexDebugInfo info;
         info.commonInfo = this->getCommonInfo();
         info.commonInfo.basicInfo.algo = VecSimAlgo_SVS;
-        info.commonInfo.basicInfo.isTiered = false;
+
+        info.svsInfo =
+            svsInfoStruct{.quantBits = getCompressionMode(),
+                          .alpha = this->buildParams.alpha,
+                          .graphMaxDegree = this->buildParams.graph_max_degree,
+                          .constructionWindowSize = this->buildParams.window_size,
+                          .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
+                          .pruneTo = this->buildParams.prune_to,
+                          .useSearchHistory = this->buildParams.use_full_search_history,
+                          .numThreads = this->getNumThreads(),
+                          .numberOfMarkedDeletedNodes = this->changes_num,
+                          .searchWindowSize = this->search_window_size,
+                          .epsilon = this->epsilon};
         return info;
     }
 
@@ -371,6 +384,10 @@ public:
     size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
+
+    VecSimSvsQuantBits getCompressionMode() const {
+        return storage_traits_t::get_compression_mode();
+    }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         if (!impl_ || !impl_->has_id(label)) {

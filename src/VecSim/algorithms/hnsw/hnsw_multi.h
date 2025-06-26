@@ -42,8 +42,9 @@ private:
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
     // Return all the labels in the index - this should be used for computing the number of distinct
-    // labels in a tiered index, and caller should hold the index data guard.
+    // labels in a tiered index.
     inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
         vecsim_stl::set<labelType> keys(this->allocator);
         for (auto &it : labelLookup) {
             keys.insert(it.first);

@@ -190,10 +190,6 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
-extern "C" size_t VecSimIndex_IndexLabelCount(VecSimIndex *index) {
-    return index->indexLabelCount();
-}
-
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
                                                        VecsimQueryType query_type) {
