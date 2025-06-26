@@ -54,9 +54,11 @@ protected:
 
     using storage_traits_t = SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>;
     using index_storage_type = typename storage_traits_t::index_storage_type;
+    using data_loader_type = svs::VectorDataLoader<DataType>;
 
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
     using graph_type = typename graph_builder_t::graph_type;
+    using graph_loader_type = svs::GraphLoader<uint32_t>;
 
     using impl_type =
         svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>;
@@ -560,28 +562,58 @@ public:
     }
 
     // Virtual method implementations for SVSIndexBase interface
-    void saveIndex(const std::string &folder_path) const override {
+    void saveIndex(const std::string &folder_path) const  {
         assert(impl_ && "Index is not initialized");
         if (impl_) {
             impl_->save(folder_path + "/config", folder_path + "/graph", folder_path + "/data");
         }
     }
 
-    void loadIndex(const std::string &folder_path) override {
-
-
-        impl_type index = svs::index::vamana::auto_dynamic_assemble(
-            folder_path + "/config",
-            svs::GraphLoader(folder_path + "/graph"),
-            svs::VectorDataLoader<data_type>(folder_path + "/data"),
-            distance_f{},
-            threadpool_
+    void loadIndex(const std::string &folder_path)  {
+        // Load the configuration and translator
+        auto [parameters, translator] = svs::lib::load_from_disk<svs::index::vamana::detail::VamanaStateLoader>(
+            folder_path + "/config", false, 0
         );
 
-        // impl_ gets exactly the right type
-        impl_ = std::make_unique<impl_type>(std::move(index));
+        // Load the data with the correct type
+        auto loaded_data = data_loader_type(folder_path + "/data").load();
+        auto threadpool_handle = svs::threads::ThreadPoolHandle{VecSimSVSThreadPool{threadpool_}};
 
+        // Convert the loaded data to the expected storage type
+        auto converted_data = storage_traits_t::create_storage(
+            loaded_data, this->blockSize, threadpool_handle, this->getAllocator()
+        );
 
+        // Load the graph with the correct type
+        auto loaded_graph = graph_loader_type(folder_path + "/graph").load();
+
+        // Convert the loaded graph to the expected graph type
+        auto svs_bs = svs_details::SVSBlockSize(this->blockSize,
+            graph_builder_t::element_size(loaded_graph.max_degree()));
+        typename graph_builder_t::allocator_type graph_allocator{this->getAllocator()};
+        typename graph_builder_t::blocked_type blocked_alloc{{svs_bs}, graph_allocator};
+
+        auto converted_graph = graph_type{loaded_graph.n_nodes(), loaded_graph.max_degree(), blocked_alloc};
+
+        // Copy the graph structure
+        for (size_t i = 0; i < loaded_graph.n_nodes(); ++i) {
+            auto neighbors = loaded_graph.get_node(i);
+            converted_graph.replace_node(i, neighbors);
+        }
+
+        auto logger = makeLogger();
+
+        // Create the index with the correct types
+        impl_ = std::make_unique<impl_type>(
+            parameters,
+            std::move(converted_data),
+            std::move(converted_graph),
+            distance_f{},
+            std::move(translator),
+            threadpool_,
+            std::move(logger)
+        );
+        assert(impl_ && "Index is not initialized");
     }
 
 #ifdef BUILD_TESTS

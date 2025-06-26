@@ -8,8 +8,7 @@ import tempfile
 import os
 import sys
 
-# Add the build directory to Python path (adjust as needed)
-sys.path.insert(0, 'build/src/python_bindings')
+from VecSim import *
 
 try:
     import VecSim
