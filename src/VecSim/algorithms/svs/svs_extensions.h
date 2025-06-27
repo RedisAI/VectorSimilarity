@@ -31,7 +31,7 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator) {
+                                             std::shared_ptr<VecSimAllocator> allocator, size_t /*leanvec_dim*/) {
         const auto dim = data.dimensions();
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
@@ -41,7 +41,7 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
         return index_storage_type::compress(data, pool, blocked_alloc);
     }
 
-    static constexpr size_t element_size(size_t dims, size_t alignment = 0) {
+    static constexpr size_t element_size(size_t dims, size_t alignment = 0, size_t /*leanvec_dim*/ = 0) {
         return dims * sizeof(element_type);
     }
 
@@ -107,7 +107,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator) {
+                                             std::shared_ptr<VecSimAllocator> allocator, size_t /*leanvec_dim*/) {
         const auto dim = data.dimensions();
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
@@ -117,7 +117,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
         return index_storage_type::compress(data, pool, 0, blocked_alloc);
     }
 
-    static constexpr size_t element_size(size_t dims, size_t alignment = 0) {
+    static constexpr size_t element_size(size_t dims, size_t alignment = 0, size_t /*leanvec_dim*/ = 0) {
         using primary_type = typename index_storage_type::primary_type;
         using layout_type = typename primary_type::helper_type;
         using layout_dims_type = svs::lib::MaybeStatic<index_storage_type::extent>;
@@ -153,7 +153,12 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
                                                          svs::leanvec::UsingLVQ<ResidualBits>,
                                                          svs::Dynamic, svs::Dynamic, blocked_type>;
 
-    static size_t leanvec_dims(size_t dims) { return dims / 2; }
+    static size_t check_leanvec_dim(size_t dims, size_t leanvec_dim) {
+        if(leanvec_dim == 0) {
+            return dims / 2; /* default LeanVec dimension */
+        }
+        return leanvec_dim;
+    }
 
     static constexpr bool is_compressed() { return true; }
 
@@ -170,21 +175,20 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator) {
+                                             std::shared_ptr<VecSimAllocator> allocator, size_t leanvec_dim) {
         const auto dims = data.dimensions();
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dims));
 
         allocator_type data_allocator{std::move(allocator)};
         auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
 
-        // TODO: Should we pass threadpool?
         return index_storage_type::reduce(data, std::nullopt, pool, 0,
-                                          svs::lib::MaybeStatic<svs::Dynamic>(leanvec_dims(dims)),
+                                          svs::lib::MaybeStatic<svs::Dynamic>(check_leanvec_dim(dims, leanvec_dim)),
                                           blocked_alloc);
     }
 
-    static constexpr size_t element_size(size_t dims, size_t alignment = 0) {
-        return SVSStorageTraits<DataType, QuantBits, 0, false>::element_size(leanvec_dims(dims),
+    static constexpr size_t element_size(size_t dims, size_t alignment = 0, size_t leanvec_dim = 0) {
+        return SVSStorageTraits<DataType, QuantBits, 0, false>::element_size(check_leanvec_dim(dims, leanvec_dim),
                                                                              alignment) +
                SVSStorageTraits<DataType, ResidualBits, 0, false>::element_size(dims, alignment);
     }

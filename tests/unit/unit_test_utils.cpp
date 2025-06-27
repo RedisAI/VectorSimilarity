@@ -170,6 +170,8 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
     ASSERT_EQ(info1.pruneTo, info2.pruneTo);
     ASSERT_EQ(info1.quantBits, info2.quantBits);
     ASSERT_EQ(info1.searchWindowSize, info2.searchWindowSize);
+    ASSERT_EQ(info1.searchBufferCapacity, info2.searchBufferCapacity);
+    ASSERT_EQ(info1.leanvecDim, info2.leanvecDim);
     ASSERT_EQ(info1.useSearchHistory, info2.useSearchHistory);
     ASSERT_EQ(info1.epsilon, info2.epsilon);
     ASSERT_EQ(info1.numThreads, info2.numThreads);

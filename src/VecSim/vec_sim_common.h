@@ -44,6 +44,9 @@ extern "C" {
 // DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
 #define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
 #define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
+// NOTE: No need to have SVS_VAMANA_DEFAULT_SEARCH_BUFFER_CAPACITY
+// as the default is determined by the search_window_size
+#define SVS_VAMANA_DEFAULT_LEANVEC_DIM            0
 #define SVS_VAMANA_DEFAULT_EPSILON            0.01f
 
 // Datatypes for indexing.
@@ -175,6 +178,8 @@ typedef struct {
                                          // the entire search history.
     size_t num_threads;                  // Maximum number of threads in threadpool.
     size_t search_window_size;           // Search window size to use during search.
+    size_t search_buffer_capacity;       // Search buffer capacity to use during search.
+    size_t leanvec_dim;                  // Leanvec dimension to use when LeanVec is enabled.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSParams;
 
@@ -240,6 +245,7 @@ typedef struct {
 
 typedef struct {
     size_t windowSize;              // Search window size for Vamana graph accuracy/latency tune.
+    size_t bufferCapacity;          // Search buffer capacity for Vamana graph accuracy/latency tune.
     VecSimOptionMode searchHistory; // Enabling of the visited set for search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSRuntimeParams;
@@ -340,6 +346,8 @@ typedef struct {
     size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
     size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
     size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
+    size_t searchBufferCapacity;       // Search buffer capacity for Vamana graph accuracy/latency tune.
+    size_t leanvecDim;                 // Leanvec dimension to use when LeanVec is enabled.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } svsInfoStruct;
 
