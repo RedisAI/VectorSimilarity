@@ -12,6 +12,7 @@
 #include "unit_test_utils.h"
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <random>
 #include <vector>
 
@@ -2550,6 +2551,87 @@ TEST(SVSTest, quant_modes) {
         runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
         VecSimIndex_Free(index);
+    }
+}
+
+TEST(SVSTest, save_load) {
+    namespace fs = std::filesystem;
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+
+    const size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+
+    for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                            VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                            VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+        SVSParams params = {
+            .type = VecSimType_FLOAT32,
+            .dim = dim,
+            .metric = VecSimMetric_L2,
+            .blockSize = 1024,
+            /* SVS-Vamana specifics */
+            .quantBits = quant_bits,
+            .graph_max_degree = 63, // x^2-1 to round the graph block size
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
+
+        VecSimParams index_params = CreateParams(params);
+        VecSimIndex *index = VecSimIndex_New(&index_params);
+        if (index == nullptr) {
+            if (std::get<1>(svs_details::isSVSQuantBitsSupported(quant_bits))) {
+                GTEST_FAIL() << "Failed to create SVS index";
+            } else {
+                GTEST_SKIP() << "SVS LVQ is not supported.";
+            }
+        }
+
+        std::vector<std::array<float, dim>> v(n);
+        for (size_t i = 0; i < n; i++) {
+            GenerateVector<float>(v[i].data(), dim, i);
+        }
+
+        std::vector<size_t> ids(n);
+        std::iota(ids.begin(), ids.end(), 0);
+
+        auto svs_index = dynamic_cast<SVSIndexBase *>(index);
+        ASSERT_NE(svs_index, nullptr);
+        svs_index->addVectors(v.data(), ids.data(), n);
+
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        float query[] = {50, 50, 50, 50};
+        auto verify_res = [&](size_t id, double score, size_t idx) {
+            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
+            EXPECT_EQ(id, (idx + 45));
+        };
+        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+        fs::path tmp{fs::temp_directory_path()};
+        auto subdir = "vecsim_test_" + std::to_string(std::rand());
+        auto index_path = tmp / subdir;
+        while (fs::exists(index_path)) {
+            subdir = "vecsim_test_" + std::to_string(std::rand());
+            index_path = tmp / subdir;
+        }
+        fs::create_directories(index_path);
+        svs_index->saveIndex(index_path.string());
+        VecSimIndex_Free(index);
+
+        // Recreate the index from the saved path
+        index = VecSimIndex_New(&index_params);
+        svs_index = dynamic_cast<SVSIndexBase *>(index);
+        ASSERT_NE(svs_index, nullptr);
+        svs_index->loadIndex(index_path.string());
+        fs::remove_all(index_path); // Cleanup the saved index directory
+
+        // Verify the index was loaded correctly
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
     }
 }
 
