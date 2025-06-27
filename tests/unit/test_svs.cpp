@@ -1465,6 +1465,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .searchBufferCapacity = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .leanvecDim = SVS_VAMANA_DEFAULT_LEANVEC_DIM,
           .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: Cosine metric with defaults
@@ -1483,6 +1485,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .searchBufferCapacity = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .leanvecDim = SVS_VAMANA_DEFAULT_LEANVEC_DIM,
           .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: Custom alpha parameter
@@ -1502,6 +1506,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .searchBufferCapacity = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .leanvecDim = SVS_VAMANA_DEFAULT_LEANVEC_DIM,
           .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: Custom graph parameters
@@ -1523,6 +1529,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numberOfMarkedDeletedNodes = 0,
 
           .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .searchBufferCapacity = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .leanvecDim = SVS_VAMANA_DEFAULT_LEANVEC_DIM,
           .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
 
         // Test: All custom parameters
@@ -1538,6 +1546,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
              .use_search_history = VecSimOption_DISABLE,
              .num_threads = 4,
              .search_window_size = 20,
+             .search_buffer_capacity = 40,
+             .leanvec_dim = dim / 2,
              .epsilon = 0.05,
          },
          {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
@@ -1550,6 +1560,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numThreads = 4,
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = 20,
+          .searchBufferCapacity = 40,
+          .leanvecDim = dim / 2,
           .epsilon = 0.05}},
 
         // Test: Search history AUTO mode
@@ -1569,6 +1581,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .searchBufferCapacity = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .leanvecDim = SVS_VAMANA_DEFAULT_LEANVEC_DIM,
           .epsilon = SVS_VAMANA_DEFAULT_EPSILON}},
         // Test: Search history AUTO mode
         {"search_history_enable",
@@ -1587,6 +1601,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS,
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .searchBufferCapacity = SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE,
+          .leanvecDim = SVS_VAMANA_DEFAULT_LEANVEC_DIM,
           .epsilon = SVS_VAMANA_DEFAULT_EPSILON}}};
 
     // Run tests for each parameter combination
@@ -1645,6 +1661,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_consistency_across_metrics) {
         EXPECT_EQ(info.svsInfo.graphMaxDegree, SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE);
         EXPECT_EQ(info.svsInfo.constructionWindowSize, SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE);
         EXPECT_EQ(info.svsInfo.searchWindowSize, SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE);
+        EXPECT_EQ(info.svsInfo.searchBufferCapacity, SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE);
+        EXPECT_DOUBLE_EQ(info.svsInfo.leanvecDim, SVS_VAMANA_DEFAULT_LEANVEC_DIM);
         EXPECT_DOUBLE_EQ(info.svsInfo.epsilon, SVS_VAMANA_DEFAULT_EPSILON);
         EXPECT_EQ(info.svsInfo.numThreads, SVS_VAMANA_DEFAULT_NUM_THREADS);
         EXPECT_EQ(info.svsInfo.useSearchHistory, SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY);
