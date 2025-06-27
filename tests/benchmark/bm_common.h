@@ -38,9 +38,7 @@ public:
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
 
     // Does nothing but returning the index memory.
-    static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
-    static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
-    static void Memory_Tiered(benchmark::State &st, unsigned short index_offset = 0);
+    static void Memory(benchmark::State &st, IndexTypeIndex index_type);
 };
 
 template <typename index_type_t>
@@ -66,30 +64,10 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned short index_offset) {
-    auto index = INDICES.at(INDEX_BF + index_offset);
+void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex index_type) {
+    auto index = INDICES.at(index_type);
     index->fitMemory();
 
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
-}
-template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, unsigned short index_offset) {
-    auto index = INDICES.at(INDEX_HNSW + index_offset);
-    index->fitMemory();
-
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
-}
-template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
-                                                  unsigned short index_offset) {
-    auto index = INDICES.at(INDEX_TIERED_HNSW + index_offset);
-    index->fitMemory();
     for (auto _ : st) {
         // Do nothing...
     }

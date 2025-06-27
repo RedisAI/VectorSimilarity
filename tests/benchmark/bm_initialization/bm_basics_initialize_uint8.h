@@ -16,17 +16,17 @@ the file.
 
 // Memory BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), uint8_index_t)
-(benchmark::State &st) { Memory_FLAT(st); }
+(benchmark::State &st) { Memory(st, INDEX_BF); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
 // Memory HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW), uint8_index_t)
-(benchmark::State &st) { Memory_HNSW(st); }
+(benchmark::State &st) { Memory(st, INDEX_HNSW); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW))->Iterations(1);
 
 // Memory Tiered
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered), uint8_index_t)
-(benchmark::State &st) { Memory_Tiered(st); }
+(benchmark::State &st) { Memory(st, INDEX_TIERED_HNSW); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered))->Iterations(1);
 
 // AddLabel

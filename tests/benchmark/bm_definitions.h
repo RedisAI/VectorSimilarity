@@ -39,6 +39,7 @@ enum IndexTypeIndex {
 // Bit flags for selectively enabling index types in benchmarks via
 // BM_VecSimGeneral::enabled_index_types bitmask Limited to 32 index types because IndexTypeFlags is
 // stored in a 32-bit mask (uint32_t)
+// Note: Bit positions currently match IndexTypeIndex values but this is not required by the code
 enum IndexTypeFlags {
     INDEX_TYPE_BF = 1 << 0,
     INDEX_TYPE_BF_UPDATED = 1 << 1,
@@ -47,7 +48,7 @@ enum IndexTypeFlags {
     INDEX_TYPE_TIERED_HNSW = 1 << 4,
     INDEX_TYPE_SVS = 1 << 5,
     INDEX_TYPE_TIERED_SVS = 1 << 6,
-    INDEX_TYPE_SVS_QUANTIZED = 1 << 7
+    INDEX_TYPE_SVS_COMPRESSED = 1 << 7
 };
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
