@@ -49,7 +49,7 @@ if(USE_SVS)
     endif()
 
     cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|IntelLLVM")
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250626-clang.tar.gz" CACHE STRING "SVS URL")
     else()
         set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250626.tar.gz" CACHE STRING "SVS URL")
