@@ -93,7 +93,17 @@ protected:
             keys.insert(it.first);
         }
         return keys;
-    };
+    }
+
+    vecsim_stl::vector<idType> getElementIds(size_t label) const override {
+        vecsim_stl::vector<idType> ids(this->allocator);
+        auto it = labelToIdLookup.find(label);
+        if (it == labelToIdLookup.end()) {
+            return ids;
+        }
+        ids.push_back(it->second);
+        return ids;
+    }
 
     vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() const override {
