@@ -561,6 +561,50 @@ public:
     }
 
 private:
+    static void applySwapsToLabelsArray(std::vector<size_t> &labels,
+                                        const std::vector<swap_record> &swaps) {
+        // Enumerate journal and reflect swaps in the labels.
+        // The journal contains tuples of (label, oldId, newId).
+        // oldId is the index of the label in flat index before the swap.
+        // newId is the index of the label in flat index after the swap.
+        for (const auto &p : swaps) {
+            auto label = std::get<0>(p);
+            auto oldId = std::get<1>(p);
+            auto newId = std::get<2>(p);
+
+            // If oldId is out of bounds - skip,
+            // but if newId is in - do no delete on newId.
+            if (oldId >= labels.size()) {
+                if (newId < labels.size()) {
+                    labels[newId] = SKIP_LABEL;
+                }
+                continue; // Next record.
+            }
+
+            // If label is SKIP_LABEL, it means that the vector was not moved but updated
+            // in-place. We do not need to remove it from labels, just skip it in
+            // deleteVector().
+            if (label == SKIP_LABEL) {
+                labels[oldId] = SKIP_LABEL;
+                continue; // Next record.
+            }
+
+            // If recorded label does not match the label in labels,
+            // it means that another vector was moved to the old position - do not delete it.
+            if (label != labels[oldId]) {
+                labels[oldId] = SKIP_LABEL;
+                continue;
+            }
+
+            // remove the old label from labels at position oldId
+            labels.erase(labels.begin() + oldId);
+            if (newId != oldId) { // swap mode
+                // Update the label at newId position
+                labels[newId] = label;
+            }
+        }
+    }
+
     void updateSVSIndex() {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
@@ -596,46 +640,9 @@ private:
         { // lock frontend index for writing and delete moved vectors
             std::lock_guard lock(this->flatIndexGuard);
 
-            // Enumerate journal and reflect swaps in the labels_to_move.
-            // The journal contains tuples of (label, oldId, newId).
-            // oldId is the index of the label in flat index before the swap.
-            // newId is the index of the label in flat index after the swap.
-            for (const auto &p : this->swaps_journal) {
-                auto label = std::get<0>(p);
-                auto oldId = std::get<1>(p);
-                auto newId = std::get<2>(p);
+            // Apply swaps from journal to labels_to_move to reflect changes made in meanwhile.
+            applySwapsToLabelsArray(labels_to_move, this->swaps_journal);
 
-                // If oldId is out of bounds - skip,
-                // but if newId is in - do no delete on newId.
-                if (oldId >= labels_to_move.size()) {
-                    if (newId < labels_to_move.size()) {
-                        labels_to_move[newId] = SKIP_LABEL;
-                    }
-                    continue; // Next record.
-                }
-
-                // If label is SKIP_LABEL, it means that the vector was not moved but updated
-                // in-place. We do not need to remove it from labels_to_move, just skip it in
-                // deleteVector().
-                if (label == SKIP_LABEL) {
-                    labels_to_move[oldId] = SKIP_LABEL;
-                    continue; // Next record.
-                }
-
-                // If recorded label does not match the label in labels_to_move,
-                // it means that another vector was moved to the old position - do not delete it.
-                if (label != labels_to_move[oldId]) {
-                    labels_to_move[oldId] = SKIP_LABEL;
-                    continue;
-                }
-
-                // remove the old label from labels_to_move at position oldId
-                labels_to_move.erase(labels_to_move.begin() + oldId);
-                if (newId != oldId) { // swap mode
-                    // Update the label at newId position
-                    labels_to_move[newId] = label;
-                }
-            }
             // delete vectors from the frontend index in reverse order
             // it increases the chance of avoiding swaps in the frontend index and performance
             // improvement
@@ -763,6 +770,49 @@ public:
         return ret;
     }
 
+    int deleteAndRecordSwaps_Unsafe(labelType label) {
+        auto deleting_ids = this->frontendIndex->getElementIds(label);
+        if (deleting_ids.empty()) {
+            // If there are no ids to delete, return 0.
+            return 0;
+        }
+
+        // assert if all elements of deleting_ids are unique
+        assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
+               "deleting_ids should contain unique ids");
+
+        // Sort deleting_ids by id descending order
+        std::sort(deleting_ids.begin(), deleting_ids.end(),
+                  [](const auto &a, const auto &b) { return a > b; });
+
+        // Delete vector from the frontend index.
+        auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
+        // Record swaps in the journal.
+        for (auto id : deleting_ids) {
+            auto it = updated_ids.find(id);
+            if (it != updated_ids.end()) {
+                assert(id == it->first && "id in updated_ids should match the id in deleting_ids");
+                auto newId = id;
+                auto oldId = it->second.first;
+                auto oldLabel = it->second.second;
+                this->swaps_journal.emplace_back(oldLabel, oldId, newId);
+                // Erase in assertion for debug compilation only
+                // NOTE: There are extra braces to wrap comma C++ operator
+                assert((updated_ids.erase(it), true));
+            } else {
+                // No swap, just delete is marked by oldId == newId == deleted id
+                this->swaps_journal.emplace_back(label, id, id);
+            }
+        }
+
+        // After processing all deleting_ids, updated_ids should be empty in debug
+        // compilation.
+        assert(updated_ids.empty() &&
+               "updated_ids should be empty after processing all deleting_ids");
+
+        return deleting_ids.size();
+    }
+
     int deleteVector(labelType label) override {
         int ret = 0;
         auto svs_index = GetSVSIndex();
@@ -776,47 +826,7 @@ public:
 
         if (label_exists) {
             std::lock_guard lock(this->flatIndexGuard);
-
-            auto deleting_ids = this->frontendIndex->getElementIds(label);
-            // assert if all elements of deleting_ids are unique
-            assert(std::set<idType>(deleting_ids.begin(), deleting_ids.end()).size() ==
-                       deleting_ids.size() &&
-                   "deleting_ids should contain unique ids");
-
-            if (!deleting_ids.empty()) {
-                // Sort deleting_ids by id descending order
-                std::sort(deleting_ids.begin(), deleting_ids.end(),
-                          [](const auto &a, const auto &b) { return a > b; });
-
-                // Delete vector from the frontend index.
-                auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
-                // Record swaps in the journal.
-                for (auto id : deleting_ids) {
-                    auto it = updated_ids.find(id);
-                    if (it != updated_ids.end()) {
-                        assert(id == it->first &&
-                               "id in updated_ids should match the id in deleting_ids");
-                        auto newId = id;
-                        auto oldId = it->second.first;
-                        auto oldLabel = it->second.second;
-                        this->swaps_journal.emplace_back(oldLabel, oldId, newId);
-                        // Erase in assertion for debug compilation only
-                        // NOTE: There are extra braces to wrap comma C++ operator
-                        assert((updated_ids.erase(it), true));
-                    } else {
-                        // No swap, just delete is marked by oldId == newId == deleted id
-                        this->swaps_journal.emplace_back(label, id, id);
-                    }
-                }
-
-                // After processing all deleting_ids, updated_ids should be empty in debug
-                // compilation.
-                assert(updated_ids.empty() &&
-                       "updated_ids should be empty after processing all deleting_ids");
-
-                ret = deleting_ids.size();
-                assert(ret >= 1 && "unexpected flat index deleteVector result");
-            }
+            ret = this->deleteAndRecordSwaps_Unsafe(label);
         }
         {
             std::lock_guard lock(this->mainIndexGuard);
