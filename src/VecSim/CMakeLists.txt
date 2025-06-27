@@ -46,8 +46,8 @@ target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if (TARGET svs::svs)
     target_link_libraries(VectorSimilarity svs::svs)
-    if(TARGET svs::svs_shared_library)
-        target_link_libraries(VectorSimilarity svs::svs_shared_library)
+    if(TARGET svs::svs_static_library)
+        target_link_libraries(VectorSimilarity svs::svs_static_library)
     endif()
 endif()
 
