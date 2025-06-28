@@ -196,7 +196,6 @@ public:
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
     size_t indexSize() const override;
-    size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
@@ -690,27 +689,6 @@ size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
     return this->backendIndex->indexCapacity() + this->frontendIndex->indexCapacity();
-}
-
-template <typename DataType, typename DistType>
-size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
-    // Compute the union of both labels set in both tiers of the index.
-    this->flatIndexGuard.lock_shared();
-    this->mainIndexGuard.lock_shared();
-    this->getHNSWIndex()->lockSharedIndexDataGuard();
-
-    auto flat_labels = this->frontendIndex->getLabelsSet();
-    auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
-
-    this->getHNSWIndex()->unlockSharedIndexDataGuard();
-    this->mainIndexGuard.unlock_shared();
-    this->flatIndexGuard.unlock_shared();
-
-    std::vector<labelType> output;
-    output.reserve(flat_labels.size() + hnsw_labels.size());
-    std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
-                   std::back_inserter(output));
-    return output.size();
 }
 
 // In the tiered index, we assume that the blobs are processed by the flat buffer

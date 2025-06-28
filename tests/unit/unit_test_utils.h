@@ -154,6 +154,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
 void compareCommonInfo(CommonInfo info1, CommonInfo info2);
 void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
 void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
+void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
 
 void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 

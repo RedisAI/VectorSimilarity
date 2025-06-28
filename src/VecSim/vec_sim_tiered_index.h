@@ -65,6 +65,28 @@ protected:
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 jobs.size());
     }
+
+    /**
+     * @brief Return the union of unique labels in both index tiers (which are not deleted).
+     * This is a debug-only method for tiered indexes that computes the union of labels
+     * from both frontend and backend indexes. It assumes that caller holds the appropriate
+     * locks and it is time-consuming.
+     * !!! Note: this should only be called in debug mode for tiered indexes !!!
+     *
+     * @return index label count for debug purposes.
+     */
+    vecsim_stl::vector<labelType> computeUnifiedIndexLabelsSetUnsafe() const {
+        auto [flat_labels, backend_labels] =
+            std::make_pair(this->frontendIndex->getLabelsSet(), this->backendIndex->getLabelsSet());
+
+        // Compute the union of the two sets.
+        vecsim_stl::vector<labelType> labels_union(this->allocator);
+        labels_union.reserve(flat_labels.size() + backend_labels.size());
+        std::set_union(flat_labels.begin(), flat_labels.end(), backend_labels.begin(),
+                       backend_labels.end(), std::back_inserter(labels_union));
+        return labels_union;
+    }
+
 #ifdef BUILD_TESTS
 public:
 #endif
@@ -107,6 +129,7 @@ public:
                this->frontendIndex->getAllocationSize();
     }
 
+    size_t indexLabelCount() const override;
     VecSimIndexStatsInfo statisticInfo() const override;
     virtual VecSimIndexDebugInfo debugInfo() const override;
     virtual VecSimDebugInfoIterator *debugInfoIterator() const override;
@@ -297,16 +320,29 @@ VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() cons
 }
 
 template <typename DataType, typename DistType>
+size_t VecSimTieredIndex<DataType, DistType>::indexLabelCount() const {
+    // This is a debug-only method for tiered indexes that computes the union of labels
+    // from both frontend and backend indexes. It requires locking and is time-consuming.
+    // !!! Note: this should only be called in debug mode for tiered indexes !!!
+    std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+    std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+    return computeUnifiedIndexLabelsSetUnsafe().size();
+}
+
+template <typename DataType, typename DistType>
 VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     VecSimIndexDebugInfo info;
     this->flatIndexGuard.lock_shared();
     this->mainIndexGuard.lock_shared();
+
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
+
+    info.commonInfo.indexLabelCount = this->computeUnifiedIndexLabelsSetUnsafe().size();
+
     this->flatIndexGuard.unlock_shared();
     this->mainIndexGuard.unlock_shared();
 
-    info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize =
         frontendInfo.commonInfo.indexSize + backendInfo.commonInfo.indexSize;
     info.commonInfo.memory = this->getAllocationSize();
@@ -328,6 +364,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
         break;
     case VecSimAlgo_SVS:
+        info.tieredInfo.backendInfo.svsInfo = backendInfo.svsInfo;
         break;
     case VecSimAlgo_BF:
     case VecSimAlgo_TIERED:

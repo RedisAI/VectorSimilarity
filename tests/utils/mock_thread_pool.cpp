@@ -78,14 +78,14 @@ void tieredIndexMock::thread_iteration(int thread_id, const bool *run_thread_ptr
     if (run_thread_ptr && !*run_thread_ptr)
         return;
     auto managed_job = jobQ.front();
-    MarkExecuteInProcess(thread_id);
+    executions_status.MarkInProcess(thread_id);
     jobQ.pop();
     lock.unlock();
     // Upgrade the index weak reference to a strong ref while we run the job over the index.
     if (auto temp_ref = managed_job.index_weak_ref.lock()) {
         managed_job.job->Execute(managed_job.job);
     }
-    MarkExecuteDone(thread_id);
+    executions_status.MarkDone(thread_id);
 }
 
 // Main loop for background worker threads that execute the jobs form the job queue.
@@ -117,7 +117,7 @@ void tieredIndexMock::thread_pool_join() {
 void tieredIndexMock::thread_pool_wait(size_t waiting_duration) {
     while (true) {
         std::unique_lock<std::mutex> lock(queue_guard);
-        if (jobQ.empty() && executions_status.count() == 0) {
+        if (jobQ.empty() && executions_status.AllDone()) {
             break;
         }
         lock.unlock();

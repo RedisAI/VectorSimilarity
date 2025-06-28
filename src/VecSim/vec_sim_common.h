@@ -17,20 +17,34 @@ extern "C" {
 #include <stdbool.h>
 
 // Common definitions
-#define INVALID_ID    UINT_MAX
-#define INVALID_LABEL SIZE_MAX
-#define UNUSED(x)     (void)(x)
+#define DEFAULT_BLOCK_SIZE 1024
+#define INVALID_ID         UINT_MAX
+#define INVALID_LABEL      SIZE_MAX
+#define UNUSED(x)          (void)(x)
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
 #define HNSW_DEFAULT_EF_RT   10
 #define HNSW_DEFAULT_EPSILON 0.01
-#define DEFAULT_BLOCK_SIZE   1024
 
 #define HNSW_INVALID_LEVEL SIZE_MAX
 #define INVALID_JOB_ID     UINT_MAX
 #define INVALID_INFO       UINT_MAX
+
+// SVS-Vamana default parameters
+#define SVS_VAMANA_DEFAULT_ALPHA_L2                 1.2f
+#define SVS_VAMANA_DEFAULT_ALPHA_IP                 0.95f
+#define SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE         32
+#define SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE 200
+#define SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY       true
+#define SVS_VAMANA_DEFAULT_NUM_THREADS              1
+// NOTE: optimal training threshold may depend on the SVSIndex compression mode.
+// it might be good to implement a utility to compute default threshold based on index parameters
+// DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
+#define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
+#define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
+#define SVS_VAMANA_DEFAULT_EPSILON            0.01f
 
 // Datatypes for indexing.
 typedef enum {
@@ -147,6 +161,7 @@ typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t blockSize;
 
     /* SVS-Vamana specifics. See Intel ScalableVectorSearch documentation */
@@ -313,18 +328,43 @@ typedef struct {
     char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
+typedef struct {
+    VecSimSvsQuantBits quantBits;  // Quantization flavor.
+    float alpha;                   // The pruning parameter.
+    size_t graphMaxDegree;         // Maximum degree in the graph.
+    size_t constructionWindowSize; // Search window size to use during graph construction.
+    size_t maxCandidatePoolSize;   // Limit on the number of neighbors considered during pruning.
+    size_t pruneTo;                // Amount that candidates will be pruned.
+    bool useSearchHistory;         // Either the contents of the search buffer can be used or
+                                   // the entire search history.
+    size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
+    size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
+    double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
+} svsInfoStruct;
+
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
 } HnswTieredInfo;
+
+typedef struct SvsTieredInfo {
+    size_t trainingTriggerThreshold;
+    size_t updateTriggerThreshold;
+    size_t updateJobWaitTime; // The time (microseconds) to wait for Redis threads reservation
+                              // before executing the scheduled SVS Index update job.
+    bool indexUpdateScheduled;
+} SvsTieredInfo;
 
 typedef struct {
 
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
+        svsInfoStruct svsInfo;
     } backendInfo; // The backend index info.
     union {
         HnswTieredInfo hnswTieredInfo;
+        SvsTieredInfo svsTieredInfo;
     } specificTieredBackendInfo;   // Info relevant for tiered index with a specific backend.
     CommonInfo backendCommonInfo;  // Common index info.
     CommonInfo frontendCommonInfo; // Common index info.
@@ -345,6 +385,7 @@ typedef struct {
     union {
         bfInfoStruct bfInfo;
         hnswInfoStruct hnswInfo;
+        svsInfoStruct svsInfo;
         tieredInfoStruct tieredInfo;
     };
 } VecSimIndexDebugInfo;
