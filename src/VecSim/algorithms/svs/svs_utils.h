@@ -274,7 +274,7 @@ struct SVSGraphBuilder {
         auto prefetch_parameters =
             svs::index::vamana::extensions::estimate_prefetch_parameters(data);
         auto builder = svs::index::vamana::VamanaBuilder(
-            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters);
+            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters, logger);
 
         // Specific to the Vamana algorithm:
         // It builds in two rounds, one with alpha=1 and the second time with the user/config
