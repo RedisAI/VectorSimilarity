@@ -51,6 +51,50 @@ enum IndexTypeFlags {
     INDEX_TYPE_SVS_COMPRESSED = 1 << 7
 };
 
+// Smart pointer wrapper for VecSimIndex with configurable ownership
+// Supports:
+// 1. Ownership control via release_ownership()
+// 2. Sharing with thread pool's shared_ptr
+// 3. Safe transfer of ownership to tiered index
+class IndexPtr {
+private:
+    std::shared_ptr<VecSimIndex> ptr;
+    std::shared_ptr<bool> owns_ptr;
+
+public:
+    // Default constructor - creates empty pointer with ownership
+    IndexPtr() : ptr(nullptr), owns_ptr(std::make_shared<bool>(true)) {}
+
+    // Constructor - always starts with ownership
+    explicit IndexPtr(VecSimIndex *p) : owns_ptr(std::make_shared<bool>(true)) {
+        if (p) {
+            ptr = std::shared_ptr<VecSimIndex>(p, [owns_ptr = this->owns_ptr](VecSimIndex *p) {
+                if (*owns_ptr) {
+                    VecSimIndex_Free(p);
+                }
+            });
+        }
+    }
+
+    // Prevent copying to ensure clear ownership
+    IndexPtr(const IndexPtr &) = delete;
+    IndexPtr &operator=(const IndexPtr &) = delete;
+
+    // Allow moving
+    IndexPtr(IndexPtr &&) = default;
+    IndexPtr &operator=(IndexPtr &&) = default;
+
+    // Access methods
+    VecSimIndex *get() const { return ptr.get(); }
+    std::shared_ptr<VecSimIndex> get_shared() { return ptr; }
+
+    // Implicit conversion to raw pointer for ease of use
+    operator VecSimIndex *() const { return ptr.get(); }
+
+    // Ownership control
+    void release_ownership() { *owns_ptr = false; }
+};
+
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
 using bf16_index_t = IndexType<VecSimType_BFLOAT16, vecsim_types::bfloat16, float>;
@@ -59,9 +103,9 @@ using int8_index_t = IndexType<VecSimType_INT8, int8_t, float>;
 using uint8_index_t = IndexType<VecSimType_UINT8, uint8_t, float>;
 
 #define INDICES   BM_VecSimIndex<index_type_t>::indices
+#define GET_INDEX BM_VecSimIndex<index_type_t>::get_index
 #define QUERIES   BM_VecSimIndex<index_type_t>::queries
 #define N_QUERIES BM_VecSimGeneral::n_queries
 #define N_VECTORS BM_VecSimGeneral::n_vectors
 #define DIM       BM_VecSimGeneral::dim
 #define IS_MULTI  BM_VecSimGeneral::is_multi
-#define REF_COUNT BM_VecSimIndex<index_type_t>::ref_count

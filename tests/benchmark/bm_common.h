@@ -48,12 +48,12 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
     auto hnsw_results =
-        VecSimIndex_TopKQuery(INDICES.at(is_tiered ? INDEX_TIERED_HNSW : INDEX_HNSW + index_offset),
+        VecSimIndex_TopKQuery(GET_INDEX(is_tiered ? INDEX_TIERED_HNSW : INDEX_HNSW + index_offset),
                               QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(INDICES.at(INDEX_BF + index_offset),
+    auto bf_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset),
                                             QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
 
     BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
@@ -65,7 +65,7 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex index_type) {
-    auto index = INDICES.at(index_type);
+    auto index = GET_INDEX(index_type);
     index->fitMemory();
 
     for (auto _ : st) {
@@ -81,7 +81,7 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(INDICES.at(INDEX_BF + index_offset), QUERIES[iter % N_QUERIES].data(),
+        VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset), QUERIES[iter % N_QUERIES].data(),
                               k, nullptr, BY_SCORE);
         iter++;
     }
@@ -106,8 +106,8 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     size_t k = st.range(1);
     std::atomic_int correct = 0;
     std::atomic_int iter = 0;
-    auto *tiered_index =
-        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_TIERED_HNSW));
+    auto tiered_index =
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW));
     size_t total_iters = 50;
     VecSimQueryReply *all_results[total_iters];
 
@@ -116,7 +116,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         size_t cur_iter = search_job->iter;
-        auto hnsw_results = VecSimIndex_TopKQuery(INDICES.at(INDEX_TIERED_HNSW),
+        auto hnsw_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_TIERED_HNSW),
                                                   QUERIES[cur_iter % N_QUERIES].data(),
                                                   search_job->k, &query_params, BY_SCORE);
         search_job->all_results[cur_iter] = hnsw_results;
@@ -136,7 +136,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     // Measure recall
     for (iter = 0; iter < total_iters; iter++) {
         auto bf_results =
-            VecSimIndex_TopKQuery(INDICES.at(INDEX_BF + index_offset),
+            VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset),
                                   QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
 

@@ -28,31 +28,21 @@ public:
     // Offset to access updated index variants in indices array (e.g., INDEX_BF + 1 =
     // INDEX_BF_UPDATED)
     const static unsigned short updated_index_offset = 1;
-    // The constructor is called after we have already registered the tests residing in
-    // BM_VecSimCommon, (and not in this class) so `ref_count` is not zero at the first time
-    // BM_VecSimUpdatedIndex Ctor is called, and we can't rely on it to decide whether we should
-    // initialize the indices or not. This is why we use the `is_initialized` flag. Also, we keep
-    // the value of ref_count at the moment of initialization in first_updatedBM_ref_count to free
-    // the indices when ref_count is decreased to this value. Reminder: ref_count is updated in
-    // BM_VecSimIndex ctor (and dtor).
+
+    // Tracks initialization state for updated indices to ensure one-time initialization
+    // Independent from BM_VecSimGeneral base class initialization since updated indices have
+    // different setup
     static bool is_initialized;
 
-    static size_t first_updatedBM_ref_count;
     BM_VecSimUpdatedIndex() {
         if (!is_initialized) {
             // Initialize the updated indexes as well, if this is the first instance.
             Initialize();
             is_initialized = true;
-            first_updatedBM_ref_count = REF_COUNT;
         }
     }
 
-    ~BM_VecSimUpdatedIndex() {
-        if (REF_COUNT == first_updatedBM_ref_count) {
-            VecSimIndex_Free(INDICES[INDEX_BF + updated_index_offset]);
-            VecSimIndex_Free(INDICES[INDEX_HNSW + updated_index_offset]);
-        }
-    }
+    ~BM_VecSimUpdatedIndex() = default;
 
 private:
     static const char *updated_hnsw_index_file;
@@ -63,50 +53,46 @@ template <typename index_type_t>
 bool BM_VecSimUpdatedIndex<index_type_t>::is_initialized = false;
 
 template <typename index_type_t>
-size_t BM_VecSimUpdatedIndex<index_type_t>::first_updatedBM_ref_count = 0;
-
-template <typename index_type_t>
 void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
-
     VecSimType type = index_type_t::get_index_type();
 
     if (BM_VecSimGeneral::enabled_index_types & IndexTypeFlags::INDEX_TYPE_BF) {
         BFParams bf_params = {
             .type = type, .dim = DIM, .metric = VecSimMetric_Cosine, .multi = IS_MULTI};
-        // This index will be inserted after the basic indices at indices[VecSimAlfo_BF +
-        // update_offset]
-        INDICES.at(INDEX_BF + updated_index_offset) =
-            BM_VecSimIndex<index_type_t>::CreateNewIndex(bf_params);
+
+        INDICES[INDEX_BF + updated_index_offset] =
+            IndexPtr(BM_VecSimIndex<index_type_t>::CreateNewIndex(bf_params));
 
         // Initially, load all the vectors to the updated bf index (before we override it).
         for (size_t i = 0; i < N_VECTORS; ++i) {
             const char *blob = BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i);
-            size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(INDICES.at(INDEX_HNSW))
+            size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(GET_INDEX(INDEX_HNSW))
                                ->getExternalLabel(i);
-            VecSimIndex_AddVector(INDICES.at(INDEX_BF + updated_index_offset), blob, label);
+            VecSimIndex_AddVector(GET_INDEX(INDEX_BF + updated_index_offset), blob, label);
         }
     }
 
     if (BM_VecSimGeneral::enabled_index_types & IndexTypeFlags::INDEX_TYPE_HNSW) {
         // Generate index from file.
-        // This index will be inserted after the basic indices at indices[VecSimAlgo_HNSWLIB +
-        // update_offset]
-        INDICES.at(INDEX_HNSW + updated_index_offset) = (HNSWFactory::NewIndex(
+        // This index will be inserted after the basic indices at INDICES[INDEX_HNSW +
+        // updated_index_offset]
+        INDICES[INDEX_HNSW + updated_index_offset] = IndexPtr(HNSWFactory::NewIndex(
             BM_VecSimIndex<index_type_t>::AttachRootPath(updated_hnsw_index_file)));
 
-        if (!BM_VecSimIndex<index_type_t>::CastToHNSW(INDICES.at(INDEX_HNSW + updated_index_offset))
+        if (!BM_VecSimIndex<index_type_t>::CastToHNSW(GET_INDEX(INDEX_HNSW + updated_index_offset))
                  ->checkIntegrity()
                  .valid_state) {
             throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
+
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < N_VECTORS; ++i) {
             const char *blob =
                 BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i, updated_index_offset);
             size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(
-                               INDICES.at(INDEX_HNSW + updated_index_offset))
+                               GET_INDEX(INDEX_HNSW + updated_index_offset))
                                ->getExternalLabel(i);
-            VecSimIndex_AddVector(INDICES.at(INDEX_BF + updated_index_offset), blob, label);
+            VecSimIndex_AddVector(GET_INDEX(INDEX_BF + updated_index_offset), blob, label);
         }
     }
 }
