@@ -27,3 +27,5 @@ void BM_VecSimGeneral::MeasureRecall(VecSimQueryReply *hnsw_results, VecSimQuery
     }
     VecSimQueryReply_IteratorFree(hnsw_it);
 }
+
+tieredIndexMock *BM_VecSimGeneral::mock_thread_pool = nullptr;

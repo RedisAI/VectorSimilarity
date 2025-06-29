@@ -50,7 +50,7 @@ private:
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
-    auto index = INDICES[st.range(0)];
+    auto index = GET_INDEX(st.range(0));
     size_t index_size = N_VECTORS;
     size_t initial_label_count = index->indexLabelCount();
 
@@ -74,7 +74,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     }
     memory_delta = index->getAllocationSize() - memory_delta;
     // For tiered index, wait for all threads to finish indexing
-    BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+    BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
 
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
@@ -88,15 +88,14 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     for (size_t label = initial_label_count; label < new_label_count; label++) {
         // If index is tiered HNSW, remove directly from the underline HNSW.
         VecSimIndex_DeleteVector(
-            INDICES[st.range(0) == VecSimAlgo_TIERED ? VecSimAlgo_HNSWLIB : st.range(0)], label);
+            GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)), label);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
 
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
-
-    auto index = INDICES[st.range(0)];
+    auto index = GET_INDEX(st.range(0));
     size_t index_size = N_VECTORS;
     size_t initial_label_count = index->indexLabelCount();
 
@@ -119,14 +118,14 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
         added_vec_count += vec_per_label;
         label++;
         if (label == initial_label_count + BM_VecSimGeneral::block_size) {
-            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+            BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         }
     }
 
     size_t memory_delta = index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
-    st.counters["num_threads"] = BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
+    st.counters["num_threads"] = BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
 
     size_t index_size_after = VecSimIndex_IndexSize(index);
     assert(index_size_after == N_VECTORS + added_vec_count);
@@ -137,7 +136,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     size_t new_label_count = index->indexLabelCount();
     // Remove directly inplace from the underline HNSW index.
     for (size_t label_ = initial_label_count; label_ < new_label_count; label_++) {
-        VecSimIndex_DeleteVector(INDICES[VecSimAlgo_HNSWLIB], label_);
+        VecSimIndex_DeleteVector(GET_INDEX(INDEX_HNSW), label_);
     }
 
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
@@ -169,7 +168,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
     }
     memory_delta = index->getAllocationSize() - memory_before;
 
-    BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+    BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
     // Remove the rest of the vectors that hadn't been swapped yet for tiered index.
     if (VecSimIndex_BasicInfo(index).algo == VecSimAlgo_TIERED) {
         dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(index)->executeReadySwapJobs();
@@ -185,7 +184,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
             VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
         }
     }
-    BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+    BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
     size_t cur_index_size = VecSimIndex_IndexSize(index);
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
@@ -195,7 +194,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
     auto *tiered_index =
-        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW));
 
     tiered_index->fitMemory();
     double memory_before = tiered_index->getAllocationSize();
@@ -217,7 +216,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
         // Delete label
         VecSimIndex_DeleteVector(tiered_index, label_to_remove++);
         if (label_to_remove == BM_VecSimGeneral::block_size) {
-            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+            BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         }
     }
 
@@ -225,7 +224,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // of deleted vectors.
     double memory_delta = tiered_index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
-    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
     st.counters["num_zombies"] = tiered_index->idToSwapJob.size();
 
     // Remove the rest of the vectors that hadn't been swapped yet.
@@ -246,7 +245,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
                                   label_idx);
         }
     }
-    BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+    BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
     assert(VecSimIndex_IndexSize(tiered_index) == N_VECTORS);
 }
 
@@ -257,7 +256,7 @@ void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
     size_t total_res = 0;
 
     for (auto _ : st) {
-        auto res = VecSimIndex_RangeQuery(INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(),
+        auto res = VecSimIndex_RangeQuery(GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(),
                                           radius, nullptr, BY_ID);
         total_res += VecSimQueryReply_Len(res);
         iter++;
@@ -276,15 +275,14 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
 
     for (auto _ : st) {
-        auto hnsw_results =
-            VecSimIndex_RangeQuery(INDICES[VecSimAlgo_HNSWLIB], QUERIES[iter % N_QUERIES].data(),
-                                   radius, &query_params, BY_ID);
+        auto hnsw_results = VecSimIndex_RangeQuery(
+            GET_INDEX(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(hnsw_results);
 
         // Measure recall:
         auto bf_results = VecSimIndex_RangeQuery(
-            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
+            GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
         total_res_bf += VecSimQueryReply_Len(bf_results);
 
         VecSimQueryReply_Free(bf_results);
@@ -341,8 +339,8 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 #define DEFINE_DELETE_LABEL(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)     \
     BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
         DeleteLabel<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                             \
-            dynamic_cast<INDEX_NAME<DATA_TYPE, DIST_TYPE> *>(                                      \
-                BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
+            BM_VecSimIndex<INDEX_TYPE>::get_typed_index<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(         \
+                VecSimAlgo),                                                                       \
             st);                                                                                   \
     }
 #define REGISTER_DeleteLabel(BM_FUNC)                                                              \
