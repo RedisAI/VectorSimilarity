@@ -109,14 +109,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // dim, block_size, M, EF_C, n_vectors, is_multi, n_queries, hnsw_index_file and
     // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
     // index type benchmarks.
-    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
-        BFParams bf_params = {.type = type,
-                              .dim = dim,
-                              .metric = VecSimMetric_Cosine,
-                              .multi = is_multi,
-                              .blockSize = block_size};
-        indices[INDEX_BF] = IndexPtr(CreateNewIndex(bf_params));
-    }
+
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
         // Initialize and load HNSW index for DBPedia data set.
         indices[INDEX_HNSW] = IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
@@ -152,7 +145,16 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         }
     }
 
-    if (indices[INDEX_HNSW] && indices[INDEX_BF]) {
+    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
+        BFParams bf_params = {.type = type,
+                              .dim = dim,
+                              .metric = VecSimMetric_Cosine,
+                              .multi = is_multi,
+                              .blockSize = block_size};
+        indices[INDEX_BF] = IndexPtr(CreateNewIndex(bf_params));
+
+        // Currently, we rely on hnsw index to initialize BF index.
+        assert(enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW);
         // Add the same vectors to Flat index.
         for (size_t i = 0; i < n_vectors; ++i) {
             const char *blob = GetHNSWDataByInternalId(i);
