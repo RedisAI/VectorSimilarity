@@ -26,8 +26,7 @@ public:
     // index_offset: Offset added to base index types to access variants (0=original, 1=updated)
 
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                             std::atomic_int &correct, unsigned short index_offset = 0,
-                             bool is_tiered = false);
+                             std::atomic_int &correct, unsigned short index_offset = 0);
 
     // Search for the K closest vectors to the query in the index. K is defined in the
     // test registration (initialization file).
@@ -44,11 +43,11 @@ public:
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                                  size_t k, std::atomic_int &correct,
-                                                 unsigned short index_offset, bool is_tiered) {
+                                                 unsigned short index_offset) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
     auto hnsw_results =
-        VecSimIndex_TopKQuery(GET_INDEX(is_tiered ? INDEX_TIERED_HNSW : INDEX_HNSW + index_offset),
+        VecSimIndex_TopKQuery(GET_INDEX(INDEX_HNSW + index_offset),
                               QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
@@ -129,7 +128,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
                                            tiered_index, k, ef, iter++, all_results);
         tiered_index->submitSingleJob(search_job);
         if (iter == total_iters) {
-            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+            BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         }
     }
 
@@ -145,7 +144,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     }
 
     st.counters["Recall"] = (float)correct / (float)(k * iter);
-    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
 }
 
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \

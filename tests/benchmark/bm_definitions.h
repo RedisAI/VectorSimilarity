@@ -41,14 +41,14 @@ enum IndexTypeIndex {
 // stored in a 32-bit mask (uint32_t)
 // Note: Bit positions currently match IndexTypeIndex values but this is not required by the code
 enum IndexTypeFlags {
-    INDEX_TYPE_BF = 1 << 0,
-    INDEX_TYPE_BF_UPDATED = 1 << 1,
-    INDEX_TYPE_HNSW = 1 << 2,
-    INDEX_TYPE_HNSW_UPDATED = 1 << 3,
-    INDEX_TYPE_TIERED_HNSW = 1 << 4,
-    INDEX_TYPE_SVS = 1 << 5,
-    INDEX_TYPE_TIERED_SVS = 1 << 6,
-    INDEX_TYPE_SVS_COMPRESSED = 1 << 7
+    INDEX_MASK_BF = 1 << 0,
+    INDEX_MASK_BF_UPDATED = 1 << 1,
+    INDEX_MASK_HNSW = 1 << 2,
+    INDEX_MASK_HNSW_UPDATED = 1 << 3,
+    INDEX_MASK_TIERED_HNSW = 1 << 4,
+    INDEX_MASK_SVS = 1 << 5,
+    INDEX_MASK_TIERED_SVS = 1 << 6,
+    INDEX_MASK_SVS_COMPRESSED = 1 << 7
 };
 
 // Smart pointer wrapper for VecSimIndex with configurable ownership

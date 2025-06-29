@@ -45,14 +45,17 @@ protected:
     static bool is_multi;
     // Bitmask controlling which index types to include in benchmarks (uses IndexTypeFlags)
     static uint32_t enabled_index_types;
-    static tieredIndexMock mock_thread_pool;
+    static tieredIndexMock *mock_thread_pool;
 
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;
 
     BM_VecSimGeneral() = default;
-    virtual ~BM_VecSimGeneral() = default;
+    virtual ~BM_VecSimGeneral() {
+        if (mock_thread_pool)
+            delete mock_thread_pool;
+    };
 
     // Updates @correct according to the number of search results in @hnsw_results
     // that appear also in the flat algorithm results list.

@@ -109,7 +109,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // dim, block_size, M, EF_C, n_vectors, is_multi, n_queries, hnsw_index_file and
     // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
     // index type benchmarks.
-    if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_BF) {
+    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
         BFParams bf_params = {.type = type,
                               .dim = dim,
                               .metric = VecSimMetric_Cosine,
@@ -117,7 +117,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                               .blockSize = block_size};
         indices[INDEX_BF] = IndexPtr(CreateNewIndex(bf_params));
     }
-    if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_HNSW) {
+    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
         // Initialize and load HNSW index for DBPedia data set.
         indices[INDEX_HNSW] = IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
 
@@ -125,10 +125,11 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         size_t ef_r = 10;
         hnsw_index->setEf(ef_r);
         // Create tiered index from the loaded HNSW index.
-        if (enabled_index_types & IndexTypeFlags::INDEX_TYPE_TIERED_HNSW) {
-            auto &mock_thread_pool = BM_VecSimGeneral::mock_thread_pool;
+        if (enabled_index_types & IndexTypeFlags::INDEX_MASK_TIERED_HNSW) {
+            BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
+            auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
             TieredIndexParams tiered_params = {
-                .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+                .jobQueue = &mock_thread_pool.jobQ,
                 .jobQueueCtx = mock_thread_pool.ctx,
                 .submitCb = tieredIndexMock::submit_callback,
                 .flatBufferLimit = block_size,
