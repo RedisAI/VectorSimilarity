@@ -53,8 +53,10 @@ protected:
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() {
-        if (mock_thread_pool)
+        if (mock_thread_pool) {
             delete mock_thread_pool;
+            mock_thread_pool = nullptr;
+        }
     };
 
     // Updates @correct according to the number of search results in @hnsw_results
