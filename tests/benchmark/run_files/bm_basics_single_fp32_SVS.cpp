@@ -8,7 +8,7 @@
 // Uses default values for QuantBits=0, ResidualBits=0, IsLeanVec=false (no compression)
 // Uses DistanceIP for Cosine metric (as per SVS factory mapping)
 template <typename DataType, typename DistType>
-using SVSIndex_Single = SVSIndex<svs::distance::DistanceIP, DataType, 0, 0, false>;
+using SVSIndex_Single = SVSIndex<svs::distance::DistanceIP, DataType, false, 0, 0, false>;
 
 // Type alias to make TieredSVSIndex compatible with benchmark framework
 // TieredSVSIndex only takes DataType parameter, DistType is ignored (always float)

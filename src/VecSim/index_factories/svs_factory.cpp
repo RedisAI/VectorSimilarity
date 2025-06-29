@@ -54,82 +54,96 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 }
 
 #ifdef BUILD_TESTS
-// NewIndexFromFolderImpl() - template helper functions to create SVS index from folder path.
-template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
-          bool IsLeanVec>
-VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params, bool is_normalized) {
-    auto abstractInitParams = NewAbstractInitParams(params);
-    auto &svsParams = params->algoParams.svsParams;
-    auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
-        abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
-    IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
-        nullptr, preprocessors}; // calculator is not in use in svs.
-    bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
-    return new (abstractInitParams.allocator)
-        SVSIndex<MetricType, DataType, QuantBits, ResidualBits, IsLeanVec>(
-            folder_path, svsParams, abstractInitParams, components, forcePreprocessing);
-}
+// // NewIndexFromFolderImpl() - template helper functions to create SVS index from folder path.
+// template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+//           bool IsLeanVec>
+// VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params,
+//                                     bool is_normalized) {
+//     auto abstractInitParams = NewAbstractInitParams(params);
+//     auto &svsParams = params->algoParams.svsParams;
+//     auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
+//         abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
+//     IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
+//         nullptr, preprocessors}; // calculator is not in use in svs.
+//     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
+//     return new (abstractInitParams.allocator)
+//         SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>(
+//             folder_path, svsParams, abstractInitParams, components, forcePreprocessing);
+// }
 
-template <typename MetricType, typename DataType>
-VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params, bool is_normalized) {
-    // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
-    // elsewhere we got code coverage failure for the `supported==false` case
-    auto quantBits =
-        std::get<0>(svs_details::isSVSQuantBitsSupported(params->algoParams.svsParams.quantBits));
+// template <typename MetricType, typename DataType>
+// VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params,
+//                                     bool is_normalized) {
+//     // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
+//     // elsewhere we got code coverage failure for the `supported==false` case
+//     auto quantBits =
+//         std::get<0>(svs_details::isSVSQuantBitsSupported(params->algoParams.svsParams.quantBits));
 
-    switch (quantBits) {
-    case VecSimSvsQuant_NONE:
-        return NewIndexFromFolderImpl<MetricType, DataType, 0, 0, false>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_Scalar:
-        return NewIndexFromFolderImpl<MetricType, DataType, 1, 0, false>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_8:
-        return NewIndexFromFolderImpl<MetricType, DataType, 8, 0, false>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_4:
-        return NewIndexFromFolderImpl<MetricType, DataType, 4, 0, false>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_4x4:
-        return NewIndexFromFolderImpl<MetricType, DataType, 4, 4, false>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_4x8:
-        return NewIndexFromFolderImpl<MetricType, DataType, 4, 8, false>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_4x8_LeanVec:
-        return NewIndexFromFolderImpl<MetricType, DataType, 4, 8, true>(folder_path, params, is_normalized);
-    case VecSimSvsQuant_8x8_LeanVec:
-        return NewIndexFromFolderImpl<MetricType, DataType, 8, 8, true>(folder_path, params, is_normalized);
-    default:
-        // If we got here something is wrong.
-        assert(false && "Unsupported quantization mode");
-        return NULL;
-    }
-}
+//     switch (quantBits) {
+//     case VecSimSvsQuant_NONE:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 0, 0, false>(folder_path, params,
+//                                                                          is_normalized);
+//     case VecSimSvsQuant_Scalar:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 1, 0, false>(folder_path, params,
+//                                                                          is_normalized);
+//     case VecSimSvsQuant_8:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 8, 0, false>(folder_path, params,
+//                                                                          is_normalized);
+//     case VecSimSvsQuant_4:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 4, 0, false>(folder_path, params,
+//                                                                          is_normalized);
+//     case VecSimSvsQuant_4x4:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 4, 4, false>(folder_path, params,
+//                                                                          is_normalized);
+//     case VecSimSvsQuant_4x8:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 4, 8, false>(folder_path, params,
+//                                                                          is_normalized);
+//     case VecSimSvsQuant_4x8_LeanVec:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 4, 8, true>(folder_path, params,
+//                                                                         is_normalized);
+//     case VecSimSvsQuant_8x8_LeanVec:
+//         return NewIndexFromFolderImpl<MetricType, DataType, 8, 8, true>(folder_path, params,
+//                                                                         is_normalized);
+//     default:
+//         // If we got here something is wrong.
+//         assert(false && "Unsupported quantization mode");
+//         return NULL;
+//     }
+// }
 
-template <typename MetricType>
-VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params, bool is_normalized) {
-    assert(params && params->algo == VecSimAlgo_SVS);
-    switch (params->algoParams.svsParams.type) {
-    case VecSimType_FLOAT32:
-        return NewIndexFromFolderImpl<MetricType, float>(folder_path, params, is_normalized);
-    case VecSimType_FLOAT16:
-        return NewIndexFromFolderImpl<MetricType, svs::Float16>(folder_path, params, is_normalized);
-    default:
-        // If we got here something is wrong.
-        assert(false && "Unsupported data type");
-        return NULL;
-    }
-}
+// template <typename MetricType>
+// VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params,
+//                                     bool is_normalized) {
+//     assert(params && params->algo == VecSimAlgo_SVS);
+//     switch (params->algoParams.svsParams.type) {
+//     case VecSimType_FLOAT32:
+//         return NewIndexFromFolderImpl<MetricType, float>(folder_path, params, is_normalized);
+//     case VecSimType_FLOAT16:
+//         return NewIndexFromFolderImpl<MetricType, svs::Float16>(folder_path, params, is_normalized);
+//     default:
+//         // If we got here something is wrong.
+//         assert(false && "Unsupported data type");
+//         return NULL;
+//     }
+// }
 
-VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params, bool is_normalized) {
-    assert(params && params->algo == VecSimAlgo_SVS);
-    switch (params->algoParams.svsParams.metric) {
-    case VecSimMetric_L2:
-        return NewIndexFromFolderImpl<svs::distance::DistanceL2>(folder_path, params, is_normalized);
-    case VecSimMetric_IP:
-    case VecSimMetric_Cosine:
-        return NewIndexFromFolderImpl<svs::distance::DistanceIP>(folder_path, params, is_normalized);
-    default:
-        // If we got here something is wrong.
-        assert(false && "Unknown distance metric type");
-        return NULL;
-    }
-}
+// VecSimIndex *NewIndexFromFolderImpl(const std::string &folder_path, const VecSimParams *params,
+//                                     bool is_normalized) {
+//     assert(params && params->algo == VecSimAlgo_SVS);
+//     switch (params->algoParams.svsParams.metric) {
+//     case VecSimMetric_L2:
+//         return NewIndexFromFolderImpl<svs::distance::DistanceL2>(folder_path, params,
+//                                                                  is_normalized);
+//     case VecSimMetric_IP:
+//     case VecSimMetric_Cosine:
+//         return NewIndexFromFolderImpl<svs::distance::DistanceIP>(folder_path, params,
+//                                                                  is_normalized);
+//     default:
+//         // If we got here something is wrong.
+//         assert(false && "Unknown distance metric type");
+//         return NULL;
+//     }
+// }
 #endif
 
 template <typename MetricType, typename DataType>
@@ -275,15 +289,15 @@ size_t EstimateComponentsMemorySVS(VecSimType type, VecSimMetric metric, bool is
 }
 } // namespace
 
-VecSimIndex *NewIndex(const std::string &index_folder, const VecSimParams *params,
-                      bool is_normalized) {
-#ifdef BUILD_TESTS
-    return NewIndexFromFolderImpl(index_folder, params, is_normalized);
-#else
-    // Loading from folder is only available in test builds
-    return nullptr;
-#endif
-}
+// VecSimIndex *NewIndex(const std::string &index_folder, const VecSimParams *params,
+//                       bool is_normalized) {
+// #ifdef BUILD_TESTS
+//     return NewIndexFromFolderImpl(index_folder, params, is_normalized);
+// #else
+//     // Loading from folder is only available in test builds
+//     return nullptr;
+// #endif
+// }
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NewIndexImpl(params, is_normalized);

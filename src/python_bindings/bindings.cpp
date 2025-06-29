@@ -200,6 +200,8 @@ public:
 
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
 
+    size_t indexLabelCount() { return this->index->indexLabelCount(); }
+
     VecSimType indexType() { return index->basicInfo().type; }
 
     size_t indexMemory() { return this->index->getAllocationSize(); }
@@ -768,6 +770,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_query", &PyVecSimIndex::range, py::arg("vector"), py::arg("radius"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
+        .def("index_label_count", &PyVecSimIndex::indexLabelCount)
         .def("index_type", &PyVecSimIndex::indexType)
         .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),

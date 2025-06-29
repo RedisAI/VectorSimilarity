@@ -20,7 +20,8 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
 
 #ifdef BUILD_TESTS
 // Factory function to create an SVS index by loading from a folder path
-VecSimIndex *NewIndex(const std::string &index_folder, const VecSimParams *params, bool is_normalized = false);
+VecSimIndex *NewIndex(const std::string &index_folder, const VecSimParams *params,
+                      bool is_normalized = false);
 #endif
 
 size_t EstimateInitialSize(const SVSParams *params, bool is_normalized = false);
