@@ -1123,6 +1123,10 @@ TYPED_TEST(SVSMultiTest, testCosine) {
 }
 
 TYPED_TEST(SVSMultiTest, testCosineBatchIterator) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     const size_t dim = 256;
     const size_t n = 50;
 

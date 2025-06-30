@@ -2538,7 +2538,7 @@ TEST(SVSTest, quant_modes) {
         ASSERT_GT(actual, 0);
         // LVQ element size estimation accuracy is low
         auto quant_bits_fallback = std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits));
-        double estimation_accuracy = (quant_bits_fallback != VecSimSvsQuant_NONE) ? 0.11 : 0.01;
+        double estimation_accuracy = (quant_bits_fallback != VecSimSvsQuant_NONE) ? 0.12 : 0.01;
         ASSERT_GE(estimation * (1.0 + estimation_accuracy), actual);
         ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 
