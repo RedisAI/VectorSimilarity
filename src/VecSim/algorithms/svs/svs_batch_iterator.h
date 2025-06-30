@@ -78,7 +78,8 @@ public:
           impl_{std::make_unique<impl_type>(index->make_batch_iterator(
               std::span{static_cast<const DataType *>(query_vector), dim}))},
           curr_it{impl_->begin()} {
-        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams, is_two_level_lvq);
+        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams,
+                                                is_two_level_lvq);
         batch_size = queryParams && queryParams->batchSize
                          ? queryParams->batchSize
                          : sp.buffer_config_.get_search_window_size();

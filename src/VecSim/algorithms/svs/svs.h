@@ -286,15 +286,15 @@ protected:
         }
     }
 
-    bool isTwoLevelLVQ(const VecSimSvsQuantBits& qbits) {
+    bool isTwoLevelLVQ(const VecSimSvsQuantBits &qbits) {
         switch (qbits) {
-            case VecSimSvsQuant_4x4:
-            case VecSimSvsQuant_4x8:
-            case VecSimSvsQuant_4x8_LeanVec:
-            case VecSimSvsQuant_8x8_LeanVec:
-              return true;
-            default:
-              return false;
+        case VecSimSvsQuant_4x4:
+        case VecSimSvsQuant_4x8:
+        case VecSimSvsQuant_4x8_LeanVec:
+        case VecSimSvsQuant_8x8_LeanVec:
+            return true;
+        default:
+            return false;
         }
     }
 
@@ -305,8 +305,10 @@ public:
           changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
           search_window_size{svs_details::getOrDefault(params.search_window_size,
                                                        SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE)},
-          search_buffer_capacity{svs_details::getOrDefault(params.search_buffer_capacity, search_window_size)},
-          leanvec_dim{svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
+          search_buffer_capacity{
+              svs_details::getOrDefault(params.search_buffer_capacity, search_window_size)},
+          leanvec_dim{
+              svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
           threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
@@ -441,7 +443,8 @@ public:
         auto query = svs::data::ConstSimpleDataView<DataType>{
             static_cast<const DataType *>(processed_query), 1, this->dim};
         auto result = svs::QueryResult<size_t>{query.size(), k};
-        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams, is_two_level_lvq);
+        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
+                                                is_two_level_lvq);
 
         auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
@@ -486,7 +489,8 @@ public:
                                          this->dim};
 
         // Base search parameters for the SVS iterator schedule.
-        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams, is_two_level_lvq);
+        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
+                                                is_two_level_lvq);
         // SVS BatchIterator handles the search in batches
         // The batch size is set to the index search window size by default
         const size_t batch_size = sp.buffer_config_.get_search_window_size();

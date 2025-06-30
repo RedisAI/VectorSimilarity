@@ -117,12 +117,13 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 // QuantizedVectorSize() is the chain of template functions to estimate vector DataSize.
 template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec>
 constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0, size_t leanvec_dim = 0) {
-    return SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>::element_size(dims,
-                                                                                        alignment, leanvec_dim);
+    return SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>::element_size(
+        dims, alignment, leanvec_dim);
 }
 
 template <typename DataType>
-size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0, size_t leanvec_dim = 0) {
+size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0,
+                           size_t leanvec_dim = 0) {
     // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
     // elsewhere we got code coverage failure for the `supported==false` case
     auto quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits));
@@ -205,7 +206,8 @@ size_t EstimateElementSize(const SVSParams *params) {
     // Assuming that the graph_max_degree can be unset in params.
     const auto graph_max_degree = svs_details::makeVamanaBuildParameters(*params).graph_max_degree;
     const auto graph_node_size = SVSGraphBuilder<graph_idx_type>::element_size(graph_max_degree);
-    const auto vector_size = QuantizedVectorSize(params->type, params->quantBits, params->dim, 0, params->leanvec_dim);
+    const auto vector_size =
+        QuantizedVectorSize(params->type, params->quantBits, params->dim, 0, params->leanvec_dim);
 
     return vector_size + graph_node_size;
 }

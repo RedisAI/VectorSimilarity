@@ -129,18 +129,16 @@ joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
     size_t sbc = sp.buffer_config_.get_total_capacity();
     if (rt_params.windowSize > 0) {
         sws = rt_params.windowSize;
-        if(rt_params.bufferCapacity > 0) {
+        if (rt_params.bufferCapacity > 0) {
             sbc = rt_params.bufferCapacity;
-        }
-        else {
-          if(!is_two_level_lvq) {
-              // set windowSize as default
-              sbc = rt_params.windowSize;
-          }
-          else {
-              // set windowSize * 1.5 as default for Two-level LVQ
-              sbc = static_cast<size_t>(rt_params.windowSize * 1.5);
-          }
+        } else {
+            if (!is_two_level_lvq) {
+                // set windowSize as default
+                sbc = rt_params.windowSize;
+            } else {
+                // set windowSize * 1.5 as default for Two-level LVQ
+                sbc = static_cast<size_t>(rt_params.windowSize * 1.5);
+            }
         }
     }
     sp.buffer_config({sws, sbc});
@@ -220,7 +218,8 @@ struct SVSStorageTraits {
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator, size_t /* leanvec_dim */) {
+                                             std::shared_ptr<VecSimAllocator> allocator,
+                                             size_t /* leanvec_dim */) {
         const auto dim = data.dimensions();
         const auto size = data.size();
         // SVS storage element size and block size can be differ than VecSim
@@ -240,7 +239,8 @@ struct SVSStorageTraits {
     }
 
     // SVS storage element size can be differ than VecSim DataSize
-    static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0, size_t /*leanvec_dim*/ = 0) {
+    static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0,
+                                         size_t /*leanvec_dim*/ = 0) {
         return dims * sizeof(DataType);
     }
 
