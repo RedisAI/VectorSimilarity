@@ -568,40 +568,26 @@ private:
         // oldId is the index of the label in flat index before the swap.
         // newId is the index of the label in flat index after the swap.
         for (const auto &p : swaps) {
-            auto label = std::get<0>(p);
             auto oldId = std::get<1>(p);
             auto newId = std::get<2>(p);
 
-            // If oldId is out of bounds - skip,
-            // but if newId is in - do no delete on newId.
-            if (oldId >= labels.size()) {
+            if (oldId == newId || oldId >= labels.size()) {
+                // If oldId == newId, it means that the vector was not moved in the Flat index,
+                // but was removed or updated in-place.
+                // If oldId is out of bounds - new vector was added and swapped meanwhile.
+                // In both cases, we should not touch flat index at the new position.
                 if (newId < labels.size()) {
                     labels[newId] = SKIP_LABEL;
                 }
-                continue; // Next record.
+                continue; // Next swap record.
             }
 
-            // If label is SKIP_LABEL, it means that the vector was not moved but updated
-            // in-place. We do not need to remove it from labels, just skip it in
-            // deleteVector().
-            if (label == SKIP_LABEL) {
-                labels[oldId] = SKIP_LABEL;
-                continue; // Next record.
-            }
-
-            // If recorded label does not match the label in labels,
-            // it means that another vector was moved to the old position - do not delete it.
-            if (label != labels[oldId]) {
-                labels[oldId] = SKIP_LABEL;
-                continue;
-            }
-
-            // remove the old label from labels at position oldId
-            labels.erase(labels.begin() + oldId);
-            if (newId != oldId) { // swap mode
-                // Update the label at newId position
-                labels[newId] = label;
-            }
+            // Real swap case.
+            // If oldId != newId and oldId is in bounds, it means that the tracked vector was moved
+            // So, move the label to new position and skip the old position from deletions.
+            // NOTE: labels[oldId] can be SKIP_LABEL, but we still need to move it to newId.
+            labels[newId] = labels[oldId];
+            labels[oldId] = SKIP_LABEL;
         }
     }
 
@@ -647,11 +633,12 @@ private:
             // it increases the chance of avoiding swaps in the frontend index and performance
             // improvement
             int deleted = 0;
-            for (idType i = labels_to_move.size(); i > 0; --i) {
-                auto label = labels_to_move[i - 1];
+            idType id = labels_to_move.size();
+            while (id-- > 0) {
+                auto label = labels_to_move[id];
                 // Delete the vector from the frontend index if not in-place updated.
                 if (label != SKIP_LABEL) {
-                    deleted += this->frontendIndex->deleteVectorById(label, i - 1);
+                    deleted += this->frontendIndex->deleteVectorById(label, id);
                 }
             }
             assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
