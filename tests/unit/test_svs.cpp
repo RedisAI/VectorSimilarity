@@ -2627,7 +2627,7 @@ TEST(SVSTest, save_load) {
         svs_index = dynamic_cast<SVSIndexBase *>(index);
         ASSERT_NE(svs_index, nullptr);
         svs_index->loadIndex(index_path.string());
-        fs::remove_all(index_path); // Cleanup the saved index directory
+        // fs::remove_all(index_path); // Cleanup the saved index directory
 
         // Verify the index was loaded correctly
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);

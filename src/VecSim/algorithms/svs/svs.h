@@ -586,20 +586,20 @@ public:
 
         if constexpr (isMulti) {
             auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
-                folder_path + "/config",
-                SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                folder_path + "/config/",
+                SVS_LAZY(graph_builder_t::load(folder_path + "/graph/", this->blockSize,
                                                this->buildParams, this->getAllocator())),
-                SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                SVS_LAZY(storage_traits_t::load(folder_path + "/data/", this->blockSize, this->dim,
                                                 this->getAllocator())),
                 distance_f(), std::move(threadpool_handle),
                 svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
             impl_ = std::make_unique<impl_type>(std::move(loaded));
         } else {
             auto loaded = svs::index::vamana::auto_dynamic_assemble(
-                folder_path + "/config",
-                SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                folder_path + "/config/",
+                SVS_LAZY(graph_builder_t::load(folder_path + "/graph/", this->blockSize,
                                                this->buildParams, this->getAllocator())),
-                SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                SVS_LAZY(storage_traits_t::load(folder_path + "/data/", this->blockSize, this->dim,
                                                 this->getAllocator())),
                 distance_f(), std::move(threadpool_handle), false, logger_);
             impl_ = std::make_unique<impl_type>(std::move(loaded));
@@ -621,3 +621,11 @@ public:
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 };
+
+template <typename MetricType, typename DataType, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+using SVSIndex_Single = SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>;
+
+template <typename MetricType, typename DataType, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+using SVSIndex_Multi = SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>;

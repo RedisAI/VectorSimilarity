@@ -48,6 +48,7 @@ protected:
 
     static size_t n_queries;
     static const char *hnsw_index_file;
+    static const char *svs_index_folder;
     static const char *test_queries_file;
 
     BM_VecSimGeneral() = default;

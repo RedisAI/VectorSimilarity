@@ -8,7 +8,7 @@
 // Uses default values for QuantBits=0, ResidualBits=0, IsLeanVec=false (no compression)
 // Uses DistanceIP for Cosine metric (as per SVS factory mapping)
 template <typename DataType, typename DistType>
-using SVSIndex_Single = SVSIndex<svs::distance::DistanceIP, DataType, false, 0, 0, false>;
+using SVSIndex_Single_BM = SVSIndex_Single<DistType, DataType, 0, 0, false>;
 
 // Type alias to make TieredSVSIndex compatible with benchmark framework
 // TieredSVSIndex only takes DataType parameter, DistType is ignored (always float)
@@ -34,6 +34,8 @@ tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
+const char *BM_VecSimGeneral::svs_index_folder =
+    "tests/benchmark/data/dbpedia_svs/";
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-test_vectors.raw";
 
@@ -42,7 +44,7 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Async, SVS, Single)
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, SVS, Single)
 
-DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, SVS), fp32_index_t, SVSIndex_Single, float, float,
+DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, SVS), fp32_index_t, SVSIndex_Single_BM, float, float,
                         INDEX_SVS)
 DEFINE_DELETE_LABEL_SVS(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredSVSIndex_Single,
                         float, float, INDEX_TIERED_SVS)

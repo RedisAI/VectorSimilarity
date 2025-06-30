@@ -154,59 +154,59 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                 const char *blob = GetHNSWDataByInternalId(i);
                 // Fot multi value indices, the internal id is not necessarily equal the label.
                 size_t label = CastToHNSW(INDICES.at(INDEX_HNSW))->getExternalLabel(i);
-                VecSimIndex_AddVector(INDICES.at(INDEX_BF), blob, label);
+                // VecSimIndex_AddVector(INDICES.at(INDEX_BF), blob, label);
             }
         }
     }
 
-    // if (IndexTypeFlags::INDEX_TYPE_SVS & enabled_index_types) {
-    //     // Initialize and load HNSW index for DBPedia data set.
-    //     SVSParams svs_params = {
-    //         .type = type,
-    //         .dim = dim,
-    //         .metric = VecSimMetric_Cosine,
-    //         /* SVS-Vamana specifics */
-    //         .quantBits = VecSimSvsQuant_NONE,
-    //         .graph_max_degree = CastToHNSW(INDICES.at(INDEX_HNSW))->getM(),
-    //         .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
-    //     };
-    //     VecSimParams svs_index_params = CreateParams(svs_params);
+    if (IndexTypeFlags::INDEX_TYPE_SVS & enabled_index_types) {
+        // Initialize and load HNSW index for DBPedia data set.
+        SVSParams svs_params = {
+            .type = type,
+            .dim = dim,
+            .metric = VecSimMetric_Cosine,
+            /* SVS-Vamana specifics */
+            .quantBits = VecSimSvsQuant_NONE,
+            .graph_max_degree = CastToHNSW(INDICES.at(INDEX_HNSW))->getM(),
+            .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
+        };
+        VecSimParams svs_index_params = CreateParams(svs_params);
 
-    //     // TODO - read svs params from file
-    //     // TODO - Create SVS new index that recives path to folders and svs params
+        // TODO - read svs params from file
+        // TODO - Create SVS new index that recives path to folders and svs params
 
-    //     INDICES.at(INDEX_SVS) = SVSFactory::NewIndex(std::string("svs_folder"), &svs_index_params);
+        INDICES.at(INDEX_SVS) = SVSFactory::NewIndex(std::string("tests/benchmark/data/dbpedia_svs/"), &svs_index_params);
 
-    //     auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
-    //     for (size_t i = 0; i < N_VECTORS; ++i) {
-    //         const char *blob = hnsw_index->getDataByInternalId(i);
-    //         VecSimIndex_AddVector(INDICES.at(INDEX_SVS), blob, i);
-    //     }
+        // auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
+        // for (size_t i = 0; i < N_VECTORS; ++i) {
+        //     const char *blob = hnsw_index->getDataByInternalId(i);
+        //     VecSimIndex_AddVector(INDICES.at(INDEX_SVS), blob, i);
+        // }
 
-    //     if (IndexTypeFlags::INDEX_TYPE_TIERED_SVS & enabled_index_types) {
-    //         VecSimParams primary_params = {.algo = VecSimAlgo_SVS,
-    //                                        .algoParams = {.svsParams = svs_params}};
+        // if (IndexTypeFlags::INDEX_TYPE_TIERED_SVS & enabled_index_types) {
+        //     VecSimParams primary_params = {.algo = VecSimAlgo_SVS,
+        //                                    .algoParams = {.svsParams = svs_params}};
 
-    //         // Create tiered index parameters with proper SVS primary index params
-    //         TieredIndexParams tiered_svs_params = {
-    //             .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
-    //             .jobQueueCtx = mock_thread_pool.ctx,
-    //             .submitCb = tieredIndexMock::submit_callback,
-    //             .flatBufferLimit = block_size,
-    //             .primaryIndexParams = &primary_params,
-    //             .specificParams = {.tieredSVSParams = {
-    //                                    .trainingTriggerThreshold = 0,
-    //                                    .updateTriggerThreshold = 0,
-    //                                    .updateJobWaitTime = 0,
-    //                                }}};
+        //     // Create tiered index parameters with proper SVS primary index params
+        //     TieredIndexParams tiered_svs_params = {
+        //         .jobQueue = &BM_VecSimGeneral::mock_thread_pool.jobQ,
+        //         .jobQueueCtx = mock_thread_pool.ctx,
+        //         .submitCb = tieredIndexMock::submit_callback,
+        //         .flatBufferLimit = block_size,
+        //         .primaryIndexParams = &primary_params,
+        //         .specificParams = {.tieredSVSParams = {
+        //                                .trainingTriggerThreshold = 0,
+        //                                .updateTriggerThreshold = 0,
+        //                                .updateJobWaitTime = 0,
+        //                            }}};
 
-    //         auto *tiered_svs_index = TieredFactory::TieredSVSFactory::NewIndex(
-    //             &tiered_svs_params, INDICES.at(INDEX_SVS));
+        //     auto *tiered_svs_index = TieredFactory::TieredSVSFactory::NewIndex(
+        //         &tiered_svs_params, INDICES.at(INDEX_SVS));
 
-    //         mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
-    //         INDICES.at(INDEX_TIERED_SVS) = tiered_svs_index;
-    //     }
-    // }
+        //     mock_thread_pool.ctx->index_strong_ref.reset(tiered_svs_index);
+        //     INDICES.at(INDEX_TIERED_SVS) = tiered_svs_index;
+        // }
+    }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);
