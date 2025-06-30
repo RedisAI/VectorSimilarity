@@ -52,7 +52,7 @@ if(USE_SVS)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250629-clang.tar.gz" CACHE STRING "SVS URL")
     else()
-        set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250629.tar.gz" CACHE STRING "SVS URL")
+        set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250630.tar.gz" CACHE STRING "SVS URL")
     endif()
 
     if(SVS_SHARED_LIB)
