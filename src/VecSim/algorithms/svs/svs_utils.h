@@ -127,16 +127,21 @@ joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
     auto &rt_params = queryParams->svsRuntimeParams;
     size_t sws = sp.buffer_config_.get_search_window_size();
     size_t sbc = sp.buffer_config_.get_total_capacity();
+
+    // buffer capacity is changed only if window size is changed
     if (rt_params.windowSize > 0) {
         sws = rt_params.windowSize;
         if (rt_params.bufferCapacity > 0) {
+            // case 1: change both window size and buffer capacity
             sbc = rt_params.bufferCapacity;
         } else {
+            // case 2: change only window size
+            // In this case, set buffer capacity based on window size
             if (!is_two_level_lvq) {
-                // set windowSize as default
+                // set buffer capacity to windowSize
                 sbc = rt_params.windowSize;
             } else {
-                // set windowSize * 1.5 as default for Two-level LVQ
+                // set buffer capacity to windowSize * 1.5 for Two-level LVQ
                 sbc = static_cast<size_t>(rt_params.windowSize * 1.5);
             }
         }

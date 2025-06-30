@@ -154,9 +154,10 @@ def test_batch_iterator(test_logger):
     num_elements = 10000
     num_queries = 10
     windowSize = 128
+    bufferCapacity = 128
 
     index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2,
-                             window_size=windowSize, search_window_size=windowSize)
+                             window_size=windowSize, search_window_size=windowSize, search_buffer_capacity=bufferCapacity)
 
     # Add 100k random vectors to the index
     rng = np.random.default_rng(seed=47)
@@ -187,12 +188,14 @@ def test_batch_iterator(test_logger):
     # Verify that runtime args are sent properly to the batch iterator.
     query_params = VecSimQueryParams()
     query_params.svsRuntimeParams.windowSize = 5
+    query_params.svsRuntimeParams.bufferCapacity = 10
     batch_iterator_new = index.create_batch_iterator(query_data, query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that accuracy is worse with the new lower window size.
     assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
 
     query_params.svsRuntimeParams.windowSize = windowSize  # Restore previous window size.
+    query_params.svsRuntimeParams.bufferCapacity = bufferCapacity # Restore previous buffer capacity.
     batch_iterator_new = index.create_batch_iterator(query_data, query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that results are now the same.

@@ -1153,18 +1153,17 @@ TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
 
     for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
 
-        SVSParams params = {
-            .dim = dim,
-            .metric = VecSimMetric_IP,
-            .blockSize = blocksize,
-            /* SVS-Vamana specifics */
-            .alpha = 0.9,
-            .graph_max_degree = 64,
-            .construction_window_size = 20,
-            .max_candidate_pool_size = 1024,
-            .prune_to = 60,
-            .use_search_history = VecSimOption_ENABLE,
-        };
+        SVSParams params = {.dim = dim,
+                            .metric = VecSimMetric_IP,
+                            .blockSize = blocksize,
+                            /* SVS-Vamana specifics */
+                            .alpha = 0.9,
+                            .graph_max_degree = 64,
+                            .construction_window_size = 20,
+                            .max_candidate_pool_size = 1024,
+                            .prune_to = 60,
+                            .use_search_history = VecSimOption_ENABLE,
+                            .leanvec_dim = dim / 4};
 
         VecSimIndex *index = this->CreateNewIndex(params);
         ASSERT_INDEX(index);
@@ -1212,18 +1211,17 @@ TYPED_TEST(SVSTest, svs_vector_search_test_l2) {
 
     for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
 
-        SVSParams params = {
-            .dim = dim,
-            .metric = VecSimMetric_L2,
-            .blockSize = blocksize,
-            /* SVS-Vamana specifics */
-            .alpha = 1.2,
-            .graph_max_degree = 64,
-            .construction_window_size = 20,
-            .max_candidate_pool_size = 1024,
-            .prune_to = 60,
-            .use_search_history = VecSimOption_ENABLE,
-        };
+        SVSParams params = {.dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .blockSize = blocksize,
+                            /* SVS-Vamana specifics */
+                            .alpha = 1.2,
+                            .graph_max_degree = 64,
+                            .construction_window_size = 20,
+                            .max_candidate_pool_size = 1024,
+                            .prune_to = 60,
+                            .use_search_history = VecSimOption_ENABLE,
+                            .leanvec_dim = dim / 4};
 
         VecSimIndex *index = this->CreateNewIndex(params);
         ASSERT_INDEX(index);
@@ -2113,6 +2111,52 @@ TYPED_TEST(SVSTest, rangeQuery) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(SVSTest, joinSearchParams) {
+
+    auto qbits = TypeParam::get_quant_bits();
+    bool is_two_level_lvq = [=]() {
+        switch (qbits) {
+        case VecSimSvsQuant_4x4:
+        case VecSimSvsQuant_4x8:
+        case VecSimSvsQuant_4x8_LeanVec:
+        case VecSimSvsQuant_8x8_LeanVec:
+            return true;
+        default:
+            return false;
+        }
+    }();
+
+    // only change window size = 100
+    // sp should have window size = 100, buffer capacity = 100 or
+    // 150 if Two-level LVQ is enabled
+    SVSRuntimeParams svsRuntimeParams = {.windowSize = 100};
+    auto query_params = CreateQueryParams(svsRuntimeParams);
+    auto sp = svs_details::joinSearchParams({}, &query_params, is_two_level_lvq);
+    ASSERT_EQ(sp.buffer_config_.get_search_window_size(), svsRuntimeParams.windowSize);
+    ASSERT_EQ(sp.buffer_config_.get_total_capacity(),
+              (is_two_level_lvq) ? static_cast<size_t>(1.5 * svsRuntimeParams.windowSize)
+                                 : svsRuntimeParams.windowSize);
+
+    // change both window size and buffer capacity
+    // sp should change based on runtime parameters
+    svsRuntimeParams.windowSize = 200;
+    svsRuntimeParams.bufferCapacity = 300;
+    query_params = CreateQueryParams(svsRuntimeParams);
+    sp = svs_details::joinSearchParams({}, &query_params, is_two_level_lvq);
+    ASSERT_EQ(sp.buffer_config_.get_search_window_size(), svsRuntimeParams.windowSize);
+    ASSERT_EQ(sp.buffer_config_.get_total_capacity(), svsRuntimeParams.bufferCapacity);
+
+    // only change buffer capacity = 100
+    // buffer capacity is changed only if window size is changed
+    // sp2 should be the same as previous sp
+    svsRuntimeParams.windowSize = 0;
+    svsRuntimeParams.bufferCapacity = 100;
+    query_params = CreateQueryParams(svsRuntimeParams);
+    auto sp2 = svs_details::joinSearchParams(std::move(sp), &query_params, is_two_level_lvq);
+    ASSERT_EQ(sp2.buffer_config_.get_search_window_size(), 200);
+    ASSERT_EQ(sp2.buffer_config_.get_total_capacity(), 300);
+}
+
 TYPED_TEST(SVSTest, rangeQueryCosine) {
     // Scalar quantization accuracy is insufficient for this test.
     if (this->isFallbackToSQ()) {
@@ -2302,6 +2346,100 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 50);
     ASSERT_EQ(qparams.svsRuntimeParams.windowSize, 100);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
+    SVSParams params = {.dim = 4, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    VecSimQueryParams qparams, zero;
+    bzero(&zero, sizeof(VecSimQueryParams));
+
+    std::vector<VecSimRawParam> rparams;
+
+    auto mkRawParams = [](const std::string &name, const std::string &val) {
+        return VecSimRawParam{name.c_str(), name.length(), val.c_str(), val.length()};
+    };
+
+    // Test with empty runtime params.
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
+            VecSim_OK);
+    }
+    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
+
+    std::string param_name = "bc_search";
+    std::string param_val = "100";
+    rparams.push_back(mkRawParams(param_name, param_val));
+
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    ASSERT_EQ(qparams.svsRuntimeParams.bufferCapacity, 100);
+
+    param_name = "wrong_name";
+    param_val = "100";
+    rparams[0] = mkRawParams(param_name, param_val);
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
+        VecSimParamResolverErr_UnknownParam);
+
+    // Testing for legal prefix but only partial parameter name.
+    param_name = "bc_sea";
+    param_val = "100";
+    rparams[0] = mkRawParams(param_name, param_val);
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
+        VecSimParamResolverErr_UnknownParam);
+
+    param_name = "bc_search";
+    param_val = "wrong_val";
+    rparams[0] = mkRawParams(param_name, param_val);
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    param_name = "bc_search";
+    param_val = "-30";
+    rparams[0] = mkRawParams(param_name, param_val);
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    param_name = "bc_search";
+    param_val = "1.618";
+    rparams[0] = mkRawParams(param_name, param_val);
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    param_name = "bc_search";
+    param_val = "100";
+    rparams[0] = mkRawParams(param_name, param_val);
+    rparams.push_back(mkRawParams(param_name, param_val));
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_AlreadySet);
+
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "BATCHES",
+                                  .valLen = strlen("BATCHES")};
+    rparams.push_back((VecSimRawParam){.name = "batch_size",
+                                       .nameLen = strlen("batch_size"),
+                                       .value = "50",
+                                       .valLen = strlen("50")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSim_OK);
+    ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
+    ASSERT_EQ(qparams.batchSize, 50);
+    ASSERT_EQ(qparams.svsRuntimeParams.bufferCapacity, 100);
 
     VecSimIndex_Free(index);
 }
