@@ -154,7 +154,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                 const char *blob = GetHNSWDataByInternalId(i);
                 // Fot multi value indices, the internal id is not necessarily equal the label.
                 size_t label = CastToHNSW(INDICES.at(INDEX_HNSW))->getExternalLabel(i);
-                // VecSimIndex_AddVector(INDICES.at(INDEX_BF), blob, label);
+                VecSimIndex_AddVector(INDICES.at(INDEX_BF), blob, label);
             }
         }
     }
@@ -167,15 +167,15 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             .metric = VecSimMetric_Cosine,
             /* SVS-Vamana specifics */
             .quantBits = VecSimSvsQuant_NONE,
-            .graph_max_degree = CastToHNSW(INDICES.at(INDEX_HNSW))->getM(),
-            .construction_window_size = CastToHNSW(INDICES.at(INDEX_HNSW))->getEf(),
+            .graph_max_degree = M,
+            .construction_window_size = EF_C,
         };
         VecSimParams svs_index_params = CreateParams(svs_params);
 
         // TODO - read svs params from file
         // TODO - Create SVS new index that recives path to folders and svs params
 
-        INDICES.at(INDEX_SVS) = SVSFactory::NewIndex(std::string("tests/benchmark/data/dbpedia_svs/"), &svs_index_params);
+        INDICES.at(INDEX_SVS) = SVSFactory::NewIndex(AttachRootPath(std::string("tests/benchmark/data/dbpedia_svs")), &svs_index_params);
 
         // auto hnsw_index = dynamic_cast<HNSWIndex<data_t, dist_t> *>(INDICES.at(INDEX_HNSW));
         // for (size_t i = 0; i < N_VECTORS; ++i) {
