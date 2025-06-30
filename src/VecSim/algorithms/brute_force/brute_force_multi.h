@@ -94,7 +94,7 @@ private:
             keys.insert(it.first);
         }
         return keys;
-    };
+    }
 
     inline vecsim_stl::vector<idType> getElementIds(size_t label) const override {
         auto it = labelToIdsLookup.find(label);

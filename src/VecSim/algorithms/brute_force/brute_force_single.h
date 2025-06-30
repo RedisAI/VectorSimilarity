@@ -98,10 +98,9 @@ protected:
     vecsim_stl::vector<idType> getElementIds(size_t label) const override {
         vecsim_stl::vector<idType> ids(this->allocator);
         auto it = labelToIdLookup.find(label);
-        if (it == labelToIdLookup.end()) {
-            return ids;
+        if (it != labelToIdLookup.end()) {
+            ids.push_back(it->second);
         }
-        ids.push_back(it->second);
         return ids;
     }
 

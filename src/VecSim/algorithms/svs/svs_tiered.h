@@ -759,10 +759,6 @@ public:
 
     int deleteAndRecordSwaps_Unsafe(labelType label) {
         auto deleting_ids = this->frontendIndex->getElementIds(label);
-        if (deleting_ids.empty()) {
-            // If there are no ids to delete, return 0.
-            return 0;
-        }
 
         // assert if all elements of deleting_ids are unique
         assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
