@@ -54,8 +54,8 @@ const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 const char *VecSimCommonStrings::HNSW_NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
 
-const char *VecSimCommonStrings::SVS_WS_SEARCH_STRING = "WINDOW_SIZE_SEARCH";
-const char *VecSimCommonStrings::SVS_BC_SEARCH_STRING = "BUFFER_CAPACITY_SEARCH";
+const char *VecSimCommonStrings::SVS_SEARCH_WS_STRING = "SEARCH_WINDOW_SIZE";
+const char *VecSimCommonStrings::SVS_SEARCH_BC_STRING = "SEARCH_BUFFER_CAPACITY";
 const char *VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING = "USE_SEARCH_HISTORY";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";

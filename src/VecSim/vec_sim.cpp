@@ -50,10 +50,10 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
     return VecSimParamResolver_OK;
 }
 
-static VecSimResolveCode _ResolveParams_WSSearch(VecSimAlgo index_type, VecSimRawParam rparam,
+static VecSimResolveCode _ResolveParams_SearchWS(VecSimAlgo index_type, VecSimRawParam rparam,
                                                  VecSimQueryParams *qparams) {
     long long num_val;
-    // WS_SEARCH is a valid parameter only in SVS algorithm.
+    // SEARCH_WS is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
         return VecSimParamResolverErr_UnknownParam;
     }
@@ -68,10 +68,10 @@ static VecSimResolveCode _ResolveParams_WSSearch(VecSimAlgo index_type, VecSimRa
     return VecSimParamResolver_OK;
 }
 
-static VecSimResolveCode _ResolveParams_BCSearch(VecSimAlgo index_type, VecSimRawParam rparam,
+static VecSimResolveCode _ResolveParams_SearchBC(VecSimAlgo index_type, VecSimRawParam rparam,
                                                  VecSimQueryParams *qparams) {
     long long num_val;
-    // BC_SEARCH is a valid parameter only in SVS algorithm.
+    // SEARCH_BC is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
         return VecSimParamResolverErr_UnknownParam;
     }
@@ -239,13 +239,13 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
                 VecSimParamResolver_OK) {
                 return res;
             }
-        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_WS_SEARCH_STRING)) {
-            if ((res = _ResolveParams_WSSearch(index_type, rparams[i], qparams)) !=
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_SEARCH_WS_STRING)) {
+            if ((res = _ResolveParams_SearchWS(index_type, rparams[i], qparams)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
-        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_BC_SEARCH_STRING)) {
-            if ((res = _ResolveParams_BCSearch(index_type, rparams[i], qparams)) !=
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_SEARCH_BC_STRING)) {
+            if ((res = _ResolveParams_SearchBC(index_type, rparams[i], qparams)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }

@@ -2286,7 +2286,7 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    std::string param_name = "window_size_search";
+    std::string param_name = "search_window_size";
     std::string param_val = "100";
     rparams.push_back(mkRawParams(param_name, param_val));
 
@@ -2303,35 +2303,35 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
         VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
-    param_name = "window_size_sea";
+    param_name = "search_window_si";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
-    param_name = "window_size_search";
+    param_name = "search_window_size";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "window_size_search";
+    param_name = "search_window_size";
     param_val = "-30";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "window_size_search";
+    param_name = "search_window_size";
     param_val = "1.618";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "window_size_search";
+    param_name = "search_window_size";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
@@ -2380,7 +2380,7 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    std::string param_name = "buffer_capacity_search";
+    std::string param_name = "search_buffer_capacity";
     std::string param_val = "100";
     rparams.push_back(mkRawParams(param_name, param_val));
 
@@ -2397,35 +2397,35 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
         VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
-    param_name = "buffer_capacity_sea";
+    param_name = "search_buffer_cap";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
-    param_name = "buffer_capacity_search";
+    param_name = "search_buffer_capacity";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "buffer_capacity_search";
+    param_name = "search_buffer_capacity";
     param_val = "-30";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "buffer_capacity_search";
+    param_name = "search_buffer_capacity";
     param_val = "1.618";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "buffer_capacity_search";
+    param_name = "search_buffer_capacity";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
