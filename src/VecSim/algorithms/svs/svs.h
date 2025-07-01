@@ -601,7 +601,7 @@ public:
             auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
                 folder_path + "/config",
                 SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
-                                            this->buildParams, this->getAllocator())),
+                                               this->buildParams, this->getAllocator())),
                 SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
                                                 this->getAllocator())),
                 distance_f(), std::move(threadpool_handle),
@@ -611,7 +611,7 @@ public:
             auto loaded = svs::index::vamana::auto_dynamic_assemble(
                 folder_path + "/config",
                 SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
-                                            this->buildParams, this->getAllocator())),
+                                               this->buildParams, this->getAllocator())),
                 SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
                                                 this->getAllocator())),
                 distance_f(), std::move(threadpool_handle), false, logger_);
@@ -636,7 +636,8 @@ public:
         }
 
         try {
-            // Save the current memory usage (before we use additional memory for the integrity check)
+            // Save the current memory usage (before we use additional memory for the integrity
+            // check)
             res.memory_usage = this->getAllocationSize();
 
             // Basic size and capacity checks
@@ -667,14 +668,14 @@ public:
                 return res;
             }
 
-
             // Validate label consistency by checking a sample of labels
             size_t label_validation_errors = 0;
             size_t labels_checked = 0;
             const size_t max_labels_to_check = std::min(res.index_size, size_t{1000});
 
-            // Iterate over a sample of labels using a lambda that captures validation counters by reference.
-            // The lambda checks for invalid labels (e.g., SIZE_MAX) and increments the error counter directly.
+            // Iterate over a sample of labels using a lambda that captures validation counters by
+            // reference. The lambda checks for invalid labels (e.g., SIZE_MAX) and increments the
+            // error counter directly.
 
             impl_->on_ids([&](size_t label) {
                 if (labels_checked >= max_labels_to_check) {
@@ -706,7 +707,6 @@ public:
 // Adding implementation for Serializer base
 #include "svs_serializer.h"
 
-
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         assert(false && "Not implemented");
@@ -723,10 +723,10 @@ public:
 #endif
 };
 
-template <typename MetricType, typename DataType, size_t QuantBits,
-          size_t ResidualBits, bool IsLeanVec>
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
 using SVSIndex_Single = SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>;
 
-template <typename MetricType, typename DataType, size_t QuantBits,
-          size_t ResidualBits, bool IsLeanVec>
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
 using SVSIndex_Multi = SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>;

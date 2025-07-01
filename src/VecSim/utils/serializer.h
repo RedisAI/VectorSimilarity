@@ -21,7 +21,7 @@ public:
         EncodingVersion_V4,
         // SVS Enconding versions
         EncodingVersion_SVS_V0 = 1000, // Do not change this value
-        EncodingVersion_INVALID, // This should always be last.
+        EncodingVersion_INVALID,       // This should always be last.
     } EncodingVersion;
 
     Serializer(EncodingVersion version = EncodingVersion_V4) : m_version(version) {}
