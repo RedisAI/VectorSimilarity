@@ -20,9 +20,9 @@ void saveAllIndexFields(std::ofstream &output) const {
     // Note: this->vecType corresponds to DataType template parameter
     // Note: this->metric corresponds to MetricType template parameter
     writeBinaryPOD(output, this->dim);
-    writeBinaryPOD(output, this->vecType);      // DataType template parameter (as VecSimType enum)
+    writeBinaryPOD(output, this->vecType); // DataType template parameter (as VecSimType enum)
     writeBinaryPOD(output, this->dataSize);
-    writeBinaryPOD(output, this->metric);       // MetricType template parameter (as VecSimMetric enum)
+    writeBinaryPOD(output, this->metric); // MetricType template parameter (as VecSimMetric enum)
     writeBinaryPOD(output, this->blockSize);
     writeBinaryPOD(output, this->isMulti);
 
@@ -48,10 +48,10 @@ void saveAllIndexFields(std::ofstream &output) const {
     // QuantBits, ResidualBits, and IsLeanVec information
 
     // Save additional template parameter constants for complete reconstruction
-    writeBinaryPOD(output, static_cast<size_t>(QuantBits));     // Template parameter QuantBits
-    writeBinaryPOD(output, static_cast<size_t>(ResidualBits));  // Template parameter ResidualBits
-    writeBinaryPOD(output, static_cast<bool>(IsLeanVec));       // Template parameter IsLeanVec
-    writeBinaryPOD(output, static_cast<bool>(isMulti));         // Template parameter isMulti
+    writeBinaryPOD(output, static_cast<size_t>(QuantBits));    // Template parameter QuantBits
+    writeBinaryPOD(output, static_cast<size_t>(ResidualBits)); // Template parameter ResidualBits
+    writeBinaryPOD(output, static_cast<bool>(IsLeanVec));      // Template parameter IsLeanVec
+    writeBinaryPOD(output, static_cast<bool>(isMulti));        // Template parameter isMulti
 
     // Save additional metadata for validation during loading
     writeBinaryPOD(output, this->lastMode); // Last search mode
