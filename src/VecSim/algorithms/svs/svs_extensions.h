@@ -51,19 +51,6 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
         // SQDataset does not provide a capacity method
         return storage.size();
     }
-
-    template <typename Distance, typename E, size_t N>
-    static float compute_distance_by_id(const index_storage_type &storage, const Distance &distance,
-                                        size_t id, std::span<E, N> query) {
-        auto dist_f = svs::index::vamana::extensions::single_search_setup(storage, distance);
-
-        // SVS distance function may require to fix/pre-process one of arguments
-        svs::distance::maybe_fix_argument(dist_f, query);
-
-        // Get the datum from the storage using the storage ID
-        auto datum = storage.get_datum(id);
-        return svs::distance::compute(dist_f, query, datum);
-    }
 };
 
 #if HAVE_SVS_LVQ
@@ -133,19 +120,6 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
         // LVQDataset does not provide a capacity method
         return storage.size();
     }
-
-    template <typename Distance, typename E, size_t N>
-    static float compute_distance_by_id(const index_storage_type &storage, const Distance &distance,
-                                        size_t id, std::span<E, N> query) {
-        auto dist_f = svs::index::vamana::extensions::single_search_setup(storage, distance);
-
-        // SVS distance function may require to fix/pre-process one of arguments
-        svs::distance::maybe_fix_argument(dist_f, query);
-
-        // Get the datum from the storage using the storage ID
-        auto datum = storage.get_datum(id);
-        return svs::distance::compute(dist_f, query, datum);
-    }
 };
 
 // LeanVec dataset traits for SVS
@@ -203,23 +177,6 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
     static size_t storage_capacity(const index_storage_type &storage) {
         // LeanDataset does not provide a capacity method
         return storage.size();
-    }
-
-    template <typename Distance, typename E, size_t N>
-    static float compute_distance_by_id(const index_storage_type &storage, const Distance &distance,
-                                        size_t id, std::span<E, N> query) {
-        // SVS distance function wrapper to cover LeanVec cases is a tuple with 3 elements: original
-        // distance, primary distance, secondary distance The last element is the secondary distance
-        // function, which is used for computaion.
-        auto dist_f =
-            std::get<2>(svs::index::vamana::extensions::single_search_setup(storage, distance));
-
-        // SVS distance function may require to fix/pre-process one of arguments
-        svs::distance::maybe_fix_argument(dist_f, query);
-
-        // Get the datum from the second LeanVec storage using the storage ID
-        auto datum = storage.get_secondary(id);
-        return svs::distance::compute(dist_f, query, datum);
     }
 };
 #else
