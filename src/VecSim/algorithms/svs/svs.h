@@ -594,133 +594,133 @@ public:
     }
 #ifdef BUILD_TESTS
 
-// Compares a binary metadata file to the current SVSIndex
-// Returns true if the metadata matches the current index configuration, false otherwise
+    // Compares a binary metadata file to the current SVSIndex
+    // Returns true if the metadata matches the current index configuration, false otherwise
 private:
-bool compareMetadataFile(const std::string &metadataFilePath) const {
-    std::ifstream input(metadataFilePath, std::ios::binary);
-    if (!input.is_open()) {
-        return false; // Cannot open file, consider as not equal
+    bool compareMetadataFile(const std::string &metadataFilePath) const {
+        std::ifstream input(metadataFilePath, std::ios::binary);
+        if (!input.is_open()) {
+            return false; // Cannot open file, consider as not equal
+        }
+
+        try {
+            // Read and compare encoding version
+            Serializer::EncodingVersion fileVersion;
+            Serializer::readBinaryPOD(input, fileVersion);
+            Serializer::EncodingVersion expectedVersion = Serializer::EncodingVersion_SVS_V0;
+            if (fileVersion != expectedVersion) {
+                input.close();
+                return false;
+            }
+
+            // Read and compare all index fields in the same order as saveAllIndexFields
+
+            // Compare base class fields from VecSimIndexAbstract
+            size_t fileDim, fileDataSize, fileBlockSize;
+            VecSimType fileVecType;
+            VecSimMetric fileMetric;
+            bool fileIsMulti;
+
+            Serializer::readBinaryPOD(input, fileDim);
+            Serializer::readBinaryPOD(input, fileVecType);
+            Serializer::readBinaryPOD(input, fileDataSize);
+            Serializer::readBinaryPOD(input, fileMetric);
+            Serializer::readBinaryPOD(input, fileBlockSize);
+            Serializer::readBinaryPOD(input, fileIsMulti);
+
+            if (fileDim != this->dim || fileVecType != this->vecType ||
+                fileDataSize != this->dataSize || fileMetric != this->metric ||
+                fileBlockSize != this->blockSize || fileIsMulti != this->isMulti) {
+                input.close();
+                return false;
+            }
+
+            // Compare SVS-specific configuration fields
+            bool fileForcePreprocessing;
+            size_t fileChangesNum;
+
+            Serializer::readBinaryPOD(input, fileForcePreprocessing);
+            Serializer::readBinaryPOD(input, fileChangesNum);
+
+            if (fileForcePreprocessing != this->forcePreprocessing ||
+                fileChangesNum != this->changes_num) {
+                input.close();
+                return false;
+            }
+
+            // Compare build parameters
+            float fileAlpha;
+            size_t fileGraphMaxDegree, fileWindowSize, fileMaxCandidatePoolSize, filePruneTo;
+            bool fileUseFullSearchHistory;
+
+            Serializer::readBinaryPOD(input, fileAlpha);
+            Serializer::readBinaryPOD(input, fileGraphMaxDegree);
+            Serializer::readBinaryPOD(input, fileWindowSize);
+            Serializer::readBinaryPOD(input, fileMaxCandidatePoolSize);
+            Serializer::readBinaryPOD(input, filePruneTo);
+            Serializer::readBinaryPOD(input, fileUseFullSearchHistory);
+
+            if (fileAlpha != this->buildParams.alpha ||
+                fileGraphMaxDegree != this->buildParams.graph_max_degree ||
+                fileWindowSize != this->buildParams.window_size ||
+                fileMaxCandidatePoolSize != this->buildParams.max_candidate_pool_size ||
+                filePruneTo != this->buildParams.prune_to ||
+                fileUseFullSearchHistory != this->buildParams.use_full_search_history) {
+                input.close();
+                return false;
+            }
+
+            // Compare search parameters
+            size_t fileSearchWindowSize;
+            double fileEpsilon;
+
+            Serializer::readBinaryPOD(input, fileSearchWindowSize);
+            Serializer::readBinaryPOD(input, fileEpsilon);
+
+            if (fileSearchWindowSize != this->search_window_size || fileEpsilon != this->epsilon) {
+                input.close();
+                return false;
+            }
+
+            // Compare compression mode
+            auto fileCompressionMode = getCompressionMode();
+            Serializer::readBinaryPOD(input, fileCompressionMode);
+
+            if (fileCompressionMode != getCompressionMode()) {
+                input.close();
+                return false;
+            }
+
+            // Compare template parameters
+            size_t fileQuantBits, fileResidualBits;
+            bool fileIsLeanVec, fileIsMultiTemplate;
+
+            Serializer::readBinaryPOD(input, fileQuantBits);
+            Serializer::readBinaryPOD(input, fileResidualBits);
+            Serializer::readBinaryPOD(input, fileIsLeanVec);
+            Serializer::readBinaryPOD(input, fileIsMultiTemplate);
+
+            if (fileQuantBits != static_cast<size_t>(QuantBits) ||
+                fileResidualBits != static_cast<size_t>(ResidualBits) ||
+                fileIsLeanVec != static_cast<bool>(IsLeanVec) ||
+                fileIsMultiTemplate != static_cast<bool>(isMulti)) {
+                input.close();
+                return false;
+            }
+
+            input.close();
+            return true; // All fields match
+
+        } catch (const std::exception &) {
+            input.close();
+            return false; // Any exception during reading means files don't match
+        }
     }
-
-    try {
-        // Read and compare encoding version
-        Serializer::EncodingVersion fileVersion;
-        Serializer::readBinaryPOD(input, fileVersion);
-        Serializer::EncodingVersion expectedVersion = Serializer::EncodingVersion_SVS_V0;
-        if (fileVersion != expectedVersion) {
-            input.close();
-            return false;
-        }
-
-        // Read and compare all index fields in the same order as saveAllIndexFields
-
-        // Compare base class fields from VecSimIndexAbstract
-        size_t fileDim, fileDataSize, fileBlockSize;
-        VecSimType fileVecType;
-        VecSimMetric fileMetric;
-        bool fileIsMulti;
-
-        Serializer::readBinaryPOD(input, fileDim);
-        Serializer::readBinaryPOD(input, fileVecType);
-        Serializer::readBinaryPOD(input, fileDataSize);
-        Serializer::readBinaryPOD(input, fileMetric);
-        Serializer::readBinaryPOD(input, fileBlockSize);
-        Serializer::readBinaryPOD(input, fileIsMulti);
-
-        if (fileDim != this->dim || fileVecType != this->vecType ||
-            fileDataSize != this->dataSize || fileMetric != this->metric ||
-            fileBlockSize != this->blockSize || fileIsMulti != this->isMulti) {
-            input.close();
-            return false;
-        }
-
-        // Compare SVS-specific configuration fields
-        bool fileForcePreprocessing;
-        size_t fileChangesNum;
-
-        Serializer::readBinaryPOD(input, fileForcePreprocessing);
-        Serializer::readBinaryPOD(input, fileChangesNum);
-
-        if (fileForcePreprocessing != this->forcePreprocessing ||
-            fileChangesNum != this->changes_num) {
-            input.close();
-            return false;
-        }
-
-        // Compare build parameters
-        float fileAlpha;
-        size_t fileGraphMaxDegree, fileWindowSize, fileMaxCandidatePoolSize, filePruneTo;
-        bool fileUseFullSearchHistory;
-
-        Serializer::readBinaryPOD(input, fileAlpha);
-        Serializer::readBinaryPOD(input, fileGraphMaxDegree);
-        Serializer::readBinaryPOD(input, fileWindowSize);
-        Serializer::readBinaryPOD(input, fileMaxCandidatePoolSize);
-        Serializer::readBinaryPOD(input, filePruneTo);
-        Serializer::readBinaryPOD(input, fileUseFullSearchHistory);
-
-        if (fileAlpha != this->buildParams.alpha ||
-            fileGraphMaxDegree != this->buildParams.graph_max_degree ||
-            fileWindowSize != this->buildParams.window_size ||
-            fileMaxCandidatePoolSize != this->buildParams.max_candidate_pool_size ||
-            filePruneTo != this->buildParams.prune_to ||
-            fileUseFullSearchHistory != this->buildParams.use_full_search_history) {
-            input.close();
-            return false;
-        }
-
-        // Compare search parameters
-        size_t fileSearchWindowSize;
-        double fileEpsilon;
-
-        Serializer::readBinaryPOD(input, fileSearchWindowSize);
-        Serializer::readBinaryPOD(input, fileEpsilon);
-
-        if (fileSearchWindowSize != this->search_window_size ||
-            fileEpsilon != this->epsilon) {
-            input.close();
-            return false;
-        }
-
-        // Compare compression mode
-        auto fileCompressionMode = getCompressionMode();
-        Serializer::readBinaryPOD(input, fileCompressionMode);
-
-        if (fileCompressionMode != getCompressionMode()) {
-            input.close();
-            return false;
-        }
-
-        // Compare template parameters
-        size_t fileQuantBits, fileResidualBits;
-        bool fileIsLeanVec, fileIsMultiTemplate;
-
-        Serializer::readBinaryPOD(input, fileQuantBits);
-        Serializer::readBinaryPOD(input, fileResidualBits);
-        Serializer::readBinaryPOD(input, fileIsLeanVec);
-        Serializer::readBinaryPOD(input, fileIsMultiTemplate);
-
-        if (fileQuantBits != static_cast<size_t>(QuantBits) ||
-            fileResidualBits != static_cast<size_t>(ResidualBits) ||
-            fileIsLeanVec != static_cast<bool>(IsLeanVec) ||
-            fileIsMultiTemplate != static_cast<bool>(isMulti)) {
-            input.close();
-            return false;
-        }
-
-        input.close();
-        return true; // All fields match
-
-    } catch (const std::exception&) {
-        input.close();
-        return false; // Any exception during reading means files don't match
-    }
-}
 
     void loadIndex(const std::string &folder_path) {
         svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
-        if (!compareMetadataFile(folder_path+"/metadata")) return;
+        if (!compareMetadataFile(folder_path + "/metadata"))
+            return;
         if constexpr (isMulti) {
             auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
                 folder_path + "/config",
