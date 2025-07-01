@@ -15,16 +15,19 @@
 class Serializer {
 public:
     typedef enum EncodingVersion {
+        // HNSW Enconding versions
         EncodingVersion_DEPRECATED = 2, // Last deprecated version
         EncodingVersion_V3,
         EncodingVersion_V4,
+        // SVS Enconding versions
+        EncodingVersion_SVS_V0 = 1000, // Do not change this value
         EncodingVersion_INVALID, // This should always be last.
     } EncodingVersion;
 
     Serializer(EncodingVersion version = EncodingVersion_V4) : m_version(version) {}
 
     // Persist index into a file in the specified location with V3 encoding routine.
-    void saveIndex(const std::string &location);
+    virtual void saveIndex(const std::string &location);
 
     EncodingVersion getVersion() const { return m_version; }
 
