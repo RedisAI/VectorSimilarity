@@ -30,6 +30,21 @@
 #include "VecSim/utils/serializer.h"
 #endif
 
+#define SVS_INVALID_META_DATA SIZE_MAX
+
+typedef struct {
+    bool valid_state;
+    long memory_usage; // in bytes
+    size_t index_size;
+    size_t storage_size;
+    size_t label_count;
+    size_t capacity;
+    size_t changes_count;
+    size_t graph_entry_point;
+    bool is_compressed;
+    bool is_multi;
+} SVSIndexMetaData;
+
 struct SVSIndexBase
 #ifdef BUILD_TESTS
     : public Serializer
@@ -604,6 +619,101 @@ public:
         }
     }
 
+    SVSIndexMetaData checkIntegrity() const {
+        SVSIndexMetaData res = {.valid_state = false,
+                                .memory_usage = -1,
+                                .index_size = SVS_INVALID_META_DATA,
+                                .storage_size = SVS_INVALID_META_DATA,
+                                .label_count = SVS_INVALID_META_DATA,
+                                .capacity = SVS_INVALID_META_DATA,
+                                .changes_count = SVS_INVALID_META_DATA,
+                                .graph_entry_point = SVS_INVALID_META_DATA,
+                                .is_compressed = false,
+                                .is_multi = isMulti};
+
+        // Check if the index implementation exists
+        if (!impl_) {
+            return res; // Return invalid state if no implementation
+        }
+
+        try {
+            // Save the current memory usage (before we use additional memory for the integrity check)
+            res.memory_usage = this->getAllocationSize();
+
+            // Basic size and capacity checks
+            res.index_size = impl_->size();
+            res.storage_size = impl_->view_data().size();
+            res.capacity = storage_traits_t::storage_capacity(impl_->view_data());
+            res.changes_count = changes_num;
+            res.is_compressed = this->isCompressed();
+
+            // Check label count consistency
+            if constexpr (isMulti) {
+                res.label_count = impl_->labelcount();
+                // For multi-index, label count should be <= index size
+                if (res.label_count > res.index_size) {
+                    return res;
+                }
+            } else {
+                res.label_count = res.index_size;
+            }
+
+            // Validate that storage size is consistent with index size
+            if (res.storage_size != res.index_size) {
+                return res;
+            }
+
+            // Validate that capacity is at least as large as index size
+            if (res.capacity < res.index_size) {
+                return res;
+            }
+
+            // Check graph entry point validity
+            try {
+                auto entry_point = impl_->get_entry_point();
+                res.graph_entry_point = entry_point;
+
+                // Entry point should be valid (less than index size) if index is not empty
+                if (res.index_size > 0 && entry_point >= res.index_size) {
+                    return res;
+                }
+            } catch (...) {
+                // If we can't get entry point, that's a problem
+                return res;
+            }
+
+            // Validate label consistency by checking a sample of labels
+            size_t label_validation_errors = 0;
+            size_t labels_checked = 0;
+            const size_t max_labels_to_check = std::min(res.index_size, size_t{1000});
+
+            impl_->on_ids([&](size_t label) {
+                if (labels_checked >= max_labels_to_check) {
+                    return;
+                }
+                labels_checked++;
+
+                // Check if label is reasonable (not too large)
+                if (label == SIZE_MAX) {
+                    label_validation_errors++;
+                }
+            });
+
+            // If we found label validation errors, the index is not valid
+            if (label_validation_errors > 0) {
+                return res;
+            }
+
+            // All checks passed
+            res.valid_state = true;
+            return res;
+
+        } catch (...) {
+            // Any exception during integrity check means the index is not valid
+            return res;
+        }
+    }
+
 // Adding implementation for Serializer base
 #include "svs_serializer.h"
 
@@ -620,6 +730,9 @@ public:
     }
 
     svs::logging::logger_ptr getLogger() const override { return logger_; }
+
+    // Validates the integrity of a loaded SVS index
+    SVSIndexMetaData checkIntegrity() const;
 #endif
 };
 
