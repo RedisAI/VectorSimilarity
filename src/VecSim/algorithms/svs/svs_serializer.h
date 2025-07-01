@@ -80,9 +80,10 @@ void saveIndexIMP(std::ofstream &output) override {
 void saveIndex(const std::string &location) override {
     assert(impl_ && "Index is not initialized");
     if (impl_) {
-        std::string verFile = location + "metadata";
+        std::string verFile = location + "/metadata";
         std::ofstream output(verFile, std::ios::binary);
         saveIndexIMP(output);
+        output.close();
         impl_->save(location + "/config", location + "/graph", location + "/data");
     }
 }
