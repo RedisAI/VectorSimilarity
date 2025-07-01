@@ -2128,13 +2128,15 @@ TYPED_TEST(SVSTest, joinSearchParams) {
 
     size_t default_window_size = 10;
     size_t default_buffer_capacity = 10;
-    svs::index::vamana::SearchBufferConfig default_buffer_config{default_window_size, default_buffer_capacity};
+    svs::index::vamana::SearchBufferConfig default_buffer_config{default_window_size,
+                                                                 default_buffer_capacity};
     // only change window size = 100
     // sp should have window size = 100, buffer capacity = 100 or
     // 150 if Two-level LVQ is enabled
     SVSRuntimeParams svsRuntimeParams = {.windowSize = 100};
     auto query_params = CreateQueryParams(svsRuntimeParams);
-    auto sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params, is_two_level_lvq);
+    auto sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params,
+                                            is_two_level_lvq);
     ASSERT_EQ(sp.buffer_config_.get_search_window_size(), svsRuntimeParams.windowSize);
     ASSERT_EQ(sp.buffer_config_.get_total_capacity(),
               (is_two_level_lvq) ? static_cast<size_t>(1.5 * svsRuntimeParams.windowSize)
@@ -2145,7 +2147,8 @@ TYPED_TEST(SVSTest, joinSearchParams) {
     svsRuntimeParams.windowSize = 200;
     svsRuntimeParams.bufferCapacity = 300;
     query_params = CreateQueryParams(svsRuntimeParams);
-    sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params, is_two_level_lvq);
+    sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params,
+                                       is_two_level_lvq);
     ASSERT_EQ(sp.buffer_config_.get_search_window_size(), svsRuntimeParams.windowSize);
     ASSERT_EQ(sp.buffer_config_.get_total_capacity(), svsRuntimeParams.bufferCapacity);
 
@@ -2155,7 +2158,8 @@ TYPED_TEST(SVSTest, joinSearchParams) {
     svsRuntimeParams.windowSize = 0;
     svsRuntimeParams.bufferCapacity = 100;
     query_params = CreateQueryParams(svsRuntimeParams);
-    sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params, is_two_level_lvq);
+    sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params,
+                                       is_two_level_lvq);
     ASSERT_EQ(sp.buffer_config_.get_search_window_size(), default_window_size);
     ASSERT_EQ(sp.buffer_config_.get_total_capacity(), default_buffer_capacity);
 }
