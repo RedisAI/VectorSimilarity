@@ -73,7 +73,6 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
 BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
     ->UNIT_AND_ITERATIONS->Arg(INDEX_TIERED_HNSW)
     ->ArgName("INDEX_TIERED_HNSW");
-;
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC, fp32_index_t)
 (benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
