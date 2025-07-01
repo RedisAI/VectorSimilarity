@@ -2126,12 +2126,15 @@ TYPED_TEST(SVSTest, joinSearchParams) {
         }
     }();
 
+    size_t default_window_size = 10;
+    size_t default_buffer_capacity = 10;
+    svs::index::vamana::SearchBufferConfig default_buffer_config{default_window_size, default_buffer_capacity};
     // only change window size = 100
     // sp should have window size = 100, buffer capacity = 100 or
     // 150 if Two-level LVQ is enabled
     SVSRuntimeParams svsRuntimeParams = {.windowSize = 100};
     auto query_params = CreateQueryParams(svsRuntimeParams);
-    auto sp = svs_details::joinSearchParams({}, &query_params, is_two_level_lvq);
+    auto sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params, is_two_level_lvq);
     ASSERT_EQ(sp.buffer_config_.get_search_window_size(), svsRuntimeParams.windowSize);
     ASSERT_EQ(sp.buffer_config_.get_total_capacity(),
               (is_two_level_lvq) ? static_cast<size_t>(1.5 * svsRuntimeParams.windowSize)
@@ -2142,19 +2145,19 @@ TYPED_TEST(SVSTest, joinSearchParams) {
     svsRuntimeParams.windowSize = 200;
     svsRuntimeParams.bufferCapacity = 300;
     query_params = CreateQueryParams(svsRuntimeParams);
-    sp = svs_details::joinSearchParams({}, &query_params, is_two_level_lvq);
+    sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params, is_two_level_lvq);
     ASSERT_EQ(sp.buffer_config_.get_search_window_size(), svsRuntimeParams.windowSize);
     ASSERT_EQ(sp.buffer_config_.get_total_capacity(), svsRuntimeParams.bufferCapacity);
 
     // only change buffer capacity = 100
     // buffer capacity is changed only if window size is changed
-    // sp2 should be the same as previous sp
+    // sp should be the same as default
     svsRuntimeParams.windowSize = 0;
     svsRuntimeParams.bufferCapacity = 100;
     query_params = CreateQueryParams(svsRuntimeParams);
-    auto sp2 = svs_details::joinSearchParams(std::move(sp), &query_params, is_two_level_lvq);
-    ASSERT_EQ(sp2.buffer_config_.get_search_window_size(), 200);
-    ASSERT_EQ(sp2.buffer_config_.get_total_capacity(), 300);
+    sp = svs_details::joinSearchParams({default_buffer_config, true, 0, 0}, &query_params, is_two_level_lvq);
+    ASSERT_EQ(sp.buffer_config_.get_search_window_size(), default_window_size);
+    ASSERT_EQ(sp.buffer_config_.get_total_capacity(), default_buffer_capacity);
 }
 
 TYPED_TEST(SVSTest, rangeQueryCosine) {
@@ -2279,7 +2282,7 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    std::string param_name = "ws_search";
+    std::string param_name = "window_size_search";
     std::string param_val = "100";
     rparams.push_back(mkRawParams(param_name, param_val));
 
@@ -2296,35 +2299,35 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
         VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
-    param_name = "ws_sea";
+    param_name = "window_size_sea";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
-    param_name = "ws_search";
+    param_name = "window_size_search";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "ws_search";
+    param_name = "window_size_search";
     param_val = "-30";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "ws_search";
+    param_name = "window_size_search";
     param_val = "1.618";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "ws_search";
+    param_name = "window_size_search";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
@@ -2373,7 +2376,7 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    std::string param_name = "bc_search";
+    std::string param_name = "buffer_capacity_search";
     std::string param_val = "100";
     rparams.push_back(mkRawParams(param_name, param_val));
 
@@ -2390,35 +2393,35 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
         VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
-    param_name = "bc_sea";
+    param_name = "buffer_capacity_sea";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
-    param_name = "bc_search";
+    param_name = "buffer_capacity_search";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "bc_search";
+    param_name = "buffer_capacity_search";
     param_val = "-30";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "bc_search";
+    param_name = "buffer_capacity_search";
     param_val = "1.618";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
-    param_name = "bc_search";
+    param_name = "buffer_capacity_search";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
