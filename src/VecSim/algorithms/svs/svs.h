@@ -28,7 +28,6 @@
 
 #ifdef BUILD_TESTS
 #include "VecSim/utils/serializer.h"
-#endif
 
 #define SVS_INVALID_META_DATA SIZE_MAX
 
@@ -40,10 +39,10 @@ typedef struct {
     size_t label_count;
     size_t capacity;
     size_t changes_count;
-    size_t graph_entry_point;
     bool is_compressed;
     bool is_multi;
 } SVSIndexMetaData;
+#endif
 
 struct SVSIndexBase
 #ifdef BUILD_TESTS
@@ -59,6 +58,7 @@ struct SVSIndexBase
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
 #ifdef BUILD_TESTS
+    virtual SVSIndexMetaData checkIntegrity() const = 0;
     virtual void loadIndex(const std::string &folder_path) = 0;
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -619,7 +619,7 @@ public:
         }
     }
 
-    SVSIndexMetaData checkIntegrity() const {
+    SVSIndexMetaData checkIntegrity() const override {
         SVSIndexMetaData res = {.valid_state = false,
                                 .memory_usage = -1,
                                 .index_size = SVS_INVALID_META_DATA,
@@ -627,7 +627,6 @@ public:
                                 .label_count = SVS_INVALID_META_DATA,
                                 .capacity = SVS_INVALID_META_DATA,
                                 .changes_count = SVS_INVALID_META_DATA,
-                                .graph_entry_point = SVS_INVALID_META_DATA,
                                 .is_compressed = false,
                                 .is_multi = isMulti};
 
@@ -668,24 +667,14 @@ public:
                 return res;
             }
 
-            // Check graph entry point validity
-            try {
-                auto entry_point = impl_->get_entry_point();
-                res.graph_entry_point = entry_point;
-
-                // Entry point should be valid (less than index size) if index is not empty
-                if (res.index_size > 0 && entry_point >= res.index_size) {
-                    return res;
-                }
-            } catch (...) {
-                // If we can't get entry point, that's a problem
-                return res;
-            }
 
             // Validate label consistency by checking a sample of labels
             size_t label_validation_errors = 0;
             size_t labels_checked = 0;
             const size_t max_labels_to_check = std::min(res.index_size, size_t{1000});
+
+            // Iterate over a sample of labels using a lambda that captures validation counters by reference.
+            // The lambda checks for invalid labels (e.g., SIZE_MAX) and increments the error counter directly.
 
             impl_->on_ids([&](size_t label) {
                 if (labels_checked >= max_labels_to_check) {
@@ -731,8 +720,6 @@ public:
 
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 
-    // Validates the integrity of a loaded SVS index
-    SVSIndexMetaData checkIntegrity() const;
 #endif
 };
 

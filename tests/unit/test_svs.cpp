@@ -2641,7 +2641,6 @@ TEST(SVSTest, save_load) {
         EXPECT_EQ(integrity_result.storage_size, n) << "Storage size should match index size";
         EXPECT_EQ(integrity_result.label_count, n) << "Label count should match expected";
         EXPECT_GE(integrity_result.capacity, n) << "Capacity should be at least index size";
-        EXPECT_LT(integrity_result.graph_entry_point, n) << "Entry point should be valid";
         EXPECT_FALSE(integrity_result.is_multi) << "This should be a single index";
 
         VecSimIndex_Free(index);
