@@ -27,6 +27,10 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
 
 extern "C" void VecSim_SetWriteMode(VecSimWriteMode mode) { VecSimIndex::setWriteMode(mode); }
 
+extern "C" void VecSim_SetNumThreads(size_t new_num_threads) {
+    VecSimIndex::setNumThreads(new_num_threads);
+}
+
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams,
                                                   VecsimQueryType query_type) {
