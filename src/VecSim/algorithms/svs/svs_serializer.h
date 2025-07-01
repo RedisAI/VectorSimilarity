@@ -42,9 +42,6 @@ void saveAllIndexFields(std::ofstream &output) const {
     writeBinaryPOD(output, this->search_window_size);
     writeBinaryPOD(output, this->epsilon);
 
-    // Save thread pool configuration
-    writeBinaryPOD(output, this->threadpool_.size());
-
     // Save template parameters as metadata for validation during loading
     writeBinaryPOD(output, getCompressionMode());
 
@@ -56,15 +53,8 @@ void saveAllIndexFields(std::ofstream &output) const {
     writeBinaryPOD(output, static_cast<bool>(IsLeanVec));       // Template parameter IsLeanVec
     writeBinaryPOD(output, static_cast<bool>(isMulti));         // Template parameter isMulti
 
-    // Save implementation state indicator
-    bool hasImpl = (impl_ != nullptr);
-    writeBinaryPOD(output, hasImpl);
-
     // Save additional metadata for validation during loading
     writeBinaryPOD(output, this->lastMode); // Last search mode
-
-    // Save thread pool capacity for complete restoration
-    writeBinaryPOD(output, this->threadpool_.capacity());
 }
 
 // Saves metadata (e.g., encoding version) to satisfy Serializer interface.
