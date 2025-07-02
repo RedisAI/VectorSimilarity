@@ -59,9 +59,6 @@ public:
 
     const RawDataContainer *getVectorsContainer() const { return this->vectors; }
 
-    const labelType getLabelByInternalId(idType internal_id) const {
-        return idToLabelMapping.at(internal_id);
-    }
     // Remove a specific vector that is stored under a label from the index by its internal id.
     virtual int deleteVectorById(labelType label, idType id) = 0;
     // Remove a vector and return a map between internal ids and the original internal ids of the
@@ -70,6 +67,9 @@ public:
     deleteVectorAndGetUpdatedIds(labelType label) = 0;
     // Check if a certain label exists in the index.
     virtual bool isLabelExists(labelType label) = 0;
+
+    // Unsafe (assume index data guard is held in MT mode).
+    virtual vecsim_stl::vector<idType> getElementIds(size_t label) const = 0;
 
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
