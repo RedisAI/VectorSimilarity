@@ -2790,7 +2790,7 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     index_logger->critical("Custom log critical");
     index_logger->flush();
     // Check that the log messages are written to the ostringstream
-    auto index_log = os_index.view();
+    auto index_log = os_index.str();
     EXPECT_NE(index_log.find("Custom log trace"), std::string::npos);
     EXPECT_NE(index_log.find("Custom log debug"), std::string::npos);
     EXPECT_NE(index_log.find("Custom log info"), std::string::npos);
@@ -2800,7 +2800,7 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
 
     VecSimIndex_Free(index);
 
-    auto global_log = os_global.view();
+    auto global_log = os_global.str();
     EXPECT_TRUE(global_log.empty()) << "Global log should be empty, but got: " << global_log;
 }
 
