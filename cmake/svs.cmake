@@ -42,17 +42,34 @@ if(USE_SVS)
 
     # detect if build environment is using glibc
     include(CheckSymbolExists)
-    unset(GLIBC_FOUND CACHE)
     check_symbol_exists(__GLIBC__ "features.h" GLIBC_FOUND)
-    if(NOT GLIBC_FOUND)
-        message(STATUS "GLIBC is not detected - SVS shared library is not supported")
+    if(GLIBC_FOUND)
+        include(CheckCSourceRuns)
+        check_c_source_runs("#include <features.h>
+            int main(){ return __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 28 ?0:1; }"
+            GLIBC_2_28_FOUND)
+        check_c_source_runs("#include <features.h>
+            int main(){ return __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 26 ?0:1; }"
+            GLIBC_2_26_FOUND)
     endif()
 
     cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250629-clang.tar.gz" CACHE STRING "SVS URL")
+        if (GLIBC_2_28_FOUND)
+            set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250629-clang.tar.gz" CACHE STRING "SVS URL")
+        else()
+            message(STATUS "GLIBC>=2.28 is required for Clang build - disabling SVS_SHARED_LIB")
+            set(SVS_SHARED_LIB OFF)
+        endif()
     else()
-        set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250630.tar.gz" CACHE STRING "SVS URL")
+        if (GLIBC_2_28_FOUND)
+            set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250630.tar.gz" CACHE STRING "SVS URL")
+        elseif(GLIBC_2_26_FOUND)
+            set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.8-dev/svs-shared-library-0.0.8-NIGHTLY-20250701-glibc-2_26.tar.gz" CACHE STRING "SVS URL")
+        else()
+            message(STATUS "GLIBC>=2.26 is required for SVS shared library - disabling SVS_SHARED_LIB")
+            set(SVS_SHARED_LIB OFF)
+        endif()
     endif()
 
     if(SVS_SHARED_LIB)
