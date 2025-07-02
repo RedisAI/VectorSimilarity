@@ -44,12 +44,12 @@ if(USE_SVS)
     include(CheckSymbolExists)
     check_symbol_exists(__GLIBC__ "features.h" GLIBC_FOUND)
     if(GLIBC_FOUND)
-        include(CheckCSourceRuns)
-        check_c_source_runs("#include <features.h>
-            int main(){ return __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 28 ?0:1; }"
+        include(CheckCXXSourceRuns)
+        check_cxx_source_runs("#include <features.h>
+            int main(){ return __GLIBC__ == 2 && __GLIBC_MINOR__ >= 28 ?0:1; }"
             GLIBC_2_28_FOUND)
-        check_c_source_runs("#include <features.h>
-            int main(){ return __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 26 ?0:1; }"
+        check_cxx_source_runs("#include <features.h>
+            int main(){ return __GLIBC__ == 2 && __GLIBC_MINOR__ >= 26 ?0:1; }"
             GLIBC_2_26_FOUND)
     endif()
 
