@@ -55,6 +55,7 @@ jobs:
     with:
       container: rockylinux:9
       run-valgrind: false
+      pre-checkout-script: dnf -y update && dnf install -y git
   # alpine3:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
