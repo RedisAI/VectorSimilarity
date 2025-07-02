@@ -693,6 +693,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("prune_to", &SVSParams::prune_to)
         .def_readwrite("use_search_history", &SVSParams::use_search_history)
         .def_readwrite("search_window_size", &SVSParams::search_window_size)
+        .def_readwrite("search_buffer_capacity", &SVSParams::search_buffer_capacity)
+        .def_readwrite("leanvec_dim", &SVSParams::leanvec_dim)
         .def_readwrite("epsilon", &SVSParams::epsilon)
         .def_readwrite("num_threads", &SVSParams::num_threads);
 
@@ -731,6 +733,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<SVSRuntimeParams>(queryParams, "SVSRuntimeParams")
         .def(py::init<>())
         .def_readwrite("windowSize", &SVSRuntimeParams::windowSize)
+        .def_readwrite("bufferCapacity", &SVSRuntimeParams::bufferCapacity)
         .def_readwrite("searchHistory", &SVSRuntimeParams::searchHistory)
         .def_readwrite("epsilon", &SVSRuntimeParams::epsilon);
 

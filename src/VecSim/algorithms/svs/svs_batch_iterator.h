@@ -71,14 +71,15 @@ private:
 
 public:
     SVS_BatchIterator(void *query_vector, const Index *index, const VecSimQueryParams *queryParams,
-                      std::shared_ptr<VecSimAllocator> allocator)
+                      std::shared_ptr<VecSimAllocator> allocator, bool is_two_level_lvq)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
           done{false}, dim{index->dimensions()}, index_{index},
           impl_{std::make_unique<impl_type>(index->make_batch_iterator(
               std::span{static_cast<const DataType *>(query_vector), dim}))},
           curr_it{impl_->begin()} {
-        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams);
+        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams,
+                                                is_two_level_lvq);
         batch_size = queryParams && queryParams->batchSize
                          ? queryParams->batchSize
                          : sp.buffer_config_.get_search_window_size();

@@ -16,7 +16,7 @@ import hnswlib
 def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
                      alpha = 1.2, graph_max_degree = 64, window_size = 128,
                      max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_AUTO,
-                     search_window_size = 20, epsilon = 0.01, num_threads = 4, is_multi = False):
+                     search_window_size = 20, search_buffer_capacity = 20, epsilon = 0.01, num_threads = 4, is_multi = False):
     svs_params = SVSParams()
 
     svs_params.dim = dim
@@ -30,6 +30,7 @@ def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
     svs_params.prune_to = prune_to
     svs_params.use_search_history = full_search_history
     svs_params.search_window_size = search_window_size
+    svs_params.search_buffer_capacity = search_buffer_capacity
     svs_params.epsilon = epsilon
     svs_params.num_threads = num_threads
 
@@ -122,7 +123,7 @@ def test_recall_for_svs_index_with_deletion(test_logger):
     num_queries = 10
     k = 10
 
-    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, search_window_size=50)
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, search_window_size=50, search_buffer_capacity=50)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -154,9 +155,10 @@ def test_batch_iterator(test_logger):
     num_elements = 10000
     num_queries = 10
     windowSize = 128
+    bufferCapacity = 128
 
     index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2,
-                             window_size=windowSize, search_window_size=windowSize)
+                             window_size=windowSize, search_window_size=windowSize, search_buffer_capacity=bufferCapacity)
 
     # Add 100k random vectors to the index
     rng = np.random.default_rng(seed=47)
@@ -187,12 +189,14 @@ def test_batch_iterator(test_logger):
     # Verify that runtime args are sent properly to the batch iterator.
     query_params = VecSimQueryParams()
     query_params.svsRuntimeParams.windowSize = 5
+    query_params.svsRuntimeParams.bufferCapacity = 10
     batch_iterator_new = index.create_batch_iterator(query_data, query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that accuracy is worse with the new lower window size.
     assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
 
     query_params.svsRuntimeParams.windowSize = windowSize  # Restore previous window size.
+    query_params.svsRuntimeParams.bufferCapacity = bufferCapacity # Restore previous buffer capacity.
     batch_iterator_new = index.create_batch_iterator(query_data, query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that results are now the same.
@@ -355,7 +359,7 @@ def test_recall_for_svs_multi_value(test_logger):
     num_elements = num_labels * num_per_label
 
     svs_index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_Cosine, alpha=0.9,
-                                 search_window_size=50, is_multi=True)
+                                 search_window_size=50, search_buffer_capacity=50, is_multi=True)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_labels, dim)))
