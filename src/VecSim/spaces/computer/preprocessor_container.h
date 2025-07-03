@@ -168,10 +168,17 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocess(const void *o
 
     void *storage_blob = nullptr;
     void *query_blob = nullptr;
+
+    // Use of separate variables for the storage_blob_size and query_blob_size, in case we need to
+    // change their sizes to different values.
+    size_t storage_blob_size = input_blob_size;
+    size_t query_blob_size = input_blob_size;
+
     for (auto pp : preprocessors) {
         if (!pp)
             break;
-        pp->preprocess(original_blob, storage_blob, query_blob, input_blob_size, this->alignment);
+        pp->preprocess(original_blob, storage_blob, query_blob, storage_blob_size, query_blob_size,
+                       this->alignment);
     }
     // At least one blob was allocated.
 
