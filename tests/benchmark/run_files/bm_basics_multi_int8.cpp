@@ -7,13 +7,15 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = true;
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_MASK_BF |
+                                                 IndexTypeFlags::INDEX_MASK_HNSW |
+                                                 IndexTypeFlags::INDEX_MASK_TIERED_HNSW;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 1024;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
-tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/wipedia_multi-cosine-dim1024-M64-efc512-int8.hnsw_v3";
@@ -26,11 +28,11 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Multi
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), int8_index_t, BruteForceIndex_Multi, int8_t,
-                    float, VecSimAlgo_BF)
+                    float, INDEX_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), int8_index_t, HNSWIndex_Multi, int8_t, float,
-                    VecSimAlgo_HNSWLIB)
+                    INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), int8_index_t, TieredHNSWIndex, int8_t, float,
-                    VecSimAlgo_TIERED)
+                    INDEX_TIERED_HNSW)
 #include "benchmark/bm_initialization/bm_basics_initialize_int8.h"
 
 BENCHMARK_MAIN();
