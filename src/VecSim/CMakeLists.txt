@@ -42,11 +42,20 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     ${HEADER_LIST}
 )
 
+# Add function and data sections flags for more effective garbage collection
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(VectorSimilarity PRIVATE -ffunction-sections -fdata-sections)
+endif()
+
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if (TARGET svs::svs)
     target_link_libraries(VectorSimilarity svs::svs)
     if(TARGET svs::svs_static_library)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            # Add garbage collection sections flag when linking with the static library
+            target_link_options(VectorSimilarity PRIVATE "-Wl,--gc-sections")
+        endif()
         target_link_libraries(VectorSimilarity svs::svs_static_library)
     endif()
 endif()
