@@ -273,8 +273,10 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
+                                       idType newElementId);
     void removeAndSwapMarkDeletedElement(idType internalId);
+    void removeIncomingEdgesAndDelete(idType deletedId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
     const ElementMetaData *getMetaDataAddress(idType internal_id) const {
@@ -285,6 +287,7 @@ public:
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
     void removeVectorInPlace(idType id);
+    idType getNewElementId();
 
     /*************************** Labels lookup API ***************************/
 
@@ -342,6 +345,11 @@ double HNSWIndex<DataType, DistType>::getEpsilon() const {
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexSize() const {
     return this->curElementCount;
+}
+
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::getNewElementId() {
+    return this->curElementCount++;
 }
 
 template <typename DataType, typename DistType>
@@ -1616,11 +1624,11 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
+void HNSWIndex<DataType, DistType>::removeIncomingEdgesAndDelete(idType deletedId) {
     // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
     // upon marking it as deleted.
-    assert(entrypointNode != internalId);
-    auto element = getGraphDataByInternalId(internalId);
+    assert(entrypointNode != deletedId);
+    auto element = getGraphDataByInternalId(deletedId);
 
     // Remove the deleted id form the relevant incoming edges sets in which it appears.
     for (size_t level = 0; level <= element->toplevel; level++) {
@@ -1632,17 +1640,27 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
             // (we know we will get here and remove this deleted id permanently).
             // However, upon asynchronous delete, this should always succeed since we do update
             // the incoming edges in the mutual update even for deleted elements.
-            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
+
+            lockNodeLinks(cur_level.getLinkAtPos(i));
+            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(deletedId);
+            unlockNodeLinks(cur_level.getLinkAtPos(i));
+
             // Assert the logical condition of: is_marked_deleted(id) => res==True.
             (void)res;
-            assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming "
-                                                            "unidirectional edges");
+            assert((!isMarkedDeleted(deletedId) || res) && "The edge should be in the incoming "
+                                                           "unidirectional edges");
         }
     }
 
     // Free the element's resources
     element->destroy(this->levelDataSize, this->allocator);
+    --numMarkedDeleted;
+}
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
+
+    removeIncomingEdgesAndDelete(internalId);
     // We can say now that the element has removed completely from index.
     --curElementCount;
 
@@ -1737,14 +1755,12 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 // scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                                  const void *vector_data) {
-    HNSWAddVectorState state{};
+                                                                  const void *vector_data,
+                                                                  idType newElementId) {
+    HNSWAddVectorState state(newElementId = newElementId);
 
     // Choose randomly the maximum level in which the new element will be in the index.
     state.elementMaxLevel = getRandomLevel(mult);
-
-    // Access and update the index global data structures with the new element meta-data.
-    state.newElementId = curElementCount++;
 
     // Create the new element's graph metadata.
     // We must assign manually enough memory on the stack and not just declare an `ElementGraphData`
@@ -1802,7 +1818,7 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeVector(const void *vector
     HNSWAddVectorState state{};
 
     this->lockIndexDataGuard();
-    state = storeNewElement(label, vector_data);
+    state = storeNewElement(label, vector_data, this->getNewElementId());
     if (state.currMaxLevel >= state.elementMaxLevel) {
         this->unlockIndexDataGuard();
     }
