@@ -29,12 +29,12 @@
 
      static constexpr VecSimSvsQuantBits get_compression_mode() { return VecSimSvsQuant_Scalar; }
 
-    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
-    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator,
-                                             size_t /*leanvec_dim*/) {
-        const auto dim = data.dimensions();
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
+     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
+                                              std::shared_ptr<VecSimAllocator> allocator,
+                                              size_t /*leanvec_dim*/) {
+         const auto dim = data.dimensions();
+         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
          allocator_type data_allocator{std::move(allocator)};
          auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
@@ -42,10 +42,10 @@
          return index_storage_type::compress(data, pool, blocked_alloc);
      }
 
-    static constexpr size_t element_size(size_t dims, size_t alignment = 0,
-                                         size_t /*leanvec_dim*/ = 0) {
-        return dims * sizeof(element_type);
-    }
+     static constexpr size_t element_size(size_t dims, size_t alignment = 0,
+                                          size_t /*leanvec_dim*/ = 0) {
+         return dims * sizeof(element_type);
+     }
 
      static size_t storage_capacity(const index_storage_type &storage) {
          // SQDataset does not provide a capacity method
@@ -107,11 +107,12 @@
          }
      }
 
-    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
-    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator) {
-        const auto dim = data.dimensions();
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
+     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
+                                              std::shared_ptr<VecSimAllocator> allocator,
+                                              size_t /*leanvec_dim*/) {
+         const auto dim = data.dimensions();
+         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
          allocator_type data_allocator{std::move(allocator)};
          auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
