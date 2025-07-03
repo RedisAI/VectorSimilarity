@@ -44,8 +44,8 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     benchmark::State &st, std::atomic_int &correct, size_t iter, size_t num_batches,
     size_t batch_size, size_t &total_res_num, size_t batch_increase_factor, size_t index_memory,
     double &memory_delta) {
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
-        INDICES.at(VecSimAlgo_HNSWLIB), QUERIES[iter % N_QUERIES].data(), nullptr);
+    VecSimBatchIterator *batchIterator =
+        VecSimBatchIterator_New(GET_INDEX(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), nullptr);
     VecSimQueryReply *accumulated_results[num_batches];
     size_t batch_num = 0;
     total_res_num = 0;
@@ -62,13 +62,13 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     }
     st.PauseTiming();
     // Update the memory delta as a result of using the batch iterator.
-    size_t curr_memory = VecSimIndex_StatsInfo(INDICES.at(VecSimAlgo_HNSWLIB)).memory;
+    size_t curr_memory = VecSimIndex_StatsInfo(GET_INDEX(INDEX_HNSW)).memory;
     memory_delta += (double)(curr_memory - index_memory);
     VecSimBatchIterator_Free(batchIterator);
 
     // Measure recall - compare every result that was collected in some batch to the BF results.
-    auto bf_results = VecSimIndex_TopKQuery(
-        INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), total_res_num, nullptr, BY_SCORE);
+    auto bf_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(),
+                                            total_res_num, nullptr, BY_SCORE);
     for (size_t i = 0; i < batch_num; i++) {
         auto hnsw_results = accumulated_results[i];
         BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
@@ -83,12 +83,12 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
     size_t batch_size = st.range(0);
     size_t num_batches = st.range(1);
     size_t iter = 0;
-    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_BF]).memory;
+    size_t index_memory = VecSimIndex_StatsInfo(GET_INDEX(INDEX_BF)).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
-            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), nullptr);
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), nullptr);
         size_t batches_counter = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
@@ -98,7 +98,7 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
                 break;
             }
         }
-        size_t curr_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_BF]).memory;
+        size_t curr_memory = VecSimIndex_StatsInfo(GET_INDEX(INDEX_BF)).memory;
         memory_delta += (double)(curr_memory - index_memory);
         VecSimBatchIterator_Free(batchIterator);
         iter++;
@@ -112,8 +112,8 @@ void BM_BatchIterator<index_type_t>::BF_VariableBatchSize(benchmark::State &st) 
     size_t num_batches = st.range(1);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
-            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), nullptr);
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), nullptr);
         size_t batches_counter = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
@@ -136,8 +136,8 @@ void BM_BatchIterator<index_type_t>::BF_BatchesToAdhocBF(benchmark::State &st) {
     size_t batch_size = 10;
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
-            INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), nullptr);
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), nullptr);
         size_t batches_counter = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             if (batches_counter == num_batches) {
@@ -151,7 +151,7 @@ void BM_BatchIterator<index_type_t>::BF_BatchesToAdhocBF(benchmark::State &st) {
         VecSimBatchIterator_Free(batchIterator);
         // Switch to ad-hoc BF
         for (size_t i = 0; i < N_VECTORS; i += step) {
-            VecSimIndex_GetDistanceFrom_Unsafe(INDICES[VecSimAlgo_BF], i,
+            VecSimIndex_GetDistanceFrom_Unsafe(GET_INDEX(INDEX_BF), i,
                                                QUERIES[iter % N_QUERIES].data());
         }
         iter++;
@@ -166,7 +166,7 @@ void BM_BatchIterator<index_type_t>::HNSW_FixedBatchSize(benchmark::State &st) {
     size_t total_res_num = num_batches * batch_size;
     size_t iter = 0;
     std::atomic_int correct = 0;
-    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_HNSWLIB]).memory;
+    size_t index_memory = VecSimIndex_StatsInfo(GET_INDEX(INDEX_HNSW)).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
@@ -185,7 +185,7 @@ void BM_BatchIterator<index_type_t>::HNSW_VariableBatchSize(benchmark::State &st
     size_t total_res_num;
     size_t iter = 0;
     std::atomic_int correct = 0;
-    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_HNSWLIB]).memory;
+    size_t index_memory = VecSimIndex_StatsInfo(GET_INDEX(INDEX_HNSW)).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
@@ -204,7 +204,7 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
     size_t total_res_num;
     size_t iter = 0;
     std::atomic_int correct = 0;
-    size_t index_memory = VecSimIndex_StatsInfo(INDICES[VecSimAlgo_HNSWLIB]).memory;
+    size_t index_memory = VecSimIndex_StatsInfo(GET_INDEX(INDEX_HNSW)).memory;
     double memory_delta = 0.0;
 
     for (auto _ : st) {
@@ -212,7 +212,7 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
                               memory_delta);
         // Switch to ad-hoc BF
         for (size_t i = 0; i < N_VECTORS; i += step) {
-            VecSimIndex_GetDistanceFrom_Unsafe(INDICES[VecSimAlgo_HNSWLIB], i,
+            VecSimIndex_GetDistanceFrom_Unsafe(GET_INDEX(INDEX_HNSW), i,
                                                QUERIES[iter % N_QUERIES].data());
         }
         iter++;

@@ -8,13 +8,13 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
+uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
-tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512-fp16.hnsw_v3";
@@ -27,10 +27,10 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel, Async, Single)
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp16_index_t, BruteForceIndex_Single,
-                    vecsim_types::float16, float, VecSimAlgo_BF)
+                    vecsim_types::float16, float, INDEX_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp16_index_t, HNSWIndex_Single,
-                    vecsim_types::float16, float, VecSimAlgo_HNSWLIB)
+                    vecsim_types::float16, float, INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp16_index_t, TieredHNSWIndex,
-                    vecsim_types::float16, float, VecSimAlgo_TIERED)
+                    vecsim_types::float16, float, INDEX_TIERED_HNSW)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp16.h"
 BENCHMARK_MAIN();
