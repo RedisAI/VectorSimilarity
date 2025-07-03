@@ -26,7 +26,16 @@
 #include "VecSim/algorithms/svs/svs_batch_iterator.h"
 #include "VecSim/algorithms/svs/svs_extensions.h"
 
-struct SVSIndexBase {
+#ifdef BUILD_TESTS
+#include "VecSim/utils/serializer.h"
+#include "svs_serialization_utils.h"
+#endif
+
+struct SVSIndexBase
+#ifdef BUILD_TESTS
+    : public Serializer
+#endif
+{
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
@@ -36,6 +45,8 @@ struct SVSIndexBase {
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
 #ifdef BUILD_TESTS
+    virtual SVSIndexMetaData checkIntegrity() const = 0;
+    virtual void loadIndex(const std::string &folder_path) = 0;
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
 };
@@ -597,8 +608,248 @@ public:
         }
         changes_num = 0;
     }
-
 #ifdef BUILD_TESTS
+
+    // Compares a binary metadata file to the current SVSIndex
+    // Returns true if the metadata matches the current index configuration, false otherwise
+private:
+    bool compareMetadataFile(const std::string &metadataFilePath) const {
+        std::ifstream input(metadataFilePath, std::ios::binary);
+        if (!input.is_open()) {
+            return false; // Cannot open file, consider as not equal
+        }
+
+        try {
+            // Read and compare encoding version
+            Serializer::EncodingVersion fileVersion;
+            Serializer::readBinaryPOD(input, fileVersion);
+            Serializer::EncodingVersion expectedVersion = this->m_version;
+            if (fileVersion != expectedVersion) {
+                input.close();
+                return false;
+            }
+
+            // Read and compare all index fields in the same order as saveAllIndexFields
+
+            // Compare base class fields from VecSimIndexAbstract
+            size_t fileDim, fileDataSize, fileBlockSize;
+            VecSimType fileVecType;
+            VecSimMetric fileMetric;
+            bool fileIsMulti;
+
+            Serializer::readBinaryPOD(input, fileDim);
+            Serializer::readBinaryPOD(input, fileVecType);
+            Serializer::readBinaryPOD(input, fileDataSize);
+            Serializer::readBinaryPOD(input, fileMetric);
+            Serializer::readBinaryPOD(input, fileBlockSize);
+            Serializer::readBinaryPOD(input, fileIsMulti);
+
+            if (fileDim != this->dim || fileVecType != this->vecType ||
+                fileDataSize != this->dataSize || fileMetric != this->metric ||
+                fileBlockSize != this->blockSize || fileIsMulti != this->isMulti) {
+                input.close();
+                return false;
+            }
+
+            // Compare SVS-specific configuration fields
+            bool fileForcePreprocessing;
+            size_t fileChangesNum;
+
+            Serializer::readBinaryPOD(input, fileForcePreprocessing);
+            Serializer::readBinaryPOD(input, fileChangesNum);
+
+            if (fileForcePreprocessing != this->forcePreprocessing ||
+                fileChangesNum != this->changes_num) {
+                input.close();
+                return false;
+            }
+
+            // Compare build parameters
+            float fileAlpha;
+            size_t fileGraphMaxDegree, fileWindowSize, fileMaxCandidatePoolSize, filePruneTo;
+            bool fileUseFullSearchHistory;
+
+            Serializer::readBinaryPOD(input, fileAlpha);
+            Serializer::readBinaryPOD(input, fileGraphMaxDegree);
+            Serializer::readBinaryPOD(input, fileWindowSize);
+            Serializer::readBinaryPOD(input, fileMaxCandidatePoolSize);
+            Serializer::readBinaryPOD(input, filePruneTo);
+            Serializer::readBinaryPOD(input, fileUseFullSearchHistory);
+
+            if (fileAlpha != this->buildParams.alpha ||
+                fileGraphMaxDegree != this->buildParams.graph_max_degree ||
+                fileWindowSize != this->buildParams.window_size ||
+                fileMaxCandidatePoolSize != this->buildParams.max_candidate_pool_size ||
+                filePruneTo != this->buildParams.prune_to ||
+                fileUseFullSearchHistory != this->buildParams.use_full_search_history) {
+                input.close();
+                return false;
+            }
+
+            // Compare search parameters
+            size_t fileSearchWindowSize;
+            double fileEpsilon;
+
+            Serializer::readBinaryPOD(input, fileSearchWindowSize);
+            Serializer::readBinaryPOD(input, fileEpsilon);
+
+            if (fileSearchWindowSize != this->search_window_size || fileEpsilon != this->epsilon) {
+                input.close();
+                return false;
+            }
+
+            // Compare compression mode
+            auto fileCompressionMode = getCompressionMode();
+            Serializer::readBinaryPOD(input, fileCompressionMode);
+
+            if (fileCompressionMode != getCompressionMode()) {
+                input.close();
+                return false;
+            }
+
+            // Compare template parameters
+            size_t fileQuantBits, fileResidualBits;
+            bool fileIsLeanVec, fileIsMultiTemplate;
+
+            Serializer::readBinaryPOD(input, fileQuantBits);
+            Serializer::readBinaryPOD(input, fileResidualBits);
+            Serializer::readBinaryPOD(input, fileIsLeanVec);
+            Serializer::readBinaryPOD(input, fileIsMultiTemplate);
+
+            if (fileQuantBits != static_cast<size_t>(QuantBits) ||
+                fileResidualBits != static_cast<size_t>(ResidualBits) ||
+                fileIsLeanVec != static_cast<bool>(IsLeanVec) ||
+                fileIsMultiTemplate != static_cast<bool>(isMulti)) {
+                input.close();
+                return false;
+            }
+
+            input.close();
+            return true; // All fields match
+
+        } catch (const std::exception &) {
+            input.close();
+            return false; // Any exception during reading means files don't match
+        }
+    }
+
+    void loadIndex(const std::string &folder_path) {
+        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
+        if (!compareMetadataFile(folder_path + "/metadata"))
+            return;
+        if constexpr (isMulti) {
+            auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
+                folder_path + "/config",
+                SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                                               this->buildParams, this->getAllocator())),
+                SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                                                this->getAllocator())),
+                distance_f(), std::move(threadpool_handle),
+                svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
+            impl_ = std::make_unique<impl_type>(std::move(loaded));
+        } else {
+            auto loaded = svs::index::vamana::auto_dynamic_assemble(
+                folder_path + "/config",
+                SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                                               this->buildParams, this->getAllocator())),
+                SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                                                this->getAllocator())),
+                distance_f(), std::move(threadpool_handle), false, logger_);
+            impl_ = std::make_unique<impl_type>(std::move(loaded));
+        }
+    }
+
+    SVSIndexMetaData checkIntegrity() const override {
+        SVSIndexMetaData res = {.valid_state = false,
+                                .memory_usage = -1,
+                                .index_size = SVS_INVALID_META_DATA,
+                                .storage_size = SVS_INVALID_META_DATA,
+                                .label_count = SVS_INVALID_META_DATA,
+                                .capacity = SVS_INVALID_META_DATA,
+                                .changes_count = SVS_INVALID_META_DATA,
+                                .is_compressed = false,
+                                .is_multi = isMulti};
+
+        // Check if the index implementation exists
+        if (!impl_) {
+            return res; // Return invalid state if no implementation
+        }
+
+        try {
+            // Save the current memory usage (before we use additional memory for the integrity
+            // check)
+            res.memory_usage = this->getAllocationSize();
+
+            // Basic size and capacity checks
+            res.index_size = impl_->size();
+            res.storage_size = impl_->view_data().size();
+            res.capacity = storage_traits_t::storage_capacity(impl_->view_data());
+            res.changes_count = changes_num;
+            res.is_compressed = this->isCompressed();
+
+            // Check label count consistency
+            if constexpr (isMulti) {
+                res.label_count = impl_->labelcount();
+                // For multi-index, label count should be <= index size
+                if (res.label_count > res.index_size) {
+                    return res;
+                }
+            } else {
+                res.label_count = res.index_size;
+            }
+
+            // Validate that storage size is consistent with index size
+            if (res.storage_size != res.index_size) {
+                return res;
+            }
+
+            // Validate that capacity is at least as large as index size
+            if (res.capacity < res.index_size) {
+                return res;
+            }
+
+            // Validate label consistency by checking a sample of labels
+            size_t label_validation_errors = 0;
+            size_t labels_checked = 0;
+            const size_t max_labels_to_check = std::min(res.index_size, size_t{1000});
+
+            // Iterate over a sample of labels using a lambda that captures validation counters by
+            // reference. The lambda checks for invalid labels (e.g., SIZE_MAX) and increments the
+            // error counter directly.
+
+            impl_->on_ids([&](size_t label) {
+                if (labels_checked >= max_labels_to_check) {
+                    return;
+                }
+                labels_checked++;
+
+                // Check if label is reasonable (not too large)
+                if (label == SIZE_MAX) {
+                    label_validation_errors++;
+                }
+            });
+
+            // If we found label validation errors, the index is not valid
+            if (label_validation_errors > 0) {
+                return res;
+            }
+
+            // All checks passed
+            res.valid_state = true;
+            return res;
+
+        } catch (...) {
+            // Any exception during integrity check means the index is not valid
+            return res;
+        }
+    }
+
+    public:
+    // implemented in svs_serializer.h
+    void saveAllIndexFields(std::ofstream &output) const;
+    void saveIndexIMP(std::ofstream &output)  override;
+    void saveIndex(const std::string &location) override;
+
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         assert(false && "Not implemented");
@@ -611,5 +862,19 @@ public:
     }
 
     svs::logging::logger_ptr getLogger() const override { return logger_; }
+
 #endif
 };
+
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
+using SVSIndex_Single = SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>;
+
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
+using SVSIndex_Multi = SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>;
+
+#ifdef BUILD_TESTS
+// Including implementations for Serializer base
+#include "svs_serializer.h"
+#endif
