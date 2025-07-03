@@ -15,7 +15,9 @@
 // Saves all reasonable fields of SVSIndex to the output stream
 // This function saves all template parameters and instance fields needed to reconstruct
 // an SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
-void saveAllIndexFields(std::ofstream &output) const {
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::saveAllIndexFields(std::ofstream &output) const {
     // Save base class fields from VecSimIndexAbstract
     // Note: this->vecType corresponds to DataType template parameter
     // Note: this->metric corresponds to MetricType template parameter
@@ -59,7 +61,9 @@ void saveAllIndexFields(std::ofstream &output) const {
 
 // Saves metadata (e.g., encoding version) to satisfy Serializer interface.
 // Full index is saved separately in saveIndex() using file paths.
-void saveIndexIMP(std::ofstream &output) override {
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::saveIndexIMP(std::ofstream &output)  {
     EncodingVersion version = EncodingVersion_SVS_V0;
     writeBinaryPOD(output, version);
 
@@ -67,7 +71,9 @@ void saveIndexIMP(std::ofstream &output) override {
     saveAllIndexFields(output);
 }
 
-void saveIndex(const std::string &location) override {
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::saveIndex(const std::string &location)  {
     assert(impl_ && "Index is not initialized");
     if (impl_) {
         std::string verFile = location + "/metadata";

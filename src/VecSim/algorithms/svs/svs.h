@@ -28,20 +28,7 @@
 
 #ifdef BUILD_TESTS
 #include "VecSim/utils/serializer.h"
-
-#define SVS_INVALID_META_DATA SIZE_MAX
-
-typedef struct {
-    bool valid_state;
-    long memory_usage; // in bytes
-    size_t index_size;
-    size_t storage_size;
-    size_t label_count;
-    size_t capacity;
-    size_t changes_count;
-    bool is_compressed;
-    bool is_multi;
-} SVSIndexMetaData;
+#include "svs_serialization_utils.h"
 #endif
 
 struct SVSIndexBase
@@ -607,7 +594,7 @@ private:
             // Read and compare encoding version
             Serializer::EncodingVersion fileVersion;
             Serializer::readBinaryPOD(input, fileVersion);
-            Serializer::EncodingVersion expectedVersion = Serializer::EncodingVersion_SVS_V0;
+            Serializer::EncodingVersion expectedVersion = this->m_version;
             if (fileVersion != expectedVersion) {
                 input.close();
                 return false;
@@ -828,8 +815,11 @@ private:
         }
     }
 
-// Adding implementation for Serializer base
-#include "svs_serializer.h"
+    public:
+    // implemented in svs_serializer.h
+    void saveAllIndexFields(std::ofstream &output) const;
+    void saveIndexIMP(std::ofstream &output)  override;
+    void saveIndex(const std::string &location) override;
 
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
@@ -854,3 +844,8 @@ using SVSIndex_Single = SVSIndex<MetricType, DataType, false, QuantBits, Residua
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
           bool IsLeanVec>
 using SVSIndex_Multi = SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>;
+
+#ifdef BUILD_TESTS
+// Including implementations for Serializer base
+#include "svs_serializer.h"
+#endif
