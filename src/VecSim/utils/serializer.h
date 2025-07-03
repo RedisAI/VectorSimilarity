@@ -19,9 +19,10 @@ public:
         EncodingVersion_DEPRECATED = 2, // Last deprecated version
         EncodingVersion_V3,
         EncodingVersion_V4,
+        EncodingVersion_HNSW_INVALID, // This should always be the last HNSW version
         // SVS Enconding versions
         EncodingVersion_SVS_V0 = 1000, // Do not change this value
-        EncodingVersion_INVALID,       // This should always be last.
+        EncodingVersion_SVS_INVALID,       // This should always be the last SVS version
     } EncodingVersion;
 
     Serializer(EncodingVersion version = EncodingVersion_V4) : m_version(version) {}

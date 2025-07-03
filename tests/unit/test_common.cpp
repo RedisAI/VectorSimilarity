@@ -477,10 +477,10 @@ TEST_F(SerializerTest, HNSWSerialzer) {
                              "Cannot load index: deprecated encoding version: 0");
 
     output.seekp(0, std::ios_base::beg);
-    Serializer::writeBinaryPOD(output, 10042);
+    Serializer::writeBinaryPOD(output, 42);
     output.flush();
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
-                             "Cannot load index: bad encoding version: 10042");
+                             "Cannot load index: bad encoding version: 42");
 
     // Test WRONG index algorithm exception
     // Use a valid version
