@@ -151,9 +151,11 @@ protected:
 
     std::unordered_map<idType, idType> pruneDeleted(
         const std::vector<idType> &deleted_ids,
-        const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods);
+        const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods,
+        idType &entrypointNode);
     void addVector(labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
                    vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
+                    vecsim_stl::vector<const void*> &new_elements_quantized_data,
                    std::unordered_map<idType, std::vector<idType>> &delta_list);
     void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
                         vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
@@ -255,19 +257,21 @@ void HNSWDiskIndex<DataType, DistType>::batchUpdate(
     // 1. for each not-deleted label with a deleted neighbor, re-choose the neighbors
     //    from the remaining nodes + the deleted nodes neighbors (by the heuristic)
     // 2. for each not-deleted label, write it to the new graph
-    auto new_ids_mapping = pruneDeleted(deleted_ids, deleted_neighborhoods);
-    auto curMaxLevel = maxLevel;
-    auto curEntryPoint = entrypointNode; // Address the case where the entry point is deleted
+    auto curEntryPoint = this->entrypointNode;
+    auto new_ids_mapping = pruneDeleted(deleted_ids, deleted_neighborhoods, curEntryPoint);
+    auto curMaxLevel = maxLevel; // TODO: take `curEntryPoint` maxLevel, address mapping?
 
     // Phase 2: Insert new elements
     // 1. for each new element, find its neighbors by the heuristic
     // 2. For each neighbor, add to the temporary delta list the new element
     std::unordered_map<idType, std::vector<idType>> delta_list;
     vecsim_stl::vector<ElementMetaData> new_elements_meta_data(this->allocator);
+    vecsim_stl::vector<const void*> new_elements_quantized_data(this->allocator);
     new_elements_meta_data.reserve(new_elements.size());
+    new_elements_quantized_data.reserve(new_elements.size());
     // std::unordered_map<labelType, idType> new_labels_mapping;
     for (const auto &[label, vector] : new_elements) {
-        addVector(label, vector, curMaxLevel, curEntryPoint, new_elements_meta_data, delta_list);
+        addVector(label, vector, curMaxLevel, curEntryPoint, new_elements_meta_data, new_elements_quantized_data, delta_list);
     }
 
     // Phase 3: Patch the graph
@@ -467,7 +471,8 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
 template <typename DataType, typename DistType>
 std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDeleted(
     const std::vector<idType> &deleted_ids,
-    const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods) {
+    const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods,
+    idType &entrypointNode) {
 
     // Higher ids will reuse the deleted ids
     auto newElementCount = this->curElementCount - deleted_neighborhoods.size();
@@ -485,8 +490,7 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
         auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
 
         if (deleted_neighborhoods.find(graphKey->node()) != deleted_neighborhoods.end()) {
-            // TODO: handle entry point
-            // Skip deleted nodes
+            this->db->Delete(writeOptions, cf, it->key());
             continue;
         }
         auto neighborsSlice = it->value();
@@ -562,8 +566,11 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
             this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
         }
     }
-
     delete it;
+
+    if (deleted_neighborhoods.find({entrypointNode, 0}) != deleted_neighborhoods.end()) {
+        // Find a new entry point, update the `entrypointNode` reference
+    }
 
     std::unordered_map<idType, idType> new_ids(deleted_ids.size());
     for (size_t i = 0; i < deleted_ids.size(); ++i) {
@@ -576,6 +583,7 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::addVector(
     labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
     vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
+    vecsim_stl::vector<const void*> &new_elements_quantized_data,
     std::unordered_map<idType, std::vector<idType>> &delta_list) {
 
     idType id = curElementCount + new_elements_meta_data.size();
