@@ -167,7 +167,7 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
                                                  IndexComponents<DataType, DistType> &components,
-                                                 Serializer::EncodingVersion version) {
+                                                 HNSWserializer::EncodingVersion version) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
@@ -199,7 +199,7 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
         throw std::runtime_error("Cannot open file");
     }
 
-    Serializer::EncodingVersion version = Serializer::ReadVersion(input);
+    HNSWserializer::EncodingVersion version = HNSWserializer::ReadVersion(input);
 
     VecSimAlgo algo = VecSimAlgo_BF;
     Serializer::readBinaryPOD(input, algo);

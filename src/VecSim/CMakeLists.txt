@@ -50,8 +50,3 @@ if (TARGET svs::svs)
         target_link_libraries(VectorSimilarity svs::svs_static_library)
     endif()
 endif()
-
-if(VECSIM_BUILD_TESTS)
-    add_library(VectorSimilaritySerializer utils/serializer.cpp)
-    target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
-endif()

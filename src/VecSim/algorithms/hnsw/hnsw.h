@@ -25,6 +25,7 @@
 #ifdef BUILD_TESTS
 #include "hnsw_serialization_utils.h"
 #include "VecSim/utils/serializer.h"
+#include "hnsw_serializer.h"
 #endif
 
 #include <deque>
@@ -85,7 +86,7 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public VecSimIndexTombstone
 #ifdef BUILD_TESTS
     ,
-                  public Serializer
+                  public HNSWserializer
 #endif
 {
 protected:
@@ -2324,5 +2325,5 @@ HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neig
 }
 
 #ifdef BUILD_TESTS
-#include "hnsw_serializer.h"
+#include "hnsw_serializer_impl.h"
 #endif
