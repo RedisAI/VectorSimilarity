@@ -50,7 +50,3 @@ if (TARGET svs::svs)
         target_link_libraries(VectorSimilarity svs::svs_static_library)
     endif()
 endif()
-
-if(VECSIM_BUILD_TESTS)
-    target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
-endif()
