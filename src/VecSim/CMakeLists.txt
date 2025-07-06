@@ -52,6 +52,9 @@ if (TARGET svs::svs)
 endif()
 
 if(VECSIM_BUILD_TESTS)
-    add_library(VectorSimilaritySerializer algorithms/hnsw/hnsw_serializer.cpp)
+    add_library(VectorSimilaritySerializer
+        algorithms/hnsw/hnsw_serializer.cpp
+        algorithms/svs/svs_serializer.cpp
+    )
     target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()
