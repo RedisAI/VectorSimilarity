@@ -24,7 +24,7 @@ public:
     // Persist index into a file in the specified location with V3 encoding routine.
     virtual void saveIndex(const std::string &location) = 0;
 
-    EncodingVersion getVersion() const { return m_version; }
+    EncodingVersion getVersion() const;
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 
