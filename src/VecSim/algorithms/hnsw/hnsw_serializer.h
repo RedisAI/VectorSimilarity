@@ -13,7 +13,7 @@
 #include <string>
 #include "VecSim/utils/serializer.h"
 
-class HNSWserializer : public Serializer {
+class HNSWSerializer : public Serializer {
 public:
     enum class EncodingVersion {
         DEPRECATED = 2, // Last deprecated version
@@ -22,7 +22,7 @@ public:
         INVALID
     };
 
-    explicit HNSWserializer(EncodingVersion version = EncodingVersion::V4);
+    explicit HNSWSerializer(EncodingVersion version = EncodingVersion::V4);
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 

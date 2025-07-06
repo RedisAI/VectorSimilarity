@@ -11,9 +11,9 @@
 
 namespace fs = std::filesystem;
 
-SVSserializer::SVSserializer(EncodingVersion version) : m_version(version) {}
+SVSSerializer::SVSSerializer(EncodingVersion version) : m_version(version) {}
 
-SVSserializer::EncodingVersion SVSserializer::ReadVersion(std::ifstream &input) {
+SVSSerializer::EncodingVersion SVSSerializer::ReadVersion(std::ifstream &input) {
     input.seekg(0, std::ifstream::beg);
 
     EncodingVersion version = EncodingVersion::INVALID;
@@ -27,7 +27,7 @@ SVSserializer::EncodingVersion SVSserializer::ReadVersion(std::ifstream &input) 
     return version;
 }
 
-void SVSserializer::saveIndex(const std::string &location) {
+void SVSSerializer::saveIndex(const std::string &location) {
     EncodingVersion version = EncodingVersion::V0;
     auto metadata_path = fs::path(location) / "metadata";;
     std::ofstream output(metadata_path, std::ios::binary);
@@ -37,6 +37,6 @@ void SVSserializer::saveIndex(const std::string &location) {
     impl_save(location);
 }
 
-SVSserializer::EncodingVersion SVSserializer::getVersion() const {
+SVSSerializer::EncodingVersion SVSSerializer::getVersion() const {
     return m_version;
 }

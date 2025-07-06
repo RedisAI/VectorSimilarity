@@ -30,7 +30,7 @@
 
 struct SVSIndexBase
 #ifdef BUILD_TESTS
-    : public SVSserializer
+    : public SVSSerializer
 #endif
 {
 

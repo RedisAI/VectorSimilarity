@@ -64,7 +64,7 @@ public:
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
                     const IndexComponents<DataType, DistType> &components,
-                    HNSWserializer::EncodingVersion version)
+                    HNSWSerializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 

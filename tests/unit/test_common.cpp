@@ -486,7 +486,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     // Use a valid version
     output.seekp(0, std::ios_base::beg);
 
-    Serializer::writeBinaryPOD(output, HNSWserializer::EncodingVersion::V3);
+    Serializer::writeBinaryPOD(output, HNSWSerializer::EncodingVersion::V3);
     Serializer::writeBinaryPOD(output, 42);
     output.flush();
 
@@ -498,7 +498,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     // Use a valid version
     output.seekp(0, std::ios_base::beg);
 
-    Serializer::writeBinaryPOD(output, HNSWserializer::EncodingVersion::V3);
+    Serializer::writeBinaryPOD(output, HNSWSerializer::EncodingVersion::V3);
     Serializer::writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
     Serializer::writeBinaryPOD(output, size_t(128));
 

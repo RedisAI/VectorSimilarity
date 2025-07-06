@@ -14,14 +14,14 @@
 #include "VecSim/utils/serializer.h"
 #include <filesystem>
 
-class SVSserializer : public Serializer {
+class SVSSerializer : public Serializer {
 public:
     enum class EncodingVersion {
         V0,
         INVALID
     };
 
-    explicit SVSserializer(EncodingVersion version = EncodingVersion::V0);
+    explicit SVSSerializer(EncodingVersion version = EncodingVersion::V0);
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 

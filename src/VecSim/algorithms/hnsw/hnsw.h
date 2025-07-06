@@ -86,7 +86,7 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public VecSimIndexTombstone
 #ifdef BUILD_TESTS
     ,
-                  public HNSWserializer
+                  public HNSWSerializer
 #endif
 {
 protected:

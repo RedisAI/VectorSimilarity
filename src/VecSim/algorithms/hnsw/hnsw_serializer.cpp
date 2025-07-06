@@ -9,9 +9,9 @@
 
 #include "hnsw_serializer.h"
 
-HNSWserializer::HNSWserializer(EncodingVersion version) : m_version(version) {}
+HNSWSerializer::HNSWSerializer(EncodingVersion version) : m_version(version) {}
 
-HNSWserializer::EncodingVersion HNSWserializer::ReadVersion(std::ifstream &input) {
+HNSWSerializer::EncodingVersion HNSWSerializer::ReadVersion(std::ifstream &input) {
     input.seekg(0, std::ifstream::beg);
 
     EncodingVersion version = EncodingVersion::INVALID;
@@ -29,7 +29,7 @@ HNSWserializer::EncodingVersion HNSWserializer::ReadVersion(std::ifstream &input
     return version;
 }
 
-void HNSWserializer::saveIndex(const std::string &location) {
+void HNSWSerializer::saveIndex(const std::string &location) {
     EncodingVersion version = EncodingVersion::V4;
     std::ofstream output(location, std::ios::binary);
     writeBinaryPOD(output, version);
@@ -37,6 +37,6 @@ void HNSWserializer::saveIndex(const std::string &location) {
     output.close();
 }
 
-HNSWserializer::EncodingVersion HNSWserializer::getVersion() const {
+HNSWSerializer::EncodingVersion HNSWSerializer::getVersion() const {
     return m_version;
 }

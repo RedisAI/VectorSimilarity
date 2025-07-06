@@ -15,8 +15,8 @@ template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          const IndexComponents<DataType, DistType> &components,
-                                         HNSWserializer::EncodingVersion version)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components), HNSWserializer(version),
+                                         HNSWSerializer::EncodingVersion version)
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components), HNSWSerializer(version),
       epsilon(params->epsilon), graphDataBlocks(this->allocator), idToMetaData(this->allocator),
       visitedNodesHandlerPool(0, this->allocator) {
 
@@ -163,7 +163,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, HNSWserializer::EncodingVersion version) {
+void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, HNSWSerializer::EncodingVersion version) {
     // Restore id to metadata vector
     labelType label = 0;
     elementFlags flags = 0;
@@ -220,7 +220,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, HNSWseria
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, ElementLevelData &data,
-                                                 HNSWserializer::EncodingVersion version) {
+                                                 HNSWSerializer::EncodingVersion version) {
     readBinaryPOD(input, data.numLinks);
     for (size_t i = 0; i < data.numLinks; i++) {
         readBinaryPOD(input, data.links[i]);
