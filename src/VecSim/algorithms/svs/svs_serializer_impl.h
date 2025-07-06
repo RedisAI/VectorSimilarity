@@ -88,17 +88,21 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     // TODO rebase on master and use `logger_` field.
     // auto logger = makeLogger();
 
+    // Verify metadata compatability
+    compareMetadataFile(folder_path + "/metadata");
+
     if constexpr (isMulti) {
-        auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
-            folder_path + "/config",
-            SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
-                                           this->buildParams, this->getAllocator())),
-            SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
-                                            this->getAllocator())),
-            distance_f(), std::move(threadpool_handle),
-            svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
-        impl_ = std::make_unique<impl_type>(std::move(loaded));
-    } else {
+    auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
+        folder_path + "/config",
+        SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                                        this->buildParams, this->getAllocator())),
+        SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                                        this->getAllocator())),
+        distance_f(), std::move(threadpool_handle),
+        svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
+    impl_ = std::make_unique<impl_type>(std::move(loaded));
+    }
+    else {
         auto loaded = svs::index::vamana::auto_dynamic_assemble(
             folder_path + "/config",
             SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
@@ -108,4 +112,44 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             distance_f(), std::move(threadpool_handle), false, logger_);
         impl_ = std::make_unique<impl_type>(std::move(loaded));
     }
+}
+
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::compareMetadataFile(const std::string &metadataFilePath) const {
+    std::ifstream input(metadataFilePath, std::ios::binary);
+    if (!input.is_open()) {
+        throw std::runtime_error("Failed to open metadata file: " + metadataFilePath);
+    }
+
+    compareField(input, this->m_version, "EncodingVersion");
+    compareField(input, this->dim, "dim");
+    compareField(input, this->vecType, "vecType");
+    compareField(input, this->dataSize, "dataSize");
+    compareField(input, this->metric, "metric");
+    compareField(input, this->blockSize, "blockSize");
+    compareField(input, this->isMulti, "isMulti");
+
+    compareField(input, this->forcePreprocessing, "forcePreprocessing");
+    compareField(input, this->changes_num, "changes_num");
+
+    compareField(input, this->buildParams.alpha, "buildParams.alpha");
+    compareField(input, this->buildParams.graph_max_degree, "buildParams.graph_max_degree");
+    compareField(input, this->buildParams.window_size, "buildParams.window_size");
+    compareField(input, this->buildParams.max_candidate_pool_size, "buildParams.max_candidate_pool_size");
+    compareField(input, this->buildParams.prune_to, "buildParams.prune_to");
+    compareField(input, this->buildParams.use_full_search_history, "buildParams.use_full_search_history");
+
+    compareField(input, this->search_window_size, "search_window_size");
+    compareField(input, this->epsilon, "epsilon");
+
+    auto compressionMode = getCompressionMode();
+    compareField(input, compressionMode, "compression_mode");
+
+    compareField(input, static_cast<size_t>(QuantBits), "QuantBits");
+    compareField(input, static_cast<size_t>(ResidualBits), "ResidualBits");
+    compareField(input, static_cast<bool>(IsLeanVec), "IsLeanVec");
+    compareField(input, static_cast<bool>(isMulti), "isMulti (template param)");
+
+    return true;
 }

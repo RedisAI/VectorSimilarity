@@ -612,6 +612,8 @@ private:
     void impl_save(const std::string &location) override;
     void saveIndexFields(std::ofstream &output) const override;
 
+
+    bool compareMetadataFile(const std::string &metadataFilePath) const override;
     void loadIndex(const std::string &folder_path) override;
 
 public:

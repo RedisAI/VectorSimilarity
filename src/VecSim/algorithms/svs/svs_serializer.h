@@ -33,6 +33,31 @@ protected:
 
     virtual void impl_save(const std::string &location) = 0;
 
+    // Helper function to compare the svs index fields with the metadata file
+    template <typename T>
+    static void compareField(std::istream &in, const T &expected, const std::string &fieldName);
+
 private:
     void saveIndexFields(std::ofstream &output) const = 0;
+    virtual bool compareMetadataFile(const std::string &metadataFilePath) const = 0;
+
 };
+
+// Implement << operator for enum class
+inline std::ostream &operator<<(std::ostream &os, SVSSerializer::EncodingVersion version) {
+    return os << static_cast<int>(version);
+}
+
+template <typename T>
+void SVSSerializer::compareField(std::istream &in, const T &expected, const std::string &fieldName) {
+    T actual;
+    Serializer::readBinaryPOD(in, actual);
+    if (!in.good()) {
+        throw std::runtime_error("Failed to read field: " + fieldName);
+    }
+    if (actual != expected) {
+        std::ostringstream msg;
+        msg << "Field mismatch in \"" << fieldName << "\": expected " << expected << ", got " << actual;
+        throw std::runtime_error(msg.str());
+    }
+}
