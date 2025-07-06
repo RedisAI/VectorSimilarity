@@ -14,7 +14,7 @@
 #include "VecSim/utils/serializer.h"
 
 class HNSWserializer : public Serializer {
-    public:
+public:
     enum class EncodingVersion {
         DEPRECATED = 2, // Last deprecated version
         V3,
@@ -22,43 +22,14 @@ class HNSWserializer : public Serializer {
         INVALID
     };
 
-    HNSWserializer(EncodingVersion version = EncodingVersion::V4) : m_version(version) {};
-    static EncodingVersion ReadVersion(std::ifstream &input) {
+    explicit HNSWserializer(EncodingVersion version = EncodingVersion::V4);
 
-        input.seekg(0, std::ifstream::beg);
+    static EncodingVersion ReadVersion(std::ifstream &input);
 
-        // The version number is the first field that is serialized.
-        EncodingVersion version = EncodingVersion::INVALID;
-        readBinaryPOD(input, version);
+    void saveIndex(const std::string &location);
 
-        if (version <= EncodingVersion::DEPRECATED) {
-            input.close();
-            throw std::runtime_error("Cannot load index: deprecated encoding version: " +
-                                     std::to_string(static_cast<int>(version)));
-        } else if (version >= EncodingVersion::INVALID) {
-            input.close();
-            throw std::runtime_error("Cannot load index: bad encoding version: " +
-                                    std::to_string(static_cast<int>(version)));
-        }
-        return version;
-    }
+    EncodingVersion getVersion() const;
 
-    // Persist index into a file in the specified location.
-    void saveIndex(const std::string &location) {
-
-        // Serializing with the latest version.
-        // Using int to enable multiple EncodingVersions types
-        EncodingVersion version = EncodingVersion::V4;
-        std::ofstream output(location, std::ios::binary);
-        writeBinaryPOD(output, version);
-        saveIndexIMP(output);
-        output.close();
-    }
-
-    EncodingVersion getVersion() const  {
-        return m_version;
-    }
-
-    protected:
+protected:
     EncodingVersion m_version;
 };
