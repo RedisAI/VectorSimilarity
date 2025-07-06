@@ -81,7 +81,8 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
 
     // Get number of blocks
     unsigned int num_blocks = 0;
-    HNSWSerializer::EncodingVersion hnsw_version = static_cast<HNSWSerializer::EncodingVersion>(version);
+    HNSWSerializer::EncodingVersion hnsw_version =
+        static_cast<HNSWSerializer::EncodingVersion>(version);
     if (hnsw_version == HNSWSerializer::EncodingVersion::V3) {
         // In V3, the number of blocks is serialized, so we need to read it from the file.
         Serializer::readBinaryPOD(input, num_blocks);

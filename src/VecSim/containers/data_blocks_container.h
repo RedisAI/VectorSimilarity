@@ -50,7 +50,8 @@ public:
     void saveVectorsData(std::ostream &output) const override;
     // Use that in deserialization when file was created with old version (v3) that serialized
     // the blocks themselves and not just thw raw vector data.
-    void restoreBlocks(std::istream &input, size_t num_vectors, Serializer::EncodingVersion version);
+    void restoreBlocks(std::istream &input, size_t num_vectors,
+                       Serializer::EncodingVersion version);
     void shrinkToFit();
     size_t numBlocks() const;
 #endif

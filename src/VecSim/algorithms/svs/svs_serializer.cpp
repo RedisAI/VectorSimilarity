@@ -1,11 +1,11 @@
 /*
-* Copyright (c) 2006-Present, Redis Ltd.
-* All rights reserved.
-*
-* Licensed under your choice of the Redis Source Available License 2.0
-* (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
-* GNU Affero General Public License v3 (AGPLv3).
-*/
+ * Copyright (c) 2006-Present, Redis Ltd.
+ * All rights reserved.
+ *
+ * Licensed under your choice of the Redis Source Available License 2.0
+ * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
+ * GNU Affero General Public License v3 (AGPLv3).
+ */
 
 #include "svs_serializer.h"
 
@@ -29,7 +29,8 @@ SVSSerializer::EncodingVersion SVSSerializer::ReadVersion(std::ifstream &input) 
 
 void SVSSerializer::saveIndex(const std::string &location) {
     EncodingVersion version = EncodingVersion::V0;
-    auto metadata_path = fs::path(location) / "metadata";;
+    auto metadata_path = fs::path(location) / "metadata";
+    ;
     std::ofstream output(metadata_path, std::ios::binary);
     writeBinaryPOD(output, version);
     saveIndexIMP(output);
@@ -37,6 +38,4 @@ void SVSSerializer::saveIndex(const std::string &location) {
     impl_save(location);
 }
 
-SVSSerializer::EncodingVersion SVSSerializer::getVersion() const {
-    return m_version;
-}
+SVSSerializer::EncodingVersion SVSSerializer::getVersion() const { return m_version; }

@@ -16,9 +16,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          const AbstractIndexInitParams &abstractInitParams,
                                          const IndexComponents<DataType, DistType> &components,
                                          HNSWSerializer::EncodingVersion version)
-    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components), HNSWSerializer(version),
-      epsilon(params->epsilon), graphDataBlocks(this->allocator), idToMetaData(this->allocator),
-      visitedNodesHandlerPool(0, this->allocator) {
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
+      HNSWSerializer(version), epsilon(params->epsilon), graphDataBlocks(this->allocator),
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -163,7 +163,8 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, HNSWSerializer::EncodingVersion version) {
+void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
+                                                 HNSWSerializer::EncodingVersion version) {
     // Restore id to metadata vector
     labelType label = 0;
     elementFlags flags = 0;
@@ -180,7 +181,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, HNSWSeria
     // Todo: create vector data container and load the stored data based on the index storage params
     // when other storage types will be available.
     dynamic_cast<DataBlocksContainer *>(this->vectors)
-        ->restoreBlocks(input, this->curElementCount,   static_cast<Serializer::EncodingVersion>(m_version));
+        ->restoreBlocks(input, this->curElementCount,
+                        static_cast<Serializer::EncodingVersion>(m_version));
 
     // Get graph data blocks
     ElementGraphData *cur_egt;

@@ -608,14 +608,13 @@ public:
 #ifdef BUILD_TESTS
 
 private:
-    void saveIndexIMP(std::ofstream &output)  override;
+    void saveIndexIMP(std::ofstream &output) override;
     void impl_save(const std::string &location) override;
     void saveIndexFields(std::ofstream &output) const override;
 
     void loadIndex(const std::string &folder_path) override;
 
 public:
-
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         assert(false && "Not implemented");
@@ -630,7 +629,6 @@ public:
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 };
-
 
 #ifdef BUILD_TESTS
 // Including implementations for Serializer base

@@ -13,7 +13,8 @@
 public:
 HNSWIndex(std::ifstream &input, const HNSWParams *params,
           const AbstractIndexInitParams &abstractInitParams,
-          const IndexComponents<DataType, DistType> &components, HNSWSerializer::EncodingVersion version);
+          const IndexComponents<DataType, DistType> &components,
+          HNSWSerializer::EncodingVersion version);
 
 // Validates the connections between vectors
 HNSWIndexMetaData checkIntegrity() const;
@@ -31,7 +32,8 @@ void saveIndexFields(std::ofstream &output) const;
 void saveGraph(std::ofstream &output) const;
 
 void saveLevel(std::ofstream &output, ElementLevelData &data) const;
-void restoreLevel(std::ifstream &input, ElementLevelData &data, HNSWSerializer::EncodingVersion version);
+void restoreLevel(std::ifstream &input, ElementLevelData &data,
+                  HNSWSerializer::EncodingVersion version);
 void computeIndegreeForAll();
 
 // Functions for index loading.

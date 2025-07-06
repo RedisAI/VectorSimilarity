@@ -43,7 +43,8 @@ class CommonIndexTest : public ::testing::Test {};
 TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
 
 TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
-return;    size_t dim = 4;
+    return;
+    size_t dim = 4;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = 5};
     VecSimIndex *index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
@@ -175,7 +176,8 @@ return;    size_t dim = 4;
 }
 
 TYPED_TEST(CommonIndexTest, DumpHNSWNeighborsDebugEdgeCases) {
-return;    size_t dim = 4;
+    return;
+    size_t dim = 4;
     size_t top_level;
     int **neighbors_data;
 
@@ -224,7 +226,8 @@ using DataTypes = ::testing::Types<float, double>;
 TYPED_TEST_SUITE(UtilsTests, DataTypes);
 
 TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
-return;    std::pair<TypeParam, size_t> p;
+    return;
+    std::pair<TypeParam, size_t> p;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     vecsim_stl::updatable_max_heap<TypeParam, size_t> heap(allocator);
@@ -313,7 +316,8 @@ return;    std::pair<TypeParam, size_t> p;
 }
 
 TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
-return;    const size_t dim = 1000;
+    return;
+    const size_t dim = 1000;
     TypeParam v[dim];
 
     std::mt19937 rng;
@@ -345,7 +349,8 @@ return;    const size_t dim = 1000;
 }
 
 TYPED_TEST(UtilsTests, results_containers) {
-return;    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    return;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     auto res1 = new VecSimQueryReply(allocator);
     auto res2 = new VecSimQueryReply(allocator);
@@ -390,7 +395,8 @@ return;    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecs
 }
 
 TYPED_TEST(UtilsTests, data_blocks_container) {
-return;    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    return;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // Create a simple data blocks container of chars with block of size 1.
     auto chars_container = DataBlocksContainer(1, 1, allocator, 64);
     ASSERT_EQ(chars_container.size(), 0);
@@ -416,7 +422,8 @@ return;    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecs
 class CommonAPITest : public ::testing::Test {};
 
 TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
-return;    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    return;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     auto res_list = new VecSimQueryReply(allocator);
     res_list->results.push_back(VecSimQueryResult{.id = 0, .score = 0.0});
@@ -525,7 +532,7 @@ void test_log_impl(void *ctx, const char *level, const char *message) {
 }
 
 TEST(CommonAPITest, testlogBasic) {
-return;
+    return;
     logCtx log;
     log.prefix = "test log prefix: ";
 
@@ -547,7 +554,8 @@ return;
 }
 
 TEST(CommonAPITest, testlogTieredIndex) {
-return;    logCtx log;
+    return;
+    logCtx log;
     log.prefix = "tiered prefix: ";
     VecSim_SetLogCallbackFunction(test_log_impl);
 
@@ -583,7 +591,8 @@ return;    logCtx log;
 }
 
 TEST(CommonAPITest, NormalizeBfloat16) {
-return;    size_t dim = 20;
+    return;
+    size_t dim = 20;
     bfloat16 v[dim];
 
     std::mt19937 gen(42);
@@ -608,7 +617,8 @@ return;    size_t dim = 20;
 }
 
 TEST(CommonAPITest, NormalizeFloat16) {
-return;    size_t dim = 20;
+    return;
+    size_t dim = 20;
     float16 v[dim];
 
     std::mt19937 gen(42);
@@ -633,7 +643,8 @@ return;    size_t dim = 20;
 }
 
 TEST(CommonAPITest, NormalizeInt8) {
-return;    size_t dim = 20;
+    return;
+    size_t dim = 20;
     int8_t v[dim + sizeof(float)];
 
     test_utils::populate_int8_vec(v, dim);
@@ -652,7 +663,8 @@ return;    size_t dim = 20;
 }
 
 TEST(CommonAPITest, NormalizeUint8) {
-return;    size_t dim = 20;
+    return;
+    size_t dim = 20;
     uint8_t v[dim + sizeof(float)];
 
     test_utils::populate_uint8_vec(v, dim);
@@ -678,7 +690,8 @@ return;    size_t dim = 20;
  * range queries, validating result ordering by score and by ID.
  */
 TEST(CommonAPITest, SearchDifferentScores) {
-return;    size_t dim = 4;
+    return;
+    size_t dim = 4;
     size_t constexpr k = 3;
 
     // Create TieredHNSW index instance with a mock queue.
@@ -910,7 +923,7 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST(CommonAPITest, testSetTestLogContext) {
-return;    // Create an index with the log context
+    return; // Create an index with the log context
     BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
     VecSimIndex *index = test_utils::CreateNewIndex(bfParams, VecSimType_FLOAT32);
     auto *bf_index = dynamic_cast<BruteForceIndex<float, float> *>(index);
@@ -946,7 +959,8 @@ return;    // Create an index with the log context
 }
 
 TEST(UtilsTests, testMockThreadPool) {
-return;    const size_t num_repeats = 2;
+    return;
+    const size_t num_repeats = 2;
     const size_t num_submissions = 200;
     // 100 seconds timeout for the test should be enough for CI MemoryChecks
     std::chrono::seconds test_timeout(100);

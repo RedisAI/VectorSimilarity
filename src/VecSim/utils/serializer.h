@@ -14,10 +14,7 @@
 
 class Serializer {
 public:
-
-    enum class EncodingVersion {
-        INVALID
-    };
+    enum class EncodingVersion { INVALID };
 
     Serializer(EncodingVersion version = EncodingVersion::INVALID) : m_version(version) {}
 
@@ -44,5 +41,4 @@ protected:
 
     // Index memory size might be changed during index saving.
     virtual void saveIndexIMP(std::ofstream &output) = 0;
-
 };
