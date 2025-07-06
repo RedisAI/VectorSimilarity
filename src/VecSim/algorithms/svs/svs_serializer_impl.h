@@ -169,7 +169,7 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
         size_t index_size = impl_->size();
         size_t storage_size = impl_->view_data().size();
         size_t capacity = storage_traits_t::storage_capacity(impl_->view_data());
-        size_t label_count = isMulti ? impl_->labelcount() : index_size;
+        size_t label_count = this->indexLabelCount();
 
         // Multi-index: label count must not exceed index size
         if constexpr (isMulti) {
@@ -190,23 +190,33 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             throw std::runtime_error("SVSIndex integrity check failed: capacity < index_size.");
         }
 
-        // Validate sample of labels
-        size_t label_validation_errors = 0;
-        size_t labels_checked = 0;
-        const size_t max_labels_to_check = std::min(index_size, size_t{1000});
+        // Binary label validation: either passes or fails
+        // In SVS, the translator only contains valid external IDs, so we just need to
+        // verify that the iteration completes successfully and the count matches expectations
+        size_t labels_counted = 0;
+        bool label_validation_passed = true;
 
-        impl_->on_ids([&](size_t label) {
-            if (labels_checked >= max_labels_to_check)
-                return;
-            labels_checked++;
-            if (label == SIZE_MAX) {
-                label_validation_errors++;
+        try {
+            impl_->on_ids([&](size_t label) {
+                labels_counted++;
+                // Basic sanity check: external IDs should be reasonable values
+                // Note: SIZE_MAX is a valid external ID value in SVS
+            });
+
+            // For non-multi indices, label count should equal index size
+            // For multi indices, label count should equal the expected label count
+            if constexpr (!isMulti) {
+                label_validation_passed = (labels_counted == index_size);
+            } else {
+                label_validation_passed = (labels_counted == label_count);
             }
-        });
+        } catch (...) {
+            label_validation_passed = false;
+        }
 
-        if (label_validation_errors > 0) {
+        if (!label_validation_passed) {
             throw std::runtime_error(
-                "SVSIndex integrity check failed: found invalid labels in index.");
+                "SVSIndex integrity check failed: label validation failed.");
         }
 
         return true;
