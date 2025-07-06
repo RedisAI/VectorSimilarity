@@ -27,11 +27,15 @@ public:
 
     void saveIndex(const std::string &location) override;
 
+
     EncodingVersion getVersion() const;
+
+    virtual void loadIndex(const std::string &location) = 0;
 
 protected:
     EncodingVersion m_version;
 
     virtual void impl_save(const std::string &location) = 0;
 
+    virtual void saveIndexFields(std::ofstream &output) const = 0;
 };

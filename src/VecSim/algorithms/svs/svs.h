@@ -42,7 +42,6 @@ struct SVSIndexBase
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
-    virtual void loadIndex(const std::string &folder_path)  { return;};
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -608,35 +607,14 @@ public:
 
 #ifdef BUILD_TESTS
 
+private:
     void saveIndexIMP(std::ofstream &output)  override;
     void impl_save(const std::string &location) override;
+    void saveIndexFields(std::ofstream &output) const override;
 
-    // void loadIndex(const std::string &folder_path) override {
-    //     svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
-    //     // TODO rebase on master and use `logger_` field.
-    //     // auto logger = makeLogger();
+    void loadIndex(const std::string &folder_path) override;
 
-    //     if constexpr (isMulti) {
-    //         auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
-    //             folder_path + "/config",
-    //             SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
-    //                                            this->buildParams, this->getAllocator())),
-    //             SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
-    //                                             this->getAllocator())),
-    //             distance_f(), std::move(threadpool_handle),
-    //             svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
-    //         impl_ = std::make_unique<impl_type>(std::move(loaded));
-    //     } else {
-    //         auto loaded = svs::index::vamana::auto_dynamic_assemble(
-    //             folder_path + "/config",
-    //             SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
-    //                                            this->buildParams, this->getAllocator())),
-    //             SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
-    //                                             this->getAllocator())),
-    //             distance_f(), std::move(threadpool_handle), false, logger_);
-    //         impl_ = std::make_unique<impl_type>(std::move(loaded));
-    //     }
-    // }
+public:
 
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
