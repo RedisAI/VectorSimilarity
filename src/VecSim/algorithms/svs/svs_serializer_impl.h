@@ -171,14 +171,6 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
         size_t capacity = storage_traits_t::storage_capacity(impl_->view_data());
         size_t label_count = this->indexLabelCount();
 
-        // Multi-index: label count must not exceed index size
-        if constexpr (isMulti) {
-            if (label_count > index_size) {
-                throw std::runtime_error(
-                    "SVSIndex integrity check failed: label_count > index_size for multi-index.");
-            }
-        }
-
         // Storage size must match index size
         if (storage_size != index_size) {
             throw std::runtime_error(
@@ -190,25 +182,21 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             throw std::runtime_error("SVSIndex integrity check failed: capacity < index_size.");
         }
 
-        // Binary label validation: either passes or fails
-        // In SVS, the translator only contains valid external IDs, so we just need to
-        // verify that the iteration completes successfully and the count matches expectations
+        // Binary label validation: verify label iteration and count consistency
         size_t labels_counted = 0;
         bool label_validation_passed = true;
 
         try {
             impl_->on_ids([&](size_t label) {
                 labels_counted++;
-                // Basic sanity check: external IDs should be reasonable values
-                // Note: SIZE_MAX is a valid external ID value in SVS
             });
 
-            // For non-multi indices, label count should equal index size
-            // For multi indices, label count should equal the expected label count
-            if constexpr (!isMulti) {
-                label_validation_passed = (labels_counted == index_size);
-            } else {
-                label_validation_passed = (labels_counted == label_count);
+            // Validate label count consistency
+            label_validation_passed = (labels_counted == label_count);
+
+            // For multi-index, also ensure label count doesn't exceed index size
+            if constexpr (isMulti) {
+                label_validation_passed = label_validation_passed && (label_count <= index_size);
             }
         } catch (...) {
             label_validation_passed = false;
