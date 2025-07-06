@@ -92,17 +92,16 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     compareMetadataFile(folder_path + "/metadata");
 
     if constexpr (isMulti) {
-    auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
-        folder_path + "/config",
-        SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
-                                        this->buildParams, this->getAllocator())),
-        SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
-                                        this->getAllocator())),
-        distance_f(), std::move(threadpool_handle),
-        svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
-    impl_ = std::make_unique<impl_type>(std::move(loaded));
-    }
-    else {
+        auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
+            folder_path + "/config",
+            SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                                           this->buildParams, this->getAllocator())),
+            SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                                            this->getAllocator())),
+            distance_f(), std::move(threadpool_handle),
+            svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
+        impl_ = std::make_unique<impl_type>(std::move(loaded));
+    } else {
         auto loaded = svs::index::vamana::auto_dynamic_assemble(
             folder_path + "/config",
             SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
@@ -116,7 +115,8 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
 
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
           size_t ResidualBits, bool IsLeanVec>
-bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::compareMetadataFile(const std::string &metadataFilePath) const {
+bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits,
+              IsLeanVec>::compareMetadataFile(const std::string &metadataFilePath) const {
     std::ifstream input(metadataFilePath, std::ios::binary);
     if (!input.is_open()) {
         throw std::runtime_error("Failed to open metadata file: " + metadataFilePath);
@@ -136,9 +136,11 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     compareField(input, this->buildParams.alpha, "buildParams.alpha");
     compareField(input, this->buildParams.graph_max_degree, "buildParams.graph_max_degree");
     compareField(input, this->buildParams.window_size, "buildParams.window_size");
-    compareField(input, this->buildParams.max_candidate_pool_size, "buildParams.max_candidate_pool_size");
+    compareField(input, this->buildParams.max_candidate_pool_size,
+                 "buildParams.max_candidate_pool_size");
     compareField(input, this->buildParams.prune_to, "buildParams.prune_to");
-    compareField(input, this->buildParams.use_full_search_history, "buildParams.use_full_search_history");
+    compareField(input, this->buildParams.use_full_search_history,
+                 "buildParams.use_full_search_history");
 
     compareField(input, this->search_window_size, "search_window_size");
     compareField(input, this->epsilon, "epsilon");
@@ -152,4 +154,67 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     compareField(input, static_cast<bool>(isMulti), "isMulti (template param)");
 
     return true;
+}
+
+template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
+          size_t ResidualBits, bool IsLeanVec>
+bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::checkIntegrity()
+    const {
+    if (!impl_) {
+        throw std::runtime_error(
+            "SVSIndex integrity check failed: index implementation (impl_) is null.");
+    }
+
+    try {
+        size_t index_size = impl_->size();
+        size_t storage_size = impl_->view_data().size();
+        size_t capacity = storage_traits_t::storage_capacity(impl_->view_data());
+        size_t label_count = isMulti ? impl_->labelcount() : index_size;
+
+        // Multi-index: label count must not exceed index size
+        if constexpr (isMulti) {
+            if (label_count > index_size) {
+                throw std::runtime_error(
+                    "SVSIndex integrity check failed: label_count > index_size for multi-index.");
+            }
+        }
+
+        // Storage size must match index size
+        if (storage_size != index_size) {
+            throw std::runtime_error(
+                "SVSIndex integrity check failed: storage_size != index_size.");
+        }
+
+        // Capacity must be at least index size
+        if (capacity < index_size) {
+            throw std::runtime_error("SVSIndex integrity check failed: capacity < index_size.");
+        }
+
+        // Validate sample of labels
+        size_t label_validation_errors = 0;
+        size_t labels_checked = 0;
+        const size_t max_labels_to_check = std::min(index_size, size_t{1000});
+
+        impl_->on_ids([&](size_t label) {
+            if (labels_checked >= max_labels_to_check)
+                return;
+            labels_checked++;
+            if (label == SIZE_MAX) {
+                label_validation_errors++;
+            }
+        });
+
+        if (label_validation_errors > 0) {
+            throw std::runtime_error(
+                "SVSIndex integrity check failed: found invalid labels in index.");
+        }
+
+        return true;
+
+    } catch (const std::exception &e) {
+        throw std::runtime_error(std::string("SVSIndex integrity check failed with exception: ") +
+                                 e.what());
+    } catch (...) {
+        throw std::runtime_error("SVSIndex integrity check failed with unknown exception.");
+    }
 }

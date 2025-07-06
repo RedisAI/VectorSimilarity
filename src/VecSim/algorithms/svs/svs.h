@@ -26,7 +26,9 @@
 #include "VecSim/algorithms/svs/svs_batch_iterator.h"
 #include "VecSim/algorithms/svs/svs_extensions.h"
 
+#ifdef BUILD_TESTS
 #include "svs_serializer.h"
+#endif
 
 struct SVSIndexBase
 #ifdef BUILD_TESTS
@@ -612,9 +614,9 @@ private:
     void impl_save(const std::string &location) override;
     void saveIndexFields(std::ofstream &output) const override;
 
-
     bool compareMetadataFile(const std::string &metadataFilePath) const override;
     void loadIndex(const std::string &folder_path) override;
+    bool checkIntegrity() const override;
 
 public:
     void fitMemory() override {}
