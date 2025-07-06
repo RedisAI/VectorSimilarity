@@ -34,5 +34,5 @@ protected:
     EncodingVersion m_version;
 
 private:
-    void saveIndexFields(std::ofstream &output) const=0;
+    void saveIndexFields(std::ofstream &output) const = 0;
 };
