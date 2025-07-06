@@ -187,9 +187,7 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
         bool label_validation_passed = true;
 
         try {
-            impl_->on_ids([&](size_t label) {
-                labels_counted++;
-            });
+            impl_->on_ids([&](size_t label) { labels_counted++; });
 
             // Validate label count consistency
             label_validation_passed = (labels_counted == label_count);
@@ -203,8 +201,7 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
         }
 
         if (!label_validation_passed) {
-            throw std::runtime_error(
-                "SVSIndex integrity check failed: label validation failed.");
+            throw std::runtime_error("SVSIndex integrity check failed: label validation failed.");
         }
 
         return true;
