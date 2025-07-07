@@ -18,7 +18,6 @@ public:
 
     Serializer(EncodingVersion version = EncodingVersion::INVALID) : m_version(version) {}
 
-    // Persist index into a file in the specified location with V3 encoding routine.
     virtual void saveIndex(const std::string &location) = 0;
 
     EncodingVersion getVersion() const;
