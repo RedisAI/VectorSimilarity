@@ -566,6 +566,14 @@ public:
         }
     }
 
+    explicit PySVSIndex(const std::string &location, const SVSParams &svs_params) {
+        this->index = std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, svs_params),
+                                                   VecSimIndex_Free);
+        if (!this->index) {
+            throw std::runtime_error("Index creation failed: " + location);
+        }
+    }
+
     void addVectorsParallel(const py::object &input, const py::object &vectors_labels) {
         py::array vectors_data(input);
         // py::array labels(vectors_labels);
@@ -586,6 +594,22 @@ public:
         auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
         assert(svs_index);
         svs_index->addVectors(vectors_data.data(), labels.data(), n_vectors);
+    }
+
+    void saveIndex(const std::string &folder_path) {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        if (!svs_index) {
+            throw std::runtime_error("Invalid SVS index");
+        }
+        svs_index->saveIndex(folder_path);
+    }
+
+    void loadIndex(const std::string &folder_path) {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        if (!svs_index) {
+            throw std::runtime_error("Invalid SVS index");
+        }
+        svs_index->loadIndex(folder_path);
     }
 };
 
