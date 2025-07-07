@@ -18,6 +18,8 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#include "VecSim/index_factories/svs_factory.h"
+#include "VecSim/algorithms/svs/svs.h"
 #include "mock_thread_pool.h"
 #include "tests_utils.h"
 #include "VecSim/index_factories/tiered_factory.h"
@@ -28,6 +30,7 @@
 #include <cstdlib>
 #include <limits>
 #include <cmath>
+#include <filesystem>
 #include <random>
 #include <cstdarg>
 #include <filesystem>
@@ -511,6 +514,48 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     output.close();
 }
+
+#if HAVE_SVS
+TEST_F(SerializerTest, SVSSerializer) {
+
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/bad_index_svs";
+    auto metadata_path = std::filesystem::path(this->file_name) / "metadata";
+
+    // Try to load an index from a directory that doesn't exist.
+    SVSParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 1024,
+        .metric = VecSimMetric_L2,
+        .blockSize = 1024,
+        /* SVS-Vamana specifics */
+        .quantBits = VecSimSvsQuant_NONE,
+        .graph_max_degree = 63, // x^2-1 to round the graph block size
+        .construction_window_size = 20,
+        .max_candidate_pool_size = 1024,
+        .prune_to = 60,
+        .use_search_history = VecSimOption_ENABLE,
+    };
+    VecSimParams index_params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = params}};
+
+    ASSERT_EXCEPTION_MESSAGE(SVSFactory::NewIndex(this->file_name, &index_params), std::runtime_error,
+                             std::string("Failed to open metadata file: ") + metadata_path.string());
+
+    // Create directory and metadata file with invalid encoding version
+    std::filesystem::create_directories(this->file_name);
+    std::ofstream output(metadata_path, std::ios::binary);
+
+    // Write invalid encoding version (42)
+    Serializer::writeBinaryPOD(output, 42);
+    output.flush();
+    output.close();
+
+    ASSERT_EXCEPTION_MESSAGE(SVSFactory::NewIndex(this->file_name, &index_params), std::runtime_error,
+                             "Cannot load index: bad encoding version: 42");
+
+    // Clean up
+    std::filesystem::remove_all(this->file_name);
+}
+#endif
 
 struct logCtx {
 public:
