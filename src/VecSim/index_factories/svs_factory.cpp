@@ -117,7 +117,8 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 // NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
           bool IsLeanVec>
-VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params,
+                          bool is_normalized) {
     auto abstractInitParams = NewAbstractInitParams(params);
     auto &svsParams = params->algoParams.svsParams;
     auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
@@ -126,22 +127,19 @@ VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *param
         nullptr, preprocessors}; // calculator is not in use in svs.
     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
     if (svsParams.multi) {
-        auto index = new (abstractInitParams.allocator)
+        return new (abstractInitParams.allocator)
             SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>(
-                svsParams, abstractInitParams, components, forcePreprocessing);
-        index->loadIndex(location);
-        return index;
+                location, svsParams, abstractInitParams, components, forcePreprocessing);
     } else {
-        auto index = new (abstractInitParams.allocator)
+        return new (abstractInitParams.allocator)
             SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>(
-                svsParams, abstractInitParams, components, forcePreprocessing);
-        index->loadIndex(location);
-        return index;
+                location, svsParams, abstractInitParams, components, forcePreprocessing);
     }
 }
 
 template <typename MetricType, typename DataType>
-VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params,
+                          bool is_normalized) {
     // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
     // elsewhere we got code coverage failure for the `supported==false` case
     auto quantBits =
@@ -172,7 +170,8 @@ VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *param
 }
 
 template <typename MetricType>
-VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params,
+                          bool is_normalized) {
     assert(params && params->algo == VecSimAlgo_SVS);
     switch (params->algoParams.svsParams.type) {
     case VecSimType_FLOAT32:
@@ -186,7 +185,8 @@ VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *param
     }
 }
 
-VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params,
+                          bool is_normalized) {
     assert(params && params->algo == VecSimAlgo_SVS);
     switch (params->algoParams.svsParams.metric) {
     case VecSimMetric_L2:
@@ -288,6 +288,10 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NewIndexImpl(params, is_normalized);
 }
 
+VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    return NewIndexImpl(location, params, is_normalized);
+}
+
 size_t EstimateElementSize(const SVSParams *params) {
     using graph_idx_type = uint32_t;
     // Assuming that the graph_max_degree can be unset in params.
@@ -317,6 +321,9 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 #else  // HAVE_SVS
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
+VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    return NULL;
+}
 size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) { return -1; }
 size_t EstimateElementSize(const SVSParams *params) { return -1; }
 }; // namespace SVSFactory

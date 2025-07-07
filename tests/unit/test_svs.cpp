@@ -20,6 +20,7 @@
 #include <sstream>
 #include "spdlog/sinks/ostream_sink.h"
 #include "VecSim/algorithms/svs/svs.h"
+#include "VecSim/index_factories/svs_factory.h"
 
 // There are possible cases when SVS Index cannot be created with the requested quantization mode
 // due to platform and/or hardware limitations or combination of requested 'compression' modes.
@@ -2790,11 +2791,19 @@ TEST(SVSTest, save_load) {
         svs_index = dynamic_cast<SVSIndexBase *>(index);
         ASSERT_NE(svs_index, nullptr);
         svs_index->loadIndex(index_path.string());
-        fs::remove_all(index_path); // Cleanup the saved index directory
-
         // Verify the index was loaded correctly
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
         runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+        // Test load from file with constructor
+        auto svs_index_load = SVSFactory::NewIndex(index_path.string(), &index_params);
+        ASSERT_NE(svs_index_load, nullptr);
+        // Verify the index was loaded correctly
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+        // Cleanup
+        fs::remove_all(index_path); // Cleanup the saved index directory
     }
 }
 
