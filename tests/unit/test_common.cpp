@@ -537,8 +537,9 @@ TEST_F(SerializerTest, SVSSerializer) {
     };
     VecSimParams index_params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = params}};
 
-    ASSERT_EXCEPTION_MESSAGE(SVSFactory::NewIndex(this->file_name, &index_params), std::runtime_error,
-                             std::string("Failed to open metadata file: ") + metadata_path.string());
+    ASSERT_EXCEPTION_MESSAGE(
+        SVSFactory::NewIndex(this->file_name, &index_params), std::runtime_error,
+        std::string("Failed to open metadata file: ") + metadata_path.string());
 
     // Create directory and metadata file with invalid encoding version
     std::filesystem::create_directories(this->file_name);
@@ -549,8 +550,8 @@ TEST_F(SerializerTest, SVSSerializer) {
     output.flush();
     output.close();
 
-    ASSERT_EXCEPTION_MESSAGE(SVSFactory::NewIndex(this->file_name, &index_params), std::runtime_error,
-                             "Cannot load index: bad encoding version: 42");
+    ASSERT_EXCEPTION_MESSAGE(SVSFactory::NewIndex(this->file_name, &index_params),
+                             std::runtime_error, "Cannot load index: bad encoding version: 42");
 
     // Clean up
     std::filesystem::remove_all(this->file_name);
