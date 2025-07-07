@@ -114,6 +114,93 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     }
 }
 
+// NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
+template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
+          bool IsLeanVec>
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    auto abstractInitParams = NewAbstractInitParams(params);
+    auto &svsParams = params->algoParams.svsParams;
+    auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
+        abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
+    IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
+        nullptr, preprocessors}; // calculator is not in use in svs.
+    bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
+    if (svsParams.multi) {
+        auto index = new (abstractInitParams.allocator)
+            SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>(
+                svsParams, abstractInitParams, components, forcePreprocessing);
+        index->loadIndex(location);
+        return index;
+    } else {
+        auto index = new (abstractInitParams.allocator)
+            SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>(
+                svsParams, abstractInitParams, components, forcePreprocessing);
+        index->loadIndex(location);
+        return index;
+    }
+}
+
+template <typename MetricType, typename DataType>
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
+    // elsewhere we got code coverage failure for the `supported==false` case
+    auto quantBits =
+        std::get<0>(svs_details::isSVSQuantBitsSupported(params->algoParams.svsParams.quantBits));
+
+    switch (quantBits) {
+    case VecSimSvsQuant_NONE:
+        return NewIndexImpl<MetricType, DataType, 0, 0, false>(location, params, is_normalized);
+    case VecSimSvsQuant_Scalar:
+        return NewIndexImpl<MetricType, DataType, 1, 0, false>(location, params, is_normalized);
+    case VecSimSvsQuant_8:
+        return NewIndexImpl<MetricType, DataType, 8, 0, false>(location, params, is_normalized);
+    case VecSimSvsQuant_4:
+        return NewIndexImpl<MetricType, DataType, 4, 0, false>(location, params, is_normalized);
+    case VecSimSvsQuant_4x4:
+        return NewIndexImpl<MetricType, DataType, 4, 4, false>(location, params, is_normalized);
+    case VecSimSvsQuant_4x8:
+        return NewIndexImpl<MetricType, DataType, 4, 8, false>(location, params, is_normalized);
+    case VecSimSvsQuant_4x8_LeanVec:
+        return NewIndexImpl<MetricType, DataType, 4, 8, true>(location, params, is_normalized);
+    case VecSimSvsQuant_8x8_LeanVec:
+        return NewIndexImpl<MetricType, DataType, 8, 8, true>(location, params, is_normalized);
+    default:
+        // If we got here something is wrong.
+        assert(false && "Unsupported quantization mode");
+        return NULL;
+    }
+}
+
+template <typename MetricType>
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    assert(params && params->algo == VecSimAlgo_SVS);
+    switch (params->algoParams.svsParams.type) {
+    case VecSimType_FLOAT32:
+        return NewIndexImpl<MetricType, float>(location, params, is_normalized);
+    case VecSimType_FLOAT16:
+        return NewIndexImpl<MetricType, svs::Float16>(location, params, is_normalized);
+    default:
+        // If we got here something is wrong.
+        assert(false && "Unsupported data type");
+        return NULL;
+    }
+}
+
+VecSimIndex *NewIndexImpl(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    assert(params && params->algo == VecSimAlgo_SVS);
+    switch (params->algoParams.svsParams.metric) {
+    case VecSimMetric_L2:
+        return NewIndexImpl<svs::distance::DistanceL2>(location, params, is_normalized);
+    case VecSimMetric_IP:
+    case VecSimMetric_Cosine:
+        return NewIndexImpl<svs::distance::DistanceIP>(location, params, is_normalized);
+    default:
+        // If we got here something is wrong.
+        assert(false && "Unknown distance metric type");
+        return NULL;
+    }
+}
+
 // QuantizedVectorSize() is the chain of template functions to estimate vector DataSize.
 template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec>
 constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0, size_t leanvec_dim = 0) {
