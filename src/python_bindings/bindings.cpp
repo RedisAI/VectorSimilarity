@@ -816,8 +816,14 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PySVSIndex, PyVecSimIndex>(m, "SVSIndex")
         .def(py::init([](const SVSParams &params) { return new PySVSIndex(params); }),
              py::arg("params"))
+        .def(py::init([](const std::string &location, const SVSParams &params) {
+                 return new PySVSIndex(location, params);
+             }),
+             py::arg("location"), py::arg("params"))
         .def("add_vector_parallel", &PySVSIndex::addVectorsParallel, py::arg("vectors"),
-             py::arg("labels"));
+             py::arg("labels"))
+        .def("save_index", &PySVSIndex::saveIndex)
+        .def("load_index", &PySVSIndex::loadIndex);
     py::class_<PyTiered_SVSIndex, PyTieredIndex>(m, "Tiered_SVSIndex")
         .def(py::init([](const SVSParams &svs_params, const TieredSVSParams &tiered_svs_params,
                          size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {
