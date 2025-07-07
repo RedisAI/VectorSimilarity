@@ -79,6 +79,10 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     impl_->save(location + "/config", location + "/graph", location + "/data");
 }
 
+// This function will load the serialized svs index from the given folder path
+// This function should be called after the index is created with the same parameters as the original index.
+// The index fields and template parameters will be validated before loading.
+// After sucssessful loading, the graph can be validated with checkIntegrity.
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
           size_t ResidualBits, bool IsLeanVec>
 void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::loadIndex(
@@ -87,7 +91,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     // TODO rebase on master and use `logger_` field.
     // auto logger = makeLogger();
 
-    // Verify metadata compatability
+    // Verify metadata compatability, will throw runtime exception if not compatable
     compareMetadataFile(folder_path + "/metadata");
 
     if constexpr (isMulti) {
