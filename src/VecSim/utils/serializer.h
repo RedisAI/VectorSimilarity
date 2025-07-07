@@ -34,7 +34,6 @@
  *            └── SVSIndex<T...>
  */
 
-
 class Serializer {
 public:
     enum class EncodingVersion { INVALID };

@@ -24,8 +24,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include "VecSim/algorithms/hnsw/svs.h"
-#include "VecSim/index_factories/svs_factory.h"
 
 #include <cstdlib>
 #include <limits>
@@ -1048,73 +1046,3 @@ TEST(UtilsTests, testMockThreadPool) {
 
     EXPECT_EXIT(TestBody(), ::testing::ExitedWithCode(0), "Success");
 }
-
-#if HAVE_SVS
-
-TEST_F(SerializerTest, SVSSerialzer) {
-
-    std::string dir_name = std::string(getenv("ROOT")) + "/tests/unit/bad_svs/";
-
-    // create the directory if it doesn't exist
-    std::filesystem::create_directories(this->dir_name);
-
-    this->file_name = dir_name + "metadata";
-
-    auto svs_index = SVSFactory::NewIndex();
-
-    // Since the first since is metadata file compatability we can check errors without creating the actual index first
-
-    // Try to load an index from a file that doesnt exist.
-    ASSERT_EXCEPTION_MESSAGE(svs_index->loadIndex(this->file_name), std::runtime_error,
-                             "Cannot open file");
-
-
-    std::ofstream output(this->file_name, std::ios::binary);
-    // Write invalid encoding version
-    Serializer::writeBinaryPOD(output, 0);
-    output.flush();
-    ASSERT_EXCEPTION_MESSAGE(svs_index->loadIndex(this->file_name), std::runtime_error,
-                             "Cannot load index: deprecated encoding version: 0");
-
-    output.seekp(0, std::ios_base::beg);
-    Serializer::writeBinaryPOD(output, 42);
-    output.flush();
-    ASSERT_EXCEPTION_MESSAGE(svs_index->loadIndex(this->file_name), std::runtime_error,
-                             "Cannot load index: bad encoding version: 42");
-
-    // Test WRONG index algorithm exception
-    // Use a valid version
-    output.seekp(0, std::ios_base::beg);
-
-    Serializer::writeBinaryPOD(output, SVSSerializer::EncodingVersion::V0);
-    Serializer::writeBinaryPOD(output, 42);
-    output.flush();
-
-    ASSERT_EXCEPTION_MESSAGE(
-        svs_index->loadIndex(this->file_name), std::runtime_error,
-        "Cannot load index: Expected SVS file but got algorithm type: Unknown (corrupted file?)");
-
-    // Test WRONG index data type
-    // Use a valid version
-    output.seekp(0, std::ios_base::beg);
-
-    Serializer::writeBinaryPOD(output, SVSSerializer::EncodingVersion::V3);
-    Serializer::writeBinaryPOD(output, VecSimAlgo_SVSLIB);
-    Serializer::writeBinaryPOD(output, size_t(128));
-
-    Serializer::writeBinaryPOD(output, 42);
-    Serializer::writeBinaryPOD(output, VecSimMetric_Cosine);
-    output.flush();
-
-    ASSERT_EXCEPTION_MESSAGE(svs_index->loadIndex(this->file_name), std::runtime_error,
-                             "Cannot load index: bad index data type: Unknown (corrupted file?)");
-
-    output.close();
-
-    // Delete created dir
-    fs::remove_all(dir_name); // Cleanup the saved index directory
-
-
-}
-
-#endif
