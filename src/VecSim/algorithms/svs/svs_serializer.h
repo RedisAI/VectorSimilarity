@@ -26,6 +26,9 @@ typedef struct {
     bool is_multi;
 } SVSIndexMetaData;
 
+// Middle layer for SVS serialization
+// Abstract functions should be implemented by the templated SVS index
+
 class SVSSerializer : public Serializer {
 public:
     enum class EncodingVersion { V0, INVALID };

@@ -13,6 +13,9 @@
 #include <string>
 #include "VecSim/utils/serializer.h"
 
+// Middle layer for HNSW serialization
+// Abstract functions should be implemented by the templated HNSW index
+
 class HNSWSerializer : public Serializer {
 public:
     enum class EncodingVersion {

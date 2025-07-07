@@ -12,6 +12,29 @@
 #include <ostream>
 #include <istream>
 
+/*
+ * Serializer Abstraction Layer for Vector Indexes
+ * -----------------------------------------------
+ * This header defines the base `Serializer` class, which provides a generic interface for
+ * serializing vector indexes to disk. It is designed to be inherited
+ * by algorithm-specific serializers (e.g., HNSWSerializer, SVSSerializer), and provides a
+ * versioned, extensible mechanism for managing persistent representations of index state.
+ * Each serializer subclass must define its own EncodingVersion enum.
+ * How to Extend:
+ * 1. Derive a new class from `Serializer`, e.g., `MyIndexSerializer`.
+ * 2. Implement `saveIndex()` and `saveIndexIMP()`.
+ * 3. Implement `saveIndexFields()` to write out relevant fields in a deterministic order.
+ * 4. Optionally, add version-aware deserialization methods.
+ *
+ * Example Inheritance Tree:
+ *   Serializer (abstract)
+ *      ├── HNSWSerializer
+ *      │     └── HNSWIndex<T, U>
+ *      └── SVSSerializer
+ *            └── SVSIndex<T...>
+ */
+
+
 class Serializer {
 public:
     enum class EncodingVersion { INVALID };
