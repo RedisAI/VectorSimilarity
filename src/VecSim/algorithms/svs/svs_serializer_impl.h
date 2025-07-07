@@ -31,7 +31,6 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
 
     // Save SVS-specific configuration fields
     writeBinaryPOD(output, this->forcePreprocessing);
-    writeBinaryPOD(output, this->changes_num);
 
     // Save build parameters
     writeBinaryPOD(output, this->buildParams.alpha);
@@ -131,7 +130,6 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits,
     compareField(input, this->isMulti, "isMulti");
 
     compareField(input, this->forcePreprocessing, "forcePreprocessing");
-    compareField(input, this->changes_num, "changes_num");
 
     compareField(input, this->buildParams.alpha, "buildParams.alpha");
     compareField(input, this->buildParams.graph_max_degree, "buildParams.graph_max_degree");
