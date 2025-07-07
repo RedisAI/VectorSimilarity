@@ -217,5 +217,8 @@ public:
     }
 #ifdef BUILD_TESTS
     virtual void fitMemory() = 0;
+    virtual void loadIndex(const std::string &location) {
+        throw std::runtime_error("Not implemented");
+    }
 #endif
 };

@@ -325,25 +325,6 @@ public:
         logger_ = makeLogger();
     }
 
-    SVSIndex(const std::string &location, const SVSParams &params,
-             const AbstractIndexInitParams &abstractInitParams, const index_component_t &components,
-             bool force_preprocessing)
-        : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
-          changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
-          search_window_size{svs_details::getOrDefault(params.search_window_size,
-                                                       SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE)},
-          search_buffer_capacity{
-              svs_details::getOrDefault(params.search_buffer_capacity, search_window_size)},
-          leanvec_dim{
-              svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
-          epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
-          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
-          impl_{nullptr} {
-        logger_ = makeLogger();
-        loadIndex(location);
-    }
-
     ~SVSIndex() = default;
 
     size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
