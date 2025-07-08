@@ -91,7 +91,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     // TODO rebase on master and use `logger_` field.
     // auto logger = makeLogger();
 
-    // Verify metadata compatability, will throw runtime exception if not compatable
+    // Verify metadata compatibility, will throw runtime exception if not compatible
     compareMetadataFile(folder_path + "/metadata");
 
     if constexpr (isMulti) {
