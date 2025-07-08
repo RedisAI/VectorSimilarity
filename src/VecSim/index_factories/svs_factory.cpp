@@ -204,8 +204,12 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 #if BUILD_TESTS
 VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
     auto index = NewIndexImpl(params, is_normalized);
-    if (index != nullptr) {
-        index->loadIndex(location);
+    // Side-cast to SVSIndexBase to call loadIndex
+    SVSIndexBase* svs_index = dynamic_cast<SVSIndexBase *>(index);
+    if (svs_index != nullptr) {
+        svs_index->loadIndex(location);
+    } else {
+        throw std::runtime_error("Failed to load index");
     }
     return index;
 }

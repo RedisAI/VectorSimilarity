@@ -217,13 +217,5 @@ public:
     }
 #ifdef BUILD_TESTS
     virtual void fitMemory() = 0;
-
-    // This function is declared here to allow test-only code to call it
-    // polymorphically without knowing the concrete index type or template parameters. Subclasses
-    // that support loading override it; others can leave it unimplemented.
-    // TODO: override in HNSW
-    virtual void loadIndex(const std::string &location) {
-        throw std::runtime_error("Not implemented");
-    }
 #endif
 };
