@@ -30,7 +30,6 @@ SVSSerializer::EncodingVersion SVSSerializer::ReadVersion(std::ifstream &input) 
 void SVSSerializer::saveIndex(const std::string &location) {
     EncodingVersion version = EncodingVersion::V0;
     auto metadata_path = fs::path(location) / "metadata";
-    ;
     std::ofstream output(metadata_path, std::ios::binary);
     writeBinaryPOD(output, version);
     saveIndexIMP(output);
