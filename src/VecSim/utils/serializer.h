@@ -57,15 +57,16 @@ public:
         in.read((char *)&podRef, sizeof(T));
     }
 
+    virtual void loadIndex(const std::string &location) {
+        throw std::runtime_error("Not implemented");
+    }
+
 protected:
     EncodingVersion m_version;
 
     // Index memory size might be changed during index saving.
     virtual void saveIndexIMP(std::ofstream &output) = 0;
 
-    virtual void loadIndex(const std::string &location) {
-        throw std::runtime_error("Not implemented");
-    }
 
 private:
     virtual void saveIndexFields(std::ofstream &output) const = 0;

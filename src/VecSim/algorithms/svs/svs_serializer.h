@@ -41,8 +41,6 @@ public:
 
     EncodingVersion getVersion() const;
 
-    virtual void loadIndex(const std::string &location) = 0;
-
     virtual bool checkIntegrity() const = 0;
 
 protected:
@@ -55,7 +53,6 @@ protected:
     static void compareField(std::istream &in, const T &expected, const std::string &fieldName);
 
 private:
-    void saveIndexFields(std::ofstream &output) const = 0;
     virtual bool compareMetadataFile(const std::string &metadataFilePath) const = 0;
 };
 
