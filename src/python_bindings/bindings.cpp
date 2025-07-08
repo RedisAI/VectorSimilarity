@@ -11,6 +11,7 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #if HAVE_SVS
 #include "VecSim/algorithms/svs/svs.h"
+#include "VecSim/index_factories/svs_factory.h"
 #endif
 #include "VecSim/batch_iterator.h"
 #include "VecSim/types/bfloat16.h"
@@ -567,7 +568,8 @@ public:
     }
 
     explicit PySVSIndex(const std::string &location, const SVSParams &svs_params) {
-        this->index = std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, svs_params),
+        VecSimParams params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
+        this->index = std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, &params),
                                                    VecSimIndex_Free);
         if (!this->index) {
             throw std::runtime_error("Index creation failed: " + location);
