@@ -526,14 +526,6 @@ TEST_F(SerializerTest, SVSSerializer) {
         .type = VecSimType_FLOAT32,
         .dim = 1024,
         .metric = VecSimMetric_L2,
-        .blockSize = 1024,
-        /* SVS-Vamana specifics */
-        .quantBits = VecSimSvsQuant_NONE,
-        .graph_max_degree = 63, // x^2-1 to round the graph block size
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
     };
     VecSimParams index_params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = params}};
 
