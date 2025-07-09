@@ -37,6 +37,7 @@ class IndexCtx:
                  prune_to = 0,
                  metric=VecSimMetric_Cosine,
                  data_type=VecSimType_FLOAT32,
+                 quantBits=VecSimSvsQuant_NONE,
                  is_multi=False,
                  num_per_label=1,
                  trainingThreshold=1024,
@@ -74,6 +75,7 @@ class IndexCtx:
                                             num_elements = self.num_vectors,
                                             metric = self.metric,
                                             data_type = self.data_type,
+                                            quantBits= quantBits,
                                             graph_max_degree = self.graph_degree,
                                             construction_window_size = self.window_size_c,
                                             search_window_size = self.window_size_r,
@@ -143,8 +145,9 @@ class IndexCtx:
         }
         return bytes_to_mega(self.num_vectors * self.dim * memory_size[self.data_type])
 
-def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
-    indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label, data_type=data_type, create_data_func=create_data_func)
+def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, quantBits=VecSimSvsQuant_NONE, create_data_func=None):
+    indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label, data_type=data_type,
+                           quantBits=quantBits, create_data_func=create_data_func)
     test_logger.info(f"data type = {indices_ctx.data.dtype}")
     num_elements = indices_ctx.num_labels
 
@@ -184,12 +187,12 @@ def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=
     test_logger.info(f"with {threads_num} threads, insertion runtime is {round_(execution_time_ratio)} times better \n")
 
 
-def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, create_data_func=None):
+def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, quantBits=VecSimSvsQuant_NONE, create_data_func=None):
     data_size = 100000
-    updateThreshold = 16
+    updateThreshold = 1024
     indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
-                           flat_buffer_size=data_size, graph_degree=64, data_type=data_type, create_data_func=create_data_func,
-                           trainingThreshold=updateThreshold, updateThreshold=updateThreshold)
+                           flat_buffer_size=data_size, graph_degree=32, data_type=data_type, quantBits=quantBits,
+                           create_data_func=create_data_func, trainingThreshold=updateThreshold, updateThreshold=updateThreshold)
     index = indices_ctx.tiered_index
 
     num_labels = indices_ctx.num_labels
@@ -265,9 +268,33 @@ def test_search_insert(test_logger):
     test_logger.info("Start insert & search test")
     search_insert(test_logger, is_multi=False)
 
+def test_search_insert_q8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, quantBits=VecSimSvsQuant_8)
+
+def test_search_insert_q4(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, quantBits=VecSimSvsQuant_4)
+
+# NOTE: LeanVec compression expected to be used with real-world datasets,
+# where we have some correlation between dimensions.
+# For syntetic randomized dataset LeanVec demonstrates recall==0.
+
 def test_search_insert_fp16(test_logger):
     test_logger.info("Start insert & search test")
     search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16)
+
+def test_search_insert_fp16_q8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16, quantBits=VecSimSvsQuant_8)
+
+def test_search_insert_fp16_q4(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16, quantBits=VecSimSvsQuant_4)
+
+# NOTE: LeanVec compression expected to be used with real-world datasets,
+# where we have some correlation between dimensions.
+# For syntetic randomized dataset LeanVec demonstrates recall==0.
 
 # TODO - add multi-label support
 @pytest.mark.skip(reason="Multi-label tiered index is not supported yet")
@@ -345,8 +372,9 @@ def test_recall_after_deletion(test_logger):
     # Wait for all repair jobs to be done.
     index.wait_for_index(5)
     test_logger.info(f"Done deleting half of the index")
-    assert index.svs_label_count() >= (num_elements / 2) - indices_ctx.tiered_svs_params.updateTriggerThreshold
-    assert svs_index.index_size() == (num_elements / 2)
+    assert index.svs_label_count() >= (num_elements // 2) - indices_ctx.tiered_svs_params.updateTriggerThreshold
+    assert index.svs_label_count() <= (num_elements // 2) + indices_ctx.tiered_svs_params.updateTriggerThreshold
+    assert svs_index.index_size() == (num_elements // 2)
 
     # Create a list of tuples of the vectors that left.
     vectors = [vectors[i] for i in range(1, num_elements, 2)]
@@ -461,7 +489,7 @@ def test_batch_iterator(test_logger):
                 keys = [key for _, key in dists[:returned_results_num]]
                 correct += len(set(accumulated_labels).intersection(set(keys)))
                 break
-        assert iterations == np.ceil(total_res / batch_size)
+        assert iterations == int(np.ceil(total_res / batch_size))
         recall = float(correct) / total_res
         assert recall >= 0.89
         total_recall += recall

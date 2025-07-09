@@ -681,10 +681,13 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::enum_<VecSimSvsQuantBits>(m, "VecSimSvsQuantBits")
         .value("VecSimSvsQuant_NONE", VecSimSvsQuant_NONE)
-        .value("VecSimSvsQuant_8", VecSimSvsQuant_8)
+        .value("VecSimSvsQuant_Scalar", VecSimSvsQuant_Scalar)
         .value("VecSimSvsQuant_4", VecSimSvsQuant_4)
+        .value("VecSimSvsQuant_8", VecSimSvsQuant_8)
         .value("VecSimSvsQuant_4x4", VecSimSvsQuant_4x4)
         .value("VecSimSvsQuant_4x8", VecSimSvsQuant_4x8)
+        .value("VecSimSvsQuant_4x8_LeanVec", VecSimSvsQuant_4x8_LeanVec)
+        .value("VecSimSvsQuant_8x8_LeanVec", VecSimSvsQuant_8x8_LeanVec)
         .export_values();
 
     py::class_<SVSParams>(m, "SVSParams")
