@@ -13,7 +13,7 @@
 
 #if HAVE_SVS_LVQ
 #include SVS_LVQ_HEADER
-#include "svs/extensions/vamana/leanvec.h"
+#include SVS_LEANVEC_HEADER
 #endif // HAVE_SVS_LVQ
 
 // Scalar Quantization traits for SVS

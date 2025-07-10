@@ -82,6 +82,7 @@ if(USE_SVS)
         list(APPEND CMAKE_PREFIX_PATH "${svs_SOURCE_DIR}")
         find_package(svs REQUIRED)
         set(SVS_LVQ_HEADER "svs/extensions/vamana/lvq.h")
+        set(SVS_LEANVEC_HEADER "svs/extensions/vamana/leanvec.h")
     else()
         # This file is included from both CMakeLists.txt and python_bindings/CMakeLists.txt
         # Set `root` relative to this file, regardless of where it is included from.
@@ -91,11 +92,16 @@ if(USE_SVS)
             deps/ScalableVectorSearch
         )
         set(SVS_LVQ_HEADER "svs/quantization/lvq/impl/lvq_impl.h")
+        set(SVS_LEANVEC_HEADER "svs/leanvec/impl/leanvec_impl.h")
     endif()
 
     if(SVS_LVQ_SUPPORTED AND EXISTS "${svs_SOURCE_DIR}/include/${SVS_LVQ_HEADER}")
         message("SVS LVQ implementation found")
-        add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=1" PUBLIC "SVS_LVQ_HEADER=\"${SVS_LVQ_HEADER}\"")
+        add_compile_definitions(VectorSimilarity
+            PUBLIC "HAVE_SVS_LVQ=1"
+            PUBLIC "SVS_LVQ_HEADER=\"${SVS_LVQ_HEADER}\""
+            PUBLIC "SVS_LEANVEC_HEADER=\"${SVS_LEANVEC_HEADER}\""
+        )
     else()
         message("SVS LVQ implementation not found")
         add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=0")
