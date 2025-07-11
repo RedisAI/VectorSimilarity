@@ -571,7 +571,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // corresponding job id. Note that after calling deleteVectorById, the last id's label
         // shouldn't be available, since it is removed from the lookup.
         labelType last_vec_label =
-            this->frontendIndex->getLabelByInternalId(this->frontendIndex->indexSize() - 1);
+            this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
         int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
         if (deleted && job->id != this->frontendIndex->indexSize()) {
             // If the vector removal caused a swap with the last id, update the relevant insert job.
