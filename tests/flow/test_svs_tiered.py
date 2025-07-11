@@ -186,13 +186,35 @@ def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=
     execution_time_ratio = svs_index_time / tiered_index_time
     test_logger.info(f"with {threads_num} threads, insertion runtime is {round_(execution_time_ratio)} times better \n")
 
+def correlated_data_func(shape):
+    """
+    Generates correlated data for testing purposes.
+    Correlated data is required to emulate real datasets for SVS LeanVec compression.
+    The data is generated such that the first half of the last dimension is correlated with the second half.
+    Supports 2D or 3D shapes.
+    """
+    rng = np.random.default_rng(seed=47)
+    data = rng.normal(1, 0.5, shape)
+    # Correlate the first half with the second half along the last dimension
+    # This is done by adding noise to the even indices and keeping the odd indices as is.
+    # This way we ensure that the even indices are correlated with the odd indices.
+    # We use a slice to select every second element in the last dimension.
+    # For example, if the shape is (100, 10), we will have
+    # data[:, 0] = data[:, 1] + noise, data[:, 2] = data[:, 3] + noise, etc.
+    # This way we ensure that the first half of the last dimension is correlated with the second half.
+    slicer_even = [slice(None)] * (len(shape) - 1) + [slice(0, None, 2)]
+    slicer_odd = [slice(None)] * (len(shape) - 1) + [slice(1, None, 2)]
+    data[tuple(slicer_even)] = data[tuple(slicer_odd)] + rng.normal(0, 0.1, data[tuple(slicer_even)].shape)
 
-def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, quantBits=VecSimSvsQuant_NONE, create_data_func=None):
+    return data
+
+def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32, quantBits=VecSimSvsQuant_NONE, create_data_func=correlated_data_func):
     data_size = 100000
+    trainingThreshold = 10240
     updateThreshold = 1024
-    indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
+    indices_ctx = IndexCtx(dim=32, data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
                            flat_buffer_size=data_size, graph_degree=32, data_type=data_type, quantBits=quantBits,
-                           create_data_func=create_data_func, trainingThreshold=updateThreshold, updateThreshold=updateThreshold)
+                           create_data_func=create_data_func, trainingThreshold=trainingThreshold, updateThreshold=updateThreshold)
     index = indices_ctx.tiered_index
 
     num_labels = indices_ctx.num_labels
@@ -276,9 +298,13 @@ def test_search_insert_q4(test_logger):
     test_logger.info("Start insert & search test")
     search_insert(test_logger, is_multi=False, quantBits=VecSimSvsQuant_4)
 
-# NOTE: LeanVec compression expected to be used with real-world datasets,
-# where we have some correlation between dimensions.
-# For syntetic randomized dataset LeanVec demonstrates recall==0.
+def test_search_insert_leanvec_8x8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, quantBits=VecSimSvsQuant_8x8_LeanVec)
+
+def test_search_insert_leanvec_4x8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, quantBits=VecSimSvsQuant_4x8_LeanVec)
 
 def test_search_insert_fp16(test_logger):
     test_logger.info("Start insert & search test")
@@ -292,9 +318,13 @@ def test_search_insert_fp16_q4(test_logger):
     test_logger.info("Start insert & search test")
     search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16, quantBits=VecSimSvsQuant_4)
 
-# NOTE: LeanVec compression expected to be used with real-world datasets,
-# where we have some correlation between dimensions.
-# For syntetic randomized dataset LeanVec demonstrates recall==0.
+def test_search_insert_fp16_leanvec_8x8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16, quantBits=VecSimSvsQuant_8x8_LeanVec)
+
+def test_search_insert_fp16_leanvec_4x8(test_logger):
+    test_logger.info("Start insert & search test")
+    search_insert(test_logger, is_multi=False, data_type=VecSimType_FLOAT16, quantBits=VecSimSvsQuant_4x8_LeanVec)
 
 # TODO - add multi-label support
 @pytest.mark.skip(reason="Multi-label tiered index is not supported yet")
