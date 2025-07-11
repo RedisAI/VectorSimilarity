@@ -169,7 +169,8 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     }
 
     std::chrono::milliseconds timeout{1000}; // long enough to reserve all threads
-    SVSParams params = {.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2};
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2, .num_threads = 1};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
     mock_thread_pool.thread_pool_size = num_threads;
