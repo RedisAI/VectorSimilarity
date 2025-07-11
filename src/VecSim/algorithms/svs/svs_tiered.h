@@ -212,9 +212,9 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // oldId is the index of the label in flat index before the swap.
     // newId is the index of the label in flat index after the swap.
     // if oldId == newId, it means that the vector was not moved in the Flat index, but was removed
-    // at the end of the Flat index.
-    // if label == SKIP_LABEL, it means that the vector was not moved/removed in the Flat index, but
-    // updated in-place
+    // from the end of the Flat index (no id swaps occurred internally).
+    // if label == SKIP_LABEL, it means that the vector was not moved in the Flat index, but
+    // updated in-place (hence was already removed  and no need to remove it again)
     using swap_record = std::tuple<labelType, idType, idType>;
     constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
     std::vector<swap_record> swaps_journal;
@@ -741,6 +741,8 @@ public:
             const auto ft_ret = this->frontendIndex->addVector(blob, label);
 
             if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
+                assert(!this->backendIndex->isMultiValue() &&
+                       "addVector() may return 0 for single value indices only");
                 for (auto id : this->frontendIndex->getElementIds(label)) {
                     this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
                 }
@@ -770,6 +772,14 @@ public:
 
         // Delete vector from the frontend index.
         auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
+
+        assert(std::all_of(updated_ids.begin(), updated_ids.end(),
+                           [&deleting_ids](const auto &pair) {
+                               return std::find(deleting_ids.begin(), deleting_ids.end(),
+                                                pair.first) != deleting_ids.end();
+                           }) &&
+               "updated_ids should be a subset of deleting_ids");
+
         // Record swaps in the journal.
         for (auto id : deleting_ids) {
             auto it = updated_ids.find(id);
@@ -779,19 +789,11 @@ public:
                 auto oldId = it->second.first;
                 auto oldLabel = it->second.second;
                 this->swaps_journal.emplace_back(oldLabel, oldId, newId);
-                // Erase in assertion for debug compilation only
-                // NOTE: There are extra braces to wrap comma C++ operator
-                assert((updated_ids.erase(it), true));
             } else {
                 // No swap, just delete is marked by oldId == newId == deleted id
-                this->swaps_journal.emplace_back(label, id, id);
+                this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
             }
         }
-
-        // After processing all deleting_ids, updated_ids should be empty in debug
-        // compilation.
-        assert(updated_ids.empty() &&
-               "updated_ids should be empty after processing all deleting_ids");
 
         return deleting_ids.size();
     }
