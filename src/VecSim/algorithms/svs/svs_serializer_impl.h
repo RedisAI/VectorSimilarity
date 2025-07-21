@@ -88,8 +88,6 @@ template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits
 void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::loadIndex(
     const std::string &folder_path) {
     svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
-    // TODO rebase on master and use `logger_` field.
-    // auto logger = makeLogger();
 
     // Verify metadata compatibility, will throw runtime exception if not compatible
     compareMetadataFile(folder_path + "/metadata");
