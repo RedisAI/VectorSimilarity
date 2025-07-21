@@ -2829,6 +2829,7 @@ TEST(SVSTest, save_load) {
 
         try {
             svs_index->loadIndex(index_path.string());
+            svs_index->checkIntegrity();
         } catch (const std::exception &e) {
             GTEST_FAIL() << "Failed to load index with quant_bits: "
                          << quant_bits_to_string(quant_bits) << ", error: " << e.what();
