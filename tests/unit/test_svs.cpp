@@ -2813,7 +2813,6 @@ TEST(SVSTest, save_load) {
         }
         fs::create_directories(index_path);
 
-        // Save index with error context
         try {
             svs_index->saveIndex(index_path.string());
         } catch (const std::exception &e) {
@@ -2828,7 +2827,6 @@ TEST(SVSTest, save_load) {
         ASSERT_NE(svs_index, nullptr) << "Failed to recreate index for loading with quant_bits: "
                                       << quant_bits_to_string(quant_bits);
 
-        // Load index with error context
         try {
             svs_index->loadIndex(index_path.string());
         } catch (const std::exception &e) {
