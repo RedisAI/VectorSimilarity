@@ -168,6 +168,20 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     }
 
     try {
+        // SVS internal index integrity validation
+        if constexpr (isMulti) {
+            impl_->get_parent_index().debug_check_invariants(true);
+        } else {
+            impl_->debug_check_invariants(true);
+        }
+    }
+    // debug_check_invariants throws svs::lib::ANNException : public std::runtime_error in case of
+    // fail.
+    catch (...) {
+        throw;
+    }
+
+    try {
         size_t index_size = impl_->size();
         size_t storage_size = impl_->view_data().size();
         size_t capacity = storage_traits_t::storage_capacity(impl_->view_data());
