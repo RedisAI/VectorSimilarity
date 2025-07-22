@@ -39,6 +39,8 @@ public:
 
     void saveIndex(const std::string &location) override;
 
+    virtual void loadIndex(const std::string &location) = 0;
+
     EncodingVersion getVersion() const;
 
     virtual bool checkIntegrity() const = 0;

@@ -57,10 +57,6 @@ public:
         in.read((char *)&podRef, sizeof(T));
     }
 
-    virtual void loadIndex(const std::string &location) {
-        throw std::runtime_error("Not implemented");
-    }
-
 protected:
     EncodingVersion m_version;
 
