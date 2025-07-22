@@ -127,7 +127,7 @@ BFParams NewBFParams(const TieredIndexParams *params) {
     return BFParams{.type = svs_params.type,
                     .dim = svs_params.dim,
                     .metric = svs_params.metric,
-                    .multi = false, // multi not supported
+                    .multi = svs_params.multi,
                     .blockSize = svs_params.blockSize};
 }
 
@@ -155,7 +155,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,
                                                   .logCtx = params->primaryIndexParams->logCtx};
-    auto frontendIndex = static_cast<BruteForceIndex_Single<DataType, float> *>(
+    auto frontendIndex = static_cast<BruteForceIndex<DataType, float> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
     // Create new tiered svs index
