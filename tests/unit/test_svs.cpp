@@ -2752,7 +2752,7 @@ TEST(SVSTest, save_load) {
     };
 
     // Test both single and multi variations
-    for (bool is_multi : {true}) {
+    for (bool is_multi : {false, true}) {
         for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
                                 VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
                                 VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
