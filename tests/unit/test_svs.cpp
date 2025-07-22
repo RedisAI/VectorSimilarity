@@ -2804,7 +2804,7 @@ TEST(SVSTest, save_load) {
                         GenerateVector<float>(v[i].data(), dim, 100000);
                     }
 
-                    ids[i] = label_id*2;
+                    ids[i] = label_id;
                 }
             } else {
                 // For single-index, each vector has a unique label (same as its index)
@@ -2831,7 +2831,7 @@ TEST(SVSTest, save_load) {
                 // Both single and multi should return labels starting from 45
                 if (is_multi) {
                     // For multi, that label of {50,50,50,50} is 25
-                    size_t expected_label = (20 + idx)*2;
+                    size_t expected_label = (20 + idx);
                     EXPECT_EQ(id, expected_label);
                 }
                 else {
