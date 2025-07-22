@@ -569,7 +569,8 @@ public:
 
     explicit PySVSIndex(const std::string &location, const SVSParams &svs_params) {
         VecSimParams params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
-        this->index = std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, &params), VecSimIndex_Free);
+        this->index =
+            std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, &params), VecSimIndex_Free);
         if (!this->index) {
             throw std::runtime_error("Index creation failed");
         }
