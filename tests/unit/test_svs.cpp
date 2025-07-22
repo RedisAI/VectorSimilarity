@@ -2751,118 +2751,163 @@ TEST(SVSTest, save_load) {
         }
     };
 
-    for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
-                            VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
-                            VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
-        SVSParams params = {
-            .type = VecSimType_FLOAT32,
-            .dim = dim,
-            .metric = VecSimMetric_L2,
-            .blockSize = 1024,
-            /* SVS-Vamana specifics */
-            .quantBits = quant_bits,
-            .graph_max_degree = 63, // x^2-1 to round the graph block size
-            .construction_window_size = 20,
-            .max_candidate_pool_size = 1024,
-            .prune_to = 60,
-            .use_search_history = VecSimOption_ENABLE,
-        };
+    // Test both single and multi variations
+    for (bool is_multi : {true}) {
+        for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                                VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                                VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+            SVSParams params = {
+                .type = VecSimType_FLOAT32,
+                .dim = dim,
+                .metric = VecSimMetric_L2,
+                .multi = is_multi,
+                .blockSize = 1024,
+                /* SVS-Vamana specifics */
+                .quantBits = quant_bits,
+                .graph_max_degree = 63, // x^2-1 to round the graph block size
+                .construction_window_size = 20,
+                .max_candidate_pool_size = 1024,
+                .prune_to = 60,
+                .use_search_history = VecSimOption_ENABLE,
+            };
 
-        VecSimParams index_params = CreateParams(params);
-        VecSimIndex *index = VecSimIndex_New(&index_params);
-        if (index == nullptr) {
-            if (std::get<1>(svs_details::isSVSQuantBitsSupported(quant_bits))) {
-                GTEST_FAIL() << "Failed to create SVS index with quant_bits: "
-                             << quant_bits_to_string(quant_bits);
-            } else {
-                GTEST_SKIP() << "SVS LVQ is not supported for quant_bits: "
-                             << quant_bits_to_string(quant_bits);
+            VecSimParams index_params = CreateParams(params);
+            VecSimIndex *index = VecSimIndex_New(&index_params);
+            if (index == nullptr) {
+                if (std::get<1>(svs_details::isSVSQuantBitsSupported(quant_bits))) {
+                    GTEST_FAIL() << "Failed to create SVS index with quant_bits: "
+                                 << quant_bits_to_string(quant_bits)
+                                 << ", multi: " << (is_multi ? "true" : "false");
+                } else {
+                    GTEST_SKIP() << "SVS LVQ is not supported for quant_bits: "
+                                 << quant_bits_to_string(quant_bits)
+                                 << ", multi: " << (is_multi ? "true" : "false");
+                }
             }
+
+            std::vector<std::array<float, dim>> v(n);
+            std::vector<size_t> ids(n);
+
+            if (is_multi) {
+                const size_t per_label = 2;
+                const size_t num_labels = n / per_label;
+
+                for (size_t i = 0; i < n; i++) {
+                    size_t label_id = (i / per_label);
+                    size_t vector_index_within_label = i % per_label;
+
+                    if (vector_index_within_label == 0) {
+                        // Match the vector used in single index mode for label_id
+                        GenerateVector<float>(v[i].data(), dim, i);
+                    } else {
+                        // Generate a far vector (deterministic and far from query)
+                        GenerateVector<float>(v[i].data(), dim, 100000);
+                    }
+
+                    ids[i] = label_id*2;
+                }
+            } else {
+                // For single-index, each vector has a unique label (same as its index)
+                for (size_t i = 0; i < n; i++) {
+                    GenerateVector<float>(v[i].data(), dim, i);
+                    ids[i] = i;
+                }
+            }
+
+
+            auto svs_index = dynamic_cast<SVSIndexBase *>(index);
+            ASSERT_NE(svs_index, nullptr)
+                << "Failed to cast to SVSIndexBase with quant_bits: "
+                << quant_bits_to_string(quant_bits) << ", multi: " << (is_multi ? "true" : "false");
+            svs_index->addVectors(v.data(), ids.data(), n);
+
+            ASSERT_EQ(VecSimIndex_IndexSize(index), n)
+                << "Index size mismatch after adding vectors with quant_bits: "
+                << quant_bits_to_string(quant_bits) << ", multi: " << (is_multi ? "true" : "false");
+
+            float query[] = {50, 50, 50, 50};
+            auto verify_res = [&](size_t id, double score, size_t idx) {
+                EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
+                // Both single and multi should return labels starting from 45
+                if (is_multi) {
+                    // For multi, that label of {50,50,50,50} is 25
+                    size_t expected_label = (20 + idx)*2;
+                    EXPECT_EQ(id, expected_label);
+                }
+                else {
+                    EXPECT_EQ(id, (idx + 45));
+                }
+            };
+            runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+            fs::path tmp{fs::temp_directory_path()};
+            auto subdir = "vecsim_test_" + std::to_string(std::rand());
+            auto index_path = tmp / subdir;
+            while (fs::exists(index_path)) {
+                subdir = "vecsim_test_" + std::to_string(std::rand());
+                index_path = tmp / subdir;
+            }
+            fs::create_directories(index_path);
+
+            try {
+                svs_index->saveIndex(index_path.string());
+            } catch (const std::exception &e) {
+                GTEST_FAIL() << "Failed to save index with quant_bits: "
+                             << quant_bits_to_string(quant_bits)
+                             << ", multi: " << (is_multi ? "true" : "false")
+                             << ", error: " << e.what();
+            }
+            VecSimIndex_Free(index);
+
+            // Recreate the index from the saved path
+            index = VecSimIndex_New(&index_params);
+            svs_index = dynamic_cast<SVSIndexBase *>(index);
+            ASSERT_NE(svs_index, nullptr)
+                << "Failed to recreate index for loading with quant_bits: "
+                << quant_bits_to_string(quant_bits) << ", multi: " << (is_multi ? "true" : "false");
+
+            try {
+                svs_index->loadIndex(index_path.string());
+                svs_index->checkIntegrity();
+            } catch (const std::exception &e) {
+                GTEST_FAIL() << "Failed to load index with quant_bits: "
+                             << quant_bits_to_string(quant_bits)
+                             << ", multi: " << (is_multi ? "true" : "false")
+                             << ", error: " << e.what();
+            }
+
+            // Verify the index was loaded correctly
+            ASSERT_EQ(VecSimIndex_IndexSize(index), n)
+                << "Index size mismatch after loading with quant_bits: "
+                << quant_bits_to_string(quant_bits) << ", multi: " << (is_multi ? "true" : "false");
+            runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+            // Test load from file with constructor
+            VecSimIndex *svs_index_load = nullptr;
+            try {
+                svs_index_load = SVSFactory::NewIndex(index_path.string(), &index_params);
+            } catch (const std::exception &e) {
+                GTEST_FAIL() << "Failed to create index from file with quant_bits: "
+                             << quant_bits_to_string(quant_bits)
+                             << ", multi: " << (is_multi ? "true" : "false")
+                             << ", error: " << e.what();
+            }
+            ASSERT_NE(svs_index_load, nullptr)
+                << "Failed to create index from file with quant_bits: "
+                << quant_bits_to_string(quant_bits) << ", multi: " << (is_multi ? "true" : "false");
+
+            // Verify the index was loaded correctly
+            ASSERT_EQ(VecSimIndex_IndexSize(svs_index_load), n)
+                << "Index size mismatch for constructor-loaded index with quant_bits: "
+                << quant_bits_to_string(quant_bits) << ", multi: " << (is_multi ? "true" : "false");
+            runTopKSearchTest(svs_index_load, query, k, verify_res, nullptr, BY_ID);
+
+            VecSimIndex_Free(svs_index_load);
+            VecSimIndex_Free(index);
+
+            // Cleanup
+            fs::remove_all(index_path); // Cleanup the saved index directory
         }
-
-        std::vector<std::array<float, dim>> v(n);
-        for (size_t i = 0; i < n; i++) {
-            GenerateVector<float>(v[i].data(), dim, i);
-        }
-
-        std::vector<size_t> ids(n);
-        std::iota(ids.begin(), ids.end(), 0);
-
-        auto svs_index = dynamic_cast<SVSIndexBase *>(index);
-        ASSERT_NE(svs_index, nullptr) << "Failed to cast to SVSIndexBase with quant_bits: "
-                                      << quant_bits_to_string(quant_bits);
-        svs_index->addVectors(v.data(), ids.data(), n);
-
-        ASSERT_EQ(VecSimIndex_IndexSize(index), n)
-            << "Index size mismatch after adding vectors with quant_bits: "
-            << quant_bits_to_string(quant_bits);
-
-        float query[] = {50, 50, 50, 50};
-        auto verify_res = [&](size_t id, double score, size_t idx) {
-            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
-            EXPECT_EQ(id, (idx + 45));
-        };
-        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
-
-        fs::path tmp{fs::temp_directory_path()};
-        auto subdir = "vecsim_test_" + std::to_string(std::rand());
-        auto index_path = tmp / subdir;
-        while (fs::exists(index_path)) {
-            subdir = "vecsim_test_" + std::to_string(std::rand());
-            index_path = tmp / subdir;
-        }
-        fs::create_directories(index_path);
-
-        try {
-            svs_index->saveIndex(index_path.string());
-        } catch (const std::exception &e) {
-            GTEST_FAIL() << "Failed to save index with quant_bits: "
-                         << quant_bits_to_string(quant_bits) << ", error: " << e.what();
-        }
-        VecSimIndex_Free(index);
-
-        // Recreate the index from the saved path
-        index = VecSimIndex_New(&index_params);
-        svs_index = dynamic_cast<SVSIndexBase *>(index);
-        ASSERT_NE(svs_index, nullptr) << "Failed to recreate index for loading with quant_bits: "
-                                      << quant_bits_to_string(quant_bits);
-
-        try {
-            svs_index->loadIndex(index_path.string());
-            svs_index->checkIntegrity();
-        } catch (const std::exception &e) {
-            GTEST_FAIL() << "Failed to load index with quant_bits: "
-                         << quant_bits_to_string(quant_bits) << ", error: " << e.what();
-        }
-
-        // Verify the index was loaded correctly
-        ASSERT_EQ(VecSimIndex_IndexSize(index), n)
-            << "Index size mismatch after loading with quant_bits: "
-            << quant_bits_to_string(quant_bits);
-        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
-
-        // Test load from file with constructor
-        VecSimIndex *svs_index_load = nullptr;
-        try {
-            svs_index_load = SVSFactory::NewIndex(index_path.string(), &index_params);
-        } catch (const std::exception &e) {
-            GTEST_FAIL() << "Failed to create index from file with quant_bits: "
-                         << quant_bits_to_string(quant_bits) << ", error: " << e.what();
-        }
-        ASSERT_NE(svs_index_load, nullptr) << "Failed to create index from file with quant_bits: "
-                                           << quant_bits_to_string(quant_bits);
-
-        // Verify the index was loaded correctly
-        ASSERT_EQ(VecSimIndex_IndexSize(svs_index_load), n)
-            << "Index size mismatch for constructor-loaded index with quant_bits: "
-            << quant_bits_to_string(quant_bits);
-        runTopKSearchTest(svs_index_load, query, k, verify_res, nullptr, BY_ID);
-
-        VecSimIndex_Free(svs_index_load);
-        VecSimIndex_Free(index);
-
-        // Cleanup
-        fs::remove_all(index_path); // Cleanup the saved index directory
     }
 }
 
