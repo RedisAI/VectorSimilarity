@@ -62,3 +62,7 @@ __pycache__/
 
 # spelling artifact, locally
 wordlist.dic
+
+
+# ignore all files in the .cursor directory
+.cursor/
