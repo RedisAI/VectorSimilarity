@@ -27,7 +27,7 @@ public:
     explicit VecSimBatchIterator(void *query_vector, void *tctx,
                                  std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0),
-          timeoutCtx(tctx){};
+          timeoutCtx(tctx) {};
 
     inline const void *getQueryBlob() const { return query_vector; }
 

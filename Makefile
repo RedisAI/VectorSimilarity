@@ -177,6 +177,7 @@ ifeq ($(VALGRIND),1)
 _CTEST_ARGS += \
 	-T memcheck \
 	--overwrite MemoryCheckCommandOptions="--leak-check=full --fair-sched=yes --error-exitcode=255"
+CMAKE_FLAGS += -DUSE_VALGRIND=ON
 endif
 
 unit_test:
@@ -197,6 +198,7 @@ endif
 
 flow_test:
 	$(SHOW)poetry install $(POETRY_ARGS)
+	$(SHOW)mkdir -p logs/tests/flow
 	$(SHOW)poetry run pytest tests/flow/$(TEST) -v -s
 
 .PHONY: flow_test

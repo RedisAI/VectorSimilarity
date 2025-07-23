@@ -145,10 +145,11 @@ public:
     /**
      * @brief Preprocess a blob for query.
      *
-     * @param queryBlob will be copied.
+     * @param queryBlob will be copied if preprocessing is required, or if force_copy is set to
+     * true.
      * @return unique_ptr of the processed blob.
      */
-    MemoryUtils::unique_blob preprocessQuery(const void *queryBlob) const;
+    MemoryUtils::unique_blob preprocessQuery(const void *queryBlob, bool force_copy = false) const;
 
     /**
      * @brief Preprocess a blob for storage.
@@ -157,13 +158,6 @@ public:
      * @return unique_ptr of the processed blob.
      */
     MemoryUtils::unique_blob preprocessForStorage(const void *original_blob) const;
-
-    /**
-     * @brief Preprocess a blob for query in place.
-     *
-     * @param blob will be directly modified, not copied.
-     */
-    void preprocessQueryInPlace(void *blob) const;
 
     /**
      * @brief Preprocess a blob for storage in place.
@@ -180,6 +174,7 @@ public:
     inline size_t getDataSize() const { return dataSize; }
     inline size_t getBlockSize() const { return blockSize; }
     inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
+
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
@@ -266,7 +261,6 @@ public:
         };
         return info;
     }
-
 #ifdef BUILD_TESTS
     void replacePPContainer(PreprocessorsContainerAbstract *newPPContainer) {
         delete this->preprocessors;
@@ -276,7 +270,50 @@ public:
     IndexComponents<DataType, DistType> get_components() const {
         return {.indexCalculator = this->indexCalculator, .preprocessors = this->preprocessors};
     }
+
+    /**
+     * @brief Used for testing - get only the vector elements associated with a given label.
+     * This function copies only the vector(s) elements into the output vector,
+     * without any additional metadata that might be stored with the vector.
+     *
+     * Important: This method returns ONLY the vector elements, even if the stored vector contains
+     * additional metadata. For example, with int8_t/uint8_t vectors using cosine similarity,
+     * this method will NOT return the norm that is stored with the vector(s).
+     *
+     * If you need the complete data including any metadata, use getStoredVectorDataByLabel()
+     * instead.
+     *
+     * @param label The label to retrieve vector(s) elements for
+     * @param vectors_output Empty vector to be filled with vector(s)
+     */
+    virtual void getDataByLabel(labelType label,
+                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
+
+    /**
+     * @brief Used for testing - get the complete raw data associated with a given label.
+     * This function returns the ENTIRE vector(s) data as stored in the index, including any
+     * additional metadata that might be stored alongside the vector elements.
+     *
+     * For example:
+     * - For int8_t/uint8_t vectors with cosine similarity, this includes the norm stored at the end
+     * - For other vector types or future implementations, this will include any additional data
+     *   that might be stored with the vector
+     *
+     * Use this method when you need access to the complete vector data as it is stored internally.
+     *
+     * @param label The label to retrieve data for
+     * @return A vector containing the complete vector data (elements + metadata) for the given
+     * label
+     */
+    virtual std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const = 0;
 #endif
+
+    /**
+     * Virtual functions that access the label lookup which is implemented in the derived classes
+     * Return all the labels in the index - this should be used for computing the number of distinct
+     * labels in a tiered index, and caller should hold the appropriate guards.
+     */
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
 protected:
     void runGC() override {}              // Do nothing, relevant for tiered index only.
@@ -291,19 +328,15 @@ ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *b
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
-VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob) const {
-    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize);
+VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
+                                                         bool force_copy) const {
+    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize, force_copy);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
     return this->preprocessors->preprocessForStorage(original_blob, this->dataSize);
-}
-
-template <typename DataType, typename DistType>
-void VecSimIndexAbstract<DataType, DistType>::preprocessQueryInPlace(void *blob) const {
-    this->preprocessors->preprocessQueryInPlace(blob, this->dataSize);
 }
 
 template <typename DataType, typename DistType>

@@ -1,6 +1,20 @@
 name: debian bullseye flow
 
-on: [workflow_dispatch, workflow_call]
+on: 
+  workflow_dispatch:
+    inputs:
+      gcc11:
+        description: 'Use GCC 11'
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      gcc11:
+        description: 'Use GCC 11'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   bullseye:
@@ -8,3 +22,11 @@ jobs:
     with:
       container: debian:bullseye
       pre-checkout-script: apt-get update && apt-get -y install git
+
+  bullseye-gcc11:
+    if: ${{ inputs.gcc11 == true }}
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      container: gcc:11-bullseye
+      pre-checkout-script: apt-get update && apt-get -y install git
+      

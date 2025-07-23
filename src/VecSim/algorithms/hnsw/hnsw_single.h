@@ -50,8 +50,23 @@ public:
         auto id = labelLookup.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
+        // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like the
+        // norm
+        memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
         vectors_output.push_back(vec);
+    }
+
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
+        std::vector<std::vector<char>> vectors_output;
+        auto id = labelLookup.at(label);
+        const char *data = this->getDataByInternalId(id);
+
+        // Create a vector with the full data (including any metadata like norms)
+        std::vector<char> vec(this->dataSize);
+        memcpy(vec.data(), data, this->dataSize);
+        vectors_output.push_back(std::move(vec));
+
+        return vectors_output;
     }
 #endif
     ~HNSWIndex_Single() = default;
@@ -92,9 +107,10 @@ size_t HNSWIndex_Single<DataType, DistType>::indexLabelCount() const {
  */
 
 // Return all the labels in the index - this should be used for computing the number of distinct
-// labels in a tiered index, and caller should hold the index data guard.
+// labels in a tiered index.
 template <typename DataType, typename DistType>
 vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
+    std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
     vecsim_stl::set<labelType> keys(this->allocator);
     for (auto &it : labelLookup) {
         keys.insert(it.first);
@@ -161,13 +177,14 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) const {
-    auto queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->preprocessQueryInPlace(queryBlobCopy);
+    // force_copy == true.
+    auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
+
+    // take ownership of the blob copy and pass it to the batch iterator.
+    auto *queryBlobCopyPtr = queryBlobCopy.release();
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
-        queryBlobCopy, this, queryParams, this->allocator);
+        queryBlobCopyPtr, this, queryParams, this->allocator);
 }
 
 /**

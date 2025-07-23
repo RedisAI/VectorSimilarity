@@ -19,7 +19,9 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 
+// MAX_POOL_SIZE and pool_execution_mask_t to be adjusted to each other.
 static const size_t MAX_POOL_SIZE = 16;
+using pool_execution_mask_t = std::atomic_uint_fast16_t;
 
 class tieredIndexMock {
 
@@ -30,11 +32,19 @@ private:
     // The thread's corresponding bit should be set to before the job is popped
     // from the queue and the execution starts.
     // We turn the bit off after the execute callback returns to mark the job is done.
-    std::bitset<MAX_POOL_SIZE> executions_status;
+    class ExecutionsStatus {
+        pool_execution_mask_t executions_status = 0; // Using atomic for thread safety
+    public:
+        void MarkInProcess(size_t thread_index) {
+            executions_status.fetch_or(1 << thread_index, std::memory_order_relaxed);
+        }
+        void MarkDone(size_t thread_index) {
+            executions_status.fetch_and(~(1 << thread_index), std::memory_order_relaxed);
+        }
+        bool AllDone() const { return executions_status.load(std::memory_order_relaxed) == 0; }
+    };
 
-    void inline MarkExecuteInProcess(size_t thread_index) { executions_status.set(thread_index); }
-
-    void inline MarkExecuteDone(size_t thread_index) { executions_status.reset(thread_index); }
+    ExecutionsStatus executions_status;
 
     typedef struct RefManagedJob {
         AsyncJob *job;

@@ -16,6 +16,7 @@
 #include "unit_test_utils.h"
 #include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "mock_thread_pool.h"
 #include "tests_utils.h"
@@ -29,6 +30,7 @@
 #include <cmath>
 #include <random>
 #include <cstdarg>
+#include <filesystem>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -668,6 +670,82 @@ TEST(CommonAPITest, NormalizeUint8) {
     ASSERT_FLOAT_EQ(norm, 1.0);
 }
 
+/**
+ * This test verifies that a tiered index correctly returns the closest vectors when querying data
+ * distributed across both the flat and the backend indices, specifically when duplicate labels
+ * exist in both indices with different distances. It adds vectors with known scores, including such
+ * duplicates, and ensures that only the closer instance is returned. The test covers both top-K and
+ * range queries, validating result ordering by score and by ID.
+ */
+TEST(CommonAPITest, SearchDifferentScores) {
+    size_t dim = 4;
+    size_t constexpr k = 3;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = dynamic_cast<TieredHNSWIndex<float, float> *>(
+        test_utils::CreateNewTieredHNSWIndex(params, mock_thread_pool));
+    ASSERT_NE(tiered_index, nullptr);
+
+    auto hnsw_index = tiered_index->getHNSWIndex();
+    auto flat_index = tiered_index->frontendIndex;
+
+    // Define IDs and distance values for test vectors
+    // ids are intentionally in random order to verify sorting works correctly
+    size_t constexpr ids[k] = {54, 4, 15};
+    double constexpr res_values[k] = {2, 3, 100};
+    // Define a type for our result pair
+    using ResultPair = std::pair<size_t, double>; // (id, score)
+
+    // Create a vector of expected results - these are the scores we expect
+    // when querying with a zero vector (L2 distance = value²*dim)
+    std::vector<ResultPair> expected_results_by_score(k);
+
+    for (size_t i = 0; i < k; i++) {
+        expected_results_by_score[i] = {ids[i], res_values[i] * res_values[i] * dim};
+    }
+
+    // Insert duplicate vectors with same ID but different distances across the two indices.
+    // The index should return only the closer of the two.
+
+    // ID 54: closer in HNSW, farther in flat — expect to return HNSW version
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[0], res_values[0]);
+    GenerateAndAddVector<float>(flat_index, dim, ids[0], res_values[0] + 1);
+
+    // ID 4: closer in flat, farther in HNSW — expect to return flat version
+    GenerateAndAddVector<float>(flat_index, dim, ids[1], res_values[1]);
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[1], res_values[1] + 1);
+
+    // ID 15: identical in both indices — distance is large, should still return one instance
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[2], res_values[2]);
+    GenerateAndAddVector<float>(flat_index, dim, ids[2], res_values[2]);
+
+    // Create a zero vector for querying - this makes scores directly proportional to vector values
+    float query_0[dim];
+    GenerateVector<float>(query_0, dim, 0);
+
+    // Verify results ordered by increasing score (distance).
+    double prev_score = 0; // all scores are positive
+    auto verify_by_score = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(prev_score, score); // prev_score < score
+        prev_score = score;
+        ASSERT_EQ(id, expected_results_by_score[res_index].first);
+        ASSERT_EQ(score, expected_results_by_score[res_index].second);
+    };
+
+    runTopKTieredIndexSearchTest<true>(tiered_index, query_0, k, verify_by_score, nullptr);
+    // Reset score tracking for range query
+    prev_score = 0;
+    // Use the largest score as the range to include all vectors
+    double range = expected_results_by_score.back().second;
+    runRangeTieredIndexSearchTest<true>(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
+}
+
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
 protected:
     template <typename algo_params>
@@ -830,3 +908,127 @@ INSTANTIATE_TEST_SUITE_P(
         std::string test_name(type);
         return test_name + "_" + metric;
     });
+
+TEST(CommonAPITest, testSetTestLogContext) {
+    // Create an index with the log context
+    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
+    VecSimIndex *index = test_utils::CreateNewIndex(bfParams, VecSimType_FLOAT32);
+    auto *bf_index = dynamic_cast<BruteForceIndex<float, float> *>(index);
+
+    std::string log_dir = "logs/tests/unit";
+    std::cout << "Log directory: " << log_dir << std::endl;
+    if (!std::filesystem::exists(log_dir)) {
+        std::filesystem::create_directories(log_dir);
+    }
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", "printed before setting context");
+    // Set the log context
+    const char *testContext = "test_context";
+    VecSim_SetTestLogContext(testContext, "unit");
+    std::string msg = "Test message with context";
+    // Trigger a log message
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", msg.c_str());
+
+    // check if the log message was written to the log file
+    std::string log_file = log_dir + "/test_context.log";
+    std::ifstream file(log_file);
+    ASSERT_TRUE(file.is_open()) << "Log file not found: " << log_file;
+    std::string line;
+    bool found = false;
+    while (std::getline(file, line)) {
+        if (line.find(msg) != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(found) << "Log message not found in log file: " << log_file;
+    VecSimIndex_Free(index);
+}
+
+TEST(UtilsTests, testMockThreadPool) {
+    const size_t num_repeats = 2;
+    const size_t num_submissions = 200;
+    // 100 seconds timeout for the test should be enough for CI MemoryChecks
+    std::chrono::seconds test_timeout(100);
+
+    auto TestBody = [=]() {
+        // Protection against test deadlock is implemented by a thread which exits process if
+        // condition variable is not notified within a timeout.
+        std::mutex mtx;
+        std::condition_variable cv;
+        auto guard_thread = std::thread([&]() {
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(lock, test_timeout) == std::cv_status::timeout) {
+                std::cerr << "Test timeout! Exiting..." << std::endl;
+                std::exit(-1);
+            }
+        });
+
+        // Create and test a mock thread pool several times
+        for (size_t i = 0; i < num_repeats; i++) {
+            // Create a mock thread pool and verify its properties
+            tieredIndexMock mock_thread_pool;
+            ASSERT_EQ(mock_thread_pool.ctx->index_strong_ref, nullptr);
+            ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+
+            // Create a new stub index to add to the mock thread pool
+            BFParams params = {.dim = 4, .metric = VecSimMetric_L2};
+            auto index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
+            mock_thread_pool.ctx->index_strong_ref.reset(index);
+            auto allocator = index->getAllocator();
+
+            // Very fast and simple job routine that increments a counter
+            // This is just to simulate a job that does some work.
+            std::atomic_int32_t job_counter = 0;
+            auto job_mock = [&job_counter](AsyncJob * /*unused*/) { job_counter++; };
+
+            // Define a mock job just to convert lambda with capture to a function pointer
+            class LambdaJob : public AsyncJob {
+            public:
+                LambdaJob(std::shared_ptr<VecSimAllocator> allocator, JobType type,
+                          std::function<void(AsyncJob *)> execute, VecSimIndex *index)
+                    : AsyncJob(allocator, type, executeJob, index), impl_(execute) {}
+
+                static void executeJob(AsyncJob *job) {
+                    static_cast<LambdaJob *>(job)->impl_(job);
+                    delete job; // Clean up the job after execution
+                }
+                std::function<void(AsyncJob *)> impl_;
+            };
+
+            mock_thread_pool.init_threads();
+            // Verify the job queue is empty
+            ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+
+            // Create a vector of jobs to submit to the mock thread pool
+            // The number of jobs is equal to the thread pool size, so they will all be executed in
+            // parallel
+            std::vector<AsyncJob *> jobs(mock_thread_pool.thread_pool_size);
+
+            // Submit jobs to the mock thread pool and wait several times
+            for (size_t j = 0; j < num_submissions; j++) {
+                job_counter.store(0); // Reset the counter for each iteration
+                // Generate jobs and submit them to the mock thread pool
+                std::generate(jobs.begin(), jobs.end(), [&]() {
+                    return new (allocator) LambdaJob(allocator, HNSW_SEARCH_JOB, job_mock, index);
+                });
+                mock_thread_pool.submit_callback_internal(jobs.data(), nullptr /*unused*/,
+                                                          jobs.size());
+                mock_thread_pool.thread_pool_wait();
+                // Verify the job queue is empty
+                ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+                // Verify counter was incremented
+                ASSERT_EQ(job_counter.load(), mock_thread_pool.thread_pool_size);
+            }
+            mock_thread_pool.thread_pool_join();
+        }
+
+        // Notify the guard thread that the test is done
+        cv.notify_one();
+        guard_thread.join();
+        std::cerr << "Success" << std::endl;
+        std::exit(testing::Test::HasFailure() ? -1 : 0); // Exit with failure if any test failed
+    };
+
+    EXPECT_EXIT(TestBody(), ::testing::ExitedWithCode(0), "Success");
+}

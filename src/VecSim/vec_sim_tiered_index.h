@@ -66,6 +66,43 @@ protected:
                                 jobs.size());
     }
 
+    /**
+     * @brief Return the union of unique labels in both index tiers (which are not deleted).
+     * This is a debug-only method for tiered indexes that computes the union of labels
+     * from both frontend and backend indexes. It assumes that caller holds the appropriate
+     * locks and it is time-consuming.
+     * !!! Note: this should only be called in debug mode for tiered indexes !!!
+     *
+     * @return index label count for debug purposes.
+     */
+    vecsim_stl::vector<labelType> computeUnifiedIndexLabelsSetUnsafe() const {
+        auto [flat_labels, backend_labels] =
+            std::make_pair(this->frontendIndex->getLabelsSet(), this->backendIndex->getLabelsSet());
+
+        // Compute the union of the two sets.
+        vecsim_stl::vector<labelType> labels_union(this->allocator);
+        labels_union.reserve(flat_labels.size() + backend_labels.size());
+        std::set_union(flat_labels.begin(), flat_labels.end(), backend_labels.begin(),
+                       backend_labels.end(), std::back_inserter(labels_union));
+        return labels_union;
+    }
+
+#ifdef BUILD_TESTS
+public:
+#endif
+    // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
+    // two lists will also have identical scores. In this case, any duplicates will naturally align
+    // at the front of both lists during the merge, so they can be removed without explicitly
+    // tracking seen ids — enabling a more efficient merge.
+    template <bool WithSet>
+    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
+                                   VecSimQueryParams *queryParams) const;
+
+    template <bool WithSet>
+    VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
+                                    VecSimQueryParams *queryParams,
+                                    VecSimQueryReply_Order order) const;
+
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
@@ -92,6 +129,7 @@ public:
                this->frontendIndex->getAllocationSize();
     }
 
+    size_t indexLabelCount() const override;
     VecSimIndexStatsInfo statisticInfo() const override;
     virtual VecSimIndexDebugInfo debugInfo() const override;
     virtual VecSimDebugInfoIterator *debugInfoIterator() const override;
@@ -107,9 +145,7 @@ public:
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
 #ifdef BUILD_TESTS
-    inline VecSimIndexAbstract<DataType, DistType> *getFlatBufferIndex() {
-        return this->frontendIndex;
-    }
+    inline BruteForceIndex<DataType, DistType> *getFlatBufferIndex() { return this->frontendIndex; }
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
@@ -118,10 +154,12 @@ public:
     }
 #endif
 };
+
 template <typename DataType, typename DistType>
+template <bool withSet>
 VecSimQueryReply *
-VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                                 VecSimQueryParams *queryParams) const {
+VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -165,12 +203,20 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
             return main_results;
         }
 
-        // Merge the results and return, avoiding duplicates.
-        if (this->backendIndex->isMultiValue()) {
-            return merge_result_lists<true>(main_results, flat_results, k);
-        } else {
-            return merge_result_lists<false>(main_results, flat_results, k);
-        }
+        return merge_result_lists<withSet>(main_results, flat_results, k);
+    }
+}
+template <typename DataType, typename DistType>
+VecSimQueryReply *
+VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                                 VecSimQueryParams *queryParams) const {
+    if (this->backendIndex->isMultiValue()) {
+        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
+    } else {
+        // Calling with withSet=false for optimized performance, assuming that shared IDs across
+        // lists also have identical scores — in which case duplicates are implicitly avoided by the
+        // merge logic.
+        return this->topKQueryImp<false>(queryBlob, k, queryParams);
     }
 }
 
@@ -179,6 +225,23 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
+    if (this->backendIndex->isMultiValue()) {
+        return this->rangeQueryImp<true>(queryBlob, radius, queryParams,
+                                         order); // Multi-value index
+    } else {
+        // Calling with withSet=false for optimized performance, assuming that shared IDs across
+        // lists also have identical scores — in which case duplicates are implicitly avoided by the
+        // merge logic.
+        return this->rangeQueryImp<false>(queryBlob, radius, queryParams, order);
+    }
+}
+
+template <typename DataType, typename DistType>
+template <bool withSet>
+VecSimQueryReply *
+VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryReply_Order order) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -227,12 +290,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryReply *ret;
-            if (this->backendIndex->isMultiValue()) {
-                ret = merge_result_lists<true>(main_results, flat_results, -1);
-            } else {
-                ret = merge_result_lists<false>(main_results, flat_results, -1);
-            }
+            VecSimQueryReply *ret = merge_result_lists<withSet>(main_results, flat_results, -1);
             // Restore the return code and return.
             ret->code = code;
             return ret;
@@ -240,11 +298,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         } else { // BY_ID
             // Notice that we don't modify the return code of the main index in any step.
             concat_results(main_results, flat_results);
-            if (this->backendIndex->isMultiValue()) {
-                filter_results_by_id<true>(main_results);
-            } else {
-                filter_results_by_id<false>(main_results);
-            }
+            filter_results_by_id<withSet>(main_results);
             return main_results;
         }
     }
@@ -266,16 +320,29 @@ VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() cons
 }
 
 template <typename DataType, typename DistType>
+size_t VecSimTieredIndex<DataType, DistType>::indexLabelCount() const {
+    // This is a debug-only method for tiered indexes that computes the union of labels
+    // from both frontend and backend indexes. It requires locking and is time-consuming.
+    // !!! Note: this should only be called in debug mode for tiered indexes !!!
+    std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+    std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+    return computeUnifiedIndexLabelsSetUnsafe().size();
+}
+
+template <typename DataType, typename DistType>
 VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     VecSimIndexDebugInfo info;
     this->flatIndexGuard.lock_shared();
     this->mainIndexGuard.lock_shared();
+
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
+
+    info.commonInfo.indexLabelCount = this->computeUnifiedIndexLabelsSetUnsafe().size();
+
     this->flatIndexGuard.unlock_shared();
     this->mainIndexGuard.unlock_shared();
 
-    info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize =
         frontendInfo.commonInfo.indexSize + backendInfo.commonInfo.indexSize;
     info.commonInfo.memory = this->getAllocationSize();
@@ -296,9 +363,11 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     case VecSimAlgo_HNSWLIB:
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
         break;
+    case VecSimAlgo_SVS:
+        info.tieredInfo.backendInfo.svsInfo = backendInfo.svsInfo;
+        break;
     case VecSimAlgo_BF:
     case VecSimAlgo_TIERED:
-    case VecSimAlgo_SVS:
         assert(false && "Invalid backend algorithm");
     }
 

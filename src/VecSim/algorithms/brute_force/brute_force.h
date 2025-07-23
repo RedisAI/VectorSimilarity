@@ -42,8 +42,8 @@ public:
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     std::unique_ptr<RawDataContainer::Iterator> getVectorsIterator() const;
-    DataType *getDataByInternalId(idType id) const {
-        return (DataType *)this->vectors->getElement(id);
+    const DataType *getDataByInternalId(idType id) const {
+        return reinterpret_cast<const DataType *>(this->vectors->getElement(id));
     }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
@@ -59,9 +59,6 @@ public:
 
     const RawDataContainer *getVectorsContainer() const { return this->vectors; }
 
-    const labelType getLabelByInternalId(idType internal_id) const {
-        return idToLabelMapping.at(internal_id);
-    }
     // Remove a specific vector that is stored under a label from the index by its internal id.
     virtual int deleteVectorById(labelType label, idType id) = 0;
     // Remove a vector and return a map between internal ids and the original internal ids of the
@@ -70,22 +67,12 @@ public:
     deleteVectorAndGetUpdatedIds(labelType label) = 0;
     // Check if a certain label exists in the index.
     virtual bool isLabelExists(labelType label) = 0;
-    // Return a set of all labels that are stored in the index (helper for computing label count
-    // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
-    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
+
+    // Unsafe (assume index data guard is held in MT mode).
+    virtual vecsim_stl::vector<idType> getElementIds(size_t label) const = 0;
 
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
-    /**
-     * @brief Used for testing - store vector(s) data associated with a given label. This function
-     * copies the vector(s)' data buffer(s) and place it in the output vector
-     *
-     * @param label
-     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
-     * the label.
-     */
-    virtual void getDataByLabel(labelType label,
-                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
     void fitMemory() override {
         if (count == 0) {
             return;
@@ -350,12 +337,13 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
-    auto *queryBlobCopy =
-        this->allocator->allocate_aligned(this->dataSize, this->preprocessors->getAlignment());
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    this->preprocessQueryInPlace(queryBlobCopy);
+    // force_copy == true.
+    auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
+
+    // take ownership of the blob copy and pass it to the batch iterator.
+    auto *queryBlobCopyPtr = queryBlobCopy.release();
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return newBatchIterator_Instance(queryBlobCopy, queryParams);
+    return newBatchIterator_Instance(queryBlobCopyPtr, queryParams);
 }
 
 template <typename DataType, typename DistType>

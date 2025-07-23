@@ -12,10 +12,7 @@ set(HEADER_LIST "${headers}")
 include_directories(../)
 
 set(SVS_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -march=native -mtune=native")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20")
 
 add_subdirectory(spaces)
 
@@ -31,7 +28,6 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/tiered_factory.cpp
     index_factories/svs_factory.cpp
     index_factories/index_factory.cpp
-    index_factories/components/components_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp
     vec_sim_debug.cpp
@@ -50,8 +46,8 @@ target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if (TARGET svs::svs)
     target_link_libraries(VectorSimilarity svs::svs)
-    if(TARGET svs::svs_shared_library)
-        target_link_libraries(VectorSimilarity svs::svs_shared_library)
+    if(TARGET svs::svs_static_library)
+        target_link_libraries(VectorSimilarity svs::svs_static_library)
     endif()
 endif()
 

@@ -15,19 +15,24 @@ import hnswlib
 
 def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
                      alpha = 1.2, graph_max_degree = 64, window_size = 128,
-                     max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_AUTO):
+                     max_candidate_pool_size = 1024, prune_to = 60, full_search_history = VecSimOption_AUTO,
+                     search_window_size = 20, search_buffer_capacity = 20, epsilon = 0.01, num_threads = 4, is_multi = False):
     svs_params = SVSParams()
 
     svs_params.dim = dim
     svs_params.type = data_type
     svs_params.metric = metric
+    svs_params.multi = is_multi
     svs_params.alpha = alpha
     svs_params.graph_max_degree = graph_max_degree
     svs_params.construction_window_size = window_size
     svs_params.max_candidate_pool_size = max_candidate_pool_size
     svs_params.prune_to = prune_to
     svs_params.use_search_history = full_search_history
-    svs_params.search_window_size = window_size
+    svs_params.search_window_size = search_window_size
+    svs_params.search_buffer_capacity = search_buffer_capacity
+    svs_params.epsilon = epsilon
+    svs_params.num_threads = num_threads
 
     return SVSIndex(svs_params)
 
@@ -60,7 +65,7 @@ def count_correctness(actual_labels, desired_labels):
 
 
 # compare results with the original version of hnswlib - do not use elements deletion.
-def test_sanity_svs_index_L2():
+def test_sanity_svs_index_L2(test_logger):
     dim = 16
     num_elements = 10000
     k = 10
@@ -80,11 +85,11 @@ def test_sanity_svs_index_L2():
     desired_labels = [key for _, key in desired]
     count = count_correctness(desired_labels, redis_labels[0])
     recall = float(count) / k
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert(recall > 0.9)
 
 
-def test_sanity_svs_index_cosine():
+def test_sanity_svs_index_cosine(test_logger):
     dim = 16
     num_elements = 10000
     k = 10
@@ -104,21 +109,21 @@ def test_sanity_svs_index_cosine():
     desired_labels = [key for _, key in desired]
     count = count_correctness(desired_labels, redis_labels[0])
     recall = float(count) / k
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert(recall > 0.9)
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
 # deterministic, but should be above a certain threshold. Note that recall is highly impacted by changing
 # index parameters.
-def test_recall_for_svs_index_with_deletion():
+def test_recall_for_svs_index_with_deletion(test_logger):
     dim = 16
     num_elements = 10000
 
     num_queries = 10
     k = 10
 
-    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, search_window_size=50, search_buffer_capacity=50)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -131,8 +136,6 @@ def test_recall_for_svs_index_with_deletion():
         index.delete_vector(i)
     vectors = [vectors[i] for i in range(1, len(data), 2)]
 
-    # # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
-    # hnsw_index.set_ef(50)
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
@@ -143,17 +146,19 @@ def test_recall_for_svs_index_with_deletion():
 
     # Measure recall
     recall = float(correct) / (k * num_queries)
-    print("\nrecall is: \n", recall)
+    test_logger.info(f"recall is: {recall}")
     assert (recall > 0.9)
 
 
-def test_batch_iterator():
+def test_batch_iterator(test_logger):
     dim = 100
     num_elements = 10000
     num_queries = 10
     windowSize = 128
+    bufferCapacity = 128
 
-    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, window_size=windowSize)
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2,
+                             window_size=windowSize, search_window_size=windowSize, search_buffer_capacity=bufferCapacity)
 
     # Add 100k random vectors to the index
     rng = np.random.default_rng(seed=47)
@@ -184,12 +189,14 @@ def test_batch_iterator():
     # Verify that runtime args are sent properly to the batch iterator.
     query_params = VecSimQueryParams()
     query_params.svsRuntimeParams.windowSize = 5
+    query_params.svsRuntimeParams.bufferCapacity = 10
     batch_iterator_new = index.create_batch_iterator(query_data, query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that accuracy is worse with the new lower window size.
     assert (sum(distances_first_batch[0]) < sum(distances_first_batch_new[0]))
 
     query_params.svsRuntimeParams.windowSize = windowSize  # Restore previous window size.
+    query_params.svsRuntimeParams.bufferCapacity = bufferCapacity # Restore previous buffer capacity.
     batch_iterator_new = index.create_batch_iterator(query_data, query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that results are now the same.
@@ -223,8 +230,7 @@ def test_batch_iterator():
         recall = float(correct) / total_res
         assert recall >= 0.89
         total_recall += recall
-    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
-          total_recall / num_queries)
+    test_logger.info(f'Avg recall for {total_res} results in index of size {num_elements} with dim={dim} is: {total_recall / num_queries}')
 
     # Run again a single query in batches until it is depleted.
     batch_iterator = index.create_batch_iterator(query_data[0])
@@ -238,10 +244,10 @@ def test_batch_iterator():
         assert len(accumulated_labels.intersection(set(labels[0]))) == 0
         accumulated_labels = accumulated_labels.union(set(labels[0]))
     assert len(accumulated_labels) >= 0.95 * num_elements
-    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+    test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
-def test_topk_query():
+def test_topk_query(test_logger):
     dim = 128
     num_elements = 100000
 
@@ -250,14 +256,14 @@ def test_topk_query():
     np.random.seed(47)
     start = time.time()
     data = np.float32(np.random.random((num_elements, dim)))
-    print(f'Sample data generated in {time.time() - start} seconds')
+    test_logger.info(f'Sample data generated in {time.time() - start} seconds')
     vectors = []
     start = time.time()
     for i, vector in enumerate(data):
         vectors.append((i, vector))
 
     index.add_vector_parallel(data, np.array(range(num_elements)))
-    print(f'Index built in {time.time() - start} seconds')
+    test_logger.info(f'Index built in {time.time() - start} seconds')
 
     query_data = np.float32(np.random.random((1, dim)))
 
@@ -279,8 +285,8 @@ def test_topk_query():
         keys = extract_labels(actual_results)
         correct = count_correctness(redis_labels[0], keys)
 
-        print(
-            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={window_size},'
+        test_logger.info(
+            f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={window_size},'
             f' got {correct} correct results, which are {correct / k} of the entire results in the range.')
 
         recalls[window_size] = correct / k
@@ -293,7 +299,7 @@ def test_topk_query():
     assert len(redis_labels[0]) == 0
 
 
-def test_range_query():
+def test_range_query(test_logger):
     dim = 100
     num_elements = 100000
 
@@ -302,24 +308,23 @@ def test_range_query():
     np.random.seed(47)
     start = time.time()
     data = np.float32(np.random.random((num_elements, dim)))
-    print(f'Sample data generated in {time.time() - start} seconds')
+    test_logger.info(f'Sample data generated in {time.time() - start} seconds')
     vectors = []
     start = time.time()
     for i, vector in enumerate(data):
         vectors.append((i, vector))
 
     index.add_vector_parallel(data, np.array(range(num_elements)))
-    print(f'Index built in {time.time() - start} seconds')
+    test_logger.info(f'Index built in {time.time() - start} seconds')
 
     query_data = np.float32(np.random.random((1, dim)))
 
     radius = 13.0
     recalls = {}
 
-    for window_size in [128, 256, 512]:
+    for epsilon_rt in [0.001, 0.01, 0.1]:
         query_params = VecSimQueryParams()
-        query_params.svsRuntimeParams.windowSize = window_size
-        query_params.svsRuntimeParams.searchHistory = VecSimOption_AUTO
+        query_params.svsRuntimeParams.epsilon = epsilon_rt
         start = time.time()
         redis_labels, redis_distances = index.range_query(query_data, radius=radius, query_param=query_params)
         end = time.time()
@@ -327,19 +332,127 @@ def test_range_query():
 
         actual_results = compute_range_euclidean(vectors, query_data.flat, radius)
 
-        print(
-            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={window_size},'
+        test_logger.info(
+            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with window_size={epsilon_rt},'
             f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
         assert np.all(np.isin(redis_labels, np.array([label for _, label in actual_results])))
 
         assert max(redis_distances[0]) <= radius
-        recalls[window_size] = res_num / len(actual_results)
+        recalls[epsilon_rt] = res_num / len(actual_results)
 
     # Expect higher recalls for higher epsilon values.
-    assert recalls[128] <= recalls[256] <= recalls[512]
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
 
     # Expect zero results for radius==0
     redis_labels, redis_distances = index.range_query(query_data, radius=0)
     assert len(redis_labels[0]) == 0
+
+def test_recall_for_svs_multi_value(test_logger):
+    dim = 16
+    num_labels = 1000
+    num_per_label = 4
+    num_queries = 10
+    k = 10
+
+    num_elements = num_labels * num_per_label
+
+    svs_index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_Cosine, alpha=0.9,
+                                 search_window_size=50, search_buffer_capacity=50, is_multi=True)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_labels, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        for _ in range(num_per_label):
+            svs_index.add_vector(vector, i)
+            vectors.append((i, vector))
+
+    query_data = np.float32(np.random.random((num_queries, dim)))
+    correct = 0
+    for target_vector in query_data:
+        svs_labels, svs_distances = svs_index.knn_query(target_vector, k)
+        assert (len(svs_labels[0]) == len(np.unique(svs_labels[0])))
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = {}
+        for key, vec in vectors:
+            # Setting or updating the score for each label. If it's the first time we calculate a score for a label,
+            # dists.get(key, 3) will return 3, which is more than a Cosine score can be,
+            # so we will choose the actual score the first time.
+            dists[key] = min(spatial.distance.cosine(target_vector, vec),
+                             dists.get(key, 3))  # cosine distance is always <= 2
+
+        dists = list(dists.items())
+        dists = sorted(dists, key=lambda pair: pair[1])[:k]
+        keys = [key for key, _ in dists]
+
+        for label in svs_labels[0]:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct += 1
+                    break
+
+    # Measure recall
+    recall = float(correct) / (k * num_queries)
+    test_logger.info(f"recall is: {recall}")
+    assert (recall > 0.9)
+
+
+def test_multi_range_query(test_logger):
+    dim = 100
+    num_labels = 10000
+    per_label = 5
+    num_elements = num_labels * per_label
+
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2, is_multi=True)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    vectors = []
+    for label, vecs in enumerate(data):
+        for vector in vecs:
+            index.add_vector(vector, label)
+            vectors.append((label, vector))
+
+    query_data = np.float32(np.random.random((1, dim)))
+
+    radius = 13.0
+    recalls = {}
+    # calculate distances of the labels in the index
+    dists = {}
+    for key, vec in vectors:
+        dists[key] = min(spatial.distance.sqeuclidean(query_data.flat, vec), dists.get(key, np.inf))
+
+    dists = list(dists.items())
+    dists = sorted(dists, key=lambda pair: pair[1])
+    keys = [key for key, dist in dists if dist <= radius]
+
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        query_params.svsRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        svs_labels, svs_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+        end = time.time()
+        res_num = len(svs_labels[0])
+
+        test_logger.info(
+            f'lookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            f' got {res_num} results, which are {res_num / len(keys)} of the entire results in the range.')
+
+        # Compare the number of vectors that are actually within the range to the returned results.
+        assert np.all(np.isin(svs_labels, np.array(keys)))
+
+        # Asserts that all the results are unique
+        assert len(svs_labels[0]) == len(np.unique(svs_labels[0]))
+
+        assert max(svs_distances[0]) <= radius
+        recalls[epsilon_rt] = res_num / len(keys)
+
+    # Expect higher recalls for higher epsilon values.
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
+
+    # Expect zero results for radius==0
+    svs_labels, svs_distances = index.range_query(query_data, radius=0)
+    assert len(svs_labels[0]) == 0

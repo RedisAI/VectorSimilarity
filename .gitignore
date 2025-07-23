@@ -1,5 +1,4 @@
-/tests/flow/logs/
-/tests/module/flow/logs
+**/logs/
 
 /.tox/
 /bin/
