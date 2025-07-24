@@ -540,8 +540,7 @@ private:
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
         // Update the SVS index
-        index->GetSVSIndex()->setNumThreads(availableThreads);
-        index->updateSVSIndex();
+        index->updateSVSIndex(availableThreads);
     }
 
 #ifdef BUILD_TESTS
@@ -591,7 +590,7 @@ private:
         }
     }
 
-    void updateSVSIndex() {
+    void updateSVSIndex(size_t availableThreads) {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
 
@@ -618,6 +617,7 @@ private:
             std::lock_guard lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+            svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
             svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                   labels_to_move.size());
         }
@@ -724,34 +724,34 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        if (!this->backendIndex->isMultiValue()) {
-            // Remove vector from the backend index if it exists in case of non-MULTI.
-            std::lock_guard lock(this->mainIndexGuard);
-            ret -= svs_index->deleteVectors(&label, 1);
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is 1.
-        }
-        {
-            std::shared_lock lock(this->mainIndexGuard);
-            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
-                                                                    : this->updateTriggerThreshold;
-        }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
-            const auto ft_ret = this->frontendIndex->addVector(blob, label);
+            ret = this->frontendIndex->addVector(blob, label);
 
-            if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
+            if (ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
                 assert(!this->backendIndex->isMultiValue() &&
                        "addVector() may return 0 for single value indices only");
                 for (auto id : this->frontendIndex->getElementIds(label)) {
                     this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
                 }
             }
-            ret = std::max(ret + ft_ret, 0);
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
 
+        if (!this->backendIndex->isMultiValue()) {
+            // Remove vector from the backend index if it exists in case of non-MULTI.
+            std::lock_guard lock(this->mainIndexGuard);
+            ret = std::max(ret - svs_index->deleteVectors(&label, 1), 0);
+        }
+
+        {
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is updateTriggerThreshold.
+            std::shared_lock lock(this->mainIndexGuard);
+            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                                    : this->updateTriggerThreshold;
+        }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
         }
