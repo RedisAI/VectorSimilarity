@@ -736,8 +736,6 @@ public:
             // Remove vector from the backend index if it exists in case of non-MULTI.
             std::lock_guard lock(this->mainIndexGuard);
             ret -= svs_index->deleteVectors(&label, 1);
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is 1.
         }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
@@ -755,6 +753,8 @@ public:
             frontend_index_size = this->frontendIndex->indexSize();
         }
         {
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is updateTriggerThreshold.
             std::shared_lock lock(this->mainIndexGuard);
             update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
                                                                     : this->updateTriggerThreshold;
