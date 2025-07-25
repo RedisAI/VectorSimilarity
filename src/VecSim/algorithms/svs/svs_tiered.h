@@ -724,30 +724,37 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
+        if (!this->backendIndex->isMultiValue()) {
+            {
+                std::shared_lock lock(this->flatIndexGuard);
+                // If the label already exists in the frontend index, we should count it
+                // to prevent the case when existing vector is moved meanwhile by the update job.
+                if (this->frontendIndex->isLabelExists(label)) {
+                    ret = -1;
+                }
+            }
+            // Remove vector from the backend index if it exists in case of non-MULTI.
+            std::lock_guard lock(this->mainIndexGuard);
+            ret -= svs_index->deleteVectors(&label, 1);
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is 1.
+        }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
-            ret = this->frontendIndex->addVector(blob, label);
+            const auto ft_ret = this->frontendIndex->addVector(blob, label);
 
-            if (ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
+            if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
                 assert(!this->backendIndex->isMultiValue() &&
                        "addVector() may return 0 for single value indices only");
                 for (auto id : this->frontendIndex->getElementIds(label)) {
                     this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
                 }
             }
+            ret = std::max(ret + ft_ret, 0);
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
-
-        if (!this->backendIndex->isMultiValue()) {
-            // Remove vector from the backend index if it exists in case of non-MULTI.
-            std::lock_guard lock(this->mainIndexGuard);
-            ret = std::max(ret - svs_index->deleteVectors(&label, 1), 0);
-        }
-
         {
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is updateTriggerThreshold.
             std::shared_lock lock(this->mainIndexGuard);
             update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
                                                                     : this->updateTriggerThreshold;
