@@ -24,10 +24,6 @@
 #include <string>
 #include <utility>
 
-// NOTE: optimal training threshold may depend on the SVSIndex compression mode.
-// it might be good to implement an utility to compute default threshold based on index parameters
-// DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
-constexpr size_t SVS_DEFAULT_TRAINING_THRESHOLD = 10 * DEFAULT_BLOCK_SIZE; // 10 * 1024 vectors
 // Maximum training threshold for SVS index, used to limit the size of training data
 constexpr size_t SVS_MAX_TRAINING_THRESHOLD = 100 * DEFAULT_BLOCK_SIZE; // 100 * 1024 vectors
 // Default batch update threshold for SVS index.
@@ -102,18 +98,20 @@ makeVamanaBuildParameters(const SVSParams &params) {
     //      without compromising the quality of the graph.
     // * use_search_history (true): now: is enabled if not disabled explicitly
     //                              future: default value based on other index parameters
-    const auto construction_window_size = getOrDefault(params.construction_window_size, 200);
-    const auto graph_max_degree = getOrDefault(params.graph_max_degree, 32);
+    const auto construction_window_size = getOrDefault(params.construction_window_size, SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE);
+    const auto graph_max_degree = getOrDefault(params.graph_max_degree, SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE);
 
     // More info about VamanaBuildParameters can be found there:
     // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
     return svs::index::vamana::VamanaBuildParameters{
-        getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ? 1.2f : 0.95f)),
+        getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ?
+            SVS_VAMANA_DEFAULT_ALPHA_L2 : SVS_VAMANA_DEFAULT_ALPHA_IP)),
         graph_max_degree,
         construction_window_size,
         getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
         getOrDefault(params.prune_to, graph_max_degree - 4),
-        params.use_search_history != VecSimOption_DISABLE
+        params.use_search_history == VecSimOption_AUTO ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY :
+            params.use_search_history == VecSimOption_ENABLE,
     };
     // clang-format on
 }
@@ -121,15 +119,34 @@ makeVamanaBuildParameters(const SVSParams &params) {
 // Join default SVS search parameters with VecSim query runtime parameters
 inline svs::index::vamana::VamanaSearchParameters
 joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
-                 const VecSimQueryParams *queryParams) {
+                 const VecSimQueryParams *queryParams, bool is_two_level_lvq) {
     if (queryParams == nullptr) {
         return std::move(sp);
     }
 
     auto &rt_params = queryParams->svsRuntimeParams;
+    size_t sws = sp.buffer_config_.get_search_window_size();
+    size_t sbc = sp.buffer_config_.get_total_capacity();
+
+    // buffer capacity is changed only if window size is changed
     if (rt_params.windowSize > 0) {
-        sp.buffer_config({rt_params.windowSize});
+        sws = rt_params.windowSize;
+        if (rt_params.bufferCapacity > 0) {
+            // case 1: change both window size and buffer capacity
+            sbc = rt_params.bufferCapacity;
+        } else {
+            // case 2: change only window size
+            // In this case, set buffer capacity based on window size
+            if (!is_two_level_lvq) {
+                // set buffer capacity to windowSize
+                sbc = rt_params.windowSize;
+            } else {
+                // set buffer capacity to windowSize * 1.5 for Two-level LVQ
+                sbc = static_cast<size_t>(rt_params.windowSize * 1.5);
+            }
+        }
     }
+    sp.buffer_config({sws, sbc});
     switch (rt_params.searchHistory) {
     case VecSimOption_ENABLE:
         sp.search_buffer_visited_set(true);
@@ -172,7 +189,6 @@ inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuan
     default:
         // fallback to no quantization if we have no LVQ support in code
         // or if the CPU doesn't support it
-        // TODO: fallback to scalar quantization
 #if HAVE_SVS_LVQ
         return svs::detail::intel_enabled() ? std::make_pair(quant_bits, true)
                                             : std::make_pair(VecSimSvsQuant_Scalar, true);
@@ -201,9 +217,14 @@ struct SVSStorageTraits {
 
     static constexpr bool is_compressed() { return false; }
 
+    static constexpr VecSimSvsQuantBits get_compression_mode() {
+        return VecSimSvsQuant_NONE; // No compression for this storage
+    }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator) {
+                                             std::shared_ptr<VecSimAllocator> allocator,
+                                             size_t /* leanvec_dim */) {
         const auto dim = data.dimensions();
         const auto size = data.size();
         // SVS storage element size and block size can be differ than VecSim
@@ -223,24 +244,12 @@ struct SVSStorageTraits {
     }
 
     // SVS storage element size can be differ than VecSim DataSize
-    static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0) {
+    static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0,
+                                         size_t /*leanvec_dim*/ = 0) {
         return dims * sizeof(DataType);
     }
 
     static size_t storage_capacity(const index_storage_type &storage) { return storage.capacity(); }
-
-    template <typename Distance, typename E, size_t N>
-    static float compute_distance_by_id(const index_storage_type &storage, const Distance &distance,
-                                        size_t id, std::span<E, N> query) {
-        auto dist_f = svs::index::vamana::extensions::single_search_setup(storage, distance);
-
-        // SVS distance function may require to fix/pre-process one of arguments
-        svs::distance::maybe_fix_argument(dist_f, query);
-
-        // Get the datum from the storage using the storage ID
-        auto datum = storage.get_datum(id);
-        return svs::distance::compute(dist_f, query, datum);
-    }
 };
 
 template <typename SVSIdType>
@@ -273,7 +282,7 @@ struct SVSGraphBuilder {
         auto prefetch_parameters =
             svs::index::vamana::extensions::estimate_prefetch_parameters(data);
         auto builder = svs::index::vamana::VamanaBuilder(
-            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters);
+            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters, logger);
 
         // Specific to the Vamana algorithm:
         // It builds in two rounds, one with alpha=1 and the second time with the user/config

@@ -70,9 +70,6 @@ public:
     deleteVectorAndGetUpdatedIds(labelType label) = 0;
     // Check if a certain label exists in the index.
     virtual bool isLabelExists(labelType label) = 0;
-    // Return a set of all labels that are stored in the index (helper for computing label count
-    // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
-    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS

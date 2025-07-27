@@ -38,7 +38,7 @@ endif
 
 ifeq ($(SAN),memory)
 CMAKE_SAN=-DUSE_MSAN=ON
-override CTEST_ARGS += --exclude-regex BruteForceTest.sanity_rinsert_1280
+#override CTEST_ARGS += --exclude-regex BruteForceTest.sanity_rinsert_1280
 
 else ifeq ($(SAN),address)
 CMAKE_SAN=-DUSE_ASAN=ON

@@ -50,10 +50,10 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
     return VecSimParamResolver_OK;
 }
 
-static VecSimResolveCode _ResolveParams_WSSearch(VecSimAlgo index_type, VecSimRawParam rparam,
+static VecSimResolveCode _ResolveParams_SearchWS(VecSimAlgo index_type, VecSimRawParam rparam,
                                                  VecSimQueryParams *qparams) {
     long long num_val;
-    // WS_SEARCH is a valid parameter only in SVS algorithm.
+    // SEARCH_WS is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
         return VecSimParamResolverErr_UnknownParam;
     }
@@ -68,6 +68,23 @@ static VecSimResolveCode _ResolveParams_WSSearch(VecSimAlgo index_type, VecSimRa
     return VecSimParamResolver_OK;
 }
 
+static VecSimResolveCode _ResolveParams_SearchBC(VecSimAlgo index_type, VecSimRawParam rparam,
+                                                 VecSimQueryParams *qparams) {
+    long long num_val;
+    // SEARCH_BC is a valid parameter only in SVS algorithm.
+    if (index_type != VecSimAlgo_SVS) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
+    if (qparams->svsRuntimeParams.bufferCapacity != 0) {
+        return VecSimParamResolverErr_AlreadySet;
+    }
+    if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
+        return VecSimParamResolverErr_BadValue;
+    }
+
+    qparams->svsRuntimeParams.bufferCapacity = (size_t)num_val;
+    return VecSimParamResolver_OK;
+}
 static VecSimResolveCode _ResolveParams_UseSearchHistory(VecSimAlgo index_type,
                                                          VecSimRawParam rparam,
                                                          VecSimQueryParams *qparams) {
@@ -190,10 +207,6 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
-extern "C" size_t VecSimIndex_IndexLabelCount(VecSimIndex *index) {
-    return index->indexLabelCount();
-}
-
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
                                                        VecsimQueryType query_type) {
@@ -226,8 +239,13 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
                 VecSimParamResolver_OK) {
                 return res;
             }
-        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_WS_SEARCH_STRING)) {
-            if ((res = _ResolveParams_WSSearch(index_type, rparams[i], qparams)) !=
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_SEARCH_WS_STRING)) {
+            if ((res = _ResolveParams_SearchWS(index_type, rparams[i], qparams)) !=
+                VecSimParamResolver_OK) {
+                return res;
+            }
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_SEARCH_BC_STRING)) {
+            if ((res = _ResolveParams_SearchBC(index_type, rparams[i], qparams)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }

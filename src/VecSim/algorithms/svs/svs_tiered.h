@@ -1,4 +1,5 @@
 #pragma once
+#include "VecSim/vec_sim_common.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "VecSim/algorithms/svs/svs.h"
@@ -595,7 +596,7 @@ public:
 
         this->trainingTriggerThreshold =
             tiered_svs_params.trainingTriggerThreshold == 0
-                ? SVS_DEFAULT_TRAINING_THRESHOLD
+                ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
                 : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
@@ -721,21 +722,6 @@ public:
         return this->frontendIndex->indexSize() + this->backendIndex->indexSize();
     }
 
-    size_t indexLabelCount() const override {
-        auto [flat_labels, svs_labels] = [this] {
-            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-            return std::make_pair(this->frontendIndex->getLabelsSet(),
-                                  this->GetSVSIndex()->getLabelsSet());
-        }();
-
-        std::vector<size_t> labels_union;
-        labels_union.reserve(flat_labels.size() + svs_labels.size());
-        std::set_union(flat_labels.begin(), flat_labels.end(), svs_labels.begin(), svs_labels.end(),
-                       std::back_inserter(labels_union));
-        return labels_union.size();
-    }
-
     size_t indexCapacity() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
@@ -764,7 +750,12 @@ public:
 
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
-        // TODO: Add SVS specific info.
+        SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
+                                       .updateTriggerThreshold = this->updateTriggerThreshold,
+                                       .updateJobWaitTime = this->updateJobWaitTime,
+                                       .indexUpdateScheduled =
+                                           static_cast<bool>(this->indexUpdateScheduled.test())};
+        info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
         return info;
     }
 

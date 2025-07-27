@@ -16,22 +16,22 @@ the file.
 ***************************************/
 // Memory BF before
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, FLAT), fp32_index_t)
-(benchmark::State &st) { Memory_FLAT(st); }
+(benchmark::State &st) { Memory(st, INDEX_BF); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
 // Updated memory BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, FLAT), fp32_index_t)
-(benchmark::State &st) { Memory_FLAT(st, updated_index_offset); }
+(benchmark::State &st) { Memory(st, INDEX_BF_UPDATED); }
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
 // Memory HNSW before
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, HNSW), fp32_index_t)
-(benchmark::State &st) { Memory_HNSW(st); }
+(benchmark::State &st) { Memory(st, INDEX_HNSW); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, HNSW))->Iterations(1);
 
 // Updated memory HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, HNSW), fp32_index_t)
-(benchmark::State &st) { Memory_HNSW(st, updated_index_offset); }
+(benchmark::State &st) { Memory(st, INDEX_HNSW_UPDATED); }
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, BM_UPDATED_FUNC_NAME(Memory, HNSW))->Iterations(1);
 
 // TopK BF

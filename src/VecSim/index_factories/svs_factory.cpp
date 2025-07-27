@@ -27,7 +27,7 @@ AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
             .dataSize = dataSize,
             .metric = svsParams.metric,
             .blockSize = svsParams.blockSize,
-            .multi = false,
+            .multi = svsParams.multi,
             .logCtx = params->logCtx};
 }
 
@@ -42,9 +42,15 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
         nullptr, preprocessors}; // calculator is not in use in svs.
     bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
-    return new (abstractInitParams.allocator)
-        SVSIndex<MetricType, DataType, QuantBits, ResidualBits, IsLeanVec>(
-            svsParams, abstractInitParams, components, forcePreprocessing);
+    if (svsParams.multi) {
+        return new (abstractInitParams.allocator)
+            SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>(
+                svsParams, abstractInitParams, components, forcePreprocessing);
+    } else {
+        return new (abstractInitParams.allocator)
+            SVSIndex<MetricType, DataType, false, QuantBits, ResidualBits, IsLeanVec>(
+                svsParams, abstractInitParams, components, forcePreprocessing);
+    }
 }
 
 template <typename MetricType, typename DataType>
@@ -110,13 +116,14 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
 
 // QuantizedVectorSize() is the chain of template functions to estimate vector DataSize.
 template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec>
-constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0) {
-    return SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>::element_size(dims,
-                                                                                        alignment);
+constexpr size_t QuantizedVectorSize(size_t dims, size_t alignment = 0, size_t leanvec_dim = 0) {
+    return SVSStorageTraits<DataType, QuantBits, ResidualBits, IsLeanVec>::element_size(
+        dims, alignment, leanvec_dim);
 }
 
 template <typename DataType>
-size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0) {
+size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t alignment = 0,
+                           size_t leanvec_dim = 0) {
     // Ignore the 'supported' flag because we always fallback at least to the non-quantized mode
     // elsewhere we got code coverage failure for the `supported==false` case
     auto quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quant_bits));
@@ -135,9 +142,9 @@ size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t al
     case VecSimSvsQuant_4x8:
         return QuantizedVectorSize<DataType, 4, 8, false>(dims, alignment);
     case VecSimSvsQuant_4x8_LeanVec:
-        return QuantizedVectorSize<DataType, 4, 8, true>(dims, alignment);
+        return QuantizedVectorSize<DataType, 4, 8, true>(dims, alignment, leanvec_dim);
     case VecSimSvsQuant_8x8_LeanVec:
-        return QuantizedVectorSize<DataType, 8, 8, true>(dims, alignment);
+        return QuantizedVectorSize<DataType, 8, 8, true>(dims, alignment, leanvec_dim);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported quantization mode");
@@ -146,12 +153,27 @@ size_t QuantizedVectorSize(VecSimSvsQuantBits quant_bits, size_t dims, size_t al
 }
 
 size_t QuantizedVectorSize(VecSimType data_type, VecSimSvsQuantBits quant_bits, size_t dims,
-                           size_t alignment = 0) {
+                           size_t alignment = 0, size_t leanvec_dim = 0) {
     switch (data_type) {
     case VecSimType_FLOAT32:
-        return QuantizedVectorSize<float>(quant_bits, dims, alignment);
+        return QuantizedVectorSize<float>(quant_bits, dims, alignment, leanvec_dim);
     case VecSimType_FLOAT16:
-        return QuantizedVectorSize<svs::Float16>(quant_bits, dims, alignment);
+        return QuantizedVectorSize<svs::Float16>(quant_bits, dims, alignment, leanvec_dim);
+    default:
+        // If we got here something is wrong.
+        assert(false && "Unsupported data type");
+        return 0;
+    }
+}
+
+size_t EstimateSVSIndexSize(const SVSParams *params) {
+    // SVSindex class has no fields which size depend on template specialization
+    // when VecSimIndexAbstract may depend on DataType template parameter
+    switch (params->type) {
+    case VecSimType_FLOAT32:
+        return sizeof(SVSIndex<svs::distance::DistanceL2, float, false, 0, 0, false>);
+    case VecSimType_FLOAT16:
+        return sizeof(SVSIndex<svs::distance::DistanceL2, svs::Float16, false, 0, 0, false>);
     default:
         // If we got here something is wrong.
         assert(false && "Unsupported data type");
@@ -184,7 +206,8 @@ size_t EstimateElementSize(const SVSParams *params) {
     // Assuming that the graph_max_degree can be unset in params.
     const auto graph_max_degree = svs_details::makeVamanaBuildParameters(*params).graph_max_degree;
     const auto graph_node_size = SVSGraphBuilder<graph_idx_type>::element_size(graph_max_degree);
-    const auto vector_size = QuantizedVectorSize(params->type, params->quantBits, params->dim);
+    const auto vector_size =
+        QuantizedVectorSize(params->type, params->quantBits, params->dim, 0, params->leanvec_dim);
 
     return vector_size + graph_node_size;
 }
@@ -193,11 +216,7 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
-    // Assume all non-quant floats have same initial size
-    // Assume quantBits>0 cases have same sizes
-    est += (params->quantBits == 0)
-               ? sizeof(SVSIndex<svs::distance::DistanceL2, float, 0, 0, false>)
-               : sizeof(SVSIndex<svs::distance::DistanceL2, float, 8, 0, false>);
+    est += EstimateSVSIndexSize(params);
     est += EstimateComponentsMemorySVS(params->type, params->metric, is_normalized);
     est += sizeof(DataBlocksContainer) + allocations_overhead;
     return est;
