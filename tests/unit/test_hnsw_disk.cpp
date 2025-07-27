@@ -108,15 +108,15 @@ TEST_F(HNSWDiskIndexTest, BasicConstruction) {
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
     
-    // Create HNSWDiskIndex - pass nullptr for column family since we're not using it
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, nullptr);
+    // Create HNSWDiskIndex - use default column family handle
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
     
     // Basic assertions - check that the index was created successfully
     // Note: We can't access protected members directly, so we'll test through public methods
     EXPECT_TRUE(&index != nullptr);
     
-    // Clean up
-    delete abstractInitParams.allocator;
+    // Clean up - shared_ptr will handle deallocation automatically
 }
 
 TEST_F(HNSWDiskIndexTest, VectorOperations) {
@@ -146,8 +146,9 @@ TEST_F(HNSWDiskIndexTest, VectorOperations) {
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
     
-    // Create HNSWDiskIndex
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, nullptr);
+    // Create HNSWDiskIndex - use default column family handle
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
     
     // Create test vectors
     std::mt19937 rng(42);
@@ -180,7 +181,7 @@ TEST_F(HNSWDiskIndexTest, VectorOperations) {
     
     // Clean up
     delete results;
-    delete abstractInitParams.allocator;
+    // shared_ptr will handle deallocation automatically
 }
 
 TEST_F(HNSWDiskIndexTest, BatchOperations) {
@@ -210,8 +211,9 @@ TEST_F(HNSWDiskIndexTest, BatchOperations) {
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
     
-    // Create HNSWDiskIndex
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, nullptr);
+    // Create HNSWDiskIndex - use default column family handle
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
     
     // Create test vectors
     std::mt19937 rng(42);
@@ -249,7 +251,7 @@ TEST_F(HNSWDiskIndexTest, BatchOperations) {
     
     // Clean up
     delete results;
-    delete abstractInitParams.allocator;
+    // shared_ptr will handle deallocation automatically
 }
 
 TEST_F(HNSWDiskIndexTest, EmptyIndexQuery) {
@@ -279,8 +281,9 @@ TEST_F(HNSWDiskIndexTest, EmptyIndexQuery) {
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
     
-    // Create HNSWDiskIndex
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, nullptr);
+    // Create HNSWDiskIndex - use default column family handle
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
     
     // Query empty index
     std::mt19937 rng(42);
@@ -298,7 +301,7 @@ TEST_F(HNSWDiskIndexTest, EmptyIndexQuery) {
     
     // Clean up
     delete results;
-    delete abstractInitParams.allocator;
+    // shared_ptr will handle deallocation automatically
 }
 
 TEST_F(HNSWDiskIndexTest, RocksDBIntegration) {
@@ -327,8 +330,9 @@ TEST_F(HNSWDiskIndexTest, RocksDBIntegration) {
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
     
-    // Create HNSWDiskIndex
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, nullptr);
+    // Create HNSWDiskIndex - use default column family handle
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
     
     // Test that RocksDB operations work through the index
     std::mt19937 rng(42);
@@ -352,7 +356,7 @@ TEST_F(HNSWDiskIndexTest, RocksDBIntegration) {
     
     // Clean up
     delete results;
-    delete abstractInitParams.allocator;
+    // shared_ptr will handle deallocation automatically
 }
 
 int main(int argc, char** argv) {

@@ -26,8 +26,11 @@
 // #include "../RediSearch/.install/boost/boost/unordered/concurrent_flat_map.hpp"
 
 // Includes that should be in the inherited class
+#include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/computer/calculator.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
+#include "VecSim/spaces/computer/preprocessors.h"
+#include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
 #ifdef BUILD_TESTS
 // #include "hnsw_serialization_utils.h"
@@ -42,7 +45,7 @@
 #include <random>
 // #include <iostream>
 #include <algorithm>
-// #include <unordered_map>
+#include <unordered_map>
 // #include <sys/resource.h>
 // #include <fstream>
 #include <shared_mutex>
@@ -52,26 +55,33 @@ using std::pair;
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
-using candidatesList = vecsim_stl::vector<pair<DistType, idType>>;
+using candidatesList = vecsim_stl::vector<std::pair<DistType, idType>>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
-using graphNodeType = pair<idType, unsigned short>; // represented as: (element_id, level)
+using graphNodeType = std::pair<idType, unsigned short>; // represented as: (element_id, level)
+
+// Hash function for graphNodeType
+struct GraphNodeHash {
+    std::size_t operator()(const graphNodeType& k) const {
+        return std::hash<idType>()(k.first) ^ (std::hash<unsigned short>()(k.second) << 1);
+    }
+};
 
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 
-struct ElementMetaData {
+struct DiskElementMetaData {
     labelType label;
     size_t topLevel;
     // elementFlags flags;
 
-    ElementMetaData(labelType label = INVALID_LABEL) noexcept : label(label) {}
-    ElementMetaData(labelType label, size_t topLevel) noexcept : label(label), topLevel(topLevel) {}
+    DiskElementMetaData(labelType label = INVALID_LABEL) noexcept : label(label) {}
+    DiskElementMetaData(labelType label, size_t topLevel) noexcept : label(label), topLevel(topLevel) {}
 };
 
-static constexpr char* GraphKeyPrefix = "GK";
+static constexpr char GraphKeyPrefix[3] = "GK";
 // #pragma pack(1)
 struct GraphKey {
-    constexpr char keyPrefix[2] = GraphKeyPrefix;
+    char keyPrefix[3] = {'G', 'K', '\0'};
     // uint8_t version;
     uint16_t level;
     idType id;
@@ -91,14 +101,8 @@ struct GraphKey {
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
 template <typename DataType, typename DistType>
-class HNSWDiskIndex : public VecsimBaseObject {
+class HNSWDiskIndex : public VecSimIndexAbstract<DataType, DistType> {
 protected:
-    // Attributes that should be inherited
-    size_t dim;                                          // Vector's dimension.
-    size_t dataSize;                                     // Vector size in bytes
-    IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
-    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
-    bool isMulti; // Determines if the index should multi-index or not.
 
     // Index build parameters
     // size_t maxElements;
@@ -117,7 +121,7 @@ protected:
     // uint8_t version; // version of the graph.
 
     // Index level generator of the top level for a new element
-    std::default_random_engine levelGenerator;
+    mutable std::default_random_engine levelGenerator;
 
     // Index global state - these should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
@@ -127,13 +131,14 @@ protected:
 
     // Index data
     // vecsim_stl::vector<DataBlock> graphDataBlocks;
-    vecsim_stl::vector<ElementMetaData> idToMetaData;
+    vecsim_stl::vector<DiskElementMetaData> idToMetaData;
     vecsim_stl::vector<const void *> quantizedData; // quantized data for the elements
     vecsim_stl::unordered_map<labelType, idType> labelToIdMap;
     rocksdb::DB *db;                 // RocksDB database, not owned by the index
     rocksdb::ColumnFamilyHandle *cf; // RocksDB column family handle, not owned by the index
 
     mutable std::shared_mutex indexDataGuard;
+    mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
 
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
@@ -151,15 +156,29 @@ protected:
 
     std::unordered_map<idType, idType> pruneDeleted(
         const std::vector<idType> &deleted_ids,
-        const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods,
+        const std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash> &deleted_neighborhoods,
         idType &entrypointNode);
     void addVector(labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
-                   vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
+                   vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
                     vecsim_stl::vector<const void*> &new_elements_quantized_data,
                    std::unordered_map<idType, std::vector<idType>> &delta_list);
     void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
-                        vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
+                        vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
                         std::unordered_map<idType, idType> &new_ids_mapping);
+
+    // Missing method declarations - adding stub implementations
+    const void* getDataByInternalId(idType id) const;
+    candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const;
+    void greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist, void* timeoutCtx = nullptr, VecSimQueryReply_Code* rc = nullptr) const;
+    std::pair<idType, size_t> safeGetEntryPointState() const;
+    VisitedNodesHandler* getVisitedList() const;
+    void returnVisitedList(VisitedNodesHandler* visited_nodes_handler) const;
+    candidatesLabelsMaxHeap<DistType>* getNewMaxPriorityQueue() const;
+    bool isMarkedDeleted(idType id) const;
+    labelType getExternalLabel(idType id) const;
+    void processCandidate(idType candidate_id, const void* data_point, size_t level, size_t ef,
+                         void* visited_tags, size_t visited_tag, candidatesLabelsMaxHeap<DistType>& top_candidates,
+                         candidatesMaxHeap<DistType>& candidate_set, DistType& lowerBound) const;
 
     size_t getRandomLevel() const {
         std::uniform_real_distribution<double> distribution;
@@ -186,6 +205,31 @@ public:
 
     VecSimQueryReply *topKQuery(const void *query_data, size_t k,
                                 VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *rangeQuery(const void *query_data, double radius,
+                                 VecSimQueryParams *queryParams) const override;
+    VecSimIndexDebugInfo debugInfo() const override;
+    VecSimDebugInfoIterator *debugInfoIterator() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
+    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                          VecSimQueryParams *queryParams) const override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
+
+    // Pure virtual methods from VecSimIndexInterface
+    int addVector(const void *blob, labelType label) override;
+
+private:
+    // Internal helper that doesn't acquire locks
+    int addVectorInternal(const void *blob, labelType label);
+    int deleteVector(labelType label) override;
+    double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
+    size_t indexSize() const override;
+    size_t indexCapacity() const override;
+    size_t indexLabelCount() const override;
+    void fitMemory() override;
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const override;
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override;
+    vecsim_stl::set<labelType> getLabelsSet() const override;
+
 
     /*****************************************************************/
 };
@@ -197,10 +241,10 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
     const IndexComponents<DataType, DistType> &components, rocksdb::DB *db,
     rocksdb::ColumnFamilyHandle *cf, size_t random_seed)
-    : VecsimBaseObject(abstractInitParams.allocator), dim(abstractInitParams.dim),
-      dataSize(abstractInitParams.dataSize), indexCalculator(components.indexCalculator),
-      preprocessors(components.preprocessors), isMulti(abstractInitParams.multi),
-      idToMetaData(params->maxElements, this->allocator), db(db), cf(cf), indexDataGuard() {
+    : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
+      idToMetaData(1000, this->allocator), quantizedData(this->allocator),
+      labelToIdMap(this->allocator), db(db), cf(cf), indexDataGuard(),
+      visitedNodesHandlerPool(1000, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -226,15 +270,14 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
 
 template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
-    delete indexCalculator;
-    delete preprocessors;
+    // Base class destructor will handle indexCalculator and preprocessors
 }
 
 /********************************** Index API **********************************/
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::batchUpdate(
-    const std::vector<pair<labelType, const void *>> &new_elements,
+    const std::vector<std::pair<labelType, const void *>> &new_elements,
     const std::vector<labelType> &deleted_labels) {
     if (!indexDataGuard.try_lock()) {
         // Cannot acquire lock, another operation is in progress
@@ -359,7 +402,7 @@ finish:
 template <typename DataType, typename DistType>
 auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const std::vector<idType> &ids) const {
     // Create a map to store the neighbors for each label
-    std::unordered_map<graphNodeType, std::vector<idType>> neighbors_map;
+    std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash> neighbors_map;
     // Create a vector of slices to store the keys
     std::vector<GraphKey> graphKeys;
     std::vector<rocksdb::Slice> keys;
@@ -376,7 +419,8 @@ auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const std::vector<idTyp
 
     // Perform a multi-get operation to retrieve the values for the keys
     std::vector<std::string> values;
-    this->db->MultiGet(rocksdb::ReadOptions(), cf, keys, &values);
+    std::vector<rocksdb::ColumnFamilyHandle*> cfs(keys.size(), cf);
+    this->db->MultiGet(rocksdb::ReadOptions(), cfs, keys, &values);
 
     // Iterate over the values and fill the neighbors map
     for (size_t i = 0; i < graphKeys.size(); ++i) {
@@ -388,7 +432,7 @@ auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const std::vector<idTyp
         // Parse the value to get the neighbors
         std::vector<idType> neighbors(neighbor_ids, neighbor_ids + num_neighbors);
         // Store the neighbors in the map
-        neighbors_map[key.node] = std::move(neighbors);
+        neighbors_map[key.node()] = std::move(neighbors);
     }
     return neighbors_map;
 }
@@ -471,17 +515,17 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
 template <typename DataType, typename DistType>
 std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDeleted(
     const std::vector<idType> &deleted_ids,
-    const std::unordered_map<graphNodeType, std::vector<idType>> &deleted_neighborhoods,
+    const std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash> &deleted_neighborhoods,
     idType &entrypointNode) {
 
     // Higher ids will reuse the deleted ids
     auto newElementCount = this->curElementCount - deleted_neighborhoods.size();
 
-    constexpr auto readOptions = rocksdb::ReadOptions();
+    auto readOptions = rocksdb::ReadOptions();
     readOptions.fill_cache = false;
     readOptions.prefix_same_as_start = true;
 
-    constexpr auto writeOptions = rocksdb::WriteOptions();
+    auto writeOptions = rocksdb::WriteOptions();
     writeOptions.disableWAL = true;
 
     auto it = this->db->NewIterator(readOptions, cf);
@@ -582,7 +626,7 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::addVector(
     labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
-    vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
+    vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
     vecsim_stl::vector<const void*> &new_elements_quantized_data,
     std::unordered_map<idType, std::vector<idType>> &delta_list) {
 
@@ -590,7 +634,7 @@ void HNSWDiskIndex<DataType, DistType>::addVector(
     new_elements_meta_data.emplace_back(label, getRandomLevel());
     auto &new_element = new_elements_meta_data.back();
 
-    constexpr auto writeOptions = rocksdb::WriteOptions();
+    auto writeOptions = rocksdb::WriteOptions();
     writeOptions.disableWAL = true;
 
     size_t commonLevel;
@@ -652,14 +696,14 @@ void HNSWDiskIndex<DataType, DistType>::addVector(
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
     std::unordered_map<idType, std::vector<idType>> &delta_list,
-    vecsim_stl::vector<ElementMetaData> &new_elements_meta_data,
+    vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
     std::unordered_map<idType, idType> &new_ids_mapping) {
 
-    constexpr auto readOptions = rocksdb::ReadOptions();
+    auto readOptions = rocksdb::ReadOptions();
     readOptions.fill_cache = false;
     readOptions.prefix_same_as_start = true;
 
-    constexpr auto writeOptions = rocksdb::WriteOptions();
+    auto writeOptions = rocksdb::WriteOptions();
     writeOptions.disableWAL = true;
 
     auto it = this->db->NewIterator(readOptions, cf);
@@ -667,7 +711,7 @@ void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
         auto key = it->key();
         auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
 
-        auto it2 = delta_list.find(graphKey->node());
+        auto it2 = delta_list.find(graphKey->node().first);
         if (it2 == delta_list.end()) {
             // No need to update this node, move to the next one
             continue;
@@ -775,4 +819,216 @@ HNSWDiskIndex<DataType, DistType>::searchBottomLayer_WithTimeout(const rocksdb::
     }
     *rc = VecSim_QueryReply_OK;
     return top_candidates;
+}
+
+/********************************** Stub Implementations **********************************/
+
+template <typename DataType, typename DistType>
+const void* HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) const {
+    // Check if the id is valid
+    if (id >= quantizedData.size()) {
+        return nullptr;
+    }
+
+    // Return the quantized data for this internal id
+    return quantizedData[id];
+}
+
+template <typename DataType, typename DistType>
+candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const {
+    // TODO: Implement proper layer search
+    candidatesMaxHeap<DistType> candidates(this->allocator);
+    return candidates;
+}
+
+template <typename DataType, typename DistType>
+labelType HNSWDiskIndex<DataType, DistType>::getExternalLabel(idType id) const {
+    if (id >= idToMetaData.size()) {
+        return INVALID_LABEL;
+    }
+    return idToMetaData[id].label;
+}
+
+template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(idType id) const {
+    // For now, no elements are marked as deleted
+    // In a real implementation, this would check a deletion flag
+    return false;
+}
+
+template <typename DataType, typename DistType>
+std::pair<idType, size_t> HNSWDiskIndex<DataType, DistType>::safeGetEntryPointState() const {
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+    return std::make_pair(entrypointNode, maxLevel);
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist, void* timeoutCtx, VecSimQueryReply_Code* rc) const {
+    // TODO: Implement proper greedy search
+    // For now, do nothing
+}
+
+
+
+
+
+template <typename DataType, typename DistType>
+candidatesLabelsMaxHeap<DistType>* HNSWDiskIndex<DataType, DistType>::getNewMaxPriorityQueue() const {
+    // Use max_priority_queue for single-label disk index
+    return new (this->allocator) vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
+}
+
+template <typename DataType, typename DistType>
+VisitedNodesHandler* HNSWDiskIndex<DataType, DistType>::getVisitedList() const {
+    return visitedNodesHandlerPool.getAvailableVisitedNodesHandler();
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::returnVisitedList(VisitedNodesHandler* visited_nodes_handler) const {
+    visitedNodesHandlerPool.returnVisitedNodesHandlerToPool(visited_nodes_handler);
+}
+
+
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::processCandidate(idType candidate_id, const void* data_point, size_t level, size_t ef,
+                     void* visited_tags, size_t visited_tag, candidatesLabelsMaxHeap<DistType>& top_candidates,
+                     candidatesMaxHeap<DistType>& candidate_set, DistType& lowerBound) const {
+    // TODO: Implement proper candidate processing
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryReply *HNSWDiskIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
+                                                                VecSimQueryParams *queryParams) const {
+    // TODO: Implement range query
+    auto rep = new VecSimQueryReply(this->allocator);
+    return rep;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexDebugInfo HNSWDiskIndex<DataType, DistType>::debugInfo() const {
+    // TODO: Implement debug info
+    VecSimIndexDebugInfo info = {};
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimDebugInfoIterator *HNSWDiskIndex<DataType, DistType>::debugInfoIterator() const {
+    // TODO: Implement debug info iterator
+    return nullptr;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexBasicInfo HNSWDiskIndex<DataType, DistType>::basicInfo() const {
+    // TODO: Implement basic info
+    VecSimIndexBasicInfo info = {};
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimBatchIterator *HNSWDiskIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
+                                                                         VecSimQueryParams *queryParams) const {
+    // TODO: Implement batch iterator
+    return nullptr;
+}
+
+template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const {
+    // TODO: Implement ad-hoc search preference logic
+    return false;
+}
+
+// Implement missing pure virtual methods from VecSimIndexInterface
+template <typename DataType, typename DistType>
+int HNSWDiskIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
+    std::lock_guard<std::shared_mutex> guard(indexDataGuard);
+    return addVectorInternal(blob, label);
+}
+
+template <typename DataType, typename DistType>
+int HNSWDiskIndex<DataType, DistType>::addVectorInternal(const void *blob, labelType label) {
+    // Check if label already exists
+    auto it = labelToIdMap.find(label);
+    if (it != labelToIdMap.end()) {
+        // Label already exists, this is an update (return 0)
+        idType existing_id = it->second;
+        if (existing_id < quantizedData.size()) {
+            // Update the existing data
+            // For now, we'll just store the raw data (not actually quantized)
+            // In a real implementation, this would go through quantization
+            quantizedData[existing_id] = blob;
+        }
+        return 0;
+    }
+
+    // This is a new vector
+    idType new_id = quantizedData.size();
+
+    // Store the data (for now, just store the raw pointer - in real implementation this would be quantized and copied)
+    quantizedData.push_back(blob);
+
+    // Update the label to ID mapping
+    labelToIdMap[label] = new_id;
+
+    // Expand metadata if needed
+    if (new_id >= idToMetaData.size()) {
+        idToMetaData.resize(new_id + 1, DiskElementMetaData(label));
+    } else {
+        idToMetaData[new_id] = DiskElementMetaData(label);
+    }
+
+    // Update element count
+    curElementCount++;
+
+    return 1; // New insertion
+}
+
+template <typename DataType, typename DistType>
+int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
+    // TODO: Implement vector deletion
+    return 0;
+}
+
+template <typename DataType, typename DistType>
+double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, const void *blob) const {
+    // TODO: Implement distance calculation
+    return 0.0;
+}
+
+template <typename DataType, typename DistType>
+size_t HNSWDiskIndex<DataType, DistType>::indexSize() const {
+    return this->curElementCount;
+}
+
+template <typename DataType, typename DistType>
+size_t HNSWDiskIndex<DataType, DistType>::indexCapacity() const {
+    return idToMetaData.size();
+}
+
+template <typename DataType, typename DistType>
+size_t HNSWDiskIndex<DataType, DistType>::indexLabelCount() const {
+    return this->curElementCount;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::fitMemory() {
+    // TODO: Implement memory fitting
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const {
+    // TODO: Implement data retrieval by label
+}
+
+template <typename DataType, typename DistType>
+std::vector<std::vector<char>> HNSWDiskIndex<DataType, DistType>::getStoredVectorDataByLabel(labelType label) const {
+    // TODO: Implement stored vector data retrieval
+    return {};
+}
+
+template <typename DataType, typename DistType>
+vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() const {
+    // TODO: Implement labels set retrieval
+    vecsim_stl::set<labelType> labels(this->allocator);
+    return labels;
 }
