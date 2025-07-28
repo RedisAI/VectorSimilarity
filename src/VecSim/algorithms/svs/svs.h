@@ -35,6 +35,8 @@ struct SVSIndexBase {
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
+    virtual void save(const std::string &path) const = 0;
+    virtual void load(const std::string &path) = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -597,6 +599,38 @@ public:
         }
         changes_num = 0;
     }
+
+    void save(const std::string &path) const override {
+        assert(indexSize() > 0);
+        if (impl_) {
+            impl_->save(path + "/config", path + "/graph", path + "/data");
+        }
+    }
+
+    void load(const std::string &folder_path) override {
+        svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
+
+        if constexpr (isMulti) {
+            auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
+                folder_path + "/config",
+                SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                                                this->buildParams, this->getAllocator())),
+                SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                                                this->getAllocator())),
+                distance_f(), std::move(threadpool_handle),
+                svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
+            impl_ = std::make_unique<impl_type>(std::move(loaded));
+        } else {
+            auto loaded = svs::index::vamana::auto_dynamic_assemble(
+                folder_path + "/config",
+                SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
+                                                this->buildParams, this->getAllocator())),
+                SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
+                                                this->getAllocator())),
+                distance_f(), std::move(threadpool_handle), false, logger_);
+            impl_ = std::make_unique<impl_type>(std::move(loaded));
+        }
+}
 
 #ifdef BUILD_TESTS
     void fitMemory() override {}
