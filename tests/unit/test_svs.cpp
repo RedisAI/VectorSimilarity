@@ -12,6 +12,7 @@
 #include "unit_test_utils.h"
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <random>
 #include <vector>
 
@@ -2894,6 +2895,125 @@ TEST(SVSTest, scalar_quantization_query) {
 
         VecSimIndex_Free(index_sq);
         VecSimIndex_Free(index_fp);
+    }
+}
+
+TEST(SVSTest, save_load) {
+    namespace fs = std::filesystem;
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+
+    const size_t dim = 4;
+    const size_t n = 100;
+    const size_t k = 10;
+
+    for (auto multi : {false, true}) {
+        SVSParams params = {
+            .type = VecSimType_FLOAT32,
+            .dim = dim,
+            .metric = VecSimMetric_L2,
+            .multi = multi,
+            .blockSize = 1024,
+            /* SVS-Vamana specifics */
+            .quantBits = VecSimSvsQuant_NONE,
+            .graph_max_degree = 63, // x^2-1 to round the graph block size
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
+
+        VecSimParams index_params = CreateParams(params);
+        VecSimIndex *index = VecSimIndex_New(&index_params);
+
+        EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
+
+        std::vector<size_t> ids(n);
+        std::vector<std::array<float, dim>> v(n);
+
+        if (multi) {
+            const size_t per_label = 2;
+            const size_t num_labels = n / per_label;
+
+            for (size_t i = 0; i < n; i++) {
+                size_t label_id = (i / per_label);
+                size_t vector_index_within_label = i % per_label;
+
+                if (vector_index_within_label == 0) {
+                    // Match the vector used in single index mode for label_id
+                    GenerateVector<float>(v[i].data(), dim, i);
+                } else {
+                    // Generate a far vector (deterministic and far from query)
+                    GenerateVector<float>(v[i].data(), dim, 100000);
+                }
+
+                ids[i] = label_id;
+            }
+        } else {
+            // For single-index, each vector has a unique label (same as its index)
+            for (size_t i = 0; i < n; i++) {
+                GenerateVector<float>(v[i].data(), dim, i);
+                ids[i] = i;
+            }
+        }
+
+        auto svs_index = dynamic_cast<SVSIndexBase *>(index);
+        ASSERT_NE(svs_index, nullptr);
+        svs_index->addVectors(v.data(), ids.data(), n);
+
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        float query[] = {50, 50, 50, 50};
+        auto verify_res = [&](size_t id, double score, size_t idx) {
+            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
+            if (multi) {
+                // For multi, that label of {50,50,50,50} is 25
+                size_t expected_label = (20 + idx);
+                EXPECT_EQ(id, expected_label);
+            }
+            else {
+                EXPECT_EQ(id, (idx + 45));
+            }
+        };
+        runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+        fs::path tmp{fs::temp_directory_path()};
+        auto subdir = "vecsim_test_" + std::to_string(std::rand());
+        auto index_path = tmp / subdir;
+        while (fs::exists(index_path)) {
+            subdir = "vecsim_test_" + std::to_string(std::rand());
+            index_path = tmp / subdir;
+        }
+        fs::create_directories(index_path);
+
+        svs_index->save(index_path.string());
+        VecSimIndex_Free(index);
+
+        // Recreate the index from the saved path
+        index = VecSimIndex_New(&index_params);
+        svs_index = dynamic_cast<SVSIndexBase *>(index);
+
+        svs_index->load(index_path.string());
+
+        // Verify the index was loaded correctly
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+        auto verify_res2 = [&](size_t id, double score, size_t idx) {
+            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
+            if (multi) {
+                // For multi, that label of {50,50,50,50} is 25
+                size_t expected_label = (20 + idx);
+                EXPECT_EQ(id, expected_label);
+            }
+            else {
+                EXPECT_EQ(id, (idx + 45));
+            }
+        };
+        runTopKSearchTest(index, query, k, verify_res2, nullptr, BY_ID);
+
+        VecSimIndex_Free(index);
+
+        // Cleanup
+        fs::remove_all(index_path); // Cleanup the saved index directory
     }
 }
 
