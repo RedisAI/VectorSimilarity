@@ -23,6 +23,7 @@
 // #include "VecSim/tombstone_interface.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
+#include "VecSim/containers/data_block.h"
 // #include "../RediSearch/.install/boost/boost/unordered/concurrent_flat_map.hpp"
 
 // Includes that should be in the inherited class
@@ -31,6 +32,7 @@
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"  // For HNSWAddVectorState definition
 
 #ifdef BUILD_TESTS
 // #include "hnsw_serialization_utils.h"
@@ -78,10 +80,12 @@ struct DiskElementMetaData {
     DiskElementMetaData(labelType label, size_t topLevel) noexcept : label(label), topLevel(topLevel) {}
 };
 
+// The state of the index and the newly stored vector to be passed to indexVector.
+// Note: This is already defined in hnsw.h, so we'll use that one
+
 static constexpr char GraphKeyPrefix[3] = "GK";
 // #pragma pack(1)
 struct GraphKey {
-    char keyPrefix[3] = {'G', 'K', '\0'};
     // uint8_t version;
     uint16_t level;
     idType id;
@@ -132,13 +136,16 @@ protected:
     // Index data
     // vecsim_stl::vector<DataBlock> graphDataBlocks;
     vecsim_stl::vector<DiskElementMetaData> idToMetaData;
-    vecsim_stl::vector<const void *> quantizedData; // quantized data for the elements
     vecsim_stl::unordered_map<labelType, idType> labelToIdMap;
     rocksdb::DB *db;                 // RocksDB database, not owned by the index
     rocksdb::ColumnFamilyHandle *cf; // RocksDB column family handle, not owned by the index
 
     mutable std::shared_mutex indexDataGuard;
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
+
+    // Global batch operation state
+    mutable std::unordered_map<idType, std::vector<idType>> delta_list;
+    mutable vecsim_stl::vector<DiskElementMetaData> new_elements_meta_data;
 
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
@@ -158,10 +165,22 @@ protected:
         const std::vector<idType> &deleted_ids,
         const std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash> &deleted_neighborhoods,
         idType &entrypointNode);
-    void addVector(labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
-                   vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
-                    vecsim_stl::vector<const void*> &new_elements_quantized_data,
-                   std::unordered_map<idType, std::vector<idType>> &delta_list);
+    
+public:
+    // Pure virtual methods from VecSimIndexInterface
+    int addVector(const void *blob, labelType label) override;
+    
+public:
+    // New separated methods for disk-based HNSW (public for testing)
+    HNSWAddVectorState storeVector(const void *vector_data, const labelType label);
+    void indexVector(const void *vector_data, const labelType label, const HNSWAddVectorState &state);
+    void appendVector(const void *vector_data, const labelType label);
+    void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
+                             size_t global_max_level, const void *vector_data);
+    idType mutuallyConnectNewElement(idType new_node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level);
+
+protected:
+    
     void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
                         vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
                         std::unordered_map<idType, idType> &new_ids_mapping);
@@ -169,7 +188,7 @@ protected:
     // Missing method declarations - adding stub implementations
     const void* getDataByInternalId(idType id) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const;
-    void greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist, void* timeoutCtx = nullptr, VecSimQueryReply_Code* rc = nullptr) const;
+    void greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist) const;
     std::pair<idType, size_t> safeGetEntryPointState() const;
     VisitedNodesHandler* getVisitedList() const;
     void returnVisitedList(VisitedNodesHandler* visited_nodes_handler) const;
@@ -180,14 +199,7 @@ protected:
                          void* visited_tags, size_t visited_tag, candidatesLabelsMaxHeap<DistType>& top_candidates,
                          candidatesMaxHeap<DistType>& candidate_set, DistType& lowerBound) const;
 
-    size_t getRandomLevel() const {
-        std::uniform_real_distribution<double> distribution;
-        double r = -log(distribution(levelGenerator)) * mult;
-        return static_cast<size_t>(r);
-    }
-
-    idType searchBottomLayerEP(const rocksdb::Snapshot *snp, const void *query_data, void *timeoutCtx,
-                               VecSimQueryReply_Code *rc) const;
+    idType searchBottomLayerEP(const rocksdb::Snapshot *snp, const void *query_data) const;
 
     candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(const rocksdb::Snapshot *snp, idType ep_id, const void *data_point, size_t ef, size_t k,
@@ -214,17 +226,17 @@ public:
                                           VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
 
-    // Pure virtual methods from VecSimIndexInterface
-    int addVector(const void *blob, labelType label) override;
-
-private:
-    // Internal helper that doesn't acquire locks
-    int addVectorInternal(const void *blob, labelType label);
-    int deleteVector(labelType label) override;
-    double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
+public:
+    // Public methods for testing
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     size_t indexLabelCount() const override;
+    size_t getRandomLevel(double reverse_size);
+
+private:
+    // HNSW helper methods
+    int deleteVector(labelType label) override;
+    double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
     void fitMemory() override;
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const override;
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override;
@@ -242,9 +254,9 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     const IndexComponents<DataType, DistType> &components, rocksdb::DB *db,
     rocksdb::ColumnFamilyHandle *cf, size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      idToMetaData(1000, this->allocator), quantizedData(this->allocator),
-      labelToIdMap(this->allocator), db(db), cf(cf), indexDataGuard(),
-      visitedNodesHandlerPool(1000, this->allocator) {
+      idToMetaData(1000, this->allocator), labelToIdMap(this->allocator),
+      db(db), cf(cf), indexDataGuard(), visitedNodesHandlerPool(1000, this->allocator),
+      delta_list(), new_elements_meta_data(this->allocator){
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -289,7 +301,11 @@ void HNSWDiskIndex<DataType, DistType>::batchUpdate(
     std::vector<idType> deleted_ids;
     deleted_ids.reserve(deleted_labels.size());
     for (const auto &label : deleted_labels) {
-        deleted_ids.push_back(labelToIdMap[label]);
+        auto it = labelToIdMap.find(label);
+        if (it != labelToIdMap.end()) {
+            deleted_ids.push_back(it->second);
+        }
+        // If label doesn't exist, skip it (don't add to deleted_ids)
     }
 
     // Phase 0: fetch and cache the deleted labels neighbors (before reaching here?)
@@ -308,13 +324,11 @@ void HNSWDiskIndex<DataType, DistType>::batchUpdate(
     // 1. for each new element, find its neighbors by the heuristic
     // 2. For each neighbor, add to the temporary delta list the new element
     std::unordered_map<idType, std::vector<idType>> delta_list;
-    vecsim_stl::vector<ElementMetaData> new_elements_meta_data(this->allocator);
-    vecsim_stl::vector<const void*> new_elements_quantized_data(this->allocator);
+    vecsim_stl::vector<DiskElementMetaData> new_elements_meta_data(this->allocator);
     new_elements_meta_data.reserve(new_elements.size());
-    new_elements_quantized_data.reserve(new_elements.size());
     // std::unordered_map<labelType, idType> new_labels_mapping;
     for (const auto &[label, vector] : new_elements) {
-        addVector(label, vector, curMaxLevel, curEntryPoint, new_elements_meta_data, new_elements_quantized_data, delta_list);
+        appendVector(vector, label);
     }
 
     // Phase 3: Patch the graph
@@ -370,7 +384,7 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
 
     auto snapshot = this->db->GetSnapshot();
 
-    idType bottom_layer_ep = searchBottomLayerEP(snapshot, processed_query, timeoutCtx, &rep->code);
+    idType bottom_layer_ep = searchBottomLayerEP(snapshot, processed_query); //, timeoutCtx, &rep->code);
     if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
         // that another thread deleted all the elements or didn't finish inserting the first element
@@ -624,73 +638,168 @@ std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDelet
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::addVector(
-    labelType label, const void *vector, size_t &curMaxLevel, idType &curEntryPoint,
-    vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
-    vecsim_stl::vector<const void*> &new_elements_quantized_data,
-    std::unordered_map<idType, std::vector<idType>> &delta_list) {
+int HNSWDiskIndex<DataType, DistType>::addVector(
+    const void *vector, labelType label
+) {
+    appendVector(vector, label);
+    return 1; // Success
+}
 
-    idType id = curElementCount + new_elements_meta_data.size();
-    new_elements_meta_data.emplace_back(label, getRandomLevel());
-    auto &new_element = new_elements_meta_data.back();
+template <typename DataType, typename DistType>
+HNSWAddVectorState HNSWDiskIndex<DataType, DistType>::storeVector(
+    const void *vector_data, const labelType label) {
+    HNSWAddVectorState state{};
 
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
+    // Choose randomly the maximum level in which the new element will be in the index.
+    state.elementMaxLevel = getRandomLevel(mult);
 
-    size_t commonLevel;
-    idType curStartNode = curEntryPoint;
-    if (new_element.topLevel > curMaxLevel) {
-        // The new element is the first one in the new level. Add an empty list for all the
-        // new levels.
-        for (size_t i = curMaxLevel + 1; i <= new_element.topLevel; ++i) {
-            auto newKey = GraphKey(id, i);
-            auto emptySlice = rocksdb::Slice();
-            this->db->Put(writeOptions, cf, newKey.asSlice(), emptySlice);
+    // Access and update the index global data structures with the new element meta-data.
+    state.newElementId = curElementCount++;
+
+    // Store the vector data in both memory and RocksDB
+    // 1. Store in memory for fast access (use processed data)
+    ProcessedBlobs processedBlobs = this->preprocess(vector_data);
+    this->vectors->addElement(processedBlobs.getStorageBlob(), state.newElementId);
+    
+    // 2. Store in RocksDB for persistence
+    try {
+        std::string vector_key = std::to_string(state.newElementId);
+        rocksdb::Slice data_slice(reinterpret_cast<const char*>(vector_data), this->dataSize);
+        rocksdb::Status vector_status = db->Put(rocksdb::WriteOptions(), cf, vector_key, data_slice);
+
+        if (!vector_status.ok()) {
+            std::cout << "Failed to store vector in RocksDB: " << vector_status.ToString() << std::endl;
+            // Failed to store vector in RocksDB, but we still have it in memory
+            // For now, continue anyway (could add error handling here)
         }
-        commonLevel = curMaxLevel;
-        curMaxLevel = new_element.topLevel;
-        curEntryPoint = id;
-    } else {
-        // The new element is not the first one in the new level. Look for the entry point in the
-        // first common level.
+    } catch (const std::exception& e) {
+        std::cout << "Exception during RocksDB Put: " << e.what() << std::endl;
+    }
 
-        DistType cur_dist = this->calcDistance(vector, getDataByInternalId(curStartNode));
-        for (auto level = curMaxLevel; level > new_element.topLevel; level--) {
+    // Create the new element's metadata
+    DiskElementMetaData new_element(label, state.elementMaxLevel);
+    idToMetaData[state.newElementId] = new_element;
+
+    // Update label mapping
+    labelToIdMap[label] = state.newElementId;
+
+    state.currMaxLevel = (int)maxLevel;
+    state.currEntryPoint = entrypointNode;
+    if (state.elementMaxLevel > state.currMaxLevel) {
+        if (entrypointNode == INVALID_ID && maxLevel != HNSW_INVALID_LEVEL) {
+            throw std::runtime_error("Internal error - inserting the first element to the graph,"
+                                     " but the current max level is not INVALID");
+        }
+        // If the new elements max level is higher than the maximum level the currently exists in
+        // the graph, update the max level and set the new element as entry point.
+        entrypointNode = state.newElementId;
+        maxLevel = state.elementMaxLevel;
+    }
+    return state;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::indexVector(
+    const void *vector_data, const labelType label, const HNSWAddVectorState &state) {
+    // Deconstruct the state variables from the auxiliaryCtx. prev_entry_point and prev_max_level
+    // are the entry point and index max level at the point of time when the element was stored, and
+    // they may (or may not) have changed due to the insertion.
+    auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
+
+    // This condition only means that we are not inserting the first (non-deleted) element (for the
+    // first element we do nothing - we don't need to connect to it).
+    if (prev_entry_point != INVALID_ID) {
+        // Start scanning the graph from the current entry point.
+        insertElementToGraph(new_element_id, element_max_level, prev_entry_point, prev_max_level,
+                             vector_data);
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::appendVector(
+    const void *vector_data, const labelType label) {
+
+    ProcessedBlobs processedBlobs = this->preprocess(vector_data);
+    HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
+
+    this->indexVector(processedBlobs.getQueryBlob(), label, state);
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
+    idType element_id, size_t element_max_level, idType entry_point,
+    size_t global_max_level, const void *vector_data) {
+
+    idType curr_element = entry_point;
+    DistType cur_dist = std::numeric_limits<DistType>::max();
+    size_t max_common_level;
+    if (element_max_level < global_max_level) {
+        max_common_level = element_max_level;
+        cur_dist = this->calcDistance(vector_data, getDataByInternalId(curr_element));
+        for (auto level = static_cast<int>(global_max_level);
+             level > static_cast<int>(element_max_level); level--) {
             // this is done for the levels which are above the max level
             // to which we are going to insert the new element. We do
             // a greedy search in the graph starting from the entry point
             // at each level, and move on with the closest element we can find.
             // When there is no improvement to do, we take a step down.
-            greedySearchLevel(vector, level, curStartNode, cur_dist);
+            greedySearchLevel(vector_data, level, curr_element, cur_dist);
         }
-        commonLevel = new_element.topLevel;
+    } else {
+        max_common_level = global_max_level;
     }
-    // Insert the new element to all the levels from the common level to the bottom level
-    for (int level = commonLevel; level >= 0; --level) {
+
+    auto writeOptions = rocksdb::WriteOptions();
+    writeOptions.disableWAL = true;
+
+    for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
-            searchLayer(curStartNode, vector, level, efConstruction);
-
-        candidatesList<DistType> new_neighbors(this->allocator);
-        new_neighbors.reserve(top_candidates.size());
-        new_neighbors.insert(new_neighbors.end(), top_candidates.begin(), top_candidates.end());
-        curStartNode = getNeighborsByHeuristic2(new_neighbors, level == 0 ? M0 : M);
-
-        // Add the new element to the graph
-        auto newKey = GraphKey(id, level);
-        std::vector<idType> neighbor_ids(new_neighbors.size());
-        for (size_t i = 0; i < new_neighbors.size(); ++i) {
-            neighbor_ids[i] = new_neighbors[i].second;
-        }
-        size_t bytes = neighbor_ids.size() * sizeof(idType);
-        auto neighbors_slice =
-            rocksdb::Slice(reinterpret_cast<const char *>(neighbor_ids.data()), bytes);
-        this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
-
-        // Update the delta list with the new element
-        for (const auto &candidate : top_candidates) {
-            delta_list[candidate.second].push_back(id);
+            searchLayer(curr_element, vector_data, level, efConstruction);
+        // If the entry point was marked deleted between iterations, we may receive an empty
+        // candidates set.
+        if (!top_candidates.empty()) {
+            curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
         }
     }
+}
+
+template <typename DataType, typename DistType>
+idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
+    idType new_node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
+
+    // The maximum number of neighbors allowed for an existing neighbor (not new).
+    size_t max_M_cur = level ? M : M0;
+
+    // Filter the top candidates to the selected neighbors by the algorithm heuristics.
+    // First, we need to copy the top candidates to a vector.
+    candidatesList<DistType> top_candidates_list(this->allocator);
+    top_candidates_list.insert(top_candidates_list.end(), top_candidates.begin(),
+                               top_candidates.end());
+    // Use the heuristic to filter the top candidates, and get the next closest entry point.
+    idType next_closest_entry_point = getNeighborsByHeuristic2(top_candidates_list, M);
+    assert(top_candidates_list.size() <= M &&
+           "Should be not be more than M candidates returned by the heuristic");
+
+    auto writeOptions = rocksdb::WriteOptions();
+    writeOptions.disableWAL = true;
+
+    // Add the new element to the graph at this level
+    auto newKey = GraphKey(new_node_id, level);
+    std::vector<idType> neighbor_ids(top_candidates_list.size());
+    for (size_t i = 0; i < top_candidates_list.size(); ++i) {
+        neighbor_ids[i] = top_candidates_list[i].second;
+    }
+    size_t bytes = neighbor_ids.size() * sizeof(idType);
+    auto neighbors_slice =
+        rocksdb::Slice(reinterpret_cast<const char *>(neighbor_ids.data()), bytes);
+    this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
+
+    // Update the delta list with the new element
+    for (const auto &candidate : top_candidates) {
+        delta_list[candidate.second].push_back(new_node_id);
+    }
+
+    return next_closest_entry_point;
 }
 
 template <typename DataType, typename DistType>
@@ -752,17 +861,14 @@ void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename DataType, typename DistType>
-idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const rocksdb::Snapshot *snp, const void *query_data, void *timeoutCtx,
-                                                          VecSimQueryReply_Code *rc) const {
-    *rc = VecSim_QueryReply_OK;
-
+idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const rocksdb::Snapshot *snp, const void *query_data) const {
     auto [curr_element, max_level] = safeGetEntryPointState();
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
     DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element));
     for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; --level) {
-        greedySearchLevel(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
+        greedySearchLevel(query_data, level, curr_element, cur_dist);
     }
     return curr_element;
 }
@@ -826,12 +932,29 @@ HNSWDiskIndex<DataType, DistType>::searchBottomLayer_WithTimeout(const rocksdb::
 template <typename DataType, typename DistType>
 const void* HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) const {
     // Check if the id is valid
-    if (id >= quantizedData.size()) {
+    if (id >= curElementCount) {
         return nullptr;
     }
 
-    // Return the quantized data for this internal id
-    return quantizedData[id];
+    // First, try to get from memory (fast path)
+    if (id < this->vectors->size() && this->vectors->getElement(id) != nullptr) {
+        return this->vectors->getElement(id);
+    }
+
+    // Fallback to RocksDB (slower path, for persistence/recovery)
+    std::string key = std::to_string(id);
+    std::string value;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, key, &value);
+
+    if (!status.ok()) {
+        // Vector data not found in either memory or RocksDB
+        return nullptr;
+    }
+
+    // For now, we'll use the memory storage from the base class
+    // In a production implementation, you might want to implement a proper cache
+    // or use a different strategy for handling disk-based vector retrieval
+    return this->vectors->getElement(id);
 }
 
 template <typename DataType, typename DistType>
@@ -863,9 +986,58 @@ std::pair<idType, size_t> HNSWDiskIndex<DataType, DistType>::safeGetEntryPointSt
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist, void* timeoutCtx, VecSimQueryReply_Code* rc) const {
-    // TODO: Implement proper greedy search
-    // For now, do nothing
+void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist) const {
+    bool changed;
+    idType bestCand = curr_element;
+
+    do {
+        // // Check for timeout if this is a query operation
+        // if (timeoutCtx && VECSIM_TIMEOUT(timeoutCtx)) {
+        //     if (rc) *rc = VecSim_QueryReply_TimedOut;
+        //     curr_element = INVALID_ID;
+        //     return;
+        // }
+
+        changed = false;
+
+        // Read neighbors from RocksDB for the current node at this level
+        GraphKey graphKey(bestCand, level);
+        std::string neighbors_data;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+
+        if (!status.ok()) {
+            // No neighbors found for this node at this level, stop searching
+            break;
+        }
+
+        // Parse the neighbors data
+        const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
+        size_t num_neighbors = neighbors_data.size() / sizeof(idType);
+
+        // Check each neighbor to find a better candidate
+        for (size_t i = 0; i < num_neighbors; i++) {
+            idType candidate = neighbors[i];
+
+            // Skip invalid candidates
+            if (candidate >= curElementCount) {
+                continue;
+            }
+
+            // Calculate distance to this candidate
+            DistType d = this->calcDistance(data_point, getDataByInternalId(candidate));
+
+            // If this candidate is closer, update our best candidate
+            if (d < cur_dist) {
+                cur_dist = d;
+                bestCand = candidate;
+                changed = true;
+            }
+        }
+
+    } while (changed);
+
+    // Update the current element to the best candidate found
+    curr_element = bestCand;
 }
 
 
@@ -886,6 +1058,13 @@ VisitedNodesHandler* HNSWDiskIndex<DataType, DistType>::getVisitedList() const {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::returnVisitedList(VisitedNodesHandler* visited_nodes_handler) const {
     visitedNodesHandlerPool.returnVisitedNodesHandlerToPool(visited_nodes_handler);
+}
+
+template <typename DataType, typename DistType>
+size_t HNSWDiskIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
+    std::uniform_real_distribution<double> distribution(0.0, 1.0);
+    double r = -log(distribution(levelGenerator)) * reverse_size;
+    return (size_t)r;
 }
 
 
@@ -938,50 +1117,6 @@ bool HNSWDiskIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, siz
     return false;
 }
 
-// Implement missing pure virtual methods from VecSimIndexInterface
-template <typename DataType, typename DistType>
-int HNSWDiskIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
-    std::lock_guard<std::shared_mutex> guard(indexDataGuard);
-    return addVectorInternal(blob, label);
-}
-
-template <typename DataType, typename DistType>
-int HNSWDiskIndex<DataType, DistType>::addVectorInternal(const void *blob, labelType label) {
-    // Check if label already exists
-    auto it = labelToIdMap.find(label);
-    if (it != labelToIdMap.end()) {
-        // Label already exists, this is an update (return 0)
-        idType existing_id = it->second;
-        if (existing_id < quantizedData.size()) {
-            // Update the existing data
-            // For now, we'll just store the raw data (not actually quantized)
-            // In a real implementation, this would go through quantization
-            quantizedData[existing_id] = blob;
-        }
-        return 0;
-    }
-
-    // This is a new vector
-    idType new_id = quantizedData.size();
-
-    // Store the data (for now, just store the raw pointer - in real implementation this would be quantized and copied)
-    quantizedData.push_back(blob);
-
-    // Update the label to ID mapping
-    labelToIdMap[label] = new_id;
-
-    // Expand metadata if needed
-    if (new_id >= idToMetaData.size()) {
-        idToMetaData.resize(new_id + 1, DiskElementMetaData(label));
-    } else {
-        idToMetaData[new_id] = DiskElementMetaData(label);
-    }
-
-    // Update element count
-    curElementCount++;
-
-    return 1; // New insertion
-}
 
 template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
