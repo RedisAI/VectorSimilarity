@@ -1,5 +1,5 @@
 **/logs/
-
+/.cache/
 /.tox/
 /bin/
 /build/
