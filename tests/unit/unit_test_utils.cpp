@@ -577,9 +577,8 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
         } else if (!strcmp(infoField->fieldName,
                            VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING)) {
             // SVS use search history.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimBool_ToString(info.svsInfo.useSearchHistory));
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.useSearchHistory);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_NUM_THREADS_STRING)) {
             // SVS number of threads.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);

@@ -424,9 +424,8 @@ public:
 
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING,
-            .fieldType = INFOFIELD_STRING,
-            .fieldValue = {
-                FieldValue{.stringValue = VecSimBool_ToString(info.svsInfo.useSearchHistory)}}});
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.useSearchHistory}}});
 
         infoIterator->addInfoField(
             VecSim_InfoField{.fieldName = VecSimCommonStrings::SVS_NUM_THREADS_STRING,

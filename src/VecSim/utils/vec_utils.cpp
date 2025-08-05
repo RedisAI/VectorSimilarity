@@ -254,16 +254,6 @@ const char *VecSimQuantBits_ToString(VecSimSvsQuantBits quantBits) {
     return NULL;
 }
 
-const char *VecSimBool_ToString(bool val) {
-    switch (val) {
-    case true:
-        return "True";
-    case false:
-        return "False";
-    }
-    return NULL;
-}
-
 size_t VecSimType_sizeof(VecSimType type) {
     switch (type) {
     case VecSimType_FLOAT32:

@@ -116,8 +116,6 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 
 const char *VecSimQuantBits_ToString(VecSimSvsQuantBits quantBits);
 
-const char *VecSimBool_ToString(bool val);
-
 size_t VecSimType_sizeof(VecSimType vecsimType);
 
 /** Returns the size in bytes of a stored or query vector */
