@@ -348,7 +348,8 @@ typedef struct {
     size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
     size_t searchBufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.
     size_t leanvecDim;           // Leanvec dimension to use when LeanVec is enabled.
-    double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
+    double epsilon;     // Epsilon parameter for SVS graph accuracy/latency for range search.
+    size_t changes_num; // Number of changes since last reindexing
 } svsInfoStruct;
 
 typedef struct HnswTieredInfo {

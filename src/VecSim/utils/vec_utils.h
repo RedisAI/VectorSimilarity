@@ -49,15 +49,24 @@ public:
     static const char *HNSW_EF_RUNTIME_STRING;
     static const char *HNSW_EF_CONSTRUCTION_STRING;
     static const char *HNSW_M_STRING;
-    static const char *HNSW_EPSILON_STRING;
+    static const char *EPSILON_STRING;
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
-    static const char *HNSW_NUM_MARKED_DELETED;
+    static const char *NUM_MARKED_DELETED;
     // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *SVS_SEARCH_WS_STRING;
+    static const char *SVS_CONSTRUCTION_WS_STRING;
     static const char *SVS_SEARCH_BC_STRING;
     static const char *SVS_USE_SEARCH_HISTORY_STRING;
+    static const char *SVS_ALPHA_STRING;
+    static const char *SVS_QUANT_BITS_STRING;
+    static const char *SVS_GRAPH_MAX_DEGREE_STRING;
+    static const char *SVS_MAX_CANDIDATE_POOL_SIZE_STRING;
+    static const char *SVS_PRUNE_TO_STRING;
+    static const char *SVS_NUM_THREADS_STRING;
+    static const char *SVS_LEANVEC_DIM_STRING;
+    static const char *SVS_CHANGES_NUM_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
@@ -99,6 +108,10 @@ const char *VecSimType_ToString(VecSimType vecsimType);
 const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
 
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
+
+const char *VecSimQuantBits_ToString(VecSimSvsQuantBits quantBits);
+
+const char *VecSimBool_ToString(bool val);
 
 size_t VecSimType_sizeof(VecSimType vecsimType);
 
