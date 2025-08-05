@@ -78,7 +78,12 @@ public:
     static const char *TIERED_BUFFER_LIMIT_STRING;
     static const char *FRONTEND_INDEX_STRING;
     static const char *BACKEND_INDEX_STRING;
+    // tiered HNSW specific
     static const char *TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING;
+    // tiered SVS specific
+    static const char *TIERED_SVS_TRAINING_THRESHOLD_STRING;
+    static const char *TIERED_SVS_UPDATE_THRESHOLD_STRING;
+    static const char *TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING;
 
     // Log levels
     static const char *LOG_DEBUG_STRING;

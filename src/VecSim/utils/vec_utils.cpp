@@ -77,8 +77,15 @@ const char *VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING = "BACKGROUND
 const char *VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING = "TIERED_BUFFER_LIMIT";
 const char *VecSimCommonStrings::FRONTEND_INDEX_STRING = "FRONTEND_INDEX";
 const char *VecSimCommonStrings::BACKEND_INDEX_STRING = "BACKEND_INDEX";
+// Tiered HNSW specific
 const char *VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING =
     "TIERED_HNSW_SWAP_JOBS_THRESHOLD";
+// Tiered SVS specific
+const char *VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING =
+    "TIERED_SVS_TRAINING_THRESHOLD";
+const char *VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING = "TIERED_SVS_UPDATE_THRESHOLD";
+const char *VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING =
+    "TIERED_SVS_THREADS_RESERVE_TIMEOUT";
 
 // Log levels
 const char *VecSimCommonStrings::LOG_DEBUG_STRING = "debug";

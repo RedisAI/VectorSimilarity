@@ -70,6 +70,12 @@ typedef enum {
     VecSimOption_DISABLE = 2,
 } VecSimOptionMode;
 
+typedef enum {
+    VecSimBool_TRUE = 1,
+    VecSimBool_FALSE = 0,
+    VecSimBool_UNSET = -1,
+} VecSimBool;
+
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
@@ -380,7 +386,7 @@ typedef struct {
     bfInfoStruct bfInfo;           // The brute force index info.
 
     uint64_t management_layer_memory; // Memory consumption of the management layer.
-    bool backgroundIndexing;          // Determines if the index is currently being indexed in the
+    VecSimBool backgroundIndexing;    // Determines if the index is currently being indexed in the
                                       // background.
     size_t bufferLimit;               // Maximum number of vectors allowed in the flat buffer.
 } tieredInfoStruct;
