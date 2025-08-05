@@ -869,7 +869,9 @@ public:
                                            static_cast<bool>(this->indexUpdateScheduled.test())};
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
         info.tieredInfo.backgroundIndexing =
-            svsTieredInfo.indexUpdateScheduled ? VecSimBool_TRUE : VecSimBool_FALSE;
+            svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
+                ? VecSimBool_TRUE
+                : VecSimBool_FALSE;
         return info;
     }
 
