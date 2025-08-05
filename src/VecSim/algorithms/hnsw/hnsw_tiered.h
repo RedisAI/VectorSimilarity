@@ -1146,7 +1146,7 @@ VecSimIndexDebugInfo TieredHNSWIndex<DataType, DistType>::debugInfo() const {
     info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
 
     info.tieredInfo.backgroundIndexing =
-        info.tieredInfo.backendCommonInfo.indexSize > 0 ? VecSimBool_TRUE : VecSimBool_FALSE;
+        info.tieredInfo.frontendCommonInfo.indexSize > 0 ? VecSimBool_TRUE : VecSimBool_FALSE;
 
     return info;
 }
