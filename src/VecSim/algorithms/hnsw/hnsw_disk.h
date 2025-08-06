@@ -84,13 +84,13 @@ struct DiskElementMetaData {
 // Note: This is already defined in hnsw.h, so we'll use that one
 
 static constexpr char GraphKeyPrefix[3] = "GK";
-// #pragma pack(1)
+#pragma pack(1)
 struct GraphKey {
     // uint8_t version;
     uint16_t level;
     idType id;
 
-    GraphKey(idType id, size_t level) : level(level), id(id) {}
+    GraphKey(idType id, size_t level) : level(static_cast<uint16_t>(level)), id(id) {}
 
     rocksdb::Slice asSlice() const {
         return rocksdb::Slice(reinterpret_cast<const char *>(this), sizeof(*this));
@@ -147,6 +147,12 @@ protected:
     mutable std::unordered_map<idType, std::vector<idType>> delta_list;
     mutable vecsim_stl::vector<DiskElementMetaData> new_elements_meta_data;
 
+    // Batch processing state
+    size_t batchThreshold;  // Number of vectors to accumulate before batch update
+    vecsim_stl::vector<std::pair<labelType, std::vector<char>>> pendingVectors;  // Vectors waiting to be batched
+    vecsim_stl::vector<DiskElementMetaData> pendingMetadata;  // Metadata for pending vectors
+    size_t pendingVectorCount;  // Count of vectors in memory
+
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
     // default (shallow) copy constructor is disabled.
@@ -178,6 +184,11 @@ public:
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                              size_t global_max_level, const void *vector_data);
     idType mutuallyConnectNewElement(idType new_node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level);
+    
+    // Batch processing methods
+    void addVectorToBatch(const void *vector_data, const labelType label);
+    void processBatch();
+    void flushBatch();  // Force flush current batch
 
 protected:
     
@@ -256,7 +267,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(1000, this->allocator), labelToIdMap(this->allocator),
       db(db), cf(cf), indexDataGuard(), visitedNodesHandlerPool(1000, this->allocator),
-      delta_list(), new_elements_meta_data(this->allocator){
+      delta_list(), new_elements_meta_data(this->allocator),
+      batchThreshold(10), pendingVectors(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0){
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -364,50 +376,146 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     auto rep = new VecSimQueryReply(this->allocator);
     // this->lastMode = STANDARD_KNN;
 
-    if (curElementCount == 0 || k == 0) {
+    if ((curElementCount == 0 && pendingVectorCount == 0) || k == 0) {
         return rep;
     }
 
+    // Preprocess the query
     auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
-    void *timeoutCtx = nullptr;
 
-    // Get original efRuntime and store it.
+    // Get search parameters
     size_t query_ef = this->ef;
+    if (queryParams && queryParams->hnswRuntimeParams.efRuntime != 0) {
+        query_ef = queryParams->hnswRuntimeParams.efRuntime;
+    }
 
-    if (queryParams) {
-        timeoutCtx = queryParams->timeoutCtx;
-        if (queryParams->hnswRuntimeParams.efRuntime != 0) {
-            query_ef = queryParams->hnswRuntimeParams.efRuntime;
+    // Get entry point
+    auto [entry_point, max_level] = safeGetEntryPointState();
+    if (entry_point == INVALID_ID) {
+        return rep; // Empty index
+    }
+
+    // Start from the entry point
+    idType curr_element = entry_point;
+    DistType curr_dist = this->calcDistance(processed_query, getDataByInternalId(curr_element));
+    
+    std::cout << "Search: entry_point=" << entry_point << ", max_level=" << max_level 
+              << ", curr_element=" << curr_element << ", curr_dist=" << curr_dist << std::endl;
+
+    // Search from top level to bottom level (greedy search)
+    // Only search at levels above 0, since we're already at the bottom level
+    for (size_t level = max_level; level > 0; level--) {
+        std::cout << "Searching at level " << level << std::endl;
+        greedySearchLevel(processed_query, level, curr_element, curr_dist);
+    }
+
+    // Final search at bottom level (level 0) with beam search
+    std::cout << "Starting bottom level search with curr_element=" << curr_element << std::endl;
+    
+    // For now, use a simple approach without visited nodes handler
+    auto *top_candidates = getNewMaxPriorityQueue();
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
+    
+    // Initialize with the current best element
+    DistType lower_bound = curr_dist;
+    top_candidates->emplace(curr_dist, getExternalLabel(curr_element));
+    candidate_set.emplace(-curr_dist, curr_element);
+
+    // Simple search without visited nodes handler for now
+    std::unordered_set<idType> visited_nodes;
+    std::unordered_set<idType> in_candidate_set;
+    // Don't mark the entry point as visited initially, let it be processed
+
+    // Search at bottom level with beam search
+    while (!candidate_set.empty()) {
+        auto curr_pair = candidate_set.top();
+        DistType curr_dist = -curr_pair.first;
+        idType curr_id = curr_pair.second;
+        candidate_set.pop();
+
+        // Stop if we have enough candidates and current distance is worse
+        if (top_candidates->size() >= query_ef && curr_dist > lower_bound) {
+            break;
+        }
+
+        // Simple candidate processing without visited nodes handler
+        if (visited_nodes.find(curr_id) != visited_nodes.end()) {
+            continue;
+        }
+        visited_nodes.insert(curr_id);
+        
+        // Calculate distance to candidate
+        DistType dist = this->calcDistance(processed_query, getDataByInternalId(curr_id));
+        
+        // Add to top candidates if it's one of the best
+        if (top_candidates->size() < query_ef || dist < lower_bound) {
+            // Check if this label is already in top candidates
+            labelType curr_label = getExternalLabel(curr_id);
+            bool already_in_top = false;
+            
+            // Simple check - in a real implementation, you'd use a more efficient data structure
+            // For now, we'll just add it and handle duplicates later
+            top_candidates->emplace(dist, curr_label);
+            
+            // Update lower bound if we have enough candidates
+            if (top_candidates->size() >= query_ef) {
+                lower_bound = top_candidates->top().first;
+            }
+        }
+        
+        // Add neighbors to candidate set for further exploration
+        GraphKey graphKey(curr_id, 0);
+        std::string neighbors_data;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+        
+        if (status.ok()) {
+            const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
+            size_t num_neighbors = neighbors_data.size() / sizeof(idType);
+            
+            for (size_t i = 0; i < num_neighbors; i++) {
+                idType neighbor_id = neighbors[i];
+                
+                // Skip invalid neighbors
+                if (neighbor_id >= curElementCount) {
+                    continue;
+                }
+                
+                if (visited_nodes.find(neighbor_id) == visited_nodes.end() && in_candidate_set.find(neighbor_id) == in_candidate_set.end()) {
+                    DistType neighbor_dist = this->calcDistance(processed_query, getDataByInternalId(neighbor_id));
+                    candidate_set.emplace(-neighbor_dist, neighbor_id);
+                    in_candidate_set.insert(neighbor_id);
+                }
+            }
         }
     }
 
-    auto snapshot = this->db->GetSnapshot();
-
-    idType bottom_layer_ep = searchBottomLayerEP(snapshot, processed_query); //, timeoutCtx, &rep->code);
-    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
-        // Although we checked that the index is not empty (curElementCount == 0), it might be
-        // that another thread deleted all the elements or didn't finish inserting the first element
-        // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-        goto finish;
-    }
-
-    // We now oun the results heap, we need to free (delete) it when we done
-    candidatesLabelsMaxHeap<DistType> *results;
-    results = searchBottomLayer_WithTimeout(snapshot, bottom_layer_ep, processed_query, std::max(query_ef, k),
-                                            k, timeoutCtx, &rep->code);
-
-    if (VecSim_OK == rep->code) {
-        rep->results.resize(results->size());
-        for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
-            std::tie(result->score, result->id) = results->top();
-            results->pop();
+    // Extract top-k results, removing duplicates
+    std::vector<std::pair<DistType, labelType>> unique_results;
+    std::unordered_set<labelType> seen_labels;
+    
+    while (!top_candidates->empty() && unique_results.size() < k) {
+        auto result_pair = top_candidates->top();
+        if (seen_labels.find(result_pair.second) == seen_labels.end()) {
+            unique_results.push_back(result_pair);
+            seen_labels.insert(result_pair.second);
         }
+        top_candidates->pop();
     }
-    delete results;
+    
+    size_t num_results = unique_results.size();
+    rep->results.resize(num_results);
 
-finish:
-    this->db->ReleaseSnapshot(snapshot);
+    std::cout << "Found " << num_results << " unique results:" << std::endl;
+    for (size_t i = 0; i < num_results; i++) {
+        rep->results[i].score = unique_results[i].first;
+        rep->results[i].id = unique_results[i].second;
+        std::cout << "  Result " << i << ": label=" << unique_results[i].second << ", score=" << unique_results[i].first << std::endl;
+    }
+
+    // Clean up
+    delete top_candidates;
+
     return rep;
 }
 
@@ -641,7 +749,7 @@ template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::addVector(
     const void *vector, labelType label
 ) {
-    appendVector(vector, label);
+    addVectorToBatch(vector, label);
     return 1; // Success
 }
 
@@ -695,6 +803,7 @@ HNSWAddVectorState HNSWDiskIndex<DataType, DistType>::storeVector(
         entrypointNode = state.newElementId;
         maxLevel = state.elementMaxLevel;
     }
+    std::cout << "New element added: " << state.newElementId << " with max level: " << state.elementMaxLevel << std::endl;
     return state;
 }
 
@@ -767,9 +876,6 @@ template <typename DataType, typename DistType>
 idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     idType new_node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
 
-    // The maximum number of neighbors allowed for an existing neighbor (not new).
-    size_t max_M_cur = level ? M : M0;
-
     // Filter the top candidates to the selected neighbors by the algorithm heuristics.
     // First, we need to copy the top candidates to a vector.
     candidatesList<DistType> top_candidates_list(this->allocator);
@@ -792,11 +898,43 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     size_t bytes = neighbor_ids.size() * sizeof(idType);
     auto neighbors_slice =
         rocksdb::Slice(reinterpret_cast<const char *>(neighbor_ids.data()), bytes);
+    
+    std::cout << "Storing graph connection: node " << new_node_id << " at level " << level 
+              << " with " << neighbor_ids.size() << " neighbors: ";
+    for (size_t i = 0; i < neighbor_ids.size(); ++i) {
+        std::cout << neighbor_ids[i] << " ";
+    }
+    std::cout << std::endl;
+    
     this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
 
-    // Update the delta list with the new element
-    for (const auto &candidate : top_candidates) {
-        delta_list[candidate.second].push_back(new_node_id);
+    // Update existing nodes to include the new node in their neighbor lists
+    for (const auto &neighbor_data : top_candidates_list) {
+        idType selected_neighbor = neighbor_data.second;
+        
+        // Read existing neighbors for this node
+        GraphKey neighborKey(selected_neighbor, level);
+        std::string existing_neighbors_data;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
+        
+        std::vector<idType> updated_neighbors;
+        if (status.ok()) {
+            // Parse existing neighbors
+            const idType* existing_neighbors = reinterpret_cast<const idType*>(existing_neighbors_data.data());
+            size_t num_existing = existing_neighbors_data.size() / sizeof(idType);
+            updated_neighbors.assign(existing_neighbors, existing_neighbors + num_existing);
+        }
+        
+        // Add the new node to the neighbor's list
+        updated_neighbors.push_back(new_node_id);
+        
+        // Write back the updated neighbor list
+        size_t updated_bytes = updated_neighbors.size() * sizeof(idType);
+        auto updated_neighbors_slice =
+            rocksdb::Slice(reinterpret_cast<const char *>(updated_neighbors.data()), updated_bytes);
+        this->db->Put(writeOptions, cf, neighborKey.asSlice(), updated_neighbors_slice);
+        
+        std::cout << "Updated node " << selected_neighbor << " to include neighbor " << new_node_id << std::endl;
     }
 
     return next_closest_entry_point;
@@ -959,8 +1097,57 @@ const void* HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) co
 
 template <typename DataType, typename DistType>
 candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const {
-    // TODO: Implement proper layer search
     candidatesMaxHeap<DistType> candidates(this->allocator);
+    candidatesMaxHeap<DistType> candidates_set(this->allocator);
+    
+    // Get visited list
+    auto *visited_nodes_handler = getVisitedList();
+    tag_t visited_tag = visited_nodes_handler->getFreshTag();
+    
+    // Start with the entry point
+    DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
+    candidates.emplace(dist, ep_id);
+    candidates_set.emplace(-dist, ep_id);
+    visited_nodes_handler->tagNode(ep_id, visited_tag);
+    
+    // Search for candidates
+    while (!candidates_set.empty()) {
+        auto curr_pair = candidates_set.top();
+        DistType curr_dist = -curr_pair.first;
+        idType curr_id = curr_pair.second;
+        candidates_set.pop();
+        
+        // If we have enough candidates and the current distance is worse than our best, stop
+        if (candidates.size() >= ef && curr_dist > candidates.top().first) {
+            break;
+        }
+        
+        // Get neighbors of current node at this level
+        GraphKey graphKey(curr_id, level);
+        std::string neighbors_data;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+        
+        if (status.ok()) {
+            const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
+            size_t num_neighbors = neighbors_data.size() / sizeof(idType);
+            
+            for (size_t i = 0; i < num_neighbors; i++) {
+                idType neighbor_id = neighbors[i];
+                
+                if (visited_nodes_handler->getNodeTag(neighbor_id) == visited_tag) {
+                    continue;
+                }
+                
+                visited_nodes_handler->tagNode(neighbor_id, visited_tag);
+                DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
+                
+                candidates.emplace(neighbor_dist, neighbor_id);
+                candidates_set.emplace(-neighbor_dist, neighbor_id);
+            }
+        }
+    }
+    
+    returnVisitedList(visited_nodes_handler);
     return candidates;
 }
 
@@ -990,14 +1177,9 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point
     bool changed;
     idType bestCand = curr_element;
 
-    do {
-        // // Check for timeout if this is a query operation
-        // if (timeoutCtx && VECSIM_TIMEOUT(timeoutCtx)) {
-        //     if (rc) *rc = VecSim_QueryReply_TimedOut;
-        //     curr_element = INVALID_ID;
-        //     return;
-        // }
+    std::cout << "Greedy search at level " << level << " starting from element " << bestCand << std::endl;
 
+    do {
         changed = false;
 
         // Read neighbors from RocksDB for the current node at this level
@@ -1007,6 +1189,7 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point
 
         if (!status.ok()) {
             // No neighbors found for this node at this level, stop searching
+            std::cout << "No neighbors found for element " << bestCand << " at level " << level << std::endl;
             break;
         }
 
@@ -1073,7 +1256,56 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::processCandidate(idType candidate_id, const void* data_point, size_t level, size_t ef,
                      void* visited_tags, size_t visited_tag, candidatesLabelsMaxHeap<DistType>& top_candidates,
                      candidatesMaxHeap<DistType>& candidate_set, DistType& lowerBound) const {
-    // TODO: Implement proper candidate processing
+    // Skip if already visited
+    auto* visited_nodes_handler = reinterpret_cast<VisitedNodesHandler*>(visited_tags);
+    if (!visited_nodes_handler) {
+        return; // Safety check
+    }
+    
+    if (visited_nodes_handler->getNodeTag(candidate_id) == visited_tag) {
+        return;
+    }
+    
+    std::cout << "Processing candidate " << candidate_id << std::endl;
+    visited_nodes_handler->tagNode(candidate_id, visited_tag);
+    
+    // Calculate distance to candidate
+    DistType dist = this->calcDistance(data_point, getDataByInternalId(candidate_id));
+    
+    // Add to top candidates if it's one of the best
+    if (top_candidates.size() < ef || dist < lowerBound) {
+        top_candidates.emplace(dist, getExternalLabel(candidate_id));
+        candidate_set.emplace(-dist, candidate_id);
+        
+        // Update lower bound if we have enough candidates
+        if (top_candidates.size() >= ef) {
+            lowerBound = top_candidates.top().first;
+        }
+    }
+    
+    // Add neighbors to candidate set for further exploration
+    GraphKey graphKey(candidate_id, level);
+    std::string neighbors_data;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+    
+    if (status.ok()) {
+        const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
+        size_t num_neighbors = neighbors_data.size() / sizeof(idType);
+        
+        for (size_t i = 0; i < num_neighbors; i++) {
+            idType neighbor_id = neighbors[i];
+            
+            // Skip invalid neighbors
+            if (neighbor_id >= curElementCount) {
+                continue;
+            }
+            
+            if (visited_nodes_handler->getNodeTag(neighbor_id) != visited_tag) {
+                DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
+                candidate_set.emplace(-neighbor_dist, neighbor_id);
+            }
+        }
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1132,7 +1364,7 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, c
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::indexSize() const {
-    return this->curElementCount;
+    return this->curElementCount + pendingVectorCount;
 }
 
 template <typename DataType, typename DistType>
@@ -1142,7 +1374,7 @@ size_t HNSWDiskIndex<DataType, DistType>::indexCapacity() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::indexLabelCount() const {
-    return this->curElementCount;
+    return this->curElementCount + pendingVectorCount;
 }
 
 template <typename DataType, typename DistType>
@@ -1166,4 +1398,57 @@ vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() con
     // TODO: Implement labels set retrieval
     vecsim_stl::set<labelType> labels(this->allocator);
     return labels;
+}
+
+/********************************** Batch Processing Methods **********************************/
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::addVectorToBatch(const void *vector_data, const labelType label) {
+    // Preprocess the vector
+    ProcessedBlobs processedBlobs = this->preprocess(vector_data);
+    
+    // Store the processed vector in memory
+    std::vector<char> vector_copy(this->dataSize);
+    std::memcpy(vector_copy.data(), processedBlobs.getStorageBlob(), this->dataSize);
+    
+    // Add to pending vectors
+    pendingVectors.emplace_back(label, std::move(vector_copy));
+    
+    // Create metadata for this vector
+    size_t elementMaxLevel = getRandomLevel(mult);
+    DiskElementMetaData metadata(label, elementMaxLevel);
+    pendingMetadata.push_back(metadata);
+    
+    pendingVectorCount++;
+    
+    // Check if we should process the batch
+    if (pendingVectorCount >= batchThreshold) {
+        processBatch();
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::processBatch() {
+    if (pendingVectorCount == 0) {
+        return; // Nothing to process
+    }
+    
+    std::cout << "Processing batch of " << pendingVectorCount << " vectors" << std::endl;
+    
+    // Process each pending vector individually using appendVector
+    for (size_t i = 0; i < pendingVectorCount; i++) {
+        appendVector(pendingVectors[i].second.data(), pendingVectors[i].first);
+    }
+    
+    // Clear the pending vectors
+    pendingVectors.clear();
+    pendingMetadata.clear();
+    pendingVectorCount = 0;
+    
+    std::cout << "Batch processing completed" << std::endl;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::flushBatch() {
+    processBatch();
 }

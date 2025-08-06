@@ -590,20 +590,16 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     int result1 = index.addVector(test_vector.data(), label1);
     EXPECT_EQ(result1, 1); // Should return success
     
-    // Test 2: Add vector using separated approach
+    // Test 2: Add vector using batching approach
     labelType label2 = 200;
     auto test_vector2 = createRandomVector(dim, rng);
     normalizeVector(test_vector2);
     
-    // Store the vector first
-    HNSWAddVectorState state = index.storeVector(test_vector2.data(), label2);
-    EXPECT_EQ(state.newElementId, 1); // Should be the second element
-    EXPECT_GE(state.elementMaxLevel, 0); // Should have a valid level
-    EXPECT_EQ(state.currEntryPoint, 0); // Should point to the first element
-    EXPECT_EQ(state.currMaxLevel, 0); // Should be at level 0 initially
+    // Add vector to batch (should be stored in memory)
+    index.addVector(test_vector2.data(), label2);
     
-    // Then index the vector
-    index.indexVector(test_vector2.data(), label2, state);
+    // Force flush the batch to disk
+    index.flushBatch();
     
     // Test 3: Query to verify both vectors were added correctly
     VecSimQueryParams queryParams;
@@ -658,6 +654,76 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     delete results;
     delete results2;
     // shared_ptr will handle deallocation automatically
+}
+
+TEST_F(HNSWDiskIndexTest, BatchingTest) {
+    // Test the batching functionality
+    const size_t dim = 64;
+    
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 8;
+    params.efConstruction = 100;
+    params.efRuntime = 50;
+    params.epsilon = 0.01;
+    
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1; // Use small block size for testing
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+    
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+    
+    // Create HNSWDiskIndex - use default column family handle
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    
+    // Create test vectors
+    std::mt19937 rng(42);
+    std::vector<std::vector<float>> test_vectors;
+    std::vector<labelType> labels;
+    
+    // Add 15 vectors (more than the batch threshold of 10)
+    for (int i = 0; i < 15; i++) {
+        auto test_vector = createRandomVector(dim, rng);
+        normalizeVector(test_vector);
+        test_vectors.push_back(test_vector);
+        labels.push_back(1000 + i);
+        
+        index.addVector(test_vector.data(), labels[i]);
+    }
+    
+    // Verify that vectors are in memory (pending)
+    EXPECT_EQ(index.indexSize(), 15);
+    EXPECT_EQ(index.indexLabelCount(), 15);
+    
+    // Force flush to process the batch
+    index.flushBatch();
+    
+    // Verify that vectors are now on disk
+    EXPECT_EQ(index.indexSize(), 15);
+    EXPECT_EQ(index.indexLabelCount(), 15);
+    
+    // Test query to verify vectors are accessible
+    VecSimQueryParams queryParams;
+    queryParams.hnswRuntimeParams.efRuntime = 50;
+    
+    auto results = index.topKQuery(test_vectors[0].data(), 10, &queryParams);
+    EXPECT_TRUE(results != nullptr);
+    EXPECT_EQ(results->code, VecSim_OK);
+    EXPECT_GE(results->results.size(), 1);
+    
+    delete results;
 }
 
 int main(int argc, char** argv) {
