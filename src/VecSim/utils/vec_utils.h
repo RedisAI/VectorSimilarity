@@ -66,7 +66,6 @@ public:
     static const char *SVS_PRUNE_TO_STRING;
     static const char *SVS_NUM_THREADS_STRING;
     static const char *SVS_LEANVEC_DIM_STRING;
-    static const char *SVS_CHANGES_NUM_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;

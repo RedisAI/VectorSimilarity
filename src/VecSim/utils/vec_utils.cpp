@@ -65,7 +65,6 @@ const char *VecSimCommonStrings::SVS_MAX_CANDIDATE_POOL_SIZE_STRING = "MAX_CANDI
 const char *VecSimCommonStrings::SVS_PRUNE_TO_STRING = "PRUNE_TO";
 const char *VecSimCommonStrings::SVS_NUM_THREADS_STRING = "NUM_THREADS";
 const char *VecSimCommonStrings::SVS_LEANVEC_DIM_STRING = "LEANVEC_DIMENSION";
-const char *VecSimCommonStrings::SVS_CHANGES_NUM_STRING = "CHANGES_SINCE_LAST_REINDEXING";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";

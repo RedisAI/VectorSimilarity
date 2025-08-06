@@ -367,15 +367,14 @@ public:
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
                           .leanvecDim = this->leanvec_dim,
-                          .epsilon = this->epsilon,
-                          .changes_num = this->changes_num};
+                          .epsilon = this->epsilon};
         return info;
     }
 
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
         // For readability. Update this number when needed.
-        size_t numberOfInfoFields = 24;
+        size_t numberOfInfoFields = 23;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
@@ -456,11 +455,6 @@ public:
             .fieldName = VecSimCommonStrings::EPSILON_STRING,
             .fieldType = INFOFIELD_FLOAT64,
             .fieldValue = {FieldValue{.floatingPointValue = info.svsInfo.epsilon}}});
-
-        infoIterator->addInfoField(VecSim_InfoField{
-            .fieldName = VecSimCommonStrings::SVS_CHANGES_NUM_STRING,
-            .fieldType = INFOFIELD_UINT64,
-            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.changes_num}}});
 
         return infoIterator;
     }
