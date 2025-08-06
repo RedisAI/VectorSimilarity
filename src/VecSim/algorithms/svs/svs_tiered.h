@@ -776,31 +776,17 @@ public:
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        if (this->GetSVSIndex()->isCompressed() || this->backendIndex->isMultiValue()) {
-            // SVS compressed distance computation precision is lower, so we always have to
-            // merge results with set.
-            return this->template topKQueryImp<true>(queryBlob, k, queryParams);
-        } else {
-            // Calling with withSet=false for optimized performance, assuming that shared IDs across
-            // lists also have identical scores — in which case duplicates are implicitly avoided by
-            // the merge logic.
-            return this->template topKQueryImp<false>(queryBlob, k, queryParams);
-        }
+        // SVS implements it's own distance computation functions which may cause sligthly different
+        // distance values than VecSim Flat Index does, so we always have to merge results with set.
+        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
     }
 
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams,
                                  VecSimQueryReply_Order order) const override {
-        if (this->GetSVSIndex()->isCompressed() || this->backendIndex->isMultiValue()) {
-            // SVS compressed distance computation precision is lower, so we always have to
-            // merge results with set.
-            return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
-        } else {
-            // Calling with withSet=false for optimized performance, assuming that shared IDs across
-            // lists also have identical scores — in which case duplicates are implicitly avoided by
-            // the merge logic.
-            return this->template rangeQueryImp<false>(queryBlob, radius, queryParams, order);
-        }
+        // SVS implements it's own distance computation functions which may cause sligthly different
+        // distance values than VecSim Flat Index does, so we always have to merge results with set.
+        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
