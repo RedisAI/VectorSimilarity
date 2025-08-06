@@ -1065,85 +1065,88 @@ TYPED_TEST(SVSTest, test_basic_svs_info_iterator) {
 
 TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
     size_t d = 128;
+    for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                            VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                            VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
 
-    SVSParams params = {
-        .dim = d,
-        .metric = VecSimMetric_L2,
-        .blockSize = 1,
-        /* SVS-Vamana specifics */
-        .alpha = 1.2,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
-    };
+        SVSParams params = {
+            .dim = d,
+            .metric = VecSimMetric_L2,
+            .blockSize = 1,
+            /* SVS-Vamana specifics */
+            .alpha = 1.2,
+            .graph_max_degree = 64,
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
+        VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
-    VecSimIndex *index = this->CreateNewIndex(params);
-    ASSERT_INDEX(index);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
+        ASSERT_EQ(0, info.commonInfo.indexSize);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-    VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
-    ASSERT_EQ(0, info.commonInfo.indexSize);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
+        TEST_DATA_T v[d];
+        for (size_t i = 0; i < d; i++) {
+            v[i] = (TEST_DATA_T)i;
+        }
+        // Add vector.
+        VecSimIndex_AddVector(index, v, 0);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(1, info.commonInfo.indexSize);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-    TEST_DATA_T v[d];
-    for (size_t i = 0; i < d; i++) {
-        v[i] = (TEST_DATA_T)i;
+        // Delete vector.
+        VecSimIndex_DeleteVector(index, 0);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(0, info.commonInfo.indexSize);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+
+        // Perform (or simulate) Search in all modes.
+        VecSimIndex_AddVector(index, v, 0);
+        auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+        VecSimQueryReply_Free(res);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+
+        res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
+        VecSimQueryReply_Free(res);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+
+        ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+
+        // Simulate the case where another call to the heuristics is done after realizing that
+        // the subset size is smaller, and change the policy as a result.
+        ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+
+        VecSimIndex_Free(index);
     }
-    // Add vector.
-    VecSimIndex_AddVector(index, v, 0);
-    info = VecSimIndex_DebugInfo(index);
-    infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(1, info.commonInfo.indexSize);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
-
-    // Delete vector.
-    VecSimIndex_DeleteVector(index, 0);
-    info = VecSimIndex_DebugInfo(index);
-    infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(0, info.commonInfo.indexSize);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
-
-    // Perform (or simulate) Search in all modes.
-    VecSimIndex_AddVector(index, v, 0);
-    auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryReply_Free(res);
-    info = VecSimIndex_DebugInfo(index);
-    infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
-
-    res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryReply_Free(res);
-    info = VecSimIndex_DebugInfo(index);
-    infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
-
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
-    info = VecSimIndex_DebugInfo(index);
-    infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
-
-    // Simulate the case where another call to the heuristics is done after realizing that
-    // the subset size is smaller, and change the policy as a result.
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
-    info = VecSimIndex_DebugInfo(index);
-    infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
-    compareSVSIndexInfoToIterator(info, infoIter);
-    VecSimDebugInfoIterator_Free(infoIter);
-
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
