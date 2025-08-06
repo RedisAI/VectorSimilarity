@@ -23,7 +23,7 @@ using float16 = vecsim_types::float16;
 namespace DebugInfoIteratorFieldCount {
 constexpr size_t FLAT = 10;
 constexpr size_t HNSW = 17;
-constexpr size_t SVS = 24;
+constexpr size_t SVS = 23;
 constexpr size_t TIERED_HNSW = 15;
 constexpr size_t TIERED_SVS = 17;
 } // namespace DebugInfoIteratorFieldCount
@@ -603,10 +603,6 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // SVS epsilon parameter.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_FLOAT64);
             ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.svsInfo.epsilon);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_CHANGES_NUM_STRING)) {
-            // SVS changes number since last reindexing.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.changes_num);
         } else {
             FAIL();
         }
