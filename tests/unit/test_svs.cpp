@@ -1074,6 +1074,7 @@ TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
             .metric = VecSimMetric_L2,
             .blockSize = 1,
             /* SVS-Vamana specifics */
+            .quantBits = quant_bits,
             .alpha = 1.2,
             .graph_max_degree = 64,
             .construction_window_size = 20,
