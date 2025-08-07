@@ -224,7 +224,7 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
                 VecSimParamResolver_OK) {
                 return res;
             }
-        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::EPSILON_STRING)) {
             if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
