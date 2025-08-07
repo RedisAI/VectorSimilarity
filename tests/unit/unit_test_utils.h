@@ -160,10 +160,10 @@ void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
 
 void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
-void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info,
-                                          VecSimIndexDebugInfo frontendIndexInfo,
-                                          VecSimIndexDebugInfo backendIndexInfo,
-                                          VecSimDebugInfoIterator *infoIterator);
+void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
+                                      VecSimIndexDebugInfo frontendIndexInfo,
+                                      VecSimIndexDebugInfo backendIndexInfo,
+                                      VecSimDebugInfoIterator *infoIterator);
 
 void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 

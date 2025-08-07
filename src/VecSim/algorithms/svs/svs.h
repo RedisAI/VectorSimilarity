@@ -374,7 +374,7 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
         // For readability. Update this number when needed.
-        size_t numberOfInfoFields = 10;
+        size_t numberOfInfoFields = 23;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
@@ -384,10 +384,78 @@ public:
             .fieldValue = {
                 FieldValue{.stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
         this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
             .fieldType = INFOFIELD_UINT64,
             .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.basicInfo.blockSize}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_QUANT_BITS_STRING,
+            .fieldType = INFOFIELD_STRING,
+            .fieldValue = {
+                FieldValue{.stringValue = VecSimQuantBits_ToString(info.svsInfo.quantBits)}}});
+
+        infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::SVS_ALPHA_STRING,
+                             .fieldType = INFOFIELD_FLOAT64,
+                             .fieldValue = {FieldValue{.floatingPointValue = info.svsInfo.alpha}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_GRAPH_MAX_DEGREE_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.graphMaxDegree}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_CONSTRUCTION_WS_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.constructionWindowSize}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_MAX_CANDIDATE_POOL_SIZE_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.maxCandidatePoolSize}}});
+
+        infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::SVS_PRUNE_TO_STRING,
+                             .fieldType = INFOFIELD_UINT64,
+                             .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.pruneTo}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.useSearchHistory}}});
+
+        infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::SVS_NUM_THREADS_STRING,
+                             .fieldType = INFOFIELD_UINT64,
+                             .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.numThreads}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::NUM_MARKED_DELETED,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.numberOfMarkedDeletedNodes}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_SEARCH_WS_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.searchWindowSize}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_SEARCH_BC_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.searchBufferCapacity}}});
+
+        infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::SVS_LEANVEC_DIM_STRING,
+                             .fieldType = INFOFIELD_UINT64,
+                             .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.leanvecDim}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::EPSILON_STRING,
+            .fieldType = INFOFIELD_FLOAT64,
+            .fieldValue = {FieldValue{.floatingPointValue = info.svsInfo.epsilon}}});
+
         return infoIterator;
     }
 
