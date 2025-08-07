@@ -750,12 +750,17 @@ public:
 
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
+
         SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
                                        .updateTriggerThreshold = this->updateTriggerThreshold,
                                        .updateJobWaitTime = this->updateJobWaitTime,
                                        .indexUpdateScheduled =
                                            static_cast<bool>(this->indexUpdateScheduled.test())};
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
+        info.tieredInfo.backgroundIndexing =
+            svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
+                ? VecSimBool_TRUE
+                : VecSimBool_FALSE;
         return info;
     }
 
@@ -770,7 +775,33 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         //  Get the base tiered fields.
         auto *infoIterator = Base::debugInfoIterator();
-        // TODO: Add SVS specific info.
+        VecSimIndexDebugInfo info = this->debugInfo();
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
+            .fieldType = INFOFIELD_INT64,
+            .fieldValue = {FieldValue{.integerValue = info.tieredInfo.backgroundIndexing}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo.svsTieredInfo
+                                                .trainingTriggerThreshold}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo.svsTieredInfo
+                                                .updateTriggerThreshold}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{
+                .uintegerValue =
+                    info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime}}});
         return infoIterator;
     }
 
