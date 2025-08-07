@@ -51,7 +51,8 @@ public:
 
 protected:
     void SetTypeParams(SVSParams &params) {
-        params.quantBits = index_type_t::get_quant_bits();
+        params.quantBits = params.quantBits == VecSimSvsQuant_NONE ? index_type_t::get_quant_bits()
+                                                                   : params.quantBits;
         params.type = index_type_t::get_index_type();
         params.multi = false;
     }
@@ -1064,6 +1065,10 @@ TYPED_TEST(SVSTest, test_basic_svs_info_iterator) {
 }
 
 TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
+    if (TypeParam::get_quant_bits() == VecSimSvsQuant_8 ||
+        TypeParam::get_quant_bits() == VecSimSvsQuant_8x8_LeanVec) {
+        GTEST_SKIP() << "Already included in the test loop.";
+    }
     size_t d = 128;
     for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
                             VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
