@@ -28,11 +28,8 @@ if(FP64_TESTS)
 	add_definitions(-DFP64_TESTS)
 endif()
 
-option(USE_VALGRIND "Building for Valgrind" OFF)
-if(USE_VALGRIND)
-    add_definitions(-DRUNNING_ON_VALGRIND)
-    message(STATUS "Building with RUNNING_ON_VALGRIND")
-endif()
+# AddressSanitizer is handled via cmake/san.cmake
+# No special definitions needed for ASan
 
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
