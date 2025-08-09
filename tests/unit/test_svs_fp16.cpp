@@ -554,151 +554,139 @@ TYPED_TEST(FP16SVSTest, svs_batch_iterator_non_unique_scores) {
     }
 }
 
-// TYPED_TEST(FP16SVSTest, svs_batch_iterator_reset) {
-//     // Scalar quantization accuracy is insufficient for this test.
-//     if (this->isFallbackToSQ()) {
-//         GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
-//     }
-//     size_t dim = 4;
-//     size_t n = 10000;
+TYPED_TEST(FP16SVSTest, svs_batch_iterator_reset) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    constexpr size_t dim = 4;
+    size_t n = 10000;
 
-//     SVSParams params = {
-//         .dim = dim,
-//         .metric = VecSimMetric_L2,
-//         /* SVS-Vamana specifics */
-//         .alpha = 1.2,
-//         .graph_max_degree = 64,
-//         .construction_window_size = 20,
-//         .max_candidate_pool_size = 1024,
-//         .prune_to = 60,
-//         .use_search_history = VecSimOption_ENABLE,
-//     };
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .construction_window_size = 20,
+    };
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     for (size_t i = 0; i < n; i++) {
-//         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i / 10);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-//     // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
-//     TEST_DATA_T query[dim];
-//     GenerateVector<TEST_DATA_T>(query, dim, n);
-//     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
+    float16 query[dim];
+    this->GenerateVector(query, dim, n);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-//     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet,
-//     in
-//     // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
-//     // iterator.
-//     size_t n_res = 100;
-//     size_t total_iteration = 5;
-//     size_t re_runs = 3;
+    // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
+    // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
+    // iterator.
+    size_t n_res = 100;
+    size_t total_iteration = 5;
+    size_t re_runs = 3;
 
-//     for (size_t take = 0; take < re_runs; take++) {
-//         size_t iteration_num = 0;
-//         while (VecSimBatchIterator_HasNext(batchIterator)) {
-//             std::set<size_t> expected_ids;
-//             for (size_t i = 1; i <= n_res * 2; i++) {
-//                 expected_ids.insert(n - iteration_num * n_res - i);
-//             }
-//             auto verify_res = [&](size_t id, double score, size_t index) {
-//                 ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-//                 expected_ids.erase(id);
-//             };
-//             runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
-//             iteration_num++;
-//             if (iteration_num == total_iteration) {
-//                 break;
-//             }
-//         }
-//         VecSimBatchIterator_Reset(batchIterator);
-//     }
-//     VecSimBatchIterator_Free(batchIterator);
-//     VecSimIndex_Free(index);
-// }
+    for (size_t take = 0; take < re_runs; take++) {
+        size_t iteration_num = 0;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            std::set<size_t> expected_ids;
+            for (size_t i = 1; i <= n_res * 2; i++) {
+                expected_ids.insert(n - iteration_num * n_res - i);
+            }
+            auto verify_res = [&](size_t id, double score, size_t index) {
+                ASSERT_TRUE(expected_ids.find(id) != expected_ids.end())
+                    << "take: " << take << " iteration_num: " << iteration_num
+                    << " index: " << index << " score: " << score;
+                expected_ids.erase(id);
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            iteration_num++;
+            if (iteration_num == total_iteration) {
+                break;
+            }
+        }
+        VecSimBatchIterator_Reset(batchIterator);
+    }
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
 
-// TYPED_TEST(FP16SVSTest, svs_batch_iterator_corner_cases) {
-//     // Scalar quantization accuracy is insufficient for this test.
-//     if (this->isFallbackToSQ()) {
-//         GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
-//     }
-//     size_t dim = 4;
-//     size_t n = 1000;
+TYPED_TEST(FP16SVSTest, svs_batch_iterator_corner_cases) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    size_t dim = 4;
+    size_t n = 1000;
 
-//     SVSParams params = {
-//         .dim = dim,
-//         .metric = VecSimMetric_L2,
-//         /* SVS-Vamana specifics */
-//         .alpha = 1.2,
-//         .graph_max_degree = 64,
-//         .construction_window_size = 20,
-//         .max_candidate_pool_size = 1024,
-//         .prune_to = 60,
-//         .use_search_history = VecSimOption_ENABLE,
-//     };
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
-//     TEST_DATA_T query[dim];
-//     GenerateVector<TEST_DATA_T>(query, dim, n);
+    // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
+    float16 query[dim];
+    this->GenerateVector(query, dim, n);
 
-//     // Create batch iterator for empty index.
-//     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-//     // Try to get more results even though there are no.
-//     VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-//     VecSimQueryReply_Free(res);
-//     // Retry to get results.
-//     VecSimBatchIterator_Reset(batchIterator);
-//     res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-//     VecSimQueryReply_Free(res);
+    // Create batch iterator for empty index.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    // Try to get more results even though there are no.
+    VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
+    // Retry to get results.
+    VecSimBatchIterator_Reset(batchIterator);
+    res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
-//     // Check if depleted
-//     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
-//     VecSimBatchIterator_Free(batchIterator);
+    // Check if depleted
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+    VecSimBatchIterator_Free(batchIterator);
 
-//     for (size_t i = 0; i < n; i++) {
-//         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-//     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-//     // Ask for zero results.
-//     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-//     VecSimQueryReply_Free(res);
+    // Ask for zero results.
+    res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
-//     // Get all in first iteration, expect to use select search.
-//     size_t n_res = n;
-//     auto verify_res = [&](size_t id, double score, size_t index) {
-//         ASSERT_TRUE(id == n - 1 - index);
-//     };
-//     runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
-//     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+    // Get all in first iteration, expect to use select search.
+    size_t n_res = n;
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_TRUE(id == n - 1 - index) << "index: " << index << " score: " << score;
+    };
+    runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
-//     // Try to get more results even though there are no.
-//     res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-//     VecSimQueryReply_Free(res);
+    // Try to get more results even though there are no.
+    res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
-//     // Reset, and run in batches, but the final batch is partial.
-//     VecSimBatchIterator_Reset(batchIterator);
-//     res = VecSimBatchIterator_Next(batchIterator, n_res / 2, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), n / 2);
-//     VecSimQueryReply_Free(res);
-//     res = VecSimBatchIterator_Next(batchIterator, n_res / 2 + 1, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryReply_Len(res), n / 2);
-//     VecSimQueryReply_Free(res);
-//     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+    // Reset, and run in batches, but the final batch is partial.
+    VecSimBatchIterator_Reset(batchIterator);
+    res = VecSimBatchIterator_Next(batchIterator, n_res / 2, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n / 2);
+    VecSimQueryReply_Free(res);
+    res = VecSimBatchIterator_Next(batchIterator, n_res / 2 + 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n / 2);
+    VecSimQueryReply_Free(res);
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
-//     VecSimBatchIterator_Free(batchIterator);
-//     VecSimIndex_Free(index);
-// }
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
 
 // // Add up to capacity.
 // TYPED_TEST(FP16SVSTest, resizeIndex) {
