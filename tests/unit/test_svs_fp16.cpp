@@ -10,6 +10,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "unit_test_utils.h"
+#include "tests_utils.h"
 #include <array>
 #include <cmath>
 #include <random>
@@ -828,292 +829,295 @@ TYPED_TEST(FP16SVSTest, test_delete_vector) {
     VecSimIndex_Free(index);
 }
 
-// TYPED_TEST(FP16SVSTest, sanity_reinsert_1280) {
-//     size_t n = 5;
-//     size_t d = 1280;
-//     size_t k = 5;
+TYPED_TEST(FP16SVSTest, sanity_reinsert_1280) {
+    constexpr size_t n = 5;
+    constexpr size_t d = 1280;
+    size_t k = 5;
 
-//     SVSParams params = {
-//         .dim = d,
-//         .metric = VecSimMetric_L2,
-//         /* SVS-Vamana specifics */
-//         .alpha = 1.2,
-//         .graph_max_degree = 64,
-//         .construction_window_size = 20,
-//         .max_candidate_pool_size = 1024,
-//         .prune_to = 60,
-//         .use_search_history = VecSimOption_ENABLE,
-//     };
+    SVSParams params = {
+        .dim = d,
+        .metric = VecSimMetric_Cosine,
+        /* SVS-Vamana specifics */
+        .alpha = 1.2,
+        .graph_max_degree = 64,
+        // .construction_window_size = 20,
+        .max_candidate_pool_size = 1024,
+        .prune_to = 60,
+        .use_search_history = VecSimOption_ENABLE,
+    };
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     auto *vectors = new TEST_DATA_T[n * d];
+    auto *vectors = new float16[n * d];
 
-//     // Generate random vectors in every iteration and inert them under different ids.
-//     for (size_t iter = 1; iter <= 3; iter++) {
-//         for (size_t i = 0; i < n; i++) {
-//             for (size_t j = 0; j < d; j++) {
-//                 (vectors + i * d)[j] = (TEST_DATA_T)rand() / (TEST_DATA_T)(RAND_MAX) / 100;
-//             }
-//         }
-//         auto expected_ids = std::set<size_t>();
-//         for (size_t i = 0; i < n; i++) {
-//             VecSimIndex_AddVector(index, (vectors + i * d), i * iter);
-//             expected_ids.insert(i * iter);
-//         }
-//         auto verify_res = [&](size_t id, double score, size_t index) {
-//             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-//             expected_ids.erase(id);
-//         };
+    // Generate random vectors in every iteration and inert them under different ids.
+    for (size_t iter = 1; iter <= 1; iter++) {
+        for (size_t i = 0; i < n; i++) {
+            size_t internal_iter = n * (iter - 1) + i;
+            test_utils::populate_float16_vec(vectors + i * d, d, internal_iter, 0.0, 1.0f);
+        }
+        auto expected_ids = std::set<size_t>();
+        for (size_t i = 0; i < n; i++) {
+            ASSERT_EQ(VecSimIndex_AddVector(index, (vectors + i * d), i * iter + 1), 1);
+            expected_ids.insert(i * iter);
+        }
+        auto verify_res = [&](size_t id, double score, size_t index) {
+            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+            expected_ids.erase(id);
+        };
 
-//         // Send arbitrary vector (the first) and search for top k. This should return all the
-//         // vectors that were inserted in this iteration - verify their ids.
-//         runTopKSearchTest(index, vectors, k, verify_res);
+        // Send arbitrary vector (the first) and search for top k. This should return all the
+        // vectors that were inserted in this iteration - verify their ids.
+        ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, vectors, k, verify_res))
+            << "iter: " << iter;
 
-//         // Remove vectors form current iteration.
-//         for (size_t i = 0; i < n; i++) {
-//             VecSimIndex_DeleteVector(index, i * iter);
-//         }
-//     }
-//     delete[] vectors;
-//     VecSimIndex_Free(index);
-// }
+        // Remove vectors form current iteration.
+        for (size_t i = 0; i < n; i++) {
+            VecSimIndex_DeleteVector(index, i * iter);
+        }
+    }
+    delete[] vectors;
+    VecSimIndex_Free(index);
+}
 
-// TYPED_TEST(FP16SVSTest, test_svs_info) {
-//     size_t n = 100;
-//     size_t d = 128;
+TYPED_TEST(FP16SVSTest, test_svs_info) {
+    size_t n = 100;
+    size_t d = 128;
 
-//     // Build with default args.
+    // Build with default args.
 
-//     SVSParams params = {
-//         .dim = d,
-//         .metric = VecSimMetric_L2,
-//         /* SVS-Vamana specifics */
-//         .alpha = 1.2,
-//         .graph_max_degree = 64,
-//         .construction_window_size = 20,
-//         .max_candidate_pool_size = 1024,
-//         .prune_to = 60,
-//         .use_search_history = VecSimOption_ENABLE,
-//     };
+    SVSParams params = {
+        .dim = d,
+        .metric = VecSimMetric_Cosine,
+    };
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-//     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
-//     ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
-//     ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
-//     // Default args.
-//     ASSERT_EQ(info.commonInfo.indexSize, 0);
-//     VecSimIndex_Free(index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, VecSimType_FLOAT16);
+    // Default args.
+    ASSERT_EQ(info.commonInfo.indexSize, 0);
+    validateSVSIndexAttributesInfo(info.svsInfo, params);
+    VecSimIndex_Free(index);
 
-//     d = 1280;
-//     params.dim = d;
-//     params.blockSize = 1;
+    d = 1280;
+    params.dim = d;
+    params.blockSize = DEFAULT_BLOCK_SIZE - 10;
+    params.alpha = SVS_VAMANA_DEFAULT_ALPHA_L2 / 2.0f,
+    params.graph_max_degree = SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE + 2,
+    params.construction_window_size = SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE + 4,
+    params.max_candidate_pool_size = params.construction_window_size * 8,
+    params.prune_to = params.graph_max_degree + 56,
+    params.use_search_history = VecSimOption_DISABLE,
 
-//     index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     info = VecSimIndex_DebugInfo(index);
-//     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
-//     ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
-//     ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
-//     ASSERT_FALSE(info.commonInfo.basicInfo.isTiered);
+    info = VecSimIndex_DebugInfo(index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isTiered);
 
-//     // User args.
-//     ASSERT_EQ(info.commonInfo.basicInfo.blockSize, 1);
-//     ASSERT_EQ(info.commonInfo.indexSize, 0);
+    // User args.
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE - 10);
+    ASSERT_EQ(info.commonInfo.indexSize, 0);
+    validateSVSIndexAttributesInfo(info.svsInfo, params);
 
-//     // Validate that Static info returns the right restricted info as well.
-//     VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(index);
-//     ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
-//     ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
-//     ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
-//     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
-//     ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
-//     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
-//     ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
+    // Validate that Static info returns the right restricted info as well.
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
-// TYPED_TEST(FP16SVSTest, test_basic_svs_info_iterator) {
-//     size_t n = 100;
-//     size_t d = 128;
-//     VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
+TYPED_TEST(FP16SVSTest, test_basic_svs_info_iterator) {
+    size_t n = 100;
+    size_t d = 128;
+    VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
 
-//     for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < 3; i++) {
 
-//         // Build with default args.
-//         SVSParams params = {
-//             .dim = d,
-//             .metric = metrics[i],
-//             /* SVS-Vamana specifics */
-//             .alpha = 1.2,
-//             .graph_max_degree = 64,
-//             .construction_window_size = 20,
-//             .max_candidate_pool_size = 1024,
-//             .prune_to = 60,
-//             .use_search_history = VecSimOption_ENABLE,
-//         };
+        // Build with default args.
+        SVSParams params = {
+            .dim = d,
+            .metric = metrics[i],
+            /* SVS-Vamana specifics */
+            .alpha = 1.2,
+            .graph_max_degree = 64,
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
 
-//         VecSimIndex *index = this->CreateNewIndex(params);
-//         ASSERT_INDEX(index);
+        VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
-//         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-//         VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
-//         VecSimIndex_Free(index);
-//     }
-// }
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+        VecSimIndex_Free(index);
+    }
+}
 
-// TYPED_TEST(FP16SVSTest, test_dynamic_svs_info_iterator) {
-//     if (TypeParam::get_quant_bits() == VecSimSvsQuant_8 ||
-//         TypeParam::get_quant_bits() == VecSimSvsQuant_8x8_LeanVec) {
-//         GTEST_SKIP() << "Already included in the test loop.";
-//     }
-//     size_t d = 128;
-//     for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
-//                             VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
-//                             VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+TYPED_TEST(FP16SVSTest, test_dynamic_svs_info_iterator) {
+    if (TypeParam::get_quant_bits() == VecSimSvsQuant_8 ||
+        TypeParam::get_quant_bits() == VecSimSvsQuant_8x8_LeanVec) {
+        GTEST_SKIP() << "Already included in the test loop.";
+    }
+    constexpr size_t d = 128;
+    for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                            VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                            VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
 
-//         SVSParams params = {
-//             .dim = d,
-//             .metric = VecSimMetric_L2,
-//             .blockSize = 1,
-//             /* SVS-Vamana specifics */
-//             .quantBits = quant_bits,
-//             .alpha = 1.2,
-//             .graph_max_degree = 64,
-//             .construction_window_size = 20,
-//             .max_candidate_pool_size = 1024,
-//             .prune_to = 60,
-//             .use_search_history = VecSimOption_ENABLE,
-//         };
-//         VecSimIndex *index = this->CreateNewIndex(params);
-//         ASSERT_INDEX(index);
+        SVSParams params = {
+            .dim = d,
+            .metric = VecSimMetric_Cosine,
+            .blockSize = 1,
+            /* SVS-Vamana specifics */
+            .quantBits = quant_bits,
+            .alpha = 1.2,
+            .graph_max_degree = 64,
+            .construction_window_size = 20,
+            .max_candidate_pool_size = 1024,
+            .prune_to = 60,
+            .use_search_history = VecSimOption_ENABLE,
+        };
+        VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
-//         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-//         VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
-//         ASSERT_EQ(0, info.commonInfo.indexSize);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        validateSVSIndexAttributesInfo(info.svsInfo, params);
 
-//         TEST_DATA_T v[d];
-//         for (size_t i = 0; i < d; i++) {
-//             v[i] = (TEST_DATA_T)i;
-//         }
-//         // Add vector.
-//         VecSimIndex_AddVector(index, v, 0);
-//         info = VecSimIndex_DebugInfo(index);
-//         infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(1, info.commonInfo.indexSize);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
+        ASSERT_EQ(0, info.commonInfo.indexSize);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-//         // Delete vector.
-//         VecSimIndex_DeleteVector(index, 0);
-//         info = VecSimIndex_DebugInfo(index);
-//         infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(0, info.commonInfo.indexSize);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        float16 v[d];
+        this->GenerateVector(v, d);
+        // Add vector.
+        VecSimIndex_AddVector(index, v, 0);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(1, info.commonInfo.indexSize);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-//         // Perform (or simulate) Search in all modes.
-//         VecSimIndex_AddVector(index, v, 0);
-//         auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
-//         VecSimQueryReply_Free(res);
-//         info = VecSimIndex_DebugInfo(index);
-//         infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        // Delete vector.
+        VecSimIndex_DeleteVector(index, 0);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(0, info.commonInfo.indexSize);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-//         res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
-//         VecSimQueryReply_Free(res);
-//         info = VecSimIndex_DebugInfo(index);
-//         infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        // Perform (or simulate) Search in all modes.
+        VecSimIndex_AddVector(index, v, 0);
+        auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+        VecSimQueryReply_Free(res);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-//         ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
-//         info = VecSimIndex_DebugInfo(index);
-//         infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
+        VecSimQueryReply_Free(res);
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-//         // Simulate the case where another call to the heuristics is done after realizing that
-//         // the subset size is smaller, and change the policy as a result.
-//         ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
-//         info = VecSimIndex_DebugInfo(index);
-//         infoIter = VecSimIndex_DebugInfoIterator(index);
-//         ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
-//         compareSVSIndexInfoToIterator(info, infoIter);
-//         VecSimDebugInfoIterator_Free(infoIter);
+        ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-//         VecSimIndex_Free(index);
-//     }
-// }
+        // Simulate the case where another call to the heuristics is done after realizing that
+        // the subset size is smaller, and change the policy as a result.
+        ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
+        info = VecSimIndex_DebugInfo(index);
+        infoIter = VecSimIndex_DebugInfoIterator(index);
+        ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
 
-// TYPED_TEST(FP16SVSTest, svs_vector_search_test_ip) {
-//     const size_t dim = 4;
-//     const size_t n = 10;
-//     const size_t k = 5;
+        VecSimIndex_Free(index);
+    }
+}
 
-//     for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
+TYPED_TEST(FP16SVSTest, svs_vector_search_test_ip) {
+    const size_t dim = 4;
+    const size_t n = 10;
+    const size_t k = 5;
 
-//         SVSParams params = {.dim = dim,
-//                             .metric = VecSimMetric_IP,
-//                             .blockSize = blocksize,
-//                             /* SVS-Vamana specifics */
-//                             .alpha = 0.9,
-//                             .graph_max_degree = 64,
-//                             .construction_window_size = 20,
-//                             .max_candidate_pool_size = 1024,
-//                             .prune_to = 60,
-//                             .use_search_history = VecSimOption_ENABLE,
-//                             .leanvec_dim = dim / 4};
+    for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
 
-//         VecSimIndex *index = this->CreateNewIndex(params);
-//         ASSERT_INDEX(index);
+        SVSParams params = {.dim = dim,
+                            .metric = VecSimMetric_IP,
+                            .blockSize = blocksize,
+                            /* SVS-Vamana specifics */
+                            .alpha = 0.9,
+                            .graph_max_degree = 64,
+                            .construction_window_size = 20,
+                            .max_candidate_pool_size = 1024,
+                            .prune_to = 60,
+                            .use_search_history = VecSimOption_ENABLE,
+                            .leanvec_dim = dim / 4};
 
-//         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-//         ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
-//         ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
+        VecSimIndex *index = this->CreateNewIndex(params);
+        ASSERT_INDEX(index);
 
-//         auto svs_index = this->CastToSVS(index);
-//         ASSERT_NE(svs_index, nullptr);
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
+        ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
 
-//         std::vector<std::array<TEST_DATA_T, dim>> v(n);
-//         for (size_t i = 0; i < n; i++) {
-//             GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
-//         }
+        auto svs_index = this->CastToSVS(index);
+        ASSERT_NE(svs_index, nullptr);
 
-//         std::vector<size_t> ids(n);
-//         std::iota(ids.begin(), ids.end(), 0);
+        std::vector<std::array<float16, dim>> v(n);
+        for (size_t i = 0; i < n; i++) {
+            this->GenerateVector(v[i].data(), dim, i);
+        }
 
-//         svs_index->addVectors(v.data(), ids.data(), n);
-//         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+        std::vector<size_t> ids(n);
+        std::iota(ids.begin(), ids.end(), 0);
 
-//         TEST_DATA_T query[] = {50, 50, 50, 50};
-//         std::set<size_t> expected_ids;
-//         for (size_t i = n - 1; i > n - 1 - k; i--) {
-//             expected_ids.insert(i);
-//         }
-//         auto verify_res = [&](size_t id, double score, size_t index) {
-//             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-//             expected_ids.erase(id);
-//         };
-//         runTopKSearchTest(index, query, k, verify_res);
-//         VecSimIndex_Free(index);
-//     }
-// }
+        svs_index->addVectors(v.data(), ids.data(), n);
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        float16 query[dim];
+        this->GenerateVector(query, dim, 0, 1.0);
+        std::set<size_t> expected_ids;
+        for (size_t i = n - 1; i > n - 1 - k; i--) {
+            expected_ids.insert(i);
+        }
+        auto verify_res = [&](size_t id, double score, size_t index) {
+            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+            expected_ids.erase(id);
+        };
+        runTopKSearchTest(index, query, k, verify_res);
+        VecSimIndex_Free(index);
+    }
+}
 
 // TYPED_TEST(FP16SVSTest, svs_vector_search_test_l2) {
 //     // Scalar quantization accuracy is insufficient for this test.
