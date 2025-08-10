@@ -688,133 +688,145 @@ TYPED_TEST(FP16SVSTest, svs_batch_iterator_corner_cases) {
     VecSimIndex_Free(index);
 }
 
-// // Add up to capacity.
-// TYPED_TEST(FP16SVSTest, resizeIndex) {
-//     size_t dim = 4;
-//     size_t n = 10;
-//     size_t bs = 4;
+// Add up to capacity.
+TYPED_TEST(FP16SVSTest, resizeIndex) {
+    size_t dim = 4;
+    size_t n = 10;
+    size_t bs = 4;
 
-//     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     // Add up to n.
-//     for (size_t i = 0; i < n; i++) {
-//         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
-//     }
+    // Add up to n.
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i);
+    }
 
-//     // Initial capacity is rounded up to the block size.
-//     size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
-//     auto quantBits = TypeParam::get_quant_bits();
-//     // Get the fallback quantization mode
-//     quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
-//     if (quantBits != VecSimSvsQuant_NONE) {
-//         // LVQDataset does not provide a capacity method
-//         extra_cap = 0;
-//     }
-//     // The size (+extra) and the capacity should be equal.
-//     ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
-//     // The capacity shouldn't be changed.
-//     ASSERT_EQ(index->indexCapacity(), n + extra_cap);
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+    auto quantBits = TypeParam::get_quant_bits();
+    // Get the fallback quantization mode
+    quantBits = std::get<0>(svs_details::isSVSQuantBitsSupported(quantBits));
+    if (quantBits != VecSimSvsQuant_NONE) {
+        // LVQDataset does not provide a capacity method
+        extra_cap = 0;
+    }
+    // The size (+extra) and the capacity should be equal.
+    ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
+    // The capacity shouldn't be changed.
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap);
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
-// // Test empty index edge cases.
-// TYPED_TEST(FP16SVSTest, svs_empty_index) {
-//     size_t dim = 4;
-//     size_t n = 20;
+// Test empty index edge cases.
+TYPED_TEST(FP16SVSTest, svs_empty_index) {
+    size_t dim = 4;
+    size_t n = 20;
 
-//     SVSParams params = {
-//         .dim = dim,
-//         .metric = VecSimMetric_L2,
-//         /* SVS-Vamana specifics */
-//         .alpha = 1.2,
-//         .graph_max_degree = 64,
-//         .construction_window_size = 20,
-//         .max_candidate_pool_size = 1024,
-//         .prune_to = 60,
-//         .use_search_history = VecSimOption_ENABLE,
-//     };
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        /* SVS-Vamana specifics */
+        .alpha = 1.2,
+        .graph_max_degree = 64,
+        .construction_window_size = 20,
+        .max_candidate_pool_size = 1024,
+        .prune_to = 60,
+        .use_search_history = VecSimOption_ENABLE,
+    };
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     // Try to remove from an empty index - should fail because label doesn't exist.
-//     VecSimIndex_DeleteVector(index, 0);
+    // Try to remove from an empty index - should fail because label doesn't exist.
+    VecSimIndex_DeleteVector(index, 0);
 
-//     // Add one vector.
-//     GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.7);
+    // Add one vector.
+    this->GenerateAndAddVector(index, dim, 1, 1.7);
 
-//     // Size equals 1.
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    // Size equals 1.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
-//     // Try to remove it.
-//     VecSimIndex_DeleteVector(index, 1);
+    // Try to remove it.
+    VecSimIndex_DeleteVector(index, 1);
 
-//     // Size equals 0.
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Size equals 0.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     // The expected capacity should be 0 for empty index.
-//     ASSERT_EQ(index->indexCapacity(), 0);
+    // The expected capacity should be 0 for empty index.
+    ASSERT_EQ(index->indexCapacity(), 0);
 
-//     // Try to remove it again.
-//     VecSimIndex_DeleteVector(index, 1);
-//     // Nor the size.
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Try to remove it again.
+    VecSimIndex_DeleteVector(index, 1);
+    // Nor the size.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
-// TYPED_TEST(FP16SVSTest, test_delete_vector) {
-//     size_t k = 5;
-//     size_t dim = 2;
-//     size_t block_size = 3;
+TYPED_TEST(FP16SVSTest, test_delete_vector) {
+    size_t k = 5;
+    constexpr size_t dim = 10;
+    size_t block_size = 3;
 
-//     SVSParams params = {
-//         .dim = dim,
-//         .metric = VecSimMetric_L2,
-//         .blockSize = block_size,
-//         /* SVS-Vamana specifics */
-//         .alpha = 1.2,
-//         .graph_max_degree = 64,
-//         .construction_window_size = 20,
-//         .max_candidate_pool_size = 1024,
-//         .prune_to = 60,
-//         .use_search_history = VecSimOption_ENABLE,
-//     };
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_IP,
+        .blockSize = block_size,
+        /* SVS-Vamana specifics */
+        .alpha = 1.2,
+        .graph_max_degree = 64,
+        // .construction_window_size = 20,
+        .max_candidate_pool_size = 1024,
+        .prune_to = 60,
+        .use_search_history = VecSimOption_ENABLE,
+    };
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     ASSERT_INDEX(index);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-//     // Delete from empty index
-//     ASSERT_EQ(VecSimIndex_DeleteVector(index, 111), 0);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Delete from empty index
+    ASSERT_EQ(VecSimIndex_DeleteVector(index, 111), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     size_t n = 6;
-//     for (size_t i = 0; i < n; i++) {
-//         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    size_t n = 6;
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-//     // Here the shift should happen.
-//     VecSimIndex_DeleteVector(index, 1);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
+    float16 query[dim];
+    this->GenerateVector(query, dim, 0.0);
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        if (index == 0) {
+            ASSERT_EQ(id, index);
+        } else {
+            ASSERT_EQ(id, index + 1);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res);
 
-//     TEST_DATA_T query[] = {0.0, 0.0};
-//     auto verify_res = [&](size_t id, double score, size_t index) {
-//         if (index == 0) {
-//             ASSERT_EQ(id, index);
-//         } else {
-//             ASSERT_EQ(id, index + 1);
-//         }
-//     };
-//     runTopKSearchTest(index, query, k, verify_res);
-//     VecSimIndex_Free(index);
-// }
+    // Here the shift should happen.
+    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
+
+    // float16 query[dim];
+    // this->GenerateVector(query, dim, 0.0);
+    // auto verify_res = [&](size_t id, double score, size_t index) {
+    //     if (index == 0) {
+    //         ASSERT_EQ(id, index);
+    //     } else {
+    //         ASSERT_EQ(id, index + 1);
+    //     }
+    // };
+    // runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
 
 // TYPED_TEST(FP16SVSTest, sanity_reinsert_1280) {
 //     size_t n = 5;

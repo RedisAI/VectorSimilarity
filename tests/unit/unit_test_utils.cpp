@@ -80,7 +80,7 @@ void validateTopKSearchTest(VecSimIndex *index, VecSimQueryReply *res, size_t k,
     } else {
         ASSERT_EQ(VecSimQueryReply_Len(res), expected_num_res);
     }
-    ASSERT_TRUE(allUniqueResults(res));
+    ASSERT_TRUE(allUniqueResults(res)) << *res;
     VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryReply_IteratorHasNext(iterator)) {
