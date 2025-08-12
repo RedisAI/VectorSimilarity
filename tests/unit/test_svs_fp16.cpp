@@ -1745,13 +1745,13 @@ TYPED_TEST(FP16SVSTest, quant_modes) {
 
     const size_t dim = 4;
     const size_t n = 100;
-    const size_t k = 10;
+    const size_t k = 11;
 
     for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
                             VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
                             VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
 
-        // SCOPED_TRACE("quant_bits = " + std::string(VecSim_toStri));
+        SCOPED_TRACE("quant_bits = " + std::string(VecSimQuantBits_ToString(quant_bits)));
         SVSParams params = {
             .dim = dim,
             .metric = VecSimMetric_L2,
@@ -1800,8 +1800,9 @@ TYPED_TEST(FP16SVSTest, quant_modes) {
         float16 query[dim];
         this->GenerateVector(query, dim, 50);
         auto verify_res = [&](size_t id, double score, size_t idx) {
-            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
-            EXPECT_EQ(id, (idx + 45));
+            EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score)
+                << "idx: " << idx << " id: " << id;
+            EXPECT_EQ(id, (idx + 45)) << "idx: " << idx << " id: " << id << " score: " << score;
         };
         runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
@@ -1844,9 +1845,7 @@ TYPED_TEST(FP16SVSTest, test_override_all) {
 
     float16 query[dim];
     this->GenerateVector(query, dim, 50);
-    auto verify_res = [&](size_t id, double score, size_t index) {
-        EXPECT_EQ(id, (index + 45));
-    };
+    auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     // Add up to new_n vectors.
