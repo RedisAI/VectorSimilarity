@@ -182,14 +182,14 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
 void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params) {
     ASSERT_EQ(info.constructionWindowSize,
               svs_details::getOrDefault(params.construction_window_size,
-                                        SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE));
+                                        SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE));
     ASSERT_EQ(info.graphMaxDegree, svs_details::getOrDefault(params.graph_max_degree,
                                                              SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE));
     ASSERT_EQ(
         info.maxCandidatePoolSize,
         svs_details::getOrDefault(params.max_candidate_pool_size, info.constructionWindowSize * 3));
     ASSERT_EQ(info.pruneTo, svs_details::getOrDefault(params.prune_to, info.graphMaxDegree - 4));
-    ASSERT_EQ(info.quantBits, svs_details::getOrDefault(params.quantBits, VecSimSvsQuant_NONE));
+    ASSERT_EQ(info.quantBits, get<0>(svs_details::isSVSQuantBitsSupported(params.quantBits)));
     ASSERT_EQ(info.searchWindowSize,
               svs_details::getOrDefault(params.search_window_size,
                                         SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE));
