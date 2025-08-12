@@ -20,6 +20,18 @@
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
+// Map index types to their expected number of debug iterator fields
+namespace DebugInfoIteratorFieldCount {
+constexpr size_t FLAT = 10;
+constexpr size_t HNSW = 17;
+constexpr size_t SVS = 23;
+constexpr size_t TIERED_HNSW = 15;
+constexpr size_t TIERED_SVS = 17;
+} // namespace DebugInfoIteratorFieldCount
+
+static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
+                                             VecSimDebugInfoIterator *infoIter);
+
 VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
                                               QUERY_TYPE_RANGE};
 
@@ -260,7 +272,7 @@ template void runRangeTieredIndexSearchTest<true, float, float>(
     VecSimQueryParams *);
 
 void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
-    ASSERT_EQ(10, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(DebugInfoIteratorFieldCount::FLAT, VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -314,7 +326,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
 }
 
 void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
-    ASSERT_EQ(17, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(DebugInfoIteratorFieldCount::HNSW, VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -362,7 +374,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             // EF runtime.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.hnswInfo.efRuntime);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::EPSILON_STRING)) {
             // Epsilon.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_FLOAT64);
             ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.hnswInfo.epsilon);
@@ -386,7 +398,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             // Block size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.blockSize);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::HNSW_NUM_MARKED_DELETED)) {
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::NUM_MARKED_DELETED)) {
             // Number of marked deleted.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue,
@@ -397,10 +409,20 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
     }
 }
 
-void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info,
-                                          VecSimIndexDebugInfo frontendIndexInfo,
-                                          VecSimIndexDebugInfo backendIndexInfo,
-                                          VecSimDebugInfoIterator *infoIterator) {
+void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
+                                      VecSimIndexDebugInfo frontendIndexInfo,
+                                      VecSimIndexDebugInfo backendIndexInfo,
+                                      VecSimDebugInfoIterator *infoIterator) {
+    VecSimAlgo backendAlgo = backendIndexInfo.commonInfo.basicInfo.algo;
+    if (backendAlgo == VecSimAlgo_HNSWLIB) {
+        ASSERT_EQ(DebugInfoIteratorFieldCount::TIERED_HNSW,
+                  VecSimDebugInfoIterator_NumberOfFields(infoIterator));
+    } else if (backendAlgo == VecSimAlgo_SVS) {
+        ASSERT_EQ(DebugInfoIteratorFieldCount::TIERED_SVS,
+                  VecSimDebugInfoIterator_NumberOfFields(infoIterator));
+    } else {
+        FAIL() << "Unsupported backend algorithm";
+    }
     while (infoIterator->hasNext()) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIterator);
 
@@ -449,31 +471,68 @@ void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info,
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
         } else if (!strcmp(infoField->fieldName,
                            VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_INT64);
+            ASSERT_EQ(infoField->fieldValue.integerValue, info.tieredInfo.backgroundIndexing);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
             compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-            compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
+            chooseCompareIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
+            // HNSW specific fields
         } else if (!strcmp(infoField->fieldName,
                            VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING)) {
+            ASSERT_EQ(backendAlgo, VecSimAlgo_HNSWLIB);
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(
                 infoField->fieldValue.uintegerValue,
                 info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold);
+            // SVS specific fields
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING)) {
+            ASSERT_EQ(backendAlgo, VecSimAlgo_SVS);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(
+                infoField->fieldValue.uintegerValue,
+                info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING)) {
+            ASSERT_EQ(backendAlgo, VecSimAlgo_SVS);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(
+                infoField->fieldValue.uintegerValue,
+                info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING)) {
+            ASSERT_EQ(backendAlgo, VecSimAlgo_SVS);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue,
+                      info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime);
         } else {
             FAIL();
         }
     }
 }
 
+static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
+                                             VecSimDebugInfoIterator *infoIter) {
+    switch (info.commonInfo.basicInfo.algo) {
+    case VecSimAlgo_HNSWLIB:
+        compareHNSWIndexInfoToIterator(info, infoIter);
+        break;
+    case VecSimAlgo_SVS:
+        compareSVSIndexInfoToIterator(info, infoIter);
+        break;
+    default:
+        FAIL();
+    }
+}
+
 void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
-    ASSERT_EQ(10, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(DebugInfoIteratorFieldCount::SVS, VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -520,6 +579,62 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // Block size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.blockSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_QUANT_BITS_STRING)) {
+            // SVS quantization bits.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimQuantBits_ToString(info.svsInfo.quantBits));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_ALPHA_STRING)) {
+            // SVS alpha parameter.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_FLOAT64);
+            ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.svsInfo.alpha);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SVS_GRAPH_MAX_DEGREE_STRING)) {
+            // SVS graph max degree.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.graphMaxDegree);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_CONSTRUCTION_WS_STRING)) {
+            // SVS construction window size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.constructionWindowSize);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SVS_MAX_CANDIDATE_POOL_SIZE_STRING)) {
+            // SVS max candidate pool size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.maxCandidatePoolSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_PRUNE_TO_STRING)) {
+            // SVS prune to parameter.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.pruneTo);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING)) {
+            // SVS use search history.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.useSearchHistory);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_NUM_THREADS_STRING)) {
+            // SVS number of threads.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.numThreads);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::NUM_MARKED_DELETED)) {
+            // SVS number of marked deleted nodes.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.numberOfMarkedDeletedNodes);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_SEARCH_WS_STRING)) {
+            // SVS search window size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.searchWindowSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_SEARCH_BC_STRING)) {
+            // SVS search buffer capacity.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.searchBufferCapacity);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SVS_LEANVEC_DIM_STRING)) {
+            // SVS leanvec dimension.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.leanvecDim);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::EPSILON_STRING)) {
+            // SVS epsilon parameter.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_FLOAT64);
+            ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.svsInfo.epsilon);
         } else {
             FAIL();
         }
