@@ -84,10 +84,10 @@ protected:
         params.quantBits = params.quantBits == VecSimSvsQuant_NONE ? index_type_t::get_quant_bits()
                                                                    : params.quantBits;
         params.type = index_type_t::get_index_type();
-        // params.multi = false;
+        params.multi = params.multi == 0 ? false : params.multi;
     }
 
-    VecSimIndex *CreateNewIndex(SVSParams &params) {
+    virtual VecSimIndex *CreateNewIndex(SVSParams &params) {
         VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
         SetTypeParams(params);
         VecSimParams index_params = CreateParams(params);
@@ -174,7 +174,7 @@ TYPED_TEST(FP16SVSTest, svs_vector_add_test) {
                 ->getStoredVectorDataByLabel(label);
         const char *data_ptr = vector_data.at(0).data();
         for (size_t i = 0; i < dim; i++) {
-            ASSERT_EQ(vecsim_types::FP16_to_FP32(((float16 *)(vector_data[0].data()))[i]),
+            ASSERT_EQ(vecsim_types::FP16_to_FP32(((float16 *)data_ptr)[i]),
                       initial_value + step * float(i));
         }
     }
@@ -1632,7 +1632,7 @@ TYPED_TEST(FP16SVSTest, rangeQuery) {
     this->GenerateVector(max_vec, dim, pivot_value + radius);
     double max_dist = FP16_L2Sqr(pivot_vec, max_vec, dim);
 
-    // Add more vectors far from the pivot vector
+    // Add more vectors far from the pivot vector, under the same labels
     for (size_t i = n_close; i < n; i++) {
         float random_number = dis(gen);
         this->GenerateAndAddVector(index, dim, i, 5.0 + random_number);
@@ -1649,19 +1649,19 @@ TYPED_TEST(FP16SVSTest, rangeQuery) {
     runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_score, expected_num_results,
                       BY_SCORE);
 
-    // // Rerun with a given query params.
-    // SVSRuntimeParams svsRuntimeParams = {.epsilon = 1.0};
-    // auto query_params = CreateQueryParams(svsRuntimeParams);
-    // query_params.batchSize = 100;
-    // runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE,
-    //                   &query_params);
+    // Rerun with a given query params.
+    SVSRuntimeParams svsRuntimeParams = {.epsilon = 100.0};
+    auto query_params = CreateQueryParams(svsRuntimeParams);
+    query_params.batchSize = 100;
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_score, expected_num_results,
+                      BY_SCORE, &query_params);
 
-    // // Get results by id.
-    // auto verify_res_by_id = [&](size_t id, double score, size_t index) {
-    //     ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
-    //     ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
-    // };
-    // runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
+    // Get results by id.
+    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, index);
+        ASSERT_LE(score, max_dist);
+    };
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_id, expected_num_results);
 
     VecSimIndex_Free(index);
 }
@@ -1958,6 +1958,474 @@ TYPED_TEST(FP16SVSTest, scalar_quantization_query) {
         VecSimIndex_Free(index_sq);
         VecSimIndex_Free(index_fp);
     }
+}
+
+/**
+ * * * * * * * * * * * * * * * * * *
+ *     Multi Vector index Tests    *
+ * * * * * * * * * * * * * * * * * *
+ */
+
+template <typename index_type_t>
+class FP16SVSMultiTest : public FP16SVSTest<index_type_t> {
+public:
+    VecSimIndex *CreateNewIndex(SVSParams &params) override {
+        VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+        params.multi = true;
+        this->SetTypeParams(params);
+        VecSimParams index_params = CreateParams(params);
+        return VecSimIndex_New(&index_params);
+    }
+};
+
+TYPED_TEST_SUITE(FP16SVSMultiTest, SVSDataTypeSet);
+
+TYPED_TEST(FP16SVSMultiTest, vector_add_multiple_test) {
+    const size_t dim = 4;
+    float initial_value = 0.5f;
+    float step = 1.0f;
+    const size_t n = 5;
+    constexpr size_t labels_count = 1;
+    const size_t label = 46;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_IP, .multi = true};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    std::vector<float16> v(dim * n);
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateVector(v.data() + i * dim, dim, i * initial_value, step);
+    }
+    std::vector<size_t> ids(n, label);
+
+    // Adding same vector multiple times under the same label
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_EQ(VecSimIndex_AddVector(index, v.data() + i * dim, label), 1);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), labels_count);
+
+    // Deleting the label. All the vectors should be deleted.
+    ASSERT_EQ(VecSimIndex_DeleteVector(index, label), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(index->indexLabelCount(), 0);
+
+    // Adding multiple vectors at once under the same label
+    auto svs_index = this->CastToSVS(index);
+    svs_index->addVectors(v.data(), ids.data(), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), labels_count);
+
+    if (!(TypeParam::get_quant_bits() == VecSimSvsQuant_8 ||
+          TypeParam::get_quant_bits() == VecSimSvsQuant_8x8_LeanVec)) {
+        // Get vector is only implemented for non-compressed indices.
+        auto vectors_data =
+            (dynamic_cast<VecSimIndexAbstract<svs_details::vecsim_dt<svs::Float16>, float> *>(
+                 index))
+                ->getStoredVectorDataByLabel(label);
+        for (size_t i = 0; i < n; i++) {
+            const char *data_ptr = vectors_data.at(i).data();
+            for (size_t j = 0; j < dim; j++) {
+                ASSERT_EQ(vecsim_types::FP16_to_FP32(((float16 *)data_ptr)[j]),
+                          i * initial_value + step * float(j));
+            }
+        }
+    }
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, vector_search_test) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t n_labels = 100;
+    size_t k = 11;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i % n_labels, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    TEST_DATA_T query[dim];
+    this->GenerateVector(query, dim, 50);
+
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2)
+            << "index: " << index << " id: " << id << " score: " << score;
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)))
+            << "index: " << index << " id: " << id << " score: " << score;
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, search_more_than_there_is) {
+    const size_t dim = 4;
+    const size_t n = 5;
+    const size_t perLabel = 3;
+    const size_t n_labels = ceil((float)n / perLabel);
+    const size_t k = 3;
+    // This test add 5 vectors under 2 labels, and then query for 3 results.
+    // We want to make sure we get only 2 results back (because the results should have unique
+    // labels), although the index contains 5 vectors.
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    std::vector<std::array<float16, dim>> v(n);
+    std::vector<size_t> ids(n);
+
+    for (size_t i = 0; i < n; i++) {
+        ids[i] = i / perLabel;
+        this->GenerateVector(v[i].data(), dim, i);
+    }
+
+    svs_index->addVectors(v.data(), ids.data(), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    float16 query[dim];
+    this->GenerateVector(query, dim, 0);
+
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n_labels);
+    auto it = VecSimQueryReply_GetIterator(res);
+    for (size_t i = 0; i < n_labels; i++) {
+        auto el = VecSimQueryReply_IteratorNext(it);
+        // SVS Scalar quantization is not enough precise
+        if (!this->isFallbackToSQ()) {
+            ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
+        }
+        labelType element_label = VecSimQueryResult_GetId(el);
+        ASSERT_EQ(element_label, i);
+    }
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, find_better_score) {
+    const size_t n = 100;
+    const size_t k = 10;
+    const size_t n_labels = 10;
+    const size_t dim = 4;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
+    // value.
+    std::vector<size_t> ids(n);
+    std::vector<std::array<float16, dim>> v(n);
+    std::map<size_t, double> scores;
+    for (size_t i = 0; i < n; i++) {
+        // For example, with n_labels == 10 and n == 100,
+        // label 0 will get vector elements 18 -> 9 (aka (9 -> 0) + 9),
+        // label 1 will get vector elements 17 -> 8 (aka (9 -> 0) + 8),
+        // label 2 will get vector elements 16 -> 7 (aka (9 -> 0) + 7),
+        // . . . . .
+        // label 9 will get vector elements 9 -> 0 (aka (9 -> 0) + 0),
+        // and so on, so each label has some common vectors with all the previous labels.
+        size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
+        ids[i] = i / n_labels;
+        this->GenerateVector(v[i].data(), dim, el);
+        // This should be the best score for each label.
+        if (i % n_labels == n_labels - 1) {
+            // `el * el * dim` is the L2-squared value with the 0 vector.
+            scores.emplace(i / n_labels, el * el * dim);
+        }
+    }
+    svs_index->addVectors(v.data(), ids.data(), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, k - index - 1);
+        // SVS scalar quantization is not enough precise
+        if (!this->isFallbackToSQ()) {
+            ASSERT_FLOAT_EQ(score, scores[id]);
+        }
+    };
+
+    float16 query[dim];
+    this->GenerateVector(query, dim, 0.0);
+    runTopKSearchTest(index, query, k, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, find_better_score_after_pop) {
+    const size_t n = 12;
+    const size_t n_labels = 3;
+    const size_t dim = 4;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    // Building the index. Each is better than the previous one.
+    std::vector<size_t> ids(n);
+    std::vector<std::array<float16, dim>> v(n);
+    for (size_t i = 0; i < n; i++) {
+        size_t el = n - i;
+        ids[i] = i % n_labels;
+        this->GenerateVector(v[i].data(), dim, el);
+    }
+    svs_index->addVectors(v.data(), ids.data(), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    float16 query[dim];
+    this->GenerateVector(query, dim, 0);
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, n_labels - index - 1);
+    };
+
+    runTopKSearchTest(index, query, n_labels, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, reindexing_same_vector_different_id) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    size_t n = 100;
+    size_t k = 10;
+    constexpr size_t dim = 4;
+    size_t perLabel = 3;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        // i / 10 is in integer (take the "floor" value)
+        this->GenerateAndAddVector(index, dim, i, i / 10);
+    }
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            this->GenerateAndAddVector(index, dim, i, float(i / 10) + n);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
+
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    float16 query[dim];
+    this->GenerateVector(query, dim, 4.9, 0.05);
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Reinsert the same vectors under different ids than before.
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i + 10, i / 10);
+    }
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            this->GenerateAndAddVector(index, dim, i + 10, float(i / 10) + n);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
+
+    // Run the same query again.
+    auto verify_res_different_id = [&](int id, double score, size_t index) {
+        ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res_different_id);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, test_svs_info) {
+    size_t d = 128;
+    // Build with default args
+    SVSParams params = {.dim = d, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_SVS);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, test_basic_svs_info_iterator) {
+    size_t n = 100;
+    size_t d = 128;
+    VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
+
+    for (size_t i = 0; i < 3; i++) {
+        SCOPED_TRACE("Testing metric: " + std::string(VecSimMetric_ToString(metrics[i])));
+
+        // Build with default args.
+        SVSParams params = {.dim = d, .metric = metrics[i]};
+        VecSimIndex *index = this->CreateNewIndex(params);
+
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+        VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
+        compareSVSIndexInfoToIterator(info, infoIter);
+        VecSimDebugInfoIterator_Free(infoIter);
+        VecSimIndex_Free(index);
+    }
+}
+
+TYPED_TEST(FP16SVSMultiTest, rangeQuery) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    size_t n_labels = 100;
+    size_t n_close = 20;
+    size_t per_label = 5;
+    size_t dim = 4;
+
+    size_t n = n_labels * per_label;
+
+    SVSParams params{.dim = dim, .metric = VecSimMetric_L2, .blockSize = n / 2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    float pivot_value = 1.0f;
+    float16 pivot_vec[dim];
+    this->GenerateVector(pivot_vec, dim, pivot_value);
+
+    float radius = 1.5f;
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<> dis(pivot_value - radius, pivot_value + radius);
+
+    for (size_t i = 0; i < n_close; i++) {
+        // First vector of each label among n_close labels is close to the pivot vector.
+        float random_number = dis(gen);
+        this->GenerateAndAddVector(index, dim, i, random_number);
+    }
+
+    float16 max_vec[dim];
+    this->GenerateVector(max_vec, dim, pivot_value + radius);
+    double max_dist = FP16_L2Sqr(pivot_vec, max_vec, dim);
+
+    for (size_t i = 0; i < n_labels; i++) {
+        size_t max_vec_for_label = per_label;
+        if (i < n_close) {
+            max_vec_for_label -= 1;
+        }
+        // Add more vectors, some under the same labels, worse than the previous vector (for the
+        // given query)
+        for (size_t j = 0; j < max_vec_for_label; j++) {
+            float random_number = dis(gen);
+            this->GenerateAndAddVector(index, dim, i, 5.0 + random_number);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    auto verify_res_by_score = [&](size_t id, double score, size_t index) {
+        ASSERT_LE(id, n_close - 1) << "score: " << score;
+        ASSERT_LE(score, max_dist);
+    };
+    uint expected_num_results = n_close;
+
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_score, expected_num_results,
+                      BY_SCORE);
+
+    // Rerun with a given query params.
+    SVSRuntimeParams svsRuntimeParams = {.epsilon = 100.0};
+    auto query_params = CreateQueryParams(svsRuntimeParams);
+    query_params.batchSize = 100;
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_score, expected_num_results,
+                      BY_SCORE, &query_params);
+
+    // Get results by id.
+    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, index);
+        ASSERT_LE(score, max_dist);
+    };
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_id, expected_num_results);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(FP16SVSMultiTest, svs_batch_iterator_basic) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    size_t dim = 4;
+    size_t n_labels = 1000;
+    size_t perLabel = 5;
+
+    size_t n = n_labels * perLabel;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    // For every i, add the vector (i,i,i,i) under the label i.
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i / perLabel, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+    float16 query[dim];
+    this->GenerateVector(query, dim, n);
+
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    size_t iteration_num = 0;
+
+    // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
+    // in every iteration. The results order should be sorted by their score (distance from the
+    // query vector), which means sorted from the largest id to the lowest.
+    size_t n_res = 5;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::vector<size_t> expected_ids(n_res);
+        for (size_t i = 0; i < n_res; i++) {
+            expected_ids[i] = (n_labels - iteration_num * n_res - i - 1);
+        }
+        auto verify_res = [&](size_t id, double score, size_t index) {
+            ASSERT_EQ(expected_ids[index], id);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, n_labels / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+
+    VecSimIndex_Free(index);
 }
 
 #else // HAVE_SVS
