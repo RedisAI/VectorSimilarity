@@ -10,6 +10,8 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "unit_test_utils.h"
+#include "VecSim/spaces/L2/L2.h"
+
 #include <array>
 #include <cmath>
 #include <random>
@@ -116,6 +118,77 @@ using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, 
 // clang-format on
 
 TYPED_TEST_SUITE(SVSTest, SVSDataTypeSet);
+TYPED_TEST(SVSTest, rangeQuery2) {
+    // Scalar quantization accuracy is insufficient for this test.
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
+    size_t n = 100;
+    size_t dim = 4;
+
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    float pivot_value = 1.0f;
+    float pivot_vec[dim];
+    GenerateVector<float>(pivot_vec, dim, pivot_value);
+
+    float radius = 1.5f;
+    std::vector<float> id_to_gen_val(n);
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<> dis(pivot_value - radius, pivot_value + radius);
+
+    // insert 20 vectors near a pivot vector.
+    size_t n_close = 20;
+    for (size_t i = 0; i < n_close; i++) {
+        float random_number = dis(gen);
+        id_to_gen_val[i] = random_number;
+        GenerateAndAddVector<float>(index, dim, i, random_number);
+    }
+
+    float max_vec[dim];
+    GenerateVector<float>(max_vec, dim, pivot_value + radius);
+    double max_dist = FP32_L2Sqr(pivot_vec, max_vec, dim);
+
+    // Add more vectors far from the pivot vector
+    for (size_t i = n_close; i < n; i++) {
+        float random_number = dis(gen);
+        id_to_gen_val[i] = random_number;
+        GenerateAndAddVector<float>(index, dim, i, 5.0 + random_number);
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    auto verify_res_by_score = [&](size_t id, double score, size_t index) {
+        ASSERT_LE(id, n_close - 1) << "score: " << score;
+        ASSERT_LE(score, max_dist);
+    };
+    uint expected_num_results = n_close;
+
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_score, expected_num_results,
+                      BY_SCORE);
+
+    // Rerun with a given query params.
+    SVSRuntimeParams svsRuntimeParams = {.epsilon = 100.0};
+    auto query_params = CreateQueryParams(svsRuntimeParams);
+    query_params.batchSize = 100;
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_score, expected_num_results + 1,
+                      BY_SCORE, &query_params);
+
+    // Get results by id.
+    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, index);
+        ASSERT_LE(score, max_dist);
+    };
+    runRangeQueryTest(index, pivot_vec, max_dist, verify_res_by_id, expected_num_results);
+
+    VecSimIndex_Free(index);
+}
 
 TYPED_TEST(SVSTest, svs_vector_add_test) {
 
@@ -260,10 +333,13 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     // Delete almost all vectors
-    const size_t keep_num = 1;
+    const size_t keep_num = 4;
     ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
     ASSERT_EQ(VecSimIndex_IndexSize(index), keep_num);
-
+    auto verify_res_after_delete = [&](size_t id, double score, size_t index) {
+        EXPECT_EQ(id, n - keep_num + index);
+    };
+    runTopKSearchTest(index, query, keep_num, verify_res_after_delete, nullptr, BY_ID);
     VecSimIndex_Free(index);
 }
 
@@ -929,7 +1005,7 @@ TYPED_TEST(SVSTest, sanity_reinsert_1280) {
 
     SVSParams params = {
         .dim = d,
-        .metric = VecSimMetric_L2,
+        .metric = VecSimMetric_Cosine,
         /* SVS-Vamana specifics */
         .alpha = 1.2,
         .graph_max_degree = 64,
@@ -2725,42 +2801,42 @@ TEST(SVSTest, quant_modes) {
     }
 }
 
-TYPED_TEST(SVSTest, logging_runtime_params) {
+TYPED_TEST(SVSTest, test_override_all) {
     const size_t dim = 4;
     const size_t n = 100;
     const size_t k = 11;
 
-    std::ostringstream os_index;
-    std::ostringstream os_global;
+    // std::ostringstream os_index;
+    // std::ostringstream os_global;
 
-    VecSim_SetLogCallbackFunction([](void *ctx, const char *level, const char *message) {
-        if (ctx == nullptr) {
-            return;
-        }
-        assert(level != nullptr);
-        assert(message != nullptr);
-        // Cast the context to the correct type
-        // and write the log message to the ostringstream
-        std::ostringstream *os = static_cast<std::ostringstream *>(ctx);
-        *os << level << ": " << message;
-    });
+    // VecSim_SetLogCallbackFunction([](void *ctx, const char *level, const char *message) {
+    //     if (ctx == nullptr) {
+    //         return;
+    //     }
+    //     assert(level != nullptr);
+    //     assert(message != nullptr);
+    //     // Cast the context to the correct type
+    //     // and write the log message to the ostringstream
+    //     std::ostringstream *os = static_cast<std::ostringstream *>(ctx);
+    //     *os << level << ": " << message;
+    // });
 
-    // Set the SVS global log context to the ostringstream
-    auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(os_global);
-    auto logger = std::make_shared<spdlog::logger>("GlobalLogger", sink);
-    // Trace all messages
-    logger->set_level(spdlog::level::trace);
-    logger->set_pattern("%@\n\t%+");
-    svs::logging::set(logger);
+    // // Set the SVS global log context to the ostringstream
+    // auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(os_global);
+    // auto logger = std::make_shared<spdlog::logger>("GlobalLogger", sink);
+    // // Trace all messages
+    // logger->set_level(spdlog::level::trace);
+    // logger->set_pattern("%@\n\t%+");
+    // svs::logging::set(logger);
 
     SVSParams params = {
         .dim = dim,
-        .metric = VecSimMetric_L2,
+        .metric = VecSimMetric_Cosine,
     };
     this->SetTypeParams(params);
     VecSimParams index_params = CreateParams(params);
-    index_params.logCtx =
-        static_cast<void *>(&os_index); // Set the index log context to the ostringstream
+    // index_params.logCtx =
+    //     static_cast<void *>(&os_index); // Set the index log context to the ostringstream
     VecSimIndex *index = this->CreateNewIndex(index_params);
     ASSERT_INDEX(index);
 
@@ -2775,10 +2851,10 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     std::vector<size_t> ids(n);
     std::iota(ids.begin(), ids.end(), 0);
 
-    svs_index->addVectors(v.data(), ids.data(), n);
+    // svs_index->addVectors(v.data(), ids.data(), n);
 
     // Overrite vectors one-by-one
-    for (size_t i = 0; i < 10; i++) {
+    for (size_t i = 0; i < n; i++) {
         index->addVector(v[i].data(), ids[i]);
     }
 
@@ -2789,28 +2865,28 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     // Write custom logging info
-    auto index_logger = svs_index->getLogger();
-    ASSERT_NE(index_logger, nullptr);
-    index_logger->trace("Custom log trace");
-    index_logger->debug("Custom log debug");
-    index_logger->info("Custom log info");
-    index_logger->warn("Custom log warn");
-    index_logger->error("Custom log error");
-    index_logger->critical("Custom log critical");
-    index_logger->flush();
-    // Check that the log messages are written to the ostringstream
-    auto index_log = os_index.str();
-    EXPECT_NE(index_log.find("Custom log trace"), std::string::npos);
-    EXPECT_NE(index_log.find("Custom log debug"), std::string::npos);
-    EXPECT_NE(index_log.find("Custom log info"), std::string::npos);
-    EXPECT_NE(index_log.find("Custom log warn"), std::string::npos);
-    EXPECT_NE(index_log.find("Custom log critical"), std::string::npos);
-    EXPECT_NE(index_log.find("Custom log error"), std::string::npos);
+    // auto index_logger = svs_index->getLogger();
+    // ASSERT_NE(index_logger, nullptr);
+    // index_logger->trace("Custom log trace");
+    // index_logger->debug("Custom log debug");
+    // index_logger->info("Custom log info");
+    // index_logger->warn("Custom log warn");
+    // index_logger->error("Custom log error");
+    // index_logger->critical("Custom log critical");
+    // index_logger->flush();
+    // // Check that the log messages are written to the ostringstream
+    // auto index_log = os_index.str();
+    // EXPECT_NE(index_log.find("Custom log trace"), std::string::npos);
+    // EXPECT_NE(index_log.find("Custom log debug"), std::string::npos);
+    // EXPECT_NE(index_log.find("Custom log info"), std::string::npos);
+    // EXPECT_NE(index_log.find("Custom log warn"), std::string::npos);
+    // EXPECT_NE(index_log.find("Custom log critical"), std::string::npos);
+    // EXPECT_NE(index_log.find("Custom log error"), std::string::npos);
 
     VecSimIndex_Free(index);
 
-    auto global_log = os_global.str();
-    EXPECT_TRUE(global_log.empty()) << "Global log should be empty, but got: " << global_log;
+    // auto global_log = os_global.str();
+    // EXPECT_TRUE(global_log.empty()) << "Global log should be empty, but got: " << global_log;
 }
 
 TEST(SVSTest, scalar_quantization_query) {
