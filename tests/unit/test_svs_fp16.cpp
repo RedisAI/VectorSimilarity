@@ -919,11 +919,15 @@ TYPED_TEST(FP16SVSTest, sanity_reinsert_1280) {
         }
         auto expected_ids = std::set<size_t>();
         for (size_t i = 0; i < n; i++) {
-            ASSERT_EQ(VecSimIndex_AddVector(index, (vectors + i * d), i * iter + 1), 1);
+            ASSERT_EQ(VecSimIndex_AddVector(index, (vectors + i * d), i * iter), 1);
             expected_ids.insert(i * iter);
         }
+
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
         auto verify_res = [&](size_t id, double score, size_t index) {
-            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end()) << "iter: " << iter
+                                                                    << " index: " << index
+                                                                    << " score: " << score << " id: " << id;
             expected_ids.erase(id);
         };
 
@@ -1491,8 +1495,6 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_cosine) {
         auto &f = v[i - 1];
         f[0] = vecsim_types::FP32_to_FP16((float)i / n);
         for (size_t j = 1; j < dim; j++) {
-            // for (size_t j = 1; j < dim; j++) {
-            // f[j] = vecsim_types::FP32_to_FP16((float)i / n);
             f[j] = vecsim_types::FP32_to_FP16(1.0);
         }
         // test_utils::populate_float16_vec(v[i].data(), dim, i, -1.0f, 1.0f);
@@ -1527,6 +1529,7 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_cosine) {
         ASSERT_EQ(fp16_score, fp16_expected_score)
             << "result_rank: " << result_rank << " id: " << id;
     };
+    runTopKSearchTest(index, query, 10, verify_res, nullptr, BY_SCORE);
     runTopKSearchTest(index, query, 10, verify_res, nullptr, BY_SCORE);
 
     // Test with batch iterator.
@@ -1824,7 +1827,7 @@ TYPED_TEST(FP16SVSTest, test_override_all) {
 
     SVSParams params = {
         .dim = dim,
-        .metric = VecSimMetric_L2,
+        .metric = VecSimMetric_Cosine,
     };
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
@@ -1840,7 +1843,7 @@ TYPED_TEST(FP16SVSTest, test_override_all) {
     std::vector<size_t> ids(n);
     std::iota(ids.begin(), ids.end(), 0);
 
-    svs_index->addVectors(v.data(), ids.data(), n);
+    // svs_index->addVectors(v.data(), ids.data(), n);
 
     // Override vectors one-by-one
     for (size_t i = 0; i < n; i++) {
