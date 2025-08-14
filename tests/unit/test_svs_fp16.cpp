@@ -1489,11 +1489,11 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_cosine) {
     std::vector<std::array<float16, dim>> v(n);
     for (size_t i = 1; i <= n; i++) {
         auto &f = v[i - 1];
-        // f[0] = vecsim_types::FP32_to_FP16((float)i / n);
-        for (size_t j = 0; j < dim; j++) {
+        f[0] = vecsim_types::FP32_to_FP16((float)i / n);
+        for (size_t j = 1; j < dim; j++) {
             // for (size_t j = 1; j < dim; j++) {
-            f[j] = vecsim_types::FP32_to_FP16((float)i / n);
-            // f[j] = vecsim_types::FP32_to_FP16(1.0);
+            // f[j] = vecsim_types::FP32_to_FP16((float)i / n);
+            f[j] = vecsim_types::FP32_to_FP16(1.0);
         }
         // test_utils::populate_float16_vec(v[i].data(), dim, i, -1.0f, 1.0f);
     }
@@ -1507,7 +1507,7 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_cosine) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     // float16 query[dim];
     // this->GenerateVector(query, dim, 0.1);
-    auto *query = v[0].data();
+    auto *query = v[n - 1].data();
 
     // topK search will normalize the query so we keep the original data to
     // avoid normalizing twice.
@@ -1520,14 +1520,14 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_cosine) {
         // Verify that abs difference between the actual and expected score is at most 1/10^5.
         float16 fp16_score = vecsim_types::FP32_to_FP16(score);
         float16 fp16_expected_score = vecsim_types::FP32_to_FP16(expected_score);
-        ASSERT_EQ(id, (result_rank + 1))
+        ASSERT_EQ(id, (n - result_rank))
             << "result_rank: " << result_rank << " id: " << id << " score: " << score
             << " expected_score: " << expected_score << " fp16_score: " << fp16_score
             << " fp16_expected_score: " << fp16_expected_score;
         ASSERT_EQ(fp16_score, fp16_expected_score)
             << "result_rank: " << result_rank << " id: " << id;
     };
-    runTopKSearchTest(index, query, 10, verify_res);
+    runTopKSearchTest(index, query, 10, verify_res, nullptr, BY_SCORE);
 
     // Test with batch iterator.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
