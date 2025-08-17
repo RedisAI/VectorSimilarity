@@ -404,6 +404,11 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.management_layer_memory}}});
 
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
+        .fieldType = INFOFIELD_INT64,
+        .fieldValue = {FieldValue{.integerValue = info.tieredInfo.backgroundIndexing}}});
+
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING,
                          .fieldType = INFOFIELD_UINT64,

@@ -29,6 +29,11 @@ public:
     using dist_t = typename index_type_t::dist_t;
 
 protected:
+    VecSimWriteMode original_mode;
+    void SetUp() { original_mode = VecSimIndexInterface::asyncWriteMode; }
+
+    void TearDown() { VecSimIndexInterface::asyncWriteMode = original_mode; }
+
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
         return tiered_index->getHNSWIndex();
