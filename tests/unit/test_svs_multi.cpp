@@ -495,7 +495,7 @@ TYPED_TEST(SVSMultiTest, test_basic_svs_info_iterator) {
 
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
         VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
-        compareFlatIndexInfoToIterator(info, infoIter);
+        compareSVSIndexInfoToIterator(info, infoIter);
         VecSimDebugInfoIterator_Free(infoIter);
         VecSimIndex_Free(index);
     }
@@ -513,7 +513,7 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     VecSimDebugInfoIterator *infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(DEFAULT_BLOCK_SIZE, info.commonInfo.basicInfo.blockSize);
     ASSERT_EQ(0, info.commonInfo.indexSize);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     // Add vectors.
@@ -529,7 +529,7 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(4, info.commonInfo.indexSize);
     ASSERT_EQ(2, info.commonInfo.indexLabelCount);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     // Delete vectors.
@@ -538,7 +538,7 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(2, info.commonInfo.indexSize);
     ASSERT_EQ(1, info.commonInfo.indexLabelCount);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     // Perform (or simulate) Search in all modes.
@@ -548,7 +548,7 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     info = VecSimIndex_DebugInfo(index);
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
@@ -556,14 +556,14 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     info = VecSimIndex_DebugInfo(index);
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_DebugInfo(index);
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     // Simulate the case where another call to the heuristics is done after realizing that
@@ -572,7 +572,7 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     info = VecSimIndex_DebugInfo(index);
     infoIter = VecSimIndex_DebugInfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
-    compareFlatIndexInfoToIterator(info, infoIter);
+    compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
 
     VecSimIndex_Free(index);

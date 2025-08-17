@@ -7,8 +7,11 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <tuple>
 
 /**
  * @class SVSMultiThreadJob
@@ -199,17 +202,26 @@ template <typename DataType>
 class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     using Self = TieredSVSIndex<DataType>;
     using Base = VecSimTieredIndex<DataType, float>;
-    using flat_index_t = BruteForceIndex_Single<DataType, float>;
+    using flat_index_t = BruteForceIndex<DataType, float>;
     using backend_index_t = VecSimIndexAbstract<DataType, float>;
     using svs_index_t = SVSIndexBase;
 
-    // Add: true, Delete: false
-    using journal_record = std::pair<labelType, bool>;
+    // swaps_journal is used by updateSVSIndex() to track vectors swap operations that were done in
+    // the Flat index during SVS index updating.
+    // The journal contains tuples of (label, oldId, newId).
+    // oldId is the index of the label in flat index before the swap.
+    // newId is the index of the label in flat index after the swap.
+    // if oldId == newId, it means that the vector was not moved in the Flat index, but was removed
+    // from the end of the Flat index (no id swaps occurred internally).
+    // if label == SKIP_LABEL, it means that the vector was not moved in the Flat index, but
+    // updated in-place (hence was already removed  and no need to remove it again)
+    using swap_record = std::tuple<labelType, idType, idType>;
+    constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
+    std::vector<swap_record> swaps_journal;
+
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
     size_t updateJobWaitTime;
-    std::vector<journal_record> journal;
-    std::shared_mutex journal_mutex;
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
@@ -257,7 +269,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         // because of the approximate nature of the algorithm.
         vecsim_stl::unordered_set<labelType> returned_results_set;
 
-        VecSimQueryReply *compute_current_batch(size_t n_res) {
+        VecSimQueryReply *compute_current_batch(size_t n_res, bool isMultiValue) {
             // Merge results
             // This call will update `svs_res` and `bf_res` to point to the end of the merged
             // results.
@@ -267,16 +279,33 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             auto [from_svs, from_flat] =
                 merge_results<true>(batch_res->results, svs_results, flat_results, n_res);
 
-            // We're on a single-value index, update the set of results returned from the FLAT index
-            // before popping them, to prevent them to be returned from the SVS index in later
-            // batches.
-            for (size_t i = 0; i < from_flat; ++i) {
-                returned_results_set.insert(flat_results[i].id);
+            if (!isMultiValue) {
+                // If we're on a single-value index, update the set of results returned from the
+                // FLAT index before popping them, to prevent them to be returned from the SVS index
+                // in later batches.
+                for (size_t i = 0; i < from_flat; ++i) {
+                    this->returned_results_set.insert(this->flat_results[i].id);
+                }
+            } else {
+                // If we're on a multi-value index, update the set of results returned (from
+                // `batch_res`)
+                for (size_t i = 0; i < batch_res->results.size(); ++i) {
+                    this->returned_results_set.insert(batch_res->results[i].id);
+                }
             }
 
             // Update results
             flat_results.erase(flat_results.begin(), flat_results.begin() + from_flat);
             svs_results.erase(svs_results.begin(), svs_results.begin() + from_svs);
+
+            // clean up the results
+            // On multi-value indexes, one (or both) results lists may contain results that are
+            // already returned form the other list (with a different score). We need to filter them
+            // out.
+            if (isMultiValue) {
+                filter_irrelevant_results(this->flat_results);
+                filter_irrelevant_results(this->svs_results);
+            }
 
             // Return current batch
             return batch_res;
@@ -348,12 +377,13 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override {
             auto svs_code = VecSim_QueryReply_OK;
 
+            const bool isMulti = this->index->backendIndex->isMultiValue();
             if (svs_iterator == nullptr) { // first call
                 // First call to getNextResults. The call to the BF iterator will include
                 // calculating all the distances and access the BF index. We take the lock on this
                 // call.
                 auto cur_flat_results = [this, n_res]() {
-                    std::shared_lock<std::shared_mutex> flat_lock{index->flatIndexGuard};
+                    std::shared_lock flat_lock{index->flatIndexGuard};
                     return flat_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
                 }();
                 // This is also the only time `getNextResults` on the BF iterator can fail.
@@ -371,12 +401,24 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                 VecSimQueryReply_Free(cur_svs_results);
                 handle_svs_depletion();
             } else {
-                if (flat_results.size() < n_res && !flat_iterator->isDepleted()) {
+                while (flat_results.size() < n_res && !flat_iterator->isDepleted()) {
                     auto tail = flat_iterator->getNextResults(n_res - flat_results.size(),
                                                               BY_SCORE_THEN_ID);
                     flat_results.insert(flat_results.end(), tail->results.begin(),
                                         tail->results.end());
                     VecSimQueryReply_Free(tail);
+
+                    if (!isMulti) {
+                        // On single-value indexes, duplicates will never appear in the hnsw results
+                        // before they appear in the flat results (at the same time or later if the
+                        // approximation misses) so we don't need to try and filter the flat results
+                        // (and recheck conditions).
+                        break;
+                    } else {
+                        // On multi-value indexes, the flat results may contain results that are
+                        // already returned from the hnsw index. We need to filter them out.
+                        filter_irrelevant_results(this->flat_results);
+                    }
                 }
 
                 while (svs_results.size() < n_res && svs_iterator != depleted() &&
@@ -402,7 +444,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             }
 
             VecSimQueryReply *batch;
-            batch = compute_current_batch(n_res);
+            batch = compute_current_batch(n_res, isMulti);
 
             if (order == BY_ID) {
                 sort_results_by_id(batch);
@@ -457,34 +499,25 @@ public:
     backend_index_t *GetBackendIndex() { return this->backendIndex; }
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
+
+    // Tracing helpers can be used to trace/inject code in the index update process.
+    std::map<std::string, std::function<void()>> tracingCallbacks;
+    void registerTracingCallback(const std::string &name, std::function<void()> callback) {
+        tracingCallbacks[name] = std::move(callback);
+    }
+    void executeTracingCallback(const std::string &name) const {
+        auto it = tracingCallbacks.find(name);
+        if (it != tracingCallbacks.end()) {
+            it->second();
+        }
+    }
+#else
+    void executeTracingCallback(const std::string &) const {
+        // In production, we do nothing.
+    }
 #endif
 
 private:
-    void TakeSnapshot(std::set<labelType> *to_delete, std::set<labelType> *to_add) {
-        std::vector<journal_record> journal_snapshot;
-        // Reserve space for journal to avoid it's reallocation.
-        // We reserve twice the trainingTriggerThreshold to ensure we have enough space for both
-        // additions and deletions, as the journal can contain both types of records.
-        journal_snapshot.reserve(this->trainingTriggerThreshold * 2);
-
-        { // Get current journal and replace with empty
-            std::scoped_lock journal_lock{journal_mutex};
-            std::swap(this->journal, journal_snapshot);
-        }
-
-        for (auto &p : journal_snapshot) {
-            // `id` is the label and `add` is a boolean indicating addition (true) or deletion
-            // (false)
-            const auto [id, add] = p;
-            if (add) {
-                to_add->insert(id);
-            } else {
-                to_delete->insert(id);
-                to_add->erase(id); // add non-deleted only
-            }
-        }
-    }
-
     /**
      * @brief Updates the SVS index in a thread-safe manner.
      *
@@ -507,8 +540,7 @@ private:
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
         // Update the SVS index
-        index->GetSVSIndex()->setNumThreads(availableThreads);
-        index->updateSVSIndex();
+        index->updateSVSIndex(availableThreads);
     }
 
 #ifdef BUILD_TESTS
@@ -528,61 +560,90 @@ public:
     }
 
 private:
-    void updateSVSIndex() {
-        std::set<labelType> to_delete;
-        std::set<labelType> to_add;
-        // Take a snapshot of the journal to determine which vectors to delete and add.
-        // std::set inserting might be pretty expensive, so minimize locks at this moment
-        TakeSnapshot(&to_delete, &to_add);
+    static void applySwapsToLabelsArray(std::vector<size_t> &labels,
+                                        const std::vector<swap_record> &swaps) {
+        // Enumerate journal and reflect swaps in the labels.
+        // The journal contains tuples of (label, oldId, newId).
+        // oldId is the index of the label in flat index before the swap.
+        // newId is the index of the label in flat index after the swap.
+        for (const auto &p : swaps) {
+            auto oldId = std::get<1>(p);
+            auto newId = std::get<2>(p);
 
-        std::vector<labelType> labels_to_add;
-        std::vector<DataType> vectors_to_add;
+            if (oldId == newId || oldId >= labels.size()) {
+                // If oldId == newId, it means that the vector was not moved in the Flat index,
+                // but was removed or updated in-place.
+                // If oldId is out of bounds - new vector was added and swapped meanwhile.
+                // In both cases, we should not touch flat index at the new position.
+                if (newId < labels.size()) {
+                    labels[newId] = SKIP_LABEL;
+                }
+                continue; // Next swap record.
+            }
+
+            // Real swap case.
+            // If oldId != newId and oldId is in bounds, it means that the tracked vector was moved
+            // So, move the label to new position and skip the old position from deletions.
+            // NOTE: labels[oldId] can be SKIP_LABEL, but we still need to move it to newId.
+            labels[newId] = labels[oldId];
+            labels[oldId] = SKIP_LABEL;
+        }
+    }
+
+    void updateSVSIndex(size_t availableThreads) {
+        std::vector<labelType> labels_to_move;
+        std::vector<DataType> vectors_to_move;
 
         { // lock frontendIndex from modifications
-            std::shared_lock<std::shared_mutex> frontend_lock{this->flatIndexGuard};
+            std::shared_lock flat_lock{this->flatIndexGuard};
 
             auto flat_index = this->GetFlatIndex();
+            const auto frontend_index_size = this->frontendIndex->indexSize();
             const size_t dim = flat_index->getDim();
+            labels_to_move.reserve(frontend_index_size);
+            vectors_to_move.reserve(frontend_index_size * dim);
 
-            // Update snapshot to sync with current frontend index status could me changed
-            // since first call to TakeSnapshot()
-            TakeSnapshot(&to_delete, &to_add);
-
-            labels_to_add.reserve(to_add.size());
-            vectors_to_add.reserve(to_add.size() * dim);
-
-            labels_to_add.insert(labels_to_add.end(), to_add.begin(), to_add.end());
-            for (auto label : labels_to_add) {
-                if (this->frontendIndex->isLabelExists(label)) {
-                    const auto id = flat_index->getIdOfLabel(label);
-                    if (id != INVALID_ID) {
-                        auto data = flat_index->getDataByInternalId(id);
-                        vectors_to_add.insert(vectors_to_add.end(), data, data + dim);
-                    }
-                }
+            for (idType i = 0; i < frontend_index_size; i++) {
+                labels_to_move.push_back(flat_index->getVectorLabel(i));
+                auto data = flat_index->getDataByInternalId(i);
+                vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
             }
+            // reset journal to the current frontend index state
+            swaps_journal.clear();
         } // release frontend index
 
+        executeTracingCallback("UpdateJob::before_add_to_svs");
         { // lock backend index for writing and add vectors there
-            std::scoped_lock lock(this->mainIndexGuard);
+            std::lock_guard lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
-            assert(labels_to_add.size() == vectors_to_add.size() / this->frontendIndex->getDim());
-            svs_index->addVectors(vectors_to_add.data(), labels_to_add.data(),
-                                  labels_to_add.size());
+            assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+            svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+            svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
+                                  labels_to_move.size());
         }
+        executeTracingCallback("UpdateJob::after_add_to_svs");
         // clean-up frontend index
         { // lock frontend index for writing and delete moved vectors
-            std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
-            // avoid deleting vectors from frontend which are updated/modified in the meantime
-            for (auto &p : this->journal) {
-                to_add.erase(p.first);
+            std::lock_guard lock(this->flatIndexGuard);
+
+            // Apply swaps from journal to labels_to_move to reflect changes made in meanwhile.
+            applySwapsToLabelsArray(labels_to_move, this->swaps_journal);
+
+            // delete vectors from the frontend index in reverse order
+            // it increases the chance of avoiding swaps in the frontend index and performance
+            // improvement
+            int deleted = 0;
+            idType id = labels_to_move.size();
+            while (id-- > 0) {
+                auto label = labels_to_move[id];
+                // Delete the vector from the frontend index if not in-place updated.
+                if (label != SKIP_LABEL) {
+                    deleted += this->frontendIndex->deleteVectorById(label, id);
+                }
             }
-            // delete vectors from the frontend index
-            size_t deleted = 0;
-            for (auto &label : to_add) {
-                deleted += this->frontendIndex->deleteVector(label);
-            }
-            assert(deleted == to_add.size());
+            assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
+                                            [](labelType label) { return label != SKIP_LABEL; }) &&
+                   "Deleted vectors count does not match the number of labels to delete");
         }
     }
 
@@ -615,9 +676,7 @@ public:
                                       : tiered_svs_params.updateJobWaitTime;
 
         // Reserve space for the journal to avoid reallocation.
-        // We reserve twice the trainingTriggerThreshold to ensure we have enough space for both
-        // additions and deletions, as the journal can contain both types of records.
-        this->journal.reserve(this->trainingTriggerThreshold * 2);
+        this->swaps_journal.reserve(this->trainingTriggerThreshold);
     }
 
     int addVector(const void *blob, labelType label) override {
@@ -639,9 +698,8 @@ public:
                 // lock in scope to ensure that these will be released before
                 // updateSVSIndexWrapper() is called.
                 {
-                    std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
+                    std::lock_guard lock(this->flatIndexGuard);
                     ret = this->frontendIndex->addVector(blob, label);
-                    journal.emplace_back(label, true);
                     // If frontend size exceeds the update job threshold, ...
                     frontend_index_size = this->frontendIndex->indexSize();
                 }
@@ -666,27 +724,85 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        { // Remove vector from the backend index if it exists.
-            std::scoped_lock lock(this->mainIndexGuard);
+        if (!this->backendIndex->isMultiValue()) {
+            {
+                std::shared_lock lock(this->flatIndexGuard);
+                // If the label already exists in the frontend index, we should count it
+                // to prevent the case when existing vector is moved meanwhile by the update job.
+                if (this->frontendIndex->isLabelExists(label)) {
+                    ret = -1;
+                }
+            }
+            // Remove vector from the backend index if it exists in case of non-MULTI.
+            std::lock_guard lock(this->mainIndexGuard);
             ret -= svs_index->deleteVectors(&label, 1);
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is 1.
-            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
-                                                                    : this->updateTriggerThreshold;
         }
-        { // Add vector to the frontend index and journal.
-            std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
-            ret = std::max(ret + this->frontendIndex->addVector(blob, label), 0);
-            journal.emplace_back(label, true);
+        { // Add vector to the frontend index.
+            std::lock_guard lock(this->flatIndexGuard);
+            const auto ft_ret = this->frontendIndex->addVector(blob, label);
+
+            if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
+                assert(!this->backendIndex->isMultiValue() &&
+                       "addVector() may return 0 for single value indices only");
+                for (auto id : this->frontendIndex->getElementIds(label)) {
+                    this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
+                }
+            }
+            ret = std::max(ret + ft_ret, 0);
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
-
+        {
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is updateTriggerThreshold.
+            std::shared_lock lock(this->mainIndexGuard);
+            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                                    : this->updateTriggerThreshold;
+        }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
         }
 
         return ret;
+    }
+
+    int deleteAndRecordSwaps_Unsafe(labelType label) {
+        auto deleting_ids = this->frontendIndex->getElementIds(label);
+
+        // assert if all elements of deleting_ids are unique
+        assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
+               "deleting_ids should contain unique ids");
+
+        // Sort deleting_ids by id descending order
+        std::sort(deleting_ids.begin(), deleting_ids.end(),
+                  [](const auto &a, const auto &b) { return a > b; });
+
+        // Delete vector from the frontend index.
+        auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
+
+        assert(std::all_of(updated_ids.begin(), updated_ids.end(),
+                           [&deleting_ids](const auto &pair) {
+                               return std::find(deleting_ids.begin(), deleting_ids.end(),
+                                                pair.first) != deleting_ids.end();
+                           }) &&
+               "updated_ids should be a subset of deleting_ids");
+
+        // Record swaps in the journal.
+        for (auto id : deleting_ids) {
+            auto it = updated_ids.find(id);
+            if (it != updated_ids.end()) {
+                assert(id == it->first && "id in updated_ids should match the id in deleting_ids");
+                auto newId = id;
+                auto oldId = it->second.first;
+                auto oldLabel = it->second.second;
+                this->swaps_journal.emplace_back(oldLabel, oldId, newId);
+            } else {
+                // No swap, just delete is marked by oldId == newId == deleted id
+                this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
+            }
+        }
+
+        return deleting_ids.size();
     }
 
     int deleteVector(labelType label) override {
@@ -701,18 +817,13 @@ public:
         }();
 
         if (label_exists) {
-            std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
-            if (this->frontendIndex->isLabelExists(label)) {
-                ret = this->frontendIndex->deleteVector(label);
-                assert(ret == 1 && "unexpected deleteVector result");
-                journal.emplace_back(label, false);
-            }
+            std::lock_guard lock(this->flatIndexGuard);
+            ret = this->deleteAndRecordSwaps_Unsafe(label);
         }
         {
-            std::scoped_lock lock(this->mainIndexGuard);
+            std::lock_guard lock(this->mainIndexGuard);
             ret += svs_index->deleteVectors(&label, 1);
         }
-        assert(ret <= 2 && "unexpected deleteVector result");
         return ret;
     }
 
@@ -750,12 +861,17 @@ public:
 
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
+
         SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
                                        .updateTriggerThreshold = this->updateTriggerThreshold,
                                        .updateJobWaitTime = this->updateJobWaitTime,
                                        .indexUpdateScheduled =
                                            static_cast<bool>(this->indexUpdateScheduled.test())};
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
+        info.tieredInfo.backgroundIndexing =
+            svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
+                ? VecSimBool_TRUE
+                : VecSimBool_FALSE;
         return info;
     }
 
@@ -770,37 +886,49 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         //  Get the base tiered fields.
         auto *infoIterator = Base::debugInfoIterator();
-        // TODO: Add SVS specific info.
+        VecSimIndexDebugInfo info = this->debugInfo();
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
+            .fieldType = INFOFIELD_INT64,
+            .fieldValue = {FieldValue{.integerValue = info.tieredInfo.backgroundIndexing}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo.svsTieredInfo
+                                                .trainingTriggerThreshold}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo.svsTieredInfo
+                                                .updateTriggerThreshold}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{
+                .uintegerValue =
+                    info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime}}});
         return infoIterator;
     }
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        if (this->GetSVSIndex()->isCompressed() || this->backendIndex->isMultiValue()) {
-            // SVS compressed distance computation precision is lower, so we always have to
-            // merge results with set.
-            return this->template topKQueryImp<true>(queryBlob, k, queryParams);
-        } else {
-            // Calling with withSet=false for optimized performance, assuming that shared IDs across
-            // lists also have identical scores — in which case duplicates are implicitly avoided by
-            // the merge logic.
-            return this->template topKQueryImp<false>(queryBlob, k, queryParams);
-        }
+        // SVS implements it's own distance computation functions which may cause sligthly different
+        // distance values than VecSim Flat Index does, so we always have to merge results with set.
+        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
     }
 
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams,
                                  VecSimQueryReply_Order order) const override {
-        if (this->GetSVSIndex()->isCompressed() || this->backendIndex->isMultiValue()) {
-            // SVS compressed distance computation precision is lower, so we always have to
-            // merge results with set.
-            return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
-        } else {
-            // Calling with withSet=false for optimized performance, assuming that shared IDs across
-            // lists also have identical scores — in which case duplicates are implicitly avoided by
-            // the merge logic.
-            return this->template rangeQueryImp<false>(queryBlob, radius, queryParams, order);
-        }
+        // SVS implements it's own distance computation functions which may cause sligthly different
+        // distance values than VecSim Flat Index does, so we always have to merge results with set.
+        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -817,7 +945,7 @@ public:
     void runGC() override {
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered SVS index");
-        std::unique_lock<std::shared_mutex> backend_lock{this->mainIndexGuard};
+        std::lock_guard lock{this->mainIndexGuard};
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
     }

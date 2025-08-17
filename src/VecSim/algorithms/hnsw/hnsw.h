@@ -2144,12 +2144,12 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.entrypoint}}});
 
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::EPSILON_STRING,
                          .fieldType = INFOFIELD_FLOAT64,
                          .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
 
     infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::HNSW_NUM_MARKED_DELETED,
+        .fieldName = VecSimCommonStrings::NUM_MARKED_DELETED,
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.numberOfMarkedDeletedNodes}}});
 

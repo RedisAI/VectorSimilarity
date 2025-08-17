@@ -626,9 +626,14 @@ public:
     explicit PyTiered_SVSIndex(const SVSParams &svs_params,
                                const TieredSVSParams &tiered_svs_params, size_t buffer_limit) {
 
-        // Create primaryIndexParams and specific params for hnsw tiered index.
+        // Create primaryIndexParams and specific params for svs tiered index.
         VecSimParams primary_index_params = {.algo = VecSimAlgo_SVS,
                                              .algoParams = {.svsParams = svs_params}};
+
+        if (primary_index_params.algoParams.svsParams.num_threads == 0) {
+            primary_index_params.algoParams.svsParams.num_threads =
+                this->mock_thread_pool.thread_pool_size; // Use the mock thread pool size as default
+        }
 
         auto tiered_params = this->getTieredIndexParams(buffer_limit);
         tiered_params.primaryIndexParams = &primary_index_params;
@@ -642,6 +647,10 @@ public:
 
         // Set the created tiered index in the index external context.
         this->mock_thread_pool.ctx->index_strong_ref = this->index;
+    }
+
+    size_t SVSLabelCount() {
+        return this->index->debugInfo().tieredInfo.backendCommonInfo.indexLabelCount;
     }
 };
 #endif
@@ -704,10 +713,13 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::enum_<VecSimSvsQuantBits>(m, "VecSimSvsQuantBits")
         .value("VecSimSvsQuant_NONE", VecSimSvsQuant_NONE)
-        .value("VecSimSvsQuant_8", VecSimSvsQuant_8)
+        .value("VecSimSvsQuant_Scalar", VecSimSvsQuant_Scalar)
         .value("VecSimSvsQuant_4", VecSimSvsQuant_4)
+        .value("VecSimSvsQuant_8", VecSimSvsQuant_8)
         .value("VecSimSvsQuant_4x4", VecSimSvsQuant_4x4)
         .value("VecSimSvsQuant_4x8", VecSimSvsQuant_4x8)
+        .value("VecSimSvsQuant_4x8_LeanVec", VecSimSvsQuant_4x8_LeanVec)
+        .value("VecSimSvsQuant_8x8_LeanVec", VecSimSvsQuant_8x8_LeanVec)
         .export_values();
 
     py::class_<SVSParams>(m, "SVSParams")
@@ -737,6 +749,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<TieredSVSParams>(m, "TieredSVSParams")
         .def(py::init())
         .def_readwrite("trainingTriggerThreshold", &TieredSVSParams::trainingTriggerThreshold)
+        .def_readwrite("updateTriggerThreshold", &TieredSVSParams::updateTriggerThreshold)
         .def_readwrite("updateJobWaitTime", &TieredSVSParams::updateJobWaitTime);
 
     py::class_<AlgoParams>(m, "AlgoParams")
@@ -839,7 +852,9 @@ PYBIND11_MODULE(VecSim, m) {
                          size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {
                  return new PyTiered_SVSIndex(svs_params, tiered_svs_params, flat_buffer_size);
              }),
-             py::arg("svs_params"), py::arg("tiered_svs_params"), py::arg("flat_buffer_size"));
+             py::arg("svs_params"), py::arg("tiered_svs_params"),
+             py::arg("flat_buffer_size") = DEFAULT_BLOCK_SIZE)
+        .def("svs_label_count", &PyTiered_SVSIndex::SVSLabelCount);
 #endif
 
     py::class_<PyBatchIterator>(m, "BatchIterator")
