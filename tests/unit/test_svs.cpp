@@ -1155,6 +1155,26 @@ TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
     }
 }
 
+TYPED_TEST(SVSTest, debugInfoIteratorFieldOrder) {
+    namespace expected_output = test_utils::test_debug_info_iterator_order;
+
+    size_t d = 4;
+    SVSParams params = {.dim = d, .metric = VecSimMetric_L2, .blockSize = 1};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    // Add a vector to ensure the index is not empty
+    GenerateAndAddVector<TEST_DATA_T>(index, d, 1, 1);
+
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    // Test the field order using the common function
+    expected_output::testDebugInfoIteratorFieldOrder(infoIterator, expected_output::getSVSFields());
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(SVSTest, svs_vector_search_test_ip) {
     const size_t dim = 4;
     const size_t n = 10;

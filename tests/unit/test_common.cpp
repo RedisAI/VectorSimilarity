@@ -689,7 +689,7 @@ TEST(CommonAPITest, SearchDifferentScores) {
     };
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = dynamic_cast<TieredHNSWIndex<float, float> *>(
-        test_utils::CreateNewTieredHNSWIndex(params, mock_thread_pool));
+        test_utils::CreateNewTieredVecSimIndex(params, mock_thread_pool));
     ASSERT_NE(tiered_index, nullptr);
 
     auto hnsw_index = tiered_index->getHNSWIndex();
@@ -811,7 +811,8 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
     VecSimMetric metric = std::get<1>(GetParam());
 
     HNSWParams hnsw_params = {.type = type, .dim = 4, .metric = metric};
-    VecSimIndex *index = test_utils::CreateNewTieredHNSWIndex(hnsw_params, this->mock_thread_pool);
+    VecSimIndex *index =
+        test_utils::CreateNewTieredVecSimIndex(hnsw_params, this->mock_thread_pool);
 
     auto verify_data_size = [&](const auto &tiered_index) {
         auto hnsw_index = tiered_index->getHNSWIndex();

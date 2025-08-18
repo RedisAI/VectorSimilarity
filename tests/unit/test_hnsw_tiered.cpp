@@ -29,6 +29,11 @@ public:
     using dist_t = typename index_type_t::dist_t;
 
 protected:
+    VecSimWriteMode original_mode;
+    void SetUp() { original_mode = VecSimIndexInterface::asyncWriteMode; }
+
+    void TearDown() { VecSimIndexInterface::asyncWriteMode = original_mode; }
+
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
         return tiered_index->getHNSWIndex();
@@ -2856,6 +2861,28 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
 
     VecSimDebugInfoIterator *infoIterator = tiered_index->debugInfoIterator();
     compareTieredIndexInfoToIterator(info, frontendIndexInfo, backendIndexInfo, infoIterator);
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+}
+
+TYPED_TEST(HNSWTieredIndexTest, debugInfoIteratorFieldOrder) {
+
+    namespace expected_output = test_utils::test_debug_info_iterator_order;
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
+                              .dim = dim,
+                              .metric = VecSimMetric_L2,
+                              .multi = TypeParam::isMulti()};
+    auto mock_thread_pool = tieredIndexMock();
+    auto index = test_utils::CreateNewTieredVecSimIndex(hnsw_params, mock_thread_pool);
+    GenerateAndAddVector(index, dim, 1, 1);
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    // Test the field order using the common function
+    expected_output::testDebugInfoIteratorFieldOrder(infoIterator,
+                                                     expected_output::getTieredHNSWFields());
 
     VecSimDebugInfoIterator_Free(infoIterator);
 }
