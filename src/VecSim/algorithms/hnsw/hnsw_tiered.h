@@ -1157,11 +1157,6 @@ VecSimDebugInfoIterator *TieredHNSWIndex<DataType, DistType>::debugInfoIterator(
     // Get the base tiered fields.
     auto *infoIterator = VecSimTieredIndex<DataType, DistType>::debugInfoIterator();
 
-    // infoIterator->addInfoField(VecSim_InfoField{
-    //     .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
-    //     .fieldType = INFOFIELD_INT64,
-    //     .fieldValue = {FieldValue{.integerValue = info.tieredInfo.backgroundIndexing}}});
-
     // Tiered HNSW specific param.
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING,
