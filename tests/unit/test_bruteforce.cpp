@@ -609,6 +609,26 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(BruteForceTest, debugInfoIteratorFieldOrder) {
+    namespace expected_output = test_utils::test_debug_info_iterator_order;
+
+    size_t d = 4;
+    BFParams params = {.dim = d, .metric = VecSimMetric_L2, .blockSize = 1};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    // Add a vector to ensure the index is not empty
+    GenerateAndAddVector<TEST_DATA_T>(index, d, 1, 1);
+
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    // Test the field order using the common function
+    expected_output::testDebugInfoIteratorFieldOrder(infoIterator,
+                                                     expected_output::getFlatFields());
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
     size_t dim = 4;
     size_t n = 100;
