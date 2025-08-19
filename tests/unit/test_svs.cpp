@@ -15,7 +15,6 @@
 #include <filesystem>
 #include <random>
 #include <vector>
-
 #if HAVE_SVS
 #include <sstream>
 #include "spdlog/sinks/ostream_sink.h"
@@ -2803,16 +2802,7 @@ TEST(SVSTest, save_load) {
 
                 for (size_t i = 0; i < n; i++) {
                     size_t label_id = (i / per_label);
-                    size_t vector_index_within_label = i % per_label;
-
-                    if (vector_index_within_label == 0) {
-                        // Match the vector used in single index mode for label_id
-                        GenerateVector<float>(v[i].data(), dim, i);
-                    } else {
-                        // Generate a far vector (deterministic and far from query)
-                        GenerateVector<float>(v[i].data(), dim, 100000);
-                    }
-
+                    GenerateVector<float>(v[i].data(), dim, i);
                     ids[i] = label_id;
                 }
             } else {
@@ -2822,7 +2812,6 @@ TEST(SVSTest, save_load) {
                     ids[i] = i;
                 }
             }
-
 
             auto svs_index = dynamic_cast<SVSIndexBase *>(index);
             ASSERT_NE(svs_index, nullptr)
@@ -2842,8 +2831,7 @@ TEST(SVSTest, save_load) {
                     // For multi, that label of {50,50,50,50} is 25
                     size_t expected_label = (20 + idx);
                     EXPECT_EQ(id, expected_label);
-                }
-                else {
+                } else {
                     EXPECT_EQ(id, (idx + 45));
                 }
             };
