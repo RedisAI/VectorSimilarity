@@ -2150,6 +2150,27 @@ TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
     VecSimDebugInfoIterator_Free(infoIterator);
 }
 
+TYPED_TEST(SVSTieredIndexTest, debugInfoIteratorFieldOrder) {
+    namespace expected_output = test_utils::test_debug_info_iterator_order;
+
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *index = test_utils::CreateNewTieredVecSimIndex(params, mock_thread_pool);
+    ASSERT_INDEX(index);
+
+    GenerateAndAddVector(index, dim, 1, 1);
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    // Test the field order using the common function
+    expected_output::testDebugInfoIteratorFieldOrder(infoIterator,
+                                                     expected_output::getTieredSVSFields());
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+}
+
 TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;

@@ -778,11 +778,6 @@ public:
         VecSimIndexDebugInfo info = this->debugInfo();
 
         infoIterator->addInfoField(VecSim_InfoField{
-            .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
-            .fieldType = INFOFIELD_INT64,
-            .fieldValue = {FieldValue{.integerValue = info.tieredInfo.backgroundIndexing}}});
-
-        infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING,
             .fieldType = INFOFIELD_UINT64,
             .fieldValue = {
