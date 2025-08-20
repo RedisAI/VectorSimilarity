@@ -1633,26 +1633,18 @@ TYPED_TEST(FP16SVSTest, rangeQuery) {
 }
 
 TYPED_TEST(FP16SVSTest, rangeQueryCosine) {
-    GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
-
     // Scalar quantization accuracy is insufficient for this test.
     if (this->isFallbackToSQ()) {
         GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
     }
-    const size_t n = 100;
+    const size_t n_close = 20;
+    const size_t n_far = 20;
+    const size_t n = n_close + n_far;
     const size_t dim = 4;
 
     SVSParams params = {
         .dim = dim,
         .metric = VecSimMetric_Cosine,
-        .blockSize = n / 2,
-        /* SVS-Vamana specifics */
-        .alpha = 0.9,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
@@ -1661,41 +1653,46 @@ TYPED_TEST(FP16SVSTest, rangeQueryCosine) {
     // To meet accurary in LVQ case we have to add bulk of vectors at once.
     std::vector<std::array<float16, dim>> v(n);
     std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
 
-    for (size_t i = 0; i < n; i++) {
-        auto &f = v[i - 1];
-        f[0] = vecsim_types::FP32_to_FP16(float(i + 1) / n);
-        for (size_t j = 1; j < dim; j++) {
-            f[j] = vecsim_types::FP32_to_FP16(1.0);
-        }
-        // Use as label := n - (internal id)
-        ids[i] = n - i;
+    for (size_t i = 0; i < n_close; i++) {
+        test_utils::populate_float16_vec(v[i].data(), dim, i, 0.0f, 2.0f);
+    }
+
+    for (size_t i = n_close; i < n; i++) {
+        test_utils::populate_float16_vec(v[i].data(), dim, i, -5.0f, -3.0f);
     }
 
     auto svs_index = this->CastToSVS(index);
     svs_index->addVectors(v.data(), ids.data(), n);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // create a query with values in the "close" range.
     float16 query[dim];
-    query[0] = vecsim_types::FP32_to_FP16(1.1);
-    for (size_t i = 1; i < dim; i++) {
-        query[i] = vecsim_types::FP32_to_FP16(1.0);
-    }
+    test_utils::populate_float16_vec(query, dim, n, 0.0f, 2.0f);
+
+    float16 normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(float16));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
-        ASSERT_EQ(id, result_rank + 1);
-        double expected_score = index->getDistanceFrom_Unsafe(id, query);
+        ASSERT_LE(id, n_close - 1)
+            << "result_rank: " << result_rank << " id: " << id << " score: " << score;
+        double expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
         // Verify that abs difference between the actual and expected score is at most 1/10^5.
-        ASSERT_NEAR(score, expected_score, 1e-5f);
+        ASSERT_NEAR(score, expected_score, 1e-5f)
+            << "result_rank: " << result_rank << " id: " << id << " score: " << score
+            << " expected_score: " << expected_score;
     };
 
-    uint expected_num_results = 31;
-    // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
-    // to get the radius.
-    VecSim_Normalize(query, dim, params.type);
-    double radius = index->getDistanceFrom_Unsafe(31, query);
-    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
+    double radius = 1.0;
+    constexpr size_t expected_num_results = n_close;
+    ASSERT_NO_FATAL_FAILURE(
+        runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE));
     // Return results BY_ID should give the same results.
-    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
+    ASSERT_NO_FATAL_FAILURE(
+        runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID));
 
     VecSimIndex_Free(index);
 }
