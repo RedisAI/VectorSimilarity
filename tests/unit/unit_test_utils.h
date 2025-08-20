@@ -110,8 +110,17 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
 
 TieredIndexParams CreateTieredParams(VecSimParams &primary_params,
                                      tieredIndexMock &mock_thread_pool);
-VecSimIndex *CreateNewTieredHNSWIndex(const HNSWParams &hnsw_params,
-                                      tieredIndexMock &mock_thread_pool);
+template <typename backend_index_params>
+VecSimIndex *CreateNewTieredVecSimIndex(const backend_index_params &hnsw_params,
+                                        tieredIndexMock &mock_thread_pool) {
+    VecSimParams primary_params = CreateParams(hnsw_params);
+    auto tiered_params = CreateTieredParams(primary_params, mock_thread_pool);
+    VecSimParams params = CreateParams(tiered_params);
+    VecSimIndex *index = VecSimIndex_New(&params);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    return index;
+}
 
 extern VecsimQueryType query_types[4];
 
@@ -201,6 +210,33 @@ TieredHNSWIndex<data_t, dist_t> *cast_to_tiered_index(VecSimIndex *index) {
     return dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
 }
 
+namespace test_debug_info_iterator_order {
+// Test debug info iterator field order (general function for all index types)
+void testDebugInfoIteratorFieldOrder(VecSimDebugInfoIterator *infoIterator,
+                                     const std::vector<std::string> &expectedFieldOrder);
+
+// Helper function: imitates addCommonInfoToIterator() from vec_sim_index.h (8 fields)
+std::vector<std::string> getCommonFields();
+
+// Get common expected field order for all tiered indexes (14 fields: imitates
+// VecSimTieredIndex::debugInfoIterator)
+std::vector<std::string> getTieredCommonFields();
+
+// Get expected field order for flat/brute force index (10 fields)
+std::vector<std::string> getFlatFields();
+
+// Get expected field order for HNSW index (17 fields)
+std::vector<std::string> getHNSWFields();
+
+// Get expected field order for SVS index (23 fields)
+std::vector<std::string> getSVSFields();
+
+// Get expected field order for tiered SVS index
+std::vector<std::string> getTieredSVSFields();
+
+// Get expected field order for tiered HNSW index
+std::vector<std::string> getTieredHNSWFields();
+} // namespace test_debug_info_iterator_order
 } // namespace test_utils
 
 // Test a specific exception type is thrown and prints the right message.
