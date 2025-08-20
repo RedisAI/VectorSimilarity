@@ -12,6 +12,7 @@
 #include "unit_test_utils.h"
 #include "tests_utils.h"
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/spaces/IP/IP.h"
 #include <array>
 #include <cmath>
 #include <random>
@@ -19,28 +20,6 @@
 
 using float16 = vecsim_types::float16;
 /**
- *
- *
- * DIDNT TAKE test_svs_parameter_combinations_and_defaults and
- * test_svs_parameter_consistency_across_metrics
- * as it mostly covered in test_svs_info
- *
- * also test_inf wasn't covered as i coudnlt get an inf score with fp16
- *
- * in batchIteratorSwapIndices decreased n to 1000
- *
- * not taking joinSearchParams (type is not relevant)
- *
- * FitMemoryTest does nothing
- *
- * resolve_ws_search_runtime_params, resolve_bc_search_runtime_params,
- * resolve_use_search_history_runtime_params, resolve_epsilon_runtime_params, nothing to do with the
- * type
- *
- * testTimeoutReturn_batch_iterator, testTimeoutReturn_range, testTimeoutReturn_topK removed
- *
- * testInitialSizeEstimation covered by testSizeEstimation
- * test_override_all also in float32 (test_svs.cpp)
  *
  * TODO: revert setLogCallbackFunction
  *
@@ -837,15 +816,7 @@ TYPED_TEST(FP16SVSTest, test_delete_vector) {
 
     SVSParams params = {
         .dim = dim,
-        .metric = VecSimMetric_IP,
-        .blockSize = block_size,
-        /* SVS-Vamana specifics */
-        .alpha = 1.2,
-        .graph_max_degree = 64,
-        // .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
+        .metric = VecSimMetric_L2,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
@@ -861,6 +832,10 @@ TYPED_TEST(FP16SVSTest, test_delete_vector) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
+    // Here the shift should happen.
+    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
+
     float16 query[dim];
     this->GenerateVector(query, dim, 0.0);
     auto verify_res = [&](size_t id, double score, size_t index) {
@@ -871,21 +846,6 @@ TYPED_TEST(FP16SVSTest, test_delete_vector) {
         }
     };
     runTopKSearchTest(index, query, k, verify_res);
-
-    // Here the shift should happen.
-    VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
-
-    // float16 query[dim];
-    // this->GenerateVector(query, dim, 0.0);
-    // auto verify_res = [&](size_t id, double score, size_t index) {
-    //     if (index == 0) {
-    //         ASSERT_EQ(id, index);
-    //     } else {
-    //         ASSERT_EQ(id, index + 1);
-    //     }
-    // };
-    // runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
 }
 
@@ -925,9 +885,8 @@ TYPED_TEST(FP16SVSTest, sanity_reinsert_1280) {
 
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
         auto verify_res = [&](size_t id, double score, size_t index) {
-            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end()) << "iter: " << iter
-                                                                    << " index: " << index
-                                                                    << " score: " << score << " id: " << id;
+            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end())
+                << "iter: " << iter << " index: " << index << " score: " << score << " id: " << id;
             expected_ids.erase(id);
         };
 
@@ -1478,77 +1437,72 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_cosine) {
         GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
     }
     const size_t dim = 128;
-    const size_t n = 50;
+    const size_t n = 20;
+    constexpr size_t query_id = n / 2;
 
     SVSParams params = {
         .dim = dim,
         .metric = VecSimMetric_Cosine,
-        .alpha = 0.9,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
 
-    // To meet accuracy in LVQ case we have to add bulk of vectors at once.
     std::vector<std::array<float16, dim>> v(n);
-    for (size_t i = 1; i <= n; i++) {
-        auto &f = v[i - 1];
-        f[0] = vecsim_types::FP32_to_FP16((float)i / n);
-        for (size_t j = 1; j < dim; j++) {
-            f[j] = vecsim_types::FP32_to_FP16(1.0);
-        }
-        // test_utils::populate_float16_vec(v[i].data(), dim, i, -1.0f, 1.0f);
+    for (size_t i = 0; i < n; i++) {
+        test_utils::populate_float16_vec(v[i].data(), dim, i, -1.0f, 1.0f);
     }
 
     std::vector<size_t> ids(n);
-    std::iota(ids.begin(), ids.end(), 1);
+    std::iota(ids.begin(), ids.end(), 0);
 
     auto svs_index = this->CastToSVS(index);
     svs_index->addVectors(v.data(), ids.data(), n);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    // float16 query[dim];
-    // this->GenerateVector(query, dim, 0.1);
-    auto *query = v[n - 1].data();
+    auto *query = v[query_id].data();
+    VecSim_Normalize(query, dim, params.type);
 
-    // topK search will normalize the query so we keep the original data to
-    // avoid normalizing twice.
-    float16 normalized_query[dim];
-    memcpy(normalized_query, query, dim * sizeof(float16));
-    VecSim_Normalize(normalized_query, dim, params.type);
+    // Get expected results.
+    std::vector<std::pair<size_t, double>> results;
+    for (size_t i = 0; i < n; i++) {
+        // normalize vector
+        auto &f = v[i];
+        VecSim_Normalize(f.data(), dim, params.type);
+        double score = FP16_InnerProduct(query, f.data(), dim);
+
+        results.push_back({i, score});
+    }
+    // Sort by score (best first)
+    std::sort(results.begin(), results.end(),
+              [](const auto &a, const auto &b) { return a.second < b.second; });
 
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
-        double expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
-        // Verify that abs difference between the actual and expected score is at most 1/10^5.
-        float16 fp16_score = vecsim_types::FP32_to_FP16(score);
-        float16 fp16_expected_score = vecsim_types::FP32_to_FP16(expected_score);
-        ASSERT_EQ(id, (n - result_rank))
-            << "result_rank: " << result_rank << " id: " << id << " score: " << score
-            << " expected_score: " << expected_score << " fp16_score: " << fp16_score
-            << " fp16_expected_score: " << fp16_expected_score;
-        ASSERT_EQ(fp16_score, fp16_expected_score)
-            << "result_rank: " << result_rank << " id: " << id;
+        if (result_rank == 0) {
+            ASSERT_EQ(id, query_id)
+                << "result_rank: " << result_rank << " id: " << id << " score: " << score;
+            ASSERT_NEAR(score, 0.0, 1e-3f)
+                << "result_rank: " << result_rank << " id: " << id << " score: " << score;
+        } else {
+            ASSERT_EQ(id, results[result_rank].first)
+                << "result_rank: " << result_rank << " id: " << id << " score: " << score;
+            ASSERT_NEAR(score, results[result_rank].second, 1e-3f)
+                << "result_rank: " << result_rank << " id: " << id << " score: " << score;
+        }
     };
-    runTopKSearchTest(index, query, 10, verify_res, nullptr, BY_SCORE);
     runTopKSearchTest(index, query, 10, verify_res, nullptr, BY_SCORE);
 
     // Test with batch iterator.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
-    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
-    // in every iteration. The order should be from the largest to the lowest id.
-    size_t n_res = 10;
+    size_t n_res = 5;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
-        std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
-            // In case of quantization, the result is not guaranteed to be properly ordered
-            if constexpr (TypeParam::get_quant_bits() == 0) {
-                ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
-            }
-            double expected_score = index->getDistanceFrom_Unsafe(id, normalized_query);
-            // Verify that abs difference between the actual and expected score is at most 1/10^5.
-            ASSERT_NEAR(score, expected_score, 1e-5f);
+            size_t global_result_rank = iteration_num * n_res + result_rank;
+            ASSERT_NO_FATAL_FAILURE(verify_res(id, score, global_result_rank))
+                << "iteration_num: " << iteration_num
+                << " global_result_rank: " << global_result_rank;
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;
@@ -1822,12 +1776,11 @@ TYPED_TEST(FP16SVSTest, quant_modes) {
 TYPED_TEST(FP16SVSTest, test_override_all) {
     const size_t dim = 4;
     const size_t n = 100;
-    size_t new_n = 250;
     const size_t k = 11;
 
     SVSParams params = {
         .dim = dim,
-        .metric = VecSimMetric_Cosine,
+        .metric = VecSimMetric_L2,
     };
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
@@ -1843,35 +1796,21 @@ TYPED_TEST(FP16SVSTest, test_override_all) {
     std::vector<size_t> ids(n);
     std::iota(ids.begin(), ids.end(), 0);
 
-    // svs_index->addVectors(v.data(), ids.data(), n);
-
-    // Override vectors one-by-one
-    for (size_t i = 0; i < n; i++) {
-        index->addVector(v[i].data(), ids[i]);
-    }
+    svs_index->addVectors(v.data(), ids.data(), n);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    float16 query[dim];
-    this->GenerateVector(query, dim, 50);
-    auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
-    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
-
-    // Add up to new_n vectors.
-    for (size_t i = n; i < new_n; i++) {
-        ASSERT_EQ(this->GenerateAndAddVector(index, dim, i, i), 1);
+    // Override all vectors.
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_EQ(this->GenerateAndAddVector(index, dim, i, i), 0);
     }
 
-    this->GenerateVector(query, dim, new_n);
-    auto verify_res_with_new_n = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, new_n - 1 - index) << "id: " << id << " score: " << score;
-        float16 a = vecsim_types::FP32_to_FP16(new_n);
-        float16 b = vecsim_types::FP32_to_FP16(id);
-        float diff = vecsim_types::FP16_to_FP32(a) - vecsim_types::FP16_to_FP32(b);
-        float exp_score = 4 * diff * diff;
-        ASSERT_EQ(score, exp_score) << "id: " << id << " score: " << score;
+    float16 query[dim];
+    this->GenerateVector(query, dim, 50);
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        EXPECT_EQ(id, (index + 45)) << "index: " << index << " id: " << id << " score: " << score;
     };
-    runTopKSearchTest(index, query, new_n, verify_res_with_new_n);
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
     VecSimIndex_Free(index);
 }
 

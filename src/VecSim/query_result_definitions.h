@@ -13,7 +13,6 @@
 
 #include <cstdlib>
 #include <limits>
-#include <iostream>
 
 // Use the "not a number" value to represent invalid score. This is for distinguishing the invalid
 // score from "inf" score (which is valid).
@@ -40,6 +39,8 @@ struct VecSimQueryReply {
 };
 
 #ifdef BUILD_TESTS
+#include <iostream>
+
 // Print operators
 inline std::ostream &operator<<(std::ostream &os, const VecSimQueryResult &result) {
     os << "id: " << result.id << ", score: " << result.score;
