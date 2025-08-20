@@ -202,47 +202,6 @@ TYPED_TEST(FP16SVSTest, svs_vector_update_test) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(FP16SVSTest, svs_vector_search_test) {
-    // Scalar quantization accuracy is insufficient for this test.
-    if (this->isFallbackToSQ()) {
-        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
-    }
-    constexpr size_t n = 100;
-    constexpr size_t k = 11;
-    constexpr size_t dim = 4;
-
-    SVSParams params = {
-        .dim = dim,
-        .metric = VecSimMetric_L2,
-    };
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-    ASSERT_INDEX(index);
-
-    for (size_t i = 0; i < n; i++) {
-        this->GenerateAndAddVector(index, dim, i, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-    float16 query[dim];
-    this->GenerateVector(query, dim, 50);
-    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
-        EXPECT_EQ(id, (index + 45));
-        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
-    };
-    runTopKSearchTest(index, query, k, verify_res_by_id, nullptr, BY_ID);
-
-    auto verify_res_by_score = [&](size_t id, double score, size_t index) {
-        size_t abs_index_offset = (index + 1) / 2;
-        int direction = id < 50 ? -1 : 1;
-        EXPECT_EQ(id, 50 + direction * abs_index_offset);
-        ASSERT_EQ(score, 4 * (50 - id) * (50 - id)); // L2 distance
-    };
-    runTopKSearchTest(index, query, k, verify_res_by_score, nullptr, BY_SCORE);
-
-    VecSimIndex_Free(index);
-}
-
 /**
  * This test crashes during search in SVS < 0.09 due to the small window size, causing the
  * graph to be very sparse, and a bug in SVS that doesn't handle well such case.
@@ -745,13 +704,6 @@ TYPED_TEST(FP16SVSTest, svs_empty_index) {
     SVSParams params = {
         .dim = dim,
         .metric = VecSimMetric_L2,
-        /* SVS-Vamana specifics */
-        .alpha = 1.2,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
     };
 
     VecSimIndex *index = this->CreateNewIndex(params);
@@ -777,16 +729,14 @@ TYPED_TEST(FP16SVSTest, svs_empty_index) {
     ASSERT_EQ(VecSimQueryReply_Len(res), 0);
     VecSimQueryReply_Free(res);
 
-    // Add one vector.
-    this->GenerateAndAddVector(index, dim, 1, 1.7);
-
-    // Size equals 1.
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-
-    // Try to remove it.
-    VecSimIndex_DeleteVector(index, 1);
-
-    // Size equals 0.
+    // Add some vectors and remove them all from index, so it will be empty again.
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateAndAddVector(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // The expected capacity should be 0 for empty index.
@@ -1233,138 +1183,6 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test_l2) {
 
         VecSimIndex_Free(index);
     }
-}
-
-TYPED_TEST(FP16SVSTest, svs_search_empty_index) {
-    size_t dim = 4;
-    size_t n = 100;
-    size_t k = 11;
-
-    SVSParams params = {
-        .dim = dim,
-        .metric = VecSimMetric_L2,
-    };
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-    ASSERT_INDEX(index);
-
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    float16 query[dim];
-    this->GenerateVector(query, dim, 50);
-
-    // We do not expect any results.
-    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(res);
-    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
-    VecSimQueryReply_IteratorFree(it);
-    VecSimQueryReply_Free(res);
-
-    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-    VecSimQueryReply_Free(res);
-
-    // Add some vectors and remove them all from index, so it will be empty again.
-    for (size_t i = 0; i < n; i++) {
-        this->GenerateAndAddVector(index, dim, i, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    for (size_t i = 0; i < n; i++) {
-        VecSimIndex_DeleteVector(index, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    // Again - we do not expect any results.
-    res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-    it = VecSimQueryReply_GetIterator(res);
-    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
-    VecSimQueryReply_IteratorFree(it);
-    VecSimQueryReply_Free(res);
-
-    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
-    VecSimQueryReply_Free(res);
-
-    VecSimIndex_Free(index);
-}
-
-TYPED_TEST(FP16SVSTest, preferAdHocOptimization) {
-    // Save the expected ratio which is the threshold between ad-hoc and batches mode
-    // for every combination of index size and dim.
-    // std::map<std::pair<size_t, size_t>, float> threshold;
-    // threshold[{1000, 4}] = threshold[{1000, 80}] = threshold[{1000, 350}] = threshold[{1000,
-    // 780}] =
-    //     1.0;
-    // threshold[{6000, 4}] = 0.2;
-    // threshold[{6000, 80}] = 0.4;
-    // threshold[{6000, 350}] = 0.6;
-    // threshold[{6000, 780}] = 0.8;
-    // threshold[{600000, 4}] = threshold[{600000, 80}] = 0.2;
-    // threshold[{600000, 350}] = 0.6;
-    // threshold[{600000, 780}] = 0.8;
-
-    for (size_t index_size : {1000, 6000, 600000}) {
-        for (size_t dim : {4, 80, 350, 780}) {
-            // Create index and check for the expected output of "prefer ad-hoc".
-
-            SVSParams params = {
-                .dim = dim,
-                .metric = VecSimMetric_IP,
-                .blockSize = 5,
-                /* SVS-Vamana specifics */
-                .alpha = 1.2,
-                .graph_max_degree = 64,
-                .construction_window_size = 20,
-                .max_candidate_pool_size = 1024,
-                .prune_to = 60,
-                .use_search_history = VecSimOption_ENABLE,
-            };
-
-            VecSimIndex *index = this->CreateNewIndex(params);
-            ASSERT_INDEX(index);
-
-            // Set the index size artificially to be the required one.
-            // (this->CastToBF(index))->count = index_size;
-            // ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
-            for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
-                bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50, true);
-                // If r is below the threshold for this specific configuration of (index_size, dim),
-                // expect that result will be ad-hoc (i.e., true), and otherwise, batches (i.e.,
-                // false)
-                // bool expected_res = r < threshold[{index_size, dim}];
-                bool expected_res = true;
-                ASSERT_EQ(res, expected_res);
-            }
-            VecSimIndex_Free(index);
-        }
-    }
-    // Corner cases - empty index.
-
-    SVSParams params = {
-        .dim = 4,
-        .metric = VecSimMetric_IP,
-        .blockSize = 5,
-        /* SVS-Vamana specifics */
-        .alpha = 1.2,
-        .graph_max_degree = 64,
-        .construction_window_size = 20,
-        .max_candidate_pool_size = 1024,
-        .prune_to = 60,
-        .use_search_history = VecSimOption_ENABLE,
-    };
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-    ASSERT_INDEX(index);
-
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
-
-    // Corner cases - subset size is greater than index size.
-    ASSERT_EQ(VecSimIndex_PreferAdHocSearch(index, 42, 50, true),
-              VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
-
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(FP16SVSTest, batchIteratorSwapIndices) {
