@@ -19,12 +19,6 @@
 #include <vector>
 
 using float16 = vecsim_types::float16;
-/**
- *
- * TODO: revert setLogCallbackFunction
- *
- * TODO: test_basic ASSERT_NEAR tolerance is very low! we need to adjust
- */
 
 #if HAVE_SVS
 #include <sstream>
@@ -70,8 +64,12 @@ protected:
         params.multi = params.multi == 0 ? false : params.multi;
     }
 
-    virtual VecSimIndex *CreateNewIndex(SVSParams &params) {
+    void SetUp() override {
+        // Limit VecSim log level to avoid printing too much information
         VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+    }
+
+    virtual VecSimIndex *CreateNewIndex(SVSParams &params) {
         SetTypeParams(params);
         VecSimParams index_params = CreateParams(params);
         return VecSimIndex_New(&index_params);
@@ -245,6 +243,11 @@ TYPED_TEST(FP16SVSTest, svs_vector_search_test) {
     VecSimIndex_Free(index);
 }
 
+/**
+ * This test crashes during search in SVS < 0.09 due to the small window size, causing the
+ * graph to be very sparse, and a bug in SVS that doesn't handle well such case.
+ * See mod-10771
+ */
 TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     constexpr size_t n = 256;
     size_t k = 11;
@@ -259,8 +262,6 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     VecSimIndex *index = this->CreateNewIndex(params);
     ASSERT_INDEX(index);
 
-    auto svs_index = this->CastToSVS(index); // CAST_TO_SVS(index, svs::distance::DistanceL2);
-
     std::vector<std::array<float16, dim>> v(n);
     for (size_t i = 0; i < n; i++) {
         this->GenerateVector(v[i].data(), dim, i);
@@ -269,6 +270,7 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     std::vector<size_t> ids(n);
     std::iota(ids.begin(), ids.end(), 0);
 
+    auto svs_index = this->CastToSVS(index);
     svs_index->addVectors(v.data(), ids.data(), n);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -286,8 +288,9 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     auto verify_res_after_delete = [&](size_t id, double score, size_t index) {
         EXPECT_EQ(id, n - keep_num + index);
     };
-    // TODO : THIS IS CURRENTLY THROWING A C++ EXCEPTION ORIGINATED FROM robin_hash.h: 917
-    // =====================================================================
+
+    // Before the bug fix, here an exception is thrown from robin_hash.h: 917:
+    // Thread 0: Couldn't find key.
     runTopKSearchTest(index, query, keep_num, verify_res_after_delete, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
