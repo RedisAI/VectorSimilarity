@@ -1096,6 +1096,9 @@ TYPED_TEST(FP16SVSTest, test_dynamic_svs_info_iterator) {
 }
 
 TYPED_TEST(FP16SVSTest, test_get_distance) {
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+    }
     const size_t dim = 4;
     static double constexpr expected_dists[2] = {0.25, -1.5}; // L2, IP
 
