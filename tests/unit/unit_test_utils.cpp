@@ -15,7 +15,6 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
-#include "VecSim/algorithms/svs/svs_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -191,6 +190,9 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
     ASSERT_EQ(info1.numberOfMarkedDeletedNodes, info2.numberOfMarkedDeletedNodes);
 }
 
+#if HAVE_SVS
+#include "VecSim/algorithms/svs/svs_utils.h"
+
 void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params) {
     ASSERT_EQ(info.constructionWindowSize,
               svs_details::getOrDefault(params.construction_window_size,
@@ -221,6 +223,7 @@ void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params) {
                                        : params.use_search_history == VecSimOption_ENABLE;
     ASSERT_EQ(info.useSearchHistory, expected_search_history);
 }
+#endif
 
 /*
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
