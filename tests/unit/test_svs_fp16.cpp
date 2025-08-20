@@ -2292,10 +2292,7 @@ protected:
                              index_type_t::get_quant_bits() == VecSimSvsQuant_8x8_LeanVec;
         auto vec_to_compare = vector;
         if (metric == VecSimMetric_Cosine) {
-            float16 norm_vec[dim];
-            memcpy(norm_vec, vector, dim * sizeof(float16));
-            VecSim_Normalize(norm_vec, dim, VecSimType_FLOAT16);
-            vec_to_compare = norm_vec;
+            VecSim_Normalize(vec_to_compare, dim, VecSimType_FLOAT16);
         }
         if (!is_compressed) {
             for (size_t i = 0; i < per_label; i++) {
