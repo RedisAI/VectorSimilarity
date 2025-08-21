@@ -56,6 +56,14 @@ jobs:
           echo "========================"
       - name: install dependencies
         run: .install/install_script.sh ${{ !inputs.container && 'sudo' || '' }}
+      - name: Print GCC and G++ versions
+        run: |
+          echo "=== Compiler Information ==="
+          echo "--- GCC version ---"
+          gcc --version || echo "GCC not available"
+          echo "--- G++ version ---"
+          g++ --version || echo "G++ not available"
+          echo "=========================="
       - name: Set Artifact Name
         # Artifact names have to be unique, so we base them on the environment.
         # We also remove invalid characters from the name.
