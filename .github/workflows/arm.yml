@@ -27,7 +27,7 @@ jobs:
           ec2-instance-type: t4g.medium
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
-          # ec2-volume-size: 30
+          ec2-volume-size: 30
 
   arm:
     needs: start-runner # required to start the main job when the runner is ready
