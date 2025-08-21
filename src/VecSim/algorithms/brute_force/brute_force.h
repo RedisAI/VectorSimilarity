@@ -90,12 +90,16 @@ protected:
     virtual void removeVector(idType id);
 
     void growByBlock() {
+                    this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                      "brute_force:growByBlock");
         idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
     }
 
     void shrinkByBlock() {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                      "brute_force:shrinkByBlock");
         assert(indexCapacity() > 0); // should not be called when index is empty
 
         // remove a block size of labels.
