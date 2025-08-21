@@ -17,7 +17,14 @@ on:
         description: 'Run valgrind tests'
         type: boolean
         default: true
-
+      use_disk_tmp:
+        type: boolean
+        required: false
+        default: false
+      tmpdir_subpath:
+        type: string
+        required: false
+        default: ".tmp"
 jobs:
   test:
     name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}
@@ -28,6 +35,14 @@ jobs:
         # Use bash as default shell for every OS other than alpine
         shell: ${{ inputs.container && contains(inputs.container, 'alpine') && 'sh -l -eo pipefail {0}' || 'bash -l -eo pipefail {0}' }}
     steps:
+      - name: Use disk-backed TMPDIR
+        if: ${{ inputs.use_disk_tmp }}
+        run: |
+          mkdir -p "${{ github.workspace }}/${{ inputs.tmpdir_subpath }}"
+          echo "TMPDIR=${{ github.workspace }}/${{ inputs.tmpdir_subpath }}" >> "$GITHUB_ENV"
+          echo "TMP=${{ github.workspace }}/${{ inputs.tmpdir_subpath }}"     >> "$GITHUB_ENV"
+          echo "TEMP=${{ github.workspace }}/${{ inputs.tmpdir_subpath }}"    >> "$GITHUB_ENV"
+
       - name: pre-checkout script
         run: ${{ inputs.pre-checkout-script }}
       - name: checkout

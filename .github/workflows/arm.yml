@@ -28,22 +28,14 @@ jobs:
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
-  prep-disk-tmp:
-    needs: start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }}   # same runner
-    steps:
-      - name: Bind-mount /tmp to a disk-backed dir
-        run: |
-          sudo mkdir -p /mnt/ci-tmp
-          sudo mount --bind /mnt/ci-tmp /tmp
-          df -hT /tmp
   arm:
-    needs: [start-runner, prep-disk-tmp] # required to start the main job when the runner is ready
+    needs: start-runner # required to start the main job when the runner is ready
     uses: ./.github/workflows/task-unit-test.yml
     with:
       env: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
       run-valgrind: false # run the job without valgrind
-
+      use_disk_tmp: true
+      tmpdir_subpath: ".tmp"
   stop-runner:
     name: Stop self-hosted EC2 runner
     needs:
