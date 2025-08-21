@@ -20,3 +20,6 @@ else
     $MODE ./${filename} --skip-license --prefix=/usr/local --exclude-subdir
     cmake --version
 fi
+
+echo "GCC version:"
+gcc --version

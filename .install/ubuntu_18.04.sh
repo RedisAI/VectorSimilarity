@@ -21,3 +21,6 @@ $MODE make install
 cd ..
 
 source install_cmake.sh $MODE
+
+echo "GCC version:"
+gcc --version
