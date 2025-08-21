@@ -65,12 +65,12 @@ jobs:
           NAME="$(echo $NAME | sed -e 's/[":\/\\<>\|*?]/_/g')" # Replace invalid characters with underscores
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
-      - name: Clean up disk space
-        run: |
-          sudo apt-get clean
-          docker system prune -af || true
-          rm -rf $HOME/.cache || true
-          df -h
+      # - name: Clean up disk space
+      #   run: |
+      #     sudo apt-get clean
+      #     docker system prune -af || true
+      #     rm -rf $HOME/.cache || true
+      #     df -h
       - name: unit tests
         run: make unit_test
       - name: valgrind
