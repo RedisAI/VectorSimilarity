@@ -6,6 +6,3 @@ export DEBIAN_FRONTEND=noninteractive
 $MODE tdnf install -y build-essential git wget ca-certificates which
 
 source install_cmake.sh $MODE
-
-echo "GCC version:"
-gcc --version

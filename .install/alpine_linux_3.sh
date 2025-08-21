@@ -7,6 +7,3 @@ $MODE apk update
 $MODE apk add --no-cache build-base gcc g++ make wget git valgrind linux-headers
 
 $MODE apk add --no-cache cmake
-
-echo "GCC version:"
-gcc --version

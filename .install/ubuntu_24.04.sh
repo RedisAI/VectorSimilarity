@@ -15,6 +15,3 @@ clang-format-18 --version
 $MODE apt install -yqq git wget build-essential lcov openssl libssl-dev \
     python3 python3-venv python3-dev unzip rsync curl
 source install_cmake.sh $MODE
-
-echo "GCC version:"
-gcc --version
