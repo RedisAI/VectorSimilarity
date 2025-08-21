@@ -4,6 +4,6 @@ set -e
 
 $MODE apk update
 
-$MODE apk add --no-cache build-base wget git valgrind linux-headers
+$MODE apk add --no-cache gcc-12 g++-12 make binutils musl-dev wget git valgrind linux-headers
 
 $MODE apk add --no-cache cmake
