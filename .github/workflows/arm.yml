@@ -24,7 +24,7 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 region AMI for ARM
           ec2-image-id: ami-062b37d89f25c958f
-          ec2-instance-type: t4g.large
+          ec2-instance-type: r6gd.medium
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
@@ -34,8 +34,7 @@ jobs:
     with:
       env: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
       run-valgrind: false # run the job without valgrind
-      use_disk_tmp: true
-      tmpdir_subpath: ".tmp"
+
   stop-runner:
     name: Stop self-hosted EC2 runner
     needs:
