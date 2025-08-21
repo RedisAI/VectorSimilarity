@@ -13,6 +13,8 @@
 #include <string>
 #include "VecSim/utils/serializer.h"
 #include <filesystem>
+#include <sstream>    // Required for std::ostringstream in macos
+
 
 typedef struct {
     bool valid_state;
