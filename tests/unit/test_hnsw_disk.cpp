@@ -605,7 +605,9 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     VecSimQueryParams queryParams;
     queryParams.hnswRuntimeParams.efRuntime = 50;
     
+    std::cout << "About to call topKQuery..." << std::endl;
     auto results = index.topKQuery(test_vector.data(), 2, &queryParams);
+    std::cout << "topKQuery returned, results size: " << (results ? results->results.size() : 0) << std::endl;
     
     EXPECT_TRUE(results != nullptr);
     EXPECT_EQ(results->code, VecSim_OK);
@@ -724,6 +726,164 @@ TEST_F(HNSWDiskIndexTest, BatchingTest) {
     EXPECT_GE(results->results.size(), 1);
     
     delete results;
+}
+
+TEST_F(HNSWDiskIndexTest, HierarchicalSearchTest) {
+    // Test the hierarchical search functionality
+    const size_t dim = 64;
+    
+    // Create HNSW parameters with smaller values for testing
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 4;  // Small M for testing
+    params.efConstruction = 50;
+    params.efRuntime = 20;
+    params.epsilon = 0.01;
+    
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+    
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+    
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    
+    // Create test vectors with known relationships
+    std::mt19937 rng(42);
+    std::vector<std::vector<float>> test_vectors;
+    std::vector<labelType> labels;
+    
+    // Create a base vector
+    auto base_vector = createRandomVector(dim, rng);
+    normalizeVector(base_vector);
+    test_vectors.push_back(base_vector);
+    labels.push_back(100);
+    
+    // Create similar vectors (small variations of base)
+    for (int i = 1; i < 10; i++) {
+        auto similar_vector = base_vector;
+        // Add small random noise
+        std::uniform_real_distribution<float> noise_dist(-0.1f, 0.1f);
+        for (size_t j = 0; j < dim; j++) {
+            similar_vector[j] += noise_dist(rng);
+        }
+        normalizeVector(similar_vector);
+        test_vectors.push_back(similar_vector);
+        labels.push_back(100 + i);
+    }
+    
+    // Create some different vectors
+    for (int i = 10; i < 20; i++) {
+        auto different_vector = createRandomVector(dim, rng);
+        normalizeVector(different_vector);
+        test_vectors.push_back(different_vector);
+        labels.push_back(200 + i);
+    }
+    
+    std::cout << "\n=== Adding vectors to index ===" << std::endl;
+    
+    // Add vectors to index
+    for (size_t i = 0; i < test_vectors.size(); i++) {
+        std::cout << "Adding vector " << i << " with label " << labels[i] << std::endl;
+        index.addVector(test_vectors[i].data(), labels[i]);
+    }
+    
+    // Force flush to process all vectors
+    index.flushBatch();
+    
+    std::cout << "\n=== Index state after adding vectors ===" << std::endl;
+    std::cout << "Index size: " << index.indexSize() << std::endl;
+    std::cout << "Index label count: " << index.indexLabelCount() << std::endl;
+    
+    // Debug: Print graph structure
+    index.debugPrintGraphStructure();
+    
+    // Test hierarchical search with different query vectors
+    std::cout << "\n=== Testing hierarchical search ===" << std::endl;
+    
+    // Test 1: Query with base vector (should find similar vectors first)
+    std::cout << "\n--- Test 1: Query with base vector ---" << std::endl;
+    VecSimQueryParams queryParams1;
+    queryParams1.hnswRuntimeParams.efRuntime = 20;
+    
+    auto results1 = index.topKQuery(test_vectors[0].data(), 5, &queryParams1);
+    EXPECT_TRUE(results1 != nullptr) << "Query 1 failed to return results";
+    EXPECT_EQ(results1->code, VecSim_OK) << "Query 1 returned error code: " << results1->code;
+    EXPECT_GE(results1->results.size(), 1) << "Query 1 returned no results";
+    
+    std::cout << "Query 1 results (" << results1->results.size() << "):" << std::endl;
+    for (size_t i = 0; i < results1->results.size(); i++) {
+        std::cout << "  Result " << i << ": id=" << results1->results[i].id 
+                  << ", score=" << results1->results[i].score << std::endl;
+    }
+    
+    // Test 2: Query with a different vector
+    std::cout << "\n--- Test 2: Query with different vector ---" << std::endl;
+    auto results2 = index.topKQuery(test_vectors[15].data(), 5, &queryParams1);
+    EXPECT_TRUE(results2 != nullptr) << "Query 2 failed to return results";
+    EXPECT_EQ(results2->code, VecSim_OK) << "Query 2 returned error code: " << results2->code;
+    EXPECT_GE(results2->results.size(), 1) << "Query 2 returned no results";
+    
+    std::cout << "Query 2 results (" << results2->results.size() << "):" << std::endl;
+    for (size_t i = 0; i < results2->results.size(); i++) {
+        std::cout << "  Result " << i << ": id=" << results2->results[i].id 
+                  << ", score=" << results2->results[i].score << std::endl;
+    }
+    
+    // Test 3: Query with larger k to test multiple results
+    std::cout << "\n--- Test 3: Query with larger k ---" << std::endl;
+    auto results3 = index.topKQuery(test_vectors[0].data(), 10, &queryParams1);
+    EXPECT_TRUE(results3 != nullptr) << "Query 3 failed to return results";
+    EXPECT_EQ(results3->code, VecSim_OK) << "Query 3 returned error code: " << results3->code;
+    EXPECT_GE(results3->results.size(), 5) << "Query 3 should return at least 5 results";
+    
+    std::cout << "Query 3 results (" << results3->results.size() << "):" << std::endl;
+    for (size_t i = 0; i < results3->results.size(); i++) {
+        std::cout << "  Result " << i << ": id=" << results3->results[i].id 
+                  << ", score=" << results3->results[i].score << std::endl;
+    }
+    
+    // Verify that results are ordered by distance (lower score = better)
+    for (size_t i = 1; i < results3->results.size(); i++) {
+        EXPECT_LE(results3->results[i-1].score, results3->results[i].score) 
+            << "Results not properly ordered by distance";
+    }
+    
+    // Test 4: Query with a completely new vector
+    std::cout << "\n--- Test 4: Query with new vector ---" << std::endl;
+    auto new_query_vector = createRandomVector(dim, rng);
+    normalizeVector(new_query_vector);
+    
+    auto results4 = index.topKQuery(new_query_vector.data(), 5, &queryParams1);
+    EXPECT_TRUE(results4 != nullptr) << "Query 4 failed to return results";
+    EXPECT_EQ(results4->code, VecSim_OK) << "Query 4 returned error code: " << results4->code;
+    EXPECT_GE(results4->results.size(), 1) << "Query 4 returned no results";
+    
+    std::cout << "Query 4 results (" << results4->results.size() << "):" << std::endl;
+    for (size_t i = 0; i < results4->results.size(); i++) {
+        std::cout << "  Result " << i << ": id=" << results4->results[i].id 
+                  << ", score=" << results4->results[i].score << std::endl;
+    }
+    
+    // Clean up
+    delete results1;
+    delete results2;
+    delete results3;
+    delete results4;
+    
+    std::cout << "\n=== Hierarchical search test completed ===" << std::endl;
 }
 
 int main(int argc, char** argv) {
