@@ -399,17 +399,17 @@ VecSimQueryReply *
 HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
                                              VecSimQueryParams *queryParams) const {
 
-    std::cout << "topKQuery called with k=" << k << ", curElementCount=" << curElementCount << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "topKQuery called with k=%zu, curElementCount=%zu", k, curElementCount);
     
     // Debug: Print graph structure before search
-    std::cout << "\n=== Graph Structure Before Search ===" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Graph Structure Before Search ===");
     debugPrintGraphStructure();
     
     auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = STANDARD_KNN;
 
     if ((curElementCount == 0 && pendingVectorCount == 0) || k == 0) {
-        std::cout << "Empty index or k=0, returning empty results" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Empty index or k=0, returning empty results");
         return rep;
     }
 
@@ -428,31 +428,31 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     }
 
     // Step 1: Find the entry point by searching from top level to bottom level
-    std::cout << "\nSearching for entry point..." << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Searching for entry point...");
     idType bottom_layer_ep = searchBottomLayerEP(processed_query, timeoutCtx, &rep->code);
-    std::cout << "Entry point found: " << bottom_layer_ep << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Entry point found: %u", bottom_layer_ep);
     if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
-        std::cout << "No entry point found or error occurred" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "No entry point found or error occurred");
         return rep; // Empty index or error
     }
 
     // Step 2: Perform hierarchical search from top level down to bottom level
-    std::cout << "\nStarting hierarchical search with curElementCount: " << curElementCount << std::endl;
-    std::cout << "Search parameters: ef=" << std::max(query_ef, k) << ", k=" << k << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Starting hierarchical search with curElementCount: %zu", curElementCount);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Search parameters: ef=%zu, k=%zu", std::max(query_ef, k), k);
     
     // Use a more sophisticated search that properly traverses the HNSW hierarchy
     auto *results = hierarchicalSearch(processed_query, bottom_layer_ep, std::max(query_ef, k), k, timeoutCtx, &rep->code);
 
     if (VecSim_OK == rep->code && results) {
-        std::cout << "Search returned " << results->size() << " results" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Search returned %zu results", results->size());
         rep->results.resize(results->size());
         for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
             std::tie(result->score, result->id) = results->top();
-            std::cout << "Result: id=" << result->id << ", score=" << result->score << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Result: id=%u, score=%f", result->id, result->score);
             results->pop();
         }
     } else {
-        std::cout << "Search failed or returned no results" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Search failed or returned no results");
     }
     
     delete results;
@@ -689,17 +689,17 @@ template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::addVector(
     const void *vector, labelType label
 ) {
-    std::cout << "\n=== addVector called with label " << label << " ===" << std::endl;
-    std::cout << "Current index size: " << curElementCount << std::endl;
-    std::cout << "Pending vectors: " << pendingVectorCount << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== addVector called with label %u ===", label);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Current index size: %zu", curElementCount);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Pending vectors: %zu", pendingVectorCount);
     
     addVectorToBatch(vector, label);
     
-    std::cout << "After addVectorToBatch - pending vectors: " << pendingVectorCount << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "After addVectorToBatch - pending vectors: %zu", pendingVectorCount);
     
     // If batch threshold reached, process immediately for debugging
     if (pendingVectorCount >= batchThreshold) {
-        std::cout << "Batch threshold reached, processing immediately..." << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Batch threshold reached, processing immediately...");
         processBatch();
     }
     
@@ -729,12 +729,12 @@ HNSWAddVectorState HNSWDiskIndex<DataType, DistType>::storeVector(
         rocksdb::Status vector_status = db->Put(rocksdb::WriteOptions(), cf, vector_key, data_slice);
 
         if (!vector_status.ok()) {
-            std::cout << "Failed to store vector in RocksDB: " << vector_status.ToString() << std::endl;
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "Failed to store vector in RocksDB: %s", vector_status.ToString().c_str());
             // Failed to store vector in RocksDB, but we still have it in memory
             // For now, continue anyway (could add error handling here)
         }
     } catch (const std::exception& e) {
-        std::cout << "Exception during RocksDB Put: " << e.what() << std::endl;
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "Exception during RocksDB Put: %s", e.what());
     }
 
     // Create the new element's metadata
@@ -756,7 +756,7 @@ HNSWAddVectorState HNSWDiskIndex<DataType, DistType>::storeVector(
         entrypointNode = state.newElementId;
         maxLevel = state.elementMaxLevel;
     }
-    std::cout << "New element added: " << state.newElementId << " with max level: " << state.elementMaxLevel << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "New element added: %u with max level: %zu", state.newElementId, state.elementMaxLevel);
     return state;
 }
 
@@ -781,19 +781,19 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::appendVector(
     const void *vector_data, const labelType label) {
 
-    std::cout << "\n=== Adding Vector with Label " << label << " ===" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Adding Vector with Label %u ===", label);
     
     ProcessedBlobs processedBlobs = this->preprocess(vector_data);
-    std::cout << "Vector preprocessed successfully" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Vector preprocessed successfully");
     
     HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
-    std::cout << "Vector stored with ID " << state.newElementId << ", max level " << state.elementMaxLevel << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Vector stored with ID %u, max level %zu", state.newElementId, state.elementMaxLevel);
 
     this->indexVector(processedBlobs.getQueryBlob(), label, state);
-    std::cout << "Vector indexed successfully" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Vector indexed successfully");
     
     // Debug: Print graph structure after adding this vector
-    std::cout << "\n=== Graph Structure After Adding Vector " << label << " ===" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Graph Structure After Adding Vector %u ===", label);
     debugPrintGraphStructure();
 }
 
@@ -802,10 +802,10 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
     idType element_id, size_t element_max_level, idType entry_point,
     size_t global_max_level, const void *vector_data) {
 
-    std::cout << "\n=== Inserting Element " << element_id << " to Graph ===" << std::endl;
-    std::cout << "Element max level: " << element_max_level << std::endl;
-    std::cout << "Global max level: " << global_max_level << std::endl;
-    std::cout << "Entry point: " << entry_point << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Inserting Element %u to Graph ===", element_id);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Element max level: %zu", element_max_level);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Global max level: %zu", global_max_level);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Entry point: %u", entry_point);
 
     idType curr_element = entry_point;
     DistType cur_dist = std::numeric_limits<DistType>::max();
@@ -813,8 +813,7 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
     if (element_max_level < global_max_level) {
         max_common_level = element_max_level;
         cur_dist = this->calcDistance(vector_data, getDataByInternalId(curr_element));
-        std::cout << "Element level < global level, searching from level " << global_max_level 
-                  << " down to " << element_max_level << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Element level < global level, searching from level %zu down to %zu", global_max_level, element_max_level);
         for (auto level = static_cast<int>(global_max_level);
              level > static_cast<int>(element_max_level); level--) {
             // this is done for the levels which are above the max level
@@ -822,59 +821,59 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
             // a greedy search in the graph starting from the entry point
             // at each level, and move on with the closest element we can find.
             // When there is no improvement to do, we take a step down.
-            std::cout << "Greedy search at level " << level << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Greedy search at level %d", level);
             greedySearchLevel(vector_data, level, curr_element, cur_dist);
-            std::cout << "After greedy search: curr_element=" << curr_element << ", cur_dist=" << cur_dist << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "After greedy search: curr_element=%u, cur_dist=%f", curr_element, cur_dist);
         }
     } else {
         max_common_level = global_max_level;
     }
 
-    std::cout << "Max common level: " << max_common_level << std::endl;
-    std::cout << "Starting level-by-level insertion from level " << max_common_level << " down to 0" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Max common level: %zu", max_common_level);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Starting level-by-level insertion from level %zu down to 0", max_common_level);
 
     auto writeOptions = rocksdb::WriteOptions();
     writeOptions.disableWAL = true;
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
-        std::cout << "\n--- Processing Level " << level << " ---" << std::endl;
-        std::cout << "Searching for candidates starting from element " << curr_element << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "--- Processing Level %d ---", level);
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Searching for candidates starting from element %u", curr_element);
         
         candidatesMaxHeap<DistType> top_candidates =
             searchLayer(curr_element, vector_data, level, efConstruction);
         
-        std::cout << "Found " << top_candidates.size() << " candidates at level " << level << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Found %zu candidates at level %d", top_candidates.size(), level);
         
         // If the entry point was marked deleted between iterations, we may receive an empty
         // candidates set.
         if (!top_candidates.empty()) {
-            std::cout << "Mutually connecting element " << element_id << " at level " << level << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Mutually connecting element %u at level %d", element_id, level);
             curr_element = mutuallyConnectNewElement(element_id, top_candidates, level);
-            std::cout << "Next closest entry point: " << curr_element << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Next closest entry point: %u", curr_element);
         } else {
-            std::cout << "WARNING: No candidates found at level " << level << "!" << std::endl;
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "WARNING: No candidates found at level %d!", level);
         }
     }
     
-    std::cout << "=== Finished inserting Element " << element_id << " ===\n" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Finished inserting Element %u ===\n", element_id);
 }
 
 template <typename DataType, typename DistType>
 idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     idType new_node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
 
-    std::cout << "  mutuallyConnectNewElement: Starting for node " << new_node_id << " at level " << level << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Starting for node %u at level %zu", new_node_id, level);
     
     // Test RocksDB connection first
-    std::cout << "  mutuallyConnectNewElement: Testing RocksDB connection..." << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Testing RocksDB connection...");
     std::string test_key = "TEST_CONNECTION";
     std::string test_value = "TEST_VALUE";
     rocksdb::Status test_status = this->db->Put(rocksdb::WriteOptions(), cf, test_key, test_value);
     if (!test_status.ok()) {
-        std::cout << "  ERROR: RocksDB test write failed: " << test_status.ToString() << std::endl;
-        std::cout << "  This indicates a serious RocksDB connection issue!" << std::endl;
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  ERROR: RocksDB test write failed: %s", test_status.ToString().c_str());
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  This indicates a serious RocksDB connection issue!");
     } else {
-        std::cout << "  SUCCESS: RocksDB test write succeeded" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  SUCCESS: RocksDB test write succeeded");
         // Clean up test key
         this->db->Delete(rocksdb::WriteOptions(), cf, test_key);
     }
@@ -894,10 +893,9 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     // Add the new element to the graph at this level
     auto newKey = GraphKey(new_node_id, level);
-    std::cout << "  mutuallyConnectNewElement: Created GraphKey for node " << new_node_id 
-              << " at level " << level << std::endl;
-    std::cout << "  mutuallyConnectNewElement: GraphKey size: " << sizeof(GraphKey) << " bytes" << std::endl;
-    std::cout << "  mutuallyConnectNewElement: GraphKey asSlice size: " << newKey.asSlice().size() << " bytes" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Created GraphKey for node %u at level %zu", new_node_id, level);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: GraphKey size: %zu bytes", sizeof(GraphKey));
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: GraphKey asSlice size: %zu bytes", newKey.asSlice().size());
     
     std::vector<idType> neighbor_ids(top_candidates_list.size());
     for (size_t i = 0; i < top_candidates_list.size(); ++i) {
@@ -907,22 +905,19 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     auto neighbors_slice =
         rocksdb::Slice(reinterpret_cast<const char *>(neighbor_ids.data()), bytes);
     
-    std::cout << "  mutuallyConnectNewElement: Neighbors data size: " << bytes << " bytes" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Neighbors data size: %zu bytes", bytes);
     
-    std::cout << "Storing graph connection: node " << new_node_id << " at level " << level 
-              << " with " << neighbor_ids.size() << " neighbors: ";
-    for (size_t i = 0; i < neighbor_ids.size(); ++i) {
-        std::cout << neighbor_ids[i] << " ";
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Storing graph connection: node %u at level %zu with %zu neighbors: ", new_node_id, level, neighbor_ids.size());
+    for (size_t i = 0; i < neighbor_ids.size(); i++) {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "%u ", neighbor_ids[i]);
     }
-    std::cout << std::endl;
     
     // Store the new node's neighbors
     rocksdb::Status put_status = this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
     if (!put_status.ok()) {
-        std::cout << "ERROR: Failed to store graph connection for node " << new_node_id 
-                  << " at level " << level << ": " << put_status.ToString() << std::endl;
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to store graph connection for node %u at level %zu: %s", new_node_id, level, put_status.ToString().c_str());
     } else {
-        std::cout << "SUCCESS: Stored graph connection for node " << new_node_id << " at level " << level << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Stored graph connection for node %u at level %zu", new_node_id, level);
     }
 
     // Update existing nodes to include the new node in their neighbor lists
@@ -952,10 +947,9 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
         rocksdb::Status update_status = this->db->Put(writeOptions, cf, neighborKey.asSlice(), updated_neighbors_slice);
         
         if (!update_status.ok()) {
-            std::cout << "ERROR: Failed to update neighbors for node " << selected_neighbor 
-                      << " at level " << level << ": " << update_status.ToString() << std::endl;
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to update neighbors for node %u at level %zu: %s", selected_neighbor, level, update_status.ToString().c_str());
         } else {
-            std::cout << "SUCCESS: Updated node " << selected_neighbor << " to include neighbor " << new_node_id << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Updated node %u to include neighbor %u", selected_neighbor, new_node_id);
         }
     }
 
@@ -1121,7 +1115,7 @@ const void* HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) co
 
 template <typename DataType, typename DistType>
 candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const {
-    std::cout << "  searchLayer: Starting search at level " << level << " from entry point " << ep_id << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Starting search at level %zu from entry point %u", level, ep_id);
     
     candidatesMaxHeap<DistType> candidates(this->allocator);
     candidatesMaxHeap<DistType> candidates_set(this->allocator);
@@ -1132,7 +1126,7 @@ candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idTyp
     
     // Start with the entry point
     DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
-    std::cout << "  searchLayer: Entry point " << ep_id << " distance: " << dist << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Entry point %u distance: %f", ep_id, dist);
     candidates.emplace(dist, ep_id);
     candidates_set.emplace(-dist, ep_id);
     visited_nodes_handler->tagNode(ep_id, visited_tag);
@@ -1146,14 +1140,11 @@ candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idTyp
         idType curr_id = curr_pair.second;
         candidates_set.pop();
         
-        std::cout << "  searchLayer: Iteration " << iterations << ", processing node " << curr_id 
-                  << " with distance " << curr_dist << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Iteration %zu, processing node %u with distance %f", iterations, curr_id, curr_dist);
         
         // If we have enough candidates and the current distance is worse than our best, stop
         if (candidates.size() >= ef && curr_dist > candidates.top().first) {
-            std::cout << "  searchLayer: Stopping search - have " << candidates.size() 
-                      << " candidates and current distance " << curr_dist 
-                      << " > best distance " << candidates.top().first << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Stopping search - have %zu candidates and current distance %f > best distance %f", candidates.size(), curr_dist, candidates.top().first);
             break;
         }
         
@@ -1165,31 +1156,31 @@ candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idTyp
         if (status.ok()) {
             const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
             size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-            std::cout << "  searchLayer: Node " << curr_id << " has " << num_neighbors << " neighbors at level " << level << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Node %u has %zu neighbors at level %zu", curr_id, num_neighbors, level);
             
             for (size_t i = 0; i < num_neighbors; i++) {
                 idType neighbor_id = neighbors[i];
                 
                 if (visited_nodes_handler->getNodeTag(neighbor_id) == visited_tag) {
-                    std::cout << "  searchLayer: Skipping already visited neighbor " << neighbor_id << std::endl;
+                    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Skipping already visited neighbor %u", neighbor_id);
                     continue;
                 }
                 
                 visited_nodes_handler->tagNode(neighbor_id, visited_tag);
                 DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
-                std::cout << "  searchLayer: Adding neighbor " << neighbor_id << " with distance " << neighbor_dist << std::endl;
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Adding neighbor %u with distance %f", neighbor_id, neighbor_dist);
                 
                 candidates.emplace(neighbor_dist, neighbor_id);
                 candidates_set.emplace(-neighbor_dist, neighbor_id);
             }
         } else {
-            std::cout << "  searchLayer: WARNING - No neighbors found for node " << curr_id << " at level " << level << std::endl;
-            std::cout << "  searchLayer: RocksDB status: " << status.ToString() << std::endl;
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  searchLayer: WARNING - No neighbors found for node %u at level %zu", curr_id, level);
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  searchLayer: RocksDB status: %s", status.ToString().c_str());
         }
     }
     
-    std::cout << "  searchLayer: Search completed in " << iterations << " iterations" << std::endl;
-    std::cout << "  searchLayer: Found " << candidates.size() << " candidates" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Search completed in %zu iterations", iterations);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  searchLayer: Found %zu candidates", candidates.size());
     
     returnVisitedList(visited_nodes_handler);
     return candidates;
@@ -1221,7 +1212,7 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point
     bool changed;
     idType bestCand = curr_element;
 
-    std::cout << "Greedy search at level " << level << " starting from element " << bestCand << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Greedy search at level %zu starting from element %u", level, bestCand);
 
     do {
         changed = false;
@@ -1233,7 +1224,7 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point
 
         if (!status.ok()) {
             // No neighbors found for this node at this level, stop searching
-            std::cout << "No neighbors found for element " << bestCand << " at level " << level << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "No neighbors found for element %u at level %zu", bestCand, level);
             break;
         }
 
@@ -1310,26 +1301,25 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(idType candidate_id, co
         return;
     }
     
-    std::cout << "    processCandidate: Processing candidate " << candidate_id << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Processing candidate %u", candidate_id);
     visited_set->insert(candidate_id);
     
     // Calculate distance to candidate
     DistType dist = this->calcDistance(data_point, getDataByInternalId(candidate_id));
-    std::cout << "    processCandidate: Candidate " << candidate_id << " distance: " << dist << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Candidate %u distance: %f", candidate_id, dist);
     
     // Add to top candidates if it's one of the best
     if (top_candidates.size() < ef || dist < lowerBound) {
         top_candidates.emplace(dist, getExternalLabel(candidate_id));
-        std::cout << "    processCandidate: Added candidate " << candidate_id << " to results" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Added candidate %u to results", candidate_id);
         
         // Update lower bound if we have enough candidates
         if (top_candidates.size() >= ef) {
             lowerBound = top_candidates.top().first;
-            std::cout << "    processCandidate: Updated lower bound to: " << lowerBound << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Updated lower bound to: %f", lowerBound);
         }
     } else {
-        std::cout << "    processCandidate: Candidate " << candidate_id << " not good enough (dist=" << dist 
-                  << " >= lowerBound=" << lowerBound << ")" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Candidate %u not good enough (dist=%f >= lowerBound=%f)", candidate_id, dist, lowerBound);
     }
     
     // Add neighbors to candidate set for further exploration
@@ -1340,27 +1330,27 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(idType candidate_id, co
     if (status.ok()) {
         const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
         size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-        std::cout << "    processCandidate: Found " << num_neighbors << " neighbors for candidate " << candidate_id << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Found %zu neighbors for candidate %u", num_neighbors, candidate_id);
         
         for (size_t i = 0; i < num_neighbors; i++) {
             idType neighbor_id = neighbors[i];
             
             // Skip invalid neighbors
             if (neighbor_id >= curElementCount) {
-                std::cout << "    processCandidate: Skipping invalid neighbor " << neighbor_id << std::endl;
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Skipping invalid neighbor %u", neighbor_id);
                 continue;
             }
             
             if (visited_set->find(neighbor_id) == visited_set->end()) {
                 DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
                 candidate_set.emplace(-neighbor_dist, neighbor_id);
-                std::cout << "    processCandidate: Added neighbor " << neighbor_id << " to candidate set with distance " << neighbor_dist << std::endl;
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Added neighbor %u to candidate set with distance %f", neighbor_id, neighbor_dist);
             } else {
-                std::cout << "    processCandidate: Skipping already visited neighbor " << neighbor_id << std::endl;
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: Skipping already visited neighbor %u", neighbor_id);
             }
         }
     } else {
-        std::cout << "    processCandidate: No neighbors found for candidate " << candidate_id << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    processCandidate: No neighbors found for candidate %u", candidate_id);
     }
 }
 
@@ -1460,16 +1450,16 @@ vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() con
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::addVectorToBatch(const void *vector_data, const labelType label) {
-    std::cout << "  addVectorToBatch: Processing vector with label " << label << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  addVectorToBatch: Processing vector with label %u", label);
     
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector_data);
-    std::cout << "  addVectorToBatch: Vector preprocessed successfully" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  addVectorToBatch: Vector preprocessed successfully");
     
     // Store the processed vector in memory
     std::vector<char> vector_copy(this->dataSize);
     std::memcpy(vector_copy.data(), processedBlobs.getStorageBlob(), this->dataSize);
-    std::cout << "  addVectorToBatch: Vector copied to memory, size: " << this->dataSize << " bytes" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  addVectorToBatch: Vector copied to memory, size: %zu bytes", this->dataSize);
     
     // Add to pending vectors
     pendingVectors.emplace_back(label, std::move(vector_copy));
@@ -1481,13 +1471,12 @@ void HNSWDiskIndex<DataType, DistType>::addVectorToBatch(const void *vector_data
     
     pendingVectorCount++;
     
-    std::cout << "  addVectorToBatch: Added to pending batch. Total pending: " << pendingVectorCount 
-              << ", threshold: " << batchThreshold << std::endl;
-    std::cout << "  addVectorToBatch: Generated level: " << elementMaxLevel << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  addVectorToBatch: Added to pending batch. Total pending: %zu, threshold: %zu", pendingVectorCount, batchThreshold);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  addVectorToBatch: Generated level: %zu", elementMaxLevel);
     
     // Check if we should process the batch
     if (pendingVectorCount >= batchThreshold) {
-        std::cout << "  addVectorToBatch: Batch threshold reached, calling processBatch()" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  addVectorToBatch: Batch threshold reached, calling processBatch()");
         processBatch();
     }
 }
@@ -1495,19 +1484,19 @@ void HNSWDiskIndex<DataType, DistType>::addVectorToBatch(const void *vector_data
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::processBatch() {
     if (pendingVectorCount == 0) {
-        std::cout << "  processBatch: No pending vectors to process" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: No pending vectors to process");
         return; // Nothing to process
     }
     
-    std::cout << "\n=== Processing Batch ===" << std::endl;
-    std::cout << "  processBatch: Processing " << pendingVectorCount << " vectors" << std::endl;
-    std::cout << "  processBatch: Current index size: " << curElementCount << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Processing Batch ===");
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Processing %zu vectors", pendingVectorCount);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Current index size: %zu", curElementCount);
     
     // Process each pending vector individually using appendVector
     for (size_t i = 0; i < pendingVectorCount; i++) {
-        std::cout << "  processBatch: Processing vector " << i << " with label " << pendingVectors[i].first << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Processing vector %zu with label %u", i, pendingVectors[i].first);
         appendVector(pendingVectors[i].second.data(), pendingVectors[i].first);
-        std::cout << "  processBatch: Vector " << i << " processed" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Vector %zu processed", i);
     }
     
     // Note: Resize is not needed since we start with a small pool size
@@ -1517,9 +1506,9 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
     pendingMetadata.clear();
     pendingVectorCount = 0;
     
-    std::cout << "  processBatch: Batch processing completed" << std::endl;
-    std::cout << "  processBatch: Final index size: " << curElementCount << std::endl;
-    std::cout << "=== Batch Processing Complete ===\n" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Batch processing completed");
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Final index size: %zu", curElementCount);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Batch Processing Complete ===");
 }
 
 template <typename DataType, typename DistType>
@@ -1531,22 +1520,21 @@ void HNSWDiskIndex<DataType, DistType>::flushBatch() {
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::debugPrintGraphStructure() const {
-    std::cout << "\n=== HNSW Disk Index Graph Structure ===" << std::endl;
-    std::cout << "Total elements: " << curElementCount << std::endl;
-    std::cout << "Entry point: " << entrypointNode << std::endl;
-    std::cout << "Max level: " << maxLevel << std::endl;
-    std::cout << "M: " << M << ", M0: " << M0 << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== HNSW Disk Index Graph Structure ===");
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Total elements: %zu", curElementCount);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Entry point: %u", entrypointNode);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Max level: %zu", maxLevel);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "M: %zu, M0: %zu", M, M0);
     
     // Count total edges
     size_t total_edges = debugCountGraphEdges();
-    std::cout << "Total graph edges: " << total_edges << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Total graph edges: %zu", total_edges);
     
     // Print metadata for each element
-    std::cout << "\nElement metadata:" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Element metadata:");
     for (size_t i = 0; i < std::min(curElementCount, idToMetaData.size()); ++i) {
         if (idToMetaData[i].label != INVALID_LABEL) {
-            std::cout << "  Element " << i << ": label=" << idToMetaData[i].label 
-                      << ", topLevel=" << idToMetaData[i].topLevel << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Element %zu: label=%u, topLevel=%zu", i, idToMetaData[i].label, idToMetaData[i].topLevel);
         }
     }
     
@@ -1557,13 +1545,13 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintGraphStructure() const {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::debugPrintNodeNeighbors(idType node_id) const {
     if (node_id >= curElementCount) {
-        std::cout << "Node " << node_id << " is out of range (max: " << (curElementCount-1) << ")" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Node %u is out of range (max: %zu)", node_id, (curElementCount-1));
         return;
     }
     
-    std::cout << "\n=== Neighbors for Node " << node_id << " ===" << std::endl;
-    std::cout << "Label: " << getExternalLabel(node_id) << std::endl;
-    std::cout << "Top level: " << idToMetaData[node_id].topLevel << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Neighbors for Node %u ===", node_id);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Label: %u", getExternalLabel(node_id));
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Top level: %zu", idToMetaData[node_id].topLevel);
     
     // Check each level
     for (size_t level = 0; level <= idToMetaData[node_id].topLevel; ++level) {
@@ -1574,20 +1562,19 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintNodeNeighbors(idType node_id) 
         if (status.ok()) {
             const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
             size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-            std::cout << "  Level " << level << " (" << num_neighbors << " neighbors): ";
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Level %zu (%zu neighbors): ", level, num_neighbors);
             for (size_t i = 0; i < num_neighbors; i++) {
-                std::cout << neighbors[i] << " ";
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "%u ", neighbors[i]);
             }
-            std::cout << std::endl;
         } else {
-            std::cout << "  Level " << level << ": No neighbors found" << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Level %zu: No neighbors found", level);
         }
     }
 }
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::debugPrintAllGraphKeys() const {
-    std::cout << "\n=== All Graph Keys in RocksDB ===" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== All Graph Keys in RocksDB ===");
     
     auto readOptions = rocksdb::ReadOptions();
     readOptions.fill_cache = false;
@@ -1603,10 +1590,9 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintAllGraphKeys() const {
         // Parse the key: "GK" + GraphKey struct
         if (key.size() >= 9 && key.starts_with("GK")) { // 3 bytes for "GK" + 2 for level + 4 for id
             const GraphKey* graphKey = reinterpret_cast<const GraphKey*>(key.data() + 3);
-            std::cout << "  Key " << key_count << ": node=" << graphKey->id 
-                      << ", level=" << graphKey->level;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Key %zu: node=%u, level=%u", key_count, graphKey->id, graphKey->level);
         } else {
-            std::cout << "  Key " << key_count << ": invalid format (size=" << key.size() << ")";
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Key %zu: invalid format (size=%zu)", key_count, key.size());
         }
         
         // Get neighbors count
@@ -1614,26 +1600,25 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintAllGraphKeys() const {
         size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
         total_neighbors += num_neighbors;
         
-        std::cout << " (" << num_neighbors << " neighbors)" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, " (%zu neighbors)", num_neighbors);
         
         // Print first few neighbors
         if (num_neighbors > 0) {
             const idType* neighbors = reinterpret_cast<const idType*>(neighborsSlice.data());
-            std::cout << "    Neighbors: ";
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    Neighbors: ");
             for (size_t i = 0; i < std::min(num_neighbors, size_t(5)); i++) {
-                std::cout << neighbors[i] << " ";
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "%u ", neighbors[i]);
             }
             if (num_neighbors > 5) {
-                std::cout << "... (and " << (num_neighbors - 5) << " more)";
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "... (and %zu more)", (num_neighbors - 5));
             }
-            std::cout << std::endl;
         }
         
         key_count++;
     }
     
-    std::cout << "Total graph keys: " << key_count << std::endl;
-    std::cout << "Total neighbor connections: " << total_neighbors << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Total graph keys: %zu", key_count);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Total neighbor connections: %zu", total_neighbors);
     
     delete it;
 }
@@ -1659,34 +1644,34 @@ size_t HNSWDiskIndex<DataType, DistType>::debugCountGraphEdges() const {
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::debugValidateGraphConnectivity() const {
-    std::cout << "\n=== Graph Connectivity Validation ===" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Graph Connectivity Validation ===");
     
     if (curElementCount == 0) {
-        std::cout << "Index is empty, nothing to validate" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Index is empty, nothing to validate");
         return;
     }
     
     // Check if entry point exists and has neighbors
     if (entrypointNode != INVALID_ID) {
-        std::cout << "Entry point " << entrypointNode << " exists" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Entry point %u exists", entrypointNode);
         debugPrintNodeNeighbors(entrypointNode);
     } else {
-        std::cout << "WARNING: No entry point set!" << std::endl;
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "WARNING: No entry point set!");
     }
     
     // Check connectivity for first few elements
     size_t elements_to_check = std::min(curElementCount, size_t(5));
-    std::cout << "\nChecking connectivity for first " << elements_to_check << " elements:" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Checking connectivity for first %zu elements:", elements_to_check);
     
     for (size_t i = 0; i < elements_to_check; ++i) {
         if (idToMetaData[i].label != INVALID_LABEL) {
-            std::cout << "\nElement " << i << ":" << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Element %zu:", i);
             debugPrintNodeNeighbors(i);
         }
     }
     
     // Check for isolated nodes (nodes with no neighbors at any level)
-    std::cout << "\nChecking for isolated nodes..." << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Checking for isolated nodes...");
     size_t isolated_count = 0;
     
     for (size_t i = 0; i < curElementCount; ++i) {
@@ -1705,16 +1690,15 @@ void HNSWDiskIndex<DataType, DistType>::debugValidateGraphConnectivity() const {
         }
         
         if (!has_neighbors) {
-            std::cout << "  WARNING: Element " << i << " (label " << idToMetaData[i].label 
-                      << ") has no neighbors at any level!" << std::endl;
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  WARNING: Element %zu (label %u) has no neighbors at any level!", i, idToMetaData[i].label);
             isolated_count++;
         }
     }
     
     if (isolated_count == 0) {
-        std::cout << "  All elements have at least some neighbors" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  All elements have at least some neighbors");
     } else {
-        std::cout << "  Found " << isolated_count << " isolated elements" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Found %zu isolated elements", isolated_count);
     }
 }
 
@@ -1724,18 +1708,18 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
                                                       VecSimQueryReply_Code *rc) const {
     if (rc) *rc = VecSim_QueryReply_OK;
     
-    std::cout << "  hierarchicalSearch: Starting hierarchical search from entry point " << ep_id << std::endl;
-    std::cout << "  hierarchicalSearch: Target ef=" << ef << ", k=" << k << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Starting hierarchical search from entry point %u", ep_id);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Target ef=%zu, k=%zu", ef, k);
     
     // Get the current entry point state
     auto [curr_entry_point, max_level] = safeGetEntryPointState();
     if (curr_entry_point == INVALID_ID) {
-        std::cout << "  hierarchicalSearch: No valid entry point found" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: No valid entry point found");
         if (rc) *rc = VecSim_QueryReply_OK; // Just return OK but no results
         return nullptr;
     }
     
-    std::cout << "  hierarchicalSearch: Current entry point: " << curr_entry_point << ", max level: " << max_level << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Current entry point: %u, max level: %zu", curr_entry_point, max_level);
     
     // Initialize result containers
     candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
@@ -1748,7 +1732,7 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     idType curr_element = ep_id;
     DistType curr_dist = this->calcDistance(data_point, getDataByInternalId(curr_element));
     
-    std::cout << "  hierarchicalSearch: Entry point distance: " << curr_dist << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Entry point distance: %f", curr_dist);
     
     // Add entry point to results
     if (!isMarkedDeleted(curr_element)) {
@@ -1757,9 +1741,9 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     }
     
     // Phase 1: Search from top level down to level 1 (hierarchical traversal)
-    std::cout << "  hierarchicalSearch: Phase 1 - Hierarchical traversal from level " << max_level << " to 1" << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Phase 1 - Hierarchical traversal from level %zu to 1", max_level);
     for (size_t level = max_level; level > 0; --level) {
-        std::cout << "  hierarchicalSearch: Searching at level " << level << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Searching at level %zu", level);
         
         // Search at this level using the current element as entry point
         candidatesMaxHeap<DistType> level_candidates = searchLayer(curr_element, data_point, level, ef);
@@ -1768,10 +1752,9 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
             // Find the closest element at this level to continue the search
             curr_element = level_candidates.top().second;
             curr_dist = level_candidates.top().first;
-            std::cout << "  hierarchicalSearch: Level " << level << " - closest element: " << curr_element 
-                      << " with distance: " << curr_dist << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Level %zu - closest element: %u with distance: %f", level, curr_element, curr_dist);
         } else {
-            std::cout << "  hierarchicalSearch: Level " << level << " - no candidates found" << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Level %zu - no candidates found", level);
         }
         
         // Check timeout
@@ -1783,8 +1766,8 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     }
     
     // Phase 2: Search at the bottom layer (level 0) with beam search
-    std::cout << "  hierarchicalSearch: Phase 2 - Bottom layer search at level 0" << std::endl;
-    std::cout << "  hierarchicalSearch: Starting from element " << curr_element << " with distance " << curr_dist << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Phase 2 - Bottom layer search at level 0");
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Starting from element %u with distance %f", curr_element, curr_dist);
     
     // Reset visited set for bottom layer search
     visited_set.clear();
@@ -1803,14 +1786,14 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     if (start_status.ok()) {
         const idType* start_neighbors = reinterpret_cast<const idType*>(start_neighbors_data.data());
         size_t num_start_neighbors = start_neighbors_data.size() / sizeof(idType);
-        std::cout << "  hierarchicalSearch: Adding " << num_start_neighbors << " initial neighbors from level 0" << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Adding %zu initial neighbors from level 0", num_start_neighbors);
         
         for (size_t i = 0; i < num_start_neighbors; i++) {
             idType neighbor_id = start_neighbors[i];
             if (neighbor_id < curElementCount && visited_set.find(neighbor_id) == visited_set.end()) {
                 DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
                 candidate_set.emplace(-neighbor_dist, neighbor_id);
-                std::cout << "  hierarchicalSearch: Added initial neighbor " << neighbor_id << " with distance " << neighbor_dist << std::endl;
+                this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Added initial neighbor %u with distance %f", neighbor_id, neighbor_dist);
             }
         }
     }
@@ -1818,8 +1801,8 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     // Beam search at bottom layer
     DistType lower_bound = curr_dist;
     
-    std::cout << "  hierarchicalSearch: Starting beam search with initial lower bound: " << lower_bound << std::endl;
-    std::cout << "  hierarchicalSearch: Initial candidate set size: " << candidate_set.size() << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Starting beam search with initial lower bound: %f", lower_bound);
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Initial candidate set size: %zu", candidate_set.size());
     
     while (!candidate_set.empty()) {
         // Check timeout
@@ -1833,14 +1816,11 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
         idType curr_candidate_id = curr_pair.second;
         candidate_set.pop();
         
-        std::cout << "  hierarchicalSearch: Processing candidate " << curr_candidate_id 
-                  << " with distance " << curr_candidate_dist << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Processing candidate %u with distance %f", curr_candidate_id, curr_candidate_dist);
         
         // If we have enough candidates and current distance is worse, stop
         if (top_candidates->size() >= ef && curr_candidate_dist > lower_bound) {
-            std::cout << "  hierarchicalSearch: Stopping search - have " << top_candidates->size() 
-                      << " candidates and current distance " << curr_candidate_dist 
-                      << " > lower bound " << lower_bound << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Stopping search - have %zu candidates and current distance %f > lower bound %f", top_candidates->size(), curr_candidate_dist, lower_bound);
             break;
         }
         
@@ -1849,20 +1829,17 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
                         reinterpret_cast<void*>(&visited_set), 0, 
                         *top_candidates, candidate_set, lower_bound);
         
-        std::cout << "  hierarchicalSearch: After processing candidate " << curr_candidate_id 
-                  << " - top candidates: " << top_candidates->size() 
-                  << ", candidate set: " << candidate_set.size() << std::endl;
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: After processing candidate %u - top candidates: %zu, candidate set: %zu", curr_candidate_id, top_candidates->size(), candidate_set.size());
         
         // Update lower bound based on current top candidates
         if (top_candidates->size() >= ef) {
             lower_bound = top_candidates->top().first;
-            std::cout << "  hierarchicalSearch: Updated lower bound to: " << lower_bound << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Updated lower bound to: %f", lower_bound);
         }
         
         // Continue searching until we have enough candidates or exhaust all possibilities
         if (top_candidates->size() >= ef && candidate_set.empty()) {
-            std::cout << "  hierarchicalSearch: Stopping search - have " << top_candidates->size() 
-                      << " candidates and no more candidates to explore" << std::endl;
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Stopping search - have %zu candidates and no more candidates to explore", top_candidates->size());
             break;
         }
     }
@@ -1872,7 +1849,7 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
         top_candidates->pop();
     }
     
-    std::cout << "  hierarchicalSearch: Search completed. Final results: " << top_candidates->size() << std::endl;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  hierarchicalSearch: Search completed. Final results: %zu", top_candidates->size());
     if (rc) *rc = VecSim_QueryReply_OK;
     return top_candidates;
 }
