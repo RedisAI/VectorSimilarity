@@ -437,7 +437,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
-    if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+    if (hnsw_index->isCapacityFull()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();

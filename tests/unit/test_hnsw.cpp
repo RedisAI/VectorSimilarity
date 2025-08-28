@@ -57,6 +57,35 @@ TYPED_TEST(HNSWTest, hnsw_vector_add_test) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(HNSWTest, hnsw_vector_add_test2) {
+    size_t dim = 4;
+    size_t bs = 1;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = 16, .efConstruction = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    size_t num_docs = bs * 3;
+    for (size_t i = 0; i < num_docs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
+    }
+
+    // delete the last vector
+    for (size_t i = 0; i < 2 * bs; i++) {
+        VecSimIndex_DeleteVector(index, num_docs - i - 1);
+    }
+    // add 1 vec
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, num_docs);
+
+    // override last vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, num_docs - 1);
+    // try to add it again
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, num_docs - 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), num_docs);
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     size_t dim = 4;
     size_t bs = 1;

@@ -372,70 +372,91 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
     size_t block_size = hnswIndex->basicInfo().blockSize;
 
-    size_t accumulated_mem_delta = allocator->getAllocationSize();
+    size_t prev_bucket_count = hnswIndex->labelLookup.bucket_count();
     for (size_t i = 0; i < block_size; i++) {
         GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, i, i);
     }
     // Get the memory delta after adding the block.
-    accumulated_mem_delta = allocator->getAllocationSize() - accumulated_mem_delta;
+    size_t one_block_mem_delta = allocator->getAllocationSize() - initial_memory_size;
+
+    size_t one_block_buckets = hnswIndex->labelLookup.bucket_count();
+    // @param expected_size - The expected number of elements in the index.
+    // @param expected_data_container_blocks - The expected number of blocks in the data containers.
+    // @param expected_map_containers_capacity - The expected capacity of the map containers in
+    // number of elements.
+    auto verify_containers_size = [&](size_t expected_size, size_t expected_data_container_blocks,
+                                      size_t expected_map_containers_size) {
+        SCOPED_TRACE("Verifying containers size for size " + std::to_string(expected_size));
+        ASSERT_EQ(hnswIndex->indexSize(), expected_size);
+        ASSERT_EQ(hnswIndex->indexCapacity(), expected_data_container_blocks * block_size);
+        ASSERT_EQ(hnswIndex->graphDataBlocks.size(), expected_data_container_blocks);
+        ASSERT_EQ(dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors)->numBlocks(),
+                  expected_data_container_blocks);
+        ASSERT_EQ(hnswIndex->vectors->size(), expected_size);
+
+        ASSERT_EQ(hnswIndex->idToMetaData.capacity(), expected_map_containers_size);
+        ASSERT_EQ(hnswIndex->idToMetaData.size(), expected_map_containers_size);
+        ASSERT_GE(hnswIndex->labelLookup.bucket_count(), expected_map_containers_size);
+        // Also validate that there are no unidirectional connections (these add memory to the
+        // incoming edges sets).
+        ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
+    };
 
     // Validate that a single block exists.
-    ASSERT_EQ(hnswIndex->indexSize(), block_size);
-    ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
-    ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
-    // Also validate that there are no unidirectional connections (these add memory to the incoming
-    // edges sets).
-    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
+    verify_containers_size(block_size, 1, block_size);
 
+    size_t one_block_mem = allocator->getAllocationSize();
     // Add another vector, expect resizing of the index to contain two blocks.
-    size_t prev_bucket_count = hnswIndex->labelLookup.bucket_count();
-    size_t mem_delta = allocator->getAllocationSize();
     GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
-    mem_delta = allocator->getAllocationSize() - mem_delta;
-
-    ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
-    ASSERT_EQ(hnswIndex->indexCapacity(), 2 * block_size);
-    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
+    verify_containers_size(block_size + 1, 2, 2 * block_size);
+    size_t mem_delta = allocator->getAllocationSize() - one_block_mem;
 
     // Compute the expected memory allocation due to the last vector insertion.
     size_t vec_max_level = hnswIndex->getGraphDataByInternalId(block_size)->toplevel;
-    size_t expected_mem_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
-        hashTableNodeSize;
+    size_t last_vec_graph_data_mem =
+        (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) + hashTableNodeSize;
     if (vec_max_level > 0) {
-        expected_mem_delta += hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
+        last_vec_graph_data_mem +=
+            hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
     }
+    size_t expected_mem_delta = last_vec_graph_data_mem;
     // Also account for all the memory allocation caused by the resizing that this vector triggered
     // except for the bucket count of the labels_lookup hash table that is calculated separately.
-    size_t size_total_data_per_element = hnswIndex->elementGraphDataSize + hnswIndex->dataSize;
-    expected_mem_delta +=
-        (sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) + size_total_data_per_element) *
-        block_size;
-    expected_mem_delta +=
-        (hnswIndex->labelLookup.bucket_count() - prev_bucket_count) * sizeof(size_t);
-    // New blocks allocated - 1 aligned block for vectors and 1 unaligned block for graph data.
-    auto *data_blocks = dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors);
-    expected_mem_delta +=
+    // Calculate the expected memory delta for adding a block.
+    size_t data_containers_block_mem =
         2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->getAlignment();
-    expected_mem_delta += (data_blocks->capacity() - data_blocks->numBlocks()) * sizeof(DataBlock);
+    size_t size_total_data_per_element = hnswIndex->elementGraphDataSize + hnswIndex->dataSize;
+    data_containers_block_mem += size_total_data_per_element * block_size;
+    // account for idToMetaData and visitedNodesHandlerPool entries.
     expected_mem_delta +=
-        (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
-        sizeof(DataBlock);
+        (sizeof(tag_t) + sizeof(ElementMetaData)) * block_size + data_containers_block_mem;
+    // Account for the allocation of a new bucket in the labels_lookup hash table.
+    expected_mem_delta +=
+        (hnswIndex->labelLookup.bucket_count() - one_block_buckets) * sizeof(size_t);
+    // New blocks allocated - 1 aligned block for vectors and 1 unaligned block for graph data.
 
     ASSERT_EQ(expected_mem_delta, mem_delta);
 
-    // Remove the last vector, expect resizing back to a single block, and return to the previous
-    // memory consumption.
+    // Remove the last vector, expect datablocks containers (vectors buffer and graph data) resizing
+    // back to a single block. Index-size container such as id to label mapping, are only freed when
+    // there two empty blocks.
+    size_t before_delete_mem = allocator->getAllocationSize();
+    size_t graph_data_blocks_capacity = hnswIndex->graphDataBlocks.capacity();
+    auto vectors_blocks = dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors);
+    size_t vectors_blocks_capacity = vectors_blocks->capacity();
     VecSimIndex_DeleteVector(hnswIndex, block_size);
-    ASSERT_EQ(hnswIndex->indexSize(), block_size);
-    ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
-    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
-    size_t expected_allocation_size = initial_memory_size + accumulated_mem_delta;
-    expected_allocation_size +=
-        (data_blocks->capacity() - data_blocks->numBlocks()) * sizeof(DataBlock);
-    expected_allocation_size +=
-        (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
-        sizeof(DataBlock);
+    verify_containers_size(block_size, 1, 2 * block_size);
+
+    size_t expected_allocation_size =
+        before_delete_mem - last_vec_graph_data_mem - hnswIndex->getAlignment();
+    // Free the buffer of the last block in both data containers.
+    expected_allocation_size -=
+        size_total_data_per_element * block_size + 2 * vecsimAllocationOverhead;
+    expected_allocation_size -=
+        (graph_data_blocks_capacity - hnswIndex->graphDataBlocks.capacity()) *
+        (sizeof(DataBlock) + vecsimAllocationOverhead);
+    expected_allocation_size -= (vectors_blocks_capacity - vectors_blocks->capacity()) *
+                                (sizeof(DataBlock) + vecsimAllocationOverhead);
     ASSERT_EQ(allocator->getAllocationSize(), expected_allocation_size);
 
     // Remove the rest of the vectors, and validate that the memory returns to its initial state.
@@ -450,7 +471,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
     // Data block vectors do not shrink on resize so extra memory is expected.
     size_t block_vectors_memory =
-        sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() + data_blocks->capacity()) +
+        sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() +
+                             dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors)->capacity()) +
         2 * vecsimAllocationOverhead;
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to

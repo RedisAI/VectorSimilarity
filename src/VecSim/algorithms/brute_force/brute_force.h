@@ -89,36 +89,51 @@ protected:
     // Private internal function that implements generic single vector deletion.
     virtual void removeVector(idType id);
 
-    void growByBlock() {
-        idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
+    void resizeIndexCommon(size_t new_max_elements) {
+        assert(new_max_elements % this->blockSize == 0 &&
+               "new_max_elements must be a multiple of blockSize");
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Resizing FLAT index from %zu to %zu",
+                  idToLabelMapping.capacity(), new_max_elements);
+        assert(idToLabelMapping.capacity() == idToLabelMapping.size());
+        idToLabelMapping.resize(new_max_elements);
         idToLabelMapping.shrink_to_fit();
-        resizeLabelLookup(idToLabelMapping.size());
+        assert(idToLabelMapping.capacity() == idToLabelMapping.size());
+        resizeLabelLookup(new_max_elements);
     }
 
-    void shrinkIfUnderUtilized() {
-        // Reset everything if the index is empty.
-        // TODO: initial capacity
+    void growByBlock() {
+        assert(indexCapacity() == idToLabelMapping.capacity());
+        assert(indexCapacity() % this->blockSize == 0);
+        assert(indexCapacity() == indexSize() - 1);
+        assert((dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks() ==
+                (indexSize() - 1) / this->blockSize));
+
+        resizeIndexCommon(indexCapacity() + this->blockSize);
+    }
+
+    void shrinkByBlock() {
+        // assert(indexCapacity() > 0); // should not be called when index is empty
+
+        // // remove a block size of labels.
+        // assert(idToLabelMapping.size() >= this->blockSize);
+        // idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
+        // idToLabelMapping.shrink_to_fit();
+        // resizeLabelLookup(idToLabelMapping.size());
+        assert(indexCapacity() >= this->blockSize);
+        assert(indexCapacity() % this->blockSize == 0);
+        assert(dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks() ==
+               indexSize() / this->blockSize);
+
         if (indexSize() == 0) {
-            idToLabelMapping = vecsim_stl::vector<labelType>(this->allocator);
-            resizeLabelLookup(0);
-            return;
-        }
-        size_t curr_capacity = idToLabelMapping.capacity();
-        assert(idToLabelMapping.size() == curr_capacity); // assuming all entries are valid
+            resizeIndexCommon(0);
+        } else if (indexCapacity() >= (indexSize() + 2 * this->blockSize)) {
 
-        if (curr_capacity <= this->getMinimalShrinkCapacity())
-            return;
-
-        assert(indexSize() <= idToLabelMapping.size());
-        if (indexSize() < static_cast<size_t>(this->getShrinkThreshold() * curr_capacity)) {
-            size_t new_size = indexSize() + this->blockSize;
-            assert(new_size < curr_capacity);
-            idToLabelMapping.resize(new_size);
-            idToLabelMapping.shrink_to_fit();
-            assert(idToLabelMapping.size() == new_size);
-            assert(idToLabelMapping.capacity() == new_size);
-
-            resizeLabelLookup(new_size);
+            assert(indexCapacity() == idToLabelMapping.capacity());
+            assert(idToLabelMapping.size() == idToLabelMapping.capacity());
+            assert(dynamic_cast<DataBlocksContainer *>(this->vectors)->size() +
+                       2 * this->blockSize ==
+                   idToLabelMapping.capacity());
+            resizeIndexCommon(indexCapacity() - this->blockSize);
         }
     }
 
@@ -203,7 +218,10 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     }
     this->vectors->removeElement(last_idx);
 
-    shrinkIfUnderUtilized();
+    // If we reached to a multiply of a block size, we can reduce meta data structures size.
+    if (this->count % this->blockSize == 0) {
+        shrinkByBlock();
+    }
 }
 
 template <typename DataType, typename DistType>

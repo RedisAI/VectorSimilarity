@@ -80,20 +80,6 @@ protected:
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
 
-    // Relaxed shrink threshold to decouple shrinking from growth logic and prevent
-    // oscillations when repeatedly adding/removing vectors with IDs divisible by blockSize.
-    // When count < SHRINK_THRESHOLD * capacity, containers may shrink.
-    // Note: Not all containers use this threshold - implementation depends on container type
-    // and algorithm-specific requirements.
-    static constexpr float SHRINK_THRESHOLD = 0.75f;
-    // To ensure the new capacity is not larger than the current capacity, i.e prevent shrinking from
-    // actually increasing the capacity, we need:
-    // new_capacity = count + blockSize < capacity
-    // Since count < SHRINK_THRESHOLD * capacity (worst case: count ≈ SHRINK_THRESHOLD * capacity):
-    // SHRINK_THRESHOLD * capacity + blockSize < capacity
-    // Therefore: capacity > blockSize / (1 - SHRINK_THRESHOLD) = 4 * blockSize
-    // Cached value to avoid repeated calculations.
-    const size_t minimalShrinkCapacity;
     RawDataContainer *vectors; // The raw vectors data container.
 
     /**
@@ -111,9 +97,6 @@ protected:
         return info;
     }
 
-    float getShrinkThreshold() const { return SHRINK_THRESHOLD; }
-    size_t getMinimalShrinkCapacity() const { return minimalShrinkCapacity; }
-
 public:
     /**
      * @brief Construct a new Vec Sim Index object
@@ -125,8 +108,7 @@ public:
           dataSize(params.dataSize), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
-          minimalShrinkCapacity(static_cast<size_t>(blockSize / (1.0f - SHRINK_THRESHOLD))) {
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         assert(dataSize);
         this->vectors = new (this->allocator) DataBlocksContainer(
