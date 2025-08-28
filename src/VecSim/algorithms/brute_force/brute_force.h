@@ -104,9 +104,9 @@ protected:
     void growByBlock() {
         assert(indexCapacity() == idToLabelMapping.capacity());
         assert(indexCapacity() % this->blockSize == 0);
-        assert(indexCapacity() == indexSize() - 1);
+        assert(indexCapacity() == indexSize());
         assert((dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks() ==
-                (indexSize() - 1) / this->blockSize));
+                (indexSize()) / this->blockSize));
 
         resizeIndexCommon(indexCapacity() + this->blockSize);
     }
@@ -175,14 +175,15 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
+    // Resize the index meta data structures if needed
+    if (indexSize() >= indexCapacity()) {
+        growByBlock();
+    }
+
     auto processed_blob = this->preprocessForStorage(vector_data);
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // Resize the index meta data structures if needed
-    if (indexSize() > indexCapacity()) {
-        growByBlock();
-    }
     // add vector data to vector raw data container
     this->vectors->addElement(processed_blob.get(), id);
 
