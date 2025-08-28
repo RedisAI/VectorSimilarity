@@ -159,9 +159,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     int deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta -=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // Free the vector in the vector block
-    expectedAllocationDelta -= sizeof(labelType);             // resize idToLabelMapping
-    expectedAllocationDelta -=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
+    // idToLabelMapping and label:id should not change since count < minimalShrinkCapacity
 
     // Assert that the reclaiming of memory did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
@@ -184,12 +182,13 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
         sizeof(DataBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
+    // We resize maps containers to 0.
     expectedAllocationDelta -=
-        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
+        2 * sizeof(labelType) + vecsimAllocationOverhead; // remove two idToLabelMapping
+    expectedAllocationDelta -= 2 * sizeof(std::pair<labelType, idType>) +
+                               vecsimAllocationOverhead; // remove two label:id pair
     expectedAllocationDelta -= (sizeof(TEST_DATA_T) * dim +
                                 vecsimAllocationOverhead); // Free the vector in the vector block
-    expectedAllocationDelta -=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
 
     // Assert that the reclaiming of memory did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.

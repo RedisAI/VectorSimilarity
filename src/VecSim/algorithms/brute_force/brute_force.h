@@ -95,14 +95,31 @@ protected:
         resizeLabelLookup(idToLabelMapping.size());
     }
 
-    void shrinkByBlock() {
-        assert(indexCapacity() > 0); // should not be called when index is empty
+    void shrinkIfUnderUtilized() {
+        // Reset everything if the index is empty.
+        // TODO: initial capacity
+        if (indexSize() == 0) {
+            idToLabelMapping = vecsim_stl::vector<labelType>(this->allocator);
+            resizeLabelLookup(0);
+            return;
+        }
+        size_t curr_capacity = idToLabelMapping.capacity();
+        assert(idToLabelMapping.size() == curr_capacity); // assuming all entries are valid
 
-        // remove a block size of labels.
-        assert(idToLabelMapping.size() >= this->blockSize);
-        idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
-        idToLabelMapping.shrink_to_fit();
-        resizeLabelLookup(idToLabelMapping.size());
+        if (curr_capacity <= this->getMinimalShrinkCapacity())
+            return;
+
+        assert(indexSize() <= idToLabelMapping.size());
+        if (indexSize() < static_cast<size_t>(this->getShrinkThreshold() * curr_capacity)) {
+            size_t new_size = indexSize() + this->blockSize;
+            assert(new_size < curr_capacity);
+            idToLabelMapping.resize(new_size);
+            idToLabelMapping.shrink_to_fit();
+            assert(idToLabelMapping.size() == new_size);
+            assert(idToLabelMapping.capacity() == new_size);
+
+            resizeLabelLookup(new_size);
+        }
     }
 
     void setVectorLabel(idType id, labelType new_label) { idToLabelMapping.at(id) = new_label; }
@@ -186,10 +203,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     }
     this->vectors->removeElement(last_idx);
 
-    // If we reached to a multiply of a block size, we can reduce meta data structures size.
-    if (this->count % this->blockSize == 0) {
-        shrinkByBlock();
-    }
+    shrinkIfUnderUtilized();
 }
 
 template <typename DataType, typename DistType>
@@ -199,7 +213,7 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
-    return this->idToLabelMapping.size();
+    return this->idToLabelMapping.capacity();
 }
 
 template <typename DataType, typename DistType>
