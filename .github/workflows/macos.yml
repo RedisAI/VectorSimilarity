@@ -7,4 +7,3 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       env: macos-latest
-      run-asan: false

@@ -34,7 +34,6 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       env: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
-      run-asan: false # run the job without valgrind
 
   stop-runner:
     name: Stop self-hosted EC2 runner

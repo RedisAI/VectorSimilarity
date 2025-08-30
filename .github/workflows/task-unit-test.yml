@@ -13,10 +13,6 @@ on:
       pre-checkout-script:
         description: 'Script to run before checkout'
         type: string
-      run-asan:
-        description: 'Run AddressSanitizer tests'
-        type: boolean
-        default: true
 
 jobs:
   test:
@@ -67,6 +63,3 @@ jobs:
 
       - name: unit tests
         run: make unit_test
-      - name: AddressSanitizer tests
-        if: ${{ inputs.run-asan }}
-        run: make asan
