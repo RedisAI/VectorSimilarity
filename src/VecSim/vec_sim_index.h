@@ -29,7 +29,7 @@
  * @param allocator The allocator to use for the index.
  * @param dim The dimension of the vectors in the index.
  * @param vecType The type of the vectors in the index.
- * @param dataSize The size of stored vectors in bytes.
+ * @param dataSize The size of stored vectors (possibly after pre-processing) in bytes.
  * @param metric The metric to use in the index.
  * @param blockSize The block size to use in the index.
  * @param multi Determines if the index should multi-index or not.
@@ -68,18 +68,20 @@ struct IndexComponents {
 template <typename DataType, typename DistType>
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
-    size_t dim;          // Vector's dimension.
-    VecSimType vecType;  // Datatype to index.
-    size_t dataSize;     // Vector size in bytes
-    VecSimMetric metric; // Distance metric to use in the index.
-    size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
-                         // resizing)
+    size_t dim;           // Vector's dimension.
+    VecSimType vecType;   // Datatype to index.
+    VecSimMetric metric;  // Distance metric to use in the index.
+    size_t inputBlobSize; // The size of the vector input blob in bytes.
+    size_t blockSize; // Index's vector block size (determines by how many vectors to resize when
+                      // resizing)
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
-    PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
+    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
 
+    size_t dataSize;           // Vector element data size in bytes to be stored
+                               // (possibly after pre-processing and different from inputBlobSize).
     RawDataContainer *vectors; // The raw vectors data container.
 
     /**
@@ -105,10 +107,11 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
                         const IndexComponents<DataType, DistType> &components)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          dataSize(params.dataSize), metric(params.metric),
+          metric(params.metric), inputBlobSize(this->dim * sizeof(DataType)),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx),
+          dataSize(params.dataSize) {
         assert(VecSimType_sizeof(vecType));
         assert(dataSize);
         this->vectors = new (this->allocator) DataBlocksContainer(
@@ -323,23 +326,26 @@ protected:
 
 template <typename DataType, typename DistType>
 ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *blob) const {
-    return this->preprocessors->preprocess(blob, this->dataSize);
+    return this->preprocessors->preprocess(blob, inputBlobSize);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
                                                          bool force_copy) const {
-    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize, force_copy);
+    // force_copy indicates that we copy a processed blob (e.g., for batch iterator) - hence we're
+    // currently using the dataSize (post-processed size) as the effective input size.
+    const auto effective_input_size = force_copy ? dataSize : inputBlobSize;
+    return this->preprocessors->preprocessQuery(queryBlob, effective_input_size, force_copy);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
-    return this->preprocessors->preprocessForStorage(original_blob, this->dataSize);
+    return this->preprocessors->preprocessForStorage(original_blob, inputBlobSize);
 }
 
 template <typename DataType, typename DistType>
 void VecSimIndexAbstract<DataType, DistType>::preprocessStorageInPlace(void *blob) const {
-    this->preprocessors->preprocessStorageInPlace(blob, this->dataSize);
+    this->preprocessors->preprocessStorageInPlace(blob, inputBlobSize);
 }

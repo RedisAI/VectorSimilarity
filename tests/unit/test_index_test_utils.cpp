@@ -87,7 +87,7 @@ protected:
     std::vector<std::vector<int8_t>> vectors;
     void GenerateRandomAndAddVector(size_t label, size_t id) override {
         std::vector<int8_t> v(dim);
-        test_utils::populate_int8_vec(v.data(), dim, id);
+        test_utils::populate_int8_vec(v.data(), dim, static_cast<int>(id));
         VecSimIndex_AddVector(index, v.data(), label);
 
         vectors.emplace_back(v);
@@ -154,8 +154,8 @@ protected:
 
 TEST_P(Int8IndexTestUtilsTest, BF) {
     BFParams params = {.type = VecSimType_INT8, .dim = dim};
+    sleep(10);
     SetUp(params);
-
     EXPECT_NO_FATAL_FAILURE(get_stored_vector_data_single_test());
     VecSimMetric metric = std::get<1>(GetParam());
     if (metric == VecSimMetric_Cosine) {
@@ -189,7 +189,6 @@ INSTANTIATE_TEST_SUITE_P(Int8IndexTestUtilsTest, Int8IndexTestUtilsTest,
 TEST_P(Float32IndexTestUtilsTest, BF) {
     BFParams params = {.type = VecSimType_FLOAT32, .dim = dim};
     SetUp(params);
-
     EXPECT_NO_FATAL_FAILURE(get_stored_vector_data_single_test());
     VecSimMetric metric = std::get<1>(GetParam());
 }
@@ -215,11 +214,11 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 void IndexTestUtilsTest::get_stored_vector_data_single_test() {
-    size_t n = this->labels_count * this->vec_per_label;
+    size_t n = IndexTestUtilsTest::labels_count * this->vec_per_label;
 
     // Add vectors to the index
     int id = 0;
-    for (size_t i = 0; i < this->labels_count; i++) {
+    for (size_t i = 0; i < IndexTestUtilsTest::labels_count; i++) {
         for (size_t j = 0; j < vec_per_label; j++) {
             this->GenerateRandomAndAddVector(i, id++);
         }

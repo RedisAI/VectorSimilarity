@@ -8,4 +8,3 @@ jobs:
     with:
       container: alpine:3
       pre-checkout-script: apk add bash git
-      run-valgrind: true

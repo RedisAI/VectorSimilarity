@@ -42,6 +42,8 @@ jobs:
         run: make check-format
       - name: unit tests
         run: make unit_test
+      - name: address sanitizer tests
+        run: make asan
       - name: flow tests
         run: make flow_test VERBOSE=1
             # Using version 4 if node20 is supported, since it is MUCH faster (15m vs 25s)
@@ -57,7 +59,6 @@ jobs:
 
 
   coverage:
-    needs: [basic-tests]
     if: ${{ !github.event.pull_request.draft}}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
