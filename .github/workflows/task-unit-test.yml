@@ -70,9 +70,3 @@ jobs:
       - name: AddressSanitizer tests
         if: ${{ inputs.run-asan }}
         run: make asan
-      - name: Archive AddressSanitizer test reports
-        if: ${{ inputs.run-asan && failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: AddressSanitizer test reports on ${{ steps.artifact-name.outputs.name }}
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/

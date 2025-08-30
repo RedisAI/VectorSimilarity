@@ -15,23 +15,23 @@ jobs:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
   #     container: ubuntu:jammy
-  #     run-asan: true
+  #     run-valgrind: true
   # alpine3:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
   #     container: alpine:3
   #     pre-checkout-script: apk add bash
-  #     run-asan: true
+  #     run-valgrind: true
   # focal:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
   #     container: ubuntu:focal
-  #     run-asan: false
+  #     run-valgrind: false
   # bionic:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
   #     container: ubuntu:focal
-  #     run-asan: false
+  #     run-valgrind: false
   # bullseye:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:

@@ -28,9 +28,6 @@ if(FP64_TESTS)
 	add_definitions(-DFP64_TESTS)
 endif()
 
-# AddressSanitizer is handled via cmake/san.cmake
-# No special definitions needed for ASan
-
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 else()

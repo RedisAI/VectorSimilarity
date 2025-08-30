@@ -8,14 +8,6 @@ ifneq ($(filter coverage show-cov upload-cov,$(MAKECMDGOALS)),)
 COV=1
 endif
 
-ifneq ($(ASAN),1)
-# ASAN is not enabled
-else
-# ASAN is enabled - force debug build and set SAN=address
-override DEBUG ?= 1
-override SAN = address
-endif
-
 ifeq ($(COV),1)
 override DEBUG ?= 1
 CMAKE_COV += -DUSE_COVERAGE=ON
@@ -25,31 +17,22 @@ ifeq ($(NO_TESTS),1)
 CMAKE_TESTS += -DVECSIM_BUILD_TESTS=off
 endif
 
-ifneq ($(SAN),)
-override DEBUG ?= 1
-export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
-export MSAN_OPTIONS=allocator_may_return_null=1
-
-ifeq ($(SAN),mem)
-override SAN=memory
-else ifeq ($(SAN),addr)
-override SAN=address
+ifeq ($(ASAN),1)
+override SAN ?= address
 endif
 
-ifeq ($(SAN),memory)
-CMAKE_SAN=-DUSE_MSAN=ON
-#override CTEST_ARGS += --exclude-regex BruteForceTest.sanity_rinsert_1280
+ifneq ($(SAN),)
 
-else ifeq ($(SAN),address)
+ifeq ($(SAN),address)
+override SAN=address
+export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
 CMAKE_SAN=-DUSE_ASAN=ON
-else ifeq ($(SAN),leak)
-else ifeq ($(SAN),thread)
 else
-$(error SAN=mem|addr|leak|thread)
+$(error SAN=address is currently the only supported option)
 endif
 
 export SAN
-endif # SAN
+endif # SAN != ''
 
 ROOT=.
 export ROOT
@@ -61,7 +44,7 @@ make build
   COV=1			   # build for code coverage
   VERBOSE=1        # print detailed build info
   ASAN=1           # build with AddressSanitizer (clang)
-  SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
+  SAN=type         # build with LLVM sanitizer (type=address)
   SLOW=1           # don't run build in parallel (for diagnostics)
   PROFILE=1		   # enable profiling compile flags (and debug symbols) for release type.
 make pybind        # build Python bindings
@@ -96,6 +79,11 @@ FLAVOR=debug
 else
 FLAVOR=release
 endif
+
+ifeq ($(ASAN),1)
+FLAVOR := ${FLAVOR}-asan
+endif
+
 FULL_VARIANT:=$(shell uname)-$(shell uname -m)-$(FLAVOR)
 BINROOT=$(ROOT)/bin/$(FULL_VARIANT)
 BINDIR=$(BINROOT)
