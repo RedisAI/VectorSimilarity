@@ -24,8 +24,6 @@ jobs:
   #      container: ubuntu:bionic
   bullseye:
     uses: ./.github/workflows/debian11.yml
-    with:
-      gcc11: true
   #  amazonlinux2:
   #    needs: [check-if-docs-only]
   #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
