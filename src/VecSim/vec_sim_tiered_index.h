@@ -359,6 +359,9 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     };
     info.commonInfo.basicInfo = basic_info;
 
+    // NOTE: backgroundIndexing needs to be set by the backend index.
+    info.tieredInfo.backgroundIndexing = VecSimBool_UNSET;
+
     switch (backendInfo.commonInfo.basicInfo.algo) {
     case VecSimAlgo_HNSWLIB:
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
@@ -376,7 +379,6 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     info.tieredInfo.frontendCommonInfo = frontendInfo.commonInfo;
     info.tieredInfo.bfInfo = frontendInfo.bfInfo;
 
-    info.tieredInfo.backgroundIndexing = frontendInfo.commonInfo.indexSize > 0;
     info.tieredInfo.management_layer_memory = this->allocator->getAllocationSize();
     info.tieredInfo.bufferLimit = this->flatBufferLimit;
     return info;
@@ -404,8 +406,8 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
-        .fieldType = INFOFIELD_UINT64,
-        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.backgroundIndexing}}});
+        .fieldType = INFOFIELD_INT64,
+        .fieldValue = {FieldValue{.integerValue = info.tieredInfo.backgroundIndexing}}});
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING,

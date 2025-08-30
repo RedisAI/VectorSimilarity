@@ -49,14 +49,22 @@ const char *VecSimCommonStrings::MEMORY_STRING = "MEMORY";
 const char *VecSimCommonStrings::HNSW_EF_RUNTIME_STRING = "EF_RUNTIME";
 const char *VecSimCommonStrings::HNSW_M_STRING = "M";
 const char *VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION";
-const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
+const char *VecSimCommonStrings::EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
-const char *VecSimCommonStrings::HNSW_NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
+const char *VecSimCommonStrings::NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
 
 const char *VecSimCommonStrings::SVS_SEARCH_WS_STRING = "SEARCH_WINDOW_SIZE";
+const char *VecSimCommonStrings::SVS_CONSTRUCTION_WS_STRING = "CONSTRUCTION_WINDOW_SIZE";
 const char *VecSimCommonStrings::SVS_SEARCH_BC_STRING = "SEARCH_BUFFER_CAPACITY";
 const char *VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING = "USE_SEARCH_HISTORY";
+const char *VecSimCommonStrings::SVS_ALPHA_STRING = "ALPHA";
+const char *VecSimCommonStrings::SVS_QUANT_BITS_STRING = "QUANT_BITS";
+const char *VecSimCommonStrings::SVS_GRAPH_MAX_DEGREE_STRING = "GRAPH_MAX_DEGREE";
+const char *VecSimCommonStrings::SVS_MAX_CANDIDATE_POOL_SIZE_STRING = "MAX_CANDIDATE_POOL_SIZE";
+const char *VecSimCommonStrings::SVS_PRUNE_TO_STRING = "PRUNE_TO";
+const char *VecSimCommonStrings::SVS_NUM_THREADS_STRING = "NUM_THREADS";
+const char *VecSimCommonStrings::SVS_LEANVEC_DIM_STRING = "LEANVEC_DIMENSION";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
@@ -68,8 +76,15 @@ const char *VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING = "BACKGROUND
 const char *VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING = "TIERED_BUFFER_LIMIT";
 const char *VecSimCommonStrings::FRONTEND_INDEX_STRING = "FRONTEND_INDEX";
 const char *VecSimCommonStrings::BACKEND_INDEX_STRING = "BACKEND_INDEX";
+// Tiered HNSW specific
 const char *VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING =
     "TIERED_HNSW_SWAP_JOBS_THRESHOLD";
+// Tiered SVS specific
+const char *VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING =
+    "TIERED_SVS_TRAINING_THRESHOLD";
+const char *VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING = "TIERED_SVS_UPDATE_THRESHOLD";
+const char *VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING =
+    "TIERED_SVS_THREADS_RESERVE_TIMEOUT";
 
 // Log levels
 const char *VecSimCommonStrings::LOG_DEBUG_STRING = "debug";
@@ -212,6 +227,28 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
         return "HYBRID_BATCHES_TO_ADHOC_BF";
     case RANGE_QUERY:
         return "RANGE_QUERY";
+    }
+    return NULL;
+}
+
+const char *VecSimQuantBits_ToString(VecSimSvsQuantBits quantBits) {
+    switch (quantBits) {
+    case VecSimSvsQuant_NONE:
+        return "NONE";
+    case VecSimSvsQuant_Scalar:
+        return "Scalar";
+    case VecSimSvsQuant_4:
+        return "4";
+    case VecSimSvsQuant_8:
+        return "8";
+    case VecSimSvsQuant_4x4:
+        return "4x4";
+    case VecSimSvsQuant_4x8:
+        return "4x8";
+    case VecSimSvsQuant_4x8_LeanVec:
+        return "4x8_LeanVec";
+    case VecSimSvsQuant_8x8_LeanVec:
+        return "8x8_LeanVec";
     }
     return NULL;
 }
