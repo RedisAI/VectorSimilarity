@@ -6,6 +6,7 @@ MODE=$1 # whether to install using sudo or not
 
 if [[ $OS_TYPE = 'Darwin' ]]
 then
+    brew uninstall cmake
     brew install cmake
 else
     if [[ $processor = 'x86_64' ]]
