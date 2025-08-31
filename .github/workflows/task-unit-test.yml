@@ -17,6 +17,9 @@ on:
         description: 'Run valgrind tests'
         type: boolean
         default: true
+      svs-base-url:
+        description: 'Base URL for SVS pre-built library'
+        type: string
 
 jobs:
   test:
@@ -66,6 +69,8 @@ jobs:
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: unit tests
+        env:
+          SVS_BASE_URL: ${{ inputs.svs-base-url || '' }}
         run: make unit_test
       - name: valgrind
         if: ${{ inputs.run-valgrind }}

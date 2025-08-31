@@ -51,6 +51,10 @@ endif
 export SAN
 endif # SAN
 
+ifneq ($(SVS_BASE_URL),)
+CMAKE_SVS += -DSVS_BASE_URL=$(SVS_BASE_URL)
+endif
+
 ROOT=.
 export ROOT
 #----------------------------------------------------------------------------------------------
@@ -138,6 +142,7 @@ CMAKE_FLAGS += \
 	--no-warn-unused-cli \
 	$(CMAKE_SAN) \
 	$(CMAKE_COV) \
+	$(CMAKE_SVS) \
 	$(CMAKE_TESTS)
 
 build:
