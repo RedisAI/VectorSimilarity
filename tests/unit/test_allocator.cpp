@@ -526,6 +526,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
         SCOPED_TRACE("Verifying containers size for size " + std::to_string(expected_size));
         ASSERT_EQ(hnswIndex->indexSize(), expected_size);
         ASSERT_EQ(hnswIndex->indexCapacity(), expected_data_container_blocks * block_size);
+        ASSERT_EQ(hnswIndex->indexCapacity(), hnswIndex->maxElements);
         ASSERT_EQ(hnswIndex->graphDataBlocks.size(), expected_data_container_blocks);
         ASSERT_EQ(dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors)->numBlocks(),
                   expected_data_container_blocks);
