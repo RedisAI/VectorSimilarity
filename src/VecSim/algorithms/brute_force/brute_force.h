@@ -112,13 +112,6 @@ protected:
     }
 
     void shrinkByBlock() {
-        // assert(indexCapacity() > 0); // should not be called when index is empty
-
-        // // remove a block size of labels.
-        // assert(idToLabelMapping.size() >= this->blockSize);
-        // idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
-        // idToLabelMapping.shrink_to_fit();
-        // resizeLabelLookup(idToLabelMapping.size());
         assert(indexCapacity() >= this->blockSize);
         assert(indexCapacity() % this->blockSize == 0);
         assert(dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks() ==
