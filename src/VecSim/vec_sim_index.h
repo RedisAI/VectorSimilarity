@@ -75,7 +75,7 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
-    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
+    PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.

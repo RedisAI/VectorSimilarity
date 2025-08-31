@@ -1804,12 +1804,6 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
         throw e;
     }
 
-    // else if (state.newElementId % this->blockSize == 0) {
-    //     // If we had an initial capacity, we might have to allocate new blocks for the graph
-    //     data. this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
-    //                                        this->allocator);
-    // }
-
     // Insert the new element to the data block
     this->vectors->addElement(vector_data, state.newElementId);
     this->graphDataBlocks.back().addElement(cur_egd);
