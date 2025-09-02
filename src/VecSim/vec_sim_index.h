@@ -106,6 +106,7 @@ public:
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getDataSize() const { return dataSize; }
     inline size_t getBlockSize() const { return blockSize; }
+    inline auto getAlignment() const { return alignment; }
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
