@@ -41,6 +41,8 @@ jobs:
       - name: check format
         run: make check-format
       - name: unit tests
+        env:
+          SVS_BASE_URL: ${{ vars.SVS_BASE_URL }}
         run: make unit_test
       - name: flow tests
         run: make flow_test VERBOSE=1

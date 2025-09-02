@@ -66,6 +66,8 @@ jobs:
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: unit tests
+        env:
+          SVS_BASE_URL: ${{ vars.SVS_BASE_URL }}
         run: make unit_test
       - name: valgrind
         if: ${{ inputs.run-valgrind }}
