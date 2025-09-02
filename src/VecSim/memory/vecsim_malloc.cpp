@@ -71,6 +71,11 @@ void *VecSimAllocator::callocate(size_t size) {
     return NULL;
 }
 
+std::unique_ptr<void, VecSimAllocator::Deleter> VecSimAllocator::allocate_unique(size_t size) {
+    void *ptr = this->allocate(size);
+    return {ptr, Deleter(*this)};
+}
+
 void *VecSimAllocator::operator new(size_t size) { return vecsim_malloc(size); }
 
 void *VecSimAllocator::operator new[](size_t size) { return vecsim_malloc(size); }

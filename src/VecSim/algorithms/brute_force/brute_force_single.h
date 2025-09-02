@@ -94,11 +94,11 @@ template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                           labelType label) {
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    auto normalized_blob = this->getAllocator()->allocate_unique(this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
+        memcpy(normalized_blob.get(), vector_data, this->dim * sizeof(DataType));
+        normalizeVector(static_cast<DataType *>(normalized_blob.get()), this->dim);
+        vector_data = normalized_blob.get();
     }
 
     auto optionalID = this->labelToIdLookup.find(label);
