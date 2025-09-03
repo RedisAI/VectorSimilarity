@@ -176,15 +176,15 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            char cur_vec[this->dataSize];
-            input.read(cur_vec, this->dataSize);
-            this->vectorBlocks.back().addElement(cur_vec);
+            auto cur_vec = this->getAllocator()->allocate_unique(this->dataSize);
+            input.read(static_cast<char *>(cur_vec.get()), this->dataSize);
+            this->vectorBlocks.back().addElement(cur_vec.get());
         }
     }
 
     // Get graph data blocks
     ElementGraphData *cur_egt;
-    char tmpData[this->elementGraphDataSize];
+    auto tmpData = this->getAllocator()->allocate_unique(this->elementGraphDataSize);
     size_t toplevel = 0;
     for (size_t i = 0; i < num_blocks; i++) {
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
@@ -193,19 +193,20 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input, EncodingV
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
             // Reset tmpData
-            memset(tmpData, 0, this->elementGraphDataSize);
+            memset(tmpData.get(), 0, this->elementGraphDataSize);
             // Read the current element top level
             readBinaryPOD(input, toplevel);
             // Allocate space and structs for the current element
             try {
-                new (tmpData) ElementGraphData(toplevel, this->levelDataSize, this->allocator);
+                new (tmpData.get())
+                    ElementGraphData(toplevel, this->levelDataSize, this->allocator);
             } catch (std::runtime_error &e) {
                 this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                           "Error - allocating memory for new element failed due to low memory");
                 throw e;
             }
             // Add the current element to the current block, and update cur_egt to point to it.
-            this->graphDataBlocks.back().addElement(tmpData);
+            this->graphDataBlocks.back().addElement(tmpData.get());
             cur_egt = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
 
             // Restore the current element's graph data

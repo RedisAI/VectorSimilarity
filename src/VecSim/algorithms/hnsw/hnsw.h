@@ -1775,9 +1775,9 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     // Create the new element's graph metadata.
     // We must assign manually enough memory on the stack and not just declare an `ElementGraphData`
     // variable, since it has a flexible array member.
-    char tmpData[this->elementGraphDataSize];
-    memset(tmpData, 0, this->elementGraphDataSize);
-    ElementGraphData *cur_egd = (ElementGraphData *)tmpData;
+    auto tmpData = this->allocator->allocate_unique(this->elementGraphDataSize);
+    memset(tmpData.get(), 0, this->elementGraphDataSize);
+    ElementGraphData *cur_egd = (ElementGraphData *)(tmpData.get());
     // Allocate memory (inside `ElementGraphData` constructor) for the links in higher levels and
     // initialize this memory to zeros. The reason for doing it here is that we might mark this
     // vector as deleted BEFORE we finish its indexing. In that case, we will collect the incoming
