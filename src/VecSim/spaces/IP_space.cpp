@@ -13,7 +13,7 @@
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
-
+#include <cassert>
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
@@ -78,6 +78,8 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         ret_dist_func = Choose_FP32_IP_implementation_NEON(dim);
         break;
 #endif
+    case ARCH_OPT_SIZE:
+        assert(false && "ARCH_OPT_SIZE is not a valid optimization type");
 #endif // CPU_FEATURES_ARCH_X86_64
     case ARCH_OPT_NONE:
         break;
@@ -161,6 +163,8 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         ret_dist_func = Choose_FP64_IP_implementation_NEON(dim);
         break;
 #endif
+    case ARCH_OPT_SIZE:
+        assert(false && "ARCH_OPT_SIZE is not a valid optimization type");
 #endif // CPU_FEATURES_ARCH_AARCH64
     case ARCH_OPT_NONE:
         break;
