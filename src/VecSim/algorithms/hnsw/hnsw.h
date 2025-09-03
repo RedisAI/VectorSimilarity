@@ -680,7 +680,9 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
                 neighbors_bitmap[neighbor_neighbors[j]] = true;
             }
 
-            idType removed_links[sz_link_list_other + 1];
+            auto removed_links_alloc =
+                this->getAllocator()->allocate_unique((sz_link_list_other + 1) * sizeof(idType));
+            auto removed_links = static_cast<idType *>(removed_links_alloc.get());
             size_t removed_links_num;
             removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, neighbors_bitmap,
                              removed_links, &removed_links_num);
@@ -755,7 +757,9 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
     size_t Mcurmax = level ? maxM_ : maxM0_;
     size_t removed_links_num;
-    idType removed_links[neighbour_neighbours_count];
+    auto removed_links_alloc =
+        this->getAllocator()->allocate_unique(neighbour_neighbours_count * sizeof(idType));
+    idType *removed_links = static_cast<idType *>(removed_links_alloc.get());
     removeExtraLinks(neighbour_neighbours_list, candidates, Mcurmax, neighbour_neighbours,
                      neighbour_orig_neighbours_set, removed_links, &removed_links_num);
 
@@ -1166,11 +1170,11 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     idType cur_c;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    auto normalized_blob = this->getAllocator()->allocate_unique(this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
+        memcpy(normalized_blob.get(), vector_data, this->dim * sizeof(DataType));
+        normalizeVector(static_cast<DataType *>(normalized_blob.get()), this->dim);
+        vector_data = normalized_blob.get();
     }
 
     {
@@ -1392,11 +1396,11 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    auto normalized_blob = this->getAllocator()->allocate_unique(this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
+        memcpy(normalized_blob.get(), query_data, this->dim * sizeof(DataType));
+        normalizeVector(static_cast<DataType *>(normalized_blob.get()), this->dim);
+        query_data = normalized_blob.get();
     }
     // Get original efRuntime and store it.
     size_t ef = ef_;
@@ -1509,11 +1513,11 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    auto normalized_blob = this->getAllocator()->allocate_unique(this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
+        memcpy(normalized_blob.get(), query_data, this->dim * sizeof(DataType));
+        normalizeVector(static_cast<DataType *>(normalized_blob.get()), this->dim);
+        query_data = normalized_blob.get();
     }
 
     double epsilon = epsilon_;

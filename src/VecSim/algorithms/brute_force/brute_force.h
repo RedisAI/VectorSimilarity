@@ -243,12 +243,11 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         return rl;
     }
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    auto normalized_blob = this->getAllocator()->allocate_unique(this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-
-        queryBlob = normalized_blob;
+        memcpy(normalized_blob.get(), queryBlob, this->dim * sizeof(DataType));
+        normalizeVector(static_cast<DataType *>(normalized_blob.get()), this->dim);
+        queryBlob = normalized_blob.get();
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
@@ -296,11 +295,11 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    auto normalized_blob = this->getAllocator()->allocate_unique(this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        queryBlob = normalized_blob;
+        memcpy(normalized_blob.get(), queryBlob, this->dim * sizeof(DataType));
+        normalizeVector(static_cast<DataType *>(normalized_blob.get()), this->dim);
+        queryBlob = normalized_blob.get();
     }
 
     // Compute scores in every block and save results that are within the range.
