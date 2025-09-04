@@ -9,6 +9,7 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
         done
     done
     echo updated_index_single_fp32
+    echo hnsw_disk_single_fp32
     echo spaces_fp32
     echo spaces_fp64
     echo spaces_bf16
@@ -84,6 +85,10 @@ elif [ "$BM_TYPE" = "bm-batch-iter-uint8-multi" ] ; then
 # Updated index benchmarks
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
     echo updated_index_single_fp32
+
+# Disk-based HNSW benchmarks
+elif [ "$BM_TYPE" = "bm-hnsw-disk-fp32-single" ] ; then
+    echo hnsw_disk_single_fp32
 
 # Spaces benchmarks
 elif [ "$BM_TYPE" = "bm-spaces" ] ; then

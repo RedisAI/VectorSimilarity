@@ -11,8 +11,13 @@
 
 #include "bm_vecsim_general.h"
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/algorithms/hnsw/hnsw_disk.h"
+#include <rocksdb/db.h>
+#include <rocksdb/options.h>
+#include <filesystem>
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -32,7 +37,9 @@ public:
         }
     }
 
-    virtual ~BM_VecSimIndex() = default;
+    virtual ~BM_VecSimIndex() {
+        CleanupRocksDB();
+    }
 
     // The implicit conversion operator in IndexPtr allows automatic conversion to VecSimIndex*.
     // This lets indices[algo] be used directly as a VecSimIndex* without explicitly calling .get().
@@ -57,6 +64,14 @@ protected:
     }
 
 private:
+    // RocksDB management for disk-based HNSW indices
+    static std::unique_ptr<rocksdb::DB> benchmark_db;
+    static rocksdb::ColumnFamilyHandle* benchmark_cf;
+    static std::string rocksdb_temp_dir;
+    
+    static void InitializeRocksDB();
+    static void CleanupRocksDB();
+    
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file, VecSimType type);
@@ -103,6 +118,49 @@ std::array<IndexPtr, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<int8_index_t>::indice
 template <>
 std::array<IndexPtr, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<uint8_index_t>::indices{};
 
+// RocksDB static member specializations
+template <>
+std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp32_index_t>::benchmark_db{};
+template <>
+rocksdb::ColumnFamilyHandle* BM_VecSimIndex<fp32_index_t>::benchmark_cf{};
+template <>
+std::string BM_VecSimIndex<fp32_index_t>::rocksdb_temp_dir{};
+
+template <>
+std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp64_index_t>::benchmark_db{};
+template <>
+rocksdb::ColumnFamilyHandle* BM_VecSimIndex<fp64_index_t>::benchmark_cf{};
+template <>
+std::string BM_VecSimIndex<fp64_index_t>::rocksdb_temp_dir{};
+
+template <>
+std::unique_ptr<rocksdb::DB> BM_VecSimIndex<bf16_index_t>::benchmark_db{};
+template <>
+rocksdb::ColumnFamilyHandle* BM_VecSimIndex<bf16_index_t>::benchmark_cf{};
+template <>
+std::string BM_VecSimIndex<bf16_index_t>::rocksdb_temp_dir{};
+
+template <>
+std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp16_index_t>::benchmark_db{};
+template <>
+rocksdb::ColumnFamilyHandle* BM_VecSimIndex<fp16_index_t>::benchmark_cf{};
+template <>
+std::string BM_VecSimIndex<fp16_index_t>::rocksdb_temp_dir{};
+
+template <>
+std::unique_ptr<rocksdb::DB> BM_VecSimIndex<int8_index_t>::benchmark_db{};
+template <>
+rocksdb::ColumnFamilyHandle* BM_VecSimIndex<int8_index_t>::benchmark_cf{};
+template <>
+std::string BM_VecSimIndex<int8_index_t>::rocksdb_temp_dir{};
+
+template <>
+std::unique_ptr<rocksdb::DB> BM_VecSimIndex<uint8_index_t>::benchmark_db{};
+template <>
+rocksdb::ColumnFamilyHandle* BM_VecSimIndex<uint8_index_t>::benchmark_cf{};
+template <>
+std::string BM_VecSimIndex<uint8_index_t>::rocksdb_temp_dir{};
+
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
     VecSimType type = index_type_t::get_index_type();
@@ -143,6 +201,42 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             // Launch the BG threads loop that takes jobs from the queue and executes them.
             mock_thread_pool.init_threads();
         }
+    }
+
+    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW_DISK) {
+        // Initialize RocksDB for disk-based HNSW index
+        InitializeRocksDB();
+        
+        // Create disk-based HNSW index with RocksDB
+        HNSWParams hnsw_disk_params = {.type = type,
+                                       .dim = dim,
+                                       .metric = VecSimMetric_Cosine,
+                                       .multi = is_multi,
+                                       .initialCapacity = 0, // Deprecated
+                                       .blockSize = block_size,
+                                       .M = M,
+                                       .efConstruction = EF_C,
+                                       .efRuntime = 10,
+                                       .epsilon = 0.01};
+        
+        // Create AbstractIndexInitParams manually
+        AbstractIndexInitParams abstractInitParams;
+        abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+        abstractInitParams.dim = dim;
+        abstractInitParams.vecType = type;
+        abstractInitParams.dataSize = VecSimParams_GetDataSize(type, dim, VecSimMetric_Cosine);
+        abstractInitParams.metric = VecSimMetric_Cosine;
+        abstractInitParams.blockSize = block_size;
+        abstractInitParams.multi = is_multi;
+        abstractInitParams.logCtx = nullptr;
+        
+        // Create index components
+        IndexComponents<data_t, dist_t> indexComponents = CreateIndexComponents<data_t, dist_t>(
+            abstractInitParams.allocator, VecSimMetric_Cosine, dim, false);
+            
+        indices[INDEX_HNSW_DISK] = IndexPtr(new (abstractInitParams.allocator) HNSWDiskIndex<data_t, dist_t>(
+            &hnsw_disk_params, abstractInitParams, indexComponents, 
+            benchmark_db.get(), benchmark_cf));
     }
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
@@ -188,5 +282,52 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
         std::vector<data_t> query(dim);
         input.read((char *)query.data(), dim * sizeof(data_t));
         queries.push_back(query);
+    }
+}
+
+// RocksDB initialization and cleanup methods
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::InitializeRocksDB() {
+    if (benchmark_db) {
+        return; // Already initialized
+    }
+    
+    // Create a temporary directory for RocksDB
+    rocksdb_temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid());
+    
+    // Ensure the directory exists
+    std::filesystem::create_directories(rocksdb_temp_dir);
+    
+    rocksdb::Options options;
+    options.create_if_missing = true;
+    options.error_if_exists = false;
+    
+    rocksdb::DB* db_ptr = nullptr;
+    rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_temp_dir, &db_ptr);
+    if (!status.ok()) {
+        throw std::runtime_error("Failed to open RocksDB: " + status.ToString());
+    }
+    
+    benchmark_db.reset(db_ptr);
+    benchmark_cf = benchmark_db->DefaultColumnFamily();
+}
+
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::CleanupRocksDB() {
+    if (benchmark_cf) {
+        benchmark_cf = nullptr;
+    }
+    
+    if (benchmark_db) {
+        benchmark_db.reset();
+    }
+    
+    if (!rocksdb_temp_dir.empty()) {
+        try {
+            std::filesystem::remove_all(rocksdb_temp_dir);
+        } catch (...) {
+            // Ignore cleanup errors
+        }
+        rocksdb_temp_dir.clear();
     }
 }

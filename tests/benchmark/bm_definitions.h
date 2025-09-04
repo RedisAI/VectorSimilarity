@@ -29,6 +29,7 @@ enum IndexTypeIndex {
     INDEX_BF_UPDATED,
     INDEX_HNSW,
     INDEX_HNSW_UPDATED,
+    INDEX_HNSW_DISK,
     INDEX_TIERED_HNSW,
     INDEX_SVS,
     INDEX_TIERED_SVS,
@@ -45,10 +46,11 @@ enum IndexTypeFlags {
     INDEX_MASK_BF_UPDATED = 1 << 1,
     INDEX_MASK_HNSW = 1 << 2,
     INDEX_MASK_HNSW_UPDATED = 1 << 3,
-    INDEX_MASK_TIERED_HNSW = 1 << 4,
-    INDEX_MASK_SVS = 1 << 5,
-    INDEX_MASK_TIERED_SVS = 1 << 6,
-    INDEX_MASK_SVS_COMPRESSED = 1 << 7
+    INDEX_MASK_HNSW_DISK = 1 << 4,
+    INDEX_MASK_TIERED_HNSW = 1 << 5,
+    INDEX_MASK_SVS = 1 << 6,
+    INDEX_MASK_TIERED_SVS = 1 << 7,
+    INDEX_MASK_SVS_COMPRESSED = 1 << 8
 };
 
 // Smart pointer wrapper for VecSimIndex with configurable ownership
@@ -112,4 +114,5 @@ using uint8_index_t = IndexType<VecSimType_UINT8, uint8_t, float>;
 
 constexpr uint32_t DEFAULT_BM_INDEXES_MASK = IndexTypeFlags::INDEX_MASK_BF |
                                              IndexTypeFlags::INDEX_MASK_HNSW |
+                                             IndexTypeFlags::INDEX_MASK_HNSW_DISK |
                                              IndexTypeFlags::INDEX_MASK_TIERED_HNSW;

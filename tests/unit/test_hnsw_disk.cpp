@@ -22,12 +22,12 @@ class HNSWDiskIndexTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Disable all debug logging
-        VecSimIndexInterface::setLogCallbackFunction([](void *ctx, const char *level, const char *message) {
-            // Only show warnings and errors
-            if (std::string_view{level} == VecSimCommonStrings::LOG_WARNING_STRING) {
-                std::cout << "[" << level << "] " << message << std::endl;
-            }
-        });
+        // VecSimIndexInterface::setLogCallbackFunction([](void *ctx, const char *level, const char *message) {
+        //     // Only show warnings and errors
+        //     if (std::string_view{level} == VecSimCommonStrings::LOG_WARNING_STRING) {
+        //         std::cout << "[" << level << "] " << message << std::endl;
+        //     }
+        // });
         // Create a temporary directory for RocksDB
         temp_dir = "/tmp/hnsw_disk_test_" + std::to_string(getpid());
         
@@ -49,9 +49,15 @@ protected:
     }
 
     void TearDown() override {
+        // Note: HNSWDiskIndex objects created in tests should go out of scope
+        // and be destroyed before this method is called.
+        // If any index objects still exist, they would be accessing deleted database.
+        
         if (db) {
             delete db;
+            db = nullptr;
         }
+        
         // Clean up temporary directory
         try {
             std::filesystem::remove_all(temp_dir);

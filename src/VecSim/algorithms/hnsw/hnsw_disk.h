@@ -166,6 +166,31 @@ protected:
     vecsim_stl::vector<DiskElementMetaData> pendingMetadata;  // Metadata for pending vectors
     size_t pendingVectorCount;  // Count of vectors in memory
 
+    // In-memory graph updates staging (for delayed disk operations)
+    struct GraphUpdate {
+        idType node_id;
+        size_t level;
+        std::vector<idType> neighbors;
+        
+        GraphUpdate(idType node_id, size_t level, const std::vector<idType>& neighbors) 
+            : node_id(node_id), level(level), neighbors(neighbors) {}
+    };
+    
+    // Staging area for graph updates during batch processing
+    std::vector<GraphUpdate> stagedGraphUpdates;
+    
+    // Track which nodes need their neighbor lists updated (for bidirectional connections)
+    struct NeighborUpdate {
+        idType node_id;
+        size_t level;
+        idType new_neighbor_id;
+        
+        NeighborUpdate(idType node_id, size_t level, idType new_neighbor_id)
+            : node_id(node_id), level(level), new_neighbor_id(new_neighbor_id) {}
+    };
+    
+    std::vector<NeighborUpdate> stagedNeighborUpdates;
+
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
     // default (shallow) copy constructor is disabled.
@@ -202,14 +227,25 @@ public:
     void addVectorToBatch(const void *vector_data, const labelType label);
     void processBatch();
     void flushBatch();  // Force flush current batch
+    
+    // Manual control of staged updates
+    void flushStagedUpdates();  // Manually flush any pending staged updates
 
 protected:
+    
+    // New method for flushing staged graph updates to disk
+    void flushStagedGraphUpdates();
+    
+    // New method for handling neighbor connection updates when neighbor lists are full
+    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor, 
+                                       size_t level, DistType distance);
     
     void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
                         vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
                         std::unordered_map<idType, idType> &new_ids_mapping);
 
-    // Missing method declarations - adding stub implementations
+public:
+    // Methods needed by benchmark framework
     const void* getDataByInternalId(idType id) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const;
     void greedySearchLevel(const void* data_point, size_t level, idType& curr_element, DistType& cur_dist) const;
@@ -222,6 +258,8 @@ protected:
     void processCandidate(idType candidate_id, const void* data_point, size_t level, size_t ef,
                          void* visited_tags, size_t visited_tag, candidatesLabelsMaxHeap<DistType>& top_candidates,
                          candidatesMaxHeap<DistType>& candidate_set, DistType& lowerBound) const;
+
+protected:
 
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx = nullptr,
                                VecSimQueryReply_Code *rc = nullptr) const;
@@ -256,6 +294,21 @@ public:
                                           VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
 
+    // Methods needed by benchmark framework
+    void fitMemory() override;
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const override;
+    
+    // Missing virtual method implementations
+    VecSimIndexStatsInfo statisticInfo() const override;
+    void setLastSearchMode(VecSearchMode mode) override;
+    void runGC() override;
+    void acquireSharedLocks() override;
+    void releaseSharedLocks() override;
+    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override;
+    vecsim_stl::set<labelType> getLabelsSet() const override;
+    int deleteVector(labelType label) override;
+    double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
+
 public:
     // Public methods for testing
     size_t indexSize() const override;
@@ -269,15 +322,12 @@ public:
     void debugPrintAllGraphKeys() const;
     size_t debugCountGraphEdges() const;
     void debugValidateGraphConnectivity() const;
+    
+    // Debug methods for staged updates
+    void debugPrintStagedUpdates() const;
 
 private:
     // HNSW helper methods
-    int deleteVector(labelType label) override;
-    double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
-    void fitMemory() override;
-    void getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const override;
-    std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override;
-    vecsim_stl::set<labelType> getLabelsSet() const override;
 
 
     /*****************************************************************/
@@ -294,7 +344,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       idToMetaData(1000, this->allocator), labelToIdMap(this->allocator),
       db(db), cf(cf), indexDataGuard(), visitedNodesHandlerPool(10, this->allocator),
       delta_list(), new_elements_meta_data(this->allocator),
-      batchThreshold(10), pendingVectors(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0){
+      batchThreshold(10), pendingVectors(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
+      stagedGraphUpdates(), stagedNeighborUpdates() {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -320,6 +371,27 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
 
 template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
+    // Clear any staged updates before destruction
+    stagedGraphUpdates.clear();
+    stagedNeighborUpdates.clear();
+    
+    // Clear pending vectors
+    pendingVectors.clear();
+    pendingMetadata.clear();
+    
+    // Clear delta list and new elements metadata
+    delta_list.clear();
+    new_elements_meta_data.clear();
+    
+    // Clear main data structures
+    idToMetaData.clear();
+    labelToIdMap.clear();
+    
+    // Ensure all memory is properly released
+    idToMetaData.shrink_to_fit();
+    labelToIdMap.clear();
+    
+    // Note: db and cf are not owned by this class, so we don't delete them
     // Base class destructor will handle indexCalculator and preprocessors
 }
 
@@ -786,11 +858,17 @@ void HNSWDiskIndex<DataType, DistType>::appendVector(
     ProcessedBlobs processedBlobs = this->preprocess(vector_data);
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Vector preprocessed successfully");
     
-    HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
+    HNSWAddVectorState state = this->storeVector(processedBlobs.getQueryBlob(), label);
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Vector stored with ID %u, max level %zu", state.newElementId, state.elementMaxLevel);
 
     this->indexVector(processedBlobs.getQueryBlob(), label, state);
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Vector indexed successfully");
+    
+    // If this was called directly (not through batch processing), flush staged updates immediately
+    if (pendingVectorCount == 0) {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "appendVector called directly, flushing staged updates immediately");
+        flushStagedGraphUpdates();
+    }
     
     // Debug: Print graph structure after adding this vector
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Graph Structure After Adding Vector %u ===", label);
@@ -821,9 +899,7 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
             // a greedy search in the graph starting from the entry point
             // at each level, and move on with the closest element we can find.
             // When there is no improvement to do, we take a step down.
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Greedy search at level %d", level);
             greedySearchLevel(vector_data, level, curr_element, cur_dist);
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "After greedy search: curr_element=%u, cur_dist=%f", curr_element, cur_dist);
         }
     } else {
         max_common_level = global_max_level;
@@ -864,20 +940,9 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Starting for node %u at level %zu", new_node_id, level);
     
-    // Test RocksDB connection first
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Testing RocksDB connection...");
-    std::string test_key = "TEST_CONNECTION";
-    std::string test_value = "TEST_VALUE";
-    rocksdb::Status test_status = this->db->Put(rocksdb::WriteOptions(), cf, test_key, test_value);
-    if (!test_status.ok()) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  ERROR: RocksDB test write failed: %s", test_status.ToString().c_str());
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  This indicates a serious RocksDB connection issue!");
-    } else {
-        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  SUCCESS: RocksDB test write succeeded");
-        // Clean up test key
-        this->db->Delete(rocksdb::WriteOptions(), cf, test_key);
-    }
-
+    // The maximum number of neighbors allowed for an existing neighbor (not new).
+    size_t max_M_cur = level ? M : M0;
+    
     // Filter the top candidates to the selected neighbors by the algorithm heuristics.
     // First, we need to copy the top candidates to a vector.
     candidatesList<DistType> top_candidates_list(this->allocator);
@@ -888,44 +953,118 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(top_candidates_list.size() <= M &&
            "Should be not be more than M candidates returned by the heuristic");
 
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
-
-    // Add the new element to the graph at this level
-    auto newKey = GraphKey(new_node_id, level);
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Created GraphKey for node %u at level %zu", new_node_id, level);
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: GraphKey size: %zu bytes", sizeof(GraphKey));
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: GraphKey asSlice size: %zu bytes", newKey.asSlice().size());
+    // Instead of writing to disk immediately, stage the updates in memory
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Staging graph updates in memory for node %u at level %zu", new_node_id, level);
     
+    // Stage the new node's neighbors
     std::vector<idType> neighbor_ids(top_candidates_list.size());
     for (size_t i = 0; i < top_candidates_list.size(); ++i) {
         neighbor_ids[i] = top_candidates_list[i].second;
     }
-    size_t bytes = neighbor_ids.size() * sizeof(idType);
-    auto neighbors_slice =
-        rocksdb::Slice(reinterpret_cast<const char *>(neighbor_ids.data()), bytes);
     
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  mutuallyConnectNewElement: Neighbors data size: %zu bytes", bytes);
+    // Add to staged graph updates
+    stagedGraphUpdates.emplace_back(new_node_id, level, neighbor_ids);
     
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Storing graph connection: node %u at level %zu with %zu neighbors: ", new_node_id, level, neighbor_ids.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staging graph connection: node %u at level %zu with %zu neighbors: ", new_node_id, level, neighbor_ids.size());
     for (size_t i = 0; i < neighbor_ids.size(); i++) {
         this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "%u ", neighbor_ids[i]);
     }
     
-    // Store the new node's neighbors
-    rocksdb::Status put_status = this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
-    if (!put_status.ok()) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to store graph connection for node %u at level %zu: %s", new_node_id, level, put_status.ToString().c_str());
-    } else {
-        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Stored graph connection for node %u at level %zu", new_node_id, level);
-    }
-
-    // Update existing nodes to include the new node in their neighbor lists
+    // Stage updates to existing nodes to include the new node in their neighbor lists
     for (const auto &neighbor_data : top_candidates_list) {
         idType selected_neighbor = neighbor_data.second;
+        DistType distance = neighbor_data.first;
         
-        // Read existing neighbors for this node
+        // Check if the neighbor's neighbor list has capacity
+        // For disk-based implementation, we need to determine if we need to re-evaluate the neighbor's connections
+        
+        // Read the neighbor's current neighbor count from disk to check capacity
         GraphKey neighborKey(selected_neighbor, level);
+        std::string existing_neighbors_data;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
+        
+        size_t current_neighbor_count = 0;
+        if (status.ok()) {
+            current_neighbor_count = existing_neighbors_data.size() / sizeof(idType);
+        }
+        
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Neighbor %u at level %zu has %zu current neighbors, max allowed: %zu", 
+                 selected_neighbor, level, current_neighbor_count, max_M_cur);
+        
+        if (current_neighbor_count < max_M_cur) {
+            // Neighbor has capacity, just add the new node
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Neighbor %u has capacity, staging simple update", selected_neighbor);
+            stagedNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
+        } else {
+            // Neighbor is full, need to re-evaluate connections using revisitNeighborConnections logic
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Neighbor %u is full, staging revisit neighbor connections", selected_neighbor);
+            stageRevisitNeighborConnections(new_node_id, selected_neighbor, level, distance);
+        }
+        
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Staged neighbor update for node %u to include neighbor %u", selected_neighbor, new_node_id);
+    }
+
+    return next_closest_entry_point;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
+    if (stagedGraphUpdates.empty() && stagedNeighborUpdates.empty()) {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  flushStagedGraphUpdates: No staged updates to flush");
+        return;
+    }
+    
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Flushing Staged Graph Updates to Disk ===");
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Total staged updates: %zu graph + %zu neighbor updates", 
+              stagedGraphUpdates.size(), stagedNeighborUpdates.size());
+    
+    auto writeOptions = rocksdb::WriteOptions();
+    writeOptions.disableWAL = true;
+    
+    // First, handle new node insertions
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  flushStagedGraphUpdates: Processing %zu new node insertions", stagedGraphUpdates.size());
+    
+    for (const auto& update : stagedGraphUpdates) {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    Flushing graph update: node %u at level %zu with %zu neighbors", 
+                 update.node_id, update.level, update.neighbors.size());
+        
+        auto newKey = GraphKey(update.node_id, update.level);
+        size_t bytes = update.neighbors.size() * sizeof(idType);
+        auto neighbors_slice = rocksdb::Slice(reinterpret_cast<const char *>(update.neighbors.data()), bytes);
+        
+        rocksdb::Status put_status = this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
+        if (!put_status.ok()) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to store graph connection for node %u at level %zu: %s", 
+                     update.node_id, update.level, put_status.ToString().c_str());
+        } else {
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Stored graph connection for node %u at level %zu with %zu neighbors", 
+                     update.node_id, update.level, update.neighbors.size());
+        }
+    }
+    
+    // Then, handle neighbor list updates for existing nodes
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  flushStagedGraphUpdates: Processing %zu neighbor list updates", stagedNeighborUpdates.size());
+    
+    // Group neighbor updates by node and level for efficient processing
+    std::map<std::pair<idType, size_t>, std::vector<idType>> neighborUpdatesByNode;
+    
+    for (const auto& update : stagedNeighborUpdates) {
+        auto key = std::make_pair(update.node_id, update.level);
+        neighborUpdatesByNode[key].push_back(update.new_neighbor_id);
+    }
+    
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Grouped into %zu unique node-level combinations", neighborUpdatesByNode.size());
+    
+    // Process each node's neighbor updates
+    for (const auto& [nodeKey, newNeighbors] : neighborUpdatesByNode) {
+        idType node_id = nodeKey.first;
+        size_t level = nodeKey.second;
+        
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    Processing neighbor updates for node %u at level %zu (%zu new neighbors)", 
+                 node_id, level, newNeighbors.size());
+        
+        // Read existing neighbors from disk
+        GraphKey neighborKey(node_id, level);
         std::string existing_neighbors_data;
         rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
         
@@ -935,25 +1074,130 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
             const idType* existing_neighbors = reinterpret_cast<const idType*>(existing_neighbors_data.data());
             size_t num_existing = existing_neighbors_data.size() / sizeof(idType);
             updated_neighbors.assign(existing_neighbors, existing_neighbors + num_existing);
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "      Found %zu existing neighbors", num_existing);
+        } else {
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "      No existing neighbors found (new node at this level)");
         }
         
-        // Add the new node to the neighbor's list
-        updated_neighbors.push_back(new_node_id);
+        // Add new neighbors (avoiding duplicates)
+        size_t added_count = 0;
+        for (idType new_neighbor : newNeighbors) {
+            if (std::find(updated_neighbors.begin(), updated_neighbors.end(), new_neighbor) == updated_neighbors.end()) {
+                updated_neighbors.push_back(new_neighbor);
+                added_count++;
+            }
+        }
+        
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "      Added %zu new neighbors, total now: %zu", added_count, updated_neighbors.size());
         
         // Write back the updated neighbor list
         size_t updated_bytes = updated_neighbors.size() * sizeof(idType);
-        auto updated_neighbors_slice =
-            rocksdb::Slice(reinterpret_cast<const char *>(updated_neighbors.data()), updated_bytes);
+        auto updated_neighbors_slice = rocksdb::Slice(reinterpret_cast<const char *>(updated_neighbors.data()), updated_bytes);
         rocksdb::Status update_status = this->db->Put(writeOptions, cf, neighborKey.asSlice(), updated_neighbors_slice);
         
         if (!update_status.ok()) {
-            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to update neighbors for node %u at level %zu: %s", selected_neighbor, level, update_status.ToString().c_str());
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to update neighbors for node %u at level %zu: %s", 
+                     node_id, level, update_status.ToString().c_str());
         } else {
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Updated node %u to include neighbor %u", selected_neighbor, new_node_id);
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "SUCCESS: Updated node %u at level %zu to include %zu new neighbors", 
+                     node_id, level, newNeighbors.size());
         }
     }
+    
+    // Clear staged updates after successful flush
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Clearing staged updates after successful flush");
+    stagedGraphUpdates.clear();
+    stagedNeighborUpdates.clear();
+    
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Staged Graph Updates Flushed Successfully ===");
+}
 
-    return next_closest_entry_point;
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor, 
+                                                                        size_t level, DistType distance) {
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  stageRevisitNeighborConnections: Handling full neighbor list for node %u at level %zu", selected_neighbor, level);
+    
+    // Read the neighbor's current neighbor list from disk 
+    // TODO: perhaps cache the neigbhors for stage update
+    GraphKey neighborKey(selected_neighbor, level);
+    std::string existing_neighbors_data;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
+    
+    if (!status.ok()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  WARNING: Could not read existing neighbors for node %u at level %zu", selected_neighbor, level);
+        // Fall back to simple neighbor update
+        stagedNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
+        return;
+    }
+    
+    // Parse existing neighbors
+    const idType* existing_neighbors = reinterpret_cast<const idType*>(existing_neighbors_data.data());
+    size_t num_existing = existing_neighbors_data.size() / sizeof(idType);
+    
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Found %zu existing neighbors for node %u", num_existing, selected_neighbor);
+    
+    // Collect all candidates: existing neighbors + new node
+    candidatesList<DistType> candidates(this->allocator);
+    candidates.reserve(num_existing + 1);
+    
+    // Add the new node with its pre-calculated distance
+    candidates.emplace_back(distance, new_node_id);
+    
+    // Add existing neighbors with their distances to the selected neighbor
+    const void* selected_neighbor_data = getDataByInternalId(selected_neighbor);
+    for (size_t j = 0; j < num_existing; j++) {
+        idType existing_neighbor_id = existing_neighbors[j];
+        const void* existing_neighbor_data = getDataByInternalId(existing_neighbor_id);
+        DistType existing_distance = this->calcDistance(existing_neighbor_data, selected_neighbor_data);
+        candidates.emplace_back(existing_distance, existing_neighbor_id);
+    }
+    
+    // Use the heuristic to select the best neighbors (similar to revisitNeighborConnections in hnsw.h)
+    size_t max_M_cur = level ? M : M0;
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Applying heuristic to select %zu best neighbors from %zu candidates", max_M_cur, candidates.size());
+    
+    // Apply the neighbor selection heuristic
+    vecsim_stl::vector<idType> removed_candidates(this->allocator);
+    getNeighborsByHeuristic2(candidates, max_M_cur, removed_candidates);
+    
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  After heuristic: selected %zu neighbors, removed %zu", candidates.size(), removed_candidates.size());
+    
+    // Check if the new node was selected as a neighbor
+    bool new_node_selected = false;
+    for (const auto& candidate : candidates) {
+        if (candidate.second == new_node_id) {
+            new_node_selected = true;
+            break;
+        }
+    }
+    
+    if (new_node_selected) {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  New node %u was selected as neighbor for node %u", new_node_id, selected_neighbor);
+        
+        // The new node was selected, so we need to update the neighbor's neighbor list
+        // Extract the selected neighbor IDs
+        std::vector<idType> selected_neighbor_ids;
+        selected_neighbor_ids.reserve(candidates.size());
+        for (const auto& candidate : candidates) {
+            selected_neighbor_ids.push_back(candidate.second);
+        }
+        
+        // Stage this update - the neighbor's neighbor list will be completely replaced
+        // We'll need to handle this specially in flushStagedGraphUpdates
+        stagedGraphUpdates.emplace_back(selected_neighbor, level, selected_neighbor_ids);
+        
+        // Also stage the bidirectional connection from new node to selected neighbor
+        stagedNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
+        
+    } else {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  New node %u was NOT selected as neighbor for node %u", new_node_id, selected_neighbor);
+        
+        // The new node was not selected, so we only need to stage the unidirectional connection
+        // from new node to selected neighbor
+        stagedNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
+    }
+    
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  SUCCESS: Staged revisit neighbor connections for node %u", selected_neighbor);
 }
 
 template <typename DataType, typename DistType>
@@ -1397,15 +1641,8 @@ bool HNSWDiskIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, siz
 
 
 template <typename DataType, typename DistType>
-int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
-    // TODO: Implement vector deletion
-    return 0;
-}
-
-template <typename DataType, typename DistType>
-double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, const void *blob) const {
-    // TODO: Implement distance calculation
-    return 0.0;
+size_t HNSWDiskIndex<DataType, DistType>::indexCapacity() const {
+    return idToMetaData.size();
 }
 
 template <typename DataType, typename DistType>
@@ -1414,36 +1651,8 @@ size_t HNSWDiskIndex<DataType, DistType>::indexSize() const {
 }
 
 template <typename DataType, typename DistType>
-size_t HNSWDiskIndex<DataType, DistType>::indexCapacity() const {
-    return idToMetaData.size();
-}
-
-template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::indexLabelCount() const {
     return this->curElementCount + pendingVectorCount;
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::fitMemory() {
-    // TODO: Implement memory fitting
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const {
-    // TODO: Implement data retrieval by label
-}
-
-template <typename DataType, typename DistType>
-std::vector<std::vector<char>> HNSWDiskIndex<DataType, DistType>::getStoredVectorDataByLabel(labelType label) const {
-    // TODO: Implement stored vector data retrieval
-    return {};
-}
-
-template <typename DataType, typename DistType>
-vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() const {
-    // TODO: Implement labels set retrieval
-    vecsim_stl::set<labelType> labels(this->allocator);
-    return labels;
 }
 
 /********************************** Batch Processing Methods **********************************/
@@ -1492,14 +1701,27 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Processing %zu vectors", pendingVectorCount);
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Current index size: %zu", curElementCount);
     
+    // Clear any previous staged updates (but log what we're clearing)
+    if (!stagedGraphUpdates.empty() || !stagedNeighborUpdates.empty()) {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Clearing %zu previous staged graph updates and %zu neighbor updates", 
+                  stagedGraphUpdates.size(), stagedNeighborUpdates.size());
+    }
+    stagedGraphUpdates.clear();
+    stagedNeighborUpdates.clear();
+    
     // Process each pending vector individually using appendVector
+    // This will stage all graph updates in memory instead of writing to disk
     for (size_t i = 0; i < pendingVectorCount; i++) {
         this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Processing vector %zu with label %u", i, pendingVectors[i].first);
         appendVector(pendingVectors[i].second.data(), pendingVectors[i].first);
         this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Vector %zu processed", i);
     }
     
-    // Note: Resize is not needed since we start with a small pool size
+    // Now flush all staged graph updates to disk in a single batch operation
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Flushing %zu staged graph updates to disk", stagedGraphUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  processBatch: Flushing %zu staged neighbor updates to disk", stagedNeighborUpdates.size());
+    
+    flushStagedGraphUpdates();
     
     // Clear the pending vectors
     pendingVectors.clear();
@@ -1853,3 +2075,97 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     if (rc) *rc = VecSim_QueryReply_OK;
     return top_candidates;
 }
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::flushStagedUpdates() {
+    // Implement the logic to manually flush any pending staged updates
+    // This could involve writing any pending staged updates to disk
+    // or clearing the staged updates if they are no longer needed
+    // For example, you might want to call flushStagedGraphUpdates() here
+    flushStagedGraphUpdates();
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::debugPrintStagedUpdates() const {
+    // Implement the logic to debug print staged updates
+    // This could involve logging the contents of stagedGraphUpdates and stagedNeighborUpdates
+    // or any other relevant information
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Staged Updates ===");
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Graph Updates: %zu", stagedGraphUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Neighbor Updates: %zu", stagedNeighborUpdates.size());
+}
+
+// Add missing method implementations for benchmark framework
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::fitMemory() {
+    // TODO: Implement memory fitting
+    // For now, just a stub implementation
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::getDataByLabel(labelType label, std::vector<std::vector<DataType>>& vectors_output) const {
+    // TODO: Implement data retrieval by label
+    // For now, just a stub implementation
+    vectors_output.clear();
+}
+
+template <typename DataType, typename DistType>
+std::vector<std::vector<char>> HNSWDiskIndex<DataType, DistType>::getStoredVectorDataByLabel(labelType label) const {
+    // TODO: Implement stored vector data retrieval
+    // For now, just a stub implementation
+    return {};
+}
+
+template <typename DataType, typename DistType>
+vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() const {
+    // TODO: Implement labels set retrieval
+    // For now, just a stub implementation
+    vecsim_stl::set<labelType> labels(this->allocator);
+    return labels;
+}
+
+template <typename DataType, typename DistType>
+int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
+    // TODO: Implement vector deletion
+    // For now, just a stub implementation
+    return 0;
+}
+
+template <typename DataType, typename DistType>
+double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, const void *blob) const {
+    // TODO: Implement distance calculation
+    // For now, just a stub implementation
+    return 0.0;
+}
+
+// Missing virtual method implementations for HNSWDiskIndex
+template <typename DataType, typename DistType>
+VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
+    VecSimIndexStatsInfo info = {};
+    info.memory = 0; // TODO: Implement actual memory calculation
+    info.numberOfMarkedDeleted = 0; // TODO: Implement if needed
+    return info;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::setLastSearchMode(VecSearchMode mode) {
+    // TODO: Implement if needed for disk-based HNSW
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::runGC() {
+    // TODO: Implement garbage collection for disk-based HNSW
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::acquireSharedLocks() {
+    // TODO: Implement if needed for disk-based HNSW
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::releaseSharedLocks() {
+    // TODO: Implement if needed for disk-based HNSW
+}
+
+
+
