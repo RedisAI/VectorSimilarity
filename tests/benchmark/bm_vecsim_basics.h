@@ -349,14 +349,15 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
             GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)),
             label_to_update);
         assert(ret == 1);
-        // Capacity should shrink by one block after deletion        ret =
-        // VecSimIndex_AddVector(index, QUERIES[(added_vec_count - 1) % N_QUERIES].data(),
-        BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         assert(index->indexCapacity() == index_cap - BM_VecSimGeneral::block_size);
+        // Capacity should shrink by one block after deletion
+        ret = VecSimIndex_AddVector(index, QUERIES[(added_vec_count - 1) % N_QUERIES].data(),
+                                    label_to_update);
+        assert(ret == 1);
+        BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         assert(VecSimIndex_IndexSize(
                    GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0))) ==
                N_VECTORS + added_vec_count);
-        assert(ret == 1);
         // Capacity should grow back to original size after addition
         assert(index->indexCapacity() == index_cap);
     }
