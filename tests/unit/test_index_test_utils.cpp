@@ -245,3 +245,20 @@ void IndexTestUtilsTest::get_stored_vector_data_single_test() {
         EXPECT_NO_FATAL_FAILURE(this->ValidateVectors(stored_data, i));
     }
 }
+
+TEST(QueryResultPrintTest, PrintOperators) {
+    // Test VecSimQueryResult print operator
+    VecSimQueryResult result = {.id = 42, .score = 3.14};
+    std::ostringstream oss1;
+    oss1 << result;
+    EXPECT_EQ(oss1.str(), "id: 42, score: 3.14");
+
+    // Test VecSimQueryReply print operator
+    VecSimQueryReply reply(VecSimAllocator::newVecsimAllocator());
+    reply.results.push_back({.id = 1, .score = 1.5});
+    reply.results.push_back({.id = 2, .score = 2.5});
+
+    std::ostringstream oss2;
+    oss2 << reply;
+    EXPECT_EQ(oss2.str(), "id: 1, score: 1.5\nid: 2, score: 2.5\n");
+}
