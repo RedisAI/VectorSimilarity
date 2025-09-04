@@ -28,8 +28,10 @@ public:
                         std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment = 0);
     ~DataBlocksContainer();
 
+    // Number of elements in the container.
     size_t size() const override;
 
+    // Number of blocks allocated.
     size_t capacity() const;
 
     size_t blockSize() const;
@@ -46,13 +48,13 @@ public:
 
     std::unique_ptr<RawDataContainer::Iterator> getIterator() const override;
 
+    size_t numBlocks() const;
 #ifdef BUILD_TESTS
     void saveVectorsData(std::ostream &output) const override;
     // Use that in deserialization when file was created with old version (v3) that serialized
     // the blocks themselves and not just thw raw vector data.
     void restoreBlocks(std::istream &input, size_t num_vectors, Serializer::EncodingVersion);
     void shrinkToFit();
-    size_t numBlocks() const;
 #endif
 
     class Iterator : public RawDataContainer::Iterator {

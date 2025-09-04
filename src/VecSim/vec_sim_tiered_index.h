@@ -50,7 +50,17 @@ protected:
 
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
+    void lockMainIndexGuard() const {
+        mainIndexGuard.lock();
+#ifdef BUILD_TESTS
+        mainIndexGuard_write_lock_count++;
+#endif
+    }
 
+    void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+#ifdef BUILD_TESTS
+    mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
+#endif
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
@@ -89,6 +99,7 @@ protected:
 
 #ifdef BUILD_TESTS
 public:
+    int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
     // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
     // two lists will also have identical scores. In this case, any duplicates will naturally align

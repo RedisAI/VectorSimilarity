@@ -89,20 +89,45 @@ protected:
     // Private internal function that implements generic single vector deletion.
     virtual void removeVector(idType id);
 
-    void growByBlock() {
-        idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
+    void resizeIndexCommon(size_t new_max_elements) {
+        assert(new_max_elements % this->blockSize == 0 &&
+               "new_max_elements must be a multiple of blockSize");
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Resizing FLAT index from %zu to %zu",
+                  idToLabelMapping.capacity(), new_max_elements);
+        assert(idToLabelMapping.capacity() == idToLabelMapping.size());
+        idToLabelMapping.resize(new_max_elements);
         idToLabelMapping.shrink_to_fit();
-        resizeLabelLookup(idToLabelMapping.size());
+        assert(idToLabelMapping.capacity() == idToLabelMapping.size());
+        resizeLabelLookup(new_max_elements);
+    }
+
+    void growByBlock() {
+        assert(indexCapacity() == idToLabelMapping.capacity());
+        assert(indexCapacity() % this->blockSize == 0);
+        assert(indexCapacity() == indexSize());
+        assert((dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks() ==
+                (indexSize()) / this->blockSize));
+
+        resizeIndexCommon(indexCapacity() + this->blockSize);
     }
 
     void shrinkByBlock() {
-        assert(indexCapacity() > 0); // should not be called when index is empty
+        assert(indexCapacity() >= this->blockSize);
+        assert(indexCapacity() % this->blockSize == 0);
+        assert(dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks() ==
+               indexSize() / this->blockSize);
 
-        // remove a block size of labels.
-        assert(idToLabelMapping.size() >= this->blockSize);
-        idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
-        idToLabelMapping.shrink_to_fit();
-        resizeLabelLookup(idToLabelMapping.size());
+        if (indexSize() == 0) {
+            resizeIndexCommon(0);
+        } else if (indexCapacity() >= (indexSize() + 2 * this->blockSize)) {
+
+            assert(indexCapacity() == idToLabelMapping.capacity());
+            assert(idToLabelMapping.size() == idToLabelMapping.capacity());
+            assert(dynamic_cast<DataBlocksContainer *>(this->vectors)->size() +
+                       2 * this->blockSize ==
+                   idToLabelMapping.capacity());
+            resizeIndexCommon(indexCapacity() - this->blockSize);
+        }
     }
 
     void setVectorLabel(idType id, labelType new_label) { idToLabelMapping.at(id) = new_label; }
@@ -143,14 +168,15 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
+    // Resize the index meta data structures if needed
+    if (indexSize() >= indexCapacity()) {
+        growByBlock();
+    }
+
     auto processed_blob = this->preprocessForStorage(vector_data);
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // Resize the index meta data structures if needed
-    if (indexSize() > indexCapacity()) {
-        growByBlock();
-    }
     // add vector data to vector raw data container
     this->vectors->addElement(processed_blob.get(), id);
 
@@ -199,7 +225,7 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
-    return this->idToLabelMapping.size();
+    return this->idToLabelMapping.capacity();
 }
 
 template <typename DataType, typename DistType>
