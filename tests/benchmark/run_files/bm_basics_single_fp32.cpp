@@ -31,5 +31,14 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Sin
                     INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
                     INDEX_TIERED_HNSW)
+
+// Test Oscilations
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single),
+                            fp32_index_t)
+(benchmark::State &st) { UpdateAtBlockSize(st); }
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single), INDEX_BF);
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single), INDEX_HNSW);
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single),
+                           INDEX_TIERED_HNSW);
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 BENCHMARK_MAIN();
