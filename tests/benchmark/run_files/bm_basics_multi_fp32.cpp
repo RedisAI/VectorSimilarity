@@ -33,4 +33,10 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWI
                     VecSimAlgo_TIERED)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 
+// Test oscillations at block size boundaries.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, UpdateAtBlockSize_Multi, fp32_index_t)
+(benchmark::State &st) { UpdateAtBlockSize(st); }
+REGISTER_UpdateAtBlockSize(UpdateAtBlockSize_Multi, VecSimAlgo_BF);
+REGISTER_UpdateAtBlockSize(UpdateAtBlockSize_Multi, VecSimAlgo_HNSWLIB);
+REGISTER_UpdateAtBlockSize(UpdateAtBlockSize_Multi, VecSimAlgo_TIERED);
 BENCHMARK_MAIN();
