@@ -70,6 +70,13 @@ public:
     virtual size_t indexSize() const = 0;
 
     /**
+     * @brief Return the index capacity, so we know if resize is required for adding new vectors.
+     *
+     * @return index capacity.
+     */
+    virtual size_t indexCapacity() const = 0;
+
+    /**
      * @brief Return the number of unique labels in the index using its SizeFn.
      *
      * @return index label count.

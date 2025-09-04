@@ -184,7 +184,7 @@ public:
     inline void setEpsilon(double epsilon);
     inline double getEpsilon() const;
     inline size_t indexSize() const override;
-    inline size_t getIndexCapacity() const;
+    inline size_t indexCapacity() const override;
     inline size_t getEfConstruction() const;
     inline size_t getM() const;
     inline size_t getMaxLevel() const;
@@ -248,7 +248,7 @@ size_t HNSWIndex<DataType, DistType>::indexSize() const {
 }
 
 template <typename DataType, typename DistType>
-size_t HNSWIndex<DataType, DistType>::getIndexCapacity() const {
+size_t HNSWIndex<DataType, DistType>::indexCapacity() const {
     return max_elements_;
 }
 
