@@ -644,9 +644,10 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearchCosine) {
         }
         VecSimIndex_AddVector(tiered_index, f, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
 
     mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
     // Verify that vectors were moved to SVS as expected
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
     auto sz_b = tiered_index->GetBackendIndex()->indexSize();

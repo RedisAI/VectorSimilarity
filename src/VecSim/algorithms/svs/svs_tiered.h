@@ -507,8 +507,7 @@ private:
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
         // Update the SVS index
-        index->GetSVSIndex()->setNumThreads(availableThreads);
-        index->updateSVSIndex();
+        index->updateSVSIndex(availableThreads);
     }
 
 #ifdef BUILD_TESTS
@@ -528,7 +527,7 @@ public:
     }
 
 private:
-    void updateSVSIndex() {
+    void updateSVSIndex(size_t availableThreads) {
         std::set<labelType> to_delete;
         std::set<labelType> to_add;
         // Take a snapshot of the journal to determine which vectors to delete and add.
@@ -567,6 +566,7 @@ private:
             std::scoped_lock lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_add.size() == vectors_to_add.size() / this->frontendIndex->getDim());
+            svs_index->setNumThreads(std::min(availableThreads, labels_to_add.size()));
             svs_index->addVectors(vectors_to_add.data(), labels_to_add.data(),
                                   labels_to_add.size());
         }
@@ -666,13 +666,18 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        { // Remove vector from the backend index if it exists.
+        {
+            {
+                std::shared_lock lock(this->flatIndexGuard);
+                // If the label already exists in the frontend index, we should count it
+                // to prevent the case when existing vector is moved meanwhile by the update job.
+                if (this->frontendIndex->isLabelExists(label)) {
+                    ret = -1;
+                }
+            }
+            // Remove vector from the backend index if it exists.
             std::scoped_lock lock(this->mainIndexGuard);
             ret -= svs_index->deleteVectors(&label, 1);
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is 1.
-            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
-                                                                    : this->updateTriggerThreshold;
         }
         { // Add vector to the frontend index and journal.
             std::scoped_lock lock(this->flatIndexGuard, this->journal_mutex);
@@ -681,7 +686,13 @@ public:
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
-
+        {
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is updateTriggerThreshold.
+            std::shared_lock lock(this->mainIndexGuard);
+            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                                    : this->updateTriggerThreshold;
+        }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
         }
