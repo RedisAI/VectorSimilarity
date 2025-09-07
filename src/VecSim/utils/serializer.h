@@ -12,21 +12,37 @@
 #include <ostream>
 #include <istream>
 
+/*
+ * Serializer Abstraction Layer for Vector Indexes
+ * -----------------------------------------------
+ * This header defines the base `Serializer` class, which provides a generic interface for
+ * serializing vector indexes to disk. It is designed to be inherited
+ * by algorithm-specific serializers (e.g., HNSWSerializer, SVSSerializer), and provides a
+ * versioned, extensible mechanism for managing persistent representations of index state.
+ * Each serializer subclass must define its own EncodingVersion enum.
+ * How to Extend:
+ * 1. Derive a new class from `Serializer`, e.g., `MyIndexSerializer`.
+ * 2. Implement `saveIndex()` and `saveIndexIMP()`.
+ * 3. Implement `saveIndexFields()` to write out relevant fields in a deterministic order.
+ * 4. Optionally, add version-aware deserialization methods.
+ *
+ * Example Inheritance Tree:
+ *   Serializer (abstract)
+ *      ├── HNSWSerializer
+ *      │     └── HNSWIndex<T, U>
+ *      └── SVSSerializer
+ *            └── SVSIndex<T...>
+ */
+
 class Serializer {
 public:
-    typedef enum EncodingVersion {
-        EncodingVersion_DEPRECATED = 2, // Last deprecated version
-        EncodingVersion_V3,
-        EncodingVersion_V4,
-        EncodingVersion_INVALID, // This should always be last.
-    } EncodingVersion;
+    enum class EncodingVersion { INVALID };
 
-    Serializer(EncodingVersion version = EncodingVersion_V4) : m_version(version) {}
+    Serializer(EncodingVersion version = EncodingVersion::INVALID) : m_version(version) {}
 
-    // Persist index into a file in the specified location with V3 encoding routine.
-    void saveIndex(const std::string &location);
+    virtual void saveIndex(const std::string &location) = 0;
 
-    EncodingVersion getVersion() const { return m_version; }
+    EncodingVersion getVersion() const;
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 
@@ -46,4 +62,7 @@ protected:
 
     // Index memory size might be changed during index saving.
     virtual void saveIndexIMP(std::ofstream &output) = 0;
+
+private:
+    virtual void saveIndexFields(std::ofstream &output) const = 0;
 };
