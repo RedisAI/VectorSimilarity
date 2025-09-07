@@ -70,7 +70,9 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
+    st.counters["memory"] =
+        benchmark::Counter((double)VecSimIndex_StatsInfo(index).memory,
+                           benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
 }
 
 // TopK search BM
