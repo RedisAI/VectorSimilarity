@@ -343,7 +343,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     auto *hnswIndex =
         new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
 
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
+    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
     size_t initial_memory_size = allocator->getAllocationSize();
     // labels_lookup and element_levels containers are not allocated at all in some platforms,
     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
@@ -362,7 +362,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     }
     // Validate that a single block exists.
     ASSERT_EQ(hnswIndex->indexSize(), block_size);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), block_size);
+    ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
     ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
     // Also validate that there are no unidirectional connections (these add memory to the incoming
     // edges sets).
@@ -373,7 +373,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     size_t mem_delta = GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
 
     ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), 2 * block_size);
+    ASSERT_EQ(hnswIndex->indexCapacity(), 2 * block_size);
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Compute the expected memory allocation due to the last vector insertion.
@@ -400,7 +400,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // memory consumption.
     VecSimIndex_DeleteVector(hnswIndex, block_size);
     ASSERT_EQ(hnswIndex->indexSize(), block_size);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), block_size);
+    ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
     ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
 
@@ -410,7 +410,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     }
 
     ASSERT_EQ(hnswIndex->indexSize(), 0);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
+    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
     // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory = hnswIndex->label_lookup_.bucket_count() * sizeof(size_t);
