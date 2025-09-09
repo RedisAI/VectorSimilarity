@@ -117,6 +117,31 @@ using SVSDataTypeSet = ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, 
 
 TYPED_TEST_SUITE(SVSTest, SVSDataTypeSet);
 
+// This test verifies a bug fix where zero vectors would cause division by zero during
+// normalization (vector/norm where norm=0), resulting in NaN/Inf values that crashed the SVS
+// library. The fix was introduced in PR #752, bumping up SVS library to version that includes the
+// fix.
+TYPED_TEST(SVSTest, test_index_zeros_vector_cosine) {
+    const size_t dim = 4;
+
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+    };
+    this->SetTypeParams(params);
+    VecSimParams index_params = CreateParams(params);
+    VecSimIndex *index = this->CreateNewIndex(index_params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(SVSTest, svs_vector_add_test) {
 
     size_t dim = 4;
