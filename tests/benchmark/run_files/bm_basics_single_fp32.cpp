@@ -26,5 +26,12 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex
                     float, VecSimAlgo_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
                     VecSimAlgo_HNSWLIB)
+
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
+
+// Test oscillations at block size boundaries.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, UpdateAtBlockSize_Single, fp32_index_t)
+(benchmark::State &st) { UpdateAtBlockSize(st); }
+REGISTER_UpdateAtBlockSize(UpdateAtBlockSize_Single, VecSimAlgo_BF);
+REGISTER_UpdateAtBlockSize(UpdateAtBlockSize_Single, VecSimAlgo_HNSWLIB);
 BENCHMARK_MAIN();

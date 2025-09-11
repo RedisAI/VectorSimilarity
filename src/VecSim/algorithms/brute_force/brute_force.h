@@ -36,6 +36,7 @@ public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
     virtual size_t indexSize() const override;
+    size_t indexCapacity() const override;
     vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
@@ -210,6 +211,11 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexSize() const {
     return this->count;
+}
+
+template <typename DataType, typename DistType>
+size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
+    return this->idToLabelMapping.size();
 }
 
 // Compute the score for every vector in the block by using the given distance function.
