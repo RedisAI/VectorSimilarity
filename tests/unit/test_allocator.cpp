@@ -324,8 +324,17 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         expectedAllocationDelta -=
             2 * sizeof(labelType) +
             vecsimAllocationOverhead; // remove two idToLabelMapping and free the container
+        auto calcReserveHashTableToZero = [](size_t initial_buckets) {
+            std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+            auto dummy_lookup =
+                vecsim_stl::unordered_map<size_t, unsigned int>(initial_buckets, allocator);
+            size_t memory_before = allocator->getAllocationSize();
+            dummy_lookup.reserve(0);
+            size_t memory_after = allocator->getAllocationSize();
+            return memory_before - memory_after;
+        };
         expectedAllocationDelta -=
-            (buckets_num_before - bfIndex->labelToIdLookup.bucket_count()) * sizeof(size_t);
+            calcReserveHashTableToZero(buckets_num_before); // resizing labelToIdLookup to 0
         ASSERT_EQ(allocator->getAllocationSize(),
                   expectedAllocationSize + deleteCommandAllocationDelta);
         ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
