@@ -92,7 +92,7 @@ void validateTopKSearchTest(VecSimIndex *index, VecSimQueryReply *res, size_t k,
     } else {
         ASSERT_EQ(VecSimQueryReply_Len(res), expected_num_res);
     }
-    ASSERT_TRUE(allUniqueResults(res));
+    ASSERT_TRUE(allUniqueResults(res)) << *res;
     VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryReply_IteratorHasNext(iterator)) {
@@ -189,6 +189,41 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
     ASSERT_EQ(info1.numThreads, info2.numThreads);
     ASSERT_EQ(info1.numberOfMarkedDeletedNodes, info2.numberOfMarkedDeletedNodes);
 }
+
+#if HAVE_SVS
+#include "VecSim/algorithms/svs/svs_utils.h"
+
+void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params) {
+    ASSERT_EQ(info.constructionWindowSize,
+              svs_details::getOrDefault(params.construction_window_size,
+                                        SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE));
+    ASSERT_EQ(info.graphMaxDegree, svs_details::getOrDefault(params.graph_max_degree,
+                                                             SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE));
+    ASSERT_EQ(
+        info.maxCandidatePoolSize,
+        svs_details::getOrDefault(params.max_candidate_pool_size, info.constructionWindowSize * 3));
+    ASSERT_EQ(info.pruneTo, svs_details::getOrDefault(params.prune_to, info.graphMaxDegree - 4));
+    ASSERT_EQ(info.quantBits, get<0>(svs_details::isSVSQuantBitsSupported(params.quantBits)));
+    ASSERT_EQ(info.searchWindowSize,
+              svs_details::getOrDefault(params.search_window_size,
+                                        SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE));
+    ASSERT_EQ(info.searchBufferCapacity,
+              svs_details::getOrDefault(params.search_buffer_capacity, info.searchWindowSize));
+    ASSERT_EQ(info.leanvecDim,
+              svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM));
+    ASSERT_EQ(info.epsilon, svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON));
+    ASSERT_EQ(info.numThreads,
+              std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads));
+
+    float expected_alpha = params.metric == VecSimMetric_L2 ? SVS_VAMANA_DEFAULT_ALPHA_L2
+                                                            : SVS_VAMANA_DEFAULT_ALPHA_IP;
+    ASSERT_EQ(info.alpha, svs_details::getOrDefault(params.alpha, expected_alpha));
+    bool expected_search_history = params.use_search_history == VecSimOption_AUTO
+                                       ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY
+                                       : params.use_search_history == VecSimOption_ENABLE;
+    ASSERT_EQ(info.useSearchHistory, expected_search_history);
+}
+#endif
 
 /*
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
