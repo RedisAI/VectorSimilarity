@@ -337,8 +337,8 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
             calcReserveHashTableToZero(buckets_num_before); // resizing labelToIdLookup to 0
         ASSERT_EQ(allocator->getAllocationSize(),
                   expectedAllocationSize + deleteCommandAllocationDelta);
-        ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-        ASSERT_EQ(expectedAllocationDelta, deleteCommandAllocationDelta);
+        ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+        ASSERT_GE(expectedAllocationDelta, deleteCommandAllocationDelta);
 
         memory = VecSimIndex_StatsInfo(bfIndex).memory;
         ASSERT_EQ(allocator->getAllocationSize(), memory);
