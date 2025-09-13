@@ -111,51 +111,166 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
 
 TYPED_TEST(BruteForceTest, resize_and_align_index) {
     size_t dim = 4;
-    size_t n = 14;
     size_t blockSize = 10;
+    size_t curr_label = 0;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = blockSize};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
     BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    auto verify_index_size = [&](size_t expected_size, size_t expected_capacity, std::string msg) {
+        SCOPED_TRACE("verify_index_size: " + msg);
+        ASSERT_EQ(VecSimIndex_IndexSize(index), expected_size);
+        ASSERT_EQ(bf_index->idToLabelMapping.size(), expected_capacity);
+        ASSERT_EQ(bf_index->indexCapacity(), expected_capacity);
+        ASSERT_EQ(dynamic_cast<DataBlocksContainer *>(bf_index->vectors)->numBlocks(),
+                  expected_size / blockSize + (expected_size % blockSize != 0))
+            << "expected_size: " << expected_size << " expected_capacity: " << expected_capacity;
+    };
+    // Empty index with no initial capacity
+    verify_index_size(0, 0, "empty index");
 
-    for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    // Add one vector, index capacity should grow to blockSize.
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, curr_label++);
+    verify_index_size(1, blockSize, "add one vector");
+
+    // Add vector up to blocksize, index capacity should remain the same.
+    while (curr_label < blockSize) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, curr_label++);
     }
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    verify_index_size(blockSize, blockSize, "add up to blocksize");
 
     // remove invalid id
     VecSimIndex_DeleteVector(index, 3459);
 
     // This should do nothing
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
+    verify_index_size(blockSize, blockSize, "remove invalid id");
 
-    // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (to fit a multiplication of block_size).
-    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    // Capacity and size should remain blockSize * 2.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
-    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), 2 * blockSize);
+    // Add another vector, since index size equals to block size, this should cause resizing
+    // of the capacity by one blocksize
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, curr_label++);
+    verify_index_size(blockSize + 1, 2 * blockSize,
+                      "add one more vector after reaching block size");
 
-    // Now size = n + 1 (= 15), capacity = 2 * bs (= 20). Test capacity overflow again
+    // Now size = blocksize + 1 (= 11), capacity = 2 * bs (= 20). Test capacity overflow again
     // to check that it stays aligned with block size.
-
-    size_t add_vectors_count = 8;
-    for (size_t i = 0; i < add_vectors_count; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, n + 2 + i, i);
+    size_t add_vectors_count = blockSize + 2; // 12
+    while (curr_label < add_vectors_count + blockSize + 1) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, curr_label++);
     }
 
-    // Size should be n + 1 + 8 (= 25).
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
+    // Size should be blocksize + 1 + add_vectors_count (= 23).
+    verify_index_size(
+        blockSize + 1 + add_vectors_count, 3 * blockSize,
+        "add more vectors after reaching 2 * blocksize capacity to trigger another resize");
 
-    // Check new capacity size, should be blockSize * 3.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), 3 * blockSize);
-    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), 3 * blockSize);
+    // Delete vectors so that indexsize % blocksize == 0 (and then delete one more)
+    size_t num_deleted = 0;
+    auto remove_to_one_below_blocksize = [&](size_t initial_label_to_remove) {
+        while (VecSimIndex_IndexSize(index) % blockSize != 0) {
+            ASSERT_EQ(VecSimIndex_DeleteVector(index, initial_label_to_remove++), 1)
+                << "tried to remove label: " << initial_label_to_remove - 1;
+            num_deleted++;
+        }
+        VecSimIndex_DeleteVector(index, initial_label_to_remove);
+        num_deleted++;
+    };
+
+    // First trigger of remove_to_one_below_blocksize will result in one free block.
+    // This should not trigger shrinking of metadata containers.
+    remove_to_one_below_blocksize(0); // remove first block labels.
+    verify_index_size(
+        blockSize * 2 - 1, 3 * blockSize,
+        "delete vectors so that indexsize % blocksize == 0, but there is only one free block");
+
+    // Second trigger of remove_to_one_below_blocksize will result in two free blocks.
+    // This should trigger shrinking of metadata containers by one block.
+    remove_to_one_below_blocksize(num_deleted);
+    verify_index_size(
+        blockSize - 1, 2 * blockSize,
+        "delete vectors so that indexsize % blocksize == 0 and there are two free blocks");
+
+    // Now there is one block in use and one free. adding vectors up to blocksize should not trigger
+    // another resize.
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, curr_label++);
+    verify_index_size(blockSize, 2 * blockSize,
+                      "add vectors up to blocksize after deleting two blocks");
+
+    // Delete all vectors.
+    while (VecSimIndex_IndexSize(index) > 0) {
+        VecSimIndex_DeleteVector(index, num_deleted++);
+    }
+    verify_index_size(0, 0, "delete all vectors");
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_no_oscillation_test) {
+    size_t dim = 4;
+    size_t blockSize = 2;
+    size_t cycles = 5; // Number of add/delete cycles to test
+
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = blockSize};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
+
+    auto verify_no_oscillation = [&](size_t expected_size, size_t expected_capacity,
+                                     const std::string &msg) {
+        SCOPED_TRACE("verify_no_oscillation: " + msg);
+        ASSERT_EQ(VecSimIndex_IndexSize(index), expected_size);
+        ASSERT_EQ(bf_index->indexCapacity(), expected_capacity);
+    };
+
+    // Initial state: empty index
+    verify_no_oscillation(0, 0, "initial empty state");
+
+    size_t current_label = 0;
+
+    // Add initial 3 blocks
+    size_t initial_num_blocks = 3;
+    for (size_t i = 0; i < initial_num_blocks * blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, current_label++);
+    }
+    verify_no_oscillation(initial_num_blocks * blockSize, initial_num_blocks * blockSize,
+                          "initial " + std::to_string(initial_num_blocks) +
+                              " blocks vectors added");
+
+    // Perform oscillation cycles: delete block, add block, delete block, add block...
+    for (size_t cycle = 0; cycle < cycles; cycle++) {
+        // Delete blockSize vectors (size becomes blockSize, but capacity should remain 2 *
+        // blockSize due to buffer zone)
+        for (size_t i = 0; i < blockSize; i++) {
+            VecSimIndex_DeleteVector(index, cycle * blockSize + i);
+        }
+        verify_no_oscillation((initial_num_blocks - 1) * blockSize, initial_num_blocks * blockSize,
+                              "cycle " + std::to_string(cycle) +
+                                  " - after deleting block of vectors");
+
+        // Add blockSize vectors back (size becomes 2 * blockSize, capacity should remain 2 *
+        // blockSize)
+        for (size_t i = 0; i < blockSize; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, current_label++);
+        }
+        verify_no_oscillation(initial_num_blocks * blockSize, initial_num_blocks * blockSize,
+                              "cycle " + std::to_string(cycle) +
+                                  " - after adding blockSize vectors back");
+    }
+
+    // Final verification: delete enough vectors to trigger actual shrinking
+    // Delete blocksize vectors to have only one block of vectors (2 free blocks = shrinking
+    // condition)
+    size_t vectors_to_delete = 2 * blockSize;
+    for (size_t i = 0; i < vectors_to_delete; i++) {
+        VecSimIndex_DeleteVector(index, cycles * blockSize + i);
+    }
+    verify_no_oscillation(blockSize, 2 * blockSize,
+                          "final shrinking to trigger shrinking by one block");
+
+    // Verify we can still grow normally after the oscillation test
+    for (size_t i = 0; i < blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, current_label++);
+    }
+    verify_no_oscillation(2 * blockSize, 2 * blockSize, "growth after oscillation test");
 
     VecSimIndex_Free(index);
 }

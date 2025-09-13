@@ -314,7 +314,7 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToRun) {
 
     // Execute swap jobs - acquire hnsw write lock.
-    this->mainIndexGuard.lock();
+    this->lockMainIndexGuard();
     TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
                readySwapJobs, std::min(readySwapJobs, maxJobsToRun));
@@ -339,7 +339,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
     readySwapJobs -= idsToRemove.size();
     TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                "Tiered HNSW index GC: done executing %zu swap jobs", idsToRemove.size());
-    this->mainIndexGuard.unlock();
+    this->unlockMainIndexGuard();
 }
 
 template <typename DataType, typename DistType>
@@ -437,11 +437,11 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
-    if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+    if (hnsw_index->isCapacityFull()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();
-        this->mainIndexGuard.lock();
+        this->lockMainIndexGuard();
         hnsw_index->lockIndexDataGuard();
 
         // Hold the index data lock while we store the new element. If the new node's max level is
@@ -466,7 +466,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
-        this->mainIndexGuard.unlock();
+        this->unlockMainIndexGuard();
     } else {
         // Do the same as above except for changing the capacity, but with *shared* lock held:
         // Hold the index data lock while we store the new element. If the new node's max level is
@@ -713,9 +713,9 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
         // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
         // label since we already checked it outside.
-        this->mainIndexGuard.lock();
+        this->lockMainIndexGuard();
         hnsw_index->addVector(storage_blob.get(), label);
-        this->mainIndexGuard.unlock();
+        this->unlockMainIndexGuard();
         return ret;
     }
     if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
@@ -841,9 +841,9 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         }
     } else {
         // delete in place.
-        this->mainIndexGuard.lock();
+        this->lockMainIndexGuard();
         num_deleted_vectors += this->deleteLabelFromHNSWInplace(label);
-        this->mainIndexGuard.unlock();
+        this->unlockMainIndexGuard();
     }
 
     return num_deleted_vectors;

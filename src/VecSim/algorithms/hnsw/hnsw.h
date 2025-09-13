@@ -235,6 +235,11 @@ public:
     double getEpsilon() const;
     size_t indexSize() const override;
     size_t indexCapacity() const override;
+    /**
+     * Checks if the index capacity is full to hint the caller a resize is needed.
+     * @note Must be called with indexDataGuard locked.
+     */
+    size_t isCapacityFull() const;
     size_t getEfConstruction() const;
     size_t getM() const;
     size_t getMaxLevel() const;
@@ -347,6 +352,11 @@ size_t HNSWIndex<DataType, DistType>::indexSize() const {
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexCapacity() const {
     return this->maxElements;
+}
+
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::isCapacityFull() const {
+    return indexSize() == this->maxElements;
 }
 
 template <typename DataType, typename DistType>
@@ -1281,31 +1291,59 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     assert(new_max_elements % this->blockSize == 0 &&
            "new_max_elements must be a multiple of blockSize");
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-              "Updating HNSW index capacity from %zu to %zu", this->maxElements, new_max_elements);
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Resizing HNSW index from %zu to %zu",
+              idToMetaData.capacity(), new_max_elements);
     resizeLabelLookup(new_max_elements);
     visitedNodesHandlerPool.resize(new_max_elements);
+    assert(idToMetaData.capacity() == idToMetaData.size());
     idToMetaData.resize(new_max_elements);
     idToMetaData.shrink_to_fit();
-
-    maxElements = new_max_elements;
+    assert(idToMetaData.capacity() == idToMetaData.size());
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::growByBlock() {
-    size_t new_max_elements = maxElements + this->blockSize;
+    assert(this->maxElements % this->blockSize == 0);
+    assert(this->maxElements == indexSize());
+    assert(graphDataBlocks.size() == this->maxElements / this->blockSize);
+    assert(idToMetaData.capacity() == maxElements ||
+           idToMetaData.capacity() == maxElements + this->blockSize);
+
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+              "Updating HNSW index capacity from %zu to %zu", maxElements,
+              maxElements + this->blockSize);
+    maxElements += this->blockSize;
+
     graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
 
-    resizeIndexCommon(new_max_elements);
+    if (idToMetaData.capacity() == indexSize()) {
+        resizeIndexCommon(maxElements);
+    }
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::shrinkByBlock() {
-    assert(maxElements >= this->blockSize);
-    size_t new_max_elements = maxElements - this->blockSize;
-    graphDataBlocks.pop_back();
+    assert(this->maxElements >= this->blockSize);
+    assert(this->maxElements % this->blockSize == 0);
 
-    resizeIndexCommon(new_max_elements);
+    if (indexSize() % this->blockSize == 0) {
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+                  "Updating HNSW index capacity from %zu to %zu", maxElements,
+                  maxElements - this->blockSize);
+        graphDataBlocks.pop_back();
+        assert(graphDataBlocks.size() == indexSize() / this->blockSize);
+
+        // assuming idToMetaData reflects the capacity of the heavy reallocation containers.
+        if (indexSize() == 0) {
+            resizeIndexCommon(0);
+        } else if (idToMetaData.capacity() >= (indexSize() + 2 * this->blockSize)) {
+            assert(this->maxElements + this->blockSize == idToMetaData.capacity());
+            resizeIndexCommon(idToMetaData.capacity() - this->blockSize);
+        }
+
+        // Take the lower bound into account.
+        maxElements -= this->blockSize;
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1660,9 +1698,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     // If we need to free a complete block and there is at least one block between the
     // capacity and the size.
     this->vectors->removeElement(curElementCount);
-    if (curElementCount % this->blockSize == 0) {
-        shrinkByBlock();
-    }
+    shrinkByBlock();
 }
 
 template <typename DataType, typename DistType>
@@ -1738,6 +1774,9 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
                                                                   const void *vector_data) {
+    if (isCapacityFull()) {
+        growByBlock();
+    }
     HNSWAddVectorState state{};
 
     // Choose randomly the maximum level in which the new element will be in the index.
@@ -1763,14 +1802,6 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "Error - allocating memory for new element failed due to low memory");
         throw e;
-    }
-
-    if (indexSize() > indexCapacity()) {
-        growByBlock();
-    } else if (state.newElementId % this->blockSize == 0) {
-        // If we had an initial capacity, we might have to allocate new blocks for the graph data.
-        this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
-                                           this->allocator);
     }
 
     // Insert the new element to the data block
