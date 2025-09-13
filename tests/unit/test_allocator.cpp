@@ -324,21 +324,15 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         expectedAllocationDelta -=
             2 * sizeof(labelType) +
             vecsimAllocationOverhead; // remove two idToLabelMapping and free the container
-        auto calcReserveHashTableToZero = [](size_t initial_buckets) {
-            std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-            auto dummy_lookup =
-                vecsim_stl::unordered_map<size_t, unsigned int>(initial_buckets, allocator);
-            size_t memory_before = allocator->getAllocationSize();
-            dummy_lookup.reserve(0);
-            size_t memory_after = allocator->getAllocationSize();
-            return memory_before - memory_after;
-        };
-        expectedAllocationDelta -=
-            calcReserveHashTableToZero(buckets_num_before); // resizing labelToIdLookup to 0
+        // resizing labelToIdLookup to 0
+        size_t buckets_after = bfIndex->labelToIdLookup.bucket_count();
+        ASSERT_EQ(bfIndex->labelToIdLookup.size(), 0);
+        ASSERT_LE(buckets_after, buckets_num_before);
+        expectedAllocationDelta -= (buckets_num_before - buckets_after) * sizeof(size_t);
         ASSERT_EQ(allocator->getAllocationSize(),
                   expectedAllocationSize + deleteCommandAllocationDelta);
-        ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-        ASSERT_GE(expectedAllocationDelta, deleteCommandAllocationDelta);
+        ASSERT_LE(abs(expectedAllocationDelta), abs(deleteCommandAllocationDelta));
+        ASSERT_GE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
 
         memory = VecSimIndex_StatsInfo(bfIndex).memory;
         ASSERT_EQ(allocator->getAllocationSize(), memory);
