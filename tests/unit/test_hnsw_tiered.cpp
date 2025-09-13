@@ -3826,3 +3826,86 @@ TYPED_TEST(HNSWTieredIndexTestBasic, switchDeleteModes) {
     ASSERT_EQ(state.valid_state, 1);
     ASSERT_EQ(state.connections_to_repair, 0);
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
+    size_t dim = 4;
+    constexpr size_t blockSize = 10;
+    size_t resize_operations = 0;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = blockSize};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = SIZE_MAX,
+                                       .primaryIndexParams = &hnsw_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 1}}};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_params));
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), 0);
+
+    // add a vector
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    mock_thread_pool.thread_iteration();
+    resize_operations++;
+
+    // first vector should trigger resize
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+
+    // add up to block size
+    for (size_t i = 1; i < blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+        mock_thread_pool.thread_iteration();
+    }
+    // should not trigger resize
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+
+    // add one more vector to trigger another resize
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, blockSize);
+    mock_thread_pool.thread_iteration();
+    resize_operations++;
+
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize + 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+
+    // delete a vector to shrink data blocks
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1) << "Failed to delete vector 0";
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    tiered_index->executeReadySwapJobs();
+    resize_operations++;
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+
+    // add this vector again and verify lock was acquired to resize
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    mock_thread_pool.thread_iteration();
+    resize_operations++;
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize + 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+
+    // add up to block size (count = 2 blockSize), the lock shouldn't be acquired because no resize
+    // is required
+    for (size_t i = blockSize + 1; i < 2 * blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+}

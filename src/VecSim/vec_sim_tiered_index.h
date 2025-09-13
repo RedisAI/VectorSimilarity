@@ -41,7 +41,17 @@ protected:
 
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
+    void lockMainIndexGuard() const {
+        mainIndexGuard.lock();
+#ifdef BUILD_TESTS
+        mainIndexGuard_write_lock_count++;
+#endif
+    }
 
+    void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+#ifdef BUILD_TESTS
+    mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
+#endif
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
@@ -57,7 +67,10 @@ protected:
                                 jobs.size());
     }
 
+#ifdef BUILD_TESTS
 public:
+    int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
+#endif
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
                       TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
