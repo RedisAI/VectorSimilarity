@@ -540,8 +540,7 @@ private:
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
         // Update the SVS index
-        index->GetSVSIndex()->setNumThreads(availableThreads);
-        index->updateSVSIndex();
+        index->updateSVSIndex(availableThreads);
     }
 
 #ifdef BUILD_TESTS
@@ -591,7 +590,7 @@ private:
         }
     }
 
-    void updateSVSIndex() {
+    void updateSVSIndex(size_t availableThreads) {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
 
@@ -618,6 +617,7 @@ private:
             std::lock_guard lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+            svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
             svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                   labels_to_move.size());
         }
@@ -725,16 +725,17 @@ public:
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
         if (!this->backendIndex->isMultiValue()) {
+            {
+                std::shared_lock lock(this->flatIndexGuard);
+                // If the label already exists in the frontend index, we should count it
+                // to prevent the case when existing vector is moved meanwhile by the update job.
+                if (this->frontendIndex->isLabelExists(label)) {
+                    ret = -1;
+                }
+            }
             // Remove vector from the backend index if it exists in case of non-MULTI.
             std::lock_guard lock(this->mainIndexGuard);
             ret -= svs_index->deleteVectors(&label, 1);
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is 1.
-        }
-        {
-            std::shared_lock lock(this->mainIndexGuard);
-            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
-                                                                    : this->updateTriggerThreshold;
         }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
@@ -751,7 +752,13 @@ public:
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
-
+        {
+            // If main index is empty then update_threshold is trainingTriggerThreshold,
+            // overwise it is updateTriggerThreshold.
+            std::shared_lock lock(this->mainIndexGuard);
+            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                                    : this->updateTriggerThreshold;
+        }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
         }
@@ -854,12 +861,17 @@ public:
 
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
+
         SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
                                        .updateTriggerThreshold = this->updateTriggerThreshold,
                                        .updateJobWaitTime = this->updateJobWaitTime,
                                        .indexUpdateScheduled =
                                            static_cast<bool>(this->indexUpdateScheduled.test())};
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
+        info.tieredInfo.backgroundIndexing =
+            svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
+                ? VecSimBool_TRUE
+                : VecSimBool_FALSE;
         return info;
     }
 
@@ -874,37 +886,44 @@ public:
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         //  Get the base tiered fields.
         auto *infoIterator = Base::debugInfoIterator();
-        // TODO: Add SVS specific info.
+        VecSimIndexDebugInfo info = this->debugInfo();
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo.svsTieredInfo
+                                                .trainingTriggerThreshold}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo.svsTieredInfo
+                                                .updateTriggerThreshold}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{
+                .uintegerValue =
+                    info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime}}});
         return infoIterator;
     }
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        if (this->GetSVSIndex()->isCompressed() || this->backendIndex->isMultiValue()) {
-            // SVS compressed distance computation precision is lower, so we always have to
-            // merge results with set.
-            return this->template topKQueryImp<true>(queryBlob, k, queryParams);
-        } else {
-            // Calling with withSet=false for optimized performance, assuming that shared IDs across
-            // lists also have identical scores — in which case duplicates are implicitly avoided by
-            // the merge logic.
-            return this->template topKQueryImp<false>(queryBlob, k, queryParams);
-        }
+        // SVS implements it's own distance computation functions which may cause sligthly different
+        // distance values than VecSim Flat Index does, so we always have to merge results with set.
+        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
     }
 
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams,
                                  VecSimQueryReply_Order order) const override {
-        if (this->GetSVSIndex()->isCompressed() || this->backendIndex->isMultiValue()) {
-            // SVS compressed distance computation precision is lower, so we always have to
-            // merge results with set.
-            return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
-        } else {
-            // Calling with withSet=false for optimized performance, assuming that shared IDs across
-            // lists also have identical scores — in which case duplicates are implicitly avoided by
-            // the merge logic.
-            return this->template rangeQueryImp<false>(queryBlob, radius, queryParams, order);
-        }
+        // SVS implements it's own distance computation functions which may cause sligthly different
+        // distance values than VecSim Flat Index does, so we always have to merge results with set.
+        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
