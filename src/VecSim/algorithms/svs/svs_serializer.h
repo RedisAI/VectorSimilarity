@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <sstream>
 #include <fstream>
 #include <string>
 #include "VecSim/utils/serializer.h"

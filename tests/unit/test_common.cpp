@@ -18,8 +18,10 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#if HAVE_SVS
 #include "VecSim/index_factories/svs_factory.h"
 #include "VecSim/algorithms/svs/svs.h"
+#endif
 #include "mock_thread_pool.h"
 #include "tests_utils.h"
 #include "VecSim/index_factories/tiered_factory.h"
