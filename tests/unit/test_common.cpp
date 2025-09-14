@@ -609,16 +609,50 @@ TEST(CommonAPITest, testlogTieredIndex) {
     GenerateAndAddVector<float>(tiered_index, 4, 1);
     mock_thread_pool.thread_iteration();
     tiered_index->deleteVector(1);
-    ASSERT_EQ(log.logBuffer.size(), 4);
-    ASSERT_EQ(log.logBuffer[0],
-              "verbose: " + log.prefix + "Updating HNSW index capacity from 0 to 1024");
-    ASSERT_EQ(log.logBuffer[1],
+    auto buffer_as_string = [&]() {
+        std::string buffer;
+        for (size_t i = 0; i < log.logBuffer.size(); i++) {
+            buffer += log.logBuffer[i] + "\n";
+        }
+        return buffer;
+    };
+    ASSERT_EQ(log.logBuffer.size(), 8) << buffer_as_string();
+    size_t log_iter = 0;
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing FLAT index from 0 to 1024")
+        << "failed at log index:" << log_iter - 1 << "." << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 0 to 1024")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing HNSW index from 0 to 1024")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing FLAT index from 1024 to 0")
+        << "failed at log index:" << log_iter - 1 << "." << std::endl
+        << "expected log: " << buffer_as_string();
+
+    ASSERT_EQ(log.logBuffer[log_iter++],
               "verbose: " + log.prefix +
-                  "Tiered HNSW index GC: there are 1 ready swap jobs. Start executing 1 swap jobs");
-    ASSERT_EQ(log.logBuffer[2],
-              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0");
-    ASSERT_EQ(log.logBuffer[3],
-              "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs");
+                  "Tiered HNSW index GC: there are 1 ready swap jobs. Start executing 1 swap jobs")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing HNSW index from 1024 to 0")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
 }
 
 TEST(CommonAPITest, NormalizeBfloat16) {

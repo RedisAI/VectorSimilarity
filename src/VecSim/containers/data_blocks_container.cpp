@@ -64,6 +64,8 @@ std::unique_ptr<RawDataContainer::Iterator> DataBlocksContainer::getIterator() c
     return std::make_unique<DataBlocksContainer::Iterator>(*this);
 }
 
+size_t DataBlocksContainer::numBlocks() const { return this->blocks.size(); }
+
 #ifdef BUILD_TESTS
 void DataBlocksContainer::saveVectorsData(std::ostream &output) const {
     // Save data blocks
@@ -115,8 +117,6 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
 }
 
 void DataBlocksContainer::shrinkToFit() { this->blocks.shrink_to_fit(); }
-
-size_t DataBlocksContainer::numBlocks() const { return this->blocks.size(); }
 
 #endif
 /********************************** Iterator API ************************************************/
