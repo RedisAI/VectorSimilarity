@@ -32,13 +32,12 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }
 REGISTER_AddLabel(BM_ADD_LABEL, INDEX_BF);
 REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW);
-// DISABLED: AddLabel benchmarks for HNSW disk index cause assertion failures
-// REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
 
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));
-// DISABLED: DeleteLabel benchmarks for HNSW disk index cause assertion failures
+// DISABLED: DeleteLabel benchmarks for HNSW disk index cause segmentation faults
 // REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSWDisk));
 
 // TopK benchmarks
@@ -64,17 +63,17 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), fp32_ind
 REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW), fp32_index_t);
 
 // Special disk-based HNSW benchmarks for batch processing
-// DISABLED: Async AddLabel and DeleteLabel benchmarks for HNSW disk index cause assertion failures
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
-// (benchmark::State &st) { AddLabel_AsyncIngest(st); }
-// BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
-//     ->UNIT_AND_ITERATIONS->Arg(INDEX_HNSW_DISK)
-//     ->ArgName("INDEX_HNSW_DISK");
+// RE-ENABLED: Async AddLabel and DeleteLabel benchmarks for HNSW disk index now work with populated index
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
+(benchmark::State &st) { AddLabel_AsyncIngest(st); }
+BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
+    ->UNIT_AND_ITERATIONS->Arg(INDEX_HNSW_DISK)
+    ->ArgName("INDEX_HNSW_DISK");
 
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC, fp32_index_t)
-// (benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
-// BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC)
-//     ->UNIT_AND_ITERATIONS->Arg(1)
-//     ->Arg(100)
-//     ->Arg(BM_VecSimGeneral::block_size)
-//     ->ArgName("SwapJobsThreshold");
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC, fp32_index_t)
+(benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
+BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC)
+    ->UNIT_AND_ITERATIONS->Arg(1)
+    ->Arg(100)
+    ->Arg(BM_VecSimGeneral::block_size)
+    ->ArgName("SwapJobsThreshold");

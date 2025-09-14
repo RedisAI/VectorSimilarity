@@ -32,9 +32,8 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex
                     float, INDEX_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
                     INDEX_HNSW)
-// DISABLED: DeleteLabel benchmark for HNSW disk index causes assertion failures
-// DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSWDisk), fp32_index_t, HNSWDiskIndex, float, float,
-//                     INDEX_HNSW_DISK)
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSWDisk), fp32_index_t, HNSWDiskIndex, float, float,
+                    INDEX_HNSW_DISK)
 
 #include "benchmark/bm_initialization/bm_hnsw_disk_initialize_fp32.h"
 BENCHMARK_MAIN();

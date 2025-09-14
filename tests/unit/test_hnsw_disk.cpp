@@ -259,15 +259,12 @@ TEST_F(HNSWDiskIndexTest, StoreVectorTest) {
     auto test_vector = createRandomVector(dim, rng);
     normalizeVector(test_vector);
     
-    // Test storeVector method
+    // Test addVector method
     labelType label = 100;
-    HNSWAddVectorState state = index.storeVector(test_vector.data(), label);
+    int result = index.addVector(test_vector.data(), label);
     
-    // Verify the state
-    EXPECT_EQ(state.newElementId, 0); // Should be the first element
-    EXPECT_GE(state.elementMaxLevel, 0); // Should have a valid level
-    EXPECT_EQ(state.currEntryPoint, INVALID_ID); // Should be invalid initially
-    EXPECT_EQ(state.currMaxLevel, HNSW_INVALID_LEVEL); // Should be invalid initially
+    // Verify the result
+    EXPECT_EQ(result, 1); // Should return success
     
     // Test that the index size increased
     EXPECT_EQ(index.indexSize(), 1);
@@ -406,7 +403,7 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     auto test_vector3 = createRandomVector(dim, rng);
     normalizeVector(test_vector3);
     
-    index.appendVector(test_vector3.data(), label3);
+    index.addVector(test_vector3.data(), label3);
     
     // Verify the third vector was added
     auto results2 = index.topKQuery(test_vector3.data(), 3, &queryParams);

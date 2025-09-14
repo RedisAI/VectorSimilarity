@@ -38,7 +38,8 @@ public:
     }
 
     virtual ~BM_VecSimIndex() {
-        CleanupRocksDB();
+        // Don't cleanup static RocksDB database here as it's shared across benchmarks
+        // CleanupRocksDB();
     }
 
     // The implicit conversion operator in IndexPtr allows automatic conversion to VecSimIndex*.
@@ -237,6 +238,18 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         indices[INDEX_HNSW_DISK] = IndexPtr(new (abstractInitParams.allocator) HNSWDiskIndex<data_t, dist_t>(
             &hnsw_disk_params, abstractInitParams, indexComponents, 
             benchmark_db.get(), benchmark_cf));
+            
+        // Populate the disk index with the same vectors as the HNSW index
+        if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
+            auto *hnsw_index = CastToHNSW(indices[INDEX_HNSW]);
+            size_t n_vectors = hnsw_index->indexSize();
+            
+            for (size_t i = 0; i < n_vectors; ++i) {
+                const char *blob = GetHNSWDataByInternalId(i);
+                size_t label = hnsw_index->getExternalLabel(i);
+                VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], blob, label);
+            }
+        }
     }
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
