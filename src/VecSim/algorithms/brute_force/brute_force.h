@@ -87,6 +87,15 @@ public:
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
     }
+
+    size_t getStoredVectorsCount() const {
+        size_t actual_stored_vec = 0;
+        for (auto &block : vectorBlocks) {
+            actual_stored_vec += block.getLength();
+        }
+
+        return actual_stored_vec;
+    }
 #endif
 
 protected:
@@ -96,36 +105,63 @@ protected:
     // Private internal function that implements generic single vector deletion.
     virtual void removeVector(idType id);
 
-    inline void growByBlock() {
+    void resizeIndexCommon(size_t new_max_elements) {
+        assert(new_max_elements % this->blockSize == 0 &&
+               "new_max_elements must be a multiple of blockSize");
+        this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Resizing FLAT index from %zu to %zu",
+                  idToLabelMapping.capacity(), new_max_elements);
+        assert(idToLabelMapping.capacity() == idToLabelMapping.size());
+        idToLabelMapping.resize(new_max_elements);
+        idToLabelMapping.shrink_to_fit();
+        assert(idToLabelMapping.capacity() == idToLabelMapping.size());
+        resizeLabelLookup(new_max_elements);
+    }
+
+    void growByBlock() {
+        assert(indexCapacity() == idToLabelMapping.capacity());
+        assert(indexCapacity() % this->blockSize == 0);
+        assert(indexCapacity() == indexSize());
+
         assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
         vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
                                   this->alignment);
-        idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
-        idToLabelMapping.shrink_to_fit();
-        resizeLabelLookup(idToLabelMapping.size());
+        resizeIndexCommon(indexCapacity() + this->blockSize);
     }
 
-    inline void shrinkByBlock() {
-        assert(indexCapacity() > 0); // should not be called when index is empty
-
+    void shrinkByBlock() {
+        assert(indexCapacity() >= this->blockSize);
+        assert(indexCapacity() % this->blockSize == 0);
         // remove last block (should be empty)
         assert(vectorBlocks.size() > 0 && vectorBlocks.back().getLength() == 0);
         vectorBlocks.pop_back();
+        assert(vectorBlocks.size() * this->blockSize == indexSize());
 
-        // remove a block size of labels.
-        assert(idToLabelMapping.size() >= this->blockSize);
-        idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
-        idToLabelMapping.shrink_to_fit();
-        resizeLabelLookup(idToLabelMapping.size());
+        if (indexCapacity() >= (indexSize() + 2 * this->blockSize)) {
+            assert(indexCapacity() == idToLabelMapping.capacity());
+            assert(idToLabelMapping.size() == idToLabelMapping.capacity());
+            // There are at least two free blocks.
+            assert(vectorBlocks.size() * this->blockSize + 2 * this->blockSize <=
+                   idToLabelMapping.capacity());
+            resizeIndexCommon(indexCapacity() - this->blockSize);
+        } else if (indexCapacity() == this->blockSize) {
+            // Special case to handle last block.
+            // This special condition resolves the ambiguity: when capacity==blockSize, we can't
+            // tell if this block came from growth (should shrink to 0) or initial capacity (should
+            // keep it). We choose to always shrink to 0 to maintain the one-block removal
+            // guarantee. In contrast, newer branches without initial capacity support use simpler
+            // logic: immediately shrink to 0 whenever index size becomes 0.
+            assert(vectorBlocks.empty());
+            assert(indexSize() == 0);
+            resizeIndexCommon(0);
+            return;
+        }
     }
 
     inline DataBlock &getVectorVectorBlock(idType id) {
         return vectorBlocks.at(id / this->blockSize);
     }
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
-    inline void setVectorLabel(idType id, labelType new_label) {
-        idToLabelMapping.at(id) = new_label;
-    }
+    void setVectorLabel(idType id, labelType new_label) { idToLabelMapping.at(id) = new_label; }
     // inline priority queue getter that need to be implemented by derived class
     virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() const = 0;
@@ -166,18 +202,18 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
-    // Give the vector new id and increase count.
-    idType id = this->count++;
-
-    // Resize the index if needed.
-    if (indexSize() > indexCapacity()) {
+    // Resize the index meta data structures if needed
+    if (indexSize() >= indexCapacity()) {
         growByBlock();
-    } else if (id % this->blockSize == 0) {
-        // If we didn't reach the initial capacity but the last block is full, add a new block
-        // only.
+    } else if (this->count % this->blockSize == 0) {
+        // If we didn't reach the initial capacity but the last block is full, initialize a new
+        // block only.
         this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
                                         this->alignment);
     }
+
+    // Give the vector new id and increase count.
+    idType id = this->count++;
 
     // Get the last vectors block to store the vector in.
     DataBlock &vectorBlock = this->vectorBlocks.back();
