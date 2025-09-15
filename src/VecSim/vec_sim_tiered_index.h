@@ -67,8 +67,8 @@ protected:
                                 jobs.size());
     }
 
-#ifdef BUILD_TESTS
 public:
+#ifdef BUILD_TESTS
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,

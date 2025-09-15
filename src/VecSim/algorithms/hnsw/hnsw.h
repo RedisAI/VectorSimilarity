@@ -1356,12 +1356,17 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
         if (idToMetaData.capacity() >= (indexSize() + 2 * this->blockSize)) {
             resizeIndexCommon(idToMetaData.capacity() - this->blockSize);
         } else if (idToMetaData.capacity() == this->blockSize) {
+            // Special case to handle last block.
+            // This special condition resolves the ambiguity: when capacity==blockSize, we can't
+            // tell if this block came from growth (should shrink to 0) or initial capacity (should
+            // keep it). We choose to always shrink to 0 to maintain the one-block removal
+            // guarantee. In contrast, newer branches without initial capacity support use simpler
+            // logic: immediately shrink to 0 whenever index size becomes 0.
             assert(vectorBlocks.empty());
             assert(indexSize() == 0);
             assert(maxElements == this->blockSize);
             resizeIndexCommon(0);
         }
-
         // Take the lower bound into account.
         maxElements -= this->blockSize;
     }
