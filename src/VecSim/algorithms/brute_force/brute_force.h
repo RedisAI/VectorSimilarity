@@ -225,7 +225,7 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
-    return this->idToLabelMapping.capacity();
+    return this->idToLabelMapping.size();
 }
 
 template <typename DataType, typename DistType>
