@@ -209,6 +209,7 @@ VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, b
     if (svs_index != nullptr) {
         svs_index->loadIndex(location);
     } else {
+        VecSimIndex_Free(index);
         throw std::runtime_error("Failed to load index");
     }
     return index;
