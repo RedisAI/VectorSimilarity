@@ -275,7 +275,7 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
-    return this->idToLabelMapping.capacity();
+    return this->idToLabelMapping.size();
 }
 
 // Compute the score for every vector in the block by using the given distance function.
