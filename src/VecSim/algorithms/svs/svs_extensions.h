@@ -27,6 +27,14 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
 
     static constexpr bool is_compressed() { return true; }
 
+    static auto make_blocked_allocator(size_t block_size, size_t dim,
+                                       std::shared_ptr<VecSimAllocator> allocator) {
+        // SVS block size is a power of two, so we can use it directly
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        allocator_type data_allocator{std::move(allocator)};
+        return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+    }
+
     static constexpr VecSimSvsQuantBits get_compression_mode() { return VecSimSvsQuant_Scalar; }
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
@@ -34,12 +42,22 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
                                              std::shared_ptr<VecSimAllocator> allocator,
                                              size_t /*leanvec_dim*/) {
         const auto dim = data.dimensions();
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
-
-        allocator_type data_allocator{std::move(allocator)};
-        auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
-
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
         return index_storage_type::compress(data, pool, blocked_alloc);
+    }
+
+    static index_storage_type load(const svs::lib::LoadTable &table, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        return index_storage_type::load(table, blocked_alloc);
+    }
+
+    static index_storage_type load(const std::string &path, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        assert(svs::data::detail::is_likely_reload(path)); // TODO implement auto_load for SQDataset
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return svs::lib::load_from_disk<index_storage_type>(path, blocked_alloc);
     }
 
     static constexpr size_t element_size(size_t dims, size_t alignment = 0,
@@ -94,17 +112,36 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
         }
     }
 
+    static auto make_blocked_allocator(size_t block_size, size_t dim,
+                                       std::shared_ptr<VecSimAllocator> allocator) {
+        // SVS block size is a power of two, so we can use it directly
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        allocator_type data_allocator{std::move(allocator)};
+        return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+    }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator,
                                              size_t /*leanvec_dim*/) {
         const auto dim = data.dimensions();
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
 
-        allocator_type data_allocator{std::move(allocator)};
-        auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
-
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
         return index_storage_type::compress(data, pool, 0, blocked_alloc);
+    }
+
+    static index_storage_type load(const svs::lib::LoadTable &table, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        return index_storage_type::load(table, /*alignment=*/0, blocked_alloc);
+    }
+
+    static index_storage_type load(const std::string &path, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        assert(svs::data::detail::is_likely_reload(path)); // TODO implement auto_load for LVQ
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return svs::lib::load_from_disk<index_storage_type>(path, /*alignment=*/0, blocked_alloc);
     }
 
     static constexpr size_t element_size(size_t dims, size_t alignment = 0,
@@ -151,20 +188,39 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
         }
     }
 
+    static auto make_blocked_allocator(size_t block_size, size_t dim,
+                                       std::shared_ptr<VecSimAllocator> allocator) {
+        // SVS block size is a power of two, so we can use it directly
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        allocator_type data_allocator{std::move(allocator)};
+        return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+    }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator,
                                              size_t leanvec_dim) {
-        const auto dims = data.dimensions();
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dims));
-
-        allocator_type data_allocator{std::move(allocator)};
-        auto blocked_alloc = svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+        const auto dim = data.dimensions();
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
 
         return index_storage_type::reduce(
             data, std::nullopt, pool, 0,
-            svs::lib::MaybeStatic<svs::Dynamic>(check_leanvec_dim(dims, leanvec_dim)),
+            svs::lib::MaybeStatic<svs::Dynamic>(check_leanvec_dim(dim, leanvec_dim)),
             blocked_alloc);
+    }
+
+    static index_storage_type load(const svs::lib::LoadTable &table, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        return index_storage_type::load(table, /*alignment=*/0, blocked_alloc);
+    }
+
+    static index_storage_type load(const std::string &path, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        assert(svs::data::detail::is_likely_reload(path)); // TODO implement auto_load for LeanVec
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return svs::lib::load_from_disk<index_storage_type>(path, /*alignment=*/0, blocked_alloc);
     }
 
     static constexpr size_t element_size(size_t dims, size_t alignment = 0,
