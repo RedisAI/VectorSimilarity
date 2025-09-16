@@ -8,7 +8,7 @@
  */
 
 #include "data_blocks_container.h"
-#include "VecSim/utils/serializer.h"
+#include "VecSim/algorithms/hnsw/hnsw_serializer.h"
 #include <cmath>
 
 DataBlocksContainer::DataBlocksContainer(size_t blockSize, size_t elementBytesCount,
@@ -83,7 +83,9 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
 
     // Get number of blocks
     unsigned int num_blocks = 0;
-    if (version == Serializer::EncodingVersion_V3) {
+    HNSWSerializer::EncodingVersion hnsw_version =
+        static_cast<HNSWSerializer::EncodingVersion>(version);
+    if (hnsw_version == HNSWSerializer::EncodingVersion::V3) {
         // In V3, the number of blocks is serialized, so we need to read it from the file.
         Serializer::readBinaryPOD(input, num_blocks);
     } else {
@@ -97,7 +99,7 @@ void DataBlocksContainer::restoreBlocks(std::istream &input, size_t num_vectors,
         this->blocks.emplace_back(this->block_size, this->element_bytes_count, this->allocator,
                                   this->alignment);
         unsigned int block_len = 0;
-        if (version == Serializer::EncodingVersion_V3) {
+        if (hnsw_version == HNSWSerializer::EncodingVersion::V3) {
             // In V3, the length of each block is serialized, so we need to read it from the file.
             Serializer::readBinaryPOD(input, block_len);
         } else {
