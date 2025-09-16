@@ -1755,7 +1755,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
 
         // Verify that the index was loaded as expected.
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
-        ASSERT_EQ(serialized_hnsw_index->getVersion(), Serializer::EncodingVersion_V4);
+        ASSERT_EQ(serialized_hnsw_index->getVersion(), HNSWSerializer::EncodingVersion::V4);
 
         VecSimIndexDebugInfo info2 = VecSimIndex_DebugInfo(serialized_index);
         ASSERT_EQ(info2.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
@@ -1825,7 +1825,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationV3) {
         auto *serialized_hnsw_index = this->CastToHNSW(serialized_index);
 
         // Verify that the index was loaded as expected.
-        ASSERT_EQ(serialized_hnsw_index->getVersion(), Serializer::EncodingVersion_V3);
+        ASSERT_EQ(serialized_hnsw_index->getVersion(), HNSWSerializer::EncodingVersion::V3);
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
 
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(serialized_index);
