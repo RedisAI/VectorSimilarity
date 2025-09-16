@@ -215,7 +215,7 @@ VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, b
         }
     } else {
         VecSimIndex_Free(index);
-        throw std::runtime_error("Failed to load index");
+        throw std::runtime_error("Cannot load index: Error in index creation before loading serialization");
     }
     return index;
 }
