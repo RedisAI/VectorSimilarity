@@ -26,7 +26,16 @@
 #include "VecSim/algorithms/svs/svs_batch_iterator.h"
 #include "VecSim/algorithms/svs/svs_extensions.h"
 
-struct SVSIndexBase {
+#ifdef BUILD_TESTS
+#include "svs_serializer.h"
+#endif
+
+struct SVSIndexBase
+#ifdef BUILD_TESTS
+    : public SVSSerializer
+#endif
+{
+
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
@@ -667,6 +676,17 @@ public:
     }
 
 #ifdef BUILD_TESTS
+
+private:
+    void saveIndexIMP(std::ofstream &output) override;
+    void impl_save(const std::string &location) override;
+    void saveIndexFields(std::ofstream &output) const override;
+
+    bool compareMetadataFile(const std::string &metadataFilePath) const override;
+    void loadIndex(const std::string &folder_path) override;
+    bool checkIntegrity() const override;
+
+public:
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         assert(false && "Not implemented");
@@ -681,3 +701,8 @@ public:
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 };
+
+#ifdef BUILD_TESTS
+// Including implementations for Serializer base
+#include "svs_serializer_impl.h"
+#endif
