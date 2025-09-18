@@ -1151,13 +1151,16 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
     --cur_element_count;
     --max_id;
 
-    // If we need to free a complete block & there is a least one block between the
-    // capacity and the size.
+    // If the new size is smaller by at least two blocks comparing to the idToLabelMapping,
+    // or if the new size is 0 and the capacity is at least one block,
+    // align to be a multiplication of blocksize  and resize by one block.
     if (cur_element_count % this->blockSize == 0 &&
-        cur_element_count + this->blockSize <= max_elements_) {
+        ((cur_element_count + 2 * this->blockSize <= max_elements_) ||
+         (cur_element_count == 0 && max_elements_ >= this->blockSize))) {
 
         // Check if the capacity is aligned to block size.
         size_t extra_space_to_free = max_elements_ % this->blockSize;
+        assert(max_elements_ - this->blockSize - extra_space_to_free >= cur_element_count);
 
         // Remove one block from the capacity.
         this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);

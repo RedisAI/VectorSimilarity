@@ -93,11 +93,12 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     // Create only the minimal struct.
     size_t dim = 128;
+    size_t blockSize = 1;
     BFParams params = {.type = TypeParam::get_index_type(),
                        .dim = dim,
                        .metric = VecSimMetric_IP,
                        .initialCapacity = 0,
-                       .blockSize = 1};
+                       .blockSize = blockSize};
 
     TEST_DATA_T vec[128] = {};
     BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *bfIndex =
@@ -108,94 +109,228 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     size_t memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
 
+    // @param expected_size - The expected number of elements in the index.
+    // @param expected_data_container_blocks - The expected number of blocks in the data containers.
+    // @param expected_map_containers_capacity - The expected capacity of the map containers in
+    // number of elements.
+    auto verify_containers_size = [&](size_t expected_size, size_t expected_data_container_blocks,
+                                      size_t expected_map_containers_size) {
+        ASSERT_EQ(bfIndex->indexSize(), expected_size);
+        ASSERT_EQ(bfIndex->vectorBlocks.size(), expected_data_container_blocks);
+        ASSERT_EQ(bfIndex->getStoredVectorsCount(), expected_size);
+
+        ASSERT_EQ(bfIndex->indexCapacity(), expected_map_containers_size);
+        ASSERT_EQ(bfIndex->idToLabelMapping.capacity(), expected_map_containers_size);
+        ASSERT_EQ(bfIndex->idToLabelMapping.size(), expected_map_containers_size);
+        ASSERT_GE(bfIndex->labelToIdLookup.bucket_count(), expected_map_containers_size);
+    };
+    // =========== Add label 1 ===========
+    size_t buckets_num_before = bfIndex->labelToIdLookup.bucket_count();
+    auto &vectors_blocks = bfIndex->vectorBlocks;
+    size_t vectors_blocks_capacity = vectors_blocks.capacity();
+
     int addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 1);
-    int64_t expectedAllocationDelta = 0;
-    expectedAllocationDelta +=
+    int64_t expectedAllocationDelta =
         sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta +=
-        sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
+        (vectors_blocks.capacity() - vectors_blocks_capacity) * sizeof(VectorBlock *) +
+        vecsimAllocationOverhead; // New vectors blocks pointers
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
+        blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // block vectors buffer
     expectedAllocationDelta +=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
+        sizeof(VectorBlock) + vecsimAllocationOverhead; // Keep the allocated vector block
+    expectedAllocationDelta += hashTableNodeSize;       // New node in the label lookup
+    // Account for the allocation of a new buckets in the labels_lookup hash table.
+    expectedAllocationDelta +=
+        (bfIndex->labelToIdLookup.bucket_count() - buckets_num_before) * sizeof(size_t);
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
-    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
-    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
-    memory = VecSimIndex_StatsInfo(bfIndex).memory;
-    ASSERT_EQ(allocator->getAllocationSize(), memory);
+    {
+        SCOPED_TRACE("Verifying allocation delta for adding first vector");
+        verify_containers_size(1, 1, 1);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + addCommandAllocationDelta);
+        ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+        ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
+        memory = VecSimIndex_StatsInfo(bfIndex).memory;
+        ASSERT_EQ(allocator->getAllocationSize(), memory);
+    }
+
+    // =========== labels = [1], vector blocks = 1, maps capacity = 1. Add label 2 + 3 ===========
 
     // Prepare for next assertion test
     expectedAllocationSize = memory;
     expectedAllocationDelta = 0;
+
+    vectors_blocks_capacity = vectors_blocks.capacity();
+    buckets_num_before = bfIndex->labelToIdLookup.bucket_count();
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta += sizeof(labelType); // resize idToLabelMapping
+    addCommandAllocationDelta += VecSimIndex_AddVector(bfIndex, vec, 3);
+    expectedAllocationDelta += (vectors_blocks.capacity() - vectors_blocks_capacity) *
+                               sizeof(VectorBlock *); // New vector blocks pointers
+    expectedAllocationDelta += 2 * sizeof(labelType); // resize idToLabelMapping
+    expectedAllocationDelta += 2 * (blockSize * sizeof(TEST_DATA_T) * dim +
+                                    vecsimAllocationOverhead); // Two block vectors buffer
     expectedAllocationDelta +=
-        sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
+        2 * (sizeof(VectorBlock) + vecsimAllocationOverhead); // Keep the allocated vector blocks
+    expectedAllocationDelta += 2 * hashTableNodeSize;         // New nodes in the label lookup
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
-    expectedAllocationDelta +=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
-    // Assert that the additional allocated delta did occur, and it is limited, as some STL
-    // collection allocate additional structures for their internal implementation.
-    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
-    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
-    memory = VecSimIndex_StatsInfo(bfIndex).memory;
-    ASSERT_EQ(allocator->getAllocationSize(), memory);
+        (bfIndex->labelToIdLookup.bucket_count() - buckets_num_before) * sizeof(size_t);
+    {
+        SCOPED_TRACE("Index size = Verifying allocation delta for adding two more vectors");
+        verify_containers_size(3, 3, 3);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + addCommandAllocationDelta);
+        ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+        ASSERT_EQ(expectedAllocationDelta, addCommandAllocationDelta);
+        memory = VecSimIndex_StatsInfo(bfIndex).memory;
+        ASSERT_EQ(allocator->getAllocationSize(), memory);
+    }
+
+    // =========== labels = [1, 2, 3], vector blocks = 3, maps capacity = 3. Delete label 1
+    // ===========
 
     // Prepare for next assertion test
     expectedAllocationSize = memory;
     expectedAllocationDelta = 0;
 
-    int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
-    expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -=
-        sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // Free the vector in the vector block
-    expectedAllocationDelta -= sizeof(VectorBlock *);         // remove from vectorBlocks vector
-    expectedAllocationDelta -= sizeof(labelType);             // resize idToLabelMapping
-    expectedAllocationDelta -=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
+    vectors_blocks_capacity = vectors_blocks.capacity();
+    buckets_num_before = bfIndex->labelToIdLookup.bucket_count();
+    {
+        SCOPED_TRACE("Verifying allocation delta for deleting a vector from index size 3");
+        int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
+        verify_containers_size(2, 2, 3);
+        // Removing blocks doesn't change vectors_blocks.capacity(), but the block buffer is freed.
+        ASSERT_EQ(vectors_blocks.capacity(), vectors_blocks_capacity);
+        expectedAllocationDelta -=
+            (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+        expectedAllocationDelta -=
+            blockSize * sizeof(TEST_DATA_T) * dim +
+            vecsimAllocationOverhead;                 // Free the vector buffer in the vector block
+        expectedAllocationDelta -= hashTableNodeSize; // Remove node from the label lookup
+        // idToLabelMapping and label:id should not change since count > capacity - 2 * blockSize
+        ASSERT_EQ(bfIndex->labelToIdLookup.bucket_count(), buckets_num_before);
 
-    // Assert that the reclaiming of memory did occur, and it is limited, as some STL
-    // collection allocate additional structures for their internal implementation.
-    ASSERT_EQ(allocator->getAllocationSize(),
-              expectedAllocationSize + deleteCommandAllocationDelta);
-    ASSERT_GE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_GE(expectedAllocationDelta, deleteCommandAllocationDelta);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + deleteCommandAllocationDelta);
+        ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+        ASSERT_EQ(expectedAllocationDelta, deleteCommandAllocationDelta);
 
-    memory = VecSimIndex_StatsInfo(bfIndex).memory;
-    ASSERT_EQ(allocator->getAllocationSize(), memory);
+        memory = VecSimIndex_StatsInfo(bfIndex).memory;
+        ASSERT_EQ(allocator->getAllocationSize(), memory);
+    }
+
+    // =========== labels = [2, 3], vector blocks = 2, maps capacity = 3. Add label 4 ===========
 
     // Prepare for next assertion test
     expectedAllocationSize = memory;
     expectedAllocationDelta = 0;
 
-    deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
-    expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
-    expectedAllocationDelta -=
-        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
-    expectedAllocationDelta -= (sizeof(TEST_DATA_T) * dim +
-                                vecsimAllocationOverhead); // Free the vector in the vector block
-    expectedAllocationDelta -=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
+    vectors_blocks_capacity = vectors_blocks.capacity();
+    buckets_num_before = bfIndex->labelToIdLookup.bucket_count();
+    size_t idToLabel_size_before = bfIndex->idToLabelMapping.size();
 
-    // Assert that the reclaiming of memory did occur, and it is limited, as some STL
-    // collection allocate additional structures for their internal implementation.
-    ASSERT_EQ(allocator->getAllocationSize(),
-              expectedAllocationSize + deleteCommandAllocationDelta);
-    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
-    memory = VecSimIndex_StatsInfo(bfIndex).memory;
-    ASSERT_EQ(allocator->getAllocationSize(), memory);
+    addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 4);
+    expectedAllocationDelta += (vectors_blocks.capacity() - vectors_blocks_capacity) *
+                               sizeof(VectorBlock *); // New vector block pointers
+    expectedAllocationDelta +=
+        sizeof(VectorBlock) + vecsimAllocationOverhead; // Keep the allocated vector blocks
+
+    expectedAllocationDelta +=
+        blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // block vectors buffer
+    expectedAllocationDelta += hashTableNodeSize; // New node in the label lookup
+    {
+        SCOPED_TRACE(
+            "Verifying allocation delta for adding a vector to index size 2 with capacity 3");
+        verify_containers_size(3, 3, 3);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + addCommandAllocationDelta);
+        ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+        ASSERT_EQ(expectedAllocationDelta, addCommandAllocationDelta);
+        memory = VecSimIndex_StatsInfo(bfIndex).memory;
+        ASSERT_EQ(allocator->getAllocationSize(), memory);
+
+        // idToLabelMapping and label:id should not change since if we one free block
+        ASSERT_EQ(bfIndex->labelToIdLookup.bucket_count(), buckets_num_before);
+        ASSERT_EQ(bfIndex->idToLabelMapping.size(), idToLabel_size_before);
+    }
+
+    // =========== labels = [2, 3, 4], vector blocks = 3, maps capacity = 3. Delete label 2 + 3
+    // ===========
+
+    // Prepare for next assertion test
+    expectedAllocationSize = memory;
+    expectedAllocationDelta = 0;
+
+    vectors_blocks_capacity = vectors_blocks.capacity();
+    buckets_num_before = bfIndex->labelToIdLookup.bucket_count();
+    {
+        SCOPED_TRACE("Verifying allocation delta for deleting two vectors from index size 3");
+        int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
+        deleteCommandAllocationDelta += VecSimIndex_DeleteVector(bfIndex, 3);
+        verify_containers_size(1, 1, 2);
+        // Removing blocks doesn't change vectors_blocks.capacity(), but the block buffer is freed.
+        ASSERT_EQ(vectors_blocks.capacity(), vectors_blocks_capacity);
+        expectedAllocationDelta -=
+            2 * (blockSize * sizeof(TEST_DATA_T) * dim +
+                 vecsimAllocationOverhead); // Free the vector buffer in the vector block
+        expectedAllocationDelta -=
+            2 * (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+
+        expectedAllocationDelta -= 2 * hashTableNodeSize; // Remove nodes from the label lookup
+        // idToLabelMapping and label:id should shrink by block since count >= capacity - 2 *
+        // blockSize
+        expectedAllocationDelta -= sizeof(labelType); // remove one idToLabelMapping
+        expectedAllocationDelta -=
+            (buckets_num_before - bfIndex->labelToIdLookup.bucket_count()) * sizeof(size_t);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + deleteCommandAllocationDelta);
+        ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+        ASSERT_EQ(expectedAllocationDelta, deleteCommandAllocationDelta);
+
+        memory = VecSimIndex_StatsInfo(bfIndex).memory;
+        ASSERT_EQ(allocator->getAllocationSize(), memory);
+    }
+
+    // =========== labels = [4], vector blocks = 1, maps capacity = 2. Delete last label ===========
+
+    // Prepare for next assertion test
+    expectedAllocationSize = memory;
+    expectedAllocationDelta = 0;
+
+    vectors_blocks_capacity = vectors_blocks.capacity();
+    buckets_num_before = bfIndex->labelToIdLookup.bucket_count();
+    {
+        SCOPED_TRACE("Verifying allocation delta for emptying the index");
+        int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 4);
+
+        // We decrease meta data containers size by one block
+        verify_containers_size(0, 0, 1);
+        // Removing blocks doesn't change vectors_blocks.capacity(), but the block buffer is freed.
+        ASSERT_EQ(vectors_blocks.capacity(), vectors_blocks_capacity);
+        expectedAllocationDelta -=
+            blockSize * sizeof(TEST_DATA_T) * dim +
+            vecsimAllocationOverhead; // Free the vector buffer in the vector block
+        expectedAllocationDelta -=
+            (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+        expectedAllocationDelta -= hashTableNodeSize;         // Remove nodes from the label lookup
+        // idToLabelMapping and label:id should shrink by block since count >= capacity - 2 *
+        // blockSize
+        expectedAllocationDelta -=
+            sizeof(labelType); // remove one idToLabelMapping and free the container
+        // resizing labelToIdLookup
+        size_t buckets_after = bfIndex->labelToIdLookup.bucket_count();
+        expectedAllocationDelta -= (buckets_num_before - buckets_after) * sizeof(size_t);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + deleteCommandAllocationDelta);
+        ASSERT_LE(abs(expectedAllocationDelta), abs(deleteCommandAllocationDelta));
+        ASSERT_GE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+
+        memory = VecSimIndex_StatsInfo(bfIndex).memory;
+        ASSERT_EQ(allocator->getAllocationSize(), memory);
+    }
+
     VecSimIndex_Free(bfIndex);
 }
 
@@ -355,71 +490,118 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
     size_t block_size = hnswIndex->debugInfo().hnswInfo.blockSize;
-    size_t accumulated_mem_delta = 0;
+    // Allocations caused by adding a new vector:
+    auto compute_vec_mem = [&](idType id) {
+        // Compute the expected memory allocation due to the  last vector insertion.
+        size_t vec_max_level = hnswIndex->element_levels_[id];
+        // Incoming edges
+        size_t new_vec_mem_delta =
+            (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead);
+        if (vec_max_level > 0) {
+            new_vec_mem_delta +=
+                hnswIndex->size_links_per_element_ * vec_max_level + vecsimAllocationOverhead;
+        }
+        // new node in the labels_lookup hash table
+        new_vec_mem_delta += hashTableNodeSize;
 
-    for (size_t i = 0; i < block_size; i++) {
-        accumulated_mem_delta += GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, i, i);
+        return new_vec_mem_delta;
+    };
+    // Add the first vector to store the first block allocation delta.
+    size_t initial_one_block_mem_delta = GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0, 0);
+    size_t one_block_mem_delta = initial_one_block_mem_delta;
+    size_t initial_buckets_count = hnswIndex->label_lookup_.bucket_count();
+    for (size_t i = 1; i < block_size; i++) {
+        one_block_mem_delta += GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, i, i);
     }
+
+    // Remove the memory allocated for the first vector, since it is added as a "dummy" vector.
+    initial_one_block_mem_delta -= compute_vec_mem(0);
+    size_t one_block_buckets = hnswIndex->label_lookup_.bucket_count();
+    // @param expected_size - The expected number of elements in the index.
+    // @param expected_capacity - The expected capacity in elements.
+    auto verify_containers_size = [&](size_t expected_size, size_t expected_capacity) {
+        SCOPED_TRACE("Verifying containers size for size " + std::to_string(expected_size));
+        ASSERT_EQ(hnswIndex->indexSize(), expected_size);
+        ASSERT_EQ(hnswIndex->indexCapacity(), expected_capacity);
+        ASSERT_EQ(hnswIndex->indexCapacity(), hnswIndex->max_elements_);
+        ASSERT_EQ(hnswIndex->element_levels_.size(), expected_capacity);
+        ASSERT_EQ(hnswIndex->element_levels_.size(), hnswIndex->element_levels_.capacity());
+
+        ASSERT_GE(hnswIndex->label_lookup_.bucket_count(), expected_capacity);
+        // Also validate that there are no unidirectional connections (these add memory to the
+        // incoming edges sets).
+        ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
+    };
+
     // Validate that a single block exists.
-    ASSERT_EQ(hnswIndex->indexSize(), block_size);
-    ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
-    ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
-    // Also validate that there are no unidirectional connections (these add memory to the incoming
-    // edges sets).
-    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
+    verify_containers_size(block_size, block_size);
+    ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + one_block_mem_delta);
 
     // Add another vector, expect resizing of the index to contain two blocks.
     size_t prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
     size_t mem_delta = GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
+    verify_containers_size(block_size + 1, 2 * block_size);
 
-    ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
-    ASSERT_EQ(hnswIndex->indexCapacity(), 2 * block_size);
-    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
-
-    // Compute the expected memory allocation due to the last vector insertion.
-    size_t vec_max_level = hnswIndex->element_levels_[block_size];
-    size_t expected_mem_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
-        hashTableNodeSize;
-    if (vec_max_level > 0) {
-        expected_mem_delta +=
-            hnswIndex->size_links_per_element_ * vec_max_level + 1 + vecsimAllocationOverhead;
-    }
-    // Also account for all the memory allocation caused by the resizing that this vector triggered
-    // except for the bucket count of the labels_lookup hash table that is calculated separately.
-    size_t size_total_data_per_element = hnswIndex->size_data_per_element_;
-    expected_mem_delta +=
-        (sizeof(tag_t) + sizeof(void *) + sizeof(size_t) + size_total_data_per_element) *
+    // Allocations caused by adding a block:
+    // element_levels, data_level0_memory_, linkLists_, visitedNodesHandlerPool
+    size_t containers_mem =
+        (sizeof(size_t) + hnswIndex->size_data_per_element_ + sizeof(void *) + sizeof(tag_t)) *
         block_size;
-    expected_mem_delta +=
+    int hash_table_mem_delta =
         (hnswIndex->label_lookup_.bucket_count() - prev_bucket_count) * sizeof(size_t);
+    size_t add_one_block_mem_delta = containers_mem + hash_table_mem_delta;
+    size_t new_vec_mem_delta = compute_vec_mem(block_size);
 
-    ASSERT_EQ(expected_mem_delta, mem_delta);
+    ASSERT_EQ(add_one_block_mem_delta + new_vec_mem_delta, mem_delta);
 
-    // Remove the last vector, expect resizing back to a single block, and return to the previous
-    // memory consumption.
-    VecSimIndex_DeleteVector(hnswIndex, block_size);
-    ASSERT_EQ(hnswIndex->indexSize(), block_size);
-    ASSERT_EQ(hnswIndex->indexCapacity(), block_size);
-    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
-    ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
+    // Remove the last vector, since size + 2 * block_size > capacity, expect the containers size to
+    // NOT change. Only the vector's memory is freed.
+    int delete_vec_mem_delta = VecSimIndex_DeleteVector(hnswIndex, block_size);
+    verify_containers_size(block_size, 2 * block_size);
 
-    // Remove the rest of the vectors, and validate that the memory returns to its initial state.
-    for (size_t i = 0; i < block_size; i++) {
-        VecSimIndex_DeleteVector(hnswIndex, i);
+    ASSERT_EQ(static_cast<size_t>(-delete_vec_mem_delta), new_vec_mem_delta);
+
+    // Remove the rest of the vectors, meta data containers size should decrease by one block.
+    prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
+    size_t expected_delete_mem_delta = 0;
+    int delete_block_mem_delta = 0;
+    for (int i = block_size - 1; i >= 0; i--) {
+        expected_delete_mem_delta += compute_vec_mem(i);
+        delete_block_mem_delta += VecSimIndex_DeleteVector(hnswIndex, i);
     }
+    verify_containers_size(0, block_size);
 
-    ASSERT_EQ(hnswIndex->indexSize(), 0);
-    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
-    // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
-    // (STL unordered_map with hash table implementation), that leaves some empty buckets.
-    size_t hash_table_memory = hnswIndex->label_lookup_.bucket_count() * sizeof(size_t);
-    // Current memory should be back as it was initially. The label_lookup hash table is an
-    // exception, since in some platforms, empty buckets remain even when the capacity is set to
-    // zero, while in others the entire capacity reduced to zero (including the header).
-    ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-                                                  hash_table_memory + 2 * vecsimAllocationOverhead);
-    ASSERT_GE(allocator->getAllocationSize(),
-              HNSWFactory::EstimateInitialSize(&params) + hash_table_memory);
+    hash_table_mem_delta =
+        (prev_bucket_count - hnswIndex->label_lookup_.bucket_count()) * sizeof(size_t);
+    expected_delete_mem_delta += hash_table_mem_delta + containers_mem;
+
+    ASSERT_EQ(static_cast<size_t>(-delete_block_mem_delta), expected_delete_mem_delta);
+
+    // Adding a vector should not cause new containers memory, only the vector's memory.
+    mem_delta = GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0);
+    verify_containers_size(1, block_size);
+
+    ASSERT_EQ(mem_delta, new_vec_mem_delta);
+    ASSERT_EQ(initial_memory_size + initial_one_block_mem_delta + mem_delta,
+              allocator->getAllocationSize());
+
+    // Delete the new (and only vec)
+    // Since the index is empty, and the capacity equals block_size, the containers should shrink to
+    // 0.
+    prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
+    delete_vec_mem_delta = VecSimIndex_DeleteVector(hnswIndex, 0);
+    verify_containers_size(0, 0);
+    hash_table_mem_delta =
+        (initial_buckets_count - hnswIndex->label_lookup_.bucket_count()) * sizeof(size_t);
+    ASSERT_LE(hnswIndex->label_lookup_.bucket_count(), initial_buckets_count);
+    ASSERT_LE(containers_mem, initial_one_block_mem_delta);
+    ASSERT_GE(initial_memory_size +
+                  (initial_one_block_mem_delta - containers_mem - hash_table_mem_delta),
+              allocator->getAllocationSize());
+    hash_table_mem_delta =
+        (prev_bucket_count - hnswIndex->label_lookup_.bucket_count()) * sizeof(size_t);
+    expected_delete_mem_delta = hash_table_mem_delta + containers_mem + mem_delta;
+    ASSERT_LE(expected_delete_mem_delta, static_cast<size_t>(-delete_vec_mem_delta));
+
     VecSimIndex_Free(hnswIndex);
 }
