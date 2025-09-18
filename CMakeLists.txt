@@ -68,9 +68,8 @@ if(VECSIM_BUILD_TESTS)
 	add_subdirectory(tests/unit unit_tests)
 	add_subdirectory(tests/module module_tests)
 
-	if(NOT(USE_ASAN OR USE_MSAN))
-		add_subdirectory(tests/benchmark benchmark)
-	endif()
+	# Enable benchmarks even with sanitizer for debugging
+	add_subdirectory(tests/benchmark benchmark)
 endif()
 
 add_subdirectory(src/VecSim)
