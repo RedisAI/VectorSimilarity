@@ -207,9 +207,16 @@ VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, b
     // Side-cast to SVSIndexBase to call loadIndex
     SVSIndexBase *svs_index = dynamic_cast<SVSIndexBase *>(index);
     if (svs_index != nullptr) {
-        svs_index->loadIndex(location);
+        try {
+            svs_index->loadIndex(location);
+        } catch (const std::exception &e) {
+            VecSimIndex_Free(index);
+            throw;
+        }
     } else {
-        throw std::runtime_error("Failed to load index");
+        VecSimIndex_Free(index);
+        throw std::runtime_error(
+            "Cannot load index: Error in index creation before loading serialization");
     }
     return index;
 }
