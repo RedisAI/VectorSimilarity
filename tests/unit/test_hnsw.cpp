@@ -72,7 +72,7 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
+//meow
     TEST_DATA_T a[dim], b[dim], c[dim], d[dim];
     for (size_t i = 0; i < dim; i++) {
         a[i] = (TEST_DATA_T)0;
