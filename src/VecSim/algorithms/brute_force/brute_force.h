@@ -54,6 +54,17 @@ public:
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     virtual ~BruteForceIndex();
 
+#ifdef BUILD_TESTS
+    size_t getStoredVectorsCount() const {
+        size_t actual_stored_vec = 0;
+        for (auto &block : vectorBlocks) {
+            actual_stored_vec += block->getLength();
+        }
+
+        return actual_stored_vec;
+    }
+#endif
+
 protected:
     // Private internal function that implements generic single vector insertion.
     virtual int appendVector(const void *vector_data, labelType label);
@@ -142,10 +153,14 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
     size_t idToLabelMapping_size = this->idToLabelMapping.size();
 
     if (id >= idToLabelMapping_size) {
+        assert(indexCapacity() == idToLabelMapping.capacity());
+        assert(idToLabelMapping.size() == idToLabelMapping.capacity());
         size_t last_block_vectors_count = id % this->blockSize;
-        this->idToLabelMapping.resize(
-            idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
+        size_t new_size = idToLabelMapping_size + this->blockSize - last_block_vectors_count;
+        assert(new_size % this->blockSize == 0);
+        this->idToLabelMapping.resize(new_size, 0);
         this->idToLabelMapping.shrink_to_fit();
+        assert(idToLabelMapping.size() == idToLabelMapping.capacity());
     }
 
     // add label to idToLabelMapping
@@ -196,12 +211,20 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 
         // Resize and align the idToLabelMapping.
         size_t idToLabel_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the idToLabelMapping
+        // If the new size is smaller by at least two blocks comparing to the idToLabelMapping,
+        // or if the new size is 0 and the capacity is at least one block,
         // align to be a multiplication of blocksize  and resize by one block.
-        if (this->count + this->blockSize <= idToLabel_size) {
+        if ((this->count + 2 * this->blockSize <= idToLabel_size) ||
+            // Handle last block
+            (this->count == 0 && idToLabel_size >= this->blockSize)) {
             size_t vector_to_align_count = idToLabel_size % this->blockSize;
-            this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
+            size_t new_size = idToLabel_size - this->blockSize - vector_to_align_count;
+            assert(new_size >= this->count);
+            assert(new_size % this->blockSize == 0);
+            assert(idToLabelMapping.size() == idToLabelMapping.capacity());
+            this->idToLabelMapping.resize(new_size);
             this->idToLabelMapping.shrink_to_fit();
+            assert(idToLabelMapping.size() == idToLabelMapping.capacity());
         }
     }
 

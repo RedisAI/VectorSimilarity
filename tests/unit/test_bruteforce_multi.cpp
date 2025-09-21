@@ -69,9 +69,12 @@ TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
 
 TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     size_t dim = 4;
-    size_t n = 15;
-    size_t blockSize = 10;
-    size_t n_labels = 3;
+    constexpr size_t blockSize = 10;
+    constexpr size_t per_label = 3;
+    constexpr size_t n_labels = 4;
+    constexpr size_t n = n_labels * per_label;
+    constexpr size_t initial_cap = n;
+    size_t expected_cap = initial_cap;
 
     BFParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = blockSize};
@@ -79,62 +82,99 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     auto bf_index = this->CastToBF_Multi(index);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    auto verify_index_size = [&](size_t expected_num_vectors, size_t expected_labels,
+                                 size_t expected_capacity, std::string msg) {
+        SCOPED_TRACE("verify_index_size: " + msg);
+        ASSERT_EQ(VecSimIndex_IndexSize(index), expected_num_vectors);
+        ASSERT_EQ(bf_index->indexLabelCount(), expected_labels);
+        ASSERT_EQ(bf_index->idToLabelMapping.size(), expected_capacity);
+        ASSERT_EQ(bf_index->getStoredVectorsCount(), expected_num_vectors);
+        ASSERT_EQ(bf_index->indexCapacity(), expected_capacity);
+        ASSERT_EQ(bf_index->vectorBlocks.size(),
+                  expected_num_vectors / blockSize + (expected_num_vectors % blockSize != 0))
+            << "expected_num_vectors: " << expected_num_vectors
+            << " expected_capacity: " << expected_capacity;
+    };
+    // Empty index with initial capacity
+    verify_index_size(0, 0, expected_cap, "empty index");
 
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels);
     }
-
-    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n);
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
+    verify_index_size(n, n_labels, expected_cap, "add" + std::to_string(n) + " vectors");
 
     // remove invalid id
-    VecSimIndex_DeleteVector(index, 3459);
+    ASSERT_EQ(VecSimIndex_DeleteVector(index, 3459), 0);
 
     // This should do nothing
-    info = VecSimIndex_DebugInfo(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n);
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
-    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
+    verify_index_size(n, n_labels, expected_cap, "remove invalid id");
 
-    // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (to fit a multiplication of block_size).
+    // Add another vector (index capacity should now increase to align with blocksize).
+    expected_cap += blockSize - n % blockSize;
+    // We add to an existing label - number of labels should not change.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
-    info = VecSimIndex_DebugInfo(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n + 1);
-    // Label count doesn't increase because label 0 already exists
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
-    // Check new capacity size, should be blockSize * 2.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
+    verify_index_size(n + 1, n_labels, expected_cap, "add one more vector");
 
-    // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
+    // Now size = n + 1 = 13, capacity = 2 * bs = 20. Test capacity overflow again
     // to check that it stays aligned with blocksize.
-
-    size_t add_vectors_count = 8;
-    for (size_t i = 0; i < add_vectors_count; i++) {
+    for (size_t i = 0; i < blockSize; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
-    // Size should be n + 1 + 8 = 24.
-    size_t new_n = n + 1 + add_vectors_count;
-    info = VecSimIndex_DebugInfo(index);
+    // Size should be n + 1 + blockSize = 23.
+    // We add to existing labels only - number of labels doesn't change.
+    // The new capacity size should be increased by one block (blockSize * 3).
+    size_t new_n = n + 1 + blockSize;
+    ASSERT_EQ(expected_cap + blockSize, 3 * blockSize);
+    verify_index_size(new_n, n_labels, expected_cap + blockSize,
+                      "add vectors to trigger another resize");
 
-    ASSERT_EQ(info.bfInfo.indexSize, new_n);
-    // Label count doesn't increase because label 0 already exists
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
     size_t total_vectors = 0;
     for (auto label_ids : bf_index->labelToIdsLookup) {
         total_vectors += label_ids.second.size();
     }
     ASSERT_EQ(total_vectors, new_n);
 
-    // Check new capacity size, should be blockSize * 3.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), 3 * blockSize);
+    // Delete vectors until one block plus some vectors are removed.
+    size_t current_vectors_block_count = (new_n + blockSize - 1) / blockSize;
+    ASSERT_EQ(current_vectors_block_count, 3);
+    size_t deleted_labels = 0;
+    size_t label_to_delete = 0;
+    auto remove_to_one_below_blocksize = [&]() {
+        while (bf_index->getVectorBlocks().size() == current_vectors_block_count) {
+            VecSimIndex_DeleteVector(index, label_to_delete++);
+            deleted_labels++;
+        }
+        if (VecSimIndex_IndexSize(bf_index) % blockSize == 0) {
+            VecSimIndex_DeleteVector(index, label_to_delete++);
+            deleted_labels++;
+        }
+    };
 
+    // First trigger of remove_to_one_below_blocksize will result in one free block.
+    // This should not trigger shrinking of metadata containers.
+    remove_to_one_below_blocksize(); // remove first block labels.
+    ASSERT_LT(VecSimIndex_IndexSize(bf_index), 2 * blockSize);
+    ASSERT_GT(VecSimIndex_IndexSize(bf_index), blockSize);
+    verify_index_size(
+        VecSimIndex_IndexSize(bf_index), n_labels - deleted_labels, 3 * blockSize,
+        "delete vectors so that indexsize < 2 * blocksize, but there is only one free block");
+
+    // Second trigger of remove_to_one_below_blocksize will result in two free blocks.
+    // This should trigger shrinking of metadata containers by one block.
+    current_vectors_block_count--;
+    remove_to_one_below_blocksize();
+    ASSERT_LT(VecSimIndex_IndexSize(bf_index), blockSize);
+    verify_index_size(
+        VecSimIndex_IndexSize(bf_index), n_labels - deleted_labels, 2 * blockSize,
+        "delete vectors so that indexsize % blocksize == 0 and there are two free blocks");
+
+    // Delete all vectors.
+    while (VecSimIndex_IndexSize(index) > 0) {
+        VecSimIndex_DeleteVector(index, label_to_delete++);
+    }
+    // We shrink capacity by one blocksize.
+    verify_index_size(0, 0, blockSize, "delete all vectors");
     VecSimIndex_Free(index);
 }
 
