@@ -49,16 +49,19 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     BFParams bf_params = NewBFParams(params);
 
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
-    size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+    size_t storedDataSize =
+        VecSimParams_GetStoredDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+    size_t inputBlobSize = bf_params.dim * sizeof(DataType);
 
     AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
                                                   .dim = bf_params.dim,
                                                   .vecType = bf_params.type,
-                                                  .dataSize = dataSize,
+                                                  .storedDataSize = storedDataSize,
                                                   .metric = bf_params.metric,
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,
-                                                  .logCtx = params->primaryIndexParams->logCtx};
+                                                  .logCtx = params->primaryIndexParams->logCtx,
+                                                  .inputBlobSize = inputBlobSize};
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
@@ -145,16 +148,19 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     auto bf_params = NewBFParams(params);
 
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
-    size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+    size_t storedDataSize =
+        VecSimParams_GetStoredDataSize(bf_params.type, bf_params.dim, bf_params.metric);
+    size_t inputBlobSize = bf_params.dim * sizeof(DataType);
 
     AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
                                                   .dim = bf_params.dim,
                                                   .vecType = bf_params.type,
-                                                  .dataSize = dataSize,
+                                                  .storedDataSize = storedDataSize,
                                                   .metric = bf_params.metric,
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,
-                                                  .logCtx = params->primaryIndexParams->logCtx};
+                                                  .logCtx = params->primaryIndexParams->logCtx,
+                                                  .inputBlobSize = inputBlobSize};
     auto frontendIndex = static_cast<BruteForceIndex<DataType, float> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 

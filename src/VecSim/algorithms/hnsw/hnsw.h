@@ -1171,7 +1171,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     memcpy((void *)element, last_element, this->elementGraphDataSize);
 
     auto data = getDataByInternalId(element_internal_id);
-    memcpy((void *)data, last_element_data, this->dataSize);
+    memcpy((void *)data, last_element_data, this->getStoredDataSize());
 
     this->idToMetaData[element_internal_id] = this->idToMetaData[curElementCount];
 

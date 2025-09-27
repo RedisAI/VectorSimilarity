@@ -99,7 +99,8 @@ protected:
     }
 
     size_t GetIndexDatasize() override {
-        return (dynamic_cast<VecSimIndexAbstract<int8_t, float> *>(this->index))->getDataSize();
+        return (dynamic_cast<VecSimIndexAbstract<int8_t, float> *>(this->index))
+            ->getStoredDataSize();
     }
 
     void ValidateVectors(std::vector<std::vector<char>> index_vectors, size_t label) override {
@@ -148,13 +149,13 @@ protected:
     }
 
     size_t GetIndexDatasize() override {
-        return (dynamic_cast<VecSimIndexAbstract<float, float> *>(this->index))->getDataSize();
+        return (dynamic_cast<VecSimIndexAbstract<float, float> *>(this->index))
+            ->getStoredDataSize();
     }
 };
 
 TEST_P(Int8IndexTestUtilsTest, BF) {
     BFParams params = {.type = VecSimType_INT8, .dim = dim};
-    sleep(10);
     SetUp(params);
     EXPECT_NO_FATAL_FAILURE(get_stored_vector_data_single_test());
     VecSimMetric metric = std::get<1>(GetParam());

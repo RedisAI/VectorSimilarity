@@ -33,26 +33,30 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
             HNSWIndex_Single<DataType, DistType>(params, abstractInitParams, components);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params,
+                                                     bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
 
-    size_t dataSize =
-        VecSimParams_GetDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
+    size_t storedDataSize =
+        VecSimParams_GetStoredDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
+    size_t inputBlobSize =
+        is_normalized ? storedDataSize : hnswParams->dim * VecSimType_sizeof(hnswParams->type);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
                                                   .vecType = hnswParams->type,
-                                                  .dataSize = dataSize,
+                                                  .storedDataSize = storedDataSize,
                                                   .metric = hnswParams->metric,
                                                   .blockSize = hnswParams->blockSize,
                                                   .multi = hnswParams->multi,
-                                                  .logCtx = params->logCtx};
+                                                  .logCtx = params->logCtx,
+                                                  .inputBlobSize = inputBlobSize};
     return abstractInitParams;
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params, is_normalized);
 
     if (hnswParams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
@@ -220,7 +224,8 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
                                  .algoParams = {.hnswParams = HNSWParams{params}}};
 
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
+    AbstractIndexInitParams abstractInitParams =
+        NewAbstractInitParams(&vecsimParams, is_normalized);
     if (params.type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);

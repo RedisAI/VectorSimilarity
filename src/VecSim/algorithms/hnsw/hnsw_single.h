@@ -62,8 +62,8 @@ public:
         const char *data = this->getDataByInternalId(id);
 
         // Create a vector with the full data (including any metadata like norms)
-        std::vector<char> vec(this->dataSize);
-        memcpy(vec.data(), data, this->dataSize);
+        std::vector<char> vec(this->getStoredDataSize());
+        memcpy(vec.data(), data, this->getStoredDataSize());
         vectors_output.push_back(std::move(vec));
 
         return vectors_output;

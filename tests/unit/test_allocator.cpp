@@ -408,7 +408,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     }
     // Also account for all the memory allocation caused by the resizing that this vector triggered
     // except for the bucket count of the labels_lookup hash table that is calculated separately.
-    size_t size_total_data_per_element = hnswIndex->elementGraphDataSize + hnswIndex->dataSize;
+    size_t size_total_data_per_element =
+        hnswIndex->elementGraphDataSize + hnswIndex->getStoredDataSize();
     expected_mem_delta +=
         (sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) + size_total_data_per_element) *
         block_size;

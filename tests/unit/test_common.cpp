@@ -822,9 +822,9 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
             (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
             expected += sizeof(float);
         }
-        size_t actual_hnsw = hnsw_index->getDataSize();
+        size_t actual_hnsw = hnsw_index->getStoredDataSize();
         ASSERT_EQ(actual_hnsw, expected);
-        size_t actual_bf = bf_index->getDataSize();
+        size_t actual_bf = bf_index->getStoredDataSize();
         ASSERT_EQ(actual_bf, expected);
     };
 
