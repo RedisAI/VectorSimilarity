@@ -32,31 +32,45 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
             BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, components);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+/*** ======================================================= */
+// TODO: move to a generaic location to be used by other algorithms.!!
+/** ======================================================= */
 
-    const BFParams *bfParams = &params->algoParams.bfParams;
-    size_t dataSize = VecSimParams_GetDataSize(bfParams->type, bfParams->dim, bfParams->metric);
+template <typename IndexParams>
+static AbstractIndexInitParams NewAbstractInitParams(const IndexParams *algo_params, void *logCtx,
+                                                     bool is_normalized) {
+
+    size_t storedDataSize =
+        VecSimParams_GetStoredDataSize(algo_params->type, algo_params->dim, algo_params->metric);
+    size_t inputBlobSize =
+        is_normalized ? storedDataSize : algo_params->dim * VecSimType_sizeof(algo_params->type);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
-                                                  .dim = bfParams->dim,
-                                                  .vecType = bfParams->type,
-                                                  .dataSize = dataSize,
-                                                  .metric = bfParams->metric,
-                                                  .blockSize = bfParams->blockSize,
-                                                  .multi = bfParams->multi,
-                                                  .logCtx = params->logCtx};
+                                                  .dim = algo_params->dim,
+                                                  .vecType = algo_params->type,
+                                                  .storedDataSize = storedDataSize,
+                                                  .metric = algo_params->metric,
+                                                  .blockSize = algo_params->blockSize,
+                                                  .multi = algo_params->multi,
+                                                  .logCtx = logCtx,
+                                                  .inputBlobSize = inputBlobSize};
     return abstractInitParams;
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const BFParams *bfParams = &params->algoParams.bfParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    AbstractIndexInitParams abstractInitParams =
+        NewAbstractInitParams(bfParams, params->logCtx, is_normalized);
+    ;
     return NewIndex(bfParams, abstractInitParams, is_normalized);
 }
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
                       bool is_normalized) {
-
+    assert((!is_normalized && abstractInitParams.inputBlobSize ==
+                                  bfparams->dim * VecSimType_sizeof(bfparams->type)) ||
+           (is_normalized &&
+            abstractInitParams.inputBlobSize != bfparams->dim * VecSimType_sizeof(bfparams->type)));
     if (bfparams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);

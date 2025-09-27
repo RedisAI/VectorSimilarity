@@ -712,12 +712,15 @@ TYPED_TEST(SVSMultiTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    auto quantBits = TypeParam::get_quant_bits();
+    auto constexpr quantBits = TypeParam::get_quant_bits();
     // Get the fallback quantization mode
-    if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
-        // Extra data in LVQ vector
-        const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
-        dim -= (lvq_vector_extra * 8) / (TypeParam::get_quant_bits() & 0xf);
+    if constexpr (quantBits != VecSimSvsQuant_NONE) { // constexpr eliminates div-by-zero warning;
+                                                      // inner condition is runtime-only
+        if (!this->isFallbackToSQ()) {
+            // Extra data in LVQ vector
+            const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
+            dim -= (lvq_vector_extra * 8) / (quantBits & 0xf);
+        }
     }
 #endif
     size_t n = 0;

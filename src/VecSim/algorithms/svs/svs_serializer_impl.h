@@ -24,7 +24,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     // Note: this->metric corresponds to MetricType template parameter
     writeBinaryPOD(output, this->dim);
     writeBinaryPOD(output, this->vecType); // DataType template parameter (as VecSimType enum)
-    writeBinaryPOD(output, this->dataSize);
+    writeBinaryPOD(output, this->getStoredDataSize());
     writeBinaryPOD(output, this->metric); // MetricType template parameter (as VecSimMetric enum)
     writeBinaryPOD(output, this->blockSize);
     writeBinaryPOD(output, this->isMulti);
@@ -128,7 +128,7 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits,
 
     compareField(input, this->dim, "dim");
     compareField(input, this->vecType, "vecType");
-    compareField(input, this->dataSize, "dataSize");
+    compareField(input, this->getStoredDataSize(), "dataSize");
     compareField(input, this->metric, "metric");
     compareField(input, this->blockSize, "blockSize");
     compareField(input, this->isMulti, "isMulti");

@@ -566,7 +566,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Calculate the expected memory delta for adding a block.
     size_t data_containers_block_mem =
         2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->getAlignment();
-    size_t size_total_data_per_element = hnswIndex->elementGraphDataSize + hnswIndex->dataSize;
+    size_t size_total_data_per_element =
+        hnswIndex->elementGraphDataSize + hnswIndex->getStoredDataSize();
     data_containers_block_mem += size_total_data_per_element * block_size;
     // account for idToMetaData and visitedNodesHandlerPool entries.
     expected_mem_delta +=

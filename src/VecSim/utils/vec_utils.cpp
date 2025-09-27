@@ -275,10 +275,10 @@ size_t VecSimType_sizeof(VecSimType type) {
     return 0;
 }
 
-size_t VecSimParams_GetDataSize(VecSimType type, size_t dim, VecSimMetric metric) {
-    size_t dataSize = VecSimType_sizeof(type) * dim;
+size_t VecSimParams_GetStoredDataSize(VecSimType type, size_t dim, VecSimMetric metric) {
+    size_t storedDataSize = VecSimType_sizeof(type) * dim;
     if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
-        dataSize += sizeof(float); // For the norm
+        storedDataSize += sizeof(float); // For the norm
     }
-    return dataSize;
+    return storedDataSize;
 }
