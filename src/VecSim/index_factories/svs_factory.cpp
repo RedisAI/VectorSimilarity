@@ -203,6 +203,27 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NewIndexImpl(params, is_normalized);
 }
 
+#if BUILD_TESTS
+VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    auto index = NewIndexImpl(params, is_normalized);
+    // Side-cast to SVSIndexBase to call loadIndex
+    SVSIndexBase *svs_index = dynamic_cast<SVSIndexBase *>(index);
+    if (svs_index != nullptr) {
+        try {
+            svs_index->loadIndex(location);
+        } catch (const std::exception &e) {
+            VecSimIndex_Free(index);
+            throw;
+        }
+    } else {
+        VecSimIndex_Free(index);
+        throw std::runtime_error(
+            "Cannot load index: Error in index creation before loading serialization");
+    }
+    return index;
+}
+#endif
+
 size_t EstimateElementSize(const SVSParams *params) {
     using graph_idx_type = uint32_t;
     // Assuming that the graph_max_degree can be unset in params.
@@ -229,9 +250,14 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 // This is a temporary solution to avoid breaking the build when SVS is not available
 // and to allow the code to compile without SVS support.
 // TODO: remove HAVE_SVS when SVS will support all Redis platforms and compilers
-#else  // HAVE_SVS
+#else // HAVE_SVS
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
+#if BUILD_TESTS
+VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    return NULL;
+}
+#endif
 size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) { return -1; }
 size_t EstimateElementSize(const SVSParams *params) { return -1; }
 }; // namespace SVSFactory
