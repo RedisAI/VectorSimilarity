@@ -36,13 +36,13 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
 
-    size_t dataSize =
-        VecSimParams_GetDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
+    size_t storedDataSize =
+        VecSimParams_GetStoredDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
                                                   .vecType = hnswParams->type,
-                                                  .dataSize = dataSize,
+                                                  .storedDataSize = storedDataSize,
                                                   .metric = hnswParams->metric,
                                                   .blockSize = hnswParams->blockSize,
                                                   .multi = hnswParams->multi,

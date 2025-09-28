@@ -20,11 +20,12 @@ namespace SVSFactory {
 namespace {
 AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     auto &svsParams = params->algoParams.svsParams;
-    size_t dataSize = VecSimParams_GetDataSize(svsParams.type, svsParams.dim, svsParams.metric);
+    size_t storedDataSize =
+        VecSimParams_GetStoredDataSize(svsParams.type, svsParams.dim, svsParams.metric);
     return {.allocator = VecSimAllocator::newVecsimAllocator(),
             .dim = svsParams.dim,
             .vecType = svsParams.type,
-            .dataSize = dataSize,
+            .storedDataSize = storedDataSize,
             .metric = svsParams.metric,
             .blockSize = svsParams.blockSize,
             .multi = svsParams.multi,

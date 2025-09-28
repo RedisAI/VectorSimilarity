@@ -182,7 +182,7 @@ protected:
             return MemoryUtils::unique_blob{const_cast<void *>(original_data), [](void *) {}};
         }
 
-        const auto data_size = this->getDataSize() * n;
+        const auto data_size = this->getStoredDataSize() * n;
 
         auto processed_blob =
             MemoryUtils::unique_blob{this->allocator->allocate(data_size),

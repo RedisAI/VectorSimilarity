@@ -29,7 +29,7 @@
  * @param allocator The allocator to use for the index.
  * @param dim The dimension of the vectors in the index.
  * @param vecType The type of the vectors in the index.
- * @param dataSize The size of stored vectors in bytes.
+ * @param storedDataSize The size of stored vectors (possibly after pre-processing) in bytes.
  * @param metric The metric to use in the index.
  * @param blockSize The block size to use in the index.
  * @param multi Determines if the index should multi-index or not.
@@ -39,7 +39,7 @@ struct AbstractIndexInitParams {
     std::shared_ptr<VecSimAllocator> allocator;
     size_t dim;
     VecSimType vecType;
-    size_t dataSize;
+    size_t storedDataSize;
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
@@ -70,7 +70,7 @@ struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
     VecSimType vecType;  // Datatype to index.
-    size_t dataSize;     // Vector size in bytes
+    size_t storedDataSize;     // Vector size in bytes
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
@@ -105,7 +105,7 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
                         const IndexComponents<DataType, DistType> &components)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          dataSize(params.dataSize), metric(params.metric),
+          storedDataSize(params.storedDataSize), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
@@ -171,7 +171,7 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
-    inline size_t getDataSize() const { return dataSize; }
+    inline size_t getStoredDataSize() const { return storedDataSize; }
     inline size_t getBlockSize() const { return blockSize; }
     inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
 
@@ -323,23 +323,23 @@ protected:
 
 template <typename DataType, typename DistType>
 ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *blob) const {
-    return this->preprocessors->preprocess(blob, this->dataSize);
+    return this->preprocessors->preprocess(blob, this->storedDataSize);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
                                                          bool force_copy) const {
-    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize, force_copy);
+    return this->preprocessors->preprocessQuery(queryBlob, this->storedDataSize, force_copy);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
-    return this->preprocessors->preprocessForStorage(original_blob, this->dataSize);
+    return this->preprocessors->preprocessForStorage(original_blob, this->storedDataSize);
 }
 
 template <typename DataType, typename DistType>
 void VecSimIndexAbstract<DataType, DistType>::preprocessStorageInPlace(void *blob) const {
-    this->preprocessors->preprocessStorageInPlace(blob, this->dataSize);
+    this->preprocessors->preprocessStorageInPlace(blob, this->storedDataSize);
 }

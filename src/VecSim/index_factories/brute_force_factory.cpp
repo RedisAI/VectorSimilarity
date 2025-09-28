@@ -35,12 +35,12 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
 
     const BFParams *bfParams = &params->algoParams.bfParams;
-    size_t dataSize = VecSimParams_GetDataSize(bfParams->type, bfParams->dim, bfParams->metric);
+    size_t storedDataSize = VecSimParams_GetStoredDataSize(bfParams->type, bfParams->dim, bfParams->metric);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,
                                                   .vecType = bfParams->type,
-                                                  .dataSize = dataSize,
+                                                  .storedDataSize = storedDataSize,
                                                   .metric = bfParams->metric,
                                                   .blockSize = bfParams->blockSize,
                                                   .multi = bfParams->multi,
