@@ -68,12 +68,12 @@ struct IndexComponents {
 template <typename DataType, typename DistType>
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
-    size_t dim;          // Vector's dimension.
-    VecSimType vecType;  // Datatype to index.
-    size_t storedDataSize;     // Vector size in bytes
-    VecSimMetric metric; // Distance metric to use in the index.
-    size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
-                         // resizing)
+    size_t dim;            // Vector's dimension.
+    VecSimType vecType;    // Datatype to index.
+    size_t storedDataSize; // Vector size in bytes
+    VecSimMetric metric;   // Distance metric to use in the index.
+    size_t blockSize; // Index's vector block size (determines by how many vectors to resize when
+                      // resizing)
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
     PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
