@@ -456,6 +456,9 @@ void HNSWDiskIndex<DataType, DistType>::batchUpdate(
         labelToIdMap[label] = newElementId;
         curElementCount++;
         
+        // Resize visited nodes handler pool to accommodate new elements
+        visitedNodesHandlerPool.resize(curElementCount);
+        
         // Add only the vector ID to pending vectors for indexing
         pendingVectorIds.push_back(newElementId);
         pendingVectorCount++;
@@ -856,6 +859,9 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     
     // Increment vector count immediately
     curElementCount++;
+    
+    // Resize visited nodes handler pool to accommodate new elements
+    visitedNodesHandlerPool.resize(curElementCount);
     
     // Add only the vector ID to pending vectors for indexing
     pendingVectorIds.push_back(newElementId);

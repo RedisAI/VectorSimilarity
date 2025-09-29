@@ -22,12 +22,12 @@ class HNSWDiskIndexTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Disable all debug logging
-        // VecSimIndexInterface::setLogCallbackFunction([](void *ctx, const char *level, const char *message) {
-        //     // Only show warnings and errors
-        //     if (std::string_view{level} == VecSimCommonStrings::LOG_WARNING_STRING) {
-        //         std::cout << "[" << level << "] " << message << std::endl;
-        //     }
-        // });
+        VecSimIndexInterface::setLogCallbackFunction([](void *ctx, const char *level, const char *message) {
+            // Only show warnings and errors
+            if (std::string_view{level} == VecSimCommonStrings::LOG_WARNING_STRING) {
+                std::cout << "[" << level << "] " << message << std::endl;
+            }
+        });
         // Create a temporary directory for RocksDB
         temp_dir = "/tmp/hnsw_disk_test_" + std::to_string(getpid());
         
@@ -54,7 +54,7 @@ protected:
         // If any index objects still exist, they would be accessing deleted database.
         
         if (db) {
-            delete db;
+            db.reset();
             db = nullptr;
         }
         
@@ -91,7 +91,7 @@ protected:
     }
 
     std::string temp_dir;
-    rocksdb::DB* db = nullptr;
+    std::unique_ptr<rocksdb::DB> db;
 };
 
 TEST_F(HNSWDiskIndexTest, BasicConstruction) {
@@ -115,6 +115,7 @@ TEST_F(HNSWDiskIndexTest, BasicConstruction) {
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
     abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
     
@@ -124,7 +125,7 @@ TEST_F(HNSWDiskIndexTest, BasicConstruction) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Basic assertions - check that the index was created successfully
     // Note: We can't access protected members directly, so we'll test through public methods
@@ -163,7 +164,7 @@ TEST_F(HNSWDiskIndexTest, SimpleTest) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Just test that the index was created successfully
     EXPECT_TRUE(&index != nullptr);
@@ -202,7 +203,7 @@ TEST_F(HNSWDiskIndexTest, BasicStoreVectorTest) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Create a test vector
     std::mt19937 rng(42);
@@ -243,6 +244,7 @@ TEST_F(HNSWDiskIndexTest, StoreVectorTest) {
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
     abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
     
@@ -252,7 +254,7 @@ TEST_F(HNSWDiskIndexTest, StoreVectorTest) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Create a test vector
     std::mt19937 rng(42);
@@ -301,7 +303,7 @@ TEST_F(HNSWDiskIndexTest, SimpleAddVectorTest) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Create a test vector
     std::mt19937 rng(42);
@@ -348,7 +350,7 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Create a test vector
     std::mt19937 rng(42);
@@ -458,7 +460,7 @@ TEST_F(HNSWDiskIndexTest, BatchingTest) {
     
     // Create HNSWDiskIndex - use default column family handle
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Create test vectors
     std::mt19937 rng(42);
@@ -528,7 +530,7 @@ TEST_F(HNSWDiskIndexTest, HierarchicalSearchTest) {
     
     // Create HNSWDiskIndex
     rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
-    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db, default_cf);
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
     
     // Create test vectors with known relationships
     std::mt19937 rng(42);
