@@ -18,6 +18,8 @@
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
 #include <filesystem>
+#include <iostream>
+#include <chrono>
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -164,16 +166,21 @@ std::string BM_VecSimIndex<uint8_index_t>::rocksdb_temp_dir{};
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
+    using clock = std::chrono::high_resolution_clock;
     VecSimType type = index_type_t::get_index_type();
-    // dim, block_size, M, EF_C, n_vectors, is_multi, n_queries, hnsw_index_file and
-    // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
-    // index type benchmarks.
+
+    std::cerr << "[Init] Starting initialization: dim=" << dim << ", M=" << M << ", efC=" << EF_C
+              << ", n_vectors=" << n_vectors << ", n_queries=" << n_queries << std::endl;
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
-        // Initialize and load HNSW index for DBPedia data set.
+        auto t0 = clock::now();
         indices[INDEX_HNSW] = IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
 
         auto *hnsw_index = CastToHNSW(indices[INDEX_HNSW]);
+        auto took =std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
+        std::cerr << "[Init] Loaded HNSW. indexSize=" << hnsw_index->indexSize()
+                  << ", took " << took << " ms" << std::endl;
+
         size_t ef_r = 10;
         hnsw_index->setEf(ef_r);
         // Create tiered index from the loaded HNSW index.
@@ -236,19 +243,34 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             abstractInitParams.allocator, VecSimMetric_Cosine, dim, false);
             
         indices[INDEX_HNSW_DISK] = IndexPtr(new (abstractInitParams.allocator) HNSWDiskIndex<data_t, dist_t>(
-            &hnsw_disk_params, abstractInitParams, indexComponents, 
-            benchmark_db.get(), benchmark_cf));
+            &hnsw_disk_params, abstractInitParams, indexComponents, benchmark_db.get(), benchmark_cf));
             
         // Populate the disk index with the same vectors as the HNSW index
         if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
             auto *hnsw_index = CastToHNSW(indices[INDEX_HNSW]);
-            size_t n_vectors = hnsw_index->indexSize();
-            
-            for (size_t i = 0; i < n_vectors; ++i) {
+            size_t total = n_vectors;
+            std::cerr << "[Init] Populating HNSWDiskIndex with " << total << " vectors..." << std::endl;
+            auto t0 = clock::now();
+            size_t print_every = std::max<size_t>(size_t(1000), total / 100); // ~1% or 10k, whichever larger
+            for (size_t i = 0; i < total; ++i) {
                 const char *blob = GetHNSWDataByInternalId(i);
                 size_t label = hnsw_index->getExternalLabel(i);
                 VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], blob, label);
+                if (i % print_every == 0 || i + 1 == total) {
+                    auto now = clock::now();
+                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - t0).count();
+                    double elapsed_s = std::max<double>(1e-6, elapsed_ms / 1000.0);
+                    double rate = (double)(i + 1) / elapsed_s; // vectors/sec
+                    size_t pct = ((i + 1) * 100) / total;
+                    std::cerr << "[Init] HNSWDiskIndex population " << pct << "% ("
+                              << (i + 1) << "/" << total << ") "
+                              << (size_t)rate << " vec/s" << std::endl;
+                }
             }
+            auto t1 = clock::now();
+            std::cerr << "[Init] HNSWDiskIndex population done in "
+                      << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()
+                      << " ms" << std::endl;
         }
     }
 
