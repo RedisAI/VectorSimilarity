@@ -297,10 +297,7 @@ TEST_F(UINT8BruteForceTest, elementSizeEstimation) {
 TEST_F(UINT8TieredTest, elementSizeEstimation) {
     size_t M = 64;
     HNSWParams hnsw_params = {.dim = 4, .M = M};
-    VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
-    TieredIndexParams tiered_params =
-        test_utils::CreateTieredParams(vecsim_hnsw_params, this->mock_thread_pool);
-    EXPECT_NO_FATAL_FAILURE(element_size_test(tiered_params));
+    EXPECT_NO_FATAL_FAILURE(element_size_test(hnsw_params));
 }
 
 /* ---------------------------- Functionality tests ---------------------------- */
