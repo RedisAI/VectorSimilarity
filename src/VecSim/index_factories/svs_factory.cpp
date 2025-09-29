@@ -14,30 +14,19 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/index_factories/factory_utils.h"
 
 namespace SVSFactory {
 
 namespace {
-AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-    auto &svsParams = params->algoParams.svsParams;
-    size_t storedDataSize =
-        VecSimParams_GetStoredDataSize(svsParams.type, svsParams.dim, svsParams.metric);
-    return {.allocator = VecSimAllocator::newVecsimAllocator(),
-            .dim = svsParams.dim,
-            .vecType = svsParams.type,
-            .storedDataSize = storedDataSize,
-            .metric = svsParams.metric,
-            .blockSize = svsParams.blockSize,
-            .multi = svsParams.multi,
-            .logCtx = params->logCtx};
-}
 
 // NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
           bool IsLeanVec>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
-    auto abstractInitParams = NewAbstractInitParams(params);
     auto &svsParams = params->algoParams.svsParams;
+    auto abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(&svsParams, params->logCtx, is_normalized);
     auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
         abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
     IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {

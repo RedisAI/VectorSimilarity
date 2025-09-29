@@ -34,6 +34,10 @@
  * @param blockSize The block size to use in the index.
  * @param multi Determines if the index should multi-index or not.
  * @param logCtx The context to use for logging.
+ * @param inputBlobSize The size of input vectors/queries blob in bytes. May differ from dim *
+ * sizeof(vecType) when vectors have been externally preprocessed (e.g., cosine normalization adds
+ * extra bytes). For example, in tiered indexes, the backend receives preprocessed blobs, not raw
+ * input vectors.
  */
 struct AbstractIndexInitParams {
     std::shared_ptr<VecSimAllocator> allocator;
@@ -44,6 +48,7 @@ struct AbstractIndexInitParams {
     size_t blockSize;
     bool multi;
     void *logCtx;
+    size_t inputBlobSize;
 };
 
 /**
@@ -68,20 +73,27 @@ struct IndexComponents {
 template <typename DataType, typename DistType>
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
-    size_t dim;            // Vector's dimension.
-    VecSimType vecType;    // Datatype to index.
-    size_t storedDataSize; // Vector size in bytes
-    VecSimMetric metric;   // Distance metric to use in the index.
-    size_t blockSize; // Index's vector block size (determines by how many vectors to resize when
-                      // resizing)
-    IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
-    PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
+    size_t dim;          // Vector's dimension.
+    VecSimType vecType;  // Datatype to index.
+    VecSimMetric metric; // Distance metric to use in the index.
+    size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
+                         // resizing)
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
+    RawDataContainer *vectors;      // The raw vectors data container.
+private:
+    IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
+    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
 
-    RawDataContainer *vectors; // The raw vectors data container.
-
+    size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
+                          // sizeof(vecType) when vectors have been externally preprocessed (e.g.,
+                          // cosine normalization adds extra bytes). For example, in tiered indexes,
+                          // the backend receives preprocessed blobs, not raw input vectors.
+    size_t storedDataSize; // Vector element data size in bytes to be stored
+                           // (possibly after pre-processing and may differ from inputBlobSize if
+                           // NOT externally preprocessed).
+protected:
     /**
      * @brief Get the common info object
      *
@@ -105,12 +117,14 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
                         const IndexComponents<DataType, DistType> &components)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          storedDataSize(params.storedDataSize), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
+          metric(params.metric),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
+          isMulti(params.multi), logCallbackCtx(params.logCtx),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
+          inputBlobSize(params.inputBlobSize), storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
-        assert(dataSize);
+        assert(storedDataSize);
+        assert(inputBlobSize);
         this->vectors = new (this->allocator) DataBlocksContainer(
             this->blockSize, this->storedDataSize, this->allocator, this->getAlignment());
     }
@@ -172,6 +186,7 @@ public:
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getStoredDataSize() const { return storedDataSize; }
+    inline size_t getInputBlobSize() const { return inputBlobSize; }
     inline size_t getBlockSize() const { return blockSize; }
     inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
 
