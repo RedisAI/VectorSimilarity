@@ -336,6 +336,8 @@ private:
     /*****************************************************************/
 };
 
+constexpr size_t INITIAL_CAPACITY = 1000;
+
 /********************************** Constructors & Destructor **********************************/
 
 template <typename DataType, typename DistType>
@@ -344,8 +346,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     const IndexComponents<DataType, DistType> &components, rocksdb::DB *db,
     rocksdb::ColumnFamilyHandle *cf, size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      idToMetaData(1000, this->allocator), labelToIdMap(this->allocator),
-      db(db), cf(cf), indexDataGuard(), visitedNodesHandlerPool(10, this->allocator),
+      idToMetaData(INITIAL_CAPACITY, this->allocator), labelToIdMap(this->allocator),
+      db(db), cf(cf), indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       delta_list(), new_elements_meta_data(this->allocator),
       batchThreshold(10), pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
       stagedGraphUpdates(this->allocator), stagedNeighborUpdates(this->allocator) {
@@ -840,7 +842,14 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     idType newElementId = curElementCount;
     size_t elementMaxLevel = getRandomLevel(mult);
     DiskElementMetaData new_element(label, elementMaxLevel);
-    
+
+    if (newElementId >= indexCapacity()) {
+        size_t new_cap = ((newElementId + this->blockSize) / this->blockSize) * this->blockSize;
+        visitedNodesHandlerPool.resize(new_cap);
+        idToMetaData.resize(new_cap);
+        labelToIdMap.reserve(new_cap);
+    }
+
     // Store metadata immediately
     idToMetaData[newElementId] = new_element;
     labelToIdMap[label] = newElementId;
