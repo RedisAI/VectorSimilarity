@@ -26,8 +26,9 @@ project(VectorSimilarity)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
+# Ensure sanitizer flags are also passed at link time
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_LD_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_LD_FLAGS}")
 
 IF(USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
@@ -37,6 +38,9 @@ include(cmake/svs.cmake)
 
 include_directories(src)
 
+# Set to ON to run benchmarks with sanitizer
+option(ALLOW_BENCHMARKS_WITH_SANITIZERS "Build benchmarks even when sanitizers are enabled" OFF)
+
 if(VECSIM_BUILD_TESTS)
 	ADD_DEFINITIONS(-DBUILD_TESTS)
 	include(FetchContent)
@@ -45,8 +49,9 @@ if(VECSIM_BUILD_TESTS)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-parameter")
 
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
-	set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
+	# Ensure sanitizer flags are also passed at link time for tests
+	set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_LD_FLAGS}")
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_LD_FLAGS}")
 
 	FetchContent_Declare(
 		googletest
@@ -68,7 +73,7 @@ if(VECSIM_BUILD_TESTS)
 	add_subdirectory(tests/unit unit_tests)
 	add_subdirectory(tests/module module_tests)
 
-	if(NOT(USE_ASAN OR USE_MSAN))
+	if(ALLOW_BENCHMARKS_WITH_SANITIZERS OR NOT (USE_ASAN OR USE_MSAN))
 		add_subdirectory(tests/benchmark benchmark)
 	endif()
 endif()
