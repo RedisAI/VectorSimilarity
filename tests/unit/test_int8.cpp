@@ -170,6 +170,7 @@ protected:
     }
 
     virtual void SetUp(TieredIndexParams &tiered_params) override {
+        ASSERT_EQ(tiered_params.primaryIndexParams->algoParams.hnswParams.type, VecSimType_INT8);
         VecSimParams params = CreateParams(tiered_params);
         index = VecSimIndex_New(&params);
         dim = tiered_params.primaryIndexParams->algoParams.hnswParams.dim;
@@ -297,10 +298,7 @@ TEST_F(INT8BruteForceTest, elementSizeEstimation) {
 TEST_F(INT8TieredTest, elementSizeEstimation) {
     size_t M = 64;
     HNSWParams hnsw_params = {.dim = 4, .M = M};
-    VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
-    TieredIndexParams tiered_params =
-        test_utils::CreateTieredParams(vecsim_hnsw_params, this->mock_thread_pool);
-    EXPECT_NO_FATAL_FAILURE(element_size_test(tiered_params));
+    EXPECT_NO_FATAL_FAILURE(element_size_test(hnsw_params));
 }
 
 /* ---------------------------- Functionality tests ---------------------------- */

@@ -168,6 +168,7 @@ protected:
     }
 
     virtual void SetUp(TieredIndexParams &tiered_params) override {
+        ASSERT_EQ(tiered_params.primaryIndexParams->algoParams.hnswParams.type, VecSimType_INT8);
         VecSimParams params = CreateParams(tiered_params);
         index = VecSimIndex_New(&params);
         dim = tiered_params.primaryIndexParams->algoParams.hnswParams.dim;
