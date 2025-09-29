@@ -55,20 +55,9 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     size_t initial_label_count = index->indexLabelCount();
     size_t initial_index_size = VecSimIndex_IndexSize(index);
 
-    // Special handling for HNSW Disk index which starts empty
-    if (st.range(0) == INDEX_HNSW_DISK) {
-        // For HNSW Disk, we start with 0 vectors and add vectors incrementally
-        index_size = 0;  // Start with empty index
-        initial_label_count = 0;
-        initial_index_size = 0;  // Ensure initial_index_size is also 0 for disk indices
-    }
-
-    // In a single vector per label index, index size should equal label count.
-    // Handle the case where initial_label_count is 0 (empty index)
-    size_t vec_per_label = (initial_label_count == 0) ? 1 :
-                           (index_size % initial_label_count == 0
+    size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
-                               : index_size / initial_label_count + 1);
+                               : index_size / initial_label_count + 1;
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
 
@@ -95,6 +84,12 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     // Updated assertion to handle empty starting index
     assert(VecSimIndex_IndexSize(index) == initial_index_size + added_vec_count);
 
+
+    // Skip clean-up for disk index since it's not supported yet.
+    if (st.range(0) == INDEX_HNSW_DISK) {
+        return;
+    }
+
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
@@ -104,7 +99,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
         VecSimIndex_DeleteVector(
             GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)), label);
     }
-    // assert(VecSimIndex_IndexSize(index) == initial_index_size);
+    assert(VecSimIndex_IndexSize(index) == initial_index_size);
 }
 
 template <typename index_type_t>
@@ -114,20 +109,10 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     size_t initial_label_count = index->indexLabelCount();
     size_t initial_index_size = VecSimIndex_IndexSize(index);
 
-    // Special handling for HNSW Disk index which starts empty
-    if (st.range(0) == INDEX_HNSW_DISK) {
-        // For HNSW Disk, we start with 0 vectors and add vectors incrementally
-        index_size = 0;  // Start with empty index
-        initial_label_count = 0;
-        initial_index_size = 0;  // Ensure initial_index_size is also 0 for disk indices
-    }
-
     // In a single vector per label index, index size should equal label count.
-    // Handle the case where initial_label_count is 0 (empty index)
-    size_t vec_per_label = (initial_label_count == 0) ? 1 :
-                           (index_size % initial_label_count == 0
+    size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
-                               : index_size / initial_label_count + 1);
+                               : index_size / initial_label_count + 1;
 
     index->fitMemory();
     size_t memory_before = index->getAllocationSize();
@@ -157,6 +142,12 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
 
     size_t index_size_after = VecSimIndex_IndexSize(index);
     assert(index_size_after == initial_index_size + added_vec_count);
+
+
+    // Skip clean-up for disk index since it's not supported yet.
+    if (st.range(0) == INDEX_HNSW_DISK) {
+        return;
+    }
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all

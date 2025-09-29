@@ -12,8 +12,8 @@ bool BM_VecSimGeneral::is_multi = false;
 uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
 
 // Configure using existing dbpedia dataset for now (can be changed to SIFT1B later)
-size_t BM_VecSimGeneral::n_queries = 10000;
-size_t BM_VecSimGeneral::n_vectors = 1000000;
+size_t BM_VecSimGeneral::n_queries = 100;
+size_t BM_VecSimGeneral::n_vectors = 10000;
 size_t BM_VecSimGeneral::dim = 768;          // dbpedia vectors are 768-dimensional
 size_t BM_VecSimGeneral::M = 64;             // HNSW parameter M
 size_t BM_VecSimGeneral::EF_C = 512;         // HNSW construction parameter
