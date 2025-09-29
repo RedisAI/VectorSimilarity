@@ -12,6 +12,9 @@ project(VectorSimilarity_UnitTest)
 include_directories(../utils)
 include(CTest)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ROCKSDB REQUIRED IMPORTED_TARGET rocksdb)
+
 set(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
@@ -64,7 +67,7 @@ target_link_libraries(test_int8 PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_uint8 PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_index_test_utils PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_svs PUBLIC gtest_main VectorSimilarity)
-target_link_libraries(test_hnsw_disk PUBLIC gtest_main VectorSimilarity rocksdb)
+target_link_libraries(test_hnsw_disk PUBLIC gtest_main VectorSimilarity PkgConfig::ROCKSDB)
 
 include(GoogleTest)
 
