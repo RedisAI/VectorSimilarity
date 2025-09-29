@@ -67,8 +67,8 @@ jobs:
 
       - name: unit tests
         run: make unit_test
-      - name: valgrind
-        if: ${{ inputs.run-valgrind }}
+      - name: sanitizer
+        # if: ${{ inputs.run-valgrind }}
         run: make SAN=address unit_test
       - name: Archive valgrind tests reports
         if: ${{ inputs.run-valgrind && failure() }}
