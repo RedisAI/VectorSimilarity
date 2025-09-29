@@ -338,23 +338,23 @@ protected:
 
 template <typename DataType, typename DistType>
 ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *blob) const {
-    return this->preprocessors->preprocess(blob, this->storedDataSize);
+    return this->preprocessors->preprocess(blob, inputBlobSize);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
                                                          bool force_copy) const {
-    return this->preprocessors->preprocessQuery(queryBlob, this->storedDataSize, force_copy);
+    return this->preprocessors->preprocessQuery(queryBlob, inputBlobSize, force_copy);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
-    return this->preprocessors->preprocessForStorage(original_blob, this->storedDataSize);
+    return this->preprocessors->preprocessForStorage(original_blob, inputBlobSize);
 }
 
 template <typename DataType, typename DistType>
 void VecSimIndexAbstract<DataType, DistType>::preprocessStorageInPlace(void *blob) const {
-    this->preprocessors->preprocessStorageInPlace(blob, this->storedDataSize);
+    this->preprocessors->preprocessStorageInPlace(blob, inputBlobSize);
 }
