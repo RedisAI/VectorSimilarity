@@ -90,6 +90,11 @@ protected:
 
     // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
-        return std::string(getenv("ROOT")) + "/" + file_name;
+        if (auto root = getenv("ROOT")) {
+            return std::string(root) + "/" + file_name;
+        } else {
+            std::cerr << "ROOT environment variable is not set. Set vecsim root path as ROOT";
+            std::exit(1);
+        }
     }
 };
