@@ -2083,7 +2083,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     info = tiered_index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
@@ -2140,7 +2140,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
     VecSimIndexDebugInfo frontendIndexInfo = tiered_index->GetFlatIndex()->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
@@ -2162,7 +2162,7 @@ TYPED_TEST(SVSTieredIndexTest, debugInfoIteratorFieldOrder) {
     auto *index = test_utils::CreateNewTieredVecSimIndex(params, mock_thread_pool);
     ASSERT_INDEX(index);
 
-    GenerateAndAddVector(index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
     VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
 
     // Test the field order using the common function
