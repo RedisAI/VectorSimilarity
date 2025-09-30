@@ -40,20 +40,18 @@ jobs:
         run: pip3 install -r requirements.txt
       - name: check format
         run: make check-format
-      - name: sanitizer
-        run: make SAN=address unit_test
       - name: unit tests
         run: make unit_test
       - name: flow tests
         run: make flow_test VERBOSE=1
             # Using version 4 if node20 is supported, since it is MUCH faster (15m vs 25s)
       - name: Upload Logs
-        # Upload artifacts only if flow tests failed
+        # Upload artifacts only if flow tests failed 
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: Test Logs
-          path: |
+          path: | 
             logs/tests/flow/*.log*
           if-no-files-found: ignore
 

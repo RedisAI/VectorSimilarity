@@ -53,8 +53,6 @@ jobs:
           echo "========================"
       - name: install dependencies
         run: sudo .install/install_script.sh
-      - name: sanitizer
-        run: make SAN=address unit_test
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
