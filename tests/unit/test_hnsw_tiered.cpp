@@ -1022,7 +1022,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     auto allocator = tiered_index->getAllocator();
 
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector(tiered_index->getHNSWIndex(), dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->getHNSWIndex(), dim, i, i);
     }
 
     // Delete vectors one by one and run the resulted repair jobs.
@@ -2703,7 +2703,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     info = tiered_index->debugInfo();
     stats = tiered_index->statisticInfo();
 
@@ -2736,7 +2736,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
     if (TypeParam::isMulti()) {
-        GenerateAndAddVector(tiered_index, dim, 1, 1);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
         info = tiered_index->debugInfo();
         stats = tiered_index->statisticInfo();
 
@@ -2785,7 +2785,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
     auto allocator = tiered_index->getAllocator();
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
     VecSimIndexDebugInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();

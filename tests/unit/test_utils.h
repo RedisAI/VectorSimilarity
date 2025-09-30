@@ -58,8 +58,10 @@ static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
     }
 }
 
+// use std::type_identity to force explicit template specification.
 template <typename data_t>
-int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
+int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id,
+                         typename std::type_identity<data_t>::type value = 1.0) {
     data_t v[dim];
     GenerateVector(v, dim, value);
     return VecSimIndex_AddVector(index, v, id);

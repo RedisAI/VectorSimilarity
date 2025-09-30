@@ -1293,7 +1293,7 @@ TYPED_TEST(BruteForceMultiTest, rangeQuery) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         // Add some vectors, worst than the second loop (for the given query)
         for (size_t j = 0; j < per_label - 1; j++)
-            GenerateAndAddVector(index, dim, i, (TEST_DATA_T)i + n);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, (TEST_DATA_T)i + n);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
