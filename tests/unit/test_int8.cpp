@@ -301,6 +301,24 @@ TEST_F(INT8TieredTest, elementSizeEstimation) {
     EXPECT_NO_FATAL_FAILURE(element_size_test(hnsw_params));
 }
 
+// ======= Cosine size estimation (stored vectors include additional space for norm)
+TEST_F(INT8HNSWTest, elementSizeEstimation_Cosine) {
+    size_t M = 64;
+
+    HNSWParams params = {.dim = 4, .metric = VecSimMetric_Cosine, .M = M};
+    EXPECT_NO_FATAL_FAILURE(element_size_test(params));
+}
+
+TEST_F(INT8BruteForceTest, elementSizeEstimation_Cosine) {
+    BFParams params = {.dim = 4, .metric = VecSimMetric_Cosine};
+    EXPECT_NO_FATAL_FAILURE(element_size_test(params));
+}
+
+TEST_F(INT8TieredTest, elementSizeEstimation_Cosine) {
+    size_t M = 64;
+    HNSWParams hnsw_params = {.dim = 4, .metric = VecSimMetric_Cosine, .M = M};
+    EXPECT_NO_FATAL_FAILURE(element_size_test(hnsw_params));
+}
 /* ---------------------------- Functionality tests ---------------------------- */
 
 template <typename params_t>

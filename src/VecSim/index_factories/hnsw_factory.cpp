@@ -126,7 +126,8 @@ size_t EstimateElementSize(const HNSWParams *params) {
     size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
     size_t size_total_data_per_element =
-        elementGraphDataSize + params->dim * VecSimType_sizeof(params->type);
+        elementGraphDataSize +
+        VecSimParams_GetStoredDataSize(params->type, params->dim, params->metric);
 
     // when reserving space for new labels in the lookup hash table, each entry is a pointer to a
     // label node (bucket).

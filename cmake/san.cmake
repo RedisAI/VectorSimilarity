@@ -7,7 +7,7 @@ if (USE_ASAN OR USE_MSAN)
 	set(CMAKE_LINKER "${CMAKE_C_COMPILER}")
 
 	if (USE_ASAN)
-		set(CLANG_SAN_FLAGS "-fno-omit-frame-pointer -fsanitize=address")
+		set(CLANG_SAN_FLAGS "-fno-omit-frame-pointer -fsanitize=address -fsized-deallocation")
 
 	elseif (USE_MSAN)
 		set(CLANG_SAN_FLAGS "-fno-omit-frame-pointer -fsanitize=memory -fsanitize-memory-track-origins=2")

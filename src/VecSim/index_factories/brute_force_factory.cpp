@@ -127,12 +127,9 @@ size_t EstimateInitialSize(const BFParams *params, bool is_normalized) {
     return est;
 }
 
-/*** ======================================================= */
-// TODO: replace params->dim * VecSimType_sizeof(params->type) with getStoredDataSize!!!
-/** ======================================================= */
-
 size_t EstimateElementSize(const BFParams *params) {
     // counting the vector size + idToLabel entry + LabelToIds entry (map reservation)
-    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType) + sizeof(void *);
+    return VecSimParams_GetStoredDataSize(params->type, params->dim, params->metric) +
+           sizeof(labelType) + sizeof(void *);
 }
 }; // namespace BruteForceFactory
