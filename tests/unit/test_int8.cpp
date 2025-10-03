@@ -1092,6 +1092,9 @@ TEST_F(INT8TieredTest, CosineBlobCorrectness) {
         ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, 1, verify_res));
         ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 2, verify_res, 1, BY_SCORE));
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+        const int8_t *stored_query = static_cast<const int8_t *>(batchIterator->getQueryBlob());
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(query, stored_query, dim));
+        verify_norm(stored_query, query_norm);
         ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, 1, verify_res));
         VecSimBatchIterator_Free(batchIterator);
     }
@@ -1117,6 +1120,9 @@ TEST_F(INT8TieredTest, CosineBlobCorrectness) {
         ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, k, verify_res));
         ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 100, verify_res, k, BY_SCORE));
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+        const int8_t *stored_query = static_cast<const int8_t *>(batchIterator->getQueryBlob());
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(query, stored_query, dim));
+        verify_norm(stored_query, query_norm);
         ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, k, verify_res));
         VecSimBatchIterator_Free(batchIterator);
     }
@@ -1140,8 +1146,35 @@ TEST_F(INT8TieredTest, CosineBlobCorrectness) {
         size_t k = 2;
         ASSERT_NO_FATAL_FAILURE(runTopKSearchTest(index, query, k, verify_res));
         ASSERT_NO_FATAL_FAILURE(runRangeQueryTest(index, query, 100, verify_res, k, BY_SCORE));
+
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-        ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, k, verify_res));
+        // This is the only scenario where we can check the query blob in the hnsw batch iterator.
+        // In all other scenarios, the hnsw iterator is depleted after the first batch, before the
+        // verify function is called.
+        auto verify_res_batch = [&](size_t label, double score, size_t result_rank) {
+            ASSERT_EQ(score, expected_score) << "label: " << label;
+            if (result_rank == 0) {
+                VecSimBatchIterator *hnsw_batch_iterator =
+                    dynamic_cast<TieredHNSWIndex<int8_t, float>::TieredHNSW_BatchIterator *>(
+                        batchIterator)
+                        ->getHNSWIterator();
+                bool hnsw_iterator_not_valid =
+                    ((hnsw_batch_iterator == UNINITIALIZED) || (hnsw_batch_iterator == DEPLETED));
+                ASSERT_FALSE(hnsw_iterator_not_valid)
+                    << "hnsw_batch_iterator status is: "
+                    << (hnsw_batch_iterator == UNINITIALIZED ? "UNINITIALIZED" : "DEPLETED");
+                const int8_t *stored_hnsw_query =
+                    static_cast<const int8_t *>(hnsw_batch_iterator->getQueryBlob());
+                ASSERT_NO_FATAL_FAILURE(CompareVectors(query, stored_hnsw_query, dim));
+                verify_norm(stored_hnsw_query, query_norm);
+            }
+        };
+        const int8_t *stored_query = static_cast<const int8_t *>(batchIterator->getQueryBlob());
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(query, stored_query, dim));
+        verify_norm(stored_query, query_norm);
+        // use batch size  of 1 to ensure the batch iterator is not depleted before the verify
+        // function is called.
+        ASSERT_NO_FATAL_FAILURE(runBatchIteratorSearchTest(batchIterator, 1, verify_res_batch));
         VecSimBatchIterator_Free(batchIterator);
     }
 }
