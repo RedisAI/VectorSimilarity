@@ -232,14 +232,14 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
         abstractInitParams.dim = dim;
         abstractInitParams.vecType = type;
-        abstractInitParams.dataSize = VecSimParams_GetDataSize(type, dim, VecSimMetric_Cosine);
+        abstractInitParams.dataSize = dim * sizeof(int8_t);  // Quantized storage (int8)
         abstractInitParams.metric = VecSimMetric_Cosine;
         abstractInitParams.blockSize = block_size;
         abstractInitParams.multi = is_multi;
         abstractInitParams.logCtx = nullptr;
-        
-        // Create index components
-        IndexComponents<data_t, dist_t> indexComponents = CreateIndexComponents<data_t, dist_t>(
+
+        // Create quantized index components (scalar quantization enabled by default)
+        IndexComponents<data_t, dist_t> indexComponents = CreateQuantizedIndexComponents<data_t, dist_t>(
             abstractInitParams.allocator, VecSimMetric_Cosine, dim, false);
             
         indices[INDEX_HNSW_DISK] = IndexPtr(new (abstractInitParams.allocator) HNSWDiskIndex<data_t, dist_t>(

@@ -52,6 +52,7 @@ add_executable(test_uint8 ../utils/mock_thread_pool.cpp test_uint8.cpp unit_test
 add_executable(test_index_test_utils ../utils/mock_thread_pool.cpp test_index_test_utils.cpp unit_test_utils.cpp)
 # add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp unit_test_utils.cpp)
 add_executable(test_hnsw_disk test_hnsw_disk.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
+add_executable(test_quantized_hnsw_disk test_quantized_hnsw_disk.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)
@@ -68,6 +69,7 @@ target_link_libraries(test_uint8 PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_index_test_utils PUBLIC gtest_main VectorSimilarity)
 # target_link_libraries(test_svs PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_disk PUBLIC gtest_main VectorSimilarity PkgConfig::ROCKSDB)
+target_link_libraries(test_quantized_hnsw_disk PUBLIC gtest_main VectorSimilarity PkgConfig::ROCKSDB)
 
 include(GoogleTest)
 
@@ -87,3 +89,4 @@ gtest_discover_tests(test_index_test_utils)
 # SVS Tiered tests are slow in debug mode, so we set a longer timeout
 # gtest_discover_tests(test_svs PROPERTIES TIMEOUT 3000)
 # gtest_discover_tests(test_hnsw_disk TEST_PREFIX HNSWDISKUNIT_)
+gtest_discover_tests(test_quantized_hnsw_disk TEST_PREFIX QUANTIZEDHNSWDISKUNIT_)

@@ -119,3 +119,102 @@ private:
     const size_t dim;
     const size_t processed_bytes_count;
 };
+
+// Scalar Quantization Preprocessor: Quantizes float vectors to int8
+// Assumes input vectors are in the range [-1, 1] (e.g., normalized embeddings)
+// For Cosine metric, this should be applied AFTER CosinePreprocessor normalization
+template <typename DataType = float>
+class ScalarQuantizationPreprocessor : public PreprocessorInterface {
+public:
+    ScalarQuantizationPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        : PreprocessorInterface(allocator), dim(dim),
+          quantized_bytes_count(dim * sizeof(int8_t)),
+          input_bytes_count(dim * sizeof(DataType)) {}
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &input_blob_size, unsigned char alignment) const override {
+        // Verify input size matches expected float vector size
+        assert(input_blob_size == input_bytes_count);
+
+        // Case 1: Blobs are different (separate storage and query)
+        if (storage_blob != query_blob) {
+            // Quantize for storage
+            if (storage_blob == nullptr) {
+                storage_blob = this->allocator->allocate(quantized_bytes_count);
+            }
+            quantizeVector(original_blob, storage_blob);
+
+            // Quantize for query
+            if (query_blob == nullptr) {
+                query_blob = this->allocator->allocate_aligned(quantized_bytes_count, alignment);
+            }
+            quantizeVector(original_blob, query_blob);
+        } else { // Case 2: Blobs are the same
+            if (query_blob == nullptr) {
+                query_blob = this->allocator->allocate_aligned(quantized_bytes_count, alignment);
+                storage_blob = query_blob;
+            }
+            quantizeVector(original_blob, query_blob);
+        }
+
+        input_blob_size = quantized_bytes_count;
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&blob,
+                              size_t &input_blob_size) const override {
+        assert(input_blob_size == input_bytes_count);
+
+        if (blob == nullptr) {
+            blob = this->allocator->allocate(quantized_bytes_count);
+        }
+        quantizeVector(original_blob, blob);
+        input_blob_size = quantized_bytes_count;
+    }
+
+    void preprocessQuery(const void *original_blob, void *&blob, size_t &input_blob_size,
+                         unsigned char alignment) const override {
+        assert(input_blob_size == input_bytes_count);
+
+        if (blob == nullptr) {
+            blob = this->allocator->allocate_aligned(quantized_bytes_count, alignment);
+        }
+        quantizeVector(original_blob, blob);
+        input_blob_size = quantized_bytes_count;
+    }
+
+    void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
+        // In-place quantization not supported (type conversion from float to int8)
+        // This would require the blob to already be allocated with the correct size
+        assert(false && "In-place quantization not supported for type conversion");
+    }
+
+private:
+    // Quantization parameters for normalized vectors in [-1, 1] range
+    // Maps [-1, 1] to [-127, 127] (symmetric quantization)
+    static constexpr float SCALE = 127.0f;
+
+    const size_t dim;
+    const size_t quantized_bytes_count;  // dim * sizeof(int8_t)
+    const size_t input_bytes_count;      // dim * sizeof(DataType)
+
+    // Quantize a float vector to int8
+    // For normalized vectors in [-1, 1], maps to [-127, 127]
+    void quantizeVector(const void *input, void *output) const {
+        const DataType *input_vec = static_cast<const DataType *>(input);
+        int8_t *output_vec = static_cast<int8_t *>(output);
+
+        for (size_t i = 0; i < dim; i++) {
+            // Quantize: int8 = clamp(float * 127, -128, 127)
+            float scaled = static_cast<float>(input_vec[i]) * SCALE;
+
+            // Clamp to int8 range [-128, 127]
+            if (scaled < -128.0f) {
+                output_vec[i] = -128;
+            } else if (scaled > 127.0f) {
+                output_vec[i] = 127;
+            } else {
+                output_vec[i] = static_cast<int8_t>(std::round(scaled));
+            }
+        }
+    }
+};
