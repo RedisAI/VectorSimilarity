@@ -11,9 +11,9 @@
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
 
-#define EPSILON (1e-6)
+#define VECSIM_EPSILON (1e-6)
 
-inline bool double_eq(double a, double b) { return fabs(a - b) < EPSILON; }
+inline bool double_eq(double a, double b) { return fabs(a - b) < VECSIM_EPSILON; }
 
 // Compare two results by score, and if the scores are equal, by id.
 inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
