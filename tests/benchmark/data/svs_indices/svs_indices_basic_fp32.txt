@@ -1,0 +1,3 @@
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/svs-dbpedia-cosine-dim768-quant-8.tar.gz
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/svs-dbpedia-cosine-dim768-quant-none.tar.gz
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-test_vectors.raw
