@@ -1,6 +1,5 @@
-# HNSW index serializer for benchmarks.
-# Serializes datasets to the HNSW (SVS) index format for use by C++ and Python benchmarks.
-# Place this script in ./VectorSimilarity/tests/benchmark/data or ./VectorSimilarity.
+# SVS index serializer for benchmarks.
+# Serializes datasets to SVS index format for use by C++ and Python benchmarks.
 
 import numpy as np
 import VecSim
@@ -25,12 +24,12 @@ DEFAULT_FILES = [
         'nickname': 'dbpedia',
         'dim': 768,
         'metric': VecSim.VecSimMetric_Cosine,
-        'hdf5_file': 'dbpedia-cosine-dim768-M64-efc512.hdf5',
+        'hdf5_file': 'dbpedia-cosine-dim768.hdf5',
     },
     {
         'filename': 'fashion_images_multi_value',
         'nickname': 'fashion_images_multi_value',
-        'hdf5_file': 'fashion_images_multi_value-cosine-dim512-M64-efc512.hdf5',
+        'hdf5_file': 'fashion_images_multi_value-cosine-dim512.hdf5',
         'dim': 512,
         'metric': VecSim.VecSimMetric_Cosine,
         'multi': True,
@@ -71,7 +70,6 @@ def serialize(files=DEFAULT_FILES):
         hdf5_file = file.get('hdf5_file', f"{filename}.hdf5")
         hdf5_path = os.path.join(location, hdf5_file)
         print(f"Loading vectors from {hdf5_path}")
-        vectors, labels = load_vectors_and_labels_from_hdf5(hdf5_path)
 
         if is_multi:
             if vectors.ndim == 3:
@@ -94,6 +92,8 @@ def serialize(files=DEFAULT_FILES):
         if dim is None:
             dim = vectors.shape[1]
             print(f"Auto-detected dimension: {dim}")
+
+        assert dim == vectors.shape[1], f"Dimension mismatch: {dim} != {vectors.shape[1]}"
 
         # Create SVS parameters
         bits_to_str = {
