@@ -619,6 +619,10 @@ public:
         assert(svs_index);
         svs_index->loadIndex(location);
     }
+
+    size_t getLabelsCount() const {
+        return this->index->debugInfo().commonInfo.indexLabelCount;
+    }
 };
 
 class PyTiered_SVSIndex : public PyTieredIndex {
@@ -845,7 +849,8 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("labels"))
         .def("check_integrity", &PySVSIndex::checkIntegrity)
         .def("save_index", &PySVSIndex::saveIndex, py::arg("location"))
-        .def("load_index", &PySVSIndex::loadIndex, py::arg("location"));
+        .def("load_index", &PySVSIndex::loadIndex, py::arg("location"))
+        .def("get_labels_count", &PySVSIndex::getLabelsCount);
 
     py::class_<PyTiered_SVSIndex, PyTieredIndex>(m, "Tiered_SVSIndex")
         .def(py::init([](const SVSParams &svs_params, const TieredSVSParams &tiered_svs_params,
