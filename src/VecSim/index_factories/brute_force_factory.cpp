@@ -42,10 +42,10 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
                       bool is_normalized) {
-    assert((!is_normalized && abstractInitParams.inputBlobSize ==
-                                  bfparams->dim * VecSimType_sizeof(bfparams->type)) ||
-           (is_normalized &&
-            abstractInitParams.inputBlobSize != bfparams->dim * VecSimType_sizeof(bfparams->type)));
+    assert(is_normalized ||
+           abstractInitParams.inputBlobSize == bfparams->dim * VecSimType_sizeof(bfparams->type));
+    assert(!is_normalized ||
+           abstractInitParams.inputBlobSize != bfparams->dim * VecSimType_sizeof(bfparams->type));
     if (bfparams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
