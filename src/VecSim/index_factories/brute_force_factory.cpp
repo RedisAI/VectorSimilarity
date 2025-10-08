@@ -11,6 +11,7 @@
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
 #include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/index_factories/factory_utils.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 
@@ -32,31 +33,19 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
             BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams, components);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-
-    const BFParams *bfParams = &params->algoParams.bfParams;
-    size_t dataSize = VecSimParams_GetDataSize(bfParams->type, bfParams->dim, bfParams->metric);
-    AbstractIndexInitParams abstractInitParams = {.allocator =
-                                                      VecSimAllocator::newVecsimAllocator(),
-                                                  .dim = bfParams->dim,
-                                                  .vecType = bfParams->type,
-                                                  .dataSize = dataSize,
-                                                  .metric = bfParams->metric,
-                                                  .blockSize = bfParams->blockSize,
-                                                  .multi = bfParams->multi,
-                                                  .logCtx = params->logCtx};
-    return abstractInitParams;
-}
-
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const BFParams *bfParams = &params->algoParams.bfParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    AbstractIndexInitParams abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(bfParams, params->logCtx, is_normalized);
     return NewIndex(bfParams, abstractInitParams, is_normalized);
 }
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams,
                       bool is_normalized) {
-
+    assert(is_normalized ||
+           abstractInitParams.inputBlobSize == bfparams->dim * VecSimType_sizeof(bfparams->type));
+    assert(!is_normalized ||
+           abstractInitParams.inputBlobSize != bfparams->dim * VecSimType_sizeof(bfparams->type));
     if (bfparams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
             abstractInitParams.allocator, bfparams->metric, bfparams->dim, is_normalized);
@@ -140,6 +129,7 @@ size_t EstimateInitialSize(const BFParams *params, bool is_normalized) {
 
 size_t EstimateElementSize(const BFParams *params) {
     // counting the vector size + idToLabel entry + LabelToIds entry (map reservation)
-    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType) + sizeof(void *);
+    return VecSimParams_GetStoredDataSize(params->type, params->dim, params->metric) +
+           sizeof(labelType) + sizeof(void *);
 }
 }; // namespace BruteForceFactory
