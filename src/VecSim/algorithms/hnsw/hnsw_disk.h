@@ -1249,59 +1249,63 @@ const void* HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) co
 
 template <typename DataType, typename DistType>
 candidatesMaxHeap<DistType> HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void* data_point, size_t level, size_t ef) const {
-    candidatesMaxHeap<DistType> candidates(this->allocator);
-    candidatesMaxHeap<DistType> candidates_set(this->allocator);
-    
+    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
+
     // Get visited list
     auto *visited_nodes_handler = getVisitedList();
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
-    
-    // Start with the entry point
-    DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
-    candidates.emplace(dist, ep_id);
-    candidates_set.emplace(-dist, ep_id);
-    visited_nodes_handler->tagNode(ep_id, visited_tag);
-    
-    size_t iterations = 0;
-    const size_t MAX_ITERATIONS = 1000; // Prevent infinite loops
-    // Search for candidates
-    while (!candidates_set.empty() && iterations < MAX_ITERATIONS) {
-        iterations++;
-        auto curr_pair = candidates_set.top();
-        DistType curr_dist = -curr_pair.first;
-        idType curr_id = curr_pair.second;
-        candidates_set.pop();
 
-        // If we have enough candidates and the current distance is worse than our best, stop
-        if (candidates.size() >= ef && curr_dist > candidates.top().first) {
+    // Start with the entry point and initialize lowerBound
+    DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
+    DistType lowerBound = dist;
+    top_candidates.emplace(dist, ep_id);
+    candidate_set.emplace(-dist, ep_id);
+    visited_nodes_handler->tagNode(ep_id, visited_tag);
+
+    // Search for candidates
+    while (!candidate_set.empty()) {
+        auto curr_pair = candidate_set.top();
+        DistType curr_dist = -curr_pair.first;
+
+        // Early termination: if we have enough candidates and current distance is worse than lowerBound, stop
+        if (curr_dist > lowerBound && top_candidates.size() >= ef) {
             break;
         }
-        
+
+        idType curr_id = curr_pair.second;
+        candidate_set.pop();
+
         // Get neighbors of current node at this level
         std::vector<idType> neighbors;
         getNeighbors(curr_id, level, neighbors);
-        
-        if (!neighbors.empty()) {
-            for (idType neighbor_id : neighbors) {
-                if (visited_nodes_handler->getNodeTag(neighbor_id) == visited_tag) {
-                    continue;
-                }
-                
-                visited_nodes_handler->tagNode(neighbor_id, visited_tag);
-                DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
 
-                candidates.emplace(neighbor_dist, neighbor_id);
-                candidates_set.emplace(-neighbor_dist, neighbor_id);
+        for (idType neighbor_id : neighbors) {
+            if (visited_nodes_handler->getNodeTag(neighbor_id) == visited_tag) {
+                continue;
+            }
+
+            visited_nodes_handler->tagNode(neighbor_id, visited_tag);
+            DistType neighbor_dist = this->calcDistance(data_point, getDataByInternalId(neighbor_id));
+
+            // Add to top candidates if it's good enough
+            if (neighbor_dist < lowerBound || top_candidates.size() < ef) {
+                top_candidates.emplace(neighbor_dist, neighbor_id);
+                candidate_set.emplace(-neighbor_dist, neighbor_id);
+
+                // Update lowerBound if we have enough candidates
+                if (top_candidates.size() > ef) {
+                    top_candidates.pop();
+                }
+                if (top_candidates.size() >= ef) {
+                    lowerBound = top_candidates.top().first;
+                }
             }
         }
     }
-    
-    if (iterations >= MAX_ITERATIONS) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "  searchLayer: WARNING - Hit maximum iteration limit (%zu), breaking out of loop", MAX_ITERATIONS);
-    }
 
     returnVisitedList(visited_nodes_handler);
-    return candidates;
+    return top_candidates;
 }
 
 template <typename DataType, typename DistType>
