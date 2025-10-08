@@ -620,9 +620,7 @@ public:
         svs_index->loadIndex(location);
     }
 
-    size_t getLabelsCount() const {
-        return this->index->debugInfo().commonInfo.indexLabelCount;
-    }
+    size_t getLabelsCount() const { return this->index->debugInfo().commonInfo.indexLabelCount; }
 };
 
 class PyTiered_SVSIndex : public PyTieredIndex {
