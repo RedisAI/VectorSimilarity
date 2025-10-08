@@ -32,6 +32,11 @@ public:
     static std::vector<std::vector<data_t>> queries;
     static std::array<IndexPtr, NUMBER_OF_INDEX_TYPES> indices;
 
+    // RocksDB management for disk-based HNSW indices (fp32 only)
+    static std::unique_ptr<rocksdb::DB> benchmark_db;
+    static rocksdb::ColumnFamilyHandle* benchmark_cf;
+    static std::string rocksdb_temp_dir;
+
     BM_VecSimIndex() {
         if (!is_initialized) {
             Initialize();
@@ -40,8 +45,8 @@ public:
     }
 
     virtual ~BM_VecSimIndex() {
-        // Don't cleanup static RocksDB database here as it's shared across benchmarks
-        // CleanupRocksDB();
+        // Cleanup RocksDB resources for fp32 type only
+        CleanupRocksDB();
     }
 
     // The implicit conversion operator in IndexPtr allows automatic conversion to VecSimIndex*.
@@ -67,14 +72,8 @@ protected:
     }
 
 private:
-    // RocksDB management for disk-based HNSW indices
-    static std::unique_ptr<rocksdb::DB> benchmark_db;
-    static rocksdb::ColumnFamilyHandle* benchmark_cf;
-    static std::string rocksdb_temp_dir;
-    
     static void InitializeRocksDB();
     static void CleanupRocksDB();
-    
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file, VecSimType type);
@@ -128,41 +127,6 @@ template <>
 rocksdb::ColumnFamilyHandle* BM_VecSimIndex<fp32_index_t>::benchmark_cf{};
 template <>
 std::string BM_VecSimIndex<fp32_index_t>::rocksdb_temp_dir{};
-
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp64_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle* BM_VecSimIndex<fp64_index_t>::benchmark_cf{};
-template <>
-std::string BM_VecSimIndex<fp64_index_t>::rocksdb_temp_dir{};
-
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<bf16_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle* BM_VecSimIndex<bf16_index_t>::benchmark_cf{};
-template <>
-std::string BM_VecSimIndex<bf16_index_t>::rocksdb_temp_dir{};
-
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp16_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle* BM_VecSimIndex<fp16_index_t>::benchmark_cf{};
-template <>
-std::string BM_VecSimIndex<fp16_index_t>::rocksdb_temp_dir{};
-
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<int8_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle* BM_VecSimIndex<int8_index_t>::benchmark_cf{};
-template <>
-std::string BM_VecSimIndex<int8_index_t>::rocksdb_temp_dir{};
-
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<uint8_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle* BM_VecSimIndex<uint8_index_t>::benchmark_cf{};
-template <>
-std::string BM_VecSimIndex<uint8_index_t>::rocksdb_temp_dir{};
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
@@ -349,14 +313,19 @@ void BM_VecSimIndex<index_type_t>::InitializeRocksDB() {
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::CleanupRocksDB() {
-    if (benchmark_cf) {
-        benchmark_cf = nullptr;
+    // Destroy the disk index BEFORE closing the database
+    // This ensures the index is destroyed while the database is still valid
+    if (indices[INDEX_HNSW_DISK].get() != nullptr) {
+        indices[INDEX_HNSW_DISK] = IndexPtr();
     }
-    
+
     if (benchmark_db) {
-        benchmark_db.reset();
+        benchmark_db.release();
     }
-    
+
+    benchmark_cf = nullptr;
+
+    // Clean up temporary directory
     if (!rocksdb_temp_dir.empty()) {
         try {
             std::filesystem::remove_all(rocksdb_temp_dir);
