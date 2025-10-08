@@ -1877,7 +1877,7 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
 
 TYPED_TEST(SVSTest, testSizeEstimation) {
     size_t dim = 64;
-    auto quantBits = TypeParam::get_quant_bits();
+    auto constexpr quantBits = TypeParam::get_quant_bits();
 #if HAVE_SVS_LVQ
     // SVS block sizes always rounded to a power of 2
     // This why, in case of quantization, actual block size can be differ than requested
@@ -1885,10 +1885,13 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
-        // Extra data in LVQ vector
-        const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
-        dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
+    if constexpr (quantBits != VecSimSvsQuant_NONE) { // constexpr eliminates div-by-zero warning;
+                                                      // inner condition is runtime-only
+        if (!this->isFallbackToSQ()) {
+            // Extra data in LVQ vector
+            const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
+            dim -= (lvq_vector_extra * 8) / quantBits;
+        }
     }
 #endif
     size_t n = 0;

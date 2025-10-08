@@ -118,4 +118,4 @@ const char *VecSimQuantBits_ToString(VecSimSvsQuantBits quantBits);
 size_t VecSimType_sizeof(VecSimType vecsimType);
 
 /** Returns the size in bytes of a stored or query vector */
-size_t VecSimParams_GetDataSize(VecSimType type, size_t dim, VecSimMetric metric);
+size_t VecSimParams_GetStoredDataSize(VecSimType type, size_t dim, VecSimMetric metric);
