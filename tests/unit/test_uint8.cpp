@@ -168,6 +168,7 @@ protected:
     }
 
     virtual void SetUp(TieredIndexParams &tiered_params) override {
+        ASSERT_EQ(tiered_params.primaryIndexParams->algoParams.hnswParams.type, VecSimType_UINT8);
         VecSimParams params = CreateParams(tiered_params);
         index = VecSimIndex_New(&params);
         dim = tiered_params.primaryIndexParams->algoParams.hnswParams.dim;
@@ -296,10 +297,26 @@ TEST_F(UINT8BruteForceTest, elementSizeEstimation) {
 TEST_F(UINT8TieredTest, elementSizeEstimation) {
     size_t M = 64;
     HNSWParams hnsw_params = {.dim = 4, .M = M};
-    VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
-    TieredIndexParams tiered_params =
-        test_utils::CreateTieredParams(vecsim_hnsw_params, this->mock_thread_pool);
-    EXPECT_NO_FATAL_FAILURE(element_size_test(tiered_params));
+    EXPECT_NO_FATAL_FAILURE(element_size_test(hnsw_params));
+}
+
+// ======= Cosine size estimation (stored vectors include additional space for norm)
+TEST_F(UINT8HNSWTest, elementSizeEstimation_Cosine) {
+    size_t M = 64;
+
+    HNSWParams params = {.dim = 4, .metric = VecSimMetric_Cosine, .M = M};
+    EXPECT_NO_FATAL_FAILURE(element_size_test(params));
+}
+
+TEST_F(UINT8BruteForceTest, elementSizeEstimation_Cosine) {
+    BFParams params = {.dim = 4, .metric = VecSimMetric_Cosine};
+    EXPECT_NO_FATAL_FAILURE(element_size_test(params));
+}
+
+TEST_F(UINT8TieredTest, elementSizeEstimation_Cosine) {
+    size_t M = 64;
+    HNSWParams hnsw_params = {.dim = 4, .metric = VecSimMetric_Cosine, .M = M};
+    EXPECT_NO_FATAL_FAILURE(element_size_test(hnsw_params));
 }
 
 /* ---------------------------- Functionality tests ---------------------------- */
