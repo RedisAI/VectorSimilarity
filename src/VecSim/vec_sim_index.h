@@ -345,7 +345,7 @@ template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
                                                          bool force_copy) const {
-    return this->preprocessors->preprocessQuery(queryBlob, inputBlobSize, force_copy);
+    return this->preprocessors->preprocessQuery(queryBlob, storedDataSize, force_copy);
 }
 
 template <typename DataType, typename DistType>
