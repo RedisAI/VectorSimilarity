@@ -17,14 +17,11 @@ ifeq ($(NO_TESTS),1)
 CMAKE_TESTS += -DVECSIM_BUILD_TESTS=off
 endif
 
-ifeq ($(ASAN),1)
-override SAN ?= address
-endif
-
 ifneq ($(SAN),)
 
 ifeq ($(SAN),address)
 override SAN=address
+DEBUG=1
 export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
 CMAKE_SAN=-DUSE_ASAN=ON
 else
@@ -43,19 +40,18 @@ make build
   DEBUG=1          # build debug variant
   COV=1			   # build for code coverage
   VERBOSE=1        # print detailed build info
-  ASAN=1           # build with AddressSanitizer (clang)
-  SAN=type         # build with LLVM sanitizer (type=address)
-  SLOW=1           # don't run build in parallel (for diagnostics)
-  PROFILE=1		   # enable profiling compile flags (and debug symbols) for release type.
+  SAN=address          # build with AddressSanitizer (clang)
+  SLOW=1               # don't run build in parallel (for diagnostics)
+  PROFILE=1            # enable profiling compile flags (and debug symbols) for release type.
 make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
-  ASAN=1             # run tests with AddressSanitizer
+  SAN=address        # run tests with AddressSanitizer
   FP_64=1			# run tests with 64-bit floating point
-make asan          # build with AddressSanitizer and run tests
+make asan            # build with AddressSanitizer and run unit tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
   VERBOSE=1        # print detailed bindings build info
@@ -80,7 +76,7 @@ else
 FLAVOR=release
 endif
 
-ifeq ($(ASAN),1)
+ifeq ($(SAN),address)
 FLAVOR := ${FLAVOR}-asan
 endif
 
@@ -170,7 +166,7 @@ unit_test:
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 asan:
-	$(SHOW)$(MAKE) ASAN=1 unit_test
+	$(SHOW)$(MAKE) SAN=address unit_test
 
 .PHONY: unit_test asan
 
