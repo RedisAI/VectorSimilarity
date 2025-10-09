@@ -16,6 +16,9 @@ on:
       san:
         type: string
 
+env:
+  SAN_VALUE: ${{ inputs.san }}
+
 jobs:
   test:
     name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}
@@ -64,14 +67,13 @@ jobs:
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: unit tests
-        run: make unit_test SAN=${{ inputs.san }} _CTEST_ARGS="-R INT8UNIT_INT8HNSWTest"
+        run: make unit_test SAN="$SAN_VALUE"
       - name: Set test path
         if: ${{ inputs.san  == 'address' && failure() }}
         id: tests-artifact-path
         run: |
           FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
           echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
-
       - name: Archive san tests reports
         if: ${{ inputs.san  == 'address' && failure() }}
         uses: actions/upload-artifact@v4
