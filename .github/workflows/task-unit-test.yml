@@ -65,9 +65,16 @@ jobs:
 
       - name: unit tests
         run: make unit_test SAN=${{ inputs.san }} _CTEST_ARGS="-R INT8UNIT_INT8HNSWTest"
+      - name: Set test path
+        if: ${{ inputs.san  == 'address' && failure() }}
+        id: tests-artifact-path
+        run: |
+          FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
+          echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
+
       - name: Archive san tests reports
-        if: ${{ inputs.san  == 'address'  && failure() }}
+        if: ${{ inputs.san  == 'address' && failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: san tests reports on ${{ steps.artifact-name.outputs.name }}
-          path: bin/Linux-x86_64-debug-asan/unit_tests/Testing/Temporary/
+          path: ${{ steps.tests-artifact-path.outputs.path }}
