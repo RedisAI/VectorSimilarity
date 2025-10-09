@@ -62,6 +62,20 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_safe_directory: true
           disable_search: true
+      - name: Sanitizer tests
+        run: make unit_test SAN=address
+      - name: Set test path
+        if: failure()
+        id: tests-artifact-path
+        run: |
+          FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
+          echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
+      - name: Archive san tests reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: san tests reports on code coverage
+          path: ${{ steps.tests-artifact-path.outputs.path }}
 
   stop-runner:
     name: Stop self-hosted EC2 runner

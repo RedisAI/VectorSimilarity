@@ -40,8 +40,6 @@ jobs:
         run: pip3 install -r requirements.txt
       - name: check format
         run: make check-format
-      - name: address sanitizer tests
-        run: make asan
       - name: unit tests
         run: make unit_test
       - name: flow tests
