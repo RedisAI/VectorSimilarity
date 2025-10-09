@@ -73,4 +73,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: san tests reports on ${{ steps.artifact-name.outputs.name }}
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+          path: bin/Linux-x86_64-debug-asan/unit_tests/Testing/Temporary/
