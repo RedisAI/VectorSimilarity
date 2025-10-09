@@ -28,6 +28,9 @@ jobs:
     steps:
       - name: pre-checkout script
         run: ${{ inputs.pre-checkout-script }}
+      - name: check san alone
+        if: inputs.san == 'address'
+        run: echo "checking inputs.san == 'address'"
       - name: checkout
         uses: actions/checkout@v4
         with:
@@ -66,7 +69,7 @@ jobs:
       - name: unit tests
         run: make unit_test SAN=${{ inputs.san }} _CTEST_ARGS="-R INT8UNIT_INT8HNSWTest"
       - name: Archive san tests reports
-        if: ${{ inputs.san }}
+        if: ${{ inputs.san  == 'address'  && failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: san tests reports on ${{ steps.artifact-name.outputs.name }}
