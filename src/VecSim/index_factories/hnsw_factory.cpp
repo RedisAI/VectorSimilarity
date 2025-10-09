@@ -35,6 +35,8 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
+    void *leak = malloc(sizeof(int));
+    *((int *)leak) = 1;
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
