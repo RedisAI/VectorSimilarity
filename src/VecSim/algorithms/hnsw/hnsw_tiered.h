@@ -179,11 +179,17 @@ public:
 
         ~TieredHNSW_BatchIterator();
 
+        const void *getQueryBlob() const override { return flat_iterator->getQueryBlob(); }
+
         VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override;
 
         bool isDepleted() override;
 
         void reset() override;
+
+#ifdef BUILD_TESTS
+        VecSimBatchIterator *getHNSWIterator() { return hnsw_iterator; }
+#endif
     };
 
 public:
