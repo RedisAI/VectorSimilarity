@@ -13,6 +13,8 @@ on:
       pre-checkout-script:
         description: 'Script to run before checkout'
         type: string
+      san:
+        type: string
 
 jobs:
   test:
@@ -62,4 +64,4 @@ jobs:
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: unit tests
-        run: make unit_test
+        run: make unit_test SAN=${{ inputs.san }}
