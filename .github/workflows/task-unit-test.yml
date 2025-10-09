@@ -28,9 +28,6 @@ jobs:
     steps:
       - name: pre-checkout script
         run: ${{ inputs.pre-checkout-script }}
-      - name: check san alone
-        if: inputs.san == 'address'
-        run: echo "checking inputs.san == 'address'"
       - name: checkout
         uses: actions/checkout@v4
         with:
