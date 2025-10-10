@@ -21,7 +21,7 @@ env:
 
 jobs:
   test:
-    name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}
+    name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}${{ inputs.san && 'sanitizer' || '' }}
     runs-on: ${{ inputs.env }}
     container: ${{ inputs.container || null }}
     defaults:
