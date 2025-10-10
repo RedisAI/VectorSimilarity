@@ -86,6 +86,7 @@ jobs:
   pr-validation:
     needs:
       - basic-tests
+      - sanitizer
       - coverage
       - codeql-analysis
       - spellcheck

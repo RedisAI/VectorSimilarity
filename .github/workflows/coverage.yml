@@ -76,6 +76,7 @@ jobs:
     needs:
       - start-runner
       - codecov
+      - sanitizer
     runs-on: ubuntu-latest
     if: ${{ always() }}
     steps:
