@@ -55,7 +55,7 @@ jobs:
             logs/tests/flow/*.log*
           if-no-files-found: ignore
 
-  sanitize:
+  sanitizer:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       san: address
