@@ -41,7 +41,14 @@ jobs:
   arm:
     uses: ./.github/workflows/arm.yml
     secrets: inherit
-
+  coverage:
+    uses: ./.github/workflows/coverage.yml
+    secrets: inherit
+  sanitizer:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      san: address
+    secrets: inherit
   notify-on-failure:
     needs:
       - benchmark
@@ -56,6 +63,8 @@ jobs:
       - alpine3
       - macos
       - arm
+      - coverage
+      - sanitizer
     runs-on: ubuntu-latest
     if: failure()
     steps:
