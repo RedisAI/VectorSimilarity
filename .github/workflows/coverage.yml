@@ -63,20 +63,26 @@ jobs:
           disable_safe_directory: true
           disable_search: true
 
-  sanitizer:
-    name: Sanitizer tests
-    needs: start-runner # required to start the main job when the runner is ready
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      env: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
-      san: address
+      - name: Sanitizer tests
+        run: make asan
+      - name: Set test path
+        if: failure()
+        id: tests-artifact-path
+        run: |
+          FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
+          echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
+      - name: Archive san tests reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: san tests reports on intel
+          path: ${{ steps.tests-artifact-path.outputs.path }}
 
   stop-runner:
     name: Stop self-hosted EC2 runner
     needs:
       - start-runner
       - codecov
-      - sanitizer
     runs-on: ubuntu-latest
     if: ${{ always() }}
     steps:
