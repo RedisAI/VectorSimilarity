@@ -2372,12 +2372,12 @@ TYPED_TEST(SVSTieredIndexTest, testCreateWithDefaultTieredSVSParams) {
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
     // Validate tiered svs info fields
     constexpr size_t expected_training_threshold =
-        TypeParam::get_quant_bits() == VecSimSvsQuant_NONE ? SVS_DEFAULT_UPDATE_THRESHOLD
+        TypeParam::get_quant_bits() == VecSimSvsQuant_NONE ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
                                                            : SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD;
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold,
               expected_training_threshold);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold,
-              SVS_DEFAULT_UPDATE_THRESHOLD);
+              SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime,
               SVS_DEFAULT_UPDATE_JOB_WAIT_TIME);
 }
