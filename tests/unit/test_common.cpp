@@ -36,6 +36,7 @@
 #include <random>
 #include <cstdarg>
 #include <filesystem>
+#include <timeout_guard.h>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -1022,22 +1023,8 @@ TEST(CommonAPITest, testSetTestLogContext) {
 TEST(UtilsTests, testMockThreadPool) {
     const size_t num_repeats = 2;
     const size_t num_submissions = 200;
-    // 100 seconds timeout for the test should be enough for CI MemoryChecks
-    std::chrono::seconds test_timeout(100);
 
     auto TestBody = [=]() {
-        // Protection against test deadlock is implemented by a thread which exits process if
-        // condition variable is not notified within a timeout.
-        std::mutex mtx;
-        std::condition_variable cv;
-        auto guard_thread = std::thread([&]() {
-            std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(lock, test_timeout) == std::cv_status::timeout) {
-                std::cerr << "Test timeout! Exiting..." << std::endl;
-                std::exit(-1);
-            }
-        });
-
         // Create and test a mock thread pool several times
         for (size_t i = 0; i < num_repeats; i++) {
             // Create a mock thread pool and verify its properties
@@ -1097,11 +1084,7 @@ TEST(UtilsTests, testMockThreadPool) {
             mock_thread_pool.thread_pool_join();
         }
 
-        // Notify the guard thread that the test is done
-        cv.notify_one();
-        guard_thread.join();
         std::cerr << "Success" << std::endl;
-        std::exit(testing::Test::HasFailure() ? -1 : 0); // Exit with failure if any test failed
     };
 
     EXPECT_EXIT(TestBody(), ::testing::ExitedWithCode(0), "Success");
