@@ -824,6 +824,79 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     }
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    constexpr size_t n = 10;
+    constexpr size_t transfer_trigger = n;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = 1};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, transfer_trigger,
+                                                    transfer_trigger);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+    }
+    // Vectors are still in the flat buffer.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    // Override a vector while in the flat buffer
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+
+    // Move vectors to the backend
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+
+    // Override a vector while in the backend
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+
+    // Delete the overriden vector
+    VecSimIndex_DeleteVector(tiered_index, 1);
+    ASSERT_EQ(tiered_index->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+
+    // Delete another arbirtrary vector
+    VecSimIndex_DeleteVector(tiered_index, 0);
+    ASSERT_EQ(tiered_index->indexSize(), n - 2);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 2);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+
+    // Empty Index
+    for (size_t i = 2; i < n; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
+    }
+
+    // Consolidate should be triggered and mark deleted count should be zeroed.
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
@@ -2556,6 +2629,8 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     // Validate that the vector is removed in place.
     tiered_index->deleteVector(vec_label);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 }
 
 TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
@@ -2728,6 +2803,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     for (size_t i = 0; i < threshold; i++) {
         tiered_index->deleteVector(i);
     }
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), threshold);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, threshold);
+
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
@@ -2744,6 +2822,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     auto size_after_gc = tiered_index->getAllocationSize();
     // Expect that the size of the index was reduced.
     ASSERT_LT(size_after_gc, size_before_gc);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {

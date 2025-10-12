@@ -139,7 +139,7 @@ public:
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
                this->frontendIndex->getAllocationSize();
     }
-
+    virtual size_t getNumMarkedDeleted() const = 0;
     size_t indexLabelCount() const override;
     VecSimIndexStatsInfo statisticInfo() const override;
     virtual VecSimIndexDebugInfo debugInfo() const override;
@@ -319,13 +319,8 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() const {
     auto stats = VecSimIndexStatsInfo{
         .memory = this->getAllocationSize(),
-        .numberOfMarkedDeleted = 0, // Default value if cast fails
+        .numberOfMarkedDeleted = this->getNumMarkedDeleted(),
     };
-
-    // If backend implements VecSimIndexTombstone, get number of marked deleted
-    if (auto tombstone = dynamic_cast<VecSimIndexTombstone *>(this->backendIndex)) {
-        stats.numberOfMarkedDeleted = tombstone->getNumMarkedDeleted();
-    }
 
     return stats;
 }

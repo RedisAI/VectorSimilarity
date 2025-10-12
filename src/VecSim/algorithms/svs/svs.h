@@ -35,7 +35,7 @@ struct SVSIndexBase
     : public SVSSerializer
 #endif
 {
-
+    SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
@@ -44,9 +44,14 @@ struct SVSIndexBase
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
+    size_t getNumMarkedDeleted() const { return num_marked_deleted; }
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
+protected:
+    // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
+    // markIndexUpdate() manages this counter
+    size_t num_marked_deleted;
 };
 
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
@@ -71,10 +76,6 @@ protected:
         svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
 
     bool forcePreprocessing;
-
-    // Index severe changes counter to initiate reindexing if number of changes exceed threshold
-    // markIndexUpdated() manages this counter
-    size_t changes_num;
 
     // Index build parameters
     svs::index::vamana::VamanaBuildParameters buildParams;
@@ -273,7 +274,7 @@ protected:
         return deleted_num;
     }
 
-    // Count severe index changes (currently deletions only) and consolidate index if needed
+    // Count deletions and consolidate index if needed
     void markIndexUpdate(size_t n = 1) {
         if (!impl_)
             return;
@@ -281,18 +282,19 @@ protected:
         // SVS index instance should not be empty
         if (indexSize() == 0) {
             this->impl_.reset();
-            changes_num = 0;
+            num_marked_deleted = 0;
             return;
         }
 
-        changes_num += n;
+        num_marked_deleted += n;
         // consolidate index if number of changes bigger than 50% of index size
         const float consolidation_threshold = .5f;
         // indexSize() should not be 0 see above lines
         assert(indexSize() > 0);
-        if (static_cast<float>(changes_num) / indexSize() > consolidation_threshold) {
+        // Note: if this function is called after deleteVectorsImpl, indexSize is already updated
+        if (static_cast<float>(num_marked_deleted) / indexSize() > consolidation_threshold) {
             impl_->consolidate();
-            changes_num = 0;
+            num_marked_deleted = 0;
         }
     }
 
@@ -312,7 +314,7 @@ public:
     SVSIndex(const SVSParams &params, const AbstractIndexInitParams &abstractInitParams,
              const index_component_t &components, bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
-          changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
+          buildParams{svs_details::makeVamanaBuildParameters(params)},
           search_window_size{svs_details::getOrDefault(params.search_window_size,
                                                        SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE)},
           search_buffer_capacity{
@@ -373,7 +375,7 @@ public:
                           .pruneTo = this->buildParams.prune_to,
                           .useSearchHistory = this->buildParams.use_full_search_history,
                           .numThreads = this->getNumThreads(),
-                          .numberOfMarkedDeletedNodes = this->changes_num,
+                          .numberOfMarkedDeletedNodes = this->num_marked_deleted,
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
                           .leanvecDim = this->leanvec_dim,
@@ -673,7 +675,7 @@ public:
             // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
             impl_->compact();
         }
-        changes_num = 0;
+        num_marked_deleted = 0;
     }
 
 #ifdef BUILD_TESTS
