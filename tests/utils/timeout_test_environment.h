@@ -31,7 +31,7 @@ public:
      */
     template <typename Rep, typename Period>
     explicit TimeoutTestListener(std::chrono::duration<Rep, Period> default_timeout)
-        : default_timeout_seconds_(
+        : default_timeout_seconds(
               std::chrono::duration_cast<std::chrono::seconds>(default_timeout).count()) {}
 
     /**
@@ -42,9 +42,9 @@ public:
         auto timeout = GetTimeoutForTest(test_info);
 
         // Create timeout guard for this test
-        current_guard_ = std::make_unique<TimeoutGuard>(timeout, [&test_info]() {
-            std::cerr << "TIMEOUT: Test " << test_info.test_suite_name() << "."
-                      << test_info.name() << " exceeded timeout!" << std::endl;
+        current_guard = std::make_unique<TimeoutGuard>(timeout, [&test_info]() {
+            std::cerr << "TIMEOUT: Test " << test_info.test_suite_name() << "." << test_info.name()
+                      << " exceeded timeout!" << std::endl;
             std::exit(-1);
         });
     }
@@ -54,9 +54,9 @@ public:
      */
     void OnTestEnd(const testing::TestInfo & /*test_info*/) override {
         // Notify and destroy the guard
-        if (current_guard_) {
-            current_guard_->notify();
-            current_guard_.reset();
+        if (current_guard) {
+            current_guard->notify();
+            current_guard.reset();
         }
     }
 
@@ -69,45 +69,17 @@ private:
      */
     std::chrono::seconds GetTimeoutForTest(const testing::TestInfo &test_info) {
         // Default timeout
-        auto timeout = std::chrono::seconds(default_timeout_seconds_);
+        auto timeout = std::chrono::seconds(default_timeout_seconds);
 
         // Customize timeout based on test characteristics
         std::string test_name = test_info.name();
         std::string suite_name = test_info.test_suite_name();
 
-        // // Example: Longer timeout for thread pool tests
-        // if (suite_name.find("Thread") != std::string::npos ||
-        //     test_name.find("thread") != std::string::npos ||
-        //     test_name.find("Thread") != std::string::npos ||
-        //     test_name.find("parallel") != std::string::npos ||
-        //     test_name.find("Parallel") != std::string::npos) {
-        //     timeout = std::chrono::seconds(100);
-        // }
-
-        // // Example: Longer timeout for tiered index tests
-        // if (suite_name.find("Tiered") != std::string::npos ||
-        //     test_name.find("tiered") != std::string::npos) {
-        //     timeout = std::chrono::seconds(120);
-        // }
-
-        // // Example: Longer timeout for SVS tests
-        // if (suite_name.find("SVS") != std::string::npos || suite_name.find("Svs") != std::string::npos) {
-        //     timeout = std::chrono::seconds(150);
-        // }
-
-#ifdef RUNNING_ON_VALGRIND
-        // Triple timeout for Valgrind
-        timeout *= 3;
-#elif defined(USE_ASAN) || defined(USE_MSAN)
-        // Double timeout for sanitizers
-        timeout *= 2;
-#endif
-
         return timeout;
     }
 
-    int default_timeout_seconds_;
-    std::unique_ptr<TimeoutGuard> current_guard_;
+    int default_timeout_seconds;
+    std::unique_ptr<TimeoutGuard> current_guard;
 };
 
 /**
@@ -124,4 +96,3 @@ inline void RegisterGlobalTimeoutListener(std::chrono::duration<Rep, Period> def
 }
 
 } // namespace test_utils
-

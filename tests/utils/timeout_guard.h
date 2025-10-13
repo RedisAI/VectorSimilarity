@@ -24,34 +24,6 @@ namespace test_utils {
  * This class creates a background thread that monitors execution time. If the timeout expires
  * before the guard is destroyed (or explicitly notified), it will call the configured action
  * (default: exit the process with error code).
- *
- * Usage patterns:
- *
- * 1. Simple timeout with default exit behavior:
- *    {
- *        TimeoutGuard guard(std::chrono::seconds(30));
- *        // ... test code ...
- *    } // Guard destroyed, timeout cancelled
- *
- * 2. Explicit notification (for complex control flow):
- *    TimeoutGuard guard(std::chrono::seconds(30));
- *    // ... test code ...
- *    guard.notify(); // Cancel timeout early
- *
- * 3. Custom timeout action:
- *    TimeoutGuard guard(std::chrono::seconds(30), []() {
- *        std::cerr << "Custom timeout handler!" << std::endl;
- *        std::abort();
- *    });
- *
- * 4. With Google Test EXPECT_EXIT:
- *    auto test_body = []() {
- *        TimeoutGuard guard(std::chrono::seconds(30));
- *        // ... test code ...
- *        guard.notify();
- *        std::exit(0);
- *    };
- *    EXPECT_EXIT(test_body(), ::testing::ExitedWithCode(0), "");
  */
 class TimeoutGuard {
 public:
@@ -64,20 +36,21 @@ public:
     template <typename Rep, typename Period>
     explicit TimeoutGuard(
         std::chrono::duration<Rep, Period> timeout,
-        std::function<void()> on_timeout = []() {
-            std::cerr << "TimeoutGuard: Test/Benchmark timeout! Exiting..." << std::endl;
-            std::exit(-1);
-        })
-        : timeout_action_(std::move(on_timeout)), timed_out_(false), notified_(false) {
+        std::function<void()> on_timeout =
+            []() {
+                std::cerr << "TimeoutGuard: Test/Benchmark timeout! Exiting..." << std::endl;
+                std::exit(-1);
+            })
+        : timeout_action(std::move(on_timeout)), is_timed_out(false), notified(false) {
 
-        guard_thread_ = std::thread([this, timeout]() {
-            std::unique_lock<std::mutex> lock(mutex_);
+        guard_thread = std::thread([this, timeout]() {
+            std::unique_lock<std::mutex> lock(mutex);
             // Wait with predicate to handle spurious wakeups correctly
             // Returns false if timeout expired, true if notified
-            if (!cv_.wait_for(lock, timeout, [this]() { return notified_; })) {
+            if (!cv.wait_for(lock, timeout, [this]() { return notified; })) {
                 // Timeout expired and not notified
-                timed_out_ = true;
-                timeout_action_();
+                is_timed_out = true;
+                timeout_action();
             }
         });
     }
@@ -86,11 +59,11 @@ public:
      * @brief Destructor - notifies the guard thread and waits for it to finish.
      */
     ~TimeoutGuard() {
-        if (!notified_) {
+        if (!notified) {
             notify();
         }
-        if (guard_thread_.joinable()) {
-            guard_thread_.join();
+        if (guard_thread.joinable()) {
+            guard_thread.join();
         }
     }
 
@@ -107,29 +80,21 @@ public:
      * Safe to call multiple times.
      */
     void notify() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!notified_) {
-            notified_ = true;
-            cv_.notify_one();
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!notified) {
+            notified = true;
+            cv.notify_one();
         }
     }
 
-    /**
-     * @brief Check if the timeout was triggered.
-     *
-     * @return true if timeout occurred, false otherwise
-     */
-    bool timed_out() const { return timed_out_; }
-
 private:
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    std::thread guard_thread_;
-    std::function<void()> timeout_action_;
-    bool timed_out_;
-    bool notified_;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::thread guard_thread;
+    std::function<void()> timeout_action;
+    bool is_timed_out;
+    bool notified;
 };
-
 
 /**
  * @brief Specialized timeout guard for benchmarks with a simpler API.
@@ -157,4 +122,3 @@ public:
 };
 
 } // namespace test_utils
-

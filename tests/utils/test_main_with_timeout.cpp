@@ -29,4 +29,3 @@ int main(int argc, char **argv) {
     // Run all tests
     return RUN_ALL_TESTS();
 }
-
