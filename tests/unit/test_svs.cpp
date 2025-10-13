@@ -182,6 +182,7 @@ TYPED_TEST(SVSTest, svs_vector_update_test) {
     // Delete the last vector.
     VecSimIndex_DeleteVector(index, 1);
     EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -261,9 +262,19 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     // Delete almost all vectors
+    // First delete small amount of vector to prevent consolidation.
+    const size_t first_batch_deletion = 10;
+    ASSERT_EQ(svs_index->deleteVectors(ids.data(), first_batch_deletion), first_batch_deletion);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - first_batch_deletion);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), first_batch_deletion);
+
+    // Now delete enough vectors to trigger consolidation.
     const size_t keep_num = 1;
-    ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
+    ASSERT_EQ(svs_index->deleteVectors(ids.data() + first_batch_deletion,
+                                       n - keep_num - first_batch_deletion),
+              n - keep_num - first_batch_deletion);
     ASSERT_EQ(VecSimIndex_IndexSize(index), keep_num);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -3012,7 +3023,7 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
     for (size_t i = 0; i < 10; i++) {
         index->addVector(v[i].data(), ids[i]);
     }
-
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 10);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};

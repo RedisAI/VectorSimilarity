@@ -726,6 +726,9 @@ public:
         assert(ret <= 2 && "unexpected deleteVector result");
         return ret;
     }
+    size_t getNumMarkedDeleted() const override {
+        return this->GetSVSIndex()->getNumMarkedDeleted();
+    }
 
     size_t indexSize() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);

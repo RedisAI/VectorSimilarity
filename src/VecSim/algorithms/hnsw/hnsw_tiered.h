@@ -201,6 +201,9 @@ public:
 
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
+    size_t getNumMarkedDeleted() const override {
+        return this->getHNSWIndex()->getNumMarkedDeleted();
+    }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
