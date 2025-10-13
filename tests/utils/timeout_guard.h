@@ -132,18 +132,19 @@ private:
 
 
 /**
- * @brief Scoped timeout guard for benchmarks.
+ * @brief Specialized timeout guard for benchmarks with a simpler API.
  *
- * Unlike the test version, this doesn't use EXPECT_EXIT and is suitable for
- * Google Benchmark fixtures.
+ * This is a convenience wrapper around TimeoutGuard specifically for Google Benchmark.
+ * It provides:
+ * - Simpler constructor (only requires timeout duration, no custom action needed)
+ * - Benchmark-specific error message on timeout
+ * - Clear intent that this is for benchmarks
  *
- * Usage in benchmark:
- *   BENCHMARK_F(MyBenchmark, BM_Operation)(benchmark::State& state) {
- *       BenchmarkTimeoutGuard guard(std::chrono::minutes(5));
- *       for (auto _ : state) {
- *           // ... benchmark code ...
- *       }
- *   }
+ * Functionally identical to TimeoutGuard with default parameters, but with better
+ * clarity and a more convenient API for benchmark use cases.
+ *
+ * Note: TimeoutGuard can also be used in benchmarks if you need custom timeout behavior.
+ * This class is just a convenience wrapper for the common case.
  */
 class BenchmarkTimeoutGuard : public TimeoutGuard {
 public:

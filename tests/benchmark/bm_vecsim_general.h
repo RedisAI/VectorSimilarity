@@ -15,6 +15,7 @@
 #include <thread>
 #include <condition_variable>
 #include <bitset>
+#include <memory>
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_interface.h"
 #include "VecSim/vec_sim_tiered_index.h"
@@ -53,10 +54,18 @@ protected:
     static const char *test_queries_file;
 
 private:
-    test_utils::BenchmarkTimeoutGuard timeout_guard_;
+    std::unique_ptr<test_utils::BenchmarkTimeoutGuard> timeout_guard_;
 
 public:
-    BM_VecSimGeneral() : timeout_guard_(std::chrono::minutes(10)) {}
+    BM_VecSimGeneral() = default;
+
+    void SetUp(const benchmark::State& state) override {
+        timeout_guard_ = std::make_unique<test_utils::BenchmarkTimeoutGuard>(std::chrono::minutes(10));
+    }
+
+    void TearDown(const benchmark::State& state) override {
+        timeout_guard_.reset(); // Destroy the guard and cancel the timeout
+    }
     virtual ~BM_VecSimGeneral() {
         if (mock_thread_pool) {
             delete mock_thread_pool;
