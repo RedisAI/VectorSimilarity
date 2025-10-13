@@ -215,7 +215,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             size_t total = n_vectors;
             std::cerr << "[Init] Populating HNSWDiskIndex with " << total << " vectors..." << std::endl;
             auto t0 = clock::now();
-            size_t print_every = std::max<size_t>(size_t(1000), total / 100); // ~1% or 10k, whichever larger
+            size_t print_every = std::max<size_t>(size_t(1000), total / 20); // ~5% or 10k, whichever larger
             for (size_t i = 0; i < total; ++i) {
                 const char *blob = GetHNSWDataByInternalId(i);
                 size_t label = hnsw_index->getExternalLabel(i);
@@ -226,15 +226,20 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                     double elapsed_s = std::max<double>(1e-6, elapsed_ms / 1000.0);
                     double rate = (double)(i + 1) / elapsed_s; // vectors/sec
                     size_t pct = ((i + 1) * 100) / total;
-                    std::cerr << "[Init] HNSWDiskIndex population " << pct << "% ("
+                    std::cerr << "[Init " << elapsed_s << "s] HNSWDiskIndex population " << pct << "% ("
                               << (i + 1) << "/" << total << ") "
                               << (size_t)rate << " vec/s" << std::endl;
                 }
             }
             auto t1 = clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::seconds>(t1 - t0).count();
+            int hours = duration / 3600;
+            int minutes = (duration % 3600) / 60;
+            int seconds = duration % 60;
             std::cerr << "[Init] HNSWDiskIndex population done in "
-                      << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()
-                      << " ms" << std::endl;
+                      << std::setfill('0') << std::setw(2) << hours << ":"
+                      << std::setfill('0') << std::setw(2) << minutes << ":"
+                      << std::setfill('0') << std::setw(2) << seconds << std::endl;
         }
     }
 
