@@ -75,25 +75,25 @@ private:
         std::string test_name = test_info.name();
         std::string suite_name = test_info.test_suite_name();
 
-        // Example: Longer timeout for thread pool tests
-        if (suite_name.find("Thread") != std::string::npos ||
-            test_name.find("thread") != std::string::npos ||
-            test_name.find("Thread") != std::string::npos ||
-            test_name.find("parallel") != std::string::npos ||
-            test_name.find("Parallel") != std::string::npos) {
-            timeout = std::chrono::seconds(100);
-        }
+        // // Example: Longer timeout for thread pool tests
+        // if (suite_name.find("Thread") != std::string::npos ||
+        //     test_name.find("thread") != std::string::npos ||
+        //     test_name.find("Thread") != std::string::npos ||
+        //     test_name.find("parallel") != std::string::npos ||
+        //     test_name.find("Parallel") != std::string::npos) {
+        //     timeout = std::chrono::seconds(100);
+        // }
 
-        // Example: Longer timeout for tiered index tests
-        if (suite_name.find("Tiered") != std::string::npos ||
-            test_name.find("tiered") != std::string::npos) {
-            timeout = std::chrono::seconds(120);
-        }
+        // // Example: Longer timeout for tiered index tests
+        // if (suite_name.find("Tiered") != std::string::npos ||
+        //     test_name.find("tiered") != std::string::npos) {
+        //     timeout = std::chrono::seconds(120);
+        // }
 
-        // Example: Longer timeout for SVS tests
-        if (suite_name.find("SVS") != std::string::npos || suite_name.find("Svs") != std::string::npos) {
-            timeout = std::chrono::seconds(150);
-        }
+        // // Example: Longer timeout for SVS tests
+        // if (suite_name.find("SVS") != std::string::npos || suite_name.find("Svs") != std::string::npos) {
+        //     timeout = std::chrono::seconds(150);
+        // }
 
 #ifdef RUNNING_ON_VALGRIND
         // Triple timeout for Valgrind

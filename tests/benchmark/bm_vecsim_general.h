@@ -25,6 +25,7 @@
 #include "bm_definitions.h"
 #include "bm_macros.h"
 #include "utils/mock_thread_pool.h"
+#include "utils/timeout_guard.h"
 
 // This class includes every static data member that is:
 // 1. Common for all data type data sets.
@@ -51,7 +52,11 @@ protected:
     static const char *hnsw_index_file;
     static const char *test_queries_file;
 
-    BM_VecSimGeneral() = default;
+private:
+    test_utils::BenchmarkTimeoutGuard timeout_guard_;
+
+public:
+    BM_VecSimGeneral() : timeout_guard_(std::chrono::minutes(10)) {}
     virtual ~BM_VecSimGeneral() {
         if (mock_thread_pool) {
             delete mock_thread_pool;

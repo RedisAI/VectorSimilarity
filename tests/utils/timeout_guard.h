@@ -72,7 +72,10 @@ public:
 
         guard_thread_ = std::thread([this, timeout]() {
             std::unique_lock<std::mutex> lock(mutex_);
-            if (cv_.wait_for(lock, timeout) == std::cv_status::timeout) {
+            // Wait with predicate to handle spurious wakeups correctly
+            // Returns false if timeout expired, true if notified
+            if (!cv_.wait_for(lock, timeout, [this]() { return notified_; })) {
+                // Timeout expired and not notified
                 timed_out_ = true;
                 timeout_action_();
             }
@@ -127,63 +130,6 @@ private:
     bool notified_;
 };
 
-/**
- * @brief Helper macro for wrapping test bodies with timeout protection.
- *
- * This macro is useful for tests that need timeout protection with EXPECT_EXIT.
- *
- * Usage:
- *   TEST(MyTest, TestWithTimeout) {
- *       auto test_body = []() {
- *           TIMEOUT_GUARD_SCOPE(std::chrono::seconds(30)) {
- *               // ... test code ...
- *           }
- *       };
- *       EXPECT_EXIT(test_body(), ::testing::ExitedWithCode(0), "Success");
- *   }
- */
-#define TIMEOUT_GUARD_SCOPE(duration)                                                              \
-    test_utils::TimeoutGuard timeout_guard_##__LINE__(                                             \
-        duration, []() {                                                                           \
-            std::cerr << "Test timeout at " << __FILE__ << ":" << __LINE__ << std::endl;          \
-            std::exit(-1);                                                                         \
-        });                                                                                        \
-    if (true)
-
-/**
- * @brief Helper function to wrap a test body with timeout and EXPECT_EXIT.
- *
- * This is a convenience function that combines TimeoutGuard with EXPECT_EXIT pattern.
- *
- * @param test_body The test function to execute
- * @param timeout Duration to wait before timeout
- * @param success_message Expected message on success (for EXPECT_EXIT)
- *
- * Usage:
- *   TEST(MyTest, TestWithTimeout) {
- *       RUN_WITH_TIMEOUT([]() {
- *           // ... test code ...
- *       }, std::chrono::seconds(30), "Success");
- *   }
- */
-template <typename TestFunc, typename Rep, typename Period>
-inline void RunWithTimeout(TestFunc test_body, std::chrono::duration<Rep, Period> timeout,
-                           const char *success_message = "Success") {
-    auto wrapped_body = [test_body, timeout, success_message]() {
-        TimeoutGuard guard(timeout);
-        test_body();
-        guard.notify();
-        std::cerr << success_message << std::endl;
-        std::exit(testing::Test::HasFailure() ? -1 : 0);
-    };
-
-#ifdef GTEST_API_
-    EXPECT_EXIT(wrapped_body(), ::testing::ExitedWithCode(0), success_message);
-#else
-    // If not using GTest, just run the body directly
-    wrapped_body();
-#endif
-}
 
 /**
  * @brief Scoped timeout guard for benchmarks.

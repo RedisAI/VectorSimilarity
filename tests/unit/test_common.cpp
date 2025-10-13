@@ -1015,7 +1015,8 @@ TEST(CommonAPITest, testSetTestLogContext) {
             break;
         }
     }
-
+    // sleep for 20 seconds
+    // std::this_thread::sleep_for(std::chrono::seconds(5));
     ASSERT_TRUE(found) << "Log message not found in log file: " << log_file;
     VecSimIndex_Free(index);
 }
