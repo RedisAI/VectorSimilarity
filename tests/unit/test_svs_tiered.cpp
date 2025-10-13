@@ -60,18 +60,19 @@ template <typename index_type_t>
 class SVSTieredIndexTest : public ::testing::Test {
 public:
     using data_t = typename index_type_t::data_t;
-    static const size_t defaultTrainingThreshold = 1024;
-    static const size_t defaultUpdateThreshold = 16;
+    static const size_t TestsDefaultTrainingThreshold = 1024;
+    static const size_t TestsDefaultUpdateThreshold = 16;
 
 protected:
     TieredSVSIndex<data_t> *CastToTieredSVS(VecSimIndex *index) {
         return reinterpret_cast<TieredSVSIndex<data_t> *>(index);
     }
 
-    TieredIndexParams CreateTieredSVSParams(VecSimParams &svs_params,
-                                            tieredIndexMock &mock_thread_pool,
-                                            size_t training_threshold = defaultTrainingThreshold,
-                                            size_t update_threshold = defaultUpdateThreshold) {
+    TieredIndexParams
+    CreateTieredSVSParams(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
+                          size_t training_threshold = TestsDefaultTrainingThreshold,
+                          size_t update_threshold = TestsDefaultUpdateThreshold,
+                          size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
         trainingThreshold = training_threshold;
         updateThreshold = update_threshold;
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
@@ -85,7 +86,8 @@ protected:
             .primaryIndexParams = &svs_params,
             .specificParams = {.tieredSVSParams =
                                    TieredSVSParams{.trainingTriggerThreshold = training_threshold,
-                                                   .updateTriggerThreshold = update_threshold}}};
+                                                   .updateTriggerThreshold = update_threshold,
+                                                   .updateJobWaitTime = update_job_wait_time}}};
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
@@ -101,11 +103,13 @@ protected:
 
     TieredSVSIndex<data_t> *
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
-                         size_t training_threshold = defaultTrainingThreshold,
-                         size_t update_threshold = defaultUpdateThreshold) {
+                         size_t training_threshold = TestsDefaultTrainingThreshold,
+                         size_t update_threshold = TestsDefaultUpdateThreshold,
+                         size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
-        TieredIndexParams tiered_params = CreateTieredSVSParams(
-            svs_params, mock_thread_pool, training_threshold, update_threshold);
+        TieredIndexParams tiered_params =
+            CreateTieredSVSParams(svs_params, mock_thread_pool, training_threshold,
+                                  update_threshold, update_job_wait_time);
         return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
 
@@ -128,8 +132,8 @@ protected:
     size_t getUpdateThreshold() const { return updateThreshold; }
 
 private:
-    size_t trainingThreshold = defaultTrainingThreshold;
-    size_t updateThreshold = defaultUpdateThreshold;
+    size_t trainingThreshold = TestsDefaultTrainingThreshold;
+    size_t updateThreshold = TestsDefaultUpdateThreshold;
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -2035,6 +2039,33 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
     }
 }
 
+TYPED_TEST(SVSTieredIndexTest, testCreateWithDefaultTieredSVSParams) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Build with default specificTieredBackendInfo.svsTieredInfo params
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 0, 0, 0);
+    ASSERT_INDEX(tiered_index);
+
+    VecSimIndexDebugInfo info = tiered_index->debugInfo();
+    // Validate tiered svs info fields
+    constexpr size_t expected_training_threshold =
+        TypeParam::get_quant_bits() == VecSimSvsQuant_NONE ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
+                                                           : SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD;
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold,
+              expected_training_threshold);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold,
+              SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime,
+              SVS_DEFAULT_UPDATE_JOB_WAIT_TIME);
+}
+
 TYPED_TEST(SVSTieredIndexTest, testInfo) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
@@ -2043,7 +2074,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -2072,8 +2103,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     // Validate tiered svs info fields
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold, 1);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold, 1);
-    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime,
-              SVS_DEFAULT_UPDATE_JOB_WAIT_TIME);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime, 1);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.indexUpdateScheduled, false);
 
     // Validate that Static info returns the right restricted info as well.

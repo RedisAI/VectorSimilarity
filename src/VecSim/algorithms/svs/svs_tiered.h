@@ -594,21 +594,25 @@ public:
           uncompletedJobs(this->allocator) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
-        this->trainingTriggerThreshold =
-            tiered_svs_params.trainingTriggerThreshold == 0
-                ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
-                : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
-
         // If flatBufferLimit is not initialized (0), use the default update threshold.
         const size_t flat_buffer_bound = tiered_index_params.flatBufferLimit == 0
-                                             ? SVS_DEFAULT_UPDATE_THRESHOLD
+                                             ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
                                              : tiered_index_params.flatBufferLimit;
 
         this->updateTriggerThreshold =
             tiered_svs_params.updateTriggerThreshold == 0
-                ? SVS_DEFAULT_UPDATE_THRESHOLD
+                ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
                 : std::min({tiered_svs_params.updateTriggerThreshold, flat_buffer_bound,
-                            SVS_DEFAULT_UPDATE_THRESHOLD});
+                            static_cast<size_t>(SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD)});
+
+        const size_t default_training_threshold = this->GetSVSIndex()->isCompressed()
+                                                      ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
+                                                      : this->updateTriggerThreshold;
+
+        this->trainingTriggerThreshold =
+            tiered_svs_params.trainingTriggerThreshold == 0
+                ? default_training_threshold
+                : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
 
         this->updateJobWaitTime = tiered_svs_params.updateJobWaitTime == 0
                                       ? SVS_DEFAULT_UPDATE_JOB_WAIT_TIME
