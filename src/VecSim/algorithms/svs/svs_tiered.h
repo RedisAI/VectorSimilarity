@@ -666,11 +666,9 @@ public:
                 : std::min({tiered_svs_params.updateTriggerThreshold, flat_buffer_bound,
                             static_cast<size_t>(SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD)});
 
-        const size_t default_training_threshold =
-            tiered_index_params.primaryIndexParams->algoParams.svsParams.quantBits ==
-                    VecSimSvsQuant_NONE
-                ? this->updateTriggerThreshold
-                : SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD;
+        const size_t default_training_threshold = this->GetSVSIndex()->isCompressed()
+                                                      ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
+                                                      : this->updateTriggerThreshold;
 
         this->trainingTriggerThreshold =
             tiered_svs_params.trainingTriggerThreshold == 0
