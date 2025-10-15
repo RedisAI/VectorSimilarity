@@ -64,7 +64,7 @@ jobs:
           disable_search: true
 
       - name: Sanitizer tests
-        run: make asan
+        run: rm -rf bin && make asan
       - name: Set test path
         if: failure()
         id: tests-artifact-path
