@@ -61,6 +61,7 @@ protected:
         params.quantBits = params.quantBits == VecSimSvsQuant_NONE ? index_type_t::get_quant_bits()
                                                                    : params.quantBits;
         params.type = index_type_t::get_index_type();
+        params.multi = params.multi == 0 ? false : params.multi;
     }
 
     void SetUp() override {
