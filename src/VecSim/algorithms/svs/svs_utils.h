@@ -26,8 +26,6 @@
 
 // Maximum training threshold for SVS index, used to limit the size of training data
 constexpr size_t SVS_MAX_TRAINING_THRESHOLD = 100 * DEFAULT_BLOCK_SIZE; // 100 * 1024 vectors
-// Default batch update threshold for SVS index.
-constexpr size_t SVS_DEFAULT_UPDATE_THRESHOLD = 1 * DEFAULT_BLOCK_SIZE; // 1 * 1024 vectors
 // Default wait time for the update job in microseconds
 constexpr size_t SVS_DEFAULT_UPDATE_JOB_WAIT_TIME = 100; // 0.1 ms
 
@@ -221,17 +219,22 @@ struct SVSStorageTraits {
         return VecSimSvsQuant_NONE; // No compression for this storage
     }
 
+    static blocked_type make_blocked_allocator(size_t block_size, size_t dim,
+                                               std::shared_ptr<VecSimAllocator> allocator) {
+        // SVS storage element size and block size can be differ than VecSim
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        allocator_type data_allocator{std::move(allocator)};
+        return blocked_type{{svs_bs}, data_allocator};
+    }
+
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
     static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
                                              std::shared_ptr<VecSimAllocator> allocator,
                                              size_t /* leanvec_dim */) {
         const auto dim = data.dimensions();
         const auto size = data.size();
-        // SVS storage element size and block size can be differ than VecSim
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
         // Allocate initial SVS storage for index
-        allocator_type data_allocator{std::move(allocator)};
-        blocked_type blocked_alloc{{svs_bs}, data_allocator};
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
         index_storage_type init_data{size, dim, blocked_alloc};
         // Copy data to allocated storage
         svs::threads::parallel_for(pool, svs::threads::StaticPartition(data.eachindex()),
@@ -241,6 +244,20 @@ struct SVSStorageTraits {
                                        }
                                    });
         return init_data;
+    }
+
+    static index_storage_type load(const svs::lib::LoadTable &table, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return index_storage_type::load(table, blocked_alloc);
+    }
+
+    static index_storage_type load(const std::string &path, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return index_storage_type::load(path, blocked_alloc);
     }
 
     // SVS storage element size can be differ than VecSim DataSize
@@ -257,7 +274,15 @@ struct SVSGraphBuilder {
     using allocator_type = svs_details::SVSAllocator<SVSIdType>;
     using blocked_type = svs::data::Blocked<allocator_type>;
     using graph_data_type = svs::data::BlockedData<SVSIdType, svs::Dynamic, allocator_type>;
-    using graph_type = svs::graphs::SimpleGraphBase<SVSIdType, graph_data_type>;
+    using graph_type = svs::graphs::SimpleGraph<SVSIdType, blocked_type>;
+
+    static blocked_type make_blocked_allocator(size_t block_size, size_t graph_max_degree,
+                                               std::shared_ptr<VecSimAllocator> allocator) {
+        // SVS block size is a power of two, so we can use it directly
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(graph_max_degree));
+        allocator_type data_allocator{std::move(allocator)};
+        return blocked_type{{svs_bs}, data_allocator};
+    }
 
     // Build SVS Graph using custom allocator
     // The logic has been taken from one of `MutableVamanaIndex` constructors
@@ -269,11 +294,9 @@ struct SVSGraphBuilder {
                                   SVSIdType entry_point, size_t block_size,
                                   std::shared_ptr<VecSimAllocator> allocator,
                                   const svs::logging::logger_ptr &logger) {
-        auto svs_bs =
-            svs_details::SVSBlockSize(block_size, element_size(parameters.graph_max_degree));
         // Perform graph construction.
-        allocator_type data_allocator{std::move(allocator)};
-        blocked_type blocked_alloc{{svs_bs}, data_allocator};
+        auto blocked_alloc =
+            make_blocked_allocator(block_size, parameters.graph_max_degree, std::move(allocator));
         auto graph = graph_type{data.size(), parameters.graph_max_degree, blocked_alloc};
         // SVS incorporates an advanced software prefetching scheme with two parameters: step and
         // lookahead. These parameters determine how far ahead to prefetch data vectors
@@ -290,6 +313,24 @@ struct SVSGraphBuilder {
         builder.construct(1.0f, entry_point, svs::logging::Level::Trace, logger);
         builder.construct(parameters.alpha, entry_point, svs::logging::Level::Trace, logger);
         return graph;
+    }
+
+    static graph_type load(const svs::lib::LoadTable &table, size_t block_size,
+                           const svs::index::vamana::VamanaBuildParameters &parameters,
+                           std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc =
+            make_blocked_allocator(block_size, parameters.graph_max_degree, std::move(allocator));
+        // Load the graph from disk
+        return graph_type::load(table, blocked_alloc);
+    }
+
+    static graph_type load(const std::string &path, size_t block_size,
+                           const svs::index::vamana::VamanaBuildParameters &parameters,
+                           std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc =
+            make_blocked_allocator(block_size, parameters.graph_max_degree, std::move(allocator));
+        // Load the graph from disk
+        return graph_type::load(path, blocked_alloc);
     }
 
     // SVS Vamana graph element size

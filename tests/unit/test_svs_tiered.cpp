@@ -60,18 +60,19 @@ template <typename index_type_t>
 class SVSTieredIndexTest : public ::testing::Test {
 public:
     using data_t = typename index_type_t::data_t;
-    static const size_t defaultTrainingThreshold = 1024;
-    static const size_t defaultUpdateThreshold = 16;
+    static const size_t TestsDefaultTrainingThreshold = 1024;
+    static const size_t TestsDefaultUpdateThreshold = 16;
 
 protected:
     TieredSVSIndex<data_t> *CastToTieredSVS(VecSimIndex *index) {
         return reinterpret_cast<TieredSVSIndex<data_t> *>(index);
     }
 
-    TieredIndexParams CreateTieredSVSParams(VecSimParams &svs_params,
-                                            tieredIndexMock &mock_thread_pool,
-                                            size_t training_threshold = defaultTrainingThreshold,
-                                            size_t update_threshold = defaultUpdateThreshold) {
+    TieredIndexParams
+    CreateTieredSVSParams(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
+                          size_t training_threshold = TestsDefaultTrainingThreshold,
+                          size_t update_threshold = TestsDefaultUpdateThreshold,
+                          size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
         trainingThreshold = training_threshold;
         updateThreshold = update_threshold;
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
@@ -85,7 +86,8 @@ protected:
             .primaryIndexParams = &svs_params,
             .specificParams = {.tieredSVSParams =
                                    TieredSVSParams{.trainingTriggerThreshold = training_threshold,
-                                                   .updateTriggerThreshold = update_threshold}}};
+                                                   .updateTriggerThreshold = update_threshold,
+                                                   .updateJobWaitTime = update_job_wait_time}}};
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
@@ -101,11 +103,13 @@ protected:
 
     TieredSVSIndex<data_t> *
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
-                         size_t training_threshold = defaultTrainingThreshold,
-                         size_t update_threshold = defaultUpdateThreshold) {
+                         size_t training_threshold = TestsDefaultTrainingThreshold,
+                         size_t update_threshold = TestsDefaultUpdateThreshold,
+                         size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
-        TieredIndexParams tiered_params = CreateTieredSVSParams(
-            svs_params, mock_thread_pool, training_threshold, update_threshold);
+        TieredIndexParams tiered_params =
+            CreateTieredSVSParams(svs_params, mock_thread_pool, training_threshold,
+                                  update_threshold, update_job_wait_time);
         return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
 
@@ -128,8 +132,8 @@ protected:
     size_t getUpdateThreshold() const { return updateThreshold; }
 
 private:
-    size_t trainingThreshold = defaultTrainingThreshold;
-    size_t updateThreshold = defaultUpdateThreshold;
+    size_t trainingThreshold = TestsDefaultTrainingThreshold;
+    size_t updateThreshold = TestsDefaultUpdateThreshold;
 };
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -824,6 +828,79 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     }
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    constexpr size_t n = 10;
+    constexpr size_t transfer_trigger = n;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = 1};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, transfer_trigger,
+                                                    transfer_trigger);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+    }
+    // Vectors are still in the flat buffer.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    // Override a vector while in the flat buffer
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+
+    // Move vectors to the backend
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+
+    // Override a vector while in the backend
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+
+    // Delete the overriden vector
+    VecSimIndex_DeleteVector(tiered_index, 1);
+    ASSERT_EQ(tiered_index->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+
+    // Delete another arbirtrary vector
+    VecSimIndex_DeleteVector(tiered_index, 0);
+    ASSERT_EQ(tiered_index->indexSize(), n - 2);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 2);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+
+    // Empty Index
+    for (size_t i = 2; i < n; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
+    }
+
+    // Consolidate should be triggered and mark deleted count should be zeroed.
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
@@ -1151,11 +1228,14 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     // converted then to a number of elements.
     // IMHO, would be better to always interpret block size to a number of elements
     // rather than conversion to-from number of bytes
-    auto quantBits = TypeParam::get_quant_bits();
-    if (quantBits != VecSimSvsQuant_NONE && !this->isFallbackToSQ()) {
-        // Extra data in LVQ vector
-        const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
-        dim -= (lvq_vector_extra * 8) / TypeParam::get_quant_bits();
+    auto constexpr quantBits = TypeParam::get_quant_bits();
+    if constexpr (quantBits != VecSimSvsQuant_NONE) { // constexpr eliminates div-by-zero warning;
+                                                      // inner condition is runtime-only
+        if (!this->isFallbackToSQ()) {
+            // Extra data in LVQ vector
+            const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
+            dim -= (lvq_vector_extra * 8) / quantBits;
+        }
     }
 #endif
     size_t n = DEFAULT_BLOCK_SIZE;
@@ -2348,6 +2428,33 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
     }
 }
 
+TYPED_TEST(SVSTieredIndexTest, testCreateWithDefaultTieredSVSParams) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Build with default specificTieredBackendInfo.svsTieredInfo params
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 0, 0, 0);
+    ASSERT_INDEX(tiered_index);
+
+    VecSimIndexDebugInfo info = tiered_index->debugInfo();
+    // Validate tiered svs info fields
+    constexpr size_t expected_training_threshold =
+        TypeParam::get_quant_bits() == VecSimSvsQuant_NONE ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
+                                                           : SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD;
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold,
+              expected_training_threshold);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold,
+              SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime,
+              SVS_DEFAULT_UPDATE_JOB_WAIT_TIME);
+}
+
 TYPED_TEST(SVSTieredIndexTest, testInfo) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
@@ -2359,7 +2466,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1, 1);
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
@@ -2388,8 +2495,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     // Validate tiered svs info fields
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold, 1);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold, 1);
-    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime,
-              SVS_DEFAULT_UPDATE_JOB_WAIT_TIME);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime, 1);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.indexUpdateScheduled, false);
 
     // Validate that Static info returns the right restricted info as well.
@@ -2402,7 +2508,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     info = tiered_index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
@@ -2432,7 +2538,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
     if (TypeParam::isMulti()) {
-        GenerateAndAddVector(tiered_index, dim, 1, 1);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
         info = tiered_index->debugInfo();
 
         EXPECT_EQ(info.commonInfo.indexSize, 2);
@@ -2478,7 +2584,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
     VecSimIndexDebugInfo frontendIndexInfo = tiered_index->GetFlatIndex()->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
@@ -2503,7 +2609,7 @@ TYPED_TEST(SVSTieredIndexTest, debugInfoIteratorFieldOrder) {
     auto *index = test_utils::CreateNewTieredVecSimIndex(params, mock_thread_pool);
     ASSERT_INDEX(index);
 
-    GenerateAndAddVector(index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
     VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
 
     // Test the field order using the common function
@@ -2553,6 +2659,8 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     // Validate that the vector is removed in place.
     tiered_index->deleteVector(vec_label);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 }
 
 TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
@@ -2725,6 +2833,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     for (size_t i = 0; i < threshold; i++) {
         tiered_index->deleteVector(i);
     }
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), threshold);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, threshold);
+
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
@@ -2741,6 +2852,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     auto size_after_gc = tiered_index->getAllocationSize();
     // Expect that the size of the index was reduced.
     ASSERT_LT(size_after_gc, size_before_gc);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {

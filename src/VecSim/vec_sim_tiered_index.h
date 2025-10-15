@@ -50,7 +50,17 @@ protected:
 
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
+    void lockMainIndexGuard() const {
+        mainIndexGuard.lock();
+#ifdef BUILD_TESTS
+        mainIndexGuard_write_lock_count++;
+#endif
+    }
 
+    void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+#ifdef BUILD_TESTS
+    mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
+#endif
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
@@ -89,6 +99,7 @@ protected:
 
 #ifdef BUILD_TESTS
 public:
+    int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
     // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
     // two lists will also have identical scores. In this case, any duplicates will naturally align
@@ -128,7 +139,7 @@ public:
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
                this->frontendIndex->getAllocationSize();
     }
-
+    virtual size_t getNumMarkedDeleted() const = 0;
     size_t indexLabelCount() const override;
     VecSimIndexStatsInfo statisticInfo() const override;
     virtual VecSimIndexDebugInfo debugInfo() const override;
@@ -308,13 +319,8 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() const {
     auto stats = VecSimIndexStatsInfo{
         .memory = this->getAllocationSize(),
-        .numberOfMarkedDeleted = 0, // Default value if cast fails
+        .numberOfMarkedDeleted = this->getNumMarkedDeleted(),
     };
-
-    // If backend implements VecSimIndexTombstone, get number of marked deleted
-    if (auto tombstone = dynamic_cast<VecSimIndexTombstone *>(this->backendIndex)) {
-        stats.numberOfMarkedDeleted = tombstone->getNumMarkedDeleted();
-    }
 
     return stats;
 }

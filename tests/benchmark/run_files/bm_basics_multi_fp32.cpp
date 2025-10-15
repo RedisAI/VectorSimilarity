@@ -35,4 +35,12 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWI
                     INDEX_TIERED_HNSW)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 
+// Test oscillations at block size boundaries.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi),
+                            fp32_index_t)
+(benchmark::State &st) { UpdateAtBlockSize(st); }
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi), INDEX_BF);
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi), INDEX_HNSW);
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi),
+                           INDEX_TIERED_HNSW);
 BENCHMARK_MAIN();

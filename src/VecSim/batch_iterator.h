@@ -29,7 +29,7 @@ public:
         : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0),
           timeoutCtx(tctx) {};
 
-    inline const void *getQueryBlob() const { return query_vector; }
+    virtual inline const void *getQueryBlob() const { return query_vector; }
 
     inline void *getTimeoutCtx() const { return timeoutCtx; }
 

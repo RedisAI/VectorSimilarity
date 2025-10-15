@@ -64,7 +64,7 @@ public:
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
                     const IndexComponents<DataType, DistType> &components,
-                    Serializer::EncodingVersion version)
+                    HNSWSerializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
@@ -90,8 +90,8 @@ public:
             const char *data = this->getDataByInternalId(id);
 
             // Create a vector with the full data (including any metadata like norms)
-            std::vector<char> vec(this->dataSize);
-            memcpy(vec.data(), data, this->dataSize);
+            std::vector<char> vec(this->getStoredDataSize());
+            memcpy(vec.data(), data, this->getStoredDataSize());
             vectors_output.push_back(std::move(vec));
         }
 

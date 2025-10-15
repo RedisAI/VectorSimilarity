@@ -11,6 +11,7 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #if HAVE_SVS
 #include "VecSim/algorithms/svs/svs.h"
+#include "VecSim/index_factories/svs_factory.h"
 #endif
 #include "VecSim/batch_iterator.h"
 #include "VecSim/types/bfloat16.h"
@@ -566,6 +567,15 @@ public:
         }
     }
 
+    explicit PySVSIndex(const std::string &location, const SVSParams &svs_params) {
+        VecSimParams params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
+        this->index =
+            std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, &params), VecSimIndex_Free);
+        if (!this->index) {
+            throw std::runtime_error("Index creation failed");
+        }
+    }
+
     void addVectorsParallel(const py::object &input, const py::object &vectors_labels) {
         py::array vectors_data(input);
         // py::array labels(vectors_labels);
@@ -587,6 +597,30 @@ public:
         assert(svs_index);
         svs_index->addVectors(vectors_data.data(), labels.data(), n_vectors);
     }
+
+    void checkIntegrity() {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        assert(svs_index);
+        try {
+            svs_index->checkIntegrity();
+        } catch (const std::exception &e) {
+            throw std::runtime_error(std::string("SVSIndex integrity check failed: ") + e.what());
+        }
+    }
+
+    void saveIndex(const std::string &location) {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        assert(svs_index);
+        svs_index->saveIndex(location);
+    }
+
+    void loadIndex(const std::string &location) {
+        auto svs_index = dynamic_cast<SVSIndexBase *>(this->index.get());
+        assert(svs_index);
+        svs_index->loadIndex(location);
+    }
+
+    size_t getLabelsCount() const { return this->index->debugInfo().commonInfo.indexLabelCount; }
 };
 
 class PyTiered_SVSIndex : public PyTieredIndex {
@@ -805,8 +839,17 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PySVSIndex, PyVecSimIndex>(m, "SVSIndex")
         .def(py::init([](const SVSParams &params) { return new PySVSIndex(params); }),
              py::arg("params"))
+        .def(py::init([](const std::string &location, const SVSParams &params) {
+                 return new PySVSIndex(location, params);
+             }),
+             py::arg("location"), py::arg("params"))
         .def("add_vector_parallel", &PySVSIndex::addVectorsParallel, py::arg("vectors"),
-             py::arg("labels"));
+             py::arg("labels"))
+        .def("check_integrity", &PySVSIndex::checkIntegrity)
+        .def("save_index", &PySVSIndex::saveIndex, py::arg("location"))
+        .def("load_index", &PySVSIndex::loadIndex, py::arg("location"))
+        .def("get_labels_count", &PySVSIndex::getLabelsCount);
+
     py::class_<PyTiered_SVSIndex, PyTieredIndex>(m, "Tiered_SVSIndex")
         .def(py::init([](const SVSParams &svs_params, const TieredSVSParams &tiered_svs_params,
                          size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {

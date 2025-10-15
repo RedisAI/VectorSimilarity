@@ -14,29 +14,19 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/index_factories/factory_utils.h"
 
 namespace SVSFactory {
 
 namespace {
-AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-    auto &svsParams = params->algoParams.svsParams;
-    size_t dataSize = VecSimParams_GetDataSize(svsParams.type, svsParams.dim, svsParams.metric);
-    return {.allocator = VecSimAllocator::newVecsimAllocator(),
-            .dim = svsParams.dim,
-            .vecType = svsParams.type,
-            .dataSize = dataSize,
-            .metric = svsParams.metric,
-            .blockSize = svsParams.blockSize,
-            .multi = svsParams.multi,
-            .logCtx = params->logCtx};
-}
 
 // NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
           bool IsLeanVec>
 VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
-    auto abstractInitParams = NewAbstractInitParams(params);
     auto &svsParams = params->algoParams.svsParams;
+    auto abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(&svsParams, params->logCtx, is_normalized);
     auto preprocessors = CreatePreprocessorsContainer<svs_details::vecsim_dt<DataType>>(
         abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
     IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
@@ -201,6 +191,27 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NewIndexImpl(params, is_normalized);
 }
 
+#if BUILD_TESTS
+VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    auto index = NewIndexImpl(params, is_normalized);
+    // Side-cast to SVSIndexBase to call loadIndex
+    SVSIndexBase *svs_index = dynamic_cast<SVSIndexBase *>(index);
+    if (svs_index != nullptr) {
+        try {
+            svs_index->loadIndex(location);
+        } catch (const std::exception &e) {
+            VecSimIndex_Free(index);
+            throw;
+        }
+    } else {
+        VecSimIndex_Free(index);
+        throw std::runtime_error(
+            "Cannot load index: Error in index creation before loading serialization");
+    }
+    return index;
+}
+#endif
+
 size_t EstimateElementSize(const SVSParams *params) {
     using graph_idx_type = uint32_t;
     // Assuming that the graph_max_degree can be unset in params.
@@ -227,9 +238,14 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 // This is a temporary solution to avoid breaking the build when SVS is not available
 // and to allow the code to compile without SVS support.
 // TODO: remove HAVE_SVS when SVS will support all Redis platforms and compilers
-#else  // HAVE_SVS
+#else // HAVE_SVS
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
+#if BUILD_TESTS
+VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
+    return NULL;
+}
+#endif
 size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) { return -1; }
 size_t EstimateElementSize(const SVSParams *params) { return -1; }
 }; // namespace SVSFactory

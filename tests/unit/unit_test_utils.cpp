@@ -660,42 +660,42 @@ size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type) {
             dynamic_cast<VecSimIndexAbstract<float, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<float, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_FLOAT64: {
         VecSimIndexAbstract<double, double> *abs_index =
             dynamic_cast<VecSimIndexAbstract<double, double> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<double, double>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_BFLOAT16: {
         VecSimIndexAbstract<vecsim_types::bfloat16, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<vecsim_types::bfloat16, float> *>(index);
         assert(abs_index && "dynamic_cast failed: can't convert index to "
                             "VecSimIndexAbstract<vecsim_types::bfloat16, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_FLOAT16: {
         VecSimIndexAbstract<vecsim_types::float16, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<vecsim_types::float16, float> *>(index);
         assert(abs_index && "dynamic_cast failed: can't convert index to "
                             "VecSimIndexAbstract<vecsim_types::float16, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_INT8: {
         VecSimIndexAbstract<int8_t, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<int8_t, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<int8_t, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_UINT8: {
         VecSimIndexAbstract<uint8_t, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<uint8_t, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<uint8_t, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     default:
         return 0;
