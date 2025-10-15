@@ -29,6 +29,8 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 
+#include "timeout_guard.h"
+
 #include <cstdlib>
 #include <limits>
 #include <cmath>
@@ -1025,6 +1027,7 @@ TEST(UtilsTests, testMockThreadPool) {
     const size_t num_submissions = 200;
 
     auto TestBody = [=]() {
+        test_utils::TimeoutGuard guard(std::chrono::seconds(100));
         // Create and test a mock thread pool several times
         for (size_t i = 0; i < num_repeats; i++) {
             // Create a mock thread pool and verify its properties

@@ -33,6 +33,15 @@ public:
      * @brief Called before each test starts.
      */
     void OnTestStart(const testing::TestInfo &test_info) override {
+        std::string test_name = test_info.name();
+        std::string suite_name = test_info.test_suite_name();
+        
+        // Skip timeout guard for death tests (tests that use EXPECT_DEATH)
+        // Death tests use fork() which doesn't play well with background threads.
+
+        if (test_name.find("MockThreadPool") != std::string::npos) {
+            return;
+        }
         // Get timeout for this specific test (can be customized per test)
         auto timeout = GetTimeoutForTest(test_info);
 
