@@ -53,6 +53,17 @@ jobs:
           echo "========================"
       - name: install dependencies
         run: sudo .install/install_script.sh
+      - name: Install clang 18
+        run: |
+          # Download and run the official LLVM installation script
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -yqq clang-18 clang++-18
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 --slave /usr/bin/clang++ clang++ /usr/bin/clang++-18
+
+          echo `clang --version`
+          echo `clang++ --version`
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
@@ -62,6 +73,20 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_safe_directory: true
           disable_search: true
+      - name: Sanitizer tests
+        run: make asan
+      - name: Set test path
+        if: failure()
+        id: tests-artifact-path
+        run: |
+          FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
+          echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
+      - name: Archive san tests reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: san tests reports on intel
+          path: ${{ steps.tests-artifact-path.outputs.path }}
 
   stop-runner:
     name: Stop self-hosted EC2 runner
