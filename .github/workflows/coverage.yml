@@ -53,15 +53,6 @@ jobs:
           echo "========================"
       - name: install dependencies
         run: sudo .install/install_script.sh
-      - name: run codecov
-        run: make coverage
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./bin/Linux-x86_64-debug/cov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          disable_safe_directory: true
-          disable_search: true
       - name: Install clang 18
         run: |
           # Download and run the official LLVM installation script
@@ -73,6 +64,15 @@ jobs:
 
           echo `clang --version`
           echo `clang++ --version`
+      - name: run codecov
+        run: make coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./bin/Linux-x86_64-debug/cov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_safe_directory: true
+          disable_search: true
       - name: Sanitizer tests
         run: make asan
       - name: Set test path
