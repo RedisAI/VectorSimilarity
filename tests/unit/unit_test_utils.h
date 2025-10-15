@@ -167,6 +167,8 @@ void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
 void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
 void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
 
+void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params);
+
 void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
 void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
