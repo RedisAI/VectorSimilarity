@@ -2042,10 +2042,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
 TYPED_TEST(SVSTieredIndexTest, testCreateWithDefaultTieredSVSParams) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .multi = TypeParam::isMulti()};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
