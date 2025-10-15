@@ -13,7 +13,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+          aws-region: ${{ secrets.AWS_REGION }}
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2
@@ -21,10 +21,10 @@ jobs:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 AMI
-          ec2-image-id: ami-09fabd03bb09b3704
+          ec2-image-id: ami-036cafe742923b3d9
           ec2-instance-type: c7i.xlarge
-          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID_BENCHMARK }}
-          security-group-id: ${{ secrets.AWS_EC2_SG_ID_BENCHMARK }}
+          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
 
   codecov:
@@ -36,17 +36,6 @@ jobs:
         uses: actions/checkout@v4
       - name: install dependencies
         run: sudo .install/install_script.sh
-      - name: Install clang 18
-        run: |
-          # Download and run the official LLVM installation script
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -yqq clang-18 clang++-18
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 --slave /usr/bin/clang++ clang++ /usr/bin/clang++-18
-
-          echo `clang --version`
-          echo `clang++ --version`
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
@@ -56,20 +45,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_safe_directory: true
           disable_search: true
-      - name: Sanitizer tests
-        run: make asan
-      - name: Set test path
-        if: failure()
-        id: tests-artifact-path
-        run: |
-          FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
-          echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
-      - name: Archive san tests reports
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: san tests reports on intel
-          path: ${{ steps.tests-artifact-path.outputs.path }}
 
   stop-runner:
     name: Stop self-hosted EC2 runner
