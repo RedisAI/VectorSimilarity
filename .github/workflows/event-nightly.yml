@@ -28,12 +28,11 @@ jobs:
 #      container: ubuntu:bionic
 #      run-valgrind: false
   bullseye:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: debian:bullseye
-      run-valgrind: false
-#  amazonlinux2:
-#    uses: ./.github/workflows/amazon2.yml
+    uses: ./.github/workflows/debian11.yml
+  #  amazonlinux2:
+  #    needs: [check-if-docs-only]
+  #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
+  #    uses: ./.github/workflows/amazon2.yml
   mariner2:
     uses: ./.github/workflows/mariner2.yml
   rocky8:
@@ -51,3 +50,36 @@ jobs:
   arm:
     uses: ./.github/workflows/arm.yml
     secrets: inherit
+  coverage:
+    uses: ./.github/workflows/coverage.yml
+    secrets: inherit
+  sanitizer:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      san: address
+    secrets: inherit
+  notify-on-failure:
+    needs:
+      - benchmark
+      - jammy
+      - focal
+#      - bionic
+      - bullseye
+#      - amazonlinux2
+      - mariner2
+      - rocky8
+      - rocky9
+      - alpine3
+      - macos
+      - arm
+      - coverage
+      - sanitizer
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Notify on failure
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: '{ "failed_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_NIGHTLY_FAILURE }}

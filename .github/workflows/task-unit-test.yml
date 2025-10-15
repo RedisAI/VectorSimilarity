@@ -13,14 +13,15 @@ on:
       pre-checkout-script:
         description: 'Script to run before checkout'
         type: string
-      run-valgrind:
-        description: 'Run valgrind tests'
-        type: boolean
-        default: true
+      san:
+        type: string
+
+env:
+  SAN_VALUE: ${{ inputs.san }}
 
 jobs:
   test:
-    name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}
+    name: Test ${{ inputs.container && format('{0} (on {1})', inputs.container, inputs.env) || inputs.env }}${{ inputs.san && ' sanitizer' || '' }}
     runs-on: ${{ inputs.env }}
     container: ${{ inputs.container || null }}
     defaults:
@@ -47,13 +48,16 @@ jobs:
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: unit tests
-        run: make unit_test
-      - name: valgrind
-        if: ${{ inputs.run-valgrind }}
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        if: ${{ inputs.run-valgrind && failure() }}
+        run: make unit_test SAN="$SAN_VALUE"
+      - name: Set test path
+        if: ${{ inputs.san  == 'address' && failure() }}
+        id: tests-artifact-path
+        run: |
+          FULL_VARIANT=$(uname)-$(uname -m)-debug-asan
+          echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
+      - name: Archive san tests reports
+        if: ${{ inputs.san  == 'address' && failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: valgrind tests reports on ${{ steps.artifact-name.outputs.name }}
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+          name: san tests reports on ${{ steps.artifact-name.outputs.name }}
+          path: ${{ steps.tests-artifact-path.outputs.path }}
