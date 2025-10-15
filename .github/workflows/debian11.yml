@@ -7,5 +7,4 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: gcc:11-bullseye
-      pre-checkout-script: apt-get update && apt-get -y install git
-      
+      # pre-checkout-script: apt-get update && apt-get -y install git
