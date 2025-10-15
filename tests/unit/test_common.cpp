@@ -1085,6 +1085,7 @@ TEST(UtilsTests, testMockThreadPool) {
         }
 
         std::cerr << "Success" << std::endl;
+        std::exit(testing::Test::HasFailure() ? -1 : 0); // Exit with failure if any test failed
     };
 
     EXPECT_EXIT(TestBody(), ::testing::ExitedWithCode(0), "Success");

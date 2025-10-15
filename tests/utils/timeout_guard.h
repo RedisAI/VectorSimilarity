@@ -41,15 +41,14 @@ public:
                 std::cerr << "TimeoutGuard: Test/Benchmark timeout! Exiting..." << std::endl;
                 std::exit(-1);
             })
-        : timeout_action(std::move(on_timeout)), is_timed_out(false), notified(false) {
+        : timeout_action(std::move(on_timeout)), notified(false) {
 
         guard_thread = std::thread([this, timeout]() {
             std::unique_lock<std::mutex> lock(mutex);
-            // Wait with predicate to handle spurious wakeups correctly
+            // Wait to see if we are notified before the timeout expires
             // Returns false if timeout expired, true if notified
             if (!cv.wait_for(lock, timeout, [this]() { return notified; })) {
                 // Timeout expired and not notified
-                is_timed_out = true;
                 timeout_action();
             }
         });
@@ -92,7 +91,6 @@ private:
     std::condition_variable cv;
     std::thread guard_thread;
     std::function<void()> timeout_action;
-    bool is_timed_out;
     bool notified;
 };
 
@@ -108,8 +106,6 @@ private:
  * Functionally identical to TimeoutGuard with default parameters, but with better
  * clarity and a more convenient API for benchmark use cases.
  *
- * Note: TimeoutGuard can also be used in benchmarks if you need custom timeout behavior.
- * This class is just a convenience wrapper for the common case.
  */
 class BenchmarkTimeoutGuard : public TimeoutGuard {
 public:

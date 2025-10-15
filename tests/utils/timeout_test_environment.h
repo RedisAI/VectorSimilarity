@@ -24,11 +24,6 @@ namespace test_utils {
  */
 class TimeoutTestListener : public testing::EmptyTestEventListener {
 public:
-    /**
-     * @brief Construct a timeout listener with a default timeout for all tests.
-     *
-     * @param default_timeout Default timeout duration for all tests
-     */
     template <typename Rep, typename Period>
     explicit TimeoutTestListener(std::chrono::duration<Rep, Period> default_timeout)
         : default_timeout_seconds(

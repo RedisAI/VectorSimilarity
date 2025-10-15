@@ -18,14 +18,9 @@
  * Tests will automatically timeout after 30 seconds (or customized duration based on test type).
  */
 int main(int argc, char **argv) {
-    // Initialize Google Test
     testing::InitGoogleTest(&argc, argv);
 
-    // Register global timeout listener with X second default timeout
-    // Individual tests can have different timeouts based on their characteristics
-    // (see TimeoutTestListener::GetTimeoutForTest for customization logic)
     test_utils::RegisterGlobalTimeoutListener(std::chrono::seconds(100));
 
-    // Run all tests
     return RUN_ALL_TESTS();
 }

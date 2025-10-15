@@ -67,6 +67,7 @@ public:
     void TearDown(const benchmark::State &state) override {
         timeout_guard.reset(); // Destroy the guard and cancel the timeout
     }
+
     virtual ~BM_VecSimGeneral() {
         if (mock_thread_pool) {
             delete mock_thread_pool;
