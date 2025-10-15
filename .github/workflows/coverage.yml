@@ -62,9 +62,19 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_safe_directory: true
           disable_search: true
+      - name: Install clang 18
+        run: |
+          # Download and run the official LLVM installation script
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -yqq clang-18 clang++-18
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 --slave /usr/bin/clang++ clang++ /usr/bin/clang++-18
 
+          echo `clang --version`
+          echo `clang++ --version`
       - name: Sanitizer tests
-        run: rm -rf bin && make asan
+        run: make asan
       - name: Set test path
         if: failure()
         id: tests-artifact-path
