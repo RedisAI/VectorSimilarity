@@ -58,9 +58,7 @@ public:
      * @brief Destructor - notifies the guard thread and waits for it to finish.
      */
     ~TimeoutGuard() {
-        if (!notified) {
-            notify();
-        }
+        notify();
         if (guard_thread.joinable()) {
             guard_thread.join();
         }
