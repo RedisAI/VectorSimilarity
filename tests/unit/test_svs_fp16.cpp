@@ -2208,7 +2208,7 @@ protected:
     TieredIndexParams
     CreateTieredSVSParams(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                           size_t training_threshold = SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD,
-                          size_t update_threshold = SVS_DEFAULT_UPDATE_THRESHOLD) {
+                          size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
         // trainingThreshold = training_threshold;
         // updateThreshold = update_threshold;
         if (svs_params.algoParams.svsParams.num_threads == 0) {
@@ -2238,7 +2238,7 @@ protected:
     TieredSVSIndex<data_t> *
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                          size_t training_threshold = SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD,
-                         size_t update_threshold = SVS_DEFAULT_UPDATE_THRESHOLD) {
+                         size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params = CreateTieredSVSParams(
             svs_params, mock_thread_pool, training_threshold, update_threshold);

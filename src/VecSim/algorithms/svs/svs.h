@@ -712,8 +712,8 @@ public:
 
                         // For uncompressed data, indexed_span should be a simple span
                         const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
-                        std::vector<char> vec_data(this->getDataSize());
-                        std::memcpy(vec_data.data(), data_ptr, this->getDataSize());
+                        std::vector<char> vec_data(this->getStoredDataSize());
+                        std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
                         vectors_output.push_back(std::move(vec_data));
                     }
                 }
@@ -723,8 +723,8 @@ public:
 
                 // For uncompressed data, indexed_span should be a simple span
                 const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
-                std::vector<char> vec_data(this->getDataSize());
-                std::memcpy(vec_data.data(), data_ptr, this->getDataSize());
+                std::vector<char> vec_data(this->getStoredDataSize());
+                std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
                 vectors_output.push_back(std::move(vec_data));
             }
 
