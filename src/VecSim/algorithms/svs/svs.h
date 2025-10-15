@@ -702,13 +702,31 @@ public:
 
             std::vector<std::vector<char>> vectors_output;
 
-            auto indexed_span = impl_->get_datum(label);
+            if constexpr (isMulti) {
+                // Multi-index case: get all vectors for this label
+                auto it = impl_->get_label_to_external_lookup().find(label);
+                if (it != impl_->get_label_to_external_lookup().end()) {
+                    const auto &external_ids = it->second;
+                    for (auto external_id : external_ids) {
+                        auto indexed_span = impl_->get_parent_index().get_datum(external_id);
 
-            // For uncompressed data, indexed_span should be a simple span
-            const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
-            std::vector<char> vec_data(this->getStoredDataSize());
-            std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
-            vectors_output.push_back(std::move(vec_data));
+                        // For uncompressed data, indexed_span should be a simple span
+                        const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
+                        std::vector<char> vec_data(this->getStoredDataSize());
+                        std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
+                        vectors_output.push_back(std::move(vec_data));
+                    }
+                }
+            } else {
+                // Single-index case
+                auto indexed_span = impl_->get_datum(label);
+
+                // For uncompressed data, indexed_span should be a simple span
+                const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
+                std::vector<char> vec_data(this->getStoredDataSize());
+                std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
+                vectors_output.push_back(std::move(vec_data));
+            }
 
             return vectors_output;
         }
