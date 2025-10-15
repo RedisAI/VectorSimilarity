@@ -1,9 +1,11 @@
 name: debian bullseye flow
 
-on: [workflow_dispatch]
+on: [workflow_dispatch, workflow_call]
 
 jobs:
   bullseye:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: debian:bullseye
+      container: gcc:11-bullseye
+      pre-checkout-script: apt-get update && apt-get -y install git
+      

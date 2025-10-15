@@ -30,8 +30,6 @@ jobs:
   bullseye:
     uses: ./.github/workflows/debian11.yml
   #  amazonlinux2:
-  #    needs: [check-if-docs-only]
-  #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
   #    uses: ./.github/workflows/amazon2.yml
   mariner2:
     uses: ./.github/workflows/mariner2.yml
@@ -39,12 +37,10 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:8
-      run-valgrind: false
   rocky9:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:9
-      run-valgrind: false
   macos:
     uses: ./.github/workflows/macos.yml
   arm:
@@ -63,9 +59,7 @@ jobs:
       - benchmark
       - jammy
       - focal
-#      - bionic
       - bullseye
-#      - amazonlinux2
       - mariner2
       - rocky8
       - rocky9
