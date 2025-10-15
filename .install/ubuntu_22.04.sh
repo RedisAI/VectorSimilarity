@@ -14,7 +14,7 @@ $MODE update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-12 60
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
 $MODE ./llvm.sh 18
-$MODE apt-get install -yqq clang-18 clang++-18 clang-tools-18
+$MODE apt-get install -yqq clang-18 clang++-18
 $MODE update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 --slave /usr/bin/clang++ clang++ /usr/bin/clang++-18
 
 echo `clang --version`
