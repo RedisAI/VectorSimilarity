@@ -15,7 +15,7 @@
  * @brief Custom main function that registers global timeout protection for all tests.
  *
  * This replaces gtest_main and adds automatic timeout protection to every test.
- * Tests will automatically timeout after 30 seconds (or customized duration based on test type).
+ * Tests will automatically timeout after X seconds (or customized duration based on test type).
  */
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
