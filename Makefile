@@ -8,14 +8,6 @@ ifneq ($(filter coverage show-cov upload-cov,$(MAKECMDGOALS)),)
 COV=1
 endif
 
-ifneq ($(VG),)
-VALGRIND=$(VG)
-endif
-
-ifeq ($(VALGRIND),1)
-override DEBUG ?= 1
-endif
-
 ifeq ($(COV),1)
 override DEBUG ?= 1
 CMAKE_COV += -DUSE_COVERAGE=ON
@@ -26,30 +18,18 @@ CMAKE_TESTS += -DVECSIM_BUILD_TESTS=off
 endif
 
 ifneq ($(SAN),)
-override DEBUG ?= 1
-export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
-export MSAN_OPTIONS=allocator_may_return_null=1
 
-ifeq ($(SAN),mem)
-override SAN=memory
-else ifeq ($(SAN),addr)
+ifeq ($(SAN),address)
 override SAN=address
-endif
-
-ifeq ($(SAN),memory)
-CMAKE_SAN=-DUSE_MSAN=ON
-override CTEST_ARGS += --exclude-regex BruteForceTest.sanity_rinsert_1280
-
-else ifeq ($(SAN),address)
+DEBUG=1
+export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
 CMAKE_SAN=-DUSE_ASAN=ON
-else ifeq ($(SAN),leak)
-else ifeq ($(SAN),thread)
 else
-$(error SAN=mem|addr|leak|thread)
+$(error SAN=address is currently the only supported option)
 endif
 
 export SAN
-endif # SAN
+endif # SAN != ''
 
 ROOT=.
 export ROOT
@@ -60,18 +40,18 @@ make build
   DEBUG=1          # build debug variant
   COV=1			   # build for code coverage
   VERBOSE=1        # print detailed build info
-  VG|VALGRIND=1    # build for Valgrind
-  SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
-  SLOW=1           # don't run build in parallel (for diagnostics)
-  PROFILE=1		   # enable profiling compile flags (and debug symbols) for release type.
+  SAN=address          # build with AddressSanitizer (clang)
+  SLOW=1               # don't run build in parallel (for diagnostics)
+  PROFILE=1            # enable profiling compile flags (and debug symbols) for release type.
 make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
-  VG|VALGRIND=1      # run tests with valgrind
-make valgrind      # build for Valgrind and run tests
+  SAN=address        # run tests with AddressSanitizer
+  FP_64=1			# run tests with 64-bit floating point
+make asan            # build with AddressSanitizer and run unit tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
 make mod_test      # run Redis module intergration tests (with RLTest)
@@ -94,6 +74,11 @@ FLAVOR=debug
 else
 FLAVOR=release
 endif
+
+ifeq ($(SAN),address)
+FLAVOR := ${FLAVOR}-asan
+endif
+
 FULL_VARIANT:=$(shell uname)-$(shell uname -m)-$(FLAVOR)
 BINROOT=$(ROOT)/bin/$(FULL_VARIANT)
 BINDIR=$(BINROOT)
@@ -166,11 +151,7 @@ ifeq ($(VERBOSE),1)
 _CTEST_ARGS += -V
 endif
 
-ifeq ($(VALGRIND),1)
-_CTEST_ARGS += \
-	-T memcheck \
-	--overwrite MemoryCheckCommandOptions="--leak-check=full --error-exitcode=255"
-endif
+# AddressSanitizer is handled via SAN=address in cmake/san.cmake
 
 unit_test:
 	$(SHOW)mkdir -p $(BINDIR)
@@ -178,10 +159,10 @@ unit_test:
 	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
-valgrind:
-	$(SHOW)$(MAKE) VG=1 unit_test
+asan:
+	$(SHOW)$(MAKE) SAN=address unit_test
 
-.PHONY: unit_test valgrind
+.PHONY: unit_test asan
 
 #----------------------------------------------------------------------------------------------
 
