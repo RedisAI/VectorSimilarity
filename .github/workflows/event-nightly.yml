@@ -16,43 +16,38 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:jammy
-      run-valgrind: false
   focal:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:focal
-      run-valgrind: false
 #  bionic:
 #    uses: ./.github/workflows/task-unit-test.yml
 #    with:
 #      container: ubuntu:bionic
-#      run-valgrind: false
   bullseye:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: debian:bullseye
-      run-valgrind: false
-#  centos7:
-#    uses: ./.github/workflows/task-unit-test.yml
-#    with:
-#      container: centos:7
-#      run-valgrind: false
-#  amazonlinux2:
-#    uses: ./.github/workflows/amazon2.yml
+    uses: ./.github/workflows/debian11.yml
+  #  amazonlinux2:
+  #    uses: ./.github/workflows/amazon2.yml
   mariner2:
     uses: ./.github/workflows/mariner2.yml
   rocky8:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:8
-      run-valgrind: false
   rocky9:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: rockylinux:9
-      run-valgrind: false
   macos:
     uses: ./.github/workflows/macos.yml
   arm:
     uses: ./.github/workflows/arm.yml
+    secrets: inherit
+  coverage:
+    uses: ./.github/workflows/coverage.yml
+    secrets: inherit
+  sanitizer:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      san: address
     secrets: inherit

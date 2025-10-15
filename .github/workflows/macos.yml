@@ -7,4 +7,8 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       env: macos-latest
-      run-valgrind: false
+  macos-san:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      env: macos-latest
+      san: address
