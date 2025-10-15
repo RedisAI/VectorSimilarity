@@ -709,20 +709,19 @@ public:
             std::vector<char> vec_data(this->getStoredDataSize());
             std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
             vectors_output.push_back(std::move(vec_data));
+
+            return vectors_output;
         }
-
-        return vectors_output;
     }
-} void getDataByLabel(
-    labelType label,
-    std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
-    assert(false && "Not implemented");
-}
+    void getDataByLabel(
+        labelType label,
+        std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
+        assert(false && "Not implemented");
+    }
 
-svs::logging::logger_ptr getLogger() const override { return logger_; }
+    svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
-}
-;
+};
 
 #ifdef BUILD_TESTS
 // Including implementations for Serializer base
