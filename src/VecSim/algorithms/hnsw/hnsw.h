@@ -389,7 +389,8 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
     size_t removed_idx = 0;
     size_t link_idx = 0;
 
-    while (orig_candidates.size() > 0) {
+    // candidates <= orig_candidates
+    while (candidates.size() > 0) {
         if (orig_candidates.top().second != candidates.top().second) {
             if (neighbors_bitmap[orig_candidates.top().second]) {
                 removed_links[removed_idx++] = orig_candidates.top().second;
@@ -400,6 +401,15 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
             candidates.pop();
             orig_candidates.pop();
         }
+    }
+
+    assert(candidates.empty() && "candidates should be empty");
+    // Handle remaining elements in orig_candidates that were rejected by heuristic
+    while (orig_candidates.size() > 0) {
+        if (neighbors_bitmap[orig_candidates.top().second]) {
+            removed_links[removed_idx++] = orig_candidates.top().second;
+        }
+        orig_candidates.pop();
     }
     setListCount(node_ll, link_idx);
     *removed_links_num = removed_idx;
@@ -466,7 +476,10 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    if (!candidate_set.empty()) {
+        assert(links_num);
+        __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    }
 
     return lowerBound;
 }
@@ -515,7 +528,10 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    if (!candidate_set.empty()) {
+        assert(links_num);
+        __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    }
 }
 
 template <typename DataType, typename DistType>
