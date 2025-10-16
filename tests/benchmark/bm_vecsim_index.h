@@ -23,6 +23,8 @@
 #include <fstream>
 #include <vector>
 
+#include <iomanip>
+
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
 public:
@@ -79,6 +81,11 @@ private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file, VecSimType type);
+
+    // FBIN loading configuration
+    static constexpr size_t BATCH_SIZE = 40;
+    static constexpr const char *FBIN_PATH = "/Users/ofir.yanai/base.10M.fbin";
+
 };
 
 template <typename index_type_t>
@@ -218,10 +225,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             auto t0 = clock::now();
 
             // Open the .fbin file for reading: [num_vectors (uint32), vector_dim (uint32), data (float32)]
-            const char* vectors_file = "/Users/ofir.yanai/base.10M.fbin";
-            std::ifstream file(vectors_file, std::ios::binary);
+            std::ifstream file(FBIN_PATH, std::ios::binary);
             if (!file.is_open()) {
-                std::cerr << "[Init] Error: Could not open file " << vectors_file << std::endl;
+                std::cerr << "[Init] Error: Could not open file " << FBIN_PATH << std::endl;
                 throw std::runtime_error("Failed to open vectors file");
             }
 
@@ -235,13 +241,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             size_t load_count = std::min<size_t>(file_num_vectors, total);
             const size_t dim_from_file = static_cast<size_t>(file_dim);
 
-            // Batch parameters
-            constexpr size_t BATCH_SIZE = 2048; // reuse fixed-size buffer
-            const size_t floats_per_batch = BATCH_SIZE * dim_from_file;
-
             // Allocate reusable buffer for batch reading (float32-aligned)
             std::vector<float> batch_buffer;
-            batch_buffer.resize(floats_per_batch);
+            batch_buffer.resize(BATCH_SIZE * dim_from_file);
 
             size_t vectors_processed = 0;
             size_t print_every = std::max<size_t>(size_t(1000), load_count / 20); // ~5% or 1000
@@ -257,10 +259,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
                 for (size_t j = 0; j < vectors_in_batch; ++j) {
                     size_t i = vectors_processed + j; // global id
-                    const void* vector_data = static_cast<const void*>(batch_buffer.data() + j * dim_from_file);
-                    size_t label = i; // label is the id
+                    const void* vector_data = batch_buffer.data() + j * dim_from_file;
 
-                    VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], vector_data, label);
+                    VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], vector_data, i);
 
                     if (i % print_every == 0 || i + 1 == load_count) {
                         auto now = clock::now();
@@ -299,14 +300,33 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                               .blockSize = block_size};
         indices[INDEX_BF] = IndexPtr(CreateNewIndex(bf_params));
 
-        // Currently, we rely on hnsw index to initialize BF index.
-        assert(enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW);
-        // Add the same vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            const char *blob = GetHNSWDataByInternalId(i);
-            // For multi value indices, the internal id is not necessarily equal the label.
-            size_t label = CastToHNSW(indices[INDEX_HNSW])->getExternalLabel(i);
-            VecSimIndex_AddVector(indices[INDEX_BF], blob, label);
+        std::ifstream file(FBIN_PATH, std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open vectors file for BF index");
+        }
+        uint32_t file_num_vectors = 0, file_dim = 0;
+        file.read(reinterpret_cast<char*>(&file_num_vectors), sizeof(uint32_t));
+        file.read(reinterpret_cast<char*>(&file_dim), sizeof(uint32_t));
+        size_t load_count = std::min<size_t>(file_num_vectors, n_vectors);
+        size_t dim_from_file = file_dim;
+
+        std::vector<float> batch_buffer;
+        batch_buffer.resize(BATCH_SIZE * dim_from_file);
+
+        size_t processed = 0;
+        while (processed < load_count) {
+            size_t in_batch = std::min(BATCH_SIZE, load_count - processed);
+            size_t floats_to_read = in_batch * dim_from_file;
+            file.read(reinterpret_cast<char*>(batch_buffer.data()), floats_to_read * sizeof(float));
+            if (!file) {
+                throw std::runtime_error("Failed to read vectors from fbin file for BF index");
+            }
+            for (size_t j = 0; j < in_batch; ++j) {
+                size_t i = processed + j;
+                const float* vec_ptr = batch_buffer.data() + j * dim_from_file;
+                VecSimIndex_AddVector(indices[INDEX_BF], vec_ptr, i);
+            }
+            processed += in_batch;
         }
     }
 
@@ -343,23 +363,23 @@ void BM_VecSimIndex<index_type_t>::InitializeRocksDB() {
     if (benchmark_db) {
         return; // Already initialized
     }
-    
+
     // Create a temporary directory for RocksDB
     rocksdb_temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid());
-    
+
     // Ensure the directory exists
     std::filesystem::create_directories(rocksdb_temp_dir);
-    
+
     rocksdb::Options options;
     options.create_if_missing = true;
     options.error_if_exists = false;
-    
+
     rocksdb::DB* db_ptr = nullptr;
     rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_temp_dir, &db_ptr);
     if (!status.ok()) {
         throw std::runtime_error("Failed to open RocksDB: " + status.ToString());
     }
-    
+
     benchmark_db.reset(db_ptr);
     benchmark_cf = benchmark_db->DefaultColumnFamily();
 }

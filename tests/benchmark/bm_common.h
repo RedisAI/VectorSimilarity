@@ -34,6 +34,7 @@ public:
     // Run TopK using both HNSW and flat index and calculate the recall of the HNSW algorithm
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
+    static void TopK_HNSW_DISK(benchmark::State &st);
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
 
     // Does nothing but returning the index memory.
@@ -46,14 +47,18 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
                                                  unsigned short index_offset) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+
+    auto hnsw_index = GET_INDEX(INDEX_HNSW + index_offset);
+    auto bf_index = GET_INDEX(INDEX_BF + index_offset);
+    auto &q = QUERIES[iter % N_QUERIES];
+
     auto hnsw_results =
-        VecSimIndex_TopKQuery(GET_INDEX(INDEX_HNSW + index_offset),
-                              QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
+        VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset),
-                                            QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+    auto bf_results = VecSimIndex_TopKQuery(bf_index, q.data(), k,
+        nullptr, BY_SCORE);
 
     BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
 
@@ -75,7 +80,34 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
 
 // TopK search BM
 
+
+    // Run TopK using disk-based HNSW index vs BF to measure recall
+    template <typename index_type_t>
+    void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
+        size_t ef = st.range(0);
+        size_t k = st.range(1);
+        std::atomic_int correct = 0;
+        size_t iter = 0;
+        for (auto _ : st) {
+            HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+            auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+            auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
+            auto bf_index = GET_INDEX(INDEX_BF);
+            auto &q = QUERIES[iter % N_QUERIES];
+            auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+            st.PauseTiming();
+            auto bf_results = VecSimIndex_TopKQuery(bf_index, q.data(), k, nullptr, BY_SCORE);
+            BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
+            VecSimQueryReply_Free(bf_results);
+            VecSimQueryReply_Free(hnsw_results);
+            st.ResumeTiming();
+            iter++;
+        }
+        st.counters["Recall"] = (float)correct / (float)(k * iter);
+    }
+
 template <typename index_type_t>
+
 void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short index_offset) {
     size_t k = st.range(0);
     size_t iter = 0;

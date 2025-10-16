@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
  *
@@ -50,7 +50,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW), fp32_inde
 REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW));
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_index_t)
-(benchmark::State &st) { TopK_HNSW(st); }
+(benchmark::State &st) { TopK_HNSW_DISK(st); }
 REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
 
 // Range benchmarks
