@@ -30,8 +30,13 @@ jobs:
       - name: flow tests
         run: make flow_test
 
+  sanitizer:
+    uses: ./.github/workflows/task-unit-test.yml
+    with:
+      san: address
+    secrets: inherit
+
   coverage:
-    needs: [basic-tests]
     if: ${{ !github.event.pull_request.draft}}
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
@@ -54,6 +59,7 @@ jobs:
   pr-validation:
     needs:
       - basic-tests
+      - sanitizer
       - coverage
       - codeql-analysis
       - spellcheck
