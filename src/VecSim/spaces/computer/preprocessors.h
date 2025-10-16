@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <memory>
 #include <cassert>
+#include <cmath>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
