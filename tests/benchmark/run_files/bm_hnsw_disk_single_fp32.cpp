@@ -14,9 +14,9 @@ uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
 // Configure using existing dbpedia dataset for now (can be changed to SIFT1B later)
 size_t BM_VecSimGeneral::n_queries = 100;
 size_t BM_VecSimGeneral::n_vectors = 100000;
-size_t BM_VecSimGeneral::dim = 768;          // dbpedia vectors are 768-dimensional
-size_t BM_VecSimGeneral::M = 32;             // HNSW parameter M
-size_t BM_VecSimGeneral::EF_C = 256;         // HNSW construction parameter
+size_t BM_VecSimGeneral::dim = 96;
+size_t BM_VecSimGeneral::M = 32;
+size_t BM_VecSimGeneral::EF_C = 256;
 
 // Dataset file paths - using existing dbpedia dataset
 const char *BM_VecSimGeneral::hnsw_index_file = "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";

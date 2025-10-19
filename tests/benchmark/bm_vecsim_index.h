@@ -20,6 +20,10 @@
 #include <filesystem>
 #include <iostream>
 #include <chrono>
+#include <fstream>
+#include <vector>
+
+#include <iomanip>
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -77,6 +81,11 @@ private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file, VecSimType type);
+
+    // FBIN loading configuration
+    static constexpr size_t BATCH_SIZE = 40;
+    static constexpr const char *FBIN_PATH = "/Users/ofir.yanai/base.10M.fbin";
+
 };
 
 template <typename index_type_t>
@@ -209,32 +218,77 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         indices[INDEX_HNSW_DISK] = IndexPtr(new (abstractInitParams.allocator) HNSWDiskIndex<data_t, dist_t>(
             &hnsw_disk_params, abstractInitParams, indexComponents, benchmark_db.get(), benchmark_cf));
             
-        // Populate the disk index with the same vectors as the HNSW index
+        // Populate the disk index by loading vectors from file
         if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
-            auto *hnsw_index = CastToHNSW(indices[INDEX_HNSW]);
             size_t total = n_vectors;
-            std::cerr << "[Init] Populating HNSWDiskIndex with " << total << " vectors..." << std::endl;
+            std::cerr << "[Init] Populating HNSWDiskIndex with " << total << " vectors from file..." << std::endl;
             auto t0 = clock::now();
-            size_t print_every = std::max<size_t>(size_t(1000), total / 100); // ~1% or 10k, whichever larger
-            for (size_t i = 0; i < total; ++i) {
-                const char *blob = GetHNSWDataByInternalId(i);
-                size_t label = hnsw_index->getExternalLabel(i);
-                VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], blob, label);
-                if (i % print_every == 0 || i + 1 == total) {
-                    auto now = clock::now();
-                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - t0).count();
-                    double elapsed_s = std::max<double>(1e-6, elapsed_ms / 1000.0);
-                    double rate = (double)(i + 1) / elapsed_s; // vectors/sec
-                    size_t pct = ((i + 1) * 100) / total;
-                    std::cerr << "[Init] HNSWDiskIndex population " << pct << "% ("
-                              << (i + 1) << "/" << total << ") "
-                              << (size_t)rate << " vec/s" << std::endl;
-                }
+
+            // Open the .fbin file for reading: [num_vectors (uint32), vector_dim (uint32), data (float32)]
+            std::ifstream file(FBIN_PATH, std::ios::binary);
+            if (!file.is_open()) {
+                std::cerr << "[Init] Error: Could not open file " << FBIN_PATH << std::endl;
+                throw std::runtime_error("Failed to open vectors file");
             }
+
+            // Read header (without extra validation)
+            uint32_t file_num_vectors = 0;
+            uint32_t file_dim = 0;
+            file.read(reinterpret_cast<char*>(&file_num_vectors), sizeof(uint32_t));
+            file.read(reinterpret_cast<char*>(&file_dim), sizeof(uint32_t));
+
+            // Determine how many vectors we will actually load (cap by benchmark's n_vectors)
+            size_t load_count = std::min<size_t>(file_num_vectors, total);
+            const size_t dim_from_file = static_cast<size_t>(file_dim);
+
+            // Allocate reusable buffer for batch reading (float32-aligned)
+            std::vector<float> batch_buffer;
+            batch_buffer.resize(BATCH_SIZE * dim_from_file);
+
+            size_t vectors_processed = 0;
+            size_t print_every = std::max<size_t>(size_t(1000), load_count / 20); // ~5% or 1000
+            while (vectors_processed < load_count) {
+                size_t vectors_in_batch = std::min(BATCH_SIZE, load_count - vectors_processed);
+                size_t floats_to_read = vectors_in_batch * dim_from_file;
+
+                file.read(reinterpret_cast<char*>(batch_buffer.data()), floats_to_read * sizeof(float));
+                if (!file) {
+                    std::cerr << "[Init] Error: Failed reading fbin data at vector " << vectors_processed << std::endl;
+                    throw std::runtime_error("Failed to read vectors from fbin file");
+                }
+
+                for (size_t j = 0; j < vectors_in_batch; ++j) {
+                    size_t i = vectors_processed + j; // global id
+                    const void* vector_data = batch_buffer.data() + j * dim_from_file;
+
+                    VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], vector_data, i);
+
+                    if (i % print_every == 0 || i + 1 == load_count) {
+                        auto now = clock::now();
+                        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - t0).count();
+                        double elapsed_s = std::max<double>(1e-6, elapsed_ms / 1000.0);
+                        double rate = (double)(i + 1) / elapsed_s; // vectors/sec
+                        size_t pct = ((i + 1) * 100) / load_count;
+                        std::cerr << "[Init " << elapsed_s << "s] HNSWDiskIndex fbin load " << pct << "% ("
+                                  << (i + 1) << "/" << load_count << ") "
+                                  << (size_t)rate << " vec/s" << std::endl;
+                    }
+                }
+
+                vectors_processed += vectors_in_batch;
+            }
+
+            file.close();
+
             auto t1 = clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::seconds>(t1 - t0).count();
+            int hours = duration / 3600;
+            int minutes = (duration % 3600) / 60;
+            int seconds = duration % 60;
             std::cerr << "[Init] HNSWDiskIndex population done in "
-                      << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()
-                      << " ms" << std::endl;
+                      << std::setfill('0') << std::setw(2) << hours << ":"
+                      << std::setfill('0') << std::setw(2) << minutes << ":"
+                      << std::setfill('0') << std::setw(2) << seconds << std::endl;
         }
     }
 
@@ -246,14 +300,33 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                               .blockSize = block_size};
         indices[INDEX_BF] = IndexPtr(CreateNewIndex(bf_params));
 
-        // Currently, we rely on hnsw index to initialize BF index.
-        assert(enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW);
-        // Add the same vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            const char *blob = GetHNSWDataByInternalId(i);
-            // For multi value indices, the internal id is not necessarily equal the label.
-            size_t label = CastToHNSW(indices[INDEX_HNSW])->getExternalLabel(i);
-            VecSimIndex_AddVector(indices[INDEX_BF], blob, label);
+        std::ifstream file(FBIN_PATH, std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open vectors file for BF index");
+        }
+        uint32_t file_num_vectors = 0, file_dim = 0;
+        file.read(reinterpret_cast<char*>(&file_num_vectors), sizeof(uint32_t));
+        file.read(reinterpret_cast<char*>(&file_dim), sizeof(uint32_t));
+        size_t load_count = std::min<size_t>(file_num_vectors, n_vectors);
+        size_t dim_from_file = file_dim;
+
+        std::vector<float> batch_buffer;
+        batch_buffer.resize(BATCH_SIZE * dim_from_file);
+
+        size_t processed = 0;
+        while (processed < load_count) {
+            size_t in_batch = std::min(BATCH_SIZE, load_count - processed);
+            size_t floats_to_read = in_batch * dim_from_file;
+            file.read(reinterpret_cast<char*>(batch_buffer.data()), floats_to_read * sizeof(float));
+            if (!file) {
+                throw std::runtime_error("Failed to read vectors from fbin file for BF index");
+            }
+            for (size_t j = 0; j < in_batch; ++j) {
+                size_t i = processed + j;
+                const float* vec_ptr = batch_buffer.data() + j * dim_from_file;
+                VecSimIndex_AddVector(indices[INDEX_BF], vec_ptr, i);
+            }
+            processed += in_batch;
         }
     }
 
@@ -290,23 +363,23 @@ void BM_VecSimIndex<index_type_t>::InitializeRocksDB() {
     if (benchmark_db) {
         return; // Already initialized
     }
-    
+
     // Create a temporary directory for RocksDB
     rocksdb_temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid());
-    
+
     // Ensure the directory exists
     std::filesystem::create_directories(rocksdb_temp_dir);
-    
+
     rocksdb::Options options;
     options.create_if_missing = true;
     options.error_if_exists = false;
-    
+
     rocksdb::DB* db_ptr = nullptr;
     rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_temp_dir, &db_ptr);
     if (!status.ok()) {
         throw std::runtime_error("Failed to open RocksDB: " + status.ToString());
     }
-    
+
     benchmark_db.reset(db_ptr);
     benchmark_cf = benchmark_db->DefaultColumnFamily();
 }
