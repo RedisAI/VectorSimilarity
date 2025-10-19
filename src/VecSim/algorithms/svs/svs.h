@@ -374,8 +374,8 @@ public:
                           .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
                           .pruneTo = this->buildParams.prune_to,
                           .useSearchHistory = this->buildParams.use_full_search_history,
-                          .lastReservedThreads = this->getNumThreads(),
                           .numThreads = this->getThreadPoolCapacity(),
+                          .lastReservedThreads = this->getNumThreads(),
                           .numberOfMarkedDeletedNodes = this->num_marked_deleted,
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
@@ -443,6 +443,11 @@ public:
             VecSim_InfoField{.fieldName = VecSimCommonStrings::SVS_NUM_THREADS_STRING,
                              .fieldType = INFOFIELD_UINT64,
                              .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.numThreads}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.lastReservedThreads}}});
 
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::NUM_MARKED_DELETED,
