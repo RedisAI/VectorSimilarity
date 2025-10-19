@@ -374,7 +374,7 @@ public:
                           .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
                           .pruneTo = this->buildParams.prune_to,
                           .useSearchHistory = this->buildParams.use_full_search_history,
-                          .numThreads = this->getNumThreads(),
+                          .numThreads = this->getThreadPoolCapacity(),
                           .numberOfMarkedDeletedNodes = this->num_marked_deleted,
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
