@@ -251,6 +251,88 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     mock_thread_pool.thread_pool_join();
 }
 
+TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
+    // Set thread_pool_size to 4 or actual number of available CPUs
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        // If the number of threads is less than 2, we can't run the test
+        GTEST_SKIP() << "No threads available";
+    }
+
+    constexpr size_t training_threshold = 10;
+    constexpr size_t update_threshold = 10;
+    constexpr size_t update_job_wait_time = 10000;
+    constexpr size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = num_threads};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    mock_thread_pool.thread_pool_size = num_threads;
+
+    // Create TieredSVS index instance with a mock queue.
+    auto *tiered_index = this->CreateTieredSVSIndex(
+        svs_params, mock_thread_pool, training_threshold, update_threshold, update_job_wait_time);
+    ASSERT_INDEX(tiered_index);
+
+    // Verify initial state: both fields should equal configured thread count
+    VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+    // Get the allocator from the tiered index.
+    auto allocator = tiered_index->getAllocator();
+
+    // Simulate thread contention by keeping one thread busy, to force reduced thread availability
+    std::atomic<bool> is_reserved = false;
+    std::atomic<bool> thread_wait = true;
+    auto reserve_and_wait = [&](VecSimIndex * /*unused*/, size_t num_threads) {
+        is_reserved = true;
+        while (thread_wait) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    };
+
+    // Keep one thread occupied
+    mock_thread_pool.init_threads();
+    SVSMultiThreadJob::JobsRegistry registry(allocator);
+    std::chrono::milliseconds timeout{update_job_wait_time}; // long enough to reserve one thread
+    auto jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, reserve_and_wait,
+                                              tiered_index, 1, timeout, &registry);
+    ASSERT_EQ(jobs.size(), 1);
+    tiered_index->submitJobs(jobs);
+    // Wait for thread reservation to complete
+    while (!is_reserved) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // Trigger training with reduced thread availability
+    for (size_t i = 0; i < training_threshold; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+    }
+    while (tiered_index->GetBackendIndex()->indexSize() != training_threshold) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // Verify: numThreads unchanged, lastReservedThreads reflects actual availability
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads - 1);
+
+    // Release occupied thread and trigger another background indexing
+    thread_wait = false;
+    mock_thread_pool.thread_pool_wait();
+    // add more vectors to trigger background indexing
+    for (size_t i = training_threshold; i < training_threshold + update_threshold; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+    }
+    mock_thread_pool.thread_pool_join();
+
+    // Verify: numThreads unchanged, lastReservedThreads reflects we used all configured threads
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+}
+
 TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     // Create TieredSVS index instance with a mock queue.
     SVSParams params = {.type = TypeParam::get_index_type(),
