@@ -722,7 +722,12 @@ public:
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
                 std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
-                return svs_index->addVectors(storage_blob.get(), &label, 1);
+                // Set available thread count to 1 for single vector write-in-place operation.
+                // This maintains the contract that single vector operations use exactly one thread.
+                // TODO: Replace this setNumThreads(1) call with an assertion once we establish
+                // a contract that write-in-place mode guarantees numThreads == 1.
+                svs_index->setNumThreads(1);
+                return this->backendIndex->addVector(storage_blob.get(), label);
             }
         }
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");

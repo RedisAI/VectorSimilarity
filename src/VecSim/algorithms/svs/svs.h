@@ -54,6 +54,11 @@ protected:
     size_t num_marked_deleted;
 };
 
+/** Thread Management Strategy:
+ * - addVector(): Requires numThreads == 1
+ * - addVectors(): Allows any numThreads value, but prohibits n=1 with numThreads>1
+ * - Callers are responsible for setting appropriate thread counts
+ **/
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
           size_t ResidualBits, bool IsLeanVec>
 class SVSIndex : public VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>,
@@ -199,6 +204,12 @@ protected:
         return processed_blob;
     }
 
+    // Assuming numThreads was updated to reflect the number of available threads before this
+    // function was called.
+    // This function assumes that the caller has already set numThreads to the appropriate value
+    // for the operation.
+    // Important NOTE: For single vector operations (n=1), numThreads should be 1.
+    // For bulk operations (n>1), numThreads should reflect the number of available threads.
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
             return 0;
@@ -217,23 +228,12 @@ protected:
         // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
-        // If n == 1, we should ensure single-threading
-        const size_t current_num_threads = getNumThreads();
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(1);
-        }
-
         if (!impl_) {
             // SVS index instance cannot be empty, so we have to construct it at first rows
             initImpl(points, ids);
         } else {
             // Add new points to existing SVS index
             impl_->add_points(points, ids);
-        }
-
-        // Restore multi-threading if needed
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(current_num_threads);
         }
 
         return n - deleted_num;
@@ -478,10 +478,18 @@ public:
     }
 
     int addVector(const void *vector_data, labelType label) override {
+        // Enforce single-threaded execution for single vector operations to ensure optimal
+        // performance and consistent behavior. Callers must set numThreads=1 before calling this
+        // method.
+        assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
     }
 
     int addVectors(const void *vectors_data, const labelType *labels, size_t n) override {
+        // Prevent misuse: single vector operations should use addVector(), not addVectors() with
+        // n=1 This ensures proper thread management and API contract enforcement.
+        assert(!(n == 1 && getNumThreads() > 1) &&
+               "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vectors_data, labels, n);
     }
 
