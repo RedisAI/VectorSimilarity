@@ -511,7 +511,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
 
     auto mock_thread_pool = tieredIndexMock();
 
-    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 0, 1);
+    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 1, 1);
     auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     ASSERT_INDEX(tiered_index);
 
@@ -527,7 +527,6 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
     ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
-    mock_thread_pool.init_threads();
 
     // Create a vector and add it to the tiered index.
     labelType vec_label = 1;
@@ -542,7 +541,6 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(vec_label, vector), 0);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
-    mock_thread_pool.thread_pool_wait();
 
     // Account for the allocation of a new block due to the vector insertion.
     expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
