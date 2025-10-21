@@ -90,14 +90,31 @@ protected:
                                                    .updateJobWaitTime = update_job_wait_time}}};
     }
 
+    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
+                          size_t expected_capcity) {
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getNumThreads(), expected_num_threads);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity);
+    }
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
-                                                 tieredIndexMock &mock_thread_pool) {
+                                                 tieredIndexMock &mock_thread_pool,
+                                                 size_t num_available_threads = 1) {
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
 
         // Set the created tiered index in the index external context (it will take ownership over
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+        // Set numThreads to 1 by default to allow direct calls to SVS addVector() API,
+        // which requires exactly 1 thread. When using tiered index addVector API,
+        // the thread count is managed internally according to the operation and threadpool
+        // capacity, so testing parallelism remains intact.
+        tiered_index->GetSVSIndex()->setNumThreads(num_available_threads);
+        size_t params_threadpool_size =
+            tiered_params.primaryIndexParams->algoParams.svsParams.num_threads;
+        size_t expected_capacity =
+            params_threadpool_size ? params_threadpool_size : mock_thread_pool.thread_pool_size;
+        verifyNumThreads(tiered_index, num_available_threads, expected_capacity);
+
         return tiered_index;
     }
 
@@ -105,12 +122,13 @@ protected:
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                          size_t training_threshold = TestsDefaultTrainingThreshold,
                          size_t update_threshold = TestsDefaultUpdateThreshold,
-                         size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
+                         size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME,
+                         size_t num_available_threads = 1) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params =
             CreateTieredSVSParams(svs_params, mock_thread_pool, training_threshold,
                                   update_threshold, update_job_wait_time);
-        return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        return CreateTieredSVSIndex(tiered_params, mock_thread_pool, num_available_threads);
     }
 
     void SetUp() override {
@@ -241,6 +259,203 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     // The number of reserved threads should be equal to the number of available threads
     ASSERT_EQ(num_reserved_threads, num_threads);
     mock_thread_pool.thread_pool_join();
+}
+
+TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
+    // Set thread_pool_size to 4 or actual number of available CPUs
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        // If the number of threads is less than 2, we can't run the test
+        GTEST_SKIP() << "No threads available";
+    }
+
+    constexpr size_t training_threshold = 10;
+    constexpr size_t update_threshold = 10;
+    constexpr size_t update_job_wait_time = 10000;
+    constexpr size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = num_threads};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    mock_thread_pool.thread_pool_size = num_threads;
+
+    // Create TieredSVS index instance with a mock queue.
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold,
+                                   update_threshold, update_job_wait_time, num_threads);
+    ASSERT_INDEX(tiered_index);
+
+    // Verify initial state: both fields should equal configured thread count
+    VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+    // Get the allocator from the tiered index.
+    auto allocator = tiered_index->getAllocator();
+
+    // Simulate thread contention by keeping one thread busy, to force reduced thread availability
+    std::atomic<bool> is_reserved = false;
+    std::atomic<bool> thread_wait = true;
+    auto reserve_and_wait = [&](VecSimIndex * /*unused*/, size_t num_threads) {
+        is_reserved = true;
+        while (thread_wait) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    };
+
+    // Keep one thread occupied
+    mock_thread_pool.init_threads();
+    SVSMultiThreadJob::JobsRegistry registry(allocator);
+    std::chrono::milliseconds timeout{update_job_wait_time}; // long enough to reserve one thread
+    auto jobs = SVSMultiThreadJob::createJobs(allocator, SVS_BATCH_UPDATE_JOB, reserve_and_wait,
+                                              tiered_index, 1, timeout, &registry);
+    ASSERT_EQ(jobs.size(), 1);
+    tiered_index->submitJobs(jobs);
+    // Wait for thread reservation to complete
+    while (!is_reserved) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // Trigger training with reduced thread availability
+    for (size_t i = 0; i < training_threshold; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+    }
+    while (tiered_index->GetBackendIndex()->indexSize() != training_threshold) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // Verify: numThreads unchanged, lastReservedThreads reflects actual availability
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads - 1);
+
+    // Release occupied thread and trigger another background indexing
+    thread_wait = false;
+    mock_thread_pool.thread_pool_wait();
+    // add more vectors to trigger background indexing
+    for (size_t i = 0; i < update_threshold; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, training_threshold + i);
+    }
+    mock_thread_pool.thread_pool_join();
+
+    // Verify: numThreads unchanged, lastReservedThreads reflects we used all configured threads
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+}
+
+TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
+    // Test that write-in-place mode correctly reports thread usage in debug info.
+    // Even when the index is configured with multiple threads, write-in-place operations
+    // should use only 1 thread and lastReservedThreads should reflect this.
+
+    // Set thread_pool_size to 4 or actual number of available CPUs
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        // If the number of threads is less than 2, we can't run the test
+        GTEST_SKIP() << "No threads available";
+    }
+
+    // Test svs when mode is write in place, but the index is configured with multiple threads.
+    constexpr size_t training_threshold = 10;
+    constexpr size_t update_threshold = 10;
+    constexpr size_t update_job_wait_time = 10000;
+    constexpr size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .num_threads = num_threads};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    mock_thread_pool.thread_pool_size = num_threads;
+
+    // Create TieredSVS index instance with a mock queue.
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold,
+                                   update_threshold, update_job_wait_time, num_threads);
+    ASSERT_INDEX(tiered_index);
+
+    // Set to mode to write in place even though the index is configured with multiple threads.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    // Verify initial state: both fields should equal configured thread count
+    VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+    // Get the allocator from the tiered index.
+    auto allocator = tiered_index->getAllocator();
+
+    mock_thread_pool.init_threads();
+
+    // Trigger training
+    for (size_t i = 0; i < training_threshold; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+    }
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    while (tiered_index->GetBackendIndex()->indexSize() != training_threshold) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // Verify: numThreads unchanged, lastReservedThreads reflects we only used one thread (main
+    // thread)
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
+
+    // add more vectors, each will be directly inserted to the backend index
+    size_t num_vectors = 10;
+    for (size_t i = 0; i < num_vectors; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, training_threshold + i);
+        // Verify: numThreads unchanged, lastReservedThreads reflects we used only one thread
+        backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+        ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+        ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTest, TestAddOneVectorAsync) {
+    auto mock_thread_pool = tieredIndexMock();
+    const auto num_threads = mock_thread_pool.thread_pool_size;
+    if (num_threads < 2) {
+        // If the number of threads is less than 2, this test has no point.
+        GTEST_SKIP() << "No threads available";
+    }
+    constexpr size_t training_threshold = 1;
+    constexpr size_t update_threshold = 1;
+    constexpr size_t update_job_wait_time = 10000;
+    constexpr size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+
+    // Create TieredSVS index instance with a mock queue.
+    auto *tiered_index = this->CreateTieredSVSIndex(
+        svs_params, mock_thread_pool, training_threshold, update_threshold, update_job_wait_time);
+    ASSERT_INDEX(tiered_index);
+    mock_thread_pool.init_threads();
+
+    // Verify initial state: both fields should equal configured thread count
+    VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+
+    // Add one vector - this should trigger background training
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    mock_thread_pool.thread_pool_wait();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+
+    // Verify: numThreads unchanged, and we used one thread
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
+
+    // add another vectors to trigger background indexing
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1);
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
+
+    // Verify: yet again, numThreads unchanged, and we used one thread
+    backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
+    ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
 }
 
 TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {

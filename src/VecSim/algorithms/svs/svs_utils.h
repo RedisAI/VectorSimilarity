@@ -27,7 +27,7 @@
 // Maximum training threshold for SVS index, used to limit the size of training data
 constexpr size_t SVS_MAX_TRAINING_THRESHOLD = 100 * DEFAULT_BLOCK_SIZE; // 100 * 1024 vectors
 // Default wait time for the update job in microseconds
-constexpr size_t SVS_DEFAULT_UPDATE_JOB_WAIT_TIME = 100; // 0.1 ms
+constexpr size_t SVS_DEFAULT_UPDATE_JOB_WAIT_TIME = 5000; // 5 ms
 
 namespace svs_details {
 // VecSim->SVS data type conversion
