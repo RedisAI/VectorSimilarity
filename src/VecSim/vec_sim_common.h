@@ -352,6 +352,8 @@ typedef struct {
     bool useSearchHistory;         // Either the contents of the search buffer can be used or
                                    // the entire search history.
     size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
+    size_t lastReservedThreads;    // Number of threads that were successfully reserved by the last
+                                   // ingestion operation.
     size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
     size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
     size_t searchBufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.

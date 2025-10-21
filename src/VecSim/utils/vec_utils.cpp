@@ -64,6 +64,7 @@ const char *VecSimCommonStrings::SVS_GRAPH_MAX_DEGREE_STRING = "GRAPH_MAX_DEGREE
 const char *VecSimCommonStrings::SVS_MAX_CANDIDATE_POOL_SIZE_STRING = "MAX_CANDIDATE_POOL_SIZE";
 const char *VecSimCommonStrings::SVS_PRUNE_TO_STRING = "PRUNE_TO";
 const char *VecSimCommonStrings::SVS_NUM_THREADS_STRING = "NUM_THREADS";
+const char *VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING = "LAST_RESERVED_NUM_THREADS";
 const char *VecSimCommonStrings::SVS_LEANVEC_DIM_STRING = "LEANVEC_DIMENSION";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
