@@ -23,7 +23,7 @@ using float16 = vecsim_types::float16;
 namespace DebugInfoIteratorFieldCount {
 constexpr size_t FLAT = 10;
 constexpr size_t HNSW = 17;
-constexpr size_t SVS = 23;
+constexpr size_t SVS = 24;
 constexpr size_t TIERED_HNSW = 15;
 constexpr size_t TIERED_SVS = 17;
 } // namespace DebugInfoIteratorFieldCount
@@ -618,6 +618,11 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // SVS number of threads.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.numThreads);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING)) {
+            // SVS number of last reserved threads.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.lastReservedThreads);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::NUM_MARKED_DELETED)) {
             // SVS number of marked deleted nodes.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -771,6 +776,7 @@ std::vector<std::string> getSVSFields() {
     fields.push_back(VecSimCommonStrings::SVS_PRUNE_TO_STRING);
     fields.push_back(VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING);
     fields.push_back(VecSimCommonStrings::SVS_NUM_THREADS_STRING);
+    fields.push_back(VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING);
     fields.push_back(VecSimCommonStrings::NUM_MARKED_DELETED);
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_WS_STRING);
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_BC_STRING);

@@ -65,6 +65,7 @@ public:
     static const char *SVS_MAX_CANDIDATE_POOL_SIZE_STRING;
     static const char *SVS_PRUNE_TO_STRING;
     static const char *SVS_NUM_THREADS_STRING;
+    static const char *SVS_LAST_RESERVED_THREADS_STRING;
     static const char *SVS_LEANVEC_DIM_STRING;
 
     static const char *BLOCK_SIZE_STRING;
