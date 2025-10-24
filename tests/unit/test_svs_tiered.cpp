@@ -322,7 +322,8 @@ TYPED_TEST(SVSTieredIndexTest, svs_bulk_vectors_add_delete_test2) {
 
     size_t n = 1024 * 10;
     // Load vectors once before the loop
-    // static auto file_vectors = load_vectors_from_file("/tmp/Test_logs_with_vecs/tests/pytests/vectors_FLOAT32_no_compression.txt");
+    // static auto file_vectors =
+    // load_vectors_from_file("/tmp/Test_logs_with_vecs/tests/pytests/vectors_FLOAT32_no_compression.txt");
 
     ASSERT_EQ(file_vectors.size(), n);
     for (size_t i = 0; i < n; i++) {
@@ -350,10 +351,8 @@ TYPED_TEST(SVSTieredIndexTest, svs_bulk_vectors_add_delete_test2) {
     test_utils::populate_float_vec(query, dim);
     size_t k = 10;
     VecSimQueryReply *res = VecSimIndex_TopKQuery(tiered_index, query, k, nullptr, BY_SCORE);
-VecSimQueryReply_Free(res);
-
+    VecSimQueryReply_Free(res);
 }
-
 
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs
