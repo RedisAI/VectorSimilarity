@@ -5,6 +5,7 @@
 
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
+#include "tests_utils.h"
 
 #if HAVE_SVS
 #include <thread>
@@ -268,6 +269,91 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     ASSERT_EQ(num_reserved_threads, num_threads);
     mock_thread_pool.thread_pool_join();
 }
+
+// // Add this function before the test
+// std::vector<std::vector<float>> load_vectors_from_file(const std::string& filename) {
+//     std::ifstream file(filename);
+//     std::string line;
+
+//     // Skip first line (metadata)
+//     std::getline(file, line);
+
+//     // Read second line with vector data
+//     std::getline(file, line);
+
+//     std::vector<std::vector<float>> vectors;
+
+//     // Simple parsing: find all [x, y] patterns
+//     size_t pos = 0;
+//     while ((pos = line.find('[', pos)) != std::string::npos) {
+//         size_t end = line.find(']', pos);
+//         if (end == std::string::npos) break;
+
+//         std::string vector_str = line.substr(pos + 1, end - pos - 1);
+//         size_t comma = vector_str.find(',');
+
+//         float x = std::stof(vector_str.substr(0, comma));
+//         float y = std::stof(vector_str.substr(comma + 1));
+
+//         vectors.push_back({x, y});
+//         pos = end + 1;
+//     }
+
+//     return vectors;
+// }
+
+TYPED_TEST(SVSTieredIndexTest, svs_bulk_vectors_add_delete_test2) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 2;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .construction_window_size = 10,
+                        .num_threads = 1};
+    VecSimParams svs_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 0, 0);
+    auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    size_t n = 1024 * 10;
+    // Load vectors once before the loop
+    // static auto file_vectors = load_vectors_from_file("/tmp/Test_logs_with_vecs/tests/pytests/vectors_FLOAT32_no_compression.txt");
+
+    ASSERT_EQ(file_vectors.size(), n);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        // if (i < file_vectors.size()) {
+        //     vector[0] = file_vectors[i][0];
+        //     vector[1] = file_vectors[i][1];
+        // }
+        test_utils::populate_float_vec(vector, dim, i);
+        VecSimIndex_AddVector(tiered_index, vector, i);
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    size_t keep_count = 10;
+    for (size_t i = 0; i < n - keep_count; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
+    }
+    // Validate that the vector was inserted to the flat buffer properly.
+    ASSERT_EQ(tiered_index->indexSize(), keep_count);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), keep_count);
+    TEST_DATA_T query[dim];
+    test_utils::populate_float_vec(query, dim);
+    size_t k = 10;
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(tiered_index, query, k, nullptr, BY_SCORE);
+VecSimQueryReply_Free(res);
+
+}
+
 
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs
