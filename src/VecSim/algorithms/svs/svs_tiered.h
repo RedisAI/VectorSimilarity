@@ -227,7 +227,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
     // Used to prevent running multiple index update jobs in parallel.
     // Even if update jobs scheduled sequentially, they can be started in parallel.
-    std::mutex updateJobMutex;
+    mutable std::mutex updateJobMutex;
 
     // The reason of following container just to properly destroy jobs which not executed yet
     SVSMultiThreadJob::JobsRegistry uncompletedJobs;
@@ -880,6 +880,8 @@ public:
                                        .indexUpdateScheduled =
                                            static_cast<bool>(this->indexUpdateScheduled.test())};
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
+        // prevent parallel updates
+        std::lock_guard<std::mutex> lock(this->updateJobMutex);
         info.tieredInfo.backgroundIndexing =
             svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
                 ? VecSimBool_TRUE
