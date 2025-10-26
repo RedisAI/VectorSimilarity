@@ -1,0 +1,7 @@
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.base.1M.fbin
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.base.10M.fbin
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.query.public.10K.fbin
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.groundtruth.1M.10K.ibin
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.groundtruth.10M.10K.ibin
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.base.1B.fbin
+https://redis-ann-benchmarks.s3.eu-central-1.amazonaws.com/deep1b/deep.groundtruth.public.10K.ibin

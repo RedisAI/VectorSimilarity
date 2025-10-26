@@ -25,6 +25,7 @@
 #include "bm_definitions.h"
 #include "bm_macros.h"
 #include "utils/mock_thread_pool.h"
+#include <filesystem>
 
 // This class includes every static data member that is:
 // 1. Common for all data type data sets.
@@ -93,8 +94,11 @@ protected:
         if (auto root = getenv("ROOT")) {
             return std::string(root) + "/" + file_name;
         } else {
-            std::cerr << "ROOT environment variable is not set. Set vecsim root path as ROOT";
-            std::exit(1);
+            std::cout << "ROOT environment variable is not set. using current directory as root."
+                      << std::endl;
+            return std::filesystem::current_path().string() + "/" + file_name;
+            // std::cerr << "ROOT environment variable is not set. Set vecsim root path as ROOT";
+            // std::exit(1);
         }
     }
 };

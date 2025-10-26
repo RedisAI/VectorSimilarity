@@ -86,6 +86,8 @@ struct DiskElementMetaData {
 // Note: This is already defined in hnsw.h, so we'll use that one
 
 static constexpr char GraphKeyPrefix[3] = "GK";
+static constexpr char RawVectorKeyPrefix[3] = "RV";
+
 #pragma pack(1)
 struct GraphKey {
     // uint8_t version;
@@ -98,20 +100,43 @@ struct GraphKey {
         // Create a key with the "GK" prefix followed by the struct data
         static thread_local std::vector<char> key_buffer;
         key_buffer.resize(3 + sizeof(*this)); // 3 bytes for "GK" + struct size
-        
+
         // Copy the "GK" prefix
         key_buffer[0] = 'G';
         key_buffer[1] = 'K';
         key_buffer[2] = '\0';
-        
+
         // Copy the struct data
         std::memcpy(key_buffer.data() + 3, this, sizeof(*this));
-        
+
         return rocksdb::Slice(key_buffer.data(), key_buffer.size());
     }
 
     graphNodeType node() const {
         return graphNodeType(id, level);
+    }
+};
+
+#pragma pack(1)
+struct RawVectorKey {
+    idType id;
+
+    RawVectorKey(idType id) : id(id) {}
+
+    rocksdb::Slice asSlice() const {
+        // Create a key with the "RV" prefix followed by the id
+        static thread_local std::vector<char> key_buffer;
+        key_buffer.resize(3 + sizeof(idType)); // 3 bytes for "RV" + id size
+
+        // Copy the "RV" prefix
+        key_buffer[0] = 'R';
+        key_buffer[1] = 'V';
+        key_buffer[2] = '\0';
+
+        // Copy the id
+        std::memcpy(key_buffer.data() + 3, &id, sizeof(idType));
+
+        return rocksdb::Slice(key_buffer.data(), key_buffer.size());
     }
 };
 #pragma pack()
@@ -261,6 +286,9 @@ public:
     void processCandidate(idType candidate_id, const void* data_point, size_t level, size_t ef,
                          void* visited_tags, size_t visited_tag, candidatesLabelsMaxHeap<DistType>& top_candidates,
                          candidatesMaxHeap<DistType>& candidate_set, DistType& lowerBound) const;
+
+    // Raw vector storage and retrieval methods
+    std::vector<char> getRawVector(idType id) const;
 
 protected:
 
@@ -807,7 +835,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 ) {
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
-    
+
     // Store the processed vector in memory immediately
     size_t containerId = this->vectors->size();
     this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
@@ -827,13 +855,27 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // Store metadata immediately
     idToMetaData[newElementId] = new_element;
     labelToIdMap[label] = newElementId;
-    
+
+    // Store raw vector to disk
+    RawVectorKey rawVectorKey(newElementId);
+    const void* storageBlob = processedBlobs.getStorageBlob();
+    auto rawVectorSlice = rocksdb::Slice(reinterpret_cast<const char*>(storageBlob), this->dataSize);
+
+    auto writeOptions = rocksdb::WriteOptions();
+    writeOptions.disableWAL = true;
+    rocksdb::Status status = db->Put(writeOptions, cf, rawVectorKey.asSlice(), rawVectorSlice);
+    if (!status.ok()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                 "WARNING: Failed to store raw vector for id %u: %s",
+                 newElementId, status.ToString().c_str());
+    }
+
     // Increment vector count immediately
     curElementCount++;
-    
+
     // Resize visited nodes handler pool to accommodate new elements
     visitedNodesHandlerPool.resize(curElementCount);
-    
+
     // Add only the vector ID to pending vectors for indexing
     pendingVectorIds.push_back(newElementId);
     pendingVectorCount++;
@@ -1244,6 +1286,37 @@ const void* HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) co
     // In a production implementation, you might want to implement a proper cache
     // or use a different strategy for handling disk-based vector retrieval
     const void* result = this->vectors->getElement(id);
+    return result;
+}
+
+template <typename DataType, typename DistType>
+std::vector<char> HNSWDiskIndex<DataType, DistType>::getRawVector(idType id) const {
+    std::vector<char> result;
+
+    if (id >= curElementCount) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                 "WARNING: getRawVector called with invalid id %u (current count: %zu)",
+                 id, curElementCount);
+        return result;
+    }
+
+    // Try to retrieve from disk
+    RawVectorKey rawVectorKey(id);
+    std::string vectorData;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, rawVectorKey.asSlice(), &vectorData);
+
+    if (status.ok()) {
+        // Copy the data from string to vector
+        result.assign(vectorData.begin(), vectorData.end());
+    } else if (status.IsNotFound()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                 "WARNING: Raw vector not found on disk for id %u", id);
+    } else {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                 "WARNING: Failed to retrieve raw vector for id %u: %s",
+                 id, status.ToString().c_str());
+    }
+
     return result;
 }
 

@@ -658,7 +658,186 @@ TEST_F(HNSWDiskIndexTest, HierarchicalSearchTest) {
     std::cout << "\n=== Hierarchical search test completed ===" << std::endl;
 }
 
+TEST_F(HNSWDiskIndexTest, RawVectorStorageAndRetrieval) {
+    // Test raw vector storage and retrieval
+    const size_t dim = 128;
+
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 16;
+    params.efConstruction = 200;
+    params.efRuntime = 100;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
+
+    // Create test vectors
+    std::mt19937 rng(42);
+    std::vector<std::vector<float>> test_vectors;
+    std::vector<labelType> labels;
+
+    const size_t num_vectors = 10;
+    for (size_t i = 0; i < num_vectors; ++i) {
+        auto vec = createRandomVector(dim, rng);
+        normalizeVector(vec);
+        test_vectors.push_back(vec);
+        labels.push_back(i);
+    }
+
+    // Add vectors to the index
+    for (size_t i = 0; i < num_vectors; ++i) {
+        int result = index.addVector(test_vectors[i].data(), labels[i]);
+        EXPECT_EQ(result, 1) << "Failed to add vector " << i;
+    }
+
+    // Verify that vectors were stored on disk
+    for (size_t i = 0; i < num_vectors; ++i) {
+        auto retrieved_vector = index.getRawVector(i);
+
+        // Check that we got a vector back
+        EXPECT_FALSE(retrieved_vector.empty()) << "Retrieved vector " << i << " is empty";
+
+        // Check that the size matches
+        EXPECT_EQ(retrieved_vector.size(), dim * sizeof(float))
+            << "Retrieved vector " << i << " has incorrect size";
+
+        // Check that the data matches (approximately, due to preprocessing)
+        const float* retrieved_data = reinterpret_cast<const float*>(retrieved_vector.data());
+        for (size_t j = 0; j < dim; ++j) {
+            EXPECT_FLOAT_EQ(retrieved_data[j], test_vectors[i][j])
+                << "Vector " << i << " element " << j << " mismatch";
+        }
+    }
+
+    std::cout << "Raw vector storage and retrieval test passed!" << std::endl;
+}
+
+TEST_F(HNSWDiskIndexTest, RawVectorRetrievalInvalidId) {
+    // Test that getRawVector handles invalid IDs gracefully
+    const size_t dim = 128;
+
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 16;
+    params.efConstruction = 200;
+    params.efRuntime = 100;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
+
+    // Try to retrieve a vector with an invalid ID (index is empty)
+    auto retrieved_vector = index.getRawVector(0);
+
+    // Should return an empty vector
+    EXPECT_TRUE(retrieved_vector.empty()) << "Retrieved vector for invalid ID should be empty";
+
+    std::cout << "Invalid ID retrieval test passed!" << std::endl;
+}
+
+TEST_F(HNSWDiskIndexTest, RawVectorMultipleRetrievals) {
+    // Test that we can retrieve the same vector multiple times
+    const size_t dim = 64;
+
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 16;
+    params.efConstruction = 200;
+    params.efRuntime = 100;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
+
+    // Create and add a test vector
+    std::mt19937 rng(42);
+    auto test_vector = createRandomVector(dim, rng);
+    normalizeVector(test_vector);
+
+    int result = index.addVector(test_vector.data(), 0);
+    EXPECT_EQ(result, 1) << "Failed to add vector";
+
+    // Retrieve the vector multiple times
+    const size_t num_retrievals = 5;
+    std::vector<std::vector<char>> retrieved_vectors;
+
+    for (size_t i = 0; i < num_retrievals; ++i) {
+        auto retrieved = index.getRawVector(0);
+        retrieved_vectors.push_back(retrieved);
+    }
+
+    // Verify all retrievals are identical
+    for (size_t i = 1; i < num_retrievals; ++i) {
+        EXPECT_EQ(retrieved_vectors[0], retrieved_vectors[i])
+            << "Retrieval " << i << " differs from first retrieval";
+    }
+
+    // Verify the data matches the original
+    const float* retrieved_data = reinterpret_cast<const float*>(retrieved_vectors[0].data());
+    for (size_t j = 0; j < dim; ++j) {
+        EXPECT_FLOAT_EQ(retrieved_data[j], test_vector[j])
+            << "Retrieved vector element " << j << " mismatch";
+    }
+
+    std::cout << "Multiple retrievals test passed!" << std::endl;
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
-} 
+}
