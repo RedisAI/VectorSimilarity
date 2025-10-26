@@ -874,11 +874,16 @@ public:
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
 
-        SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
-                                       .updateTriggerThreshold = this->updateTriggerThreshold,
-                                       .updateJobWaitTime = this->updateJobWaitTime,
-                                       .indexUpdateScheduled =
-                                           static_cast<bool>(this->indexUpdateScheduled.test())};
+        SvsTieredInfo svsTieredInfo = {
+            .trainingTriggerThreshold = this->trainingTriggerThreshold,
+            .updateTriggerThreshold = this->updateTriggerThreshold,
+            .updateJobWaitTime = this->updateJobWaitTime,
+        };
+        {
+            std::lock_guard<std::mutex> lock(this->updateJobMutex);
+            svsTieredInfo.indexUpdateScheduled =
+                this->indexUpdateScheduled.test() == VecSimBool_TRUE;
+        }
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
         // prevent parallel updates
         std::lock_guard<std::mutex> lock(this->updateJobMutex);
