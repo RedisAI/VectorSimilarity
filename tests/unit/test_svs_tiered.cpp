@@ -500,6 +500,72 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
 }
 
+TYPED_TEST(SVSTieredIndexTest, addVector) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti()};
+    VecSimParams svs_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, 1, 1);
+    auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+
+    // Get the allocator from the tiered index.
+    auto allocator = tiered_index->getAllocator();
+
+    BFParams bf_params = {.type = TypeParam::get_index_type(),
+                          .dim = dim,
+                          .metric = VecSimMetric_L2,
+                          .multi = TypeParam::isMulti()};
+
+    size_t expected_mem = TieredFactory::EstimateInitialSize(&tiered_params);
+    ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
+    ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    // Create a vector and add it to the tiered index.
+    labelType vec_label = 1;
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
+    VecSimIndex_AddVector(tiered_index, vector, vec_label);
+    // Validate that the vector was inserted to the flat buffer properly.
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(vec_label, vector), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
+
+    // Account for the allocation of a new block due to the vector insertion.
+    expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
+    // Account for the memory that was allocated in the labelToId map (approx.)
+    expected_mem += sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
+                    sizeof(void *) + sizeof(size_t);
+    // Account for the insert job that was created.
+    expected_mem +=
+        SVSMultiThreadJob::estimateSize(mock_thread_pool.thread_pool_size) + sizeof(size_t);
+    auto actual_mem = tiered_index->getAllocationSize();
+    ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
+    ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
+
+    if constexpr (TypeParam::isMulti()) {
+        // Add another vector under the same label
+        VecSimIndex_AddVector(tiered_index, vector, vec_label);
+        ASSERT_EQ(tiered_index->indexSize(), 2);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+        ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 2);
+        // Validate that there still 1 update jobs set
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
+    }
+}
+
 TYPED_TEST(SVSTieredIndexTest, background_indexing_check) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 2;
