@@ -30,8 +30,6 @@ BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSWDisk))->Iteration
 // AddLabel benchmarks
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }
-REGISTER_AddLabel(BM_ADD_LABEL, INDEX_BF);
-REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW);
 REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
 
 // DeleteLabel Registration. Definition is placed in the .cpp file.
@@ -41,17 +39,10 @@ REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
 // REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSWDisk));
 
 // TopK benchmarks
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF), fp32_index_t)
-(benchmark::State &st) { TopK_BF(st); }
-REGISTER_TopK_BF(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF));
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW), fp32_index_t)
-(benchmark::State &st) { TopK_HNSW(st); }
-REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW));
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { TopK_HNSW_DISK(st); }
-REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
+REGISTER_TopK_HNSW_DISK(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
 
 // Range benchmarks
 // BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAMEC_NAME(Range, BF), fp32_index_t)

@@ -94,8 +94,10 @@ protected:
         if (auto root = getenv("ROOT")) {
             return std::string(root) + "/" + file_name;
         } else {
-            std::cout << "ROOT environment variable is not set. using current directory as root."
-                      << std::endl;
+            // std::cout << "ROOT environment variable is not set. using current directory as root."
+            //           << std::endl;
+            // std::cout << "Full path: " << std::filesystem::current_path().string() + "/" + file_name
+            //           << std::endl;
             return std::filesystem::current_path().string() + "/" + file_name;
             // std::cerr << "ROOT environment variable is not set. Set vecsim root path as ROOT";
             // std::exit(1);

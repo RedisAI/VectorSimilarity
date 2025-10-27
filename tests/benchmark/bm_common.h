@@ -81,30 +81,29 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
 // TopK search BM
 
 
-    // Run TopK using disk-based HNSW index vs BF to measure recall
-    template <typename index_type_t>
-    void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
-        size_t ef = st.range(0);
-        size_t k = st.range(1);
-        std::atomic_int correct = 0;
-        size_t iter = 0;
-        for (auto _ : st) {
-            HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
-            auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
-            auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
-            auto bf_index = GET_INDEX(INDEX_BF);
-            auto &q = QUERIES[iter % N_QUERIES];
-            auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
-            st.PauseTiming();
-            auto bf_results = VecSimIndex_TopKQuery(bf_index, q.data(), k, nullptr, BY_SCORE);
-            BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
-            VecSimQueryReply_Free(bf_results);
-            VecSimQueryReply_Free(hnsw_results);
-            st.ResumeTiming();
-            iter++;
-        }
-        st.counters["Recall"] = (float)correct / (float)(k * iter);
+// Run TopK using disk-based HNSW index vs BF to measure recall
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
+    size_t ef = st.range(0);
+    size_t k = st.range(1);
+    std::atomic_int correct = 0;
+    size_t iter = 0;
+    for (auto _ : st) {
+        HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+        auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+        auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
+        auto &q = QUERIES[iter % N_QUERIES];
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+        st.PauseTiming();
+        auto bf_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(iter % N_QUERIES, k);
+        BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
+        VecSimQueryReply_Free(bf_results);
+        VecSimQueryReply_Free(hnsw_results);
+        st.ResumeTiming();
+        iter++;
     }
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
+}
 
 template <typename index_type_t>
 
@@ -199,6 +198,18 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->ArgNames({"ef_runtime", "k"})                                                            \
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
+
+// {ef_runtime, k} (recall that always ef_runtime >= k)
+#define REGISTER_TopK_HNSW_DISK(BM_CLASS, BM_FUNC)                                                      \
+    BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
+        ->Args({10, 10})                                                                           \
+        ->Args({200, 10})                                                                          \
+        ->Args({100, 100})                                                                         \
+        ->Args({200, 100})                                                                         \
+        ->ArgNames({"ef_runtime", "k"})                                                            \
+        ->Iterations(10)                                                                           \
+        ->Unit(benchmark::kMillisecond)
+
 
 // {ef_runtime, k} (recall that always ef_runtime >= k)
 #define REGISTER_TopK_Tiered(BM_CLASS, BM_FUNC)                                                    \

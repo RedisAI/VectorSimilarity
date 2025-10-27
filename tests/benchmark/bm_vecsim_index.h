@@ -75,6 +75,7 @@ protected:
         return CastToHNSW(indices[INDEX_HNSW + index_offset])->getDataByInternalId(id);
     }
 
+    static VecSimQueryReply *TopKGroundTruth(size_t query_id, size_t k);
 private:
     static void InitializeRocksDB();
     static void CleanupRocksDB();
@@ -84,7 +85,7 @@ private:
 
     // FBIN loading configuration
     static constexpr size_t BATCH_SIZE = 40;
-    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.10M.fbin";
+    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.10K.fbin";
 
 };
 
@@ -182,7 +183,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     using clock = std::chrono::high_resolution_clock;
     VecSimType type = index_type_t::get_index_type();
 
-   
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
         auto t0 = clock::now();
         indices[INDEX_HNSW] = IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
@@ -241,7 +241,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         n_vectors = file_num_vectors;
         dim = file_dim;
         std::cerr << "[Init] Starting initialization: dim=" << dim << ", M=" << M << ", efC=" << EF_C
-              << ", n_vectors=" << n_vectors << ", n_queries=" << n_queries << std::endl;
+              << ", n_vectors=" << n_vectors << std::endl;
         // Create disk-based HNSW index with RocksDB
         HNSWParams hnsw_disk_params = {.type = type,
                                        .dim = dim,
@@ -379,14 +379,34 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::loadTestVectors(const std::string &test_file, VecSimType type) {
 
-    std::ifstream input(test_file, std::ios::binary);
+    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW_DISK) {
+        // Open the .fbin file for reading: [num_vectors (uint32), vector_dim (uint32), data (float32)]
+        std::ifstream file(test_file, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "[Init] Error: Could not open file " << FBIN_PATH << std::endl;
+            throw std::runtime_error("Failed to open vectors file");
+        }
 
-    if (!input.is_open()) {
-        throw std::runtime_error("Test vectors file was not found in path. Exiting...");
+        // Read header (without extra validation)
+        uint32_t file_num_vectors = 0;
+        uint32_t file_dim = 0;
+        file.read(reinterpret_cast<char*>(&file_num_vectors), sizeof(uint32_t));
+        file.read(reinterpret_cast<char*>(&file_dim), sizeof(uint32_t));
+        assert(file_dim == dim && "Query file dimension mismatch");
+        n_queries = std::min((size_t)file_num_vectors, n_queries);
+        std::cerr << "[Init] Loaded " << n_queries << " queries from " << test_file << std::endl;
+        InsertToQueries(file);
     }
-    input.seekg(0, std::ifstream::beg);
+    else {
+        std::ifstream input(test_file, std::ios::binary);
 
-    InsertToQueries(input);
+        if (!input.is_open()) {
+            throw std::runtime_error("Test vectors file was not found in path. Exiting...");
+        }
+        input.seekg(0, std::ifstream::beg);
+
+        InsertToQueries(input);
+    }
 }
 
 template <typename index_type_t>
@@ -396,6 +416,34 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
         input.read((char *)query.data(), dim * sizeof(data_t));
         queries.push_back(query);
     }
+}
+
+template <typename index_type_t>
+VecSimQueryReply *BM_VecSimIndex<index_type_t>::TopKGroundTruth(size_t query_id, size_t k) {
+    std::map <std::string, std::string> gt_files = {
+        {"deep.base.10K.fbin", "deep.groundtruth.10K.10K.ibin"},
+        {"deep.base.1M.fbin", "deep.groundtruth.1M.10K.ibin"}
+    };
+    std::filesystem::path fbin_path(FBIN_PATH);
+    std::string filename = fbin_path.filename().string();
+    std::string directory = fbin_path.parent_path().string();
+    std::string gt_file_name = gt_files[filename];
+    std::string ground_truth_file = (directory + "/" + gt_file_name);
+    std::ifstream file(AttachRootPath(ground_truth_file), std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open ground truth file");
+    }
+    uint32_t file_num_vectors = 0, gt_k = 0;
+    file.read(reinterpret_cast<char*>(&file_num_vectors), sizeof(uint32_t));
+    file.read(reinterpret_cast<char*>(&gt_k), sizeof(uint32_t));
+    std::vector<int32_t> query(gt_k);
+    file.seekg((2 + query_id * gt_k) * sizeof(int32_t), std::ifstream::beg);
+    file.read((char *)query.data(), gt_k * sizeof(int32_t));
+    auto res = new VecSimQueryReply(VecSimAllocator::newVecsimAllocator());
+    for (size_t i = 0; i < k; i++) {
+        res->results.push_back(VecSimQueryResult{.id = (size_t)query[i], .score = 0.0});
+    }
+    return res;
 }
 
 // RocksDB initialization and cleanup methods
@@ -449,3 +497,4 @@ void BM_VecSimIndex<index_type_t>::CleanupRocksDB() {
         rocksdb_temp_dir.clear();
     }
 }
+
