@@ -885,8 +885,6 @@ public:
                 this->indexUpdateScheduled.test() == VecSimBool_TRUE;
         }
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
-        // prevent parallel updates
-        std::lock_guard<std::mutex> lock(this->updateJobMutex);
         info.tieredInfo.backgroundIndexing =
             svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
                 ? VecSimBool_TRUE
