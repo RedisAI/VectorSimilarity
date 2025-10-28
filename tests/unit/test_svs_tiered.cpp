@@ -492,10 +492,7 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
 TYPED_TEST(SVSTieredIndexTest, addVector) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .multi = TypeParam::isMulti()};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
 
     auto mock_thread_pool = tieredIndexMock();
@@ -507,10 +504,8 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
 
-    BFParams bf_params = {.type = TypeParam::get_index_type(),
-                          .dim = dim,
-                          .metric = VecSimMetric_L2,
-                          .multi = TypeParam::isMulti()};
+    BFParams bf_params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
 
     size_t expected_mem = TieredFactory::EstimateInitialSize(&tiered_params);
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
@@ -542,17 +537,6 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     auto actual_mem = tiered_index->getAllocationSize();
     ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
-
-    if constexpr (TypeParam::isMulti()) {
-        // Add another vector under the same label
-        VecSimIndex_AddVector(tiered_index, vector, vec_label);
-        ASSERT_EQ(tiered_index->indexSize(), 2);
-        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-        ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
-        ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 2);
-        // Validate that there still 1 update jobs set
-        ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
-    }
 }
 
 TYPED_TEST(SVSTieredIndexTest, background_indexing_check) {
@@ -560,10 +544,8 @@ TYPED_TEST(SVSTieredIndexTest, background_indexing_check) {
     size_t dim = 2;
     constexpr size_t training_th = DEFAULT_BLOCK_SIZE;
     constexpr size_t update_th = DEFAULT_BLOCK_SIZE;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .multi = TypeParam::isMulti()};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+
     VecSimParams svs_params = CreateParams(params);
 
     auto mock_thread_pool = tieredIndexMock();
