@@ -539,6 +539,55 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
 }
 
+TYPED_TEST(SVSTieredIndexTest, background_indexing_check) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 2;
+    constexpr size_t training_th = DEFAULT_BLOCK_SIZE;
+    constexpr size_t update_th = DEFAULT_BLOCK_SIZE;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+
+    VecSimParams svs_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto tiered_params =
+        this->CreateTieredSVSParams(svs_params, mock_thread_pool, training_th, update_th);
+    auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+
+    mock_thread_pool.init_threads();
+
+    for (size_t i = 0; i < training_th; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i);
+        VecSimIndex_AddVector(tiered_index, vector, i);
+    }
+
+    while (tiered_index->debugInfo().tieredInfo.backgroundIndexing != VecSimBool_FALSE) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_th);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), training_th);
+
+    constexpr size_t second_batch = 2500;
+
+    for (size_t i = 0; i < second_batch; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i);
+        VecSimIndex_AddVector(tiered_index, vector, training_th + i);
+    }
+
+    while (tiered_index->debugInfo().tieredInfo.backgroundIndexing != VecSimBool_FALSE) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    ASSERT_GT(tiered_index->GetBackendIndex()->indexSize(), training_th + second_batch / update_th);
+    ASSERT_LT(tiered_index->GetFlatIndex()->indexSize(), update_th);
+    ASSERT_EQ(tiered_index->indexSize(), second_batch + training_th);
+}
+
 TYPED_TEST(SVSTieredIndexTest, insertJob) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
