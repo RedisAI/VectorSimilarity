@@ -15,6 +15,7 @@
 #include <thread>
 #include <condition_variable>
 #include <bitset>
+#include <memory>
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_interface.h"
 #include "VecSim/vec_sim_tiered_index.h"
@@ -25,6 +26,7 @@
 #include "bm_definitions.h"
 #include "bm_macros.h"
 #include "utils/mock_thread_pool.h"
+#include "utils/timeout_guard.h"
 
 // This class includes every static data member that is:
 // 1. Common for all data type data sets.
@@ -51,7 +53,21 @@ protected:
     static const char *hnsw_index_file;
     static const char *test_queries_file;
 
+private:
+    std::unique_ptr<test_utils::BenchmarkTimeoutGuard> timeout_guard;
+
+public:
     BM_VecSimGeneral() = default;
+
+    void SetUp(const benchmark::State &state) override {
+        timeout_guard =
+            std::make_unique<test_utils::BenchmarkTimeoutGuard>(std::chrono::minutes(10));
+    }
+
+    void TearDown(const benchmark::State &state) override {
+        timeout_guard.reset(); // Destroy the guard and cancel the timeout
+    }
+
     virtual ~BM_VecSimGeneral() {
         if (mock_thread_pool) {
             delete mock_thread_pool;
