@@ -1093,4 +1093,3 @@ TEST(UtilsTests, testMockThreadPool) {
 
     EXPECT_EXIT(TestBody(), ::testing::ExitedWithCode(0), "Success");
 }
-
