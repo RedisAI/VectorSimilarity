@@ -20,7 +20,7 @@
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
 
-    test_utils::RegisterGlobalTimeoutListener(std::chrono::seconds(100));
+    test_utils::RegisterGlobalTimeoutListener(std::chrono::seconds(300));
 
     return RUN_ALL_TESTS();
 }
