@@ -85,7 +85,7 @@ private:
 
     // FBIN loading configuration
     static constexpr size_t BATCH_SIZE = 40;
-    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.10K.fbin";
+    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.100K.fbin";
 
 };
 
@@ -422,7 +422,9 @@ template <typename index_type_t>
 VecSimQueryReply *BM_VecSimIndex<index_type_t>::TopKGroundTruth(size_t query_id, size_t k) {
     std::map <std::string, std::string> gt_files = {
         {"deep.base.10K.fbin", "deep.groundtruth.10K.10K.ibin"},
-        {"deep.base.1M.fbin", "deep.groundtruth.1M.10K.ibin"}
+        {"deep.base.100K.fbin", "deep.groundtruth.100K.10K.ibin"},
+        {"deep.base.1M.fbin", "deep.groundtruth.1M.10K.ibin"},
+        {"deep.base.10M.fbin", "deep.groundtruth.10M.10K.ibin"}
     };
     std::filesystem::path fbin_path(FBIN_PATH);
     std::string filename = fbin_path.filename().string();
@@ -455,7 +457,7 @@ void BM_VecSimIndex<index_type_t>::InitializeRocksDB() {
 
     // Create a temporary directory for RocksDB
     rocksdb_temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid());
-
+    std::cerr << "RocksDB temp dir: " << rocksdb_temp_dir << std::endl;
     // Ensure the directory exists
     std::filesystem::create_directories(rocksdb_temp_dir);
 

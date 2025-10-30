@@ -2060,8 +2060,16 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, c
 // Missing virtual method implementations for HNSWDiskIndex
 template <typename DataType, typename DistType>
 VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
+    uint64_t disk_size = 0;
+    this->db->GetIntProperty(rocksdb::DB::Properties::kTotalSstFilesSize, &disk_size);
+    // std::cout << "Disk size: " << disk_size << std::endl;
+    uint64_t db_mem_size = 0;
+    this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &db_mem_size);
+    // std::cout << "Disk mem size: " << db_mem_size << std::endl;
     VecSimIndexStatsInfo info = {};
-    info.memory = 0; // TODO: Implement actual memory calculation
+    info.memory = this->allocator->getAllocationSize();
+    info.memory += db_mem_size;
+    info.disk = disk_size;
     info.numberOfMarkedDeleted = 0; // TODO: Implement if needed
     return info;
 }

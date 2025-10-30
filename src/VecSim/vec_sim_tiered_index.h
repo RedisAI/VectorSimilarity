@@ -308,6 +308,7 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() const {
     auto stats = VecSimIndexStatsInfo{
         .memory = this->getAllocationSize(),
+        .disk = 0,
         .numberOfMarkedDeleted = 0, // Default value if cast fails
     };
 

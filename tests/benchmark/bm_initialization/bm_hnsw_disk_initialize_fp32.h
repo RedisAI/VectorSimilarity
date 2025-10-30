@@ -27,22 +27,20 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSWDisk), fp3
 (benchmark::State &st) { Memory(st, INDEX_HNSW_DISK); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSWDisk))->Iterations(1);
 
-// AddLabel benchmarks
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
-(benchmark::State &st) { AddLabel(st); }
-REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
+// Disk benchmarks
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk), fp32_index_t)
+(benchmark::State &st) { Disk(st, INDEX_HNSW_DISK); }
+BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk))->Iterations(1);
 
-// DeleteLabel Registration. Definition is placed in the .cpp file.
-// REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
-// REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));
-// DISABLED: DeleteLabel benchmarks for HNSW disk index cause segmentation faults
-// REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSWDisk));
-
-// TopK benchmarks
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { TopK_HNSW_DISK(st); }
 REGISTER_TopK_HNSW_DISK(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
+
+// AddLabel benchmarks
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
+(benchmark::State &st) { AddLabel(st); }
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
 
 // Range benchmarks
 // BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAMEC_NAME(Range, BF), fp32_index_t)

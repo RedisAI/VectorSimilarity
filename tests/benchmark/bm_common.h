@@ -39,6 +39,7 @@ public:
 
     // Does nothing but returning the index memory.
     static void Memory(benchmark::State &st, IndexTypeIndex index_type);
+    static void Disk(benchmark::State &st, IndexTypeIndex index_type);
 };
 
 template <typename index_type_t>
@@ -65,6 +66,16 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
     VecSimQueryReply_Free(bf_results);
     VecSimQueryReply_Free(hnsw_results);
     st.ResumeTiming();
+}
+
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::Disk(benchmark::State &st, IndexTypeIndex index_type) {
+    auto index = GET_INDEX(index_type);
+
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["disk"] = (double)VecSimIndex_StatsInfo(index).disk;
 }
 
 template <typename index_type_t>
