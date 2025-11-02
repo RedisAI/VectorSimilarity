@@ -177,6 +177,7 @@ protected:
     vecsim_stl::vector<DiskElementMetaData> idToMetaData;
     vecsim_stl::unordered_map<labelType, idType> labelToIdMap;
     rocksdb::DB *db;                 // RocksDB database, not owned by the index
+    rocksdb::Options dbOptions;      // RocksDB options, not owned by the index
     rocksdb::ColumnFamilyHandle *cf; // RocksDB column family handle, not owned by the index
 
     mutable std::shared_mutex indexDataGuard;
@@ -340,6 +341,10 @@ public:
     int deleteVector(labelType label) override;
     double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
 
+    uint64_t getAllocationSize() const override;
+    uint64_t getDiskSize() const override;
+    std::shared_ptr<rocksdb::Statistics> getDBStatistics() const;
+
 public:
     // Public methods for testing
     size_t indexSize() const override;
@@ -389,7 +394,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     efConstruction = std::max(efConstruction, M);
     ef = params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT;
     epsilon = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
-
+    dbOptions = db->GetOptions();
     curElementCount = 0;
 
     // initializations for special treatment of the first node
@@ -2057,19 +2062,32 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, c
     return 0.0;
 }
 
-// Missing virtual method implementations for HNSWDiskIndex
 template <typename DataType, typename DistType>
-VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
-    uint64_t disk_size = 0;
-    this->db->GetIntProperty(rocksdb::DB::Properties::kTotalSstFilesSize, &disk_size);
-    // std::cout << "Disk size: " << disk_size << std::endl;
+uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
     uint64_t db_mem_size = 0;
     this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &db_mem_size);
     // std::cout << "Disk mem size: " << db_mem_size << std::endl;
+    return this->allocator->getAllocationSize() + db_mem_size;
+}
+
+template <typename DataType, typename DistType>
+uint64_t HNSWDiskIndex<DataType, DistType>::getDiskSize() const {
+    uint64_t disk_size = 0;
+    this->db->GetIntProperty(rocksdb::DB::Properties::kTotalSstFilesSize, &disk_size);
+    return disk_size;
+}
+
+template <typename DataType, typename DistType>
+std::shared_ptr<rocksdb::Statistics> HNSWDiskIndex<DataType, DistType>::getDBStatistics() const {
+    return this->dbOptions.statistics;
+}
+
+// Missing virtual method implementations for HNSWDiskIndex
+template <typename DataType, typename DistType>
+VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
     VecSimIndexStatsInfo info = {};
-    info.memory = this->allocator->getAllocationSize();
-    info.memory += db_mem_size;
-    info.disk = disk_size;
+    info.memory = this->getAllocationSize();
+    info.disk = this->getDiskSize();
     info.numberOfMarkedDeleted = 0; // TODO: Implement if needed
     return info;
 }

@@ -17,6 +17,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_disk.h"
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
+#include <rocksdb/statistics.h>
 #include <filesystem>
 #include <iostream>
 #include <chrono>
@@ -464,7 +465,8 @@ void BM_VecSimIndex<index_type_t>::InitializeRocksDB() {
     rocksdb::Options options;
     options.create_if_missing = true;
     options.error_if_exists = false;
-
+    options.statistics = rocksdb::CreateDBStatistics();
+    
     rocksdb::DB* db_ptr = nullptr;
     rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_temp_dir, &db_ptr);
     if (!status.ok()) {

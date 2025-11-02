@@ -63,6 +63,11 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
     index->fitMemory();
     size_t memory_delta = index->getAllocationSize();
+    std::shared_ptr<rocksdb::Statistics> stats = nullptr;
+    if (st.range(0) == INDEX_HNSW_DISK) {
+        stats = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(index)->getDBStatistics();
+    }
+    size_t io_ticks = 0;
     // Add a new label from the test set in every iteration.
     for (auto _ : st) {
         // Add one label
@@ -77,9 +82,12 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     if (BM_VecSimGeneral::mock_thread_pool) {
         BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
     }
-
+    if (stats) {
+        io_ticks = stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
+    }
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
+    st.counters["io_ticks"] = io_ticks;
 
     // Updated assertion to handle empty starting index
     assert(VecSimIndex_IndexSize(index) == initial_index_size + added_vec_count);
