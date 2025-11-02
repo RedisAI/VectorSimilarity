@@ -539,6 +539,7 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(), tiered_index->indexCapacity());
     ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(vec_label, vector), 0);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
@@ -656,6 +657,7 @@ TYPED_TEST(SVSTieredIndexTest, insertJob) {
                                          ? DEFAULT_BLOCK_SIZE
                                          : tiered_index->GetBackendIndex()->indexCapacity();
     ASSERT_EQ(tiered_index->indexCapacity(), expected_capacity);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(), tiered_index->indexCapacity());
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexCapacity(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, vector), 0);
 }

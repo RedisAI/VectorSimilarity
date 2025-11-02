@@ -511,6 +511,12 @@ public:
             it->second();
         }
     }
+    size_t indexMetaDataCapacity() const override {
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+        return this->frontendIndex->indexMetaDataCapacity() +
+               this->backendIndex->indexMetaDataCapacity();
+    }
 #else
     void executeTracingCallback(const std::string &) const {
         // In production, we do nothing.
