@@ -76,10 +76,12 @@ struct GraphNodeHash {
 struct DiskElementMetaData {
     labelType label;
     size_t topLevel;
-    // elementFlags flags;
+    elementFlags flags;
 
-    DiskElementMetaData(labelType label = INVALID_LABEL) noexcept : label(label) {}
-    DiskElementMetaData(labelType label, size_t topLevel) noexcept : label(label), topLevel(topLevel) {}
+    DiskElementMetaData(labelType label = INVALID_LABEL) noexcept
+        : label(label), topLevel(0), flags(0) {}
+    DiskElementMetaData(labelType label, size_t topLevel) noexcept
+        : label(label), topLevel(topLevel), flags(0) {}
 };
 
 // The state of the index and the newly stored vector to be passed to indexVector.
@@ -169,6 +171,7 @@ protected:
     // Index global state - these should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
     size_t curElementCount;
+    size_t numMarkedDeleted;
     idType entrypointNode;
     size_t maxLevel; // this is the top level of the entry point's element
 
@@ -352,6 +355,24 @@ public:
     size_t indexLabelCount() const override;
     size_t getRandomLevel(double reverse_size);
 
+    // Flagging API
+    template <Flags FLAG>
+    void markAs(idType internalId) {
+        __atomic_fetch_or(&idToMetaData[internalId].flags, FLAG, 0);
+    }
+    template <Flags FLAG>
+    void unmarkAs(idType internalId) {
+        __atomic_fetch_and(&idToMetaData[internalId].flags, ~FLAG, 0);
+    }
+    template <Flags FLAG>
+    bool isMarkedAs(idType internalId) const {
+        return __atomic_load_n(&idToMetaData[internalId].flags, 0) & FLAG;
+    }
+
+    // Mark delete API
+    vecsim_stl::vector<idType> markDelete(labelType label);
+    size_t getNumMarkedDeleted() const { return numMarkedDeleted; }
+
     // Debug methods to inspect graph structure
     void debugPrintGraphStructure() const;
     void debugPrintNodeNeighbors(idType node_id) const;
@@ -364,7 +385,7 @@ public:
 
 private:
     // HNSW helper methods
-
+    void replaceEntryPoint();
 
     /*****************************************************************/
 };
@@ -396,6 +417,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     epsilon = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
     dbOptions = db->GetOptions();
     curElementCount = 0;
+    numMarkedDeleted = 0;
 
     // initializations for special treatment of the first node
     entrypointNode = INVALID_ID;
@@ -1396,9 +1418,7 @@ labelType HNSWDiskIndex<DataType, DistType>::getExternalLabel(idType id) const {
 
 template <typename DataType, typename DistType>
 bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(idType id) const {
-    // For now, no elements are marked as deleted
-    // In a real implementation, this would check a deletion flag
-    return false;
+    return id < idToMetaData.size() && isMarkedAs<DELETE_MARK>(id);
 }
 
 template <typename DataType, typename DistType>
@@ -1435,6 +1455,11 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void* data_point
 
             // Skip invalid candidates
             if (candidate >= curElementCount) {
+                continue;
+            }
+
+            // Skip deleted candidates
+            if (isMarkedDeleted(candidate)) {
                 continue;
             }
 
@@ -1503,13 +1528,15 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(idType candidate_id, co
     // Calculate distance to candidate
     DistType dist = this->calcDistance(data_point, getDataByInternalId(candidate_id));
 
-    // Add to top candidates if it's one of the best
-    if (top_candidates.size() < ef || dist < lowerBound) {
-        top_candidates.emplace(dist, getExternalLabel(candidate_id));
+    // Add to top candidates if it's one of the best and not marked deleted
+    if (!isMarkedDeleted(candidate_id)) {
+        if (top_candidates.size() < ef || dist < lowerBound) {
+            top_candidates.emplace(dist, getExternalLabel(candidate_id));
 
-        // Update lower bound if we have enough candidates
-        if (top_candidates.size() >= ef) {
-            lowerBound = top_candidates.top().first;
+            // Update lower bound if we have enough candidates
+            if (top_candidates.size() >= ef) {
+                lowerBound = top_candidates.top().first;
+            }
         }
     }
 
@@ -2110,6 +2137,94 @@ void HNSWDiskIndex<DataType, DistType>::acquireSharedLocks() {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::releaseSharedLocks() {
     // TODO: Implement if needed for disk-based HNSW
+}
+
+/********************************** Mark Delete Implementation **********************************/
+
+template <typename DataType, typename DistType>
+vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelType label) {
+    std::unique_lock<std::shared_mutex> index_data_lock(indexDataGuard);
+
+    vecsim_stl::vector<idType> internal_ids(this->allocator);
+
+    // Find the internal ID for this label
+    auto it = labelToIdMap.find(label);
+    if (it == labelToIdMap.end()) {
+        // Label doesn't exist, return empty vector
+        return internal_ids;
+    }
+
+    const idType internalId = it->second;
+
+    // Check if already marked deleted
+    if (isMarkedDeleted(internalId)) {
+        // Already deleted, return empty vector
+        return internal_ids;
+    }
+
+    // Mark as deleted
+    markAs<DELETE_MARK>(internalId);
+    __atomic_fetch_add(&numMarkedDeleted, 1, 0);
+
+    // If this is the entrypoint, we need to replace it
+    if (internalId == entrypointNode) {
+        replaceEntryPoint();
+    }
+
+    // Remove from label lookup
+    labelToIdMap.erase(it);
+
+    // Return the internal ID that was marked deleted
+    internal_ids.push_back(internalId);
+    return internal_ids;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
+    // This method is called when the current entrypoint is marked as deleted
+    // We need to find a new entrypoint from the remaining non-deleted nodes
+
+    idType old_entry_point_id = entrypointNode;
+
+    // Try to find a new entrypoint at the current max level
+    while (maxLevel != HNSW_INVALID_LEVEL) {
+        // First, try to find a neighbor of the old entrypoint at the top level
+        GraphKey graphKey(old_entry_point_id, maxLevel);
+        std::string neighbors_data;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+
+        if (status.ok() && !neighbors_data.empty()) {
+            size_t num_neighbors = neighbors_data.size() / sizeof(idType);
+            const idType* neighbors = reinterpret_cast<const idType*>(neighbors_data.data());
+
+            // Try to find a non-deleted neighbor
+            for (size_t i = 0; i < num_neighbors; i++) {
+                if (!isMarkedDeleted(neighbors[i])) {
+                    entrypointNode = neighbors[i];
+                    return;
+                }
+            }
+        }
+
+        // If no suitable neighbor found, search for any non-deleted node at this level
+        for (idType id = 0; id < curElementCount; id++) {
+            if (id != old_entry_point_id &&
+                id < idToMetaData.size() &&
+                idToMetaData[id].label != INVALID_LABEL &&
+                idToMetaData[id].topLevel == maxLevel &&
+                !isMarkedDeleted(id)) {
+                entrypointNode = id;
+                return;
+            }
+        }
+
+        // No non-deleted nodes at this level, decrease maxLevel and try again
+        maxLevel--;
+    }
+
+    // If we get here, the index is empty or all nodes are deleted
+    entrypointNode = INVALID_ID;
+    maxLevel = HNSW_INVALID_LEVEL;
 }
 
 

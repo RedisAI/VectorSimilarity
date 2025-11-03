@@ -841,3 +841,146 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+TEST_F(HNSWDiskIndexTest, markDelete) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 16;
+    params.efConstruction = 200;
+    params.efRuntime = 50;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle* default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(), default_cf);
+
+    // Try marking a non-existing label (should return empty vector)
+    ASSERT_EQ(index.markDelete(0), vecsim_stl::vector<idType>(abstractInitParams.allocator));
+
+    // Add vectors to the index
+    for (size_t i = 0; i < n; i++) {
+        std::vector<float> vec(dim);
+        for (size_t j = 0; j < dim; j++) {
+            vec[j] = static_cast<float>(i);
+        }
+        int result = index.addVector(vec.data(), i);
+        EXPECT_EQ(result, 1) << "Failed to add vector " << i;
+    }
+    ASSERT_EQ(index.indexSize(), n);
+
+    // Create query vector around the middle
+    std::vector<float> query(dim);
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = static_cast<float>(n / 2);
+    }
+
+    // Search for k results around the middle. Expect to find them.
+    auto verify_res = [&](size_t id, double score, size_t result_index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (result_index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((result_index + 1) / 2) * ((result_index + 1) / 2)));
+    };
+
+    VecSimQueryParams queryParams;
+    queryParams.hnswRuntimeParams.efRuntime = 50;
+
+    // Run initial search test
+    auto results = index.topKQuery(query.data(), k, &queryParams);
+    ASSERT_TRUE(results != nullptr);
+    ASSERT_EQ(results->code, VecSim_OK);
+    ASSERT_EQ(results->results.size(), k);
+
+    for (size_t i = 0; i < results->results.size(); i++) {
+        verify_res(results->results[i].id, results->results[i].score, i);
+    }
+    delete results;
+
+    // Get the entrypoint to determine which vectors to delete
+    auto [ep_id, max_level] = index.safeGetEntryPointState();
+    unsigned char ep_reminder = ep_id % 2;
+
+    // Mark as deleted half of the vectors, including the entrypoint
+    for (labelType label = 0; label < n; label++) {
+        if (label % 2 == ep_reminder) {
+            ASSERT_EQ(index.markDelete(label),
+                      vecsim_stl::vector<idType>(1, label, abstractInitParams.allocator));
+        }
+    }
+
+    ASSERT_EQ(index.getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(index.indexSize(), n);
+
+    // Search for k results around the middle. Expect to find only non-deleted results.
+    auto verify_res_half = [&](size_t id, double score, size_t result_index) {
+        ASSERT_NE(id % 2, ep_reminder);
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        size_t expected_id = result_index % 2 ? result_index + 1 : result_index;
+        ASSERT_EQ(diff_id, expected_id);
+        ASSERT_EQ(score, (dim * expected_id * expected_id));
+    };
+
+    // Run search test after marking deleted
+    results = index.topKQuery(query.data(), k, &queryParams);
+    ASSERT_TRUE(results != nullptr);
+    ASSERT_EQ(results->code, VecSim_OK);
+    ASSERT_EQ(results->results.size(), k);
+
+    for (size_t i = 0; i < results->results.size(); i++) {
+        verify_res_half(results->results[i].id, results->results[i].score, i);
+    }
+    delete results;
+
+    // Add a new vector, make sure it has no link to a deleted vector
+    std::vector<float> new_vec(dim);
+    for (size_t j = 0; j < dim; j++) {
+        new_vec[j] = static_cast<float>(n);
+    }
+    index.addVector(new_vec.data(), n);
+
+    // Re-add the previously marked vectors (under new internal ids)
+    for (labelType label = 0; label < n; label++) {
+        if (label % 2 == ep_reminder) {
+            std::vector<float> vec(dim);
+            for (size_t j = 0; j < dim; j++) {
+                vec[j] = static_cast<float>(label);
+            }
+            index.addVector(vec.data(), label);
+        }
+    }
+
+    ASSERT_EQ(index.indexSize(), n + n / 2 + 1);
+    ASSERT_EQ(index.getNumMarkedDeleted(), n / 2);
+
+    // Search for k results around the middle again. Expect to find the same results we
+    // found in the first search
+    results = index.topKQuery(query.data(), k, &queryParams);
+    ASSERT_TRUE(results != nullptr);
+    ASSERT_EQ(results->code, VecSim_OK);
+    ASSERT_EQ(results->results.size(), k);
+
+    for (size_t i = 0; i < results->results.size(); i++) {
+        verify_res(results->results[i].id, results->results[i].score, i);
+    }
+    delete results;
+}
