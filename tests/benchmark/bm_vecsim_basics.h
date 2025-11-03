@@ -303,6 +303,9 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     // Calculate vectors needed to reach next block boundary
     size_t vecs_to_blocksize =
         BM_VecSimGeneral::block_size - (initial_index_size % BM_VecSimGeneral::block_size);
+    size_t initial_index_cap = index->indexMetaDataCapacity();
+    assert(initial_index_cap == N_VECTORS + vecs_to_blocksize);
+
     assert(vecs_to_blocksize < BM_VecSimGeneral::block_size);
     labelType initial_label_count = index->indexLabelCount();
     labelType curr_label = initial_label_count;
@@ -327,15 +330,20 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
 
     // Benchmark loop: repeatedly delete/add same vector to trigger grow-shrink cycles
     labelType label_to_update = curr_label - 1;
-    size_t index_cap = index->indexCapacity();
+    size_t index_cap = index->indexMetaDataCapacity();
+    std::cout << "index_cap after adding vectors " << index_cap << std::endl;
+    assert(index_cap == initial_index_cap + BM_VecSimGeneral::block_size);
+
     for (auto _ : st) {
         // Remove the vector directly from hnsw
         size_t ret = VecSimIndex_DeleteVector(
             INDICES[st.range(0) == VecSimAlgo_TIERED ? VecSimAlgo_HNSWLIB : st.range(0)],
             label_to_update);
         assert(ret == 1);
-        assert(index->indexCapacity() == index_cap - BM_VecSimGeneral::block_size);
-        // Capacity should shrink by one block after deletion
+
+        // Capacity should not change
+        size_t curr_cap = index->indexMetaDataCapacity();
+        assert(curr_cap == index_cap);
         ret = VecSimIndex_AddVector(index, QUERIES[(added_vec_count - 1) % N_QUERIES].data(),
                                     label_to_update);
         assert(ret == 1);
@@ -343,8 +351,8 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
         assert(VecSimIndex_IndexSize(
                    INDICES[st.range(0) == VecSimAlgo_TIERED ? VecSimAlgo_HNSWLIB : st.range(0)]) ==
                N_VECTORS + added_vec_count);
-        // Capacity should grow back to original size after addition
-        assert(index->indexCapacity() == index_cap);
+        // Capacity should not change
+        assert(index->indexMetaDataCapacity() == index_cap);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
 

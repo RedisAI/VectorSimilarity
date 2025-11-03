@@ -120,6 +120,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
 
         ASSERT_EQ(bfIndex->indexCapacity(), expected_map_containers_size);
         ASSERT_EQ(bfIndex->idToLabelMapping.capacity(), expected_map_containers_size);
+        ASSERT_EQ(bfIndex->indexMetaDataCapacity(), expected_map_containers_size);
         ASSERT_EQ(bfIndex->idToLabelMapping.size(), expected_map_containers_size);
         ASSERT_GE(bfIndex->labelToIdLookup.bucket_count(), expected_map_containers_size);
     };
@@ -530,6 +531,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
         ASSERT_EQ(hnswIndex->getStoredVectorsCount(), expected_size);
 
         ASSERT_EQ(hnswIndex->idToMetaData.capacity(), expected_map_containers_size);
+        ASSERT_EQ(hnswIndex->indexMetaDataCapacity(), expected_map_containers_size);
         ASSERT_EQ(hnswIndex->idToMetaData.size(), expected_map_containers_size);
         ASSERT_GE(hnswIndex->labelLookup.bucket_count(), expected_map_containers_size);
         // Also validate that there are no unidirectional connections (these add memory to the
