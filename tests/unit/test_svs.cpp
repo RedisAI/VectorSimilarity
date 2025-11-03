@@ -833,6 +833,7 @@ TYPED_TEST(SVSTest, resizeIndex) {
     }
     // The size (+extra) and the capacity should be equal.
     ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
+    ASSERT_EQ(index->indexMetaDataCapacity(), index->indexCapacity());
     // The capacity shouldn't be changed.
     ASSERT_EQ(index->indexCapacity(), n + extra_cap);
 
@@ -878,6 +879,7 @@ TYPED_TEST(SVSTest, svs_empty_index) {
 
     // The expected capacity should be 0 for empty index.
     ASSERT_EQ(index->indexCapacity(), 0);
+    ASSERT_EQ(index->indexMetaDataCapacity(), index->indexCapacity());
 
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);
