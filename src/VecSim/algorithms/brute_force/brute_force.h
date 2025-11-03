@@ -88,6 +88,8 @@ public:
         resizeLabelLookup(idToLabelMapping.size());
     }
 
+    size_t indexMetaDataCapacity() const override { return idToLabelMapping.capacity(); }
+
     size_t getStoredVectorsCount() const {
         size_t actual_stored_vec = 0;
         for (auto &block : vectorBlocks) {

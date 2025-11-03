@@ -3860,6 +3860,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
     ASSERT_EQ(hnsw_index->indexSize(), 1);
     ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
 
     // add up to block size
     for (size_t i = 1; i < blockSize; i++) {
@@ -3870,6 +3875,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
     ASSERT_EQ(hnsw_index->indexSize(), blockSize);
     ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
 
     // add one more vector to trigger another resize
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, blockSize);
@@ -3879,6 +3889,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
     ASSERT_EQ(hnsw_index->indexSize(), blockSize + 1);
     ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
 
     // delete a vector to shrink data blocks
     ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1) << "Failed to delete vector 0";
@@ -3890,6 +3905,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
     ASSERT_EQ(hnsw_index->indexSize(), blockSize);
     ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    // meta data capacity should not shrink
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
 
     // add this vector again and verify lock was acquired to resize
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
@@ -3898,6 +3915,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
     ASSERT_EQ(hnsw_index->indexSize(), blockSize + 1);
     ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
 
     // add up to block size (count = 2 blockSize), the lock shouldn't be acquired because no resize
     // is required
@@ -3908,4 +3930,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
     ASSERT_EQ(hnsw_index->indexSize(), 2 * blockSize);
     ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
 }
