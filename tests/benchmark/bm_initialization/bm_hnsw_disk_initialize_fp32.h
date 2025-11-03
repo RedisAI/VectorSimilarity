@@ -1,4 +1,4 @@
- /*
+/*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
  *
@@ -32,7 +32,6 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk), fp32_
 (benchmark::State &st) { Disk(st, INDEX_HNSW_DISK); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk))->Iterations(1);
 
-
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { TopK_HNSW_DISK(st); }
 REGISTER_TopK_HNSW_DISK(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
@@ -52,8 +51,8 @@ REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
 // REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW), fp32_index_t);
 
 // Special disk-based HNSW benchmarks for batch processing
-// RE-ENABLED: Async AddLabel and DeleteLabel benchmarks for HNSW disk index now work with populated index
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
+// RE-ENABLED: Async AddLabel and DeleteLabel benchmarks for HNSW disk index now work with populated
+// index BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
 // (benchmark::State &st) { AddLabel_AsyncIngest(st); }
 // BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
 //     ->UNIT_AND_ITERATIONS->Arg(INDEX_HNSW_DISK)

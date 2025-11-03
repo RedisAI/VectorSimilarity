@@ -19,7 +19,8 @@ size_t BM_VecSimGeneral::M = 32;
 size_t BM_VecSimGeneral::EF_C = 256;
 
 // Dataset file paths - using existing dbpedia dataset
-const char *BM_VecSimGeneral::hnsw_index_file = "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
+const char *BM_VecSimGeneral::hnsw_index_file =
+    "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
 const char *BM_VecSimGeneral::test_queries_file = "tests/benchmark/data/deep.query.public.10K.fbin";
 
 #define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Single)

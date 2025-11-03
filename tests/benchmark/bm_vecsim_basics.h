@@ -95,7 +95,6 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     // Updated assertion to handle empty starting index
     assert(VecSimIndex_IndexSize(index) == initial_index_size + added_vec_count);
 
-
     // Skip clean-up for disk index since it's not supported yet.
     if (st.range(0) == INDEX_HNSW_DISK) {
         return;
@@ -138,7 +137,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
         }
         added_vec_count += vec_per_label;
         label++;
-        if (BM_VecSimGeneral::mock_thread_pool && 
+        if (BM_VecSimGeneral::mock_thread_pool &&
             label == initial_label_count + BM_VecSimGeneral::block_size) {
             BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         }
@@ -153,7 +152,6 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
 
     size_t index_size_after = VecSimIndex_IndexSize(index);
     assert(index_size_after == initial_index_size + added_vec_count);
-
 
     // Skip clean-up for disk index since it's not supported yet.
     if (st.range(0) == INDEX_HNSW_DISK) {

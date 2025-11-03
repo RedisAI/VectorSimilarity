@@ -53,13 +53,11 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
     auto bf_index = GET_INDEX(INDEX_BF + index_offset);
     auto &q = QUERIES[iter % N_QUERIES];
 
-    auto hnsw_results =
-        VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(bf_index, q.data(), k,
-        nullptr, BY_SCORE);
+    auto bf_results = VecSimIndex_TopKQuery(bf_index, q.data(), k, nullptr, BY_SCORE);
 
     BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
 
@@ -91,7 +89,6 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
 
 // TopK search BM
 
-
 // Run TopK using disk-based HNSW index vs BF to measure recall
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
@@ -100,7 +97,9 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     std::atomic_int correct = 0;
     size_t iter = 0;
     auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
-    size_t byte_reads = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index)->getDBStatistics()->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+    size_t byte_reads = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index)
+                            ->getDBStatistics()
+                            ->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
@@ -115,7 +114,10 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
-    byte_reads = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index)->getDBStatistics()->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO) - byte_reads;
+    byte_reads = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index)
+                     ->getDBStatistics()
+                     ->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO) -
+                 byte_reads;
     st.counters["byte_reads"] = (double)byte_reads / (double)iter;
 }
 
@@ -214,7 +216,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k} (recall that always ef_runtime >= k)
-#define REGISTER_TopK_HNSW_DISK(BM_CLASS, BM_FUNC)                                                      \
+#define REGISTER_TopK_HNSW_DISK(BM_CLASS, BM_FUNC)                                                 \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Args({10, 10})                                                                           \
         ->Args({200, 10})                                                                          \
@@ -223,7 +225,6 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->ArgNames({"ef_runtime", "k"})                                                            \
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
-
 
 // {ef_runtime, k} (recall that always ef_runtime >= k)
 #define REGISTER_TopK_Tiered(BM_CLASS, BM_FUNC)                                                    \
