@@ -48,7 +48,7 @@ size_t EstimateComponentsMemory(VecSimMetric metric, bool is_normalized) {
 template <typename DataType, typename DistType>
 IndexComponents<DataType, DistType>
 CreateQuantizedIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric,
-                                size_t dim, bool is_normalized) {
+                               size_t dim, bool is_normalized) {
     unsigned char alignment = 0;
 
     // For Cosine metric with quantization, use Inner Product distance
@@ -64,8 +64,8 @@ CreateQuantizedIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSi
 
     // Create preprocessor container with space for 2 preprocessors (normalization + quantization)
     constexpr size_t n_preprocessors = 2;
-    auto preprocessors =
-        new (allocator) MultiPreprocessorsContainer<DataType, n_preprocessors>(allocator, alignment);
+    auto preprocessors = new (allocator)
+        MultiPreprocessorsContainer<DataType, n_preprocessors>(allocator, alignment);
 
     // For Cosine metric, add normalization preprocessor first
     // This ensures vectors are in [-1, 1] range before quantization
