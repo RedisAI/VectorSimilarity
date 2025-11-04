@@ -148,7 +148,16 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
     auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
 
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
+#ifdef HAVE_SVS_LVQ
     ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
+#else
+    if (this->quantBits == VecSimSvsQuant_NONE) {
+        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
+        else {
+            ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, VecSimSvsQuant_Scalar);
+        }
+#endif
+
     std::cout << "quantBits: " << this->quantBits << std::endl;
     auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
                                  size_t expected_backend_size, std::string msg = "") {
