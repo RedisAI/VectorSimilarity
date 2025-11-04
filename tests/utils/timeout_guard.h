@@ -111,8 +111,7 @@ public:
     explicit BenchmarkTimeoutGuard(std::chrono::duration<Rep, Period> timeout)
         : TimeoutGuard(timeout, []() {
               std::cerr << "BenchmarkTimeoutGuard: Benchmark timeout! Exiting..." << std::endl;
-              abort();
-              //   std::exit(-1);
+              std::exit(-1);
           }) {}
 };
 
