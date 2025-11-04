@@ -172,9 +172,10 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
         }
         // assert frontend index size is training_threshold - 1
         // assert backend index size is 0
-        verify_index_size(
-            training_threshold - 1, training_threshold - 1, 0,
-            std::format("added training_threshold - 1 ({}) vectors", training_threshold - 1));
+        verify_index_size(training_threshold - 1, training_threshold - 1, 0,
+                          (std::ostringstream() << "added training_threshold - 1 ("
+                                                << (training_threshold - 1) << ") vectors")
+                              .str());
         // Start timer
         st.ResumeTiming();
 
@@ -187,11 +188,12 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
         st.PauseTiming();
         // assert backend index size is 0
         // assert frontend index size is training_threshold
-        verify_index_size(
-            training_threshold, 0, training_threshold,
-            std::format("added the training_threshold'th ({}) vector", training_threshold));
+        verify_index_size(training_threshold, 0, training_threshold,
+                          (std::ostringstream() << "added the training_threshold'th ("
+                                                << training_threshold << ") vector")
+                              .str());
 
-        // Resume for next iteratoin
+        // Resume for next iteration
         st.ResumeTiming();
     }
     // Insert rest of the vectors to measure recall
@@ -258,9 +260,10 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
         }
         // assert frontend index size is training_threshold - 1
         // assert backend index size is 0
-        verify_index_size(
-            training_threshold - 1, training_threshold - 1, 0,
-            std::format("added training_threshold - 1 ({}) vectors", training_threshold - 1));
+        verify_index_size(training_threshold - 1, training_threshold - 1, 0,
+                          (std::ostringstream() << "added training_threshold - 1 ("
+                                                << (training_threshold - 1) << ") vectors")
+                              .str());
 
         // start threads
         mock_thread_pool.init_threads();
@@ -278,9 +281,10 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
         st.PauseTiming();
         // assert backend index size is 0
         // assert frontend index size is training_threshold
-        verify_index_size(
-            training_threshold, 0, training_threshold,
-            std::format("added the training_threshold'th ({}) vector", training_threshold));
+        verify_index_size(training_threshold+1, 0, training_threshold,
+                          (std::ostringstream() << "added the training_threshold'th ("
+                                                << training_threshold << ") vector")
+                              .str());
         verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
                          mock_thread_pool.thread_pool_size);
 
