@@ -13,7 +13,7 @@
   NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
 the file.
 ***************************************/
-#define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(10)
+#define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(5)
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_Train, fp32_index_t)
 (benchmark::State &st) { Train(st); }

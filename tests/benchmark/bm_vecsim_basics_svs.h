@@ -20,7 +20,8 @@ public:
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-    BM_VecSimSVSTrain() : data_type(index_type_t::get_index_type()) {
+    BM_VecSimSVSTrain()
+        : quantBits(VecSimSvsQuant_NONE), data_type(index_type_t::get_index_type()) {
         if (!is_initialized) {
             VecSim_SetLogCallbackFunction(nullptr);
             std::cout << "calling load test vectors" << std::endl;
@@ -66,12 +67,22 @@ private:
         ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity)
             << "thread pool capacity mismatch";
     }
-    static TieredSVSIndex<data_t> *
-    CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
-                         size_t training_threshold,
+    TieredSVSIndex<data_t> *
+    CreateTieredSVSIndex(tieredIndexMock &mock_thread_pool, size_t training_threshold,
                          size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
-        TieredIndexParams tiered_params = CreateTieredSVSParams(
-            svs_params, mock_thread_pool, training_threshold, update_threshold);
+        SVSParams svs_params = {
+            .type = this->data_type,
+            .dim = BM_VecSimGeneral::dim,
+            .metric = VecSimMetric_Cosine,
+            .quantBits = this->quantBits,
+            .graph_max_degree = BM_VecSimGeneral::M,
+            .construction_window_size = BM_VecSimGeneral::EF_C,
+            .num_threads = mock_thread_pool.thread_pool_size,
+        };
+        VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
+
+        TieredIndexParams tiered_params =
+            CreateTieredSVSParams(params, mock_thread_pool, training_threshold, update_threshold);
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
         assert(tiered_index);
@@ -142,18 +153,7 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
         // In each iteration create a new index
         auto mock_thread_pool = tieredIndexMock();
 
-        SVSParams svs_params = {
-            .type = data_type,
-            .dim = BM_VecSimGeneral::dim,
-            .metric = VecSimMetric_Cosine,
-            .quantBits = this->quantBits,
-            .graph_max_degree = BM_VecSimGeneral::M,
-            .construction_window_size = BM_VecSimGeneral::EF_C,
-            .num_threads = mock_thread_pool.thread_pool_size,
-        };
-        VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
-
-        auto *tiered_index = CreateTieredSVSIndex(params, mock_thread_pool, training_threshold);
+        auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
 
         auto verify_index_size = [&](size_t expected_tiered_index_size,
                                      size_t expected_frontend_size, size_t expected_backend_size,
@@ -224,24 +224,13 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
         // In each iteration create a new index
         auto mock_thread_pool = tieredIndexMock(num_threads);
         ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
-
+        std::cout << "iter: " << iter << std::endl;
         if (iter++ == 0) {
             std::cout << "running benchmark using " << mock_thread_pool.thread_pool_size
                       << " threads in the pool" << std::endl;
         }
 
-        SVSParams svs_params = {
-            .type = data_type,
-            .dim = BM_VecSimGeneral::dim,
-            .metric = VecSimMetric_Cosine,
-            .quantBits = this->quantBits,
-            .graph_max_degree = BM_VecSimGeneral::M,
-            .construction_window_size = BM_VecSimGeneral::EF_C,
-            .num_threads = mock_thread_pool.thread_pool_size,
-        };
-        VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
-
-        auto *tiered_index = CreateTieredSVSIndex(params, mock_thread_pool, training_threshold);
+        auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
 
         auto verify_index_size = [&](size_t expected_tiered_index_size,
                                      size_t expected_frontend_size, size_t expected_backend_size,
