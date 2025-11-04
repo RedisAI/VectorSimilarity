@@ -281,7 +281,7 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
         st.PauseTiming();
         // assert backend index size is 0
         // assert frontend index size is training_threshold
-        verify_index_size(training_threshold+1, 0, training_threshold,
+        verify_index_size(training_threshold + 1, 0, training_threshold,
                           (std::ostringstream() << "added the training_threshold'th ("
                                                 << training_threshold << ") vector")
                               .str());
