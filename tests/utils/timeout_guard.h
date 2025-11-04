@@ -39,7 +39,7 @@ public:
         std::function<void()> on_timeout =
             []() {
                 std::cerr << "TimeoutGuard: Test/Benchmark timeout! Exiting..." << std::endl;
-                std::exit(-1);
+                abort();
             })
         : timeout_action(std::move(on_timeout)), notified(false) {
 
