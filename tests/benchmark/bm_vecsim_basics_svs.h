@@ -46,6 +46,10 @@ private:
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file);
 
+    template <bool is_async>
+    void runTrainBMIteration(benchmark::State &st, tieredIndexMock &mock_thread_pool,
+                             size_t training_threshold);
+
     static TieredIndexParams
     CreateTieredSVSParams(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                           size_t training_threshold, size_t update_threshold,
@@ -135,6 +139,66 @@ void BM_VecSimSVSTrain<index_type_t>::InsertToQueries(std::ifstream &input) {
     }
     std::cout << "loaded " << test_vectors.size() << " test vectors" << std::endl;
 }
+template <typename index_type_t>
+template <bool is_async>
+void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
+                                                          tieredIndexMock &mock_thread_pool,
+                                                          size_t training_threshold) {
+    this->quantBits = static_cast<VecSimSvsQuantBits>(st.range(0));
+    auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
+
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
+    ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
+    std::cout << "quantBits: " << this->quantBits << std::endl;
+    auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
+                                 size_t expected_backend_size, std::string msg = "") {
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
+        auto backend_info = info.tieredInfo.backendCommonInfo;
+        auto frontend_info = info.tieredInfo.frontendCommonInfo;
+        ASSERT_EQ(info.commonInfo.indexSize, expected_tiered_index_size) << msg;
+        ASSERT_EQ(backend_info.indexSize, expected_backend_size) << msg;
+        ASSERT_EQ(frontend_info.indexSize, expected_frontend_size) << msg;
+    };
+
+    // insert just below training threshold vectors
+    for (size_t i = 0; i < training_threshold - 1; ++i) {
+        VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i);
+    }
+    // Expect frontend index size is (training_threshold - 1) and backend index size is 0
+    verify_index_size(training_threshold - 1, training_threshold - 1, 0,
+                      (std::ostringstream() << "added training_threshold - 1 ("
+                                            << (training_threshold - 1) << ") vectors")
+                          .str());
+
+    // start threads
+    if constexpr (is_async)
+        mock_thread_pool.init_threads();
+
+    // Start timer
+    st.ResumeTiming();
+
+    // add one more vector
+    VecSimIndex_AddVector(tiered_index, test_vectors[training_threshold - 1].data(),
+                          training_threshold - 1);
+    if constexpr (is_async)
+        mock_thread_pool.thread_pool_wait();
+
+    // Stop timer
+    // TODO: test how removing pause/resume timing affects results (according to docs it may
+    // introduce overhead)
+    st.PauseTiming();
+    // expect backend index size is training_threshold and frontend index size is 0
+    verify_index_size(training_threshold, 0, training_threshold,
+                      (std::ostringstream()
+                       << "added the training_threshold'th (" << training_threshold << ") vector")
+                          .str());
+    if constexpr (is_async)
+        verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
+                         mock_thread_pool.thread_pool_size);
+
+    // Resume for next iteration
+    st.ResumeTiming();
+}
 
 template <typename index_type_t>
 void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
@@ -142,7 +206,7 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
     auto original_mode = VecSimIndexInterface::asyncWriteMode;
     VecSim_SetWriteMode(VecSim_WriteInPlace);
 
-    auto training_threshold = st.range(0);
+    auto training_threshold = st.range(1);
     std::cout << "Training threshold: " << training_threshold << std::endl;
 
     // Ensure we have enough vectors to train.
@@ -152,53 +216,10 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
         st.PauseTiming();
         // In each iteration create a new index
         auto mock_thread_pool = tieredIndexMock();
-
-        auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
-
-        auto verify_index_size = [&](size_t expected_tiered_index_size,
-                                     size_t expected_frontend_size, size_t expected_backend_size,
-                                     std::string msg = "") {
-            VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-            auto backend_info = info.tieredInfo.backendCommonInfo;
-            auto frontend_info = info.tieredInfo.frontendCommonInfo;
-            ASSERT_EQ(info.commonInfo.indexSize, expected_tiered_index_size) << msg;
-            ASSERT_EQ(backend_info.indexSize, expected_backend_size) << msg;
-            ASSERT_EQ(frontend_info.indexSize, expected_frontend_size) << msg;
-        };
-
-        // insert just below training threshold vectors
-        for (size_t i = 0; i < training_threshold - 1; ++i) {
-            VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i);
-        }
-        // assert frontend index size is training_threshold - 1
-        // assert backend index size is 0
-        verify_index_size(training_threshold - 1, training_threshold - 1, 0,
-                          (std::ostringstream() << "added training_threshold - 1 ("
-                                                << (training_threshold - 1) << ") vectors")
-                              .str());
-        // Start timer
-        st.ResumeTiming();
-
-        // add one more vector
-        VecSimIndex_AddVector(tiered_index, test_vectors[training_threshold - 1].data(),
-                              training_threshold - 1);
-        // Stop timer
-        // TODO: test how removing pause/resume timing affects results (accroding to docs it may
-        // introduce overhead)
-        st.PauseTiming();
-        // assert backend index size is 0
-        // assert frontend index size is training_threshold
-        verify_index_size(training_threshold, 0, training_threshold,
-                          (std::ostringstream() << "added the training_threshold'th ("
-                                                << training_threshold << ") vector")
-                              .str());
-
-        // Resume for next iteration
-        st.ResumeTiming();
+        runTrainBMIteration<false>(st, mock_thread_pool, training_threshold);
     }
-    // Insert rest of the vectors to measure recall
-
     // Restore original write mode
+    ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteInPlace);
     VecSim_SetWriteMode(original_mode);
 }
 
@@ -207,8 +228,8 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
     // ensure mode is async
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
 
-    auto training_threshold = st.range(0);
-    int unsigned num_threads = st.range(1);
+    auto training_threshold = st.range(1);
+    int unsigned num_threads = st.range(2);
 
     if (num_threads > std::thread::hardware_concurrency()) {
         GTEST_SKIP() << "Not enough threads available, skipping test...";
@@ -230,54 +251,6 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
                       << " threads in the pool" << std::endl;
         }
 
-        auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
-
-        auto verify_index_size = [&](size_t expected_tiered_index_size,
-                                     size_t expected_frontend_size, size_t expected_backend_size,
-                                     std::string msg = "") {
-            VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-            auto backend_info = info.tieredInfo.backendCommonInfo;
-            auto frontend_info = info.tieredInfo.frontendCommonInfo;
-            ASSERT_EQ(info.commonInfo.indexSize, expected_tiered_index_size) << msg;
-            ASSERT_EQ(backend_info.indexSize, expected_backend_size) << msg;
-            ASSERT_EQ(frontend_info.indexSize, expected_frontend_size) << msg;
-        };
-
-        // insert just below training threshold vectors
-        for (size_t i = 0; i < training_threshold - 1; ++i) {
-            VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i);
-        }
-        // assert frontend index size is training_threshold - 1
-        // assert backend index size is 0
-        verify_index_size(training_threshold - 1, training_threshold - 1, 0,
-                          (std::ostringstream() << "added training_threshold - 1 ("
-                                                << (training_threshold - 1) << ") vectors")
-                              .str());
-
-        // start threads
-        mock_thread_pool.init_threads();
-
-        // Start timer
-        st.ResumeTiming();
-
-        // add one more vector
-        VecSimIndex_AddVector(tiered_index, test_vectors[training_threshold - 1].data(),
-                              training_threshold - 1);
-        mock_thread_pool.thread_pool_wait();
-        // Stop timer
-        // TODO: test how removing pause/resume timing affects results (accroding to docs it may
-        // introduce overhead)
-        st.PauseTiming();
-        // assert backend index size is 0
-        // assert frontend index size is training_threshold
-        verify_index_size(training_threshold, 0, training_threshold,
-                          (std::ostringstream() << "added the training_threshold'th ("
-                                                << training_threshold << ") vector")
-                              .str());
-        verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
-                         mock_thread_pool.thread_pool_size);
-
-        // Resume for next iteration
-        st.ResumeTiming();
+        runTrainBMIteration<true>(st, mock_thread_pool, training_threshold);
     }
 }
