@@ -32,7 +32,7 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Sin
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
                     VecSimAlgo_TIERED)
 
-// #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
+#include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 
 // Test oscillations at block size boundaries.
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, UpdateAtBlockSize_Single, fp32_index_t)
