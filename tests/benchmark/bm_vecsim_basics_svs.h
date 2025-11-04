@@ -24,7 +24,6 @@ public:
         : quantBits(VecSimSvsQuant_NONE), data_type(index_type_t::get_index_type()) {
         if (!is_initialized) {
             VecSim_SetLogCallbackFunction(nullptr);
-            std::cout << "calling load test vectors" << std::endl;
             loadTestVectors(AttachRootPath(test_queries_file));
             is_initialized = true;
         }
@@ -158,7 +157,6 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
     }
 #endif
 
-    std::cout << "quantBits: " << this->quantBits << std::endl;
     auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
                                  size_t expected_backend_size, std::string msg = "") {
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
@@ -195,7 +193,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
     // Stop timer
     // TODO: test how removing pause/resume timing affects results (according to docs it may
     // introduce overhead)
-    st.PauseTiming();
+    // st.PauseTiming();
     // expect backend index size is training_threshold and frontend index size is 0
     verify_index_size(training_threshold, 0, training_threshold,
                       (std::ostringstream()
@@ -206,7 +204,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
                          mock_thread_pool.thread_pool_size);
 
     // Resume for next iteration
-    st.ResumeTiming();
+    // st.ResumeTiming();
 }
 
 template <typename index_type_t>
@@ -216,11 +214,10 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
     VecSim_SetWriteMode(VecSim_WriteInPlace);
 
     auto training_threshold = st.range(1);
-    std::cout << "Training threshold: " << training_threshold << std::endl;
 
     // Ensure we have enough vectors to train.
     ASSERT_GE(N_QUERIES, training_threshold);
-    std::cout << "pausing timer after training" << std::endl;
+    std::cout << "NOT pausing timer after training" << std::endl;
     for (auto _ : st) {
         st.PauseTiming();
         // In each iteration create a new index
@@ -243,23 +240,16 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
     if (num_threads > std::thread::hardware_concurrency()) {
         GTEST_SKIP() << "Not enough threads available, skipping test...";
     }
-    std::cout << "Training threshold: " << training_threshold << std::endl;
 
     // Ensure we have enough vectors to train.
     ASSERT_GE(N_QUERIES, training_threshold);
-    std::cout << "pausing timer after training" << std::endl;
+    std::cout << "NOT pausing timer after training" << std::endl;
     size_t iter = 0;
     for (auto _ : st) {
         st.PauseTiming();
         // In each iteration create a new index
         auto mock_thread_pool = tieredIndexMock(num_threads);
         ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
-        std::cout << "iter: " << iter << std::endl;
-        if (iter++ == 0) {
-            std::cout << "running benchmark using " << mock_thread_pool.thread_pool_size
-                      << " threads in the pool" << std::endl;
-        }
-
         runTrainBMIteration<true>(st, mock_thread_pool, training_threshold);
     }
 }
