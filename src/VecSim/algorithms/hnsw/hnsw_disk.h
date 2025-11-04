@@ -342,7 +342,8 @@ public:
     double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
 
     uint64_t getAllocationSize() const override;
-    uint64_t getDiskSize() const override;
+    uint64_t getDBMemorySize() const;
+    uint64_t getDiskSize() const;
     std::shared_ptr<rocksdb::Statistics> getDBStatistics() const;
 
 public:
@@ -2064,10 +2065,15 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id, c
 
 template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
+    
+    return this->allocator->getAllocationSize();
+}
+
+template <typename DataType, typename DistType>
+uint64_t HNSWDiskIndex<DataType, DistType>::getDBMemorySize() const {
     uint64_t db_mem_size = 0;
     this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &db_mem_size);
-    // std::cout << "Disk mem size: " << db_mem_size << std::endl;
-    return this->allocator->getAllocationSize() + db_mem_size;
+    return db_mem_size;
 }
 
 template <typename DataType, typename DistType>
@@ -2087,7 +2093,8 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
     VecSimIndexStatsInfo info = {};
     info.memory = this->getAllocationSize();
-    info.disk = this->getDiskSize();
+    info.db_memory = this->getDBMemorySize();
+    info.db_disk = this->getDiskSize();
     info.numberOfMarkedDeleted = 0; // TODO: Implement if needed
     return info;
 }

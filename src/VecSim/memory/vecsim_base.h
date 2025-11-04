@@ -33,8 +33,5 @@ public:
     virtual inline uint64_t getAllocationSize() const {
         return this->allocator->getAllocationSize();
     }
-    virtual inline uint64_t getDiskSize() const {
-        return 0;
-    }
     virtual ~VecsimBaseObject() = default;
 };
