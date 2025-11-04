@@ -191,9 +191,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
         mock_thread_pool.thread_pool_wait();
 
     // Stop timer
-    // TODO: test how removing pause/resume timing affects results (according to docs it may
-    // introduce overhead)
-    // st.PauseTiming();
+    st.PauseTiming();
     // expect backend index size is training_threshold and frontend index size is 0
     verify_index_size(training_threshold, 0, training_threshold,
                       (std::ostringstream()
@@ -204,7 +202,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
                          mock_thread_pool.thread_pool_size);
 
     // Resume for next iteration
-    // st.ResumeTiming();
+    st.ResumeTiming();
 }
 
 template <typename index_type_t>
@@ -217,7 +215,6 @@ void BM_VecSimSVSTrain<index_type_t>::Train(benchmark::State &st) {
 
     // Ensure we have enough vectors to train.
     ASSERT_GE(N_QUERIES, training_threshold);
-    std::cout << "NOT pausing timer after training" << std::endl;
     for (auto _ : st) {
         st.PauseTiming();
         // In each iteration create a new index
@@ -243,7 +240,6 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
 
     // Ensure we have enough vectors to train.
     ASSERT_GE(N_QUERIES, training_threshold);
-    std::cout << "NOT pausing timer after training" << std::endl;
     size_t iter = 0;
     for (auto _ : st) {
         st.PauseTiming();
