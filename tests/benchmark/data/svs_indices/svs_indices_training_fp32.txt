@@ -1,0 +1,1 @@
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-1M-vectors.raw

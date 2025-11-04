@@ -1,4 +1,6 @@
 BM_TYPE=$1
+alg="hnsw"
+
 if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     file_name="all"
 elif [ "$BM_TYPE" = "benchmarks-default" ] \
@@ -41,9 +43,12 @@ then
     file_name="basic_uint8"
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
+elif [ "$BM_TYPE" = "bm-svs-train-fp32" ]; then
+    file_name="training_fp32"
+    alg="svs"
 else
     echo "No files to download for BM_TYPE=$BM_TYPE"
     exit 0
 fi
 
-cat tests/benchmark/data/hnsw_indices/hnsw_indices_$file_name.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
+cat tests/benchmark/data/${alg}_indices/${alg}_indices_$file_name.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
