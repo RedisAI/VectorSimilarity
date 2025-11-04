@@ -193,17 +193,20 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     // Benchmark loop: repeatedly delete/add same vector to trigger grow-shrink cycles
     labelType label_to_update = curr_label - 1;
     size_t index_cap = index->indexCapacity();
+    std::cout << "index_cap after adding vectors " << index_cap << std::endl;
+    assert(index_cap == N_VECTORS + vecs_to_blocksize + BM_VecSimGeneral::block_size);
+
     for (auto _ : st) {
         // Remove the vector directly from hnsw
-        size_t ret = VecSimIndex_DeleteVector(index, label_to_update);
-        assert(ret == 1);
-        assert(index->indexCapacity() == index_cap - BM_VecSimGeneral::block_size);
-        // Capacity should shrink by one block after deletion
-        ret = VecSimIndex_AddVector(index, QUERIES[(added_vec_count - 1) % N_QUERIES].data(),
-                                    label_to_update);
-        assert(ret == 1);
+        VecSimIndex_DeleteVector(index, label_to_update);
+
+        // Capacity should not change
+        size_t curr_cap = index->indexCapacity();
+        assert(curr_cap == index_cap);
+        VecSimIndex_AddVector(index, QUERIES[(added_vec_count - 1) % N_QUERIES].data(),
+                              label_to_update);
         assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
-        // Capacity should grow back to original size after addition
+        // Capacity should not change
         assert(index->indexCapacity() == index_cap);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
