@@ -153,9 +153,9 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
 #else
     if (this->quantBits == VecSimSvsQuant_NONE) {
         ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
-        else {
-            ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, VecSimSvsQuant_Scalar);
-        }
+    } else {
+        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, VecSimSvsQuant_Scalar);
+    }
 #endif
 
     std::cout << "quantBits: " << this->quantBits << std::endl;
