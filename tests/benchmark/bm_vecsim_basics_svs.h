@@ -147,7 +147,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
     auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
 
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-#ifdef HAVE_SVS_LVQ
+#if HAVE_SVS_LVQ
     ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
 #else
     if (this->quantBits == VecSimSvsQuant_NONE) {

@@ -15,7 +15,7 @@ the file.
 ***************************************/
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(5)
 
-#ifdef HAVE_SVS_LVQ
+#if HAVE_SVS_LVQ
 #define QUANT_BITS_ARGS {VecSimSvsQuant_8, VecSimSvsQuant_4x8_LeanVec}
 #else
 #define QUANT_BITS_ARGS {VecSimSvsQuant_8}
