@@ -326,6 +326,8 @@ public:
 
         return actual_stored_vec;
     }
+
+    size_t indexMetaDataCapacity() const override { return idToMetaData.capacity(); }
 #endif
 
 protected:
