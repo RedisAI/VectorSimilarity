@@ -51,8 +51,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TrainCompressedAsync, fp32_ind
 BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TrainCompressedAsync)
     ->UNIT_AND_ITERATIONS
     ->ArgsProduct({QUANT_BITS_ARGS,
-                   {static_cast<long int>(BM_VecSimGeneral::block_size), 5000, 10000, 50000,
-                    100000},
+                   {static_cast<long int>(BM_VecSimGeneral::block_size), 5000, 10000, 50000},
                    {4, 8, 16}})
     ->ArgNames({"quant_bits", "training_threshold", "thread_count"})
     ->MeasureProcessCPUTime();
