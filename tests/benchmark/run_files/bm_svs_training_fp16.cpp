@@ -1,0 +1,18 @@
+#include "benchmark/bm_vecsim_basics_svs.h"
+
+/**************************************
+Training threshold benchmarks
+***************************************/
+
+bool BM_VecSimGeneral::is_multi = false;
+
+size_t BM_VecSimGeneral::n_queries = 100000;
+size_t BM_VecSimGeneral::dim = 768;
+size_t BM_VecSimGeneral::M = 128;
+size_t BM_VecSimGeneral::EF_C = 512;
+size_t BM_VecSimGeneral::block_size = 1024;
+
+const char *BM_VecSimGeneral::test_queries_file =
+    "tests/benchmark/data/dbpedia-cosine-dim768-1M-fp16-vectors.raw";
+#include "benchmark/bm_initialization/bm_training_initialize_fp16.h"
+BENCHMARK_MAIN();

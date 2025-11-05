@@ -44,8 +44,10 @@ then
     file_name="basic_uint8"
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
-elif [ "$BM_TYPE" = "bm-svs-train-fp32" ]; then
-    file_name="training_fp32"
+elif [ "$BM_TYPE" = "bm-svs-train-fp32" ] \
+|| [ "$BM_TYPE" = "bm-svs-train-fp16" ]
+then
+    file_name="training"
     alg="svs"
 else
     echo "No files to download for BM_TYPE=$BM_TYPE"

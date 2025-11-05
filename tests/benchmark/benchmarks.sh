@@ -10,6 +10,7 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     done
     echo updated_index_single_fp32
     echo svs_training_fp32
+    echo svs_training_fp16
     echo spaces_fp32
     echo spaces_fp64
     echo spaces_bf16
@@ -88,6 +89,8 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
 
 elif [ "$BM_TYPE" = "bm-svs-train-fp32" ] ; then
     echo svs_training_fp32
+elif [ "$BM_TYPE" = "bm-svs-train-fp16" ] ; then
+    echo svs_training_fp16
 
 # Spaces benchmarks
 elif [ "$BM_TYPE" = "bm-spaces" ] ; then

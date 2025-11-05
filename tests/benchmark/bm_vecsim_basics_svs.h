@@ -13,6 +13,7 @@
 #include "VecSim/algorithms/svs/svs_tiered.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "gtest/gtest.h"
+#include "VecSim/types/float16.h"
 
 template <typename index_type_t>
 class BM_VecSimSVSTrain : public BM_VecSimGeneral {
@@ -113,6 +114,8 @@ bool BM_VecSimSVSTrain<index_type_t>::is_initialized = false;
 // Needs to be explicitly initalized
 template <>
 std::vector<std::vector<float>> BM_VecSimSVSTrain<fp32_index_t>::test_vectors{};
+template <>
+std::vector<std::vector<vecsim_types::float16>> BM_VecSimSVSTrain<fp16_index_t>::test_vectors{};
 
 template <typename index_type_t>
 void BM_VecSimSVSTrain<index_type_t>::loadTestVectors(const std::string &test_file) {
@@ -138,6 +141,7 @@ void BM_VecSimSVSTrain<index_type_t>::InsertToQueries(std::ifstream &input) {
     }
     std::cout << "loaded " << test_vectors.size() << " test vectors" << std::endl;
 }
+
 template <typename index_type_t>
 template <bool is_async>
 void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
