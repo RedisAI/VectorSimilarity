@@ -2,7 +2,8 @@ BM_TYPE=$1
 alg="hnsw"
 
 if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
-    file_name="all"
+    cat tests/benchmark/data/hnsw_indices/*.txt tests/benchmark/data/svs_indices/*.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
+    exit 0
 elif [ "$BM_TYPE" = "benchmarks-default" ] \
 || [ "$BM_TYPE" = "bm-basics-fp32-single" ] \
 || [ "$BM_TYPE" = "bm-basics-fp32-multi" ] \
