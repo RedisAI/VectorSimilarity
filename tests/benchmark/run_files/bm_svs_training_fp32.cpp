@@ -1,4 +1,4 @@
-#include "benchmark/bm_vecsim_basics_svs.h"
+#include "benchmark/bm_vecsim_svs_train.h"
 
 /**************************************
 Training threshold benchmarks
@@ -12,7 +12,9 @@ size_t BM_VecSimGeneral::M = 128;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
 
+#define DATA_TYPE_INDEX_T fp32_index_t
+
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-vectors.raw";
-#include "benchmark/bm_initialization/bm_training_initialize_fp32.h"
+#include "benchmark/bm_initialization/bm_training_initialize.h"
 BENCHMARK_MAIN();
