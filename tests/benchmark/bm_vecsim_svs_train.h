@@ -14,6 +14,7 @@
 #include "VecSim/index_factories/tiered_factory.h"
 #include "gtest/gtest.h"
 #include "VecSim/types/float16.h"
+#include "bm_utils.h"
 
 template <typename index_type_t>
 class BM_VecSimSVSTrain : public BM_VecSimGeneral {
@@ -50,27 +51,6 @@ private:
     void runTrainBMIteration(benchmark::State &st, tieredIndexMock &mock_thread_pool,
                              size_t training_threshold);
 
-    static TieredIndexParams
-    CreateTieredSVSParams(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
-                          size_t training_threshold, size_t update_threshold,
-                          size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
-        return TieredIndexParams{
-            .jobQueue = &mock_thread_pool.jobQ,
-            .jobQueueCtx = mock_thread_pool.ctx,
-            .submitCb = tieredIndexMock::submit_callback,
-            .primaryIndexParams = &svs_params,
-            .specificParams = {.tieredSVSParams =
-                                   TieredSVSParams{.trainingTriggerThreshold = training_threshold,
-                                                   .updateTriggerThreshold = update_threshold,
-                                                   .updateJobWaitTime = update_job_wait_time}}};
-    }
-    static void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
-                                 size_t expected_capcity) {
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getNumThreads(), expected_num_threads)
-            << "last reserved threads size mismatch";
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity)
-            << "thread pool capacity mismatch";
-    }
     TieredSVSIndex<data_t> *
     CreateTieredSVSIndex(tieredIndexMock &mock_thread_pool, size_t training_threshold,
                          size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
