@@ -37,4 +37,5 @@ static void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expect
         std::cout << "WARNING: last reserved threads (" << num_reserved_threads
                   << ") is less than expected (" << expected_num_threads << ")." << std::endl;
     }
+}
 } // namespace test_utils
