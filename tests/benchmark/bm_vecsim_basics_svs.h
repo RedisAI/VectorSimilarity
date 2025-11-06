@@ -253,3 +253,11 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
         runTrainBMIteration<true>(st, mock_thread_pool, training_threshold);
     }
 }
+
+#define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)
+
+#if HAVE_SVS_LVQ
+#define QUANT_BITS_ARGS {VecSimSvsQuant_8, VecSimSvsQuant_4x8_LeanVec}
+#else
+#define QUANT_BITS_ARGS {VecSimSvsQuant_8}
+#endif

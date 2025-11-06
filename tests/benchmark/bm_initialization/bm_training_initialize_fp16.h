@@ -13,13 +13,6 @@
   NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
 the file.
 ***************************************/
-#define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(5)
-
-#if HAVE_SVS_LVQ
-#define QUANT_BITS_ARGS {VecSimSvsQuant_8, VecSimSvsQuant_4x8_LeanVec}
-#else
-#define QUANT_BITS_ARGS {VecSimSvsQuant_8}
-#endif
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TrainNoCompression, fp16_index_t)
 (benchmark::State &st) { Train(st); }
