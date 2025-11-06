@@ -66,7 +66,7 @@ private:
         VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
 
         TieredIndexParams tiered_params =
-            CreateTieredSVSParams(params, mock_thread_pool, training_threshold, update_threshold);
+            test_utils::CreateTieredSVSParams(params, mock_thread_pool, training_threshold, update_threshold);
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
         assert(tiered_index);
@@ -82,7 +82,7 @@ private:
         size_t num_threads =
             params_threadpool_size ? params_threadpool_size : mock_thread_pool.thread_pool_size;
         tiered_index->GetSVSIndex()->setNumThreads(num_threads);
-        verifyNumThreads(tiered_index, num_threads, num_threads);
+        test_utils::verifyNumThreads(tiered_index, num_threads, num_threads);
 
         return tiered_index;
     }
@@ -182,7 +182,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
                        << "added the training_threshold'th (" << training_threshold << ") vector")
                           .str());
     if constexpr (is_async)
-        verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
+        test_utils::verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
                          mock_thread_pool.thread_pool_size);
 
     // Resume for next iteration
