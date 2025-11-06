@@ -86,7 +86,7 @@ private:
 
     // FBIN loading configuration
     static constexpr size_t BATCH_SIZE = 40;
-    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.100K.fbin";
+    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.10K.fbin";
 
 };
 
