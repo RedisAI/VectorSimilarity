@@ -97,6 +97,12 @@ protected:
         return params;
     }
 
+    static inline VecSimParams CreateParams(const SVSParams &svs_params) {
+        VecSimParams params{.algo = VecSimAlgo_SVS,
+                            .algoParams = {.svsParams = SVSParams{svs_params}}};
+        return params;
+    }
+
     // Gets HNSWParams or BFParams parameters struct, and creates new VecSimIndex.
     template <typename IndexParams>
     static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
