@@ -70,12 +70,12 @@ jobs:
             "include": [
               {
                 "architecture": "arm64",
-                "instance-type": "r8g.xlarge",
+                "instance-type": "r8g.2xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
               {
                 "architecture": "x86_64",
-                "instance-type": "r7i.xlarge",
+                "instance-type": "r7i.2xlarge",
                 "ami-id": "ami-09fabd03bb09b3704"
               }
             ]
