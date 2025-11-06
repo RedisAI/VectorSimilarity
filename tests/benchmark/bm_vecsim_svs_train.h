@@ -65,8 +65,8 @@ private:
         };
         VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
 
-        TieredIndexParams tiered_params =
-            test_utils::CreateTieredSVSParams(params, mock_thread_pool, training_threshold, update_threshold);
+        TieredIndexParams tiered_params = test_utils::CreateTieredSVSParams(
+            params, mock_thread_pool, training_threshold, update_threshold);
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
         assert(tiered_index);
@@ -183,7 +183,7 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
                           .str());
     if constexpr (is_async)
         test_utils::verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
-                         mock_thread_pool.thread_pool_size);
+                                     mock_thread_pool.thread_pool_size);
 
     // Resume for next iteration
     st.ResumeTiming();
