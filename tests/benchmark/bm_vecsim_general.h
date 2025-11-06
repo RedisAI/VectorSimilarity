@@ -61,7 +61,7 @@ public:
 
     void SetUp(const benchmark::State &state) override {
         timeout_guard =
-            std::make_unique<test_utils::BenchmarkTimeoutGuard>(std::chrono::minutes(20));
+            std::make_unique<test_utils::BenchmarkTimeoutGuard>(std::chrono::minutes(10));
     }
 
     void TearDown(const benchmark::State &state) override {

@@ -16,5 +16,5 @@ size_t BM_VecSimGeneral::block_size = 1024;
 
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-fp16-vectors.raw";
-#include "benchmark/bm_initialization/bm_training_initialize_fp16.h"
+#include "benchmark/bm_initialization/bm_training_initialize.h"
 BENCHMARK_MAIN();
