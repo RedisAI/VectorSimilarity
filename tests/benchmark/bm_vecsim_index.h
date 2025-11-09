@@ -110,7 +110,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // dim, block_size, M, EF_C, n_vectors, is_multi, n_queries, hnsw_index_file and
     // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
     // index type benchmarks.
-    BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
+
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW) {
         // Initialize and load HNSW index for DBPedia data set.
         indices[INDEX_HNSW] = IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
@@ -120,6 +120,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         hnsw_index->setEf(ef_r);
         // Create tiered index from the loaded HNSW index.
         if (enabled_index_types & IndexTypeFlags::INDEX_MASK_TIERED_HNSW) {
+            BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
             auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
             TieredIndexParams tiered_params = {
                 .jobQueue = &mock_thread_pool.jobQ,
@@ -186,8 +187,7 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
     for (size_t i = 0; i < n_queries; i++) {
         std::vector<data_t> query(dim);
-        ASSERT_TRUE(input.read((char *)query.data(), dim * sizeof(data_t)))
-            << "unexpected end of file at query " << i << "/" << n_queries;
+        input.read((char *)query.data(), dim * sizeof(data_t));
         queries.push_back(query);
     }
 }

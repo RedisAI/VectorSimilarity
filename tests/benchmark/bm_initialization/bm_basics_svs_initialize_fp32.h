@@ -19,7 +19,9 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_AddLabelOneByOne, DATA_TYPE_INDEX_T
 (benchmark::State &st) { AddLabel(st); }
 BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_AddLabelOneByOne)
     ->Unit(benchmark::kMillisecond)
-    ->Iterations(BM_VecSimGeneral::block_size);
+    ->Iterations(BM_VecSimGeneral::block_size)
+    ->Arg(QUANT_BITS_ARG)
+    ->ArgName("quant_bits");
 
 // Add vectors in batches via tiered index
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TriggerUpdateTiered, DATA_TYPE_INDEX_T)
@@ -27,8 +29,9 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TriggerUpdateTiered, DATA_TYPE_INDE
 BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TriggerUpdateTiered)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1)
-    ->ArgsProduct({{static_cast<long int>(BM_VecSimGeneral::block_size), 5000,
+    ->ArgsProduct({{QUANT_BITS_ARG},
+                   {static_cast<long int>(BM_VecSimGeneral::block_size), 5000,
                     static_cast<long int>(10 * BM_VecSimGeneral::block_size)},
                    {2, 4, 8}})
-    ->ArgNames({"update_threshold", "thread_count"})
+    ->ArgNames({"quant_bits", "update_threshold", "thread_count"})
     ->MeasureProcessCPUTime();

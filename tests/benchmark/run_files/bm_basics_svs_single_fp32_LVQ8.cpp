@@ -1,3 +1,4 @@
+#if HAVE_SVS_LVQ // Currently we don't have a serialized version of GlobalQ index.
 #include "benchmark/bm_vecsim_svs_train.h"
 
 /**************************************
@@ -14,12 +15,13 @@ size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
 
 #define DATA_TYPE_INDEX_T fp32_index_t
-#define QUANT_BITS_ARG    VecSimSvsQuant_NONE
+#define QUANT_BITS_ARG    VecSimSvsQuant_8
 template <>
 const char *BM_VecSimSVS<DATA_TYPE_INDEX_T>::svs_index_tar_file =
-    "tests/benchmark/data/svs-dbpedia-cosine-dim768-quant-none.tar.gz";
+    "tests/benchmark/data/svs-dbpedia-cosine-dim768-quant-8.tar.gz";
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-vectors.raw";
 
 #include "benchmark/bm_initialization/bm_basics_svs_initialize_fp32.h"
 BENCHMARK_MAIN();
+#endif // HAVE_SVS_LVQ

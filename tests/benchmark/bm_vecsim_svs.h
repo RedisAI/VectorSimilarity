@@ -307,10 +307,23 @@ void BM_VecSimSVS<index_type_t>::TrainAsync(benchmark::State &st) {
 
 template <typename index_type_t>
 void BM_VecSimSVS<index_type_t>::AddLabel(benchmark::State &st) {
+    VecSimSvsQuantBits quant_bits = st.range(0);
+    this->quantBits = quant_bits;
+
     size_t label = 0;
     auto index = CreateSVSIndexFromFile(1, 1);
-    size_t memory_delta = index->getAllocationSize();
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+#if HAVE_SVS_LVQ
+    ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
+#else
+    if (this->quantBits == VecSimSvsQuant_NONE) {
+        ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
+    } else {
+        ASSERT_EQ(info.svsInfo.quantBits, VecSimSvsQuant_Scalar);
+    }
+#endif
 
+    size_t memory_delta = index->getAllocationSize();
     for (auto _ : st) {
         VecSimIndex_AddVector(index, test_vectors[label].data(), label + N_VECTORS);
         label++;
@@ -328,8 +341,10 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     // ensure mode is async
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
 
-    auto update_threshold = st.range(0);
-    int unsigned num_threads = st.range(1);
+    VecSimSvsQuantBits quant_bits = st.range(0);
+    this->quantBits = quant_bits;
+    auto update_threshold = st.range(1);
+    int unsigned num_threads = st.range(2);
 
     if (num_threads > std::thread::hardware_concurrency()) {
         GTEST_SKIP() << "Not enough threads available, skipping test...";
@@ -342,6 +357,17 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     auto mock_thread_pool = tieredIndexMock(num_threads);
     ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
     auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, update_threshold);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
+#if HAVE_SVS_LVQ
+    ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
+#else
+    if (this->quantBits == VecSimSvsQuant_NONE) {
+        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
+    } else {
+        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, VecSimSvsQuant_Scalar);
+    }
+#endif
+
     auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
                                  size_t expected_backend_size, std::string msg = "") {
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);

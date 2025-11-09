@@ -12,6 +12,7 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     echo svs_training_fp32
     echo svs_training_fp16
     echo basics_svs_single_fp32
+    echo basics_svs_single_fp32_LVQ8
     echo spaces_fp32
     echo spaces_fp64
     echo spaces_bf16
@@ -85,6 +86,7 @@ elif [ "$BM_TYPE" = "bm-batch-iter-uint8-multi" ] ; then
     echo batch_iterator_multi_uint8
 elif [ "$BM_TYPE" = "bm-basics-svs-fp32-single" ] ; then
     echo basics_svs_single_fp32
+    echo basics_svs_single_fp32_LVQ8
 
 # Updated index benchmarks
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
