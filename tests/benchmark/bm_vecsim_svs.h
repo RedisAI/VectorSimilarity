@@ -26,8 +26,9 @@ public:
         if (!is_initialized) {
             VecSim_SetLogCallbackFunction(nullptr);
             loadTestVectors(AttachRootPath(test_queries_file));
-            extractTarGz(BM_VecSimGeneral::AttachRootPath(svs_index_tar_file),
-                         BM_VecSimGeneral::AttachRootPath("tests/benchmark/data"));
+            extracted_svs_index_path =
+                extractTarGz(BM_VecSimGeneral::AttachRootPath(svs_index_tar_file),
+                             BM_VecSimGeneral::AttachRootPath("tests/benchmark/data"));
             is_initialized = true;
         }
     }
@@ -45,6 +46,7 @@ public:
 
 private:
     static const char *svs_index_tar_file;
+    static std::string extracted_svs_index_path;
 
     // Each test instance will have its own quantization bits.
     VecSimSvsQuantBits quantBits;
@@ -56,14 +58,44 @@ private:
 
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file);
-    static void extractTarGz(const std::string &filename, const std::string &destination) {
+    static std::string extractTarGz(const std::string &filename, const std::string &destination) {
+        // Create a temporary extraction directory
+        std::string extract_dir = destination + "/extracted";
+        int mkdir_result = system(("mkdir -p " + extract_dir).c_str());
+        if (mkdir_result != 0) {
+            throw std::runtime_error("Failed to create extraction directory");
+        }
 
         // Extract tar.gz
-        std::string command = "tar -xzf " + filename + " -C " + destination;
+        std::string command = "tar -xzf " + filename + " -C " + extract_dir;
         int result = system(command.c_str());
         if (result != 0) {
             throw std::runtime_error("Failed to extract tar.gz file");
         }
+
+        // Get the extracted directory name
+        FILE *pipe = popen(("ls -1 " + extract_dir).c_str(), "r");
+        if (!pipe) {
+            throw std::runtime_error("Failed to list extracted directory");
+        }
+
+        char buffer[256];
+        std::string result_name = "";
+        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            result_name = buffer;
+            if (!result_name.empty() && result_name.back() == '\n') {
+                result_name.pop_back();
+            }
+        }
+        pclose(pipe);
+
+        if (result_name.empty()) {
+            throw std::runtime_error("No files found in extracted directory");
+        }
+
+        std::string extracted_dir = extract_dir + "/" + result_name;
+        std::cout << "extracted dir: " << extracted_dir << std::endl;
+        return extracted_dir;
     }
 
     template <bool is_async>
@@ -119,10 +151,8 @@ private:
         VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
 
         // Load svs index
-        auto *svs_index =
-            reinterpret_cast<VecSimIndexAbstract<data_t, float> *>(SVSFactory::NewIndex(
-                BM_VecSimGeneral::AttachRootPath("tests/benchmark/data/dbpedia_svs_none"),
-                &params));
+        auto *svs_index = reinterpret_cast<VecSimIndexAbstract<data_t, float> *>(
+            SVSFactory::NewIndex(extracted_svs_index_path, &params));
 
         return svs_index;
     }
@@ -160,6 +190,9 @@ private:
 
 template <typename index_type_t>
 bool BM_VecSimSVS<index_type_t>::is_initialized = false;
+
+template <typename index_type_t>
+std::string BM_VecSimSVS<index_type_t>::extracted_svs_index_path = "";
 
 // Needs to be explicitly initalized
 template <>
