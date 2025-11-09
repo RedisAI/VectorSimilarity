@@ -256,7 +256,6 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
         test_utils::verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
                                      mock_thread_pool.thread_pool_size,
                                      std::string("runTrainBMIteration"));
-                                    
 
     // Resume for next iteration
     st.ResumeTiming();
