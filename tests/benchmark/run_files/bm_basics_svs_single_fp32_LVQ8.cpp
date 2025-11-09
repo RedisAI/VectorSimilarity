@@ -1,5 +1,5 @@
 #if HAVE_SVS_LVQ // Currently we don't have a serialized version of GlobalQ index.
-#include "benchmark/bm_vecsim_svs_train.h"
+#include "benchmark/bm_vecsim_svs.h"
 
 /**************************************
   Basic tests for single value index with fp32 data type.
