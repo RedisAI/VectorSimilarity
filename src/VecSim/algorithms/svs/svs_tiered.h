@@ -518,9 +518,7 @@ public:
                this->backendIndex->indexMetaDataCapacity();
     }
 
-    void setUpdateTriggerThreshold(size_t threshold) {
-        this->updateTriggerThreshold = threshold;
-    }
+    void setUpdateTriggerThreshold(size_t threshold) { this->updateTriggerThreshold = threshold; }
 #else
     void executeTracingCallback(const std::string &) const {
         // In production, we do nothing.
