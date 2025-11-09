@@ -944,66 +944,6 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
     }
 }
 
-// template <typename DataType, typename DistType>
-// void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
-//     std::unordered_map<idType, std::vector<idType>> &delta_list,
-//     vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
-//     std::unordered_map<idType, idType> &new_ids_mapping) {
-
-//     auto readOptions = rocksdb::ReadOptions();
-//     readOptions.fill_cache = false;
-//     readOptions.prefix_same_as_start = true;
-
-//     auto writeOptions = rocksdb::WriteOptions();
-//     writeOptions.disableWAL = true;
-
-//     auto it = this->db->NewIterator(readOptions, cf);
-//     for (it->Seek(GraphKeyPrefix); it->Valid(); it->Next()) {
-//         auto key = it->key();
-//         auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
-
-//         auto it2 = delta_list.find(graphKey->node().first);
-//         if (it2 == delta_list.end()) {
-//             // No need to update this node, move to the next one
-//             continue;
-//         }
-
-//         // Parse graph value using new format
-//         std::string graph_value = it->value().ToString();
-//         vecsim_stl::vector<idType> existing_neighbors(this->allocator);
-//         deserializeGraphValue(graph_value, existing_neighbors);
-
-//         candidatesList<DistType> new_neighbors(this->allocator);
-//         new_neighbors.reserve(existing_neighbors.size() + it2->second.size());
-//         auto vector = getDataByInternalId(graphKey->id);
-//         for (const auto &neighbor : it2->second) {
-//             DistType dist = this->calcDistance(getDataByInternalId(neighbor), vector);
-//             new_neighbors.emplace_back(dist, neighbor);
-//         }
-//         for (size_t i = 0; i < existing_neighbors.size(); ++i) {
-//             DistType dist = this->calcDistance(getDataByInternalId(existing_neighbors[i]), vector);
-//             new_neighbors.emplace_back(dist, existing_neighbors[i]);
-//         }
-//         getNeighborsByHeuristic2(new_neighbors, graphKey->level == 0 ? M0 : M);
-
-//         // Extract the ids from the new_neighbors list
-//         vecsim_stl::vector<idType> neighbors(new_neighbors.size(), this->allocator);
-//         for (size_t i = 0; i < new_neighbors.size(); ++i) {
-//             neighbors[i] = new_neighbors[i].second;
-//         }
-
-//         // Serialize with new format
-//         std::string new_graph_value = serializeGraphValue(vector, neighbors);
-//         this->db->Put(writeOptions, cf, it->key(), new_graph_value);
-
-//     }
-
-//     delete it;
-// }
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 template <typename DataType, typename DistType>
 idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                                               VecSimQueryReply_Code *rc) const {
