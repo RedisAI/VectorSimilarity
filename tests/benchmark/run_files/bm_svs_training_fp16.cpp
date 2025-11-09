@@ -1,4 +1,4 @@
-#include "benchmark/bm_vecsim_svs_train.h"
+#include "benchmark/bm_vecsim_svs.h"
 
 /**************************************
 Training threshold benchmarks

@@ -319,7 +319,6 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     size_t vecs_to_blocksize =
         BM_VecSimGeneral::block_size - (initial_index_size % BM_VecSimGeneral::block_size);
     size_t initial_index_cap = index->indexMetaDataCapacity();
-    std::cout << "initial_index_capacity: " << initial_index_cap << std::endl;
     assert(initial_index_cap == N_VECTORS + vecs_to_blocksize);
 
     assert(vecs_to_blocksize < BM_VecSimGeneral::block_size);
@@ -348,7 +347,7 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     labelType label_to_update = curr_label - 1;
     size_t index_cap = index->indexMetaDataCapacity();
     std::cout << "index_cap after adding vectors " << index_cap << std::endl;
-    assert(index_cap == initial_index_size + vecs_to_blocksize + BM_VecSimGeneral::block_size);
+    assert(index_cap == initial_index_cap + BM_VecSimGeneral::block_size);
 
     for (auto _ : st) {
         // Remove the vector directly from hnsw
