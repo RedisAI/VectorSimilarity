@@ -47,8 +47,6 @@ struct SVSIndexBase
     size_t getNumMarkedDeleted() const { return num_marked_deleted; }
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
-    virtual void setThreadPoolCapacity(size_t capacity) = 0;
-
 #endif
 protected:
     // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
@@ -755,8 +753,6 @@ public:
     }
 
     svs::logging::logger_ptr getLogger() const override { return logger_; }
-
-    void setThreadPoolCapacity(size_t capacity) override { threadpool_.set_capacity(capacity); }
 #endif
 };
 

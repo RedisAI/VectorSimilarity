@@ -27,15 +27,26 @@ public:
         if (!is_initialized) {
             VecSim_SetLogCallbackFunction(nullptr);
             loadTestVectors(AttachRootPath(test_queries_file));
+            extractTarGz(BM_VecSimGeneral::AttachRootPath(svs_index_tar_file),
+                         BM_VecSimGeneral::AttachRootPath("tests/benchmark/data"));
             is_initialized = true;
         }
     }
     ~BM_VecSimSVSTrain() = default;
 
+    // Training benchmarks
     void Train(benchmark::State &st);
     void TrainAsync(benchmark::State &st);
 
+    // Loaded index benchmarks
+
+    // Add label directly to svs index one by one
+    void AddLabel(benchmark::State &st);
+    void TriggerUpdateTiered(benchmark::State &st);
+
 private:
+    static const char *svs_index_tar_file;
+
     // Each test instance will have its own quantization bits.
     VecSimSvsQuantBits quantBits;
     VecSimType data_type;
@@ -46,6 +57,15 @@ private:
 
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file);
+    static void extractTarGz(const std::string &filename, const std::string &destination) {
+
+        // Extract tar.gz
+        std::string command = "tar -xzf " + filename + " -C " + destination;
+        int result = system(command.c_str());
+        if (result != 0) {
+            throw std::runtime_error("Failed to extract tar.gz file");
+        }
+    }
 
     template <bool is_async>
     void runTrainBMIteration(benchmark::State &st, tieredIndexMock &mock_thread_pool,
@@ -65,8 +85,8 @@ private:
         };
         VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
 
-        TieredIndexParams tiered_params =
-            test_utils::CreateTieredSVSParams(params, mock_thread_pool, training_threshold, update_threshold);
+        TieredIndexParams tiered_params = test_utils::CreateTieredSVSParams(
+            params, mock_thread_pool, training_threshold, update_threshold);
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
         assert(tiered_index);
@@ -82,7 +102,58 @@ private:
         size_t num_threads =
             params_threadpool_size ? params_threadpool_size : mock_thread_pool.thread_pool_size;
         tiered_index->GetSVSIndex()->setNumThreads(num_threads);
-        test_utils::verifyNumThreads(tiered_index, num_threads, num_threads);
+        test_utils::verifyNumThreads(tiered_index, num_threads, num_threads,
+                                     std::string("CreateTieredSVSIndex"));
+
+        return tiered_index;
+    }
+
+    VecSimIndexAbstract<data_t, float> *CreateSVSIndexFromFile(size_t update_threshold,
+                                                               size_t num_threads = 1) {
+        SVSParams svs_params = {.type = this->data_type,
+                                .dim = BM_VecSimGeneral::dim,
+                                .metric = VecSimMetric_Cosine,
+                                .quantBits = this->quantBits,
+                                .graph_max_degree = BM_VecSimGeneral::M,
+                                .construction_window_size = BM_VecSimGeneral::EF_C,
+                                .num_threads = num_threads};
+        VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
+
+        // Load svs index
+        auto *svs_index =
+            reinterpret_cast<VecSimIndexAbstract<data_t, float> *>(SVSFactory::NewIndex(
+                BM_VecSimGeneral::AttachRootPath("tests/benchmark/data/dbpedia_svs_none"),
+                &params));
+
+        return svs_index;
+    }
+    // training_threshold is not relevant in this case, as the loaded index is already trained.
+    TieredSVSIndex<data_t> *CreateTieredSVSIndexFromFile(tieredIndexMock &mock_thread_pool,
+                                                         size_t update_threshold) {
+        SVSParams svs_params = {.type = this->data_type,
+                                .dim = BM_VecSimGeneral::dim,
+                                .metric = VecSimMetric_Cosine,
+                                .quantBits = this->quantBits,
+                                .graph_max_degree = BM_VecSimGeneral::M,
+                                .construction_window_size = BM_VecSimGeneral::EF_C,
+                                .num_threads = mock_thread_pool.thread_pool_size};
+        VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
+
+        // Load svs index
+        auto *svs_index =
+            CreateSVSIndexFromFile(update_threshold, mock_thread_pool.thread_pool_size);
+        TieredIndexParams tiered_params = test_utils::CreateTieredSVSParams(
+            params, mock_thread_pool, update_threshold, update_threshold);
+
+        auto *tiered_index = reinterpret_cast<TieredSVSIndex<data_t> *>(
+            TieredFactory::TieredSVSFactory::NewIndex<data_t>(&tiered_params, svs_index));
+        assert(tiered_index);
+        // Set the created tiered index in the index external context (it will take ownership over
+        // the index, and we'll need to release the ctx at the end of the test.
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+        size_t num_threads = mock_thread_pool.thread_pool_size;
+        test_utils::verifyNumThreads(tiered_index, num_threads, num_threads,
+                                     std::string("CreateTieredSVSIndexFromFile"));
 
         return tiered_index;
     }
@@ -183,7 +254,8 @@ void BM_VecSimSVSTrain<index_type_t>::runTrainBMIteration(benchmark::State &st,
                           .str());
     if constexpr (is_async)
         test_utils::verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
-                         mock_thread_pool.thread_pool_size);
+                                     mock_thread_pool.thread_pool_size,
+                                     std::string("runTrainBMIteration"));
 
     // Resume for next iteration
     st.ResumeTiming();
@@ -232,6 +304,77 @@ void BM_VecSimSVSTrain<index_type_t>::TrainAsync(benchmark::State &st) {
         ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
         runTrainBMIteration<true>(st, mock_thread_pool, training_threshold);
     }
+}
+
+template <typename index_type_t>
+void BM_VecSimSVSTrain<index_type_t>::AddLabel(benchmark::State &st) {
+    size_t label = 0;
+    auto index = CreateSVSIndexFromFile(1, 1);
+    size_t memory_delta = index->getAllocationSize();
+
+    for (auto _ : st) {
+        VecSimIndex_AddVector(index, test_vectors[label].data(), label + N_VECTORS);
+        label++;
+    };
+    memory_delta = index->getAllocationSize() - memory_delta;
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), N_VECTORS + this->block_size);
+    st.counters["memory_per_vector"] =
+        benchmark::Counter((double)memory_delta / (double)(this->block_size),
+                           benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
+}
+
+template <typename index_type_t>
+void BM_VecSimSVSTrain<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
+    // ensure mode is async
+    ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
+
+    auto update_threshold = st.range(0);
+    int unsigned num_threads = st.range(1);
+
+    if (num_threads > std::thread::hardware_concurrency()) {
+        GTEST_SKIP() << "Not enough threads available, skipping test...";
+    }
+
+    // Ensure we have enough vectors to update.
+    ASSERT_GE(N_QUERIES, update_threshold);
+
+    // In each iteration create a new index
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
+    auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, update_threshold);
+    auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
+                                 size_t expected_backend_size, std::string msg = "") {
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
+        auto backend_info = info.tieredInfo.backendCommonInfo;
+        auto frontend_info = info.tieredInfo.frontendCommonInfo;
+        ASSERT_EQ(info.commonInfo.indexSize, expected_tiered_index_size) << msg;
+        ASSERT_EQ(backend_info.indexSize, expected_backend_size) << msg;
+        ASSERT_EQ(frontend_info.indexSize, expected_frontend_size) << msg;
+    };
+    // insert just below training threshold vectors
+    verify_index_size(
+        N_VECTORS, 0, N_VECTORS,
+        (std::ostringstream() << "Loaded svs index from file with " << N_VECTORS << " vectors")
+            .str());
+    for (size_t i = 0; i < update_threshold - 1; ++i) {
+        int ret = VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i + N_VECTORS);
+        ASSERT_EQ(ret, 1);
+    }
+    mock_thread_pool.init_threads();
+    for (auto _ : st) {
+        // add one more vector
+        int ret = VecSimIndex_AddVector(tiered_index, test_vectors[update_threshold - 1].data(),
+                                        update_threshold - 1 + N_VECTORS);
+        ASSERT_EQ(ret, 1);
+
+        mock_thread_pool.thread_pool_wait();
+        // Stop timer
+    }
+    verify_index_size(N_VECTORS + update_threshold, 0, N_VECTORS + update_threshold,
+                      (std::ostringstream()
+                       << "added the update_threshold'th (" << update_threshold << ") vector")
+                          .str());
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)
