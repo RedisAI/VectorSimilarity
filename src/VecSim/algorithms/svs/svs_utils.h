@@ -361,6 +361,11 @@ public:
         size_ = std::clamp(new_size, size_t{1}, threads_.size() + 1);
     }
 
+    void set_capacity(size_t capacity) {
+        threads_.resize(capacity - 1);
+        size_ = capacity;
+    }
+
     void parallel_for(std::function<void(size_t)> f, size_t n) {
         if (n > size_) {
             throw svs::threads::ThreadingException("Number of tasks exceeds the thread pool size");
@@ -447,4 +452,6 @@ public:
     }
 
     void resize(size_t new_size) { pool_->resize(new_size); }
+
+    void set_capacity(size_t capacity) { pool_->set_capacity(capacity); }
 };

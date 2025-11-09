@@ -13,6 +13,7 @@
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "gtest/gtest.h"
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
@@ -185,7 +186,8 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
     for (size_t i = 0; i < n_queries; i++) {
         std::vector<data_t> query(dim);
-        input.read((char *)query.data(), dim * sizeof(data_t));
+        ASSERT_TRUE(input.read((char *)query.data(), dim * sizeof(data_t)))
+            << "unexpected end of file at query " << i << "/" << n_queries;
         queries.push_back(query);
     }
 }

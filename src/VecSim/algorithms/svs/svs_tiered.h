@@ -517,6 +517,11 @@ public:
         return this->frontendIndex->indexMetaDataCapacity() +
                this->backendIndex->indexMetaDataCapacity();
     }
+
+    void setUpdateTriggerThreshold(size_t threshold) {
+        std::lock_guard<std::mutex> lock(this->mainIndexGuard);
+        this->updateTriggerThreshold = threshold;
+    }
 #else
     void executeTracingCallback(const std::string &) const {
         // In production, we do nothing.
