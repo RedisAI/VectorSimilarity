@@ -369,7 +369,6 @@ void BM_VecSimSVSTrain<index_type_t>::TriggerUpdateTiered(benchmark::State &st) 
         ASSERT_EQ(ret, 1);
 
         mock_thread_pool.thread_pool_wait();
-        // Stop timer
     }
     verify_index_size(N_VECTORS + update_threshold, 0, N_VECTORS + update_threshold,
                       (std::ostringstream()

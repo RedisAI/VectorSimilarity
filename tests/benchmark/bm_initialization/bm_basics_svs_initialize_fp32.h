@@ -28,7 +28,7 @@ BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TriggerUpdateTiered)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1)
     ->ArgsProduct({{static_cast<long int>(BM_VecSimGeneral::block_size), 5000,
-                    10 * BM_VecSimGeneral::block_size},
+                    static_cast<long int>(10 * BM_VecSimGeneral::block_size)},
                    {2, 4, 8}})
     ->ArgNames({"update_threshold", "thread_count"})
     ->MeasureProcessCPUTime();
