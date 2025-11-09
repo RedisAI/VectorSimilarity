@@ -110,7 +110,9 @@ void BM_VecSimSVSdIndex<index_type_t>::initialize() {
 template <typename index_type_t>
 void BM_VecSimSVSdIndex<index_type_t>::AddLabelInPlace(benchmark::State &st) {
     auto original_mode = VecSimIndexInterface::asyncWriteMode;
+    auto original_num_threads = this->GetSVSIndex()->getNumThreads();
     VecSim_SetWriteMode(VecSim_WriteInPlace);
+    this->GetSVSIndex()->setNumThreads(1);
     auto index = GET_INDEX(st.range(0));
     BM_VecSimBasics<index_type_t>::AddLabel(st);
     ASSERT_EQ(VecSimIndex_DebugInfo(GET_INDEX(INDEX_SVS)).svsInfo.numberOfMarkedDeletedNodes,
@@ -120,6 +122,10 @@ void BM_VecSimSVSdIndex<index_type_t>::AddLabelInPlace(benchmark::State &st) {
     // Restore original write mode
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteInPlace);
     VecSim_SetWriteMode(original_mode);
+
+    // Restore original num threads
+    ASSERT_EQ(this->GetSVSIndex()->getNumThreads(), 1);
+    this->GetSVSIndex()->setNumThreads(original_num_threads);
 }
 
 template <typename index_type_t>
@@ -181,7 +187,7 @@ void BM_VecSimSVSdIndex<index_type_t>::AddLabelAsync(benchmark::State &st) {
     auto index = GET_INDEX(INDEX_TIERED_SVS);
     size_t update_trigger_threshold = st.range(0);
     this->GetTieredSVSIndex()->setUpdateTriggerThreshold(update_trigger_threshold);
-    ASSERT_EQ(VecSimIndex_DebugInfo(GET_INDEX(INDEX_SVS))
+    ASSERT_EQ(VecSimIndex_DebugInfo(GET_INDEX(INDEX_TIERED_SVS))
                   .tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold,
               update_trigger_threshold);
 
@@ -222,6 +228,7 @@ void BM_VecSimSVSdIndex<index_type_t>::AddLabelAsync(benchmark::State &st) {
         ASSERT_EQ(VecSimIndex_DebugInfo(GET_INDEX(INDEX_SVS)).svsInfo.numberOfMarkedDeletedNodes,
                   0);
         ASSERT_EQ(VecSimIndex_IndexSize(GET_INDEX(INDEX_SVS)), N_VECTORS);
+        std::cout << "done cleanup " << std::endl;
 
         st.ResumeTiming();
     }
