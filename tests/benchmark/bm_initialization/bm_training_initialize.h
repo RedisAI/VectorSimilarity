@@ -13,16 +13,16 @@
   And Should be of the format datatpye_index_t.
 ***************************************/
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TrainNoCompression, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TrainNoCompression, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { Train(st); }
-BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TrainNoCompression)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TrainNoCompression)
     ->UNIT_AND_ITERATIONS
     ->Args({VecSimSvsQuant_NONE, static_cast<long int>(BM_VecSimGeneral::block_size)})
     ->ArgNames({"quant_bits", "training_threshold"});
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TrainAsyncNoCompression, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TrainAsyncNoCompression, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { TrainAsync(st); }
-BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TrainAsyncNoCompression)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TrainAsyncNoCompression)
     ->UNIT_AND_ITERATIONS
     ->ArgsProduct({{VecSimSvsQuant_NONE},
                    {static_cast<long int>(BM_VecSimGeneral::block_size)},
@@ -30,15 +30,15 @@ BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TrainAsyncNoCompression)
     ->ArgNames({"quant_bits", "training_threshold", "thread_count"})
     ->MeasureProcessCPUTime();
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TrainCompressed, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TrainCompressed, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { Train(st); }
-BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TrainCompressed)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TrainCompressed)
     ->UNIT_AND_ITERATIONS->ArgsProduct({QUANT_BITS_ARGS, COMPRESSED_TRAINING_THRESHOLD_ARGS})
     ->ArgNames({"quant_bits", "training_threshold"});
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TrainCompressedAsync, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TrainCompressedAsync, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { TrainAsync(st); }
-BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TrainCompressedAsync)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TrainCompressedAsync)
     ->UNIT_AND_ITERATIONS
     ->ArgsProduct({QUANT_BITS_ARGS, COMPRESSED_ASYNC_TRAINING_THRESHOLD_ARGS, {4, 8, 16}})
     ->ArgNames({"quant_bits", "training_threshold", "thread_count"})
