@@ -306,7 +306,7 @@ void BM_VecSimSVS<index_type_t>::TrainAsync(benchmark::State &st) {
 }
 
 template <typename index_type_t>
-void BM_VecSimSVSTrain<index_type_t>::AddLabel(benchmark::State &st) {
+void BM_VecSimSVS<index_type_t>::AddLabel(benchmark::State &st) {
     size_t label = 0;
     auto index = CreateSVSIndexFromFile(1, 1);
     size_t memory_delta = index->getAllocationSize();
@@ -324,7 +324,7 @@ void BM_VecSimSVSTrain<index_type_t>::AddLabel(benchmark::State &st) {
 }
 
 template <typename index_type_t>
-void BM_VecSimSVSTrain<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
+void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     // ensure mode is async
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
 

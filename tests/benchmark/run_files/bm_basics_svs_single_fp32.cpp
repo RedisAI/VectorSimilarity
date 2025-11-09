@@ -15,7 +15,7 @@ size_t BM_VecSimGeneral::block_size = 1024;
 
 #define DATA_TYPE_INDEX_T fp32_index_t
 template <>
-const char *BM_VecSimSVSTrain<DATA_TYPE_INDEX_T>::svs_index_tar_file =
+const char *BM_VecSimSVS<DATA_TYPE_INDEX_T>::svs_index_tar_file =
     "tests/benchmark/data/svs-dbpedia-cosine-dim768-quant-none.tar.gz";
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-vectors.raw";

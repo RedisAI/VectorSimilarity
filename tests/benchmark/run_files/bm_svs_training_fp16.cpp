@@ -13,7 +13,7 @@ size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
 
 template <>
-const char *BM_VecSimSVSTrain<fp16_index_t>::svs_index_tar_file = nullptr;
+const char *BM_VecSimSVS<fp16_index_t>::svs_index_tar_file = nullptr;
 
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-fp16-vectors.raw";

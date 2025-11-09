@@ -15,16 +15,16 @@ the file.
 ***************************************/
 
 // AddLabel one by one
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_AddLabelOneByOne, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_AddLabelOneByOne, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { AddLabel(st); }
-BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_AddLabelOneByOne)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_AddLabelOneByOne)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(BM_VecSimGeneral::block_size);
 
 // Add vectors in batches via tiered index
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSTrain, BM_TriggerUpdateTiered, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TriggerUpdateTiered, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { TriggerUpdateTiered(st); }
-BENCHMARK_REGISTER_F(BM_VecSimSVSTrain, BM_TriggerUpdateTiered)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TriggerUpdateTiered)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1)
     ->ArgsProduct({{static_cast<long int>(BM_VecSimGeneral::block_size), 5000,
