@@ -519,7 +519,6 @@ public:
     }
 
     void setUpdateTriggerThreshold(size_t threshold) {
-        std::lock_guard<std::mutex> lock(this->mainIndexGuard);
         this->updateTriggerThreshold = threshold;
     }
 #else
