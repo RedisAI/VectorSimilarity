@@ -20,6 +20,8 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSdIndex, BM_FUNC_NAME(Memory, SVS), fp32_
 BENCHMARK_REGISTER_F(BM_VecSimSVSdIndex, BM_FUNC_NAME(Memory, SVS))->Iterations(1);
 
 // AddLabel
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVSdIndex, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }
-REGISTER_AddLabel(BM_ADD_LABEL, INDEX_SVS);
+// Order matters because we use the same svs index for both benchmarks.
+REGISTER_AddLabelSVS(BM_ADD_LABEL, INDEX_TIERED_SVS);
+REGISTER_AddLabelSVS(BM_ADD_LABEL, INDEX_SVS);
