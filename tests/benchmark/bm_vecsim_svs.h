@@ -307,7 +307,7 @@ void BM_VecSimSVS<index_type_t>::TrainAsync(benchmark::State &st) {
 
 template <typename index_type_t>
 void BM_VecSimSVS<index_type_t>::AddLabel(benchmark::State &st) {
-    VecSimSvsQuantBits quant_bits = st.range(0);
+    VecSimSvsQuantBits quant_bits = static_cast<VecSimSvsQuantBits>(st.range(0));
     this->quantBits = quant_bits;
 
     size_t label = 0;
@@ -341,7 +341,7 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     // ensure mode is async
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
 
-    VecSimSvsQuantBits quant_bits = st.range(0);
+    VecSimSvsQuantBits quant_bits = static_cast<VecSimSvsQuantBits>(st.range(0));
     this->quantBits = quant_bits;
     auto update_threshold = st.range(1);
     int unsigned num_threads = st.range(2);
