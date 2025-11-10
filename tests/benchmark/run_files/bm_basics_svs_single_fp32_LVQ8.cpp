@@ -1,4 +1,5 @@
 #include "benchmark/bm_vecsim_svs.h"
+#define DATA_TYPE_INDEX_T fp32_index_t
 #if HAVE_SVS_LVQ // Currently we don't have a serialized version of GlobalQ index.
 
 /**************************************
@@ -14,7 +15,6 @@ size_t BM_VecSimGeneral::M = 128;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
 
-#define DATA_TYPE_INDEX_T fp32_index_t
 template <>
 VecSimSvsQuantBits BM_VecSimSVS<DATA_TYPE_INDEX_T>::quantBits = VecSimSvsQuant_8;
 template <>
