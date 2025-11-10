@@ -13,6 +13,10 @@
   NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
 the file.
 ***************************************/
+// deleteLabel one by one
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_DeleteLabel, DATA_TYPE_INDEX_T)
+(benchmark::State &st) { DeleteLabel(st); }
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_DeleteLabel)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 // AddLabel one by one
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_AddLabelOneByOne, DATA_TYPE_INDEX_T)

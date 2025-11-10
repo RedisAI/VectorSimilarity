@@ -288,11 +288,12 @@ protected:
 
         num_marked_deleted += n;
         // consolidate index if number of changes bigger than 50% of index size
-        const float consolidation_threshold = .5f;
+        const float consolidation_threshold = .0005f;
         // indexSize() should not be 0 see above lines
         assert(indexSize() > 0);
         // Note: if this function is called after deleteVectorsImpl, indexSize is already updated
         if (static_cast<float>(num_marked_deleted) / indexSize() > consolidation_threshold) {
+            std::cout << "svs.h: consolidation_threshold: " << consolidation_threshold << std::endl;
             impl_->consolidate();
             num_marked_deleted = 0;
         }
