@@ -22,13 +22,14 @@ public:
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-    BM_VecSimSVS() : quantBits(VecSimSvsQuant_NONE), data_type(index_type_t::get_index_type()) {
+    BM_VecSimSVS() : data_type(index_type_t::get_index_type()) {
         if (!is_initialized) {
             VecSim_SetLogCallbackFunction(nullptr);
             loadTestVectors(AttachRootPath(test_queries_file));
-            extracted_svs_index_path =
-                extractTarGz(BM_VecSimGeneral::AttachRootPath(svs_index_tar_file),
-                             BM_VecSimGeneral::AttachRootPath("tests/benchmark/data"));
+            if (svs_index_tar_file) {
+                base_path = AttachRootPath("tests/benchmark/data");
+                extractTarGz(BM_VecSimGeneral::AttachRootPath(svs_index_tar_file), base_path);
+            }
             is_initialized = true;
         }
     }
@@ -42,14 +43,16 @@ public:
 
     // Add label directly to svs index one by one
     void AddLabel(benchmark::State &st);
+    // Add vector to reach update threshold in tiered index. Measure time to move vectors to svs
+    // index.
     void TriggerUpdateTiered(benchmark::State &st);
 
 private:
     static const char *svs_index_tar_file;
-    static std::string extracted_svs_index_path;
+    static std::string base_path;
 
     // Each test instance will have its own quantization bits.
-    VecSimSvsQuantBits quantBits;
+    static VecSimSvsQuantBits quantBits;
     VecSimType data_type;
 
     // Initialize test vectors once
@@ -58,44 +61,14 @@ private:
 
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file);
-    static std::string extractTarGz(const std::string &filename, const std::string &destination) {
-        // Create a temporary extraction directory
-        std::string extract_dir = destination + "/extracted";
-        int mkdir_result = system(("mkdir -p " + extract_dir).c_str());
-        if (mkdir_result != 0) {
-            throw std::runtime_error("Failed to create extraction directory");
-        }
+    static void extractTarGz(const std::string &filename, const std::string &destination) {
 
         // Extract tar.gz
-        std::string command = "tar -xzf " + filename + " -C " + extract_dir;
+        std::string command = "tar -xzf " + filename + " -C " + destination;
         int result = system(command.c_str());
         if (result != 0) {
             throw std::runtime_error("Failed to extract tar.gz file");
         }
-
-        // Get the extracted directory name
-        FILE *pipe = popen(("ls -1 " + extract_dir).c_str(), "r");
-        if (!pipe) {
-            throw std::runtime_error("Failed to list extracted directory");
-        }
-
-        char buffer[256];
-        std::string result_name = "";
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            result_name = buffer;
-            if (!result_name.empty() && result_name.back() == '\n') {
-                result_name.pop_back();
-            }
-        }
-        pclose(pipe);
-
-        if (result_name.empty()) {
-            throw std::runtime_error("No files found in extracted directory");
-        }
-
-        std::string extracted_dir = extract_dir + "/" + result_name;
-        std::cout << "extracted dir: " << extracted_dir << std::endl;
-        return extracted_dir;
     }
 
     template <bool is_async>
@@ -150,9 +123,15 @@ private:
                                 .num_threads = num_threads};
         VecSimParams params{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
 
-        // Load svs index
+        // Load svs index - construct path based on quantBits
+        std::string index_path = base_path;
+        if (this->quantBits == VecSimSvsQuant_NONE) {
+            index_path += "/dbpedia_svs_none";
+        } else if (this->quantBits == VecSimSvsQuant_8) {
+            index_path += "/dbpedia_svs_8";
+        }
         auto *svs_index = reinterpret_cast<VecSimIndexAbstract<data_t, float> *>(
-            SVSFactory::NewIndex(extracted_svs_index_path, &params));
+            SVSFactory::NewIndex(index_path, &params));
 
         return svs_index;
     }
@@ -190,9 +169,10 @@ private:
 
 template <typename index_type_t>
 bool BM_VecSimSVS<index_type_t>::is_initialized = false;
-
 template <typename index_type_t>
-std::string BM_VecSimSVS<index_type_t>::extracted_svs_index_path = "";
+VecSimSvsQuantBits BM_VecSimSVS<index_type_t>::quantBits = VecSimSvsQuant_NONE;
+template <typename index_type_t>
+std::string BM_VecSimSVS<index_type_t>::base_path = "tests/benchmark/data";
 
 // Needs to be explicitly initalized
 template <>
@@ -340,8 +320,6 @@ void BM_VecSimSVS<index_type_t>::TrainAsync(benchmark::State &st) {
 
 template <typename index_type_t>
 void BM_VecSimSVS<index_type_t>::AddLabel(benchmark::State &st) {
-    VecSimSvsQuantBits quant_bits = static_cast<VecSimSvsQuantBits>(st.range(0));
-    this->quantBits = quant_bits;
 
     size_t label = 0;
     auto index = CreateSVSIndexFromFile(1, 1);
@@ -374,10 +352,8 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     // ensure mode is async
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
 
-    VecSimSvsQuantBits quant_bits = static_cast<VecSimSvsQuantBits>(st.range(0));
-    this->quantBits = quant_bits;
-    auto update_threshold = st.range(1);
-    int unsigned num_threads = st.range(2);
+    auto update_threshold = st.range(0);
+    int unsigned num_threads = st.range(1);
 
     if (num_threads > std::thread::hardware_concurrency()) {
         GTEST_SKIP() << "Not enough threads available, skipping test...";

@@ -14,7 +14,8 @@ size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
 
 #define DATA_TYPE_INDEX_T fp32_index_t
-#define QUANT_BITS_ARG    VecSimSvsQuant_NONE
+template <>
+VecSimSvsQuantBits BM_VecSimSVS<DATA_TYPE_INDEX_T>::quantBits = VecSimSvsQuant_NONE;
 template <>
 const char *BM_VecSimSVS<DATA_TYPE_INDEX_T>::svs_index_tar_file =
     "tests/benchmark/data/svs-dbpedia-cosine-dim768-quant-none.tar.gz";
