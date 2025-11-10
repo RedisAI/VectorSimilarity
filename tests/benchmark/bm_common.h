@@ -73,7 +73,8 @@ void BM_VecSimCommon<index_type_t>::Disk(benchmark::State &st, IndexTypeIndex in
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["disk"] = (double)VecSimIndex_StatsInfo(index).disk;
+    st.counters["db_disk"] = (double)VecSimIndex_StatsInfo(index).db_disk;
+    st.counters["db_memory"] = (double)VecSimIndex_StatsInfo(index).db_memory;
 }
 
 template <typename index_type_t>
