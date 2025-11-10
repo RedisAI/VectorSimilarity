@@ -23,13 +23,15 @@ const char *BM_VecSimSVS<DATA_TYPE_INDEX_T>::svs_index_tar_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-vectors.raw";
 
+#define BM_FUNC_NAME(bm_func) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, SVS, LVQ8)
+
 #include "benchmark/bm_initialization/bm_basics_svs_initialize_fp32.h"
 #else
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_DUMMY, DATA_TYPE_INDEX_T)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_DUMMY_SVS_LVQ8, DATA_TYPE_INDEX_T)
 (benchmark::State &st) {
     // Do nothing.
 }
-BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_DUMMY)
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_DUMMY_SVS_LVQ8)
     ->Iterations(1)
 #endif // HAVE_SVS_LVQ
 BENCHMARK_MAIN();

@@ -48,7 +48,8 @@ public:
     void TriggerUpdateTiered(benchmark::State &st);
 
     // Deletes an amount of labels from the index that triggers inplace consolidation.
-    void DeleteLabel(benchmark::State &st);
+    void RunGC(benchmark::State &st);
+
 private:
     static const char *svs_index_tar_file;
     static std::string base_path;
@@ -413,29 +414,13 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
 }
 
 template <typename index_type_t>
-void BM_VecSimSVS<index_type_t>::DeleteLabel(benchmark::State &st) {
+void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
 
-    // To trigger consolidation in SVS index:
-    // The consolidation threshold is 50% (0.5f) of the current index size.
-    //
-    // Starting with N_VECTORS (loaded from file):
-    // After n deletions:
-    //   - indexSize() = N_VECTORS - n
-    //   - num_marked_deleted = n
-    //
-    // To trigger consolidation:
-    //   n / (N_VECTORS - n) > 0.5
-    //   n > N_VECTORS / 3
-    float consolidation_threshold = 0.0005f;
-    std::cout << "bm_vecsim_svs.h: consolidation_threshold: " << consolidation_threshold
-              << std::endl;
-
-    size_t num_deletions = static_cast<size_t>((consolidation_threshold * N_VECTORS) /
-                                               (1.0f + consolidation_threshold)) +
-                           1;
+    size_t num_deletions = st.range(0);
     auto mock_thread_pool = tieredIndexMock(1);
     ASSERT_EQ(mock_thread_pool.thread_pool_size, 1);
     auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, 1);
+    // TODO: move to ctor
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
 #if HAVE_SVS_LVQ
     ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
@@ -446,33 +431,28 @@ void BM_VecSimSVS<index_type_t>::DeleteLabel(benchmark::State &st) {
         ASSERT_EQ(info.svsInfo.quantBits, VecSimSvsQuant_Scalar);
     }
 #endif
-    std::cout << "deleting below consolidation threshold" << std::endl;
 
-    // int memory_delta = index->getAllocationSize();
+    // int memory_delta = tiered_index->getAllocationSize();
     // Delete vectors, not yet triggering consolidation.
-    for (size_t i = 0; i < num_deletions - 1; ++i) {
+    for (size_t i = 0; i < num_deletions; ++i) {
         int ret = VecSimIndex_DeleteVector(tiered_index, i);
         ASSERT_EQ(ret, 1);
     }
     // Memory should not change.
-    // ASSERT_EQ(index->getAllocationSize(), memory_delta);
-    // Num deleted should equal num_deletions - 1.
+    // ASSERT_EQ(tiered_index->getAllocationSize(), memory_delta);
+    // Num deleted should equal num_deletions.
     info = VecSimIndex_DebugInfo(tiered_index);
-    ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, num_deletions - 1);
-
-    // Delete one more vector, triggering consolidation.
-    std::cout << "deleting a vector to trigger consolidation after " << num_deletions
-              << " deletions" << std::endl;
+    ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, num_deletions);
+    std::cout << "running gc after deleting " << num_deletions << " vectors" << std::endl;
     for (auto _ : st) {
-        int ret2 = VecSimIndex_DeleteVector(tiered_index, num_deletions - 1);
-        ASSERT_EQ(ret2, 1);
+        VecSimTieredIndex_GC(tiered_index);
     };
     // num deleted should be 0
     std::cout << "done deleting a vector to trigger consolidation" << std::endl;
 
     info = VecSimIndex_DebugInfo(tiered_index);
     ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, 0);
-    // memory_delta = index->getAllocationSize() - memory_delta;
+    // memory_delta = tiered_index->getAllocationSize() - memory_delta;
 
     ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), N_VECTORS - num_deletions);
     // st.counters["memory_per_vector"] =
