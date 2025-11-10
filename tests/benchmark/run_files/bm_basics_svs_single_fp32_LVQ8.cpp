@@ -24,4 +24,9 @@ const char *BM_VecSimGeneral::test_queries_file =
 
 #include "benchmark/bm_initialization/bm_basics_svs_initialize_fp32.h"
 BENCHMARK_MAIN();
+# else
+int main() {
+  // Do nothing.
+   return 0;
+}
 #endif // HAVE_SVS_LVQ
