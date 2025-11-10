@@ -110,7 +110,7 @@ public:
     bool run_thread;
     IndexExtCtx *ctx;
 
-    tieredIndexMock();
+    tieredIndexMock(unsigned int num_threads = 8U);
     ~tieredIndexMock();
 
     void reset_ctx(IndexExtCtx *new_ctx = nullptr);
