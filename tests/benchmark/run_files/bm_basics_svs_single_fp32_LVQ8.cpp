@@ -1,5 +1,5 @@
-#if HAVE_SVS_LVQ // Currently we don't have a serialized version of GlobalQ index.
 #include "benchmark/bm_vecsim_svs.h"
+#if HAVE_SVS_LVQ // Currently we don't have a serialized version of GlobalQ index.
 
 /**************************************
   Basic tests for single value index with fp32 data type.
@@ -23,10 +23,5 @@ const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-vectors.raw";
 
 #include "benchmark/bm_initialization/bm_basics_svs_initialize_fp32.h"
-BENCHMARK_MAIN();
-# else
-int main() {
-  // Do nothing.
-   return 0;
-}
 #endif // HAVE_SVS_LVQ
+BENCHMARK_MAIN();
