@@ -13,7 +13,6 @@
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include "gtest/gtest.h"
 
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
