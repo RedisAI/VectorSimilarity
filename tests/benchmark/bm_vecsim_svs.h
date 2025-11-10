@@ -98,6 +98,8 @@ private:
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
         assert(tiered_index);
+        verifyQuantBits(tiered_index, "CreateTieredSVSIndex");
+
         // Set the created tiered index in the index external context (it will take ownership over
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
@@ -160,6 +162,7 @@ private:
         auto *tiered_index = reinterpret_cast<TieredSVSIndex<data_t> *>(
             TieredFactory::TieredSVSFactory::NewIndex<data_t>(&tiered_params, svs_index));
         assert(tiered_index);
+        verifyQuantBits(tiered_index, "CreateTieredSVSIndexFromFile");
         // Set the created tiered index in the index external context (it will take ownership over
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
@@ -168,6 +171,19 @@ private:
                                      std::string("CreateTieredSVSIndexFromFile"));
 
         return tiered_index;
+    }
+
+    void verifyQuantBits(VecSimIndex *index, std::string msg) {
+        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+#if HAVE_SVS_LVQ
+        ASSERT_EQ(info.svsInfo.quantBits, this->quantBits) << msg;
+#else
+        if (this->quantBits == VecSimSvsQuant_NONE) {
+            ASSERT_EQ(info.svsInfo.quantBits, this->quantBits) << msg;
+        } else {
+            ASSERT_EQ(info.svsInfo.quantBits, VecSimSvsQuant_Scalar) << msg;
+        }
+#endif
     }
 };
 
@@ -216,17 +232,6 @@ void BM_VecSimSVS<index_type_t>::runTrainBMIteration(benchmark::State &st,
                                                      size_t training_threshold) {
     this->quantBits = static_cast<VecSimSvsQuantBits>(st.range(0));
     auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
-
-    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-#if HAVE_SVS_LVQ
-    ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
-#else
-    if (this->quantBits == VecSimSvsQuant_NONE) {
-        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
-    } else {
-        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, VecSimSvsQuant_Scalar);
-    }
-#endif
 
     auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
                                  size_t expected_backend_size, std::string msg = "") {
@@ -331,17 +336,6 @@ void BM_VecSimSVS<index_type_t>::AddLabel(benchmark::State &st) {
 
     size_t label = 0;
     auto index = CreateSVSIndexFromFile(1, 1);
-    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
-#if HAVE_SVS_LVQ
-    ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
-#else
-    if (this->quantBits == VecSimSvsQuant_NONE) {
-        ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
-    } else {
-        ASSERT_EQ(info.svsInfo.quantBits, VecSimSvsQuant_Scalar);
-    }
-#endif
-
     size_t memory_delta = index->getAllocationSize();
     for (auto _ : st) {
         VecSimIndex_AddVector(index, test_vectors[label].data(), label + N_VECTORS);
@@ -375,15 +369,6 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
     auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, update_threshold);
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-#if HAVE_SVS_LVQ
-    ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
-#else
-    if (this->quantBits == VecSimSvsQuant_NONE) {
-        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, this->quantBits);
-    } else {
-        ASSERT_EQ(info.tieredInfo.backendInfo.svsInfo.quantBits, VecSimSvsQuant_Scalar);
-    }
-#endif
 
     auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
                                  size_t expected_backend_size, std::string msg = "") {
@@ -425,44 +410,23 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
     auto mock_thread_pool = tieredIndexMock(1);
     ASSERT_EQ(mock_thread_pool.thread_pool_size, 1);
     auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, 1);
-    // TODO: move to ctor
-    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-#if HAVE_SVS_LVQ
-    ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
-#else
-    if (this->quantBits == VecSimSvsQuant_NONE) {
-        ASSERT_EQ(info.svsInfo.quantBits, this->quantBits);
-    } else {
-        ASSERT_EQ(info.svsInfo.quantBits, VecSimSvsQuant_Scalar);
-    }
-#endif
 
-    // int memory_delta = tiered_index->getAllocationSize();
     // Delete vectors, not yet triggering consolidation.
     for (size_t i = 0; i < num_deletions; ++i) {
         int ret = VecSimIndex_DeleteVector(tiered_index, i);
         ASSERT_EQ(ret, 1);
     }
-    // Memory should not change.
-    // ASSERT_EQ(tiered_index->getAllocationSize(), memory_delta);
     // Num deleted should equal num_deletions.
-    info = VecSimIndex_DebugInfo(tiered_index);
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
     ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, num_deletions);
-    std::cout << "running gc after deleting " << num_deletions << " vectors" << std::endl;
     for (auto _ : st) {
         VecSimTieredIndex_GC(tiered_index);
     };
     // num deleted should be 0
-    std::cout << "done deleting a vector to trigger consolidation" << std::endl;
-
     info = VecSimIndex_DebugInfo(tiered_index);
     ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, 0);
-    // memory_delta = tiered_index->getAllocationSize() - memory_delta;
 
     ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), N_VECTORS - num_deletions);
-    // st.counters["memory_per_vector"] =
-    //     benchmark::Counter((double)memory_delta / (double)num_deletions,
-    //                        benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)
