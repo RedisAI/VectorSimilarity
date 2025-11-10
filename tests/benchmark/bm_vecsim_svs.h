@@ -201,7 +201,7 @@ void BM_VecSimSVS<index_type_t>::Train(benchmark::State &st) {
     for (auto _ : st) {
         st.PauseTiming();
         // In each iteration create a new index
-        auto mock_thread_pool = tieredIndexMock();
+        auto mock_thread_pool = tieredIndexMock(1);
         runTrainBMIteration<false>(st, mock_thread_pool, training_threshold);
     }
     // Restore original write mode
