@@ -54,7 +54,8 @@ private:
     static const char *svs_index_tar_file;
     static std::string base_path;
 
-    // Each test instance will have its own quantization bits.
+    // Quant bits can be controlled by the benchmark framework, or by changed by a running benchmark
+    // if it explicitly sets it.
     static VecSimSvsQuantBits quantBits;
     VecSimType data_type;
 
@@ -237,7 +238,8 @@ void BM_VecSimSVS<index_type_t>::runTrainBMIteration(benchmark::State &st,
         ASSERT_EQ(frontend_info.indexSize, expected_frontend_size) << msg;
     };
 
-    // insert just below training threshold vectors
+    // Phase 1: Accumulate vectors in the flat buffer (frontend index) without triggering training.
+    // Add (training_threshold - 1) vectors to stay below the training threshold.
     for (size_t i = 0; i < training_threshold - 1; ++i) {
         VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i);
     }
@@ -254,7 +256,10 @@ void BM_VecSimSVS<index_type_t>::runTrainBMIteration(benchmark::State &st,
     // Start timer
     st.ResumeTiming();
 
-    // add one more vector
+    // Phase 2: Trigger training and backend index initialization.
+    // Adding this final vector reaches the training threshold, which triggers:
+    // 1. Training of the SVS backend index using all accumulated vectors
+    // 2. Transfer of all vectors from flat buffer to the to build the index.
     VecSimIndex_AddVector(tiered_index, test_vectors[training_threshold - 1].data(),
                           training_threshold - 1);
     if constexpr (is_async)
@@ -289,7 +294,7 @@ void BM_VecSimSVS<index_type_t>::Train(benchmark::State &st) {
     for (auto _ : st) {
         st.PauseTiming();
         // In each iteration create a new index
-        auto mock_thread_pool = tieredIndexMock();
+        auto mock_thread_pool = tieredIndexMock(1);
         runTrainBMIteration<false>(st, mock_thread_pool, training_threshold);
     }
     // Restore original write mode
