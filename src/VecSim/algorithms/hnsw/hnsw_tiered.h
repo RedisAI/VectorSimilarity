@@ -179,11 +179,17 @@ public:
 
         ~TieredHNSW_BatchIterator();
 
+        const void *getQueryBlob() const override { return flat_iterator->getQueryBlob(); }
+
         VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override;
 
         bool isDepleted() override;
 
         void reset() override;
+
+#ifdef BUILD_TESTS
+        VecSimBatchIterator *getHNSWIterator() { return hnsw_iterator; }
+#endif
     };
 
 public:
@@ -195,6 +201,9 @@ public:
 
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
+    size_t getNumMarkedDeleted() const override {
+        return this->getHNSWIndex()->getNumMarkedDeleted();
+    }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
@@ -542,7 +551,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
     // Copy the vector blob from the flat buffer, so we can release the flat lock while we are
     // indexing the vector into HNSW index.
-    size_t data_size = this->frontendIndex->getDataSize();
+    size_t data_size = this->frontendIndex->getStoredDataSize();
     auto blob_copy = this->getAllocator()->allocate_unique(data_size);
     // Assuming the size of the blob stored in the frontend index matches the size of the blob
     // stored in the HNSW index.

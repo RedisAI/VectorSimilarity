@@ -65,6 +65,7 @@ public:
     static const char *SVS_MAX_CANDIDATE_POOL_SIZE_STRING;
     static const char *SVS_PRUNE_TO_STRING;
     static const char *SVS_NUM_THREADS_STRING;
+    static const char *SVS_LAST_RESERVED_THREADS_STRING;
     static const char *SVS_LEANVEC_DIM_STRING;
 
     static const char *BLOCK_SIZE_STRING;
@@ -118,4 +119,4 @@ const char *VecSimQuantBits_ToString(VecSimSvsQuantBits quantBits);
 size_t VecSimType_sizeof(VecSimType vecsimType);
 
 /** Returns the size in bytes of a stored or query vector */
-size_t VecSimParams_GetDataSize(VecSimType type, size_t dim, VecSimMetric metric);
+size_t VecSimParams_GetStoredDataSize(VecSimType type, size_t dim, VecSimMetric metric);

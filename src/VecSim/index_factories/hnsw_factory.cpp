@@ -10,6 +10,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/index_factories/factory_utils.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
@@ -33,26 +34,10 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
             HNSWIndex_Single<DataType, DistType>(params, abstractInitParams, components);
 }
 
-static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-    const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-
-    size_t dataSize =
-        VecSimParams_GetDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
-    AbstractIndexInitParams abstractInitParams = {.allocator =
-                                                      VecSimAllocator::newVecsimAllocator(),
-                                                  .dim = hnswParams->dim,
-                                                  .vecType = hnswParams->type,
-                                                  .dataSize = dataSize,
-                                                  .metric = hnswParams->metric,
-                                                  .blockSize = hnswParams->blockSize,
-                                                  .multi = hnswParams->multi,
-                                                  .logCtx = params->logCtx};
-    return abstractInitParams;
-}
-
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    AbstractIndexInitParams abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
 
     if (hnswParams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
@@ -141,7 +126,8 @@ size_t EstimateElementSize(const HNSWParams *params) {
     size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
     size_t size_total_data_per_element =
-        elementGraphDataSize + params->dim * VecSimType_sizeof(params->type);
+        elementGraphDataSize +
+        VecSimParams_GetStoredDataSize(params->type, params->dim, params->metric);
 
     // when reserving space for new labels in the lookup hash table, each entry is a pointer to a
     // label node (bucket).
@@ -220,7 +206,8 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
                                  .algoParams = {.hnswParams = HNSWParams{params}}};
 
-    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
+    AbstractIndexInitParams abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(&params, vecsimParams.logCtx, is_normalized);
     if (params.type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);

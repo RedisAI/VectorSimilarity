@@ -28,12 +28,6 @@ if(FP64_TESTS)
 	add_definitions(-DFP64_TESTS)
 endif()
 
-option(USE_VALGRIND "Building for Valgrind" OFF)
-if(USE_VALGRIND)
-    add_definitions(-DRUNNING_ON_VALGRIND)
-    message(STATUS "Building with RUNNING_ON_VALGRIND")
-endif()
-
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 else()
@@ -53,7 +47,7 @@ add_executable(test_fp16 ../utils/mock_thread_pool.cpp test_fp16.cpp unit_test_u
 add_executable(test_int8 ../utils/mock_thread_pool.cpp test_int8.cpp unit_test_utils.cpp)
 add_executable(test_uint8 ../utils/mock_thread_pool.cpp test_uint8.cpp unit_test_utils.cpp)
 add_executable(test_index_test_utils ../utils/mock_thread_pool.cpp test_index_test_utils.cpp unit_test_utils.cpp)
-add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp unit_test_utils.cpp)
+add_executable(test_svs ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp test_svs_fp16.cpp unit_test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)

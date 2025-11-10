@@ -23,7 +23,7 @@ using float16 = vecsim_types::float16;
 namespace DebugInfoIteratorFieldCount {
 constexpr size_t FLAT = 10;
 constexpr size_t HNSW = 17;
-constexpr size_t SVS = 23;
+constexpr size_t SVS = 24;
 constexpr size_t TIERED_HNSW = 15;
 constexpr size_t TIERED_SVS = 17;
 } // namespace DebugInfoIteratorFieldCount
@@ -92,7 +92,7 @@ void validateTopKSearchTest(VecSimIndex *index, VecSimQueryReply *res, size_t k,
     } else {
         ASSERT_EQ(VecSimQueryReply_Len(res), expected_num_res);
     }
-    ASSERT_TRUE(allUniqueResults(res));
+    ASSERT_TRUE(allUniqueResults(res)) << *res;
     VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryReply_IteratorHasNext(iterator)) {
@@ -189,6 +189,41 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2) {
     ASSERT_EQ(info1.numThreads, info2.numThreads);
     ASSERT_EQ(info1.numberOfMarkedDeletedNodes, info2.numberOfMarkedDeletedNodes);
 }
+
+#if HAVE_SVS
+#include "VecSim/algorithms/svs/svs_utils.h"
+
+void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params) {
+    ASSERT_EQ(info.constructionWindowSize,
+              svs_details::getOrDefault(params.construction_window_size,
+                                        SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE));
+    ASSERT_EQ(info.graphMaxDegree, svs_details::getOrDefault(params.graph_max_degree,
+                                                             SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE));
+    ASSERT_EQ(
+        info.maxCandidatePoolSize,
+        svs_details::getOrDefault(params.max_candidate_pool_size, info.constructionWindowSize * 3));
+    ASSERT_EQ(info.pruneTo, svs_details::getOrDefault(params.prune_to, info.graphMaxDegree - 4));
+    ASSERT_EQ(info.quantBits, get<0>(svs_details::isSVSQuantBitsSupported(params.quantBits)));
+    ASSERT_EQ(info.searchWindowSize,
+              svs_details::getOrDefault(params.search_window_size,
+                                        SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE));
+    ASSERT_EQ(info.searchBufferCapacity,
+              svs_details::getOrDefault(params.search_buffer_capacity, info.searchWindowSize));
+    ASSERT_EQ(info.leanvecDim,
+              svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM));
+    ASSERT_EQ(info.epsilon, svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON));
+    ASSERT_EQ(info.numThreads,
+              std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads));
+
+    float expected_alpha = params.metric == VecSimMetric_L2 ? SVS_VAMANA_DEFAULT_ALPHA_L2
+                                                            : SVS_VAMANA_DEFAULT_ALPHA_IP;
+    ASSERT_EQ(info.alpha, svs_details::getOrDefault(params.alpha, expected_alpha));
+    bool expected_search_history = params.use_search_history == VecSimOption_AUTO
+                                       ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY
+                                       : params.use_search_history == VecSimOption_ENABLE;
+    ASSERT_EQ(info.useSearchHistory, expected_search_history);
+}
+#endif
 
 /*
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
@@ -583,6 +618,11 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // SVS number of threads.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.numThreads);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING)) {
+            // SVS number of last reserved threads.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.svsInfo.lastReservedThreads);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::NUM_MARKED_DELETED)) {
             // SVS number of marked deleted nodes.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -625,42 +665,42 @@ size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type) {
             dynamic_cast<VecSimIndexAbstract<float, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<float, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_FLOAT64: {
         VecSimIndexAbstract<double, double> *abs_index =
             dynamic_cast<VecSimIndexAbstract<double, double> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<double, double>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_BFLOAT16: {
         VecSimIndexAbstract<vecsim_types::bfloat16, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<vecsim_types::bfloat16, float> *>(index);
         assert(abs_index && "dynamic_cast failed: can't convert index to "
                             "VecSimIndexAbstract<vecsim_types::bfloat16, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_FLOAT16: {
         VecSimIndexAbstract<vecsim_types::float16, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<vecsim_types::float16, float> *>(index);
         assert(abs_index && "dynamic_cast failed: can't convert index to "
                             "VecSimIndexAbstract<vecsim_types::float16, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_INT8: {
         VecSimIndexAbstract<int8_t, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<int8_t, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<int8_t, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     case VecSimType_UINT8: {
         VecSimIndexAbstract<uint8_t, float> *abs_index =
             dynamic_cast<VecSimIndexAbstract<uint8_t, float> *>(index);
         assert(abs_index &&
                "dynamic_cast failed: can't convert index to VecSimIndexAbstract<uint8_t, float>");
-        return abs_index->getDataSize();
+        return abs_index->getStoredDataSize();
     }
     default:
         return 0;
@@ -736,6 +776,7 @@ std::vector<std::string> getSVSFields() {
     fields.push_back(VecSimCommonStrings::SVS_PRUNE_TO_STRING);
     fields.push_back(VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING);
     fields.push_back(VecSimCommonStrings::SVS_NUM_THREADS_STRING);
+    fields.push_back(VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING);
     fields.push_back(VecSimCommonStrings::NUM_MARKED_DELETED);
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_WS_STRING);
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_BC_STRING);

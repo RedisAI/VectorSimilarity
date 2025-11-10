@@ -215,7 +215,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
     // Used to prevent running multiple index update jobs in parallel.
     // Even if update jobs scheduled sequentially, they can be started in parallel.
-    std::mutex updateJobMutex;
+    mutable std::mutex updateJobMutex;
 
     // The reason of following container just to properly destroy jobs which not executed yet
     SVSMultiThreadJob::JobsRegistry uncompletedJobs;
@@ -594,21 +594,25 @@ public:
           uncompletedJobs(this->allocator) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
-        this->trainingTriggerThreshold =
-            tiered_svs_params.trainingTriggerThreshold == 0
-                ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
-                : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
-
         // If flatBufferLimit is not initialized (0), use the default update threshold.
         const size_t flat_buffer_bound = tiered_index_params.flatBufferLimit == 0
-                                             ? SVS_DEFAULT_UPDATE_THRESHOLD
+                                             ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
                                              : tiered_index_params.flatBufferLimit;
 
         this->updateTriggerThreshold =
             tiered_svs_params.updateTriggerThreshold == 0
-                ? SVS_DEFAULT_UPDATE_THRESHOLD
+                ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
                 : std::min({tiered_svs_params.updateTriggerThreshold, flat_buffer_bound,
-                            SVS_DEFAULT_UPDATE_THRESHOLD});
+                            static_cast<size_t>(SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD)});
+
+        const size_t default_training_threshold = this->GetSVSIndex()->isCompressed()
+                                                      ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
+                                                      : this->updateTriggerThreshold;
+
+        this->trainingTriggerThreshold =
+            tiered_svs_params.trainingTriggerThreshold == 0
+                ? default_training_threshold
+                : std::min(tiered_svs_params.trainingTriggerThreshold, SVS_MAX_TRAINING_THRESHOLD);
 
         this->updateJobWaitTime = tiered_svs_params.updateJobWaitTime == 0
                                       ? SVS_DEFAULT_UPDATE_JOB_WAIT_TIME
@@ -660,7 +664,12 @@ public:
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
                 std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
-                return svs_index->addVectors(storage_blob.get(), &label, 1);
+                // Set available thread count to 1 for single vector write-in-place operation.
+                // This maintains the contract that single vector operations use exactly one thread.
+                // TODO: Replace this setNumThreads(1) call with an assertion once we establish
+                // a contract that write-in-place mode guarantees numThreads == 1.
+                svs_index->setNumThreads(1);
+                return this->backendIndex->addVector(storage_blob.get(), label);
             }
         }
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
@@ -726,6 +735,9 @@ public:
         assert(ret <= 2 && "unexpected deleteVector result");
         return ret;
     }
+    size_t getNumMarkedDeleted() const override {
+        return this->GetSVSIndex()->getNumMarkedDeleted();
+    }
 
     size_t indexSize() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
@@ -762,11 +774,16 @@ public:
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
 
-        SvsTieredInfo svsTieredInfo = {.trainingTriggerThreshold = this->trainingTriggerThreshold,
-                                       .updateTriggerThreshold = this->updateTriggerThreshold,
-                                       .updateJobWaitTime = this->updateJobWaitTime,
-                                       .indexUpdateScheduled =
-                                           static_cast<bool>(this->indexUpdateScheduled.test())};
+        SvsTieredInfo svsTieredInfo = {
+            .trainingTriggerThreshold = this->trainingTriggerThreshold,
+            .updateTriggerThreshold = this->updateTriggerThreshold,
+            .updateJobWaitTime = this->updateJobWaitTime,
+        };
+        {
+            std::lock_guard<std::mutex> lock(this->updateJobMutex);
+            svsTieredInfo.indexUpdateScheduled =
+                this->indexUpdateScheduled.test() == VecSimBool_TRUE;
+        }
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
         info.tieredInfo.backgroundIndexing =
             svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0

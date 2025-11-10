@@ -43,6 +43,8 @@ extern "C" {
 // it might be good to implement a utility to compute default threshold based on index parameters
 // DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
 #define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
+// Default batch update threshold for SVS index.
+#define SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD   (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
 #define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
 // NOTE: No need to have SVS_VAMANA_DEFAULT_SEARCH_BUFFER_CAPACITY
 // as the default is determined by the search_window_size
@@ -350,6 +352,8 @@ typedef struct {
     bool useSearchHistory;         // Either the contents of the search buffer can be used or
                                    // the entire search history.
     size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
+    size_t lastReservedThreads;    // Number of threads that were successfully reserved by the last
+                                   // ingestion operation.
     size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
     size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
     size_t searchBufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.

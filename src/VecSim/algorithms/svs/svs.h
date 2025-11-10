@@ -35,7 +35,7 @@ struct SVSIndexBase
     : public SVSSerializer
 #endif
 {
-
+    SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
@@ -44,11 +44,21 @@ struct SVSIndexBase
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
+    size_t getNumMarkedDeleted() const { return num_marked_deleted; }
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
+protected:
+    // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
+    // markIndexUpdate() manages this counter
+    size_t num_marked_deleted;
 };
 
+/** Thread Management Strategy:
+ * - addVector(): Requires numThreads == 1
+ * - addVectors(): Allows any numThreads value, but prohibits n=1 with numThreads>1
+ * - Callers are responsible for setting appropriate thread counts
+ **/
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
           size_t ResidualBits, bool IsLeanVec>
 class SVSIndex : public VecSimIndexAbstract<svs_details::vecsim_dt<DataType>, float>,
@@ -71,10 +81,6 @@ protected:
         svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
 
     bool forcePreprocessing;
-
-    // Index severe changes counter to initiate reindexing if number of changes exceed threshold
-    // markIndexUpdated() manages this counter
-    size_t changes_num;
 
     // Index build parameters
     svs::index::vamana::VamanaBuildParameters buildParams;
@@ -182,12 +188,13 @@ protected:
             return MemoryUtils::unique_blob{const_cast<void *>(original_data), [](void *) {}};
         }
 
-        const auto data_size = this->getDataSize() * n;
+        const auto data_size = this->getStoredDataSize() * n;
 
         auto processed_blob =
             MemoryUtils::unique_blob{this->allocator->allocate(data_size),
                                      [this](void *ptr) { this->allocator->free_allocation(ptr); }};
         // Assuming original data size equals to processed data size
+        assert(this->getInputBlobSize() == this->getStoredDataSize());
         memcpy(processed_blob.get(), original_data, data_size);
         // Preprocess each vector in place
         for (size_t i = 0; i < n; i++) {
@@ -197,6 +204,12 @@ protected:
         return processed_blob;
     }
 
+    // Assuming numThreads was updated to reflect the number of available threads before this
+    // function was called.
+    // This function assumes that the caller has already set numThreads to the appropriate value
+    // for the operation.
+    // Important NOTE: For single vector operations (n=1), numThreads should be 1.
+    // For bulk operations (n>1), numThreads should reflect the number of available threads.
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
             return 0;
@@ -215,23 +228,12 @@ protected:
         // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
-        // If n == 1, we should ensure single-threading
-        const size_t current_num_threads = getNumThreads();
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(1);
-        }
-
         if (!impl_) {
             // SVS index instance cannot be empty, so we have to construct it at first rows
             initImpl(points, ids);
         } else {
             // Add new points to existing SVS index
             impl_->add_points(points, ids);
-        }
-
-        // Restore multi-threading if needed
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(current_num_threads);
         }
 
         return n - deleted_num;
@@ -272,7 +274,7 @@ protected:
         return deleted_num;
     }
 
-    // Count severe index changes (currently deletions only) and consolidate index if needed
+    // Count deletions and consolidate index if needed
     void markIndexUpdate(size_t n = 1) {
         if (!impl_)
             return;
@@ -280,18 +282,19 @@ protected:
         // SVS index instance should not be empty
         if (indexSize() == 0) {
             this->impl_.reset();
-            changes_num = 0;
+            num_marked_deleted = 0;
             return;
         }
 
-        changes_num += n;
+        num_marked_deleted += n;
         // consolidate index if number of changes bigger than 50% of index size
         const float consolidation_threshold = .5f;
         // indexSize() should not be 0 see above lines
         assert(indexSize() > 0);
-        if (static_cast<float>(changes_num) / indexSize() > consolidation_threshold) {
+        // Note: if this function is called after deleteVectorsImpl, indexSize is already updated
+        if (static_cast<float>(num_marked_deleted) / indexSize() > consolidation_threshold) {
             impl_->consolidate();
-            changes_num = 0;
+            num_marked_deleted = 0;
         }
     }
 
@@ -311,7 +314,7 @@ public:
     SVSIndex(const SVSParams &params, const AbstractIndexInitParams &abstractInitParams,
              const index_component_t &components, bool force_preprocessing)
         : Base{abstractInitParams, components}, forcePreprocessing{force_preprocessing},
-          changes_num{0}, buildParams{svs_details::makeVamanaBuildParameters(params)},
+          buildParams{svs_details::makeVamanaBuildParameters(params)},
           search_window_size{svs_details::getOrDefault(params.search_window_size,
                                                        SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE)},
           search_buffer_capacity{
@@ -371,8 +374,9 @@ public:
                           .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
                           .pruneTo = this->buildParams.prune_to,
                           .useSearchHistory = this->buildParams.use_full_search_history,
-                          .numThreads = this->getNumThreads(),
-                          .numberOfMarkedDeletedNodes = this->changes_num,
+                          .numThreads = this->getThreadPoolCapacity(),
+                          .lastReservedThreads = this->getNumThreads(),
+                          .numberOfMarkedDeletedNodes = this->num_marked_deleted,
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
                           .leanvecDim = this->leanvec_dim,
@@ -441,6 +445,11 @@ public:
                              .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.numThreads}}});
 
         infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SVS_LAST_RESERVED_THREADS_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.lastReservedThreads}}});
+
+        infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::NUM_MARKED_DELETED,
             .fieldType = INFOFIELD_UINT64,
             .fieldValue = {FieldValue{.uintegerValue = info.svsInfo.numberOfMarkedDeletedNodes}}});
@@ -469,10 +478,18 @@ public:
     }
 
     int addVector(const void *vector_data, labelType label) override {
+        // Enforce single-threaded execution for single vector operations to ensure optimal
+        // performance and consistent behavior. Callers must set numThreads=1 before calling this
+        // method.
+        assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
     }
 
     int addVectors(const void *vectors_data, const labelType *labels, size_t n) override {
+        // Prevent misuse: single vector operations should use addVector(), not addVectors() with
+        // n=1 This ensures proper thread management and API contract enforcement.
+        assert(!(n == 1 && getNumThreads() > 1) &&
+               "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vectors_data, labels, n);
     }
 
@@ -672,7 +689,7 @@ public:
             // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
             impl_->compact();
         }
-        changes_num = 0;
+        num_marked_deleted = 0;
     }
 
 #ifdef BUILD_TESTS
@@ -689,8 +706,44 @@ private:
 public:
     void fitMemory() override {}
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
-        assert(false && "Not implemented");
-        return {};
+
+        // For compressed/quantized indices, this function is not meaningful
+        // since the stored data is in compressed format and not directly accessible
+        if constexpr (QuantBits > 0 || ResidualBits > 0) {
+            throw std::runtime_error(
+                "getStoredVectorDataByLabel is not supported for compressed/quantized indices");
+        } else {
+
+            std::vector<std::vector<char>> vectors_output;
+
+            if constexpr (isMulti) {
+                // Multi-index case: get all vectors for this label
+                auto it = impl_->get_label_to_external_lookup().find(label);
+                if (it != impl_->get_label_to_external_lookup().end()) {
+                    const auto &external_ids = it->second;
+                    for (auto external_id : external_ids) {
+                        auto indexed_span = impl_->get_parent_index().get_datum(external_id);
+
+                        // For uncompressed data, indexed_span should be a simple span
+                        const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
+                        std::vector<char> vec_data(this->getStoredDataSize());
+                        std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
+                        vectors_output.push_back(std::move(vec_data));
+                    }
+                }
+            } else {
+                // Single-index case
+                auto indexed_span = impl_->get_datum(label);
+
+                // For uncompressed data, indexed_span should be a simple span
+                const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
+                std::vector<char> vec_data(this->getStoredDataSize());
+                std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
+                vectors_output.push_back(std::move(vec_data));
+            }
+
+            return vectors_output;
+        }
     }
     void getDataByLabel(
         labelType label,
