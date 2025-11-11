@@ -390,7 +390,7 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
     }
     mock_thread_pool.init_threads();
     for (auto _ : st) {
-        // add one more vector
+        // add one more vector to trigger the update
         int ret = VecSimIndex_AddVector(tiered_index, test_vectors[update_threshold - 1].data(),
                                         update_threshold - 1 + N_VECTORS);
         ASSERT_EQ(ret, 1);
