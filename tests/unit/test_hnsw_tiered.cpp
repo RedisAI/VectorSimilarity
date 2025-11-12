@@ -3013,6 +3013,9 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
                     ASSERT_LE(res_label, i + n_labels);
                 }
             };
+            // Run top K search over the tiered index so that internally in the runTopKSearchTest
+            // helper function we will identify that it is an async index and expect to get <= k
+            // results (rather than == k, as some nodes may be unreachable).
             runTopKSearchTest(tiered_index, vector, 10, ver_res);
         }
     }
