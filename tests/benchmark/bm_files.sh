@@ -49,6 +49,9 @@ elif [ "$BM_TYPE" = "bm-svs-train-fp32" ] \
 then
     file_name="training"
     alg="svs"
+elif [ "$BM_TYPE" = "bm-basics-svs-fp32-single" ]; then
+    file_name="basic_fp32"
+    alg="svs"
 else
     echo "No files to download for BM_TYPE=$BM_TYPE"
     exit 0
