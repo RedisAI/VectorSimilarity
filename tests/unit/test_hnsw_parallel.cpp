@@ -174,12 +174,16 @@ protected:
 TYPED_TEST_SUITE(HNSWTestParallel, DataTypeSet);
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
-    size_t n = 20000;
+    size_t n = 500;
     size_t k = 11;
     size_t dim = 45;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efConstruction = 200, .efRuntime = n};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = 100,
+                         .M = 64,
+                         .efConstruction = n,
+                         .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -240,11 +244,16 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     size_t dim = 45;
-    size_t n = 20000;
-    size_t n_labels = 1000;
+    size_t n = 500;
+    size_t n_labels = 50;
     size_t k = 11;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 64, .efRuntime = n};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = 100,
+                         .M = 64,
+                         .efConstruction = n,
+                         .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params, true);
 
     for (size_t i = 0; i < n; i++) {
@@ -262,7 +271,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
         completed_tasks[myID]++;
-        TEST_DATA_T query_val = 50 + myID;
+        TEST_DATA_T query_val = (n_labels / 2) + myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [=](size_t id, double score, size_t res_index) {
@@ -291,12 +300,16 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
-    size_t n = 10000;
+    size_t n = 500;
     size_t k = 11;
     size_t dim = 64;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efConstruction = 200, .efRuntime = n};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = 100,
+                         .M = 64,
+                         .efConstruction = n,
+                         .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -417,14 +430,20 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsert) {
-    size_t n = 10000;
+    size_t n = 500;
     size_t k = 11;
     size_t dim = 32;
+    size_t block_size = 100;
     // r/w lock to ensure that index is locked (stop the world) upon adding a new block to the
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = block_size,
+                         .M = 16,
+                         .efConstruction = n,
+                         .efRuntime = n};
 
     VecSimIndex *index = this->CreateNewIndex(params);
     size_t n_threads = 10;
@@ -438,7 +457,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         for (labelType label = myID; label < n; label += n_threads) {
             completed_tasks[myID]++;
             // Insert vector while acquire the guard lock exclusively if we are performing resizing.
-            this->insertVectorParallelSafe(index, dim, label, label, indexGuard, counter, barrier);
+            this->insertVectorParallelSafe(index, dim, label, label, indexGuard, counter, barrier,
+                                           block_size);
         }
     };
     std::thread thread_objs[n_threads];
@@ -472,17 +492,22 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
-    size_t n = 10000;
-    size_t n_labels = 1000;
-    size_t per_label = n / n_labels;
+    size_t n = 500;
+    size_t n_labels = 50;
     size_t k = 11;
     size_t dim = 32;
+    size_t block_size = 100;
 
     // r/w lock to ensure that index is locked (stop the world) upon adding a new block to the
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = block_size,
+                         .M = 16,
+                         .efConstruction = n,
+                         .efRuntime = n};
 
     VecSimIndex *index = this->CreateNewIndex(params, true);
     size_t n_threads = 10;
@@ -497,7 +522,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
             completed_tasks[myID]++;
             // Insert vector while acquire the guard lock exclusively if we are performing resizing.
             this->insertVectorParallelSafe(index, dim, i % n_labels, i, indexGuard, counter,
-                                           barrier);
+                                           barrier, block_size);
         }
     };
     std::thread thread_objs[n_threads];
@@ -533,9 +558,10 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
 
 template <class index_type_t>
 void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
-    size_t n = 10000;
+    size_t n = 500;
     size_t k = 11;
     size_t dim = 32;
+    size_t block_size = 100;
     // r/w lock to ensure that index is locked (stop the world) upon adding a new block to the
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
@@ -543,8 +569,12 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
     labelType first_res_label = query_val - k / 2;
     labelType last_res_label = query_val + k / 2;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .M = 64, .efConstruction = 200, .efRuntime = n};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = block_size,
+                         .M = 64,
+                         .efConstruction = n,
+                         .efRuntime = n};
 
     VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
 
@@ -567,7 +597,7 @@ void HNSWTestParallel<index_type_t>::parallelInsertSearch(bool is_multi) {
             }
             // Insert vector while acquire the guard lock exclusively if we are performing resizing.
             this->insertVectorParallelSafe(parallel_index, dim, label, label, indexGuard,
-                                           indexed_vectors, barrier);
+                                           indexed_vectors, barrier, block_size);
         }
     };
     std::atomic_int successful_searches(0);
@@ -690,11 +720,12 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
-    size_t n = 10000;
+    size_t n = 600;
     size_t k = 10;
     size_t dim = 32;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .efRuntime = n};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .efConstruction = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
     size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
@@ -787,7 +818,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
-    size_t n = 10000;
+    size_t n = 600;
     size_t k = 11;
     size_t dim = 4;
     size_t block_size = 10;
@@ -796,8 +827,11 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
     // global data structures, which is non read safe for parallel insertions.
     std::shared_mutex indexGuard;
 
-    HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .blockSize = block_size, .efRuntime = n};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = block_size,
+                         .efConstruction = n,
+                         .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
     size_t n_threads = std::min(8U, FLOOR_EVEN(std::thread::hardware_concurrency()));

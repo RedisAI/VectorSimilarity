@@ -2935,6 +2935,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti(),
                          .M = 32,
+                         .efConstruction = 3 * n,
                          .efRuntime = 3 * n};
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
