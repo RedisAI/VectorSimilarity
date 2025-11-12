@@ -2917,18 +2917,22 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 
     // Overwrite inplace - only in single-value mode
+    size_t expected_marked_deleted = 0;
     if (!TypeParam::isMulti()) {
         TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
         tiered_index->addVector(overwritten_vec, vec_label);
+        expected_marked_deleted++;
         ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
         ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
         ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), expected_marked_deleted);
     }
     // Validate that the vector is removed in place.
     tiered_index->deleteVector(vec_label);
+    expected_marked_deleted++;
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
-    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
-    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), expected_marked_deleted);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, expected_marked_deleted);
 }
 
 TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
@@ -3097,25 +3101,21 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
 
-    // Delete all the vectors and wait for the thread pool to finish running the update jobs.
     for (size_t i = 0; i < threshold; i++) {
         tiered_index->deleteVector(i);
     }
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), threshold);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, threshold);
 
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    mock_thread_pool.init_threads();
-    mock_thread_pool.thread_pool_join();
-
     ASSERT_EQ(tiered_index->indexSize(), n - threshold);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     auto size_before_gc = tiered_index->getAllocationSize();
 
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
     ASSERT_EQ(tiered_index->indexSize(), n - threshold);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n - threshold);
     auto size_after_gc = tiered_index->getAllocationSize();
     // Expect that the size of the index was reduced.
