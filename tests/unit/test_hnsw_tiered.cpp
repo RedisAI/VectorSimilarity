@@ -3013,7 +3013,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
                     ASSERT_LE(res_label, i + n_labels);
                 }
             };
-            runTopKSearchTest(hnsw_index, vector, 10, ver_res);
+            runTopKSearchTest(tiered_index, vector, 10, ver_res);
         }
     }
 
