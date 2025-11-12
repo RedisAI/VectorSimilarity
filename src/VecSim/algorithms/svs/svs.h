@@ -240,7 +240,7 @@ protected:
     }
 
     int deleteVectorsImpl(const labelType *labels, size_t n) {
-        if (indexLabelCount() == 0) {
+        if (indexSize() == 0) {
             return 0;
         }
 
@@ -280,7 +280,7 @@ protected:
             return;
 
         // SVS index instance should not be empty
-        if (indexLabelCount() == 0) {
+        if (indexSize() == 0) {
             this->impl_.reset();
             num_marked_deleted = 0;
             return;
@@ -321,7 +321,7 @@ public:
 
     ~SVSIndex() = default;
 
-    size_t indexSize() const override { return indexStorageSize(); }
+    size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
 
     size_t indexStorageSize() const override { return impl_ ? impl_->view_data().size() : 0; }
 
@@ -333,7 +333,7 @@ public:
         if constexpr (isMulti) {
             return impl_ ? impl_->labelcount() : 0;
         } else {
-            return impl_ ? impl_->size() : 0;
+            return indexSize();
         }
     }
 
@@ -515,7 +515,7 @@ public:
                                 VecSimQueryParams *queryParams) const override {
         auto rep = new VecSimQueryReply(this->allocator);
         this->lastMode = STANDARD_KNN;
-        if (k == 0 || this->indexLabelCount() == 0) {
+        if (k == 0 || this->indexSize() == 0) {
             return rep;
         }
 
@@ -560,7 +560,7 @@ public:
                                  VecSimQueryParams *queryParams) const override {
         auto rep = new VecSimQueryReply(this->allocator);
         this->lastMode = RANGE_QUERY;
-        if (radius == 0 || this->indexLabelCount() == 0) {
+        if (radius == 0 || this->indexSize() == 0) {
             return rep;
         }
 
@@ -633,7 +633,7 @@ public:
         // take ownership of the blob copy and pass it to the batch iterator.
         auto *queryBlobCopyPtr = queryBlobCopy.release();
         // Ownership of queryBlobCopy moves to VecSimBatchIterator that will free it at the end.
-        if (indexLabelCount() == 0) {
+        if (indexSize() == 0) {
             return new (this->getAllocator())
                 NullSVS_BatchIterator(queryBlobCopyPtr, queryParams, this->getAllocator());
         } else {
@@ -643,7 +643,7 @@ public:
     }
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
-        size_t index_size = this->indexLabelCount();
+        size_t index_size = this->indexSize();
 
         // Calculate the ratio of the subset size to the total index size.
         double subsetRatio = (index_size == 0) ? 0.f : static_cast<double>(subsetSize) / index_size;

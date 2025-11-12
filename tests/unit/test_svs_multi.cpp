@@ -536,7 +536,7 @@ TYPED_TEST(SVSMultiTest, test_dynamic_svs_info_iterator) {
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_DebugInfo(index);
     infoIter = VecSimIndex_DebugInfoIterator(index);
-    ASSERT_EQ(4, info.commonInfo.indexSize);
+    ASSERT_EQ(2, info.commonInfo.indexSize);
     ASSERT_EQ(1, info.commonInfo.indexLabelCount);
     compareSVSIndexInfoToIterator(info, infoIter);
     VecSimDebugInfoIterator_Free(infoIter);
