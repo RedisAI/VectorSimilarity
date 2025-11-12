@@ -88,5 +88,5 @@ gtest_discover_tests(test_uint8 TEST_PREFIX UINT8UNIT_)
 gtest_discover_tests(test_index_test_utils)
 # SVS Tiered tests are slow in debug mode, so we set a longer timeout
 # gtest_discover_tests(test_svs PROPERTIES TIMEOUT 3000)
-# gtest_discover_tests(test_hnsw_disk TEST_PREFIX HNSWDISKUNIT_)
+gtest_discover_tests(test_hnsw_disk TEST_PREFIX HNSWDISKUNIT_)
 gtest_discover_tests(test_quantized_hnsw_disk TEST_PREFIX QUANTIZEDHNSWDISKUNIT_)

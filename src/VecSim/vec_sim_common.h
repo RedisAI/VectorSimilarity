@@ -62,7 +62,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_HNSWLIB_DISK, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
 
 typedef enum {
     VecSimOption_AUTO = 0,
@@ -133,6 +133,7 @@ typedef int (*SubmitCB)(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCa
  *
  */
 typedef struct VecSimParams VecSimParams;
+
 typedef struct {
     VecSimType type;        // Datatype to index.
     size_t dim;             // Vector's dimension.
@@ -145,6 +146,20 @@ typedef struct {
     size_t efRuntime;
     double epsilon;
 } HNSWParams;
+
+typedef struct {
+    VecSimType type;        // Datatype to index.
+    size_t dim;             // Vector's dimension.
+    VecSimMetric metric;    // Distance metric to use in the index.
+    bool multi;             // Determines if the index should multi-index or not.
+    size_t initialCapacity; // Deprecated
+    size_t blockSize;
+    size_t M;
+    size_t efConstruction;
+    size_t efRuntime;
+    double epsilon;
+    const char *dbPath;
+} HNSWDiskParams;
 
 typedef struct {
     VecSimType type;        // Datatype to index.
@@ -221,6 +236,7 @@ typedef struct {
 
 typedef union {
     HNSWParams hnswParams;
+    HNSWDiskParams hnswDiskParams;
     BFParams bfParams;
     TieredIndexParams tieredParams;
     SVSParams svsParams;

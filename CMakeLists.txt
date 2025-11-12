@@ -75,6 +75,7 @@ if(VECSIM_BUILD_TESTS)
 
 	if(ALLOW_BENCHMARKS_WITH_SANITIZERS OR NOT (USE_ASAN OR USE_MSAN))
 		add_subdirectory(tests/benchmark benchmark)
+		add_subdirectory(tests/benchmark/data/scripts hnsw_disk_serializer)
 	endif()
 endif()
 

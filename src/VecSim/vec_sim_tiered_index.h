@@ -370,6 +370,12 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     case VecSimAlgo_SVS:
         info.tieredInfo.backendInfo.svsInfo = backendInfo.svsInfo;
         break;
+#ifdef BUILD_TESTS
+    case VecSimAlgo_HNSWLIB_DISK:
+        // Disk-based HNSW is not supported as a tiered backend
+        assert(false && "HNSW_DISK cannot be used as a tiered backend");
+        break;
+#endif
     case VecSimAlgo_BF:
     case VecSimAlgo_TIERED:
         assert(false && "Invalid backend algorithm");

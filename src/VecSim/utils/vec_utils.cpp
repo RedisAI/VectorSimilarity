@@ -22,6 +22,7 @@ using float16 = vecsim_types::float16;
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
 const char *VecSimCommonStrings::HNSW_STRING = "HNSW";
+const char *VecSimCommonStrings::HNSW_DISK_STRING = "HNSW_DISK";
 const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 const char *VecSimCommonStrings::SVS_STRING = "SVS";
 
@@ -176,6 +177,8 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::TIERED_STRING;
     case VecSimAlgo_SVS:
         return VecSimCommonStrings::SVS_STRING;
+    case VecSimAlgo_HNSWLIB_DISK:
+        return VecSimCommonStrings::HNSW_DISK_STRING;
     }
     return NULL;
 }

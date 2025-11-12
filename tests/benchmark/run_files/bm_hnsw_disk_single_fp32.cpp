@@ -9,18 +9,21 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
-uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
+// Only enable HNSW_DISK for this benchmark
+uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_MASK_HNSW_DISK |
+                                                 IndexTypeFlags::INDEX_MASK_BF;
 
-// Configure using existing dbpedia dataset for now (can be changed to SIFT1B later)
+// Configure using deep dataset (10K vectors, 96 dimensions)
 size_t BM_VecSimGeneral::n_queries = 100;
-size_t BM_VecSimGeneral::n_vectors = 100000;
+size_t BM_VecSimGeneral::n_vectors = 10000;
 size_t BM_VecSimGeneral::dim = 96;
 size_t BM_VecSimGeneral::M = 32;
 size_t BM_VecSimGeneral::EF_C = 256;
 
-// Dataset file paths - using existing dbpedia dataset
+// Dataset file paths - using deep dataset
+// For HNSW disk, hnsw_index_file points to the folder containing index.hnsw_disk_v1 and rocksdb/
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
+    "tests/benchmark/data/deep-cosine-dim96-M32-efc200-disk";
 const char *BM_VecSimGeneral::test_queries_file = "tests/benchmark/data/deep.query.public.10K.fbin";
 
 #define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Single)

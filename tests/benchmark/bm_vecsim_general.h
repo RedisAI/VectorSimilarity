@@ -42,6 +42,7 @@ protected:
     static size_t M;
     static size_t EF_C;
     static size_t n_vectors;
+    static VecSimMetric metric;
 
     static bool is_multi;
     // Bitmask controlling which index types to include in benchmarks (uses IndexTypeFlags)

@@ -83,6 +83,10 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     if (BM_VecSimGeneral::mock_thread_pool) {
         BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
     }
+    // For disk index, flush any pending batch operations
+    if (st.range(0) == INDEX_HNSW_DISK) {
+        dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(index)->flushBatch();
+    }
     if (stats) {
         // io_micros = stats->getTickerCount(rocksdb::Histograms::SST_READ_MICROS);
         io_bytes = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
