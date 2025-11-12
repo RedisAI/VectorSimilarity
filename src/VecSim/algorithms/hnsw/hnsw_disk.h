@@ -88,7 +88,6 @@ struct DiskElementMetaData {
 // Note: This is already defined in hnsw.h, so we'll use that one
 
 static constexpr char GraphKeyPrefix[3] = "GK";
-static constexpr char RawVectorKeyPrefix[3] = "RV";
 
 #pragma pack(1)
 struct GraphKey {
@@ -117,28 +116,6 @@ struct GraphKey {
     graphNodeType node() const { return graphNodeType(id, level); }
 };
 
-#pragma pack(1)
-struct RawVectorKey {
-    idType id;
-
-    RawVectorKey(idType id) : id(id) {}
-
-    rocksdb::Slice asSlice() const {
-        // Create a key with the "RV" prefix followed by the id
-        static thread_local std::vector<char> key_buffer;
-        key_buffer.resize(3 + sizeof(idType)); // 3 bytes for "RV" + id size
-
-        // Copy the "RV" prefix
-        key_buffer[0] = 'R';
-        key_buffer[1] = 'V';
-        key_buffer[2] = '\0';
-
-        // Copy the id
-        std::memcpy(key_buffer.data() + 3, &id, sizeof(idType));
-
-        return rocksdb::Slice(key_buffer.data(), key_buffer.size());
-    }
-};
 #pragma pack()
 
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
@@ -227,12 +204,19 @@ protected:
 
     vecsim_stl::vector<NeighborUpdate> stagedNeighborUpdates;
 
+    // Temporary storage for raw vectors in RAM (until flush batch)
+    // Maps idType -> raw vector data (stored as string for simplicity)
+    std::unordered_map<idType, std::string> rawVectorsInRAM;
+
+    // Cache for raw vectors retrieved from disk (mutable to allow caching in const methods)
+    mutable std::unordered_map<idType, std::string> rawVectorsDiskCache;
+
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
     // default (shallow) copy constructor is disabled.
     HNSWDiskIndex(const HNSWDiskIndex &) = delete;
 
-    auto getNeighborhoods(const std::vector<idType> &ids) const;
+    auto getNeighborhoods(const vecsim_stl::vector<idType> &ids) const;
 
     idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M) const;
     void getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M,
@@ -241,12 +225,12 @@ protected:
     void getNeighborsByHeuristic2_internal(candidatesList<DistType> &top_candidates, size_t M,
                                            vecsim_stl::vector<idType> *removed_candidates) const;
 
-    std::unordered_map<idType, idType>
-    pruneDeleted(const std::vector<idType> &deleted_ids,
-                 const std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash>
-                     &deleted_neighborhoods,
-                 idType &entrypointNode);
-
+    // Helper methods for GraphKey value serialization/deserialization
+    // GraphKey value format: [raw_vector_data][neighbor_count][neighbor_ids...]
+    std::string serializeGraphValue(const void* vector_data, const vecsim_stl::vector<idType>& neighbors) const;
+    void deserializeGraphValue(const std::string& value, vecsim_stl::vector<idType>& neighbors) const;
+    const void* getVectorFromGraphValue(const std::string& value) const;
+    
 public:
     // Pure virtual methods from VecSimIndexInterface
     int addVector(const void *blob, labelType label) override;
@@ -263,10 +247,9 @@ public:
     void flushBatch(); // Force flush current batch
 
     // Helper methods
-    void getNeighbors(idType nodeId, size_t level, std::vector<idType> &result) const;
-    void searchPendingVectors(const void *query_data,
-                              candidatesLabelsMaxHeap<DistType> &top_candidates, size_t k) const;
-
+    void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
+    void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
+    
     // Manual control of staged updates
     void flushStagedUpdates(); // Manually flush any pending staged updates
 
@@ -275,12 +258,12 @@ protected:
     void flushStagedGraphUpdates();
 
     // New method for handling neighbor connection updates when neighbor lists are full
-    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor, size_t level,
-                                         DistType distance);
-
-    void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
-                        vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
-                        std::unordered_map<idType, idType> &new_ids_mapping);
+    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor, 
+                                       size_t level, DistType distance);
+    
+    // void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
+    //                     vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
+    //                     std::unordered_map<idType, idType> &new_ids_mapping);
 
 public:
     // Methods needed by benchmark framework
@@ -301,7 +284,7 @@ public:
                           candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const;
 
     // Raw vector storage and retrieval methods
-    std::vector<char> getRawVector(idType id) const;
+    const char* getRawVector(idType id) const;
 
 protected:
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx = nullptr,
@@ -325,8 +308,8 @@ public:
     virtual ~HNSWDiskIndex();
 
     /*************************** Index API ***************************/
-    void batchUpdate(const std::vector<pair<labelType, const void *>> &new_elements,
-                     const std::vector<labelType> &deleted_labels);
+    // void batchUpdate(const std::vector<pair<labelType, const void *>> &new_elements,
+    //                  const std::vector<labelType> &deleted_labels);
 
     VecSimQueryReply *topKQuery(const void *query_data, size_t k,
                                 VecSimQueryParams *queryParams) const override;
@@ -356,7 +339,8 @@ public:
     double getDistanceFrom_Unsafe(labelType id, const void *blob) const override;
 
     uint64_t getAllocationSize() const override;
-    uint64_t getDiskSize() const override;
+    uint64_t getDBMemorySize() const;
+    uint64_t getDiskSize() const;
     std::shared_ptr<rocksdb::Statistics> getDBStatistics() const;
 
 public:
@@ -471,94 +455,6 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     // Base class destructor will handle indexCalculator and preprocessors
 }
 
-/********************************** Index API **********************************/
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::batchUpdate(
-    const std::vector<std::pair<labelType, const void *>> &new_elements,
-    const std::vector<labelType> &deleted_labels) {
-    if (!indexDataGuard.try_lock()) {
-        // Cannot acquire lock, another operation is in progress
-        return;
-    }
-    // Use RAII to ensure the lock is released
-    std::lock_guard<std::shared_mutex> guard(indexDataGuard, std::adopt_lock);
-
-    std::vector<idType> deleted_ids;
-    deleted_ids.reserve(deleted_labels.size());
-    for (const auto &label : deleted_labels) {
-        auto it = labelToIdMap.find(label);
-        if (it != labelToIdMap.end()) {
-            deleted_ids.push_back(it->second);
-        }
-        // If label doesn't exist, skip it (don't add to deleted_ids)
-    }
-
-    // Phase 0: fetch and cache the deleted labels neighbors (before reaching here?)
-    auto deleted_neighborhoods = getNeighborhoods(deleted_ids);
-
-    // Phase 1: Delete elements
-    // iterate over the graph nodes and delete the deleted labels
-    // 1. for each not-deleted label with a deleted neighbor, re-choose the neighbors
-    //    from the remaining nodes + the deleted nodes neighbors (by the heuristic)
-    // 2. for each not-deleted label, write it to the new graph
-    auto curEntryPoint = this->entrypointNode;
-    auto new_ids_mapping = pruneDeleted(deleted_ids, deleted_neighborhoods, curEntryPoint);
-    auto curMaxLevel = maxLevel; // TODO: take `curEntryPoint` maxLevel, address mapping?
-
-    // Phase 2: Insert new elements
-    // 1. for each new element, find its neighbors by the heuristic
-    // 2. For each neighbor, add to the temporary delta list the new element
-    std::unordered_map<idType, std::vector<idType>> delta_list;
-    vecsim_stl::vector<DiskElementMetaData> new_elements_meta_data(this->allocator);
-    new_elements_meta_data.reserve(new_elements.size());
-    // std::unordered_map<labelType, idType> new_labels_mapping;
-    for (const auto &[label, vector] : new_elements) {
-        // Add vector to memory immediately
-        ProcessedBlobs processedBlobs = this->preprocess(vector);
-        size_t containerId = this->vectors->size();
-        this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
-
-        // Create metadata and store immediately
-        idType newElementId = curElementCount;
-        size_t elementMaxLevel = getRandomLevel(mult);
-        DiskElementMetaData new_element(label, elementMaxLevel);
-        idToMetaData[newElementId] = new_element;
-        labelToIdMap[label] = newElementId;
-        curElementCount++;
-
-        // Resize visited nodes handler pool to accommodate new elements
-        visitedNodesHandlerPool.resize(curElementCount);
-
-        // Add only the vector ID to pending vectors for indexing
-        pendingVectorIds.push_back(newElementId);
-        pendingVectorCount++;
-    }
-
-    // Phase 3: Patch the graph
-    // 1. Iterate over the entire graph
-    // 2. for each id in the delta list, re-choose the neighbors (by the heuristic)
-    patchDeltaList(delta_list, new_elements_meta_data, new_ids_mapping);
-
-    // Phase 4: Set new version, entry point and max level
-    // TODO: some lock
-    this->entrypointNode = curEntryPoint;
-    this->maxLevel = curMaxLevel;
-    this->curElementCount += new_elements.size() - deleted_labels.size();
-    for (const auto &[old_id, new_id] : new_ids_mapping) {
-        idToMetaData[new_id] = idToMetaData[old_id];
-        labelToIdMap[idToMetaData[new_id].label] = new_id;
-    }
-    this->labelToIdMap.reserve(this->curElementCount);
-    this->idToMetaData.reserve(this->curElementCount);
-    this->idToMetaData.resize(this->curElementCount - deleted_labels.size());
-    this->idToMetaData.insert(this->idToMetaData.end(), new_elements_meta_data.begin(),
-                              new_elements_meta_data.end());
-    for (idType i = 0; i < new_elements_meta_data.size(); ++i) {
-        labelToIdMap[new_elements_meta_data[i].label] =
-            this->curElementCount + i - deleted_labels.size();
-    }
-}
 
 template <typename DataType, typename DistType>
 VecSimQueryReply *
@@ -650,9 +546,9 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
 /********************************** Helpers **********************************/
 
 template <typename DataType, typename DistType>
-auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const std::vector<idType> &ids) const {
+auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const vecsim_stl::vector<idType> &ids) const {
     // Create a map to store the neighbors for each label
-    std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash> neighbors_map;
+    std::unordered_map<graphNodeType, vecsim_stl::vector<idType>, GraphNodeHash> neighbors_map;
     // Create a vector of slices to store the keys
     std::vector<GraphKey> graphKeys;
     std::vector<rocksdb::Slice> keys;
@@ -677,10 +573,10 @@ auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const std::vector<idTyp
         const auto &key = graphKeys[i];
         const auto &value = values[i];
 
-        size_t num_neighbors = value.size() / sizeof(idType);
-        const idType *neighbor_ids = reinterpret_cast<const idType *>(value.data());
-        // Parse the value to get the neighbors
-        std::vector<idType> neighbors(neighbor_ids, neighbor_ids + num_neighbors);
+        // Parse the value using new format: [vector_data][neighbor_count][neighbor_ids...]
+        vecsim_stl::vector<idType> neighbors(this->allocator);
+        deserializeGraphValue(value, neighbors);
+
         // Store the neighbors in the map
         neighbors_map[key.node()] = std::move(neighbors);
     }
@@ -763,122 +659,15 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
 }
 
 template <typename DataType, typename DistType>
-std::unordered_map<idType, idType> HNSWDiskIndex<DataType, DistType>::pruneDeleted(
-    const std::vector<idType> &deleted_ids,
-    const std::unordered_map<graphNodeType, std::vector<idType>, GraphNodeHash>
-        &deleted_neighborhoods,
-    idType &entrypointNode) {
+int HNSWDiskIndex<DataType, DistType>::addVector(
+    const void *vector, labelType label
+) {
+    // Store raw vector in RAM first (until flush batch)
+    // We need to store the original vector before preprocessing
+    idType newElementId = curElementCount;
+    const char* raw_data = reinterpret_cast<const char*>(vector);
+    rawVectorsInRAM[newElementId] = std::string(raw_data, this->inputBlobSize);
 
-    // Higher ids will reuse the deleted ids
-    auto newElementCount = this->curElementCount - deleted_neighborhoods.size();
-
-    auto readOptions = rocksdb::ReadOptions();
-    readOptions.fill_cache = false;
-    readOptions.prefix_same_as_start = true;
-
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
-
-    auto it = this->db->NewIterator(readOptions, cf);
-    for (it->Seek(GraphKeyPrefix); it->Valid(); it->Next()) {
-        auto key = it->key();
-        auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
-
-        if (deleted_neighborhoods.find(graphKey->node()) != deleted_neighborhoods.end()) {
-            this->db->Delete(writeOptions, cf, it->key());
-            continue;
-        }
-        auto neighborsSlice = it->value();
-        auto neighborsData = reinterpret_cast<const idType *>(neighborsSlice.data());
-        size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
-        std::vector<idType> neighbors(neighborsData, neighborsData + num_neighbors);
-
-        bool has_deleted_neighbors = false;
-        bool has_moving_neighbors = false;
-        for (auto &neighbor : neighbors) {
-            graphNodeType neighbor_node{neighbor, graphKey->level};
-            if (deleted_neighborhoods.find(neighbor_node) != deleted_neighborhoods.end()) {
-                has_deleted_neighbors = true;
-                if (has_moving_neighbors)
-                    break;
-            }
-            if (neighbor >= newElementCount) {
-                has_moving_neighbors = true;
-                if (has_deleted_neighbors)
-                    break;
-            }
-        }
-        auto new_id = graphKey->id < newElementCount ? graphKey->id
-                                                     : deleted_ids[graphKey->id - newElementCount];
-        if (has_deleted_neighbors) {
-            // Collect candidates for the new neighbors
-            candidatesList<DistType> new_neighbors(this->allocator);
-            std::unordered_set<idType> neighbors_set;
-            auto add_candidate = [&](idType id) {
-                if (neighbors_set.insert(id).second) {
-                    DistType dist = this->calcDistance(getDataByInternalId(id),
-                                                       getDataByInternalId(graphKey->id));
-                    new_neighbors.emplace_back(dist, id);
-                }
-            };
-            for (size_t i = 0; i < num_neighbors; ++i) {
-                graphNodeType neighbor_node{neighbors[i], graphKey->level};
-                auto it = deleted_neighborhoods.find(neighbor_node);
-                if (it != deleted_neighborhoods.end()) {
-                    // Add the deleted node's neighbors to the new candidate list, if they are not
-                    // deleted themself
-                    for (const auto &neighbor : it->second) {
-                        if (deleted_neighborhoods.find(neighbor_node) ==
-                            deleted_neighborhoods.end()) {
-                            add_candidate(neighbor);
-                        }
-                    }
-                } else {
-                    // Add the current neighbor to the new candidate list
-                    add_candidate(neighbors[i]);
-                }
-            }
-            getNeighborsByHeuristic2(new_neighbors, graphKey->level == 0 ? M0 : M);
-
-            // Extract the ids from the new_neighbors list
-            neighbors.resize(new_neighbors.size());
-            for (size_t i = 0; i < new_neighbors.size(); ++i) {
-                neighbors[i] = new_neighbors[i].second;
-            }
-            // Write new node to the new version, after fixing the deleted ids
-        }
-        if (has_moving_neighbors || has_deleted_neighbors) {
-            for (auto &neighbor : neighbors) {
-                if (neighbor >= newElementCount) {
-                    neighbor = deleted_ids[neighbor - newElementCount];
-                }
-            }
-        }
-        if (has_moving_neighbors || has_deleted_neighbors || graphKey->id < newElementCount) {
-            // Create a new key for the new node
-            auto newKey = GraphKey(new_id, graphKey->level);
-            // Create a new slice for the new neighbors
-            size_t bytes = neighbors.size() * sizeof(idType);
-            auto neighbors_slice =
-                rocksdb::Slice(reinterpret_cast<const char *>(neighbors.data()), bytes);
-            this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
-        }
-    }
-    delete it;
-
-    if (deleted_neighborhoods.find({entrypointNode, 0}) != deleted_neighborhoods.end()) {
-        // Find a new entry point, update the `entrypointNode` reference
-    }
-
-    std::unordered_map<idType, idType> new_ids(deleted_ids.size());
-    for (size_t i = 0; i < deleted_ids.size(); ++i) {
-        new_ids[newElementCount + i] = deleted_ids[i];
-    }
-    return new_ids;
-}
-
-template <typename DataType, typename DistType>
-int HNSWDiskIndex<DataType, DistType>::addVector(const void *vector, labelType label) {
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
 
@@ -887,7 +676,6 @@ int HNSWDiskIndex<DataType, DistType>::addVector(const void *vector, labelType l
     this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
 
     // Create new element ID and metadata
-    idType newElementId = curElementCount;
     size_t elementMaxLevel = getRandomLevel(mult);
     DiskElementMetaData new_element(label, elementMaxLevel);
 
@@ -901,21 +689,6 @@ int HNSWDiskIndex<DataType, DistType>::addVector(const void *vector, labelType l
     // Store metadata immediately
     idToMetaData[newElementId] = new_element;
     labelToIdMap[label] = newElementId;
-
-    // Store raw vector to disk
-    RawVectorKey rawVectorKey(newElementId);
-    const void *storageBlob = processedBlobs.getStorageBlob();
-    auto rawVectorSlice =
-        rocksdb::Slice(reinterpret_cast<const char *>(storageBlob), this->dataSize);
-
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
-    rocksdb::Status status = db->Put(writeOptions, cf, rawVectorKey.asSlice(), rawVectorSlice);
-    if (!status.ok()) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                  "WARNING: Failed to store raw vector for id %u: %s", newElementId,
-                  status.ToString().c_str());
-    }
 
     // Increment vector count immediately
     curElementCount++;
@@ -1048,84 +821,87 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
 
     auto writeOptions = rocksdb::WriteOptions();
     writeOptions.disableWAL = true;
+    // Write graph updates first (so they're available when processing neighbor updates)
+    rocksdb::WriteBatch graphBatch;
 
     // First, handle new node insertions
     for (const auto &update : stagedGraphUpdates) {
         auto newKey = GraphKey(update.node_id, update.level);
-        size_t bytes = update.neighbors.size() * sizeof(idType);
-        auto neighbors_slice =
-            rocksdb::Slice(reinterpret_cast<const char *>(update.neighbors.data()), bytes);
 
-        rocksdb::Status put_status =
-            this->db->Put(writeOptions, cf, newKey.asSlice(), neighbors_slice);
-        if (!put_status.ok()) {
-            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                      "ERROR: Failed to store graph connection for node %u at level %zu: %s",
-                      update.node_id, update.level, put_status.ToString().c_str());
-        }
+        const void* raw_vector_data = getRawVector(update.node_id);
+
+        // Serialize with new format: [raw_vector_data][neighbor_count][neighbor_ids...]
+        std::string graph_value = serializeGraphValue(raw_vector_data, update.neighbors);
+
+        graphBatch.Put(cf, newKey.asSlice(), graph_value);
+    }
+
+    // Write graph updates to disk first
+    rocksdb::Status graph_status = this->db->Write(writeOptions, &graphBatch);
+    if (!graph_status.ok()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to write graph updates batch: %s",
+                 graph_status.ToString().c_str());
+        return;
     }
 
     // Then, handle neighbor list updates for existing nodes
     // Group neighbor updates by node and level for efficient processing
-    std::unordered_map<idType, std::unordered_map<size_t, std::vector<idType>>>
-        neighborUpdatesByNode;
+    std::unordered_map<idType, std::unordered_map<size_t, vecsim_stl::vector<idType>>> neighborUpdatesByNode;
 
-    for (const auto &update : stagedNeighborUpdates) {
-        neighborUpdatesByNode[update.node_id][update.level].push_back(update.new_neighbor_id);
+    for (const auto& update : stagedNeighborUpdates) {
+        auto& levelMap = neighborUpdatesByNode[update.node_id];
+        auto it = levelMap.find(update.level);
+        if (it == levelMap.end()) {
+            levelMap.emplace(update.level, vecsim_stl::vector<idType>(this->allocator));
+            it = levelMap.find(update.level);
+        }
+        it->second.push_back(update.new_neighbor_id);
     }
 
-    // Use a single WriteBatch for all neighbor updates to avoid memory issues
-    rocksdb::WriteBatch batch;
+    // Use a separate batch for neighbor updates
+    rocksdb::WriteBatch neighborBatch;
 
     // Process each node's neighbor updates
-    for (const auto &[node_id, levelMap] : neighborUpdatesByNode) {
-        for (const auto &[level, newNeighbors] : levelMap) {
-            // Read existing neighbors from disk
-            GraphKey neighborKey(node_id, level);
-            std::string existing_neighbors_data;
-            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(),
-                                             &existing_neighbors_data);
+    for (const auto& [node_id, levelMap] : neighborUpdatesByNode) {
+        for (const auto& [level, newNeighbors] : levelMap) {
+        // Read existing graph value from disk
+        GraphKey neighborKey(node_id, level);
+        std::string existing_graph_value;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_graph_value);
 
-            vecsim_stl::vector<idType> updated_neighbors(this->allocator);
-            if (status.ok()) {
-                // Parse existing neighbors
-                const idType *existing_neighbors =
-                    reinterpret_cast<const idType *>(existing_neighbors_data.data());
-                size_t num_existing = existing_neighbors_data.size() / sizeof(idType);
-                updated_neighbors.reserve(num_existing);
-                for (size_t i = 0; i < num_existing; i++) {
-                    updated_neighbors.push_back(existing_neighbors[i]);
+        vecsim_stl::vector<idType> updated_neighbors(this->allocator);
+        if (status.ok()) {
+            // Parse existing neighbors using new format
+            deserializeGraphValue(existing_graph_value, updated_neighbors);
+        }
+
+        // Add new neighbors (avoiding duplicates)
+        for (idType new_neighbor : newNeighbors) {
+            bool found = false;
+            for (size_t i = 0; i < updated_neighbors.size(); i++) {
+                if (updated_neighbors[i] == new_neighbor) {
+                    found = true;
+                    break;
                 }
             }
-
-            // Add new neighbors (avoiding duplicates)
-            for (idType new_neighbor : newNeighbors) {
-                bool found = false;
-                for (size_t i = 0; i < updated_neighbors.size(); i++) {
-                    if (updated_neighbors[i] == new_neighbor) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    updated_neighbors.push_back(new_neighbor);
-                }
+            if (!found) {
+                updated_neighbors.push_back(new_neighbor);
             }
+        }
 
-            // Add to batch instead of writing immediately
-            size_t updated_bytes = updated_neighbors.size() * sizeof(idType);
-            auto updated_neighbors_slice = rocksdb::Slice(
-                reinterpret_cast<const char *>(updated_neighbors.data()), updated_bytes);
-            batch.Put(cf, neighborKey.asSlice(), updated_neighbors_slice);
+        const void* raw_vector_data = getRawVector(node_id);
+
+        // Serialize with new format and add to batch
+        std::string graph_value = serializeGraphValue(raw_vector_data, updated_neighbors);
+        neighborBatch.Put(cf, neighborKey.asSlice(), graph_value);
         }
     }
 
-    // Write all neighbor updates in a single batch
-    rocksdb::Status batch_status = this->db->Write(writeOptions, &batch);
-    if (!batch_status.ok()) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                  "ERROR: Failed to write neighbor updates batch: %s",
-                  batch_status.ToString().c_str());
+    // Write neighbor updates batch
+    rocksdb::Status neighbor_status = this->db->Write(writeOptions, &neighborBatch);
+    if (!neighbor_status.ok()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to write neighbor updates batch: %s",
+                 neighbor_status.ToString().c_str());
     }
 
     // Clear staged updates after successful flush
@@ -1141,9 +917,8 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
     // Read the neighbor's current neighbor list from disk
     // TODO: perhaps cache the neigbhors for stage update
     GraphKey neighborKey(selected_neighbor, level);
-    std::string existing_neighbors_data;
-    rocksdb::Status status =
-        db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
+    std::string graph_value;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &graph_value);
 
     if (!status.ok()) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -1154,21 +929,20 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
         return;
     }
 
-    // Parse existing neighbors
-    const idType *existing_neighbors =
-        reinterpret_cast<const idType *>(existing_neighbors_data.data());
-    size_t num_existing = existing_neighbors_data.size() / sizeof(idType);
+    // Parse existing neighbors using new format
+    vecsim_stl::vector<idType> existing_neighbors(this->allocator);
+    deserializeGraphValue(graph_value, existing_neighbors);
 
     // Collect all candidates: existing neighbors + new node
     candidatesList<DistType> candidates(this->allocator);
-    candidates.reserve(num_existing + 1);
+    candidates.reserve(existing_neighbors.size() + 1);
 
     // Add the new node with its pre-calculated distance
     candidates.emplace_back(distance, new_node_id);
 
     // Add existing neighbors with their distances to the selected neighbor
-    const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
-    for (size_t j = 0; j < num_existing; j++) {
+    const void* selected_neighbor_data = getDataByInternalId(selected_neighbor);
+    for (size_t j = 0; j < existing_neighbors.size(); j++) {
         idType existing_neighbor_id = existing_neighbors[j];
         const void *existing_neighbor_data = getDataByInternalId(existing_neighbor_id);
         DistType existing_distance =
@@ -1216,62 +990,6 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
         stagedNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
     }
 }
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::patchDeltaList(
-    std::unordered_map<idType, std::vector<idType>> &delta_list,
-    vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
-    std::unordered_map<idType, idType> &new_ids_mapping) {
-
-    auto readOptions = rocksdb::ReadOptions();
-    readOptions.fill_cache = false;
-    readOptions.prefix_same_as_start = true;
-
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
-
-    auto it = this->db->NewIterator(readOptions, cf);
-    for (it->Seek(GraphKeyPrefix); it->Valid(); it->Next()) {
-        auto key = it->key();
-        auto graphKey = reinterpret_cast<const GraphKey *>(key.data());
-
-        auto it2 = delta_list.find(graphKey->node().first);
-        if (it2 == delta_list.end()) {
-            // No need to update this node, move to the next one
-            continue;
-        }
-        auto neighborsSlice = it->value();
-        auto neighborsData = reinterpret_cast<const idType *>(neighborsSlice.data());
-        size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
-        candidatesList<DistType> new_neighbors(this->allocator);
-        new_neighbors.reserve(num_neighbors + it2->second.size());
-        auto vector = getDataByInternalId(graphKey->id);
-        for (const auto &neighbor : it2->second) {
-            DistType dist = this->calcDistance(getDataByInternalId(neighbor), vector);
-            new_neighbors.emplace_back(dist, neighbor);
-        }
-        for (size_t i = 0; i < num_neighbors; ++i) {
-            DistType dist = this->calcDistance(getDataByInternalId(neighborsData[i]), vector);
-            new_neighbors.emplace_back(dist, neighborsData[i]);
-        }
-        getNeighborsByHeuristic2(new_neighbors, graphKey->level == 0 ? M0 : M);
-
-        // Extract the ids from the new_neighbors list
-        std::vector<idType> neighbors(new_neighbors.size());
-        for (size_t i = 0; i < new_neighbors.size(); ++i) {
-            neighbors[i] = new_neighbors[i].second;
-        }
-        // Create a new slice for the new neighbors
-        size_t bytes = neighbors.size() * sizeof(idType);
-        auto neighbors_slice =
-            rocksdb::Slice(reinterpret_cast<const char *>(neighbors.data()), bytes);
-        this->db->Put(writeOptions, cf, it->key(), neighbors_slice);
-    }
-
-    delete it;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename DataType, typename DistType>
 idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data,
@@ -1345,48 +1063,136 @@ candidatesLabelsMaxHeap<DistType> *HNSWDiskIndex<DataType, DistType>::searchBott
     return top_candidates;
 }
 
+/********************************** Helper Methods **********************************/
+
+// Serialize GraphKey value: [raw_vector_data][neighbor_count][neighbor_ids...]
+template <typename DataType, typename DistType>
+std::string HNSWDiskIndex<DataType, DistType>::serializeGraphValue(
+    const void* vector_data, const vecsim_stl::vector<idType>& neighbors) const {
+
+    size_t neighbor_count = neighbors.size();
+    size_t total_size = this->inputBlobSize + sizeof(size_t) + neighbor_count * sizeof(idType);
+
+    std::string result;
+    result.resize(total_size);
+
+    char* ptr = result.data();
+
+    // Copy raw vector data (original, unprocessed)
+    std::memcpy(ptr, vector_data, this->inputBlobSize);
+    ptr += this->inputBlobSize;
+
+    // Copy neighbor count
+    std::memcpy(ptr, &neighbor_count, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Copy neighbor IDs
+    if (neighbor_count > 0) {
+        std::memcpy(ptr, neighbors.data(), neighbor_count * sizeof(idType));
+    }
+
+    return result;
+}
+
+
+
+// Deserialize GraphKey value to extract neighbors
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::deserializeGraphValue(
+    const std::string& value, vecsim_stl::vector<idType>& neighbors) const {
+
+    neighbors.clear();
+
+    if (value.size() < this->inputBlobSize + sizeof(size_t)) {
+        // Invalid value format
+        return;
+    }
+
+    const char* ptr = value.data();
+
+    // Skip raw vector data
+    ptr += this->inputBlobSize;
+
+    // Read neighbor count
+    size_t neighbor_count;
+    std::memcpy(&neighbor_count, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Read neighbor IDs
+    if (neighbor_count > 0 && value.size() >= this->inputBlobSize + sizeof(size_t) + neighbor_count * sizeof(idType)) {
+        neighbors.resize(neighbor_count);
+        std::memcpy(neighbors.data(), ptr, neighbor_count * sizeof(idType));
+    }
+}
+
+// Extract raw vector data pointer from GraphKey value
+template <typename DataType, typename DistType>
+const void* HNSWDiskIndex<DataType, DistType>::getVectorFromGraphValue(const std::string& value) const {
+    if (value.size() < this->inputBlobSize) {
+        return nullptr;
+    }
+    return value.data();
+}
+
 /********************************** Stub Implementations **********************************/
 
 template <typename DataType, typename DistType>
 const void *HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) const {
     assert(id < curElementCount);
-    // For now, we'll use the memory storage from the base class
-    // In a production implementation, you might want to implement a proper cache
-    // or use a different strategy for handling disk-based vector retrieval
-    const void *result = this->vectors->getElement(id);
-    return result;
+
+    if (id < this->vectors->size()) {
+        const void* result = this->vectors->getElement(id);
+        if (result != nullptr) {
+            return result;
+        }
+    }
+
+    this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+             "WARNING: Vector data not found for id %u", id);
+    return nullptr;
 }
 
 template <typename DataType, typename DistType>
-std::vector<char> HNSWDiskIndex<DataType, DistType>::getRawVector(idType id) const {
-    std::vector<char> result;
+const char* HNSWDiskIndex<DataType, DistType>::getRawVector(idType id) const {
 
     if (id >= curElementCount) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                  "WARNING: getRawVector called with invalid id %u (current count: %zu)", id,
-                  curElementCount);
-        return result;
+                 "WARNING: getRawVector called with invalid id %u (current count: %zu)",
+                 id, curElementCount);
+        return nullptr;
     }
 
-    // Try to retrieve from disk
-    RawVectorKey rawVectorKey(id);
-    std::string vectorData;
-    rocksdb::Status status =
-        db->Get(rocksdb::ReadOptions(), cf, rawVectorKey.asSlice(), &vectorData);
+    // First check RAM (for vectors not yet flushed)
+    auto it = rawVectorsInRAM.find(id);
+    if (it != rawVectorsInRAM.end()) {
+        const char* data_ptr = it->second.data();
+        return data_ptr;
+    }
+
+    // If not in RAM, retrieve from disk
+    GraphKey graphKey(id, 0);
+    std::string level0_graph_value;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
 
     if (status.ok()) {
-        // Copy the data from string to vector
-        result.assign(vectorData.begin(), vectorData.end());
+        // Extract vector data
+        const void* vector_data = getVectorFromGraphValue(level0_graph_value);
+        if (vector_data != nullptr) {
+            // Cache the raw vector data
+            const char* data_ptr = reinterpret_cast<const char*>(vector_data);
+            rawVectorsDiskCache[id] = std::string(data_ptr, this->inputBlobSize);
+            return rawVectorsDiskCache[id].data();
+        }
     } else if (status.IsNotFound()) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                  "WARNING: Raw vector not found on disk for id %u", id);
+                 "WARNING: Raw vector not found in RAM or on disk for id %u", id);
     } else {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "WARNING: Failed to retrieve raw vector for id %u: %s", id,
                   status.ToString().c_str());
     }
 
-    return result;
+    return nullptr;
 }
 
 template <typename DataType, typename DistType>
@@ -1422,7 +1228,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
         candidate_set.pop();
 
         // Get neighbors of current node at this level
-        std::vector<idType> neighbors;
+        vecsim_stl::vector<idType> neighbors(this->allocator);
         getNeighbors(curr_id, level, neighbors);
 
         for (idType neighbor_id : neighbors) {
@@ -1485,21 +1291,20 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
 
         // Read neighbors from RocksDB for the current node at this level
         GraphKey graphKey(bestCand, level);
-        std::string neighbors_data;
-        rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+        std::string graph_value;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
         if (!status.ok()) {
             // No neighbors found for this node at this level, stop searching
             break;
         }
 
-        // Parse the neighbors data
-        const idType *neighbors = reinterpret_cast<const idType *>(neighbors_data.data());
-        size_t num_neighbors = neighbors_data.size() / sizeof(idType);
+        // Parse the neighbors using new format
+        vecsim_stl::vector<idType> neighbors(this->allocator);
+        deserializeGraphValue(graph_value, neighbors);
 
         // Check each neighbor to find a better candidate
-        for (size_t i = 0; i < num_neighbors; i++) {
+        for (size_t i = 0; i < neighbors.size(); i++) {
             idType candidate = neighbors[i];
 
             // Skip invalid candidates
@@ -1588,7 +1393,7 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
     }
 
     // Add neighbors to candidate set for further exploration
-    std::vector<idType> neighbors;
+    vecsim_stl::vector<idType> neighbors(this->allocator);
     getNeighbors(candidate_id, level, neighbors);
 
     if (!neighbors.empty()) {
@@ -1669,8 +1474,7 @@ size_t HNSWDiskIndex<DataType, DistType>::indexLabelCount() const {
 /********************************** Helper Methods **********************************/
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level,
-                                                     std::vector<idType> &result) const {
+void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const {
     // Clear the result vector first
     result.clear();
 
@@ -1688,18 +1492,12 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     // If not found in staged updates, check disk
     GraphKey graphKey(nodeId, level);
 
-    // Use a temporary buffer to avoid std::string corruption
-    std::string neighbors_data;
-    rocksdb::Status status =
-        db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+    std::string graph_value;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
     if (status.ok()) {
-        size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-        result.reserve(num_neighbors);
-
-        // Direct memory assignment - avoid memcpy by casting the data pointer
-        const idType *data_ptr = reinterpret_cast<const idType *>(neighbors_data.data());
-        result.assign(data_ptr, data_ptr + num_neighbors);
+        // Parse using new format: [vector_data][neighbor_count][neighbor_ids...]
+        deserializeGraphValue(graph_value, result);
     }
 }
 
@@ -1768,6 +1566,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
     // Clear the pending vector IDs
     pendingVectorIds.clear();
+    rawVectorsInRAM.clear();
     pendingMetadata.clear();
     pendingVectorCount = 0;
 }
@@ -1821,16 +1620,15 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintNodeNeighbors(idType node_id) 
     // Check each level
     for (size_t level = 0; level <= idToMetaData[node_id].topLevel; ++level) {
         GraphKey graphKey(node_id, level);
-        std::string neighbors_data;
-        rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+        std::string graph_value;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
         if (status.ok()) {
-            const idType *neighbors = reinterpret_cast<const idType *>(neighbors_data.data());
-            size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Level %zu (%zu neighbors): ", level,
-                      num_neighbors);
-            for (size_t i = 0; i < num_neighbors; i++) {
+            // Parse using new format
+            vecsim_stl::vector<idType> neighbors(this->allocator);
+            deserializeGraphValue(graph_value, neighbors);
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Level %zu (%zu neighbors): ", level, neighbors.size());
+            for (size_t i = 0; i < neighbors.size(); i++) {
                 this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "%u ", neighbors[i]);
             }
         } else {
@@ -1864,17 +1662,18 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintAllGraphKeys() const {
             this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "  Key %zu: invalid format (size=%zu)",
                       key_count, key.size());
         }
-
-        // Get neighbors count
-        auto neighborsSlice = it->value();
-        size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
+        
+        // Parse graph value using new format
+        std::string graph_value = it->value().ToString();
+        vecsim_stl::vector<idType> neighbors(this->allocator);
+        deserializeGraphValue(graph_value, neighbors);
+        size_t num_neighbors = neighbors.size();
         total_neighbors += num_neighbors;
 
         this->log(VecSimCommonStrings::LOG_DEBUG_STRING, " (%zu neighbors)", num_neighbors);
 
         // Print first few neighbors
         if (num_neighbors > 0) {
-            const idType *neighbors = reinterpret_cast<const idType *>(neighborsSlice.data());
             this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "    Neighbors: ");
             for (size_t i = 0; i < std::min(num_neighbors, size_t(5)); i++) {
                 this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "%u ", neighbors[i]);
@@ -1905,9 +1704,11 @@ size_t HNSWDiskIndex<DataType, DistType>::debugCountGraphEdges() const {
     size_t total_edges = 0;
 
     for (it->Seek(GraphKeyPrefix); it->Valid(); it->Next()) {
-        auto neighborsSlice = it->value();
-        size_t num_neighbors = neighborsSlice.size() / sizeof(idType);
-        total_edges += num_neighbors;
+        // Parse graph value using new format
+        std::string graph_value = it->value().ToString();
+        vecsim_stl::vector<idType> neighbors(this->allocator);
+        deserializeGraphValue(graph_value, neighbors);
+        total_edges += neighbors.size();
     }
 
     delete it;
@@ -1954,13 +1755,17 @@ void HNSWDiskIndex<DataType, DistType>::debugValidateGraphConnectivity() const {
         bool has_neighbors = false;
         for (size_t level = 0; level <= idToMetaData[i].topLevel; ++level) {
             GraphKey graphKey(i, level);
-            std::string neighbors_data;
-            rocksdb::Status status =
-                db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+            std::string graph_value;
+            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
-            if (status.ok() && neighbors_data.size() > 0) {
-                has_neighbors = true;
-                break;
+            if (status.ok()) {
+                // Parse using new format
+                vecsim_stl::vector<idType> neighbors(this->allocator);
+                deserializeGraphValue(graph_value, neighbors);
+                if (neighbors.size() > 0) {
+                    has_neighbors = true;
+                    break;
+                }
             }
         }
 
@@ -2046,7 +1851,7 @@ HNSWDiskIndex<DataType, DistType>::hierarchicalSearch(const void *data_point, id
     candidate_set.emplace(-curr_dist, curr_element);
 
     // Add neighbors of the current element at level 0 to get started
-    std::vector<idType> start_neighbors;
+    vecsim_stl::vector<idType> start_neighbors(this->allocator);
     getNeighbors(curr_element, 0, start_neighbors);
 
     if (!start_neighbors.empty()) {
@@ -2176,10 +1981,15 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id,
 
 template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
+    
+    return this->allocator->getAllocationSize();
+}
+
+template <typename DataType, typename DistType>
+uint64_t HNSWDiskIndex<DataType, DistType>::getDBMemorySize() const {
     uint64_t db_mem_size = 0;
     this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &db_mem_size);
-    // std::cout << "Disk mem size: " << db_mem_size << std::endl;
-    return this->allocator->getAllocationSize() + db_mem_size;
+    return db_mem_size;
 }
 
 template <typename DataType, typename DistType>
@@ -2199,7 +2009,8 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
     VecSimIndexStatsInfo info = {};
     info.memory = this->getAllocationSize();
-    info.disk = this->getDiskSize();
+    info.db_memory = this->getDBMemorySize();
+    info.db_disk = this->getDiskSize();
     info.numberOfMarkedDeleted = 0; // TODO: Implement if needed
     return info;
 }

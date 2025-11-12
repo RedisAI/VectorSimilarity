@@ -725,17 +725,13 @@ TEST_F(HNSWDiskIndexTest, RawVectorStorageAndRetrieval) {
 
     // Verify that vectors were stored on disk
     for (size_t i = 0; i < num_vectors; ++i) {
-        auto retrieved_vector = index.getRawVector(i);
+        const char* retrieved_vector = index.getRawVector(i);
 
         // Check that we got a vector back
-        EXPECT_FALSE(retrieved_vector.empty()) << "Retrieved vector " << i << " is empty";
-
-        // Check that the size matches
-        EXPECT_EQ(retrieved_vector.size(), dim * sizeof(float))
-            << "Retrieved vector " << i << " has incorrect size";
+        EXPECT_NE(retrieved_vector, nullptr) << "Retrieved vector " << i << " is nullptr";
 
         // Check that the data matches (approximately, due to preprocessing)
-        const float *retrieved_data = reinterpret_cast<const float *>(retrieved_vector.data());
+        const float* retrieved_data = reinterpret_cast<const float*>(retrieved_vector);
         for (size_t j = 0; j < dim; ++j) {
             EXPECT_FLOAT_EQ(retrieved_data[j], test_vectors[i][j])
                 << "Vector " << i << " element " << j << " mismatch";
@@ -779,10 +775,10 @@ TEST_F(HNSWDiskIndexTest, RawVectorRetrievalInvalidId) {
                                       default_cf);
 
     // Try to retrieve a vector with an invalid ID (index is empty)
-    auto retrieved_vector = index.getRawVector(0);
+    const char* retrieved_vector = index.getRawVector(0);
 
-    // Should return an empty vector
-    EXPECT_TRUE(retrieved_vector.empty()) << "Retrieved vector for invalid ID should be empty";
+    // Should return nullptr
+    EXPECT_EQ(retrieved_vector, nullptr) << "Retrieved vector for invalid ID should be nullptr";
 
     std::cout << "Invalid ID retrieval test passed!" << std::endl;
 }
@@ -830,21 +826,26 @@ TEST_F(HNSWDiskIndexTest, RawVectorMultipleRetrievals) {
 
     // Retrieve the vector multiple times
     const size_t num_retrievals = 5;
-    std::vector<std::vector<char>> retrieved_vectors;
+    std::vector<const char*> retrieved_vectors;
 
     for (size_t i = 0; i < num_retrievals; ++i) {
-        auto retrieved = index.getRawVector(0);
+        const char* retrieved = index.getRawVector(0);
+        EXPECT_NE(retrieved, nullptr) << "Retrieval " << i << " returned nullptr";
         retrieved_vectors.push_back(retrieved);
     }
 
-    // Verify all retrievals are identical
+    // Verify all retrievals point to the same data
     for (size_t i = 1; i < num_retrievals; ++i) {
-        EXPECT_EQ(retrieved_vectors[0], retrieved_vectors[i])
-            << "Retrieval " << i << " differs from first retrieval";
+        const float* data0 = reinterpret_cast<const float*>(retrieved_vectors[0]);
+        const float* datai = reinterpret_cast<const float*>(retrieved_vectors[i]);
+        for (size_t j = 0; j < dim; ++j) {
+            EXPECT_FLOAT_EQ(data0[j], datai[j])
+                << "Retrieval " << i << " element " << j << " differs from first retrieval";
+        }
     }
 
     // Verify the data matches the original
-    const float *retrieved_data = reinterpret_cast<const float *>(retrieved_vectors[0].data());
+    const float* retrieved_data = reinterpret_cast<const float*>(retrieved_vectors[0]);
     for (size_t j = 0; j < dim; ++j) {
         EXPECT_FLOAT_EQ(retrieved_data[j], test_vector[j])
             << "Retrieved vector element " << j << " mismatch";
