@@ -961,8 +961,8 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(idType element_id,
         max_common_level = global_max_level;
     }
 
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
+    // auto writeOptions = rocksdb::WriteOptions();
+    // writeOptions.disableWAL = true;
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
@@ -1750,7 +1750,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
         // Get metadata for this vector
         DiskElementMetaData &metadata = idToMetaData[vectorId];
-        labelType label = metadata.label;
+        // labelType label = metadata.label;
         size_t elementMaxLevel = metadata.topLevel;
 
         // Insert into graph if not the first element
