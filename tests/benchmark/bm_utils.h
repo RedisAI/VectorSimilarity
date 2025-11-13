@@ -29,12 +29,12 @@ CreateTieredSVSParams(VecSimParams &svs_params, tieredIndexMock &mock_thread_poo
 
 template <typename data_t>
 static void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
-                             size_t expected_capcity) {
+                             size_t expected_capcity, std::string msg = "") {
     ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity)
-        << "thread pool capacity mismatch";
+        << msg << ": thread pool capacity mismatch";
     size_t num_reserved_threads = tiered_index->GetSVSIndex()->getNumThreads();
     if (num_reserved_threads < expected_num_threads) {
-        std::cout << "WARNING: last reserved threads (" << num_reserved_threads
+        std::cout << msg << ": WARNING: last reserved threads (" << num_reserved_threads
                   << ") is less than expected (" << expected_num_threads << ")." << std::endl;
     }
 }

@@ -43,6 +43,7 @@ on:
           - bm-updated-fp32-single
           - bm-svs-train-fp32
           - bm-svs-train-fp16
+          - bm-basics-svs-fp32-single
           - bm-spaces
         description: 'Benchmarks set to run'
         default: benchmarks-all
