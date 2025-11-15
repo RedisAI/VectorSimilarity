@@ -59,8 +59,10 @@ CreateQuantizedIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSi
     // Use INT8 distance function for quantized vectors
     spaces::dist_func_t<DistType> distFunc =
         spaces::GetDistFunc<int8_t, DistType>(distance_metric, dim, &alignment);
+    spaces::dist_func_t<DistType> rawDistFunc =
+        spaces::GetDistFunc<DataType, DistType>(distance_metric, dim, &alignment);
 
-    auto indexCalculator = new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
+    auto indexCalculator = new (allocator) DistanceCalculatorQuantized<DistType>(allocator, distFunc, rawDistFunc);
 
     // Create preprocessor container with space for 2 preprocessors (normalization + quantization)
     const size_t n_preprocessors = (metric == VecSimMetric_Cosine && !is_normalized) ? 2 : 1;
