@@ -1439,11 +1439,11 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
             }
         }
     }
-    auto it = rawVectorsCache.find(nodeId);
-    if (it != rawVectorsCache.end()) {
+    auto it = rawVectorsInRAM.find(nodeId);
+    if (it != rawVectorsInRAM.end()) {
         *vector_data = it->second.data();
     }
-    if (!result.empty() && it != rawVectorsCache.end()) {
+    if (!result.empty() && it != rawVectorsInRAM.end()) {
         return;
     }
     // If not found in staged updates, check disk
