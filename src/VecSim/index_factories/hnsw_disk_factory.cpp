@@ -16,6 +16,8 @@
 #include <fstream>
 #include <filesystem>
 #include <unistd.h>
+#include <ctime>
+#include <cstdlib>
 
 namespace HNSWDiskFactory {
 
@@ -31,24 +33,39 @@ private:
 
 public:
     // Constructor for loading from checkpoint (with temp directory for writes)
+    // Copies the entire checkpoint to a temp location to ensure the original is never modified
     ManagedRocksDB(const std::string &checkpoint_dir, const std::string &temp_path)
         : temp_dir(temp_path), cleanup_temp_dir(true) {
-        // Create temp directory for WAL writes
+
+        // Create temp directory
         std::filesystem::create_directories(temp_dir);
 
-        // Open RocksDB from checkpoint with writes redirected to temp location
+        // Copy the entire checkpoint to temp location to preserve the original
+        std::string temp_checkpoint = temp_dir + "/checkpoint_copy";
+        try {
+            std::filesystem::copy(checkpoint_dir, temp_checkpoint,
+                                std::filesystem::copy_options::recursive);
+        } catch (const std::filesystem::filesystem_error &e) {
+            // Clean up temp dir if copy failed
+            std::filesystem::remove_all(temp_dir);
+            throw std::runtime_error("Failed to copy checkpoint to temp location: " +
+                                   std::string(e.what()));
+        }
+
+        // Open RocksDB from the temp checkpoint copy
+        // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
         rocksdb::Options options;
-        options.create_if_missing = false;  // Checkpoint should already exist
+        options.create_if_missing = false;  // Checkpoint copy should exist
         options.error_if_exists = false;
         options.statistics = rocksdb::CreateDBStatistics();
-        options.wal_dir = temp_dir;  // Redirect WAL to preserve checkpoint
 
         rocksdb::DB *db_ptr = nullptr;
-        rocksdb::Status status = rocksdb::DB::Open(options, checkpoint_dir, &db_ptr);
+        rocksdb::Status status = rocksdb::DB::Open(options, temp_checkpoint, &db_ptr);
         if (!status.ok()) {
             // Clean up temp dir if DB open failed
             std::filesystem::remove_all(temp_dir);
-            throw std::runtime_error("Failed to open RocksDB from checkpoint: " + status.ToString());
+            throw std::runtime_error("Failed to open RocksDB from temp checkpoint: " +
+                                   status.ToString());
         }
 
         db.reset(db_ptr);
@@ -86,6 +103,9 @@ public:
 };
 
 // Static managed RocksDB instance for benchmark convenience wrapper
+// The destructor will automatically clean up the temp directory when:
+// 1. A new benchmark run replaces this with a new instance
+// 2. The program exits (static destructor is called)
 static std::unique_ptr<ManagedRocksDB> managed_rocksdb;
 
 // Helper function to create AbstractIndexInitParams from VecSimParams
@@ -194,14 +214,18 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
     }
 
     // Verify that the DB was opened from the correct checkpoint directory
-    // by checking if the DB name matches the checkpoint directory
+    // Accept either the original checkpoint directory OR a temp copy (ends with /checkpoint_copy)
     std::string db_name = db->GetName();
-    if (db_name != checkpoint_dir) {
+    bool is_valid_db = (db_name == checkpoint_dir) ||
+                       (db_name.size() > 16 && db_name.substr(db_name.size() - 16) == "/checkpoint_copy");
+
+    if (!is_valid_db) {
         throw std::runtime_error(
-            "RocksDB instance was not opened from the checkpoint directory.\n"
+            "RocksDB instance was not opened from a valid checkpoint location.\n"
             "Expected DB to be opened from: " + checkpoint_dir + "\n"
+            "Or from a temp copy ending with: /checkpoint_copy\n"
             "But DB was opened from: " + db_name + "\n\n"
-            "Please open RocksDB from the checkpoint directory before loading the index.");
+            "Please open RocksDB from the checkpoint directory (or temp copy) before loading the index.");
     }
 
     // Construct the index metadata file path (folder_path/index.hnsw_disk_v1)
@@ -263,10 +287,18 @@ VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
             "\nMake sure the index was saved with the checkpoint-based format.");
     }
 
-    // Create a temporary directory for writes (to preserve the checkpoint)
-    std::string temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid()) + "_writes";
+    // Create a temporary directory for the checkpoint copy
+    // Using PID and timestamp to ensure uniqueness across multiple benchmark runs
+    std::string temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid()) +
+                          "_" + std::to_string(std::time(nullptr));
 
-    // Create RAII-managed RocksDB instance (will auto-cleanup temp dir on destruction)
+    // Create RAII-managed RocksDB instance
+    // This will:
+    // 1. Copy the entire checkpoint to temp_dir/checkpoint_copy
+    // 2. Open RocksDB from the temp copy (all writes go to temp location)
+    // 3. Auto-cleanup temp_dir on destruction via RAII:
+    //    - When a new benchmark run replaces managed_rocksdb
+    //    - When the program exits (static destructor)
     managed_rocksdb = std::make_unique<ManagedRocksDB>(checkpoint_dir, temp_dir);
 
     // Call the main NewIndex function with the managed database

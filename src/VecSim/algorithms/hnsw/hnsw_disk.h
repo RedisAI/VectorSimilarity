@@ -1229,6 +1229,9 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
 
         // Get neighbors of current node at this level
         vecsim_stl::vector<idType> neighbors(this->allocator);
+        // if (curr_id == 7178) {
+        //     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Getting neighbors for 7178");
+        // }
         getNeighbors(curr_id, level, neighbors);
 
         for (idType neighbor_id : neighbors) {
@@ -1497,6 +1500,9 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
     if (status.ok()) {
         // Parse using new format: [vector_data][neighbor_count][neighbor_ids...]
+        // if (nodeId == 7178) {
+        //     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, graph_value.c_str());
+        // }
         deserializeGraphValue(graph_value, result);
     }
 }

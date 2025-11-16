@@ -75,6 +75,10 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     // Restore graph and vectors from file
     this->restoreGraph(input, version);
     this->restoreVectors(version);
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+             "Index deserialized from file and RocksDB checkpoint");
+    this->checkIntegrity();
+            
 }
 
 /**
@@ -98,6 +102,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreVectors(EncodingVersion version) {
     // Iterate through all elements and restore their processed vectors
+    auto start_time = std::chrono::steady_clock::now();
     for (idType id = 0; id < this->curElementCount; id++) {
         // Retrieve the raw vector from RocksDB (stored in level-0 graph value)
         GraphKey graphKey(id, 0);
@@ -113,18 +118,19 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(EncodingVersion version) 
         // Extract raw vector data from the graph value
         // Format: [raw_vector_data][neighbor_count][neighbor_ids...]
         const void* raw_vector_data = this->getVectorFromGraphValue(level0_graph_value);
+        // Print raw vector data
         if (raw_vector_data == nullptr) {
             throw std::runtime_error("Invalid graph value format for id " + std::to_string(id) +
                                    " during deserialization");
         }
 
-        // Copy the raw vector data to ensure it remains valid during preprocessing
-        // This is necessary because level0_graph_value will be destroyed at the end of this iteration
-        std::vector<char> raw_vector_copy(this->inputBlobSize);
-        std::memcpy(raw_vector_copy.data(), raw_vector_data, this->inputBlobSize);
+        const char* raw_data = reinterpret_cast<const char*>(raw_vector_data);
+
+        // Preprocess the vector
+        auto processed_blob = this->preprocess(raw_data);
 
         // Preprocess the copied raw vector to get the storage blob
-        auto processed_blob = this->preprocessForStorage(raw_vector_copy.data());
+
 
         // Add the processed vector to the vectors container
         // The container ID should match the element ID
@@ -133,11 +139,13 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(EncodingVersion version) 
             throw std::runtime_error("Container ID mismatch during deserialization: expected " +
                                    std::to_string(id) + ", got " + std::to_string(containerId));
         }
-        this->vectors->addElement(processed_blob.get(), containerId);
+        this->vectors->addElement(processed_blob.getStorageBlob(), containerId);
     }
-
+    auto end_time = std::chrono::steady_clock::now();
+    double elapsed_seconds = std::chrono::duration<double>(end_time - start_time).count();
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-             "Restored %zu processed vectors from RocksDB checkpoint", this->curElementCount);
+             "Restored %zu processed vectors from RocksDB checkpoint in %f seconds",
+             this->curElementCount, elapsed_seconds);
 }
 
 /**
@@ -176,7 +184,6 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     // Flush any pending updates before saving to ensure consistent snapshot
     this->flushStagedUpdates();
     this->flushBatch();
-
     // Verify that all pending state has been flushed
     // These assertions ensure data integrity during serialization
     if (!pendingVectorIds.empty()) {
@@ -190,9 +197,6 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     }
     if (!rawVectorsInRAM.empty()) {
         throw std::runtime_error("Serialization error: rawVectorsInRAM not empty after flush");
-    }
-    if (this->vectors->size() != 0) {
-        throw std::runtime_error("Serialization error: vectors container not empty after flush");
     }
     if (pendingVectorCount != 0) {
         throw std::runtime_error("Serialization error: pendingVectorCount not zero after flush");
@@ -322,6 +326,7 @@ void HNSWDiskIndex<DataType, DistType>::fieldsValidation() const {
 
 template <typename DataType, typename DistType>
 HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
+
     HNSWIndexMetaData res = {.valid_state = false,
                              .memory_usage = -1,
                              .double_connections = HNSW_INVALID_META_DATA,
@@ -342,6 +347,12 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
     // Build in-degree map: node_id -> level -> in_degree_count
     std::unordered_map<idType, std::unordered_map<size_t, size_t>> inbound_connections_num;
 
+    // Track which nodes have at least one neighbor (for isolated node detection)
+    std::unordered_set<idType> nodes_with_neighbors;
+
+    // Store all edges for efficient bidirectional checking: (node_id, level) -> set of neighbors
+    std::unordered_map<idType, std::unordered_map<size_t, std::unordered_set<idType>>> all_edges;
+
     // First pass: count deleted and max level
     for (idType id = 0; id < this->curElementCount; id++) {
         if (this->isMarkedDeleted(id)) {
@@ -354,10 +365,20 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
 
     // Validate deleted count
     if (num_deleted != this->numMarkedDeleted) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "checkIntegrity failed: deleted count mismatch (counted: %zu, expected: %zu)",
+                  num_deleted, this->numMarkedDeleted);
         return res;
     }
 
-    // Second pass: validate graph connections
+    // Validate entry point
+    if (this->curElementCount > 0 && this->entrypointNode == INVALID_ID) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "checkIntegrity failed: no entry point set for non-empty index");
+        return res;
+    }
+
+    // Second pass: validate graph connections and collect all edges
     auto readOptions = rocksdb::ReadOptions();
     readOptions.fill_cache = false;
     readOptions.prefix_same_as_start = true;
@@ -370,23 +391,35 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
         const char *keyData = it->key().data() + 3; // Skip "GK\0" prefix
         const GraphKey *gk = reinterpret_cast<const GraphKey *>(keyData);
 
-        auto neighborsData = it->value();
-        size_t numNeighbors = neighborsData.size() / sizeof(idType);
-        const idType *neighbors = reinterpret_cast<const idType *>(neighborsData.data());
+        // Deserialize neighbors using the proper format: [raw_vector_data][neighbor_count][neighbor_ids...]
+        std::string graph_value = it->value().ToString();
+        vecsim_stl::vector<idType> neighbors(this->allocator);
+        this->deserializeGraphValue(graph_value, neighbors);
+
+        // Track that this node has neighbors (if any)
+        if (neighbors.size() > 0) {
+            nodes_with_neighbors.insert(gk->id);
+        }
 
         std::unordered_set<idType> uniqueNeighbors;
 
-        for (size_t i = 0; i < numNeighbors; i++) {
+        for (size_t i = 0; i < neighbors.size(); i++) {
             idType neighborId = neighbors[i];
 
             // Check for invalid neighbor
             if (neighborId >= this->curElementCount || neighborId == gk->id) {
+                this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                          "checkIntegrity failed: invalid neighbor %u for node %u at level %zu",
+                          neighborId, gk->id, gk->level);
                 delete it;
                 return res; // Invalid state
             }
 
             // Check for duplicate neighbors
             if (!uniqueNeighbors.insert(neighborId).second) {
+                this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                          "checkIntegrity failed: duplicate neighbor %u for node %u at level %zu",
+                          neighborId, gk->id, gk->level);
                 delete it;
                 return res; // Duplicate neighbor found
             }
@@ -399,29 +432,54 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
             // Track in-degree
             inbound_connections_num[neighborId][gk->level]++;
             connections_checked++;
+        }
 
-            // Check if connection is bidirectional
-            GraphKey reverseKey(neighborId, gk->level);
-            std::string reverseNeighborsData;
-            auto status = this->db->Get(readOptions, this->cf, reverseKey.asSlice(),
-                                       &reverseNeighborsData);
+        // Store all edges for this node at this level
+        all_edges[gk->id][gk->level] = std::move(uniqueNeighbors);
+    }
 
-            if (status.ok()) {
-                size_t reverseNumNeighbors = reverseNeighborsData.size() / sizeof(idType);
-                const idType *reverseNeighbors =
-                    reinterpret_cast<const idType *>(reverseNeighborsData.data());
+    delete it;
 
-                for (size_t j = 0; j < reverseNumNeighbors; j++) {
-                    if (reverseNeighbors[j] == gk->id) {
-                        double_connections++;
-                        break;
+    // Third pass: check bidirectional connections using collected edges
+    for (const auto &[node_id, levelMap] : all_edges) {
+        for (const auto &[level, neighbors] : levelMap) {
+            for (idType neighborId : neighbors) {
+                // Check if reverse edge exists
+                auto neighbor_it = all_edges.find(neighborId);
+                if (neighbor_it != all_edges.end()) {
+                    auto level_it = neighbor_it->second.find(level);
+                    if (level_it != neighbor_it->second.end()) {
+                        if (level_it->second.count(node_id) > 0) {
+                            double_connections++;
+                        }
                     }
                 }
             }
         }
     }
 
-    delete it;
+    // Check for isolated nodes (non-deleted nodes with no neighbors at any level)
+    size_t isolated_count = 0;
+    for (idType id = 0; id < this->curElementCount; id++) {
+        // Skip deleted nodes
+        if (this->isMarkedDeleted(id)) {
+            continue;
+        }
+
+        // Check if this node has any neighbors
+        if (nodes_with_neighbors.find(id) == nodes_with_neighbors.end()) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                      "checkIntegrity warning: isolated node %u (label %u) has no neighbors at any level",
+                      id, this->idToMetaData[id].label);
+            isolated_count++;
+        }
+    }
+
+    // Log isolated nodes warning if found (but don't fail validation)
+    if (isolated_count > 0) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "checkIntegrity found %zu isolated node(s)", isolated_count);
+    }
 
     // Calculate min/max in-degree
     size_t min_in_degree = SIZE_MAX;

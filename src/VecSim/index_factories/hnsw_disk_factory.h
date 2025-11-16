@@ -71,16 +71,28 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
 /**
  * Convenience wrapper to load a disk-based HNSW index with automatic database management.
  * Opens the checkpoint database and loads the index from the specified folder.
- * Writes are redirected to a temporary location to preserve the original checkpoint.
+ * The original checkpoint is NEVER modified - all operations use a temporary copy.
  *
  * @param folder_path Path to the folder containing the index
  * @param is_normalized Whether vectors are already normalized (for Cosine metric optimization)
  * @return VecSimIndex* Pointer to the loaded HNSWDiskIndex, or throws on error
  *
- * @note This function manages the RocksDB database internally. The database will be
- *       stored in static variables and cleaned up when the benchmark exits.
- *       Any writes to the database will go to a temporary location, preserving the
- *       original checkpoint for subsequent benchmark runs.
+ * @note CHECKPOINT PRESERVATION:
+ *       - The entire checkpoint is copied to /tmp/hnsw_disk_benchmark_<pid>_<timestamp>/checkpoint_copy
+ *       - All RocksDB operations (reads and writes) use the temporary copy
+ *       - The original checkpoint remains completely unchanged across all benchmark runs
+ *       - This ensures consistent benchmark results when running the same benchmark multiple times
+ *
+ * @note CLEANUP GUARANTEES:
+ *       - Temporary directory is automatically cleaned up via RAII (ManagedRocksDB destructor)
+ *       - Each benchmark run creates a new temp directory (using PID + timestamp for uniqueness)
+ *       - Temp directories are removed when:
+ *         1. A new benchmark run starts (replaces the static managed_rocksdb)
+ *         2. The program exits (static destructor is called automatically)
+ *
+ * @note THREAD SAFETY:
+ *       - This function is NOT thread-safe due to static variable usage
+ *       - Intended for single-threaded benchmark scenarios only
  */
 VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized = false);
 

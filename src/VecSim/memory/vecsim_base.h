@@ -13,9 +13,9 @@
 struct VecsimBaseObject {
 
 protected:
-    std::shared_ptr<VecSimAllocator> allocator;
 
 public:
+std::shared_ptr<VecSimAllocator> allocator;
     VecsimBaseObject(std::shared_ptr<VecSimAllocator> allocator) : allocator(allocator) {}
 
     static void *operator new(size_t size, std::shared_ptr<VecSimAllocator> allocator);
