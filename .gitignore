@@ -12,6 +12,7 @@
 /tests/benchmark/data/*
 !/tests/benchmark/data/hnsw_indices
 !/tests/benchmark/data/*.py
+!/tests/benchmark/data/scripts
 
 # Prerequisites
 *.d
