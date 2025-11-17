@@ -238,7 +238,7 @@ public:
     
     // Helper methods
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
-    void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, const void** vector_data) const;
+    void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
     
     // Manual control of staged updates
@@ -450,39 +450,20 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     // Use a more sophisticated search that properly traverses the HNSW hierarchy
     auto *results = hierarchicalSearch(query_data, processed_query, bottom_layer_ep, std::max(query_ef, k), k, timeoutCtx, &rep->code);
 
-    if (VecSim_OK == rep->code && results) {
-        // Step 3: Also search pending batch vectors and merge results
-        if (pendingVectorCount > 0) {
-            searchPendingVectors(query_data, *results, k);
-        }
-        
+    if (pendingVectorCount > 0) {
+        // Search pending vectors using the helper method
+        searchPendingVectors(query_data, *results, k);
+
+    }
+    
+    if (!results->empty()) {
         rep->results.resize(results->size());
         for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
             std::tie(result->score, result->id) = results->top();
             results->pop();
         }
-    } else {
-        // Even if main search failed, still search pending vectors
-        if (pendingVectorCount > 0) {
-            // Create a heap to store pending results
-            auto *pending_results = getNewMaxPriorityQueue();
-
-            // Search pending vectors using the helper method
-            searchPendingVectors(query_data, *pending_results, k);
-
-            if (!pending_results->empty()) {
-                rep->results.resize(pending_results->size());
-                for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
-                    std::tie(result->score, result->id) = pending_results->top();
-                    pending_results->pop();
-                }
-                rep->code = VecSim_QueryReply_OK; // Mark as successful since we found results
-            }
-
-            delete pending_results;
-        }
+        rep->code = VecSim_QueryReply_OK; // Mark as successful since we found results
     }
-    
     delete results;
     return rep;
 }
@@ -1305,11 +1286,10 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(idType candidate_id, co
     
     // Add neighbors to candidate set for further exploration
     vecsim_stl::vector<idType> neighbors(this->allocator);
-    const void* vector_data;
-    getNeighborsAndVector(candidate_id, level, neighbors, &vector_data);
+    std::vector<char> vector_data(this->inputBlobSize);
+    getNeighborsAndVector(candidate_id, level, neighbors, vector_data.data());
     // Calculate distance to candidate
-    DistType dist = this->calcDistanceRaw(data_point_raw, vector_data);
-    
+    DistType dist = this->calcDistanceRaw(data_point_raw, vector_data.data());
     // Add to top candidates if it's one of the best
     if (top_candidates.size() < ef || dist < lowerBound) {
         top_candidates.emplace(dist, getExternalLabel(candidate_id));
@@ -1426,7 +1406,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, const void** vector_data) const {
+void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const {
     // Clear the result vector first
     result.clear();
 
@@ -1441,7 +1421,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
     }
     auto it = rawVectorsInRAM.find(nodeId);
     if (it != rawVectorsInRAM.end()) {
-        *vector_data = it->second.data();
+        std::memcpy(vector_data, it->second.data(), this->inputBlobSize);
     }
     if (!result.empty() && it != rawVectorsInRAM.end()) {
         return;
@@ -1455,7 +1435,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
     if (status.ok()) {
         // Parse using new format: [vector_data][neighbor_count][neighbor_ids...]
         deserializeGraphValue(graph_value, result);
-        *vector_data = graph_value.data();
+        std::memcpy(vector_data, graph_value.data(), this->inputBlobSize);
     }
 }
 

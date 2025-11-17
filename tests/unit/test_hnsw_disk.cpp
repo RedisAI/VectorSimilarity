@@ -345,7 +345,7 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
     
     // Create index components
-    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+    IndexComponents<float, float> components = CreateQuantizedIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
     
     // Create HNSWDiskIndex - use default column family handle
