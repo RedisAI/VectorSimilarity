@@ -52,6 +52,7 @@ protected:
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;
+    static const char *ground_truth_file;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() {

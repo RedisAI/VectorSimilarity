@@ -38,10 +38,6 @@ public:
     static std::vector<std::vector<data_t>> queries;
     static std::array<IndexPtr, NUMBER_OF_INDEX_TYPES> indices;
 
-    // RocksDB management for disk-based HNSW indices (fp32 only)
-    static std::unique_ptr<rocksdb::DB> benchmark_db;
-    static rocksdb::ColumnFamilyHandle *benchmark_cf;
-
     BM_VecSimIndex() {
         if (!is_initialized) {
             Initialize();
@@ -81,10 +77,6 @@ private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file, VecSimType type);
-
-    // FBIN loading configuration
-    static constexpr size_t BATCH_SIZE = 40;
-    static constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.1M.fbin";
 };
 
 template <typename index_type_t>
@@ -127,44 +119,6 @@ std::array<IndexPtr, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<int8_index_t>::indice
 
 template <>
 std::array<IndexPtr, NUMBER_OF_INDEX_TYPES> BM_VecSimIndex<uint8_index_t>::indices{};
-
-// RocksDB static member specializations
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp32_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle *BM_VecSimIndex<fp32_index_t>::benchmark_cf{};
-
-// // fp64
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp64_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle *BM_VecSimIndex<fp64_index_t>::benchmark_cf{};
-
-// bf16
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<bf16_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle *BM_VecSimIndex<bf16_index_t>::benchmark_cf{};
-
-// fp16
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<fp16_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle *BM_VecSimIndex<fp16_index_t>::benchmark_cf{};
-
-// int8
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<int8_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle *BM_VecSimIndex<int8_index_t>::benchmark_cf{};
-
-// uint8
-template <>
-std::unique_ptr<rocksdb::DB> BM_VecSimIndex<uint8_index_t>::benchmark_db{};
-template <>
-rocksdb::ColumnFamilyHandle *BM_VecSimIndex<uint8_index_t>::benchmark_cf{};
-
-
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
@@ -231,6 +185,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     }
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
+        constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.10K.fbin";
+        constexpr size_t BATCH_SIZE = 40;
         BFParams bf_params = {.type = type,
                               .dim = dim,
                               .metric = VecSimMetric_Cosine,
@@ -282,7 +238,7 @@ void BM_VecSimIndex<index_type_t>::loadTestVectors(const std::string &test_file,
         // (float32)]
         std::ifstream file(test_file, std::ios::binary);
         if (!file.is_open()) {
-            std::cerr << "[Init] Error: Could not open file " << FBIN_PATH << std::endl;
+            std::cerr << "[Init] Error: Could not open file " << test_file << std::endl;
             throw std::runtime_error("Failed to open vectors file");
         }
 
@@ -318,16 +274,6 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
 
 template <typename index_type_t>
 VecSimQueryReply *BM_VecSimIndex<index_type_t>::TopKGroundTruth(size_t query_id, size_t k) {
-    std::map<std::string, std::string> gt_files = {
-        {"deep.base.10K.fbin", "deep.groundtruth.10K.10K.ibin"},
-        {"deep.base.100K.fbin", "deep.groundtruth.100K.10K.ibin"},
-        {"deep.base.1M.fbin", "deep.groundtruth.1M.10K.ibin"},
-        {"deep.base.10M.fbin", "deep.groundtruth.10M.10K.ibin"}};
-    std::filesystem::path fbin_path(FBIN_PATH);
-    std::string filename = fbin_path.filename().string();
-    std::string directory = fbin_path.parent_path().string();
-    std::string gt_file_name = gt_files[filename];
-    std::string ground_truth_file = (directory + "/" + gt_file_name);
     std::ifstream file(AttachRootPath(ground_truth_file), std::ios::binary);
     if (!file.is_open()) {
         throw std::runtime_error("Failed to open ground truth file");

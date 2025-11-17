@@ -133,7 +133,6 @@ typedef int (*SubmitCB)(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCa
  *
  */
 typedef struct VecSimParams VecSimParams;
-
 typedef struct {
     VecSimType type;        // Datatype to index.
     size_t dim;             // Vector's dimension.

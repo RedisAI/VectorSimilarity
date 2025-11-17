@@ -30,14 +30,12 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             break;
         }
         case VecSimAlgo_TIERED: {
-            // Temporarily disabled due to SVS header issues
-            // index = TieredFactory::NewIndex(&params->algoParams.tieredParams);
-            return nullptr;
+            index = TieredFactory::NewIndex(&params->algoParams.tieredParams);
+            break;
         }
         case VecSimAlgo_SVS: {
-            // Temporarily disabled due to SVS header issues
-            // index = SVSFactory::NewIndex(params);
-            return nullptr;
+            index = SVSFactory::NewIndex(params);
+            break;
         }
 #ifdef BUILD_TESTS
         case VecSimAlgo_HNSWLIB_DISK: {

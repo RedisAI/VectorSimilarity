@@ -31,8 +31,8 @@ static std::string getCheckpointDir(const std::string &location);
 // used by index factory to load nodes connections
 void restoreGraph(std::ifstream &input, EncodingVersion version);
 
-// used by index factory to restore processed vectors from RocksDB
-void restoreVectors(EncodingVersion version);
+// used by index factory to restore processed vectors (from file or RocksDB)
+void restoreVectors(std::ifstream &input, EncodingVersion version);
 
 private:
 // Functions for index saving.
@@ -40,7 +40,16 @@ void saveIndexFields(std::ofstream &output) const;
 
 void saveGraph(std::ofstream &output) const;
 
+// Save processed vectors to metadata file (alternative to RocksDB-only storage)
+void saveVectorsToFile(std::ofstream &output) const;
+
 // Functions for index loading.
 void restoreIndexFields(std::ifstream &input);
 void fieldsValidation() const;
+
+// Restore vectors from metadata file (alternative to RocksDB)
+void restoreVectorsFromFile(std::ifstream &input, EncodingVersion version);
+
+// Restore vectors from RocksDB checkpoint (current method)
+void restoreVectorsFromRocksDB(EncodingVersion version);
 

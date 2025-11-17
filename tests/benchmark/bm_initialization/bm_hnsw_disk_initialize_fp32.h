@@ -15,14 +15,10 @@ the file.
 ***************************************/
 
 // Memory benchmarks
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), fp32_index_t)
-(benchmark::State &st) { Memory(st, INDEX_BF); }
-BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT))->Iterations(1);
+// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), fp32_index_t)
+// (benchmark::State &st) { Memory(st, INDEX_BF); }
+// BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
-// HNSW not enabled for this benchmark
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW), fp32_index_t)
-// (benchmark::State &st) { Memory(st, INDEX_HNSW); }
-// BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW))->Iterations(1);
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { Memory(st, INDEX_HNSW_DISK); }

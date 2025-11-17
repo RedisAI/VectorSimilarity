@@ -123,7 +123,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
 
     if (db_stats) {
         byte_reads = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO) - byte_reads;
-        st.counters["byte_reads"] = (double)byte_reads / (double)iter;
+        st.counters["byte_reads"] = static_cast<double>(byte_reads) / iter;
     }
 }
 

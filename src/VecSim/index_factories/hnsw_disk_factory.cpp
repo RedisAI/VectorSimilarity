@@ -292,16 +292,8 @@ VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
     std::string temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid()) +
                           "_" + std::to_string(std::time(nullptr));
 
-    // Create RAII-managed RocksDB instance
-    // This will:
-    // 1. Copy the entire checkpoint to temp_dir/checkpoint_copy
-    // 2. Open RocksDB from the temp copy (all writes go to temp location)
-    // 3. Auto-cleanup temp_dir on destruction via RAII:
-    //    - When a new benchmark run replaces managed_rocksdb
-    //    - When the program exits (static destructor)
     managed_rocksdb = std::make_unique<ManagedRocksDB>(checkpoint_dir, temp_dir);
 
-    // Call the main NewIndex function with the managed database
     return NewIndex(folder_path, managed_rocksdb->getDB(), managed_rocksdb->getCF(), is_normalized);
 }
 

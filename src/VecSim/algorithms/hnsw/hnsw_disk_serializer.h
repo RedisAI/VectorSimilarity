@@ -74,11 +74,60 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
 
     // Restore graph and vectors from file
     this->restoreGraph(input, version);
-    this->restoreVectors(version);
+    this->restoreVectors(input, version);
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Index deserialized from file and RocksDB checkpoint");
     this->checkIntegrity();
-            
+}
+
+/**
+ * @brief Restore vectors from metadata file to this->vectors
+ *
+ * This method reconstructs the in-memory processed vectors container from the processed vectors
+ * stored directly in the metadata file. This is an alternative to loading from RocksDB.
+ *
+ * During deserialization, we:
+ * 1. Read the processed vectors directly from the file
+ * 2. Add them to the this->vectors container
+ *
+ * This ensures that getDataByInternalId() can retrieve processed vectors during queries.
+ *
+ * @param input Input file stream positioned after graph data
+ * @param version Encoding version (currently unused, for future compatibility)
+ */
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromFile(std::ifstream &input,
+                                                                EncodingVersion version) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    // Read vectors directly from file
+    // The vectors are stored as processed blobs (storage format)
+    for (idType id = 0; id < this->curElementCount; id++) {
+        // Allocate memory for the processed vector
+        auto vector_blob = this->allocator->allocate_unique(this->dataSize);
+
+        // Read the processed vector data
+        input.read(static_cast<char *>(vector_blob.get()), this->dataSize);
+
+        if (!input.good()) {
+            throw std::runtime_error("Failed to read vector for id " + std::to_string(id) +
+                                   " during deserialization from file");
+        }
+
+        // Add the processed vector to the vectors container
+        size_t containerId = this->vectors->size();
+        if (containerId != id) {
+            throw std::runtime_error("Container ID mismatch during deserialization: expected " +
+                                   std::to_string(id) + ", got " + std::to_string(containerId));
+        }
+        this->vectors->addElement(vector_blob.get(), containerId);
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    double elapsed_seconds = std::chrono::duration<double>(end_time - start_time).count();
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+             "Restored %zu processed vectors from metadata file in %f seconds",
+             this->curElementCount, elapsed_seconds);
 }
 
 /**
@@ -100,7 +149,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
  * @param version Encoding version (currently unused, for future compatibility)
  */
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::restoreVectors(EncodingVersion version) {
+void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromRocksDB(EncodingVersion version) {
     // Iterate through all elements and restore their processed vectors
     auto start_time = std::chrono::steady_clock::now();
     for (idType id = 0; id < this->curElementCount; id++) {
@@ -124,9 +173,8 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(EncodingVersion version) 
                                    " during deserialization");
         }
 
-        const char* raw_data = reinterpret_cast<const char*>(raw_vector_data);
-
         // Preprocess the vector
+        const char* raw_data = reinterpret_cast<const char*>(raw_vector_data);
         auto processed_blob = this->preprocess(raw_data);
 
         // Preprocess the copied raw vector to get the storage blob
@@ -146,6 +194,33 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(EncodingVersion version) 
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Restored %zu processed vectors from RocksDB checkpoint in %f seconds",
              this->curElementCount, elapsed_seconds);
+}
+
+/**
+ * @brief Wrapper method to restore vectors - chooses between file and RocksDB
+ *
+ * This method determines whether to load vectors from the metadata file or from RocksDB.
+ *
+ * The choice is controlled by a compile-time flag:
+ * - HNSW_DISK_SERIALIZE_VECTORS_TO_FILE: If defined, vectors are loaded from the metadata file
+ * - Otherwise (default): Vectors are loaded from RocksDB for backward compatibility
+ *
+ * @param input Input file stream (used if loading from file)
+ * @param version Encoding version
+ */
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, EncodingVersion version) {
+// #ifdef HNSW_DISK_SERIALIZE_VECTORS_TO_FILE
+    // NEW METHOD: Load vectors from metadata file
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+             "Loading vectors from metadata file (HNSW_DISK_SERIALIZE_VECTORS_TO_FILE enabled)");
+    restoreVectorsFromFile(input, version);
+// #else
+//     // CURRENT METHOD: Load vectors from RocksDB (default for backward compatibility)
+//     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+//              "Loading vectors from RocksDB checkpoint (default method)");
+//     restoreVectorsFromRocksDB(version);
+// #endif
 }
 
 /**
@@ -320,8 +395,6 @@ void HNSWDiskIndex<DataType, DistType>::fieldsValidation() const {
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     if (this->M <= 1)
         throw std::runtime_error("HNSW index parameter M cannot be 1 or 0");
-    // if (this->M0 != this->M * 2)
-    //     throw std::runtime_error("HNSW index parameter M0 should be 2*M");
 }
 
 template <typename DataType, typename DistType>
@@ -688,4 +761,60 @@ void HNSWDiskIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         Serializer::writeBinaryPOD(output, id);
     }
 
+    // Phase 3: Save processed vectors to file (NEW METHOD)
+    // This is controlled by the HNSW_DISK_SERIALIZE_VECTORS_TO_FILE compile-time flag
+// #ifdef HNSW_DISK_SERIALIZE_VECTORS_TO_FILE
+    // NEW METHOD: Save vectors to metadata file
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+             "Saving vectors to metadata file (HNSW_DISK_SERIALIZE_VECTORS_TO_FILE enabled)");
+    saveVectorsToFile(output);
+// #else
+//     // CURRENT METHOD: Vectors are stored only in RocksDB (default for backward compatibility)
+//     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+//              "Vectors will be stored only in RocksDB checkpoint (default method)");
+//     // No additional data written to file
+// #endif
+}
+
+/**
+ * @brief Save processed vectors to metadata file
+ *
+ * This method saves the processed vectors directly to the metadata file.
+ * This is an alternative to relying solely on RocksDB for vector storage.
+ *
+ * The vectors are saved in their processed (storage) format, which means:
+ * - For quantized indexes: the quantized representation
+ * - For normalized indexes: the normalized representation
+ * - For regular indexes: the original vector data
+ *
+ * @param output Output file stream
+ */
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::saveVectorsToFile(std::ofstream &output) const {
+    auto start_time = std::chrono::steady_clock::now();
+
+    // Save all processed vectors
+    for (idType id = 0; id < this->curElementCount; id++) {
+        // Get the processed vector from the vectors container
+        const void *vector_data = this->vectors->getElement(id);
+
+        if (vector_data == nullptr) {
+            throw std::runtime_error("Failed to retrieve vector for id " + std::to_string(id) +
+                                   " during serialization");
+        }
+
+        // Write the processed vector data
+        output.write(static_cast<const char *>(vector_data), this->dataSize);
+
+        if (!output.good()) {
+            throw std::runtime_error("Failed to write vector for id " + std::to_string(id) +
+                                   " during serialization");
+        }
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    double elapsed_seconds = std::chrono::duration<double>(end_time - start_time).count();
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+             "Saved %zu processed vectors to metadata file in %f seconds",
+             this->curElementCount, elapsed_seconds);
 }
