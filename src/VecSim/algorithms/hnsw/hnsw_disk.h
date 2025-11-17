@@ -1962,7 +1962,8 @@ vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() con
 template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
     // TODO: Implement vector deletion
-    // For now, just a stub implementation
+    // For now, just mark the vector as deleted
+    markDelete(label);
     return 0;
 }
 
@@ -2055,15 +2056,15 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
 
     // Mark as deleted
     markAs<DELETE_MARK>(internalId);
-    __atomic_fetch_add(&numMarkedDeleted, 1, 0);
+    this->numMarkedDeleted++;
 
-    // If this is the entrypoint, we need to replace it
-    if (internalId == entrypointNode) {
-        replaceEntryPoint();
-    }
+    // // If this is the entrypoint, we need to replace it
+    // if (internalId == entrypointNode) {
+    //     replaceEntryPoint();
+    // }
 
-    // Remove from label lookup
-    labelToIdMap.erase(it);
+    // // Remove from label lookup
+    // labelToIdMap.erase(it);
 
     // Return the internal ID that was marked deleted
     internal_ids.push_back(internalId);

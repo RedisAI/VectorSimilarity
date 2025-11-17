@@ -96,9 +96,9 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     assert(VecSimIndex_IndexSize(index) == initial_index_size + added_vec_count);
 
     // Skip clean-up for disk index since it's not supported yet.
-    if (st.range(0) == INDEX_HNSW_DISK) {
-        return;
-    }
+    // if (st.range(0) == INDEX_HNSW_DISK) {
+    //     return;
+    // }
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
