@@ -1,0 +1,14 @@
+100k:
+  with vectors:
+    build size: 197M
+    load time: 0.025415 seconds
+    Without vectors:
+      build size: 160M
+      load time: 0.456957
+1M: 
+  with vectors:
+    build size: 1.2G
+    load time: 0.228547
+  without vectors:
+    build size: 821M
+    load time: 10.720445
