@@ -14,10 +14,6 @@
 the file.
 ***************************************/
 
-/**************************************
-  Benchmark definitions
-***************************************/
-
 // Memory benchmarks
 // BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), fp32_index_t)
 // (benchmark::State &st) { Memory(st, INDEX_BF); }
