@@ -1498,40 +1498,6 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
 
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const {
-    // Clear the result vector first
-    result.clear();
-
-    // First check staged graph updates
-    for (const auto& update : stagedGraphUpdates) {
-        if (update.node_id == nodeId && update.level == level) {
-            result.reserve(update.neighbors.size());
-            for (size_t i = 0; i < update.neighbors.size(); i++) {
-                result.push_back(update.neighbors[i]);
-            }
-        }
-    }
-    auto it = rawVectorsInRAM.find(nodeId);
-    if (it != rawVectorsInRAM.end()) {
-        std::memcpy(vector_data, it->second.data(), this->inputBlobSize);
-    }
-    if (!result.empty() && it != rawVectorsInRAM.end()) {
-        return;
-    }
-    // If not found in staged updates, check disk
-    GraphKey graphKey(nodeId, level);
-
-    std::string graph_value;
-    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-
-    if (status.ok()) {
-        // Parse using new format: [vector_data][neighbor_count][neighbor_ids...]
-        deserializeGraphValue(graph_value, result);
-        std::memcpy(vector_data, graph_value.data(), this->inputBlobSize);
-    }
-}
-
-template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::searchPendingVectors(
     const void *query_data, candidatesLabelsMaxHeap<DistType> &top_candidates, size_t k) const {
     for (size_t i = 0; i < pendingVectorCount; i++) {
