@@ -187,7 +187,7 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 
     // Create the appropriate disk index based on data type
     if (hnswParams->type == VecSimType_FLOAT32) {
-        IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
+        IndexComponents<float, float> indexComponents = CreateQuantizedIndexComponents<float, float>(
             abstractInitParams.allocator, hnswParams->metric, abstractInitParams.dim, false);
         return new (abstractInitParams.allocator) HNSWDiskIndex<float, float>(
             hnswParams, abstractInitParams, indexComponents, managed_rocksdb->getDB(),
@@ -263,7 +263,7 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
 
     // Create the appropriate disk index based on data type
     if (params.type == VecSimType_FLOAT32) {
-        IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
+        IndexComponents<float, float> indexComponents = CreateQuantizedIndexComponents<float, float>(
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
         return NewDiskIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
                                                        indexComponents, db, cf, version);
