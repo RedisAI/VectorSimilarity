@@ -1028,7 +1028,6 @@ candidatesLabelsMaxHeap<DistType> *HNSWDiskIndex<DataType, DistType>::searchBott
     } else {
         // If ep is marked as deleted, set initial lower bound to max, and don't insert to top
         // candidates heap
-        std::cout << "Entry point " << ep_id << " is marked as deleted" << std::endl;
         lowerBound = std::numeric_limits<DistType>::max();
         candidate_set.emplace(-lowerBound, ep_id);
     }
@@ -2059,13 +2058,13 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
     markAs<DELETE_MARK>(internalId);
     this->numMarkedDeleted++;
 
-    // // If this is the entrypoint, we need to replace it
-    // if (internalId == entrypointNode) {
-    //     replaceEntryPoint();
-    // }
+    // If this is the entrypoint, we need to replace it
+    if (internalId == entrypointNode) {
+        replaceEntryPoint();
+    }
 
-    // // Remove from label lookup
-    // labelToIdMap.erase(it);
+    // Remove from label lookup
+    labelToIdMap.erase(it);
 
     // Return the internal ID that was marked deleted
     internal_ids.push_back(internalId);
@@ -2076,28 +2075,28 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
     // This method is called when the current entrypoint is marked as deleted
     // We need to find a new entrypoint from the remaining non-deleted nodes
-
     idType old_entry_point_id = entrypointNode;
 
     // Try to find a new entrypoint at the current max level
     while (maxLevel != HNSW_INVALID_LEVEL) {
+        std::cout << "maxLevel: " << maxLevel << std::endl;
         // First, try to find a neighbor of the old entrypoint at the top level
         GraphKey graphKey(old_entry_point_id, maxLevel);
-        std::string neighbors_data;
+        std::string graph_value;
         rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
-        if (status.ok() && !neighbors_data.empty()) {
-            size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-            const idType *neighbors = reinterpret_cast<const idType *>(neighbors_data.data());
+        if (status.ok() && !graph_value.empty()) {
+            // Correctly deserialize the graph value to get neighbors
+            vecsim_stl::vector<idType> neighbors(this->allocator);
+            deserializeGraphValue(graph_value, neighbors);
 
             // Try to find a non-deleted neighbor
-            for (size_t i = 0; i < num_neighbors; i++) {
+            for (size_t i = 0; i < neighbors.size(); i++) {
                 if (!isMarkedDeleted(neighbors[i])) {
                     entrypointNode = neighbors[i];
                     return;
                 }
-                std::cout << "Neighbor " << neighbors[i] << " is marked as deleted" << std::endl;
             }
         }
 
@@ -2108,8 +2107,6 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
                 !isMarkedDeleted(id)) {
                 entrypointNode = id;
                 return;
-            } else if (isMarkedDeleted(id)) {
-                std::cout << "Node " << id << " is marked as deleted" << std::endl;
             }
         }
 

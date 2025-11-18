@@ -35,10 +35,8 @@ public:
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_HNSW_DISK(benchmark::State &st);
-    static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
-
-    // Benchmark TopK performance with marked deleted vectors
     static void TopK_HNSW_DISK_MarkDeleted(benchmark::State &st);
+    static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
 
     // Does nothing but returning the index memory.
     static void Memory(benchmark::State &st, IndexTypeIndex index_type);
@@ -143,12 +141,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
 
     // Reload the index to get a fresh copy without any marked deleted vectors
     std::string folder_path = BM_VecSimGeneral::AttachRootPath(BM_VecSimGeneral::hnsw_index_file);
-    auto start_time = std::chrono::steady_clock::now();
     INDICES[INDEX_HNSW_DISK] = IndexPtr(HNSWDiskFactory::NewIndex(folder_path));
-    std::cout << "Reloading HNSW_DISK index from: " << folder_path << " took "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count()
-              << " ms" << std::endl;
-    
     auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
     auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
 
@@ -194,30 +187,9 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
 
         auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
         st.PauseTiming();
-        // std::cout << "\n=== Query iteration " << iter << " (query_id=" << (iter % N_QUERIES) << ") ===" << std::endl;
-        // std::cout << "HNSW returned " << VecSimQueryReply_Len(hnsw_results) << " results (k=" << k << ", ef=" << ef << ")" << std::endl;
-
-
-        // // print hnsw results
-        // std::cout << "HNSW results: " << std::endl;
-        // std::cout << "Label\tScore" << std::endl;
-        // for (const auto &res : hnsw_results->results) {
-        //     std::cout << res.id << "\t" << res.score << std::endl;
-        // }
 
         // get all (100) ground truth results
         auto gt_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(iter % N_QUERIES, 100);
-
-        // std::cout << "Label\tScore" << std::endl;
-        // for (const auto &res : gt_results->results) {
-        //     std::cout << res.id << "\t" << res.score << std::endl;
-        // }
-
-        // print deleted labels
-        // std::cout << "Deleted labels: " << std::endl;
-        // for (const auto &label : deleted_labels) {
-        //     std::cout << label << std::endl;
-        // }
 
         auto filtered_res = new VecSimQueryReply(VecSimAllocator::newVecsimAllocator());
         for (const auto &res : gt_results->results) {
@@ -233,14 +205,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
             std::cout << "Not enough non-deleted ground truth results to compare against (only " << filtered_res->results.size() << " out of " << k << " requested)" << std::endl;
         }
 
-        // std::cout << "Filtered ground truth has " << filtered_res->results.size() << " results (after checking against "
-        //           << deleted_labels.size() << " deleted labels)" << std::endl;
-        // std::cout << "Comparing top-" << k << " HNSW results against top-" << k << " filtered ground truth" << std::endl;
-        // std::cout << "Correct before: " << correct << " - ";
         BM_VecSimGeneral::MeasureRecall(hnsw_results, filtered_res, correct);
-        // std::cout << "correct after: " << correct << std::endl;
-        // std::cout << "Current recall: " << (float)correct / (float)(k * (iter + 1))
-        //           << " (" << correct << "/" << (k * (iter + 1)) << " correct)" << std::endl;
 
         VecSimQueryReply_Free(hnsw_results);
         VecSimQueryReply_Free(filtered_res);
