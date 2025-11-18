@@ -25,8 +25,9 @@ endif()
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/brute_force_factory.cpp
     index_factories/hnsw_factory.cpp
+    index_factories/hnsw_disk_factory.cpp
     index_factories/tiered_factory.cpp
-    index_factories/svs_factory.cpp
+    ${svs_factory_file}
     index_factories/index_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp
@@ -52,6 +53,10 @@ if (TARGET svs::svs)
 endif()
 
 if(VECSIM_BUILD_TESTS)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(ROCKSDB REQUIRED IMPORTED_TARGET rocksdb)
+    target_link_libraries(VectorSimilarity PkgConfig::ROCKSDB)
+
     add_library(VectorSimilaritySerializer utils/serializer.cpp)
     target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()

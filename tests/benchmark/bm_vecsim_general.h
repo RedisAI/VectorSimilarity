@@ -42,6 +42,7 @@ protected:
     static size_t M;
     static size_t EF_C;
     static size_t n_vectors;
+    static VecSimMetric metric;
 
     static bool is_multi;
     // Bitmask controlling which index types to include in benchmarks (uses IndexTypeFlags)
@@ -51,6 +52,7 @@ protected:
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;
+    static const char *ground_truth_file;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() {
@@ -96,7 +98,8 @@ protected:
         } else {
             // std::cout << "ROOT environment variable is not set. using current directory as root."
             //           << std::endl;
-            // std::cout << "Full path: " << std::filesystem::current_path().string() + "/" + file_name
+            // std::cout << "Full path: " << std::filesystem::current_path().string() + "/" +
+            // file_name
             //           << std::endl;
             return std::filesystem::current_path().string() + "/" + file_name;
             // std::cerr << "ROOT environment variable is not set. Set vecsim root path as ROOT";

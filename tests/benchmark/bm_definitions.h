@@ -112,7 +112,6 @@ using uint8_index_t = IndexType<VecSimType_UINT8, uint8_t, float>;
 #define DIM       BM_VecSimGeneral::dim
 #define IS_MULTI  BM_VecSimGeneral::is_multi
 
-constexpr uint32_t DEFAULT_BM_INDEXES_MASK = IndexTypeFlags::INDEX_MASK_BF |
-                                             IndexTypeFlags::INDEX_MASK_HNSW |
-                                             IndexTypeFlags::INDEX_MASK_HNSW_DISK |
-                                             IndexTypeFlags::INDEX_MASK_TIERED_HNSW;
+constexpr uint32_t DEFAULT_BM_INDEXES_MASK =
+    IndexTypeFlags::INDEX_MASK_BF | IndexTypeFlags::INDEX_MASK_HNSW |
+    IndexTypeFlags::INDEX_MASK_HNSW_DISK | IndexTypeFlags::INDEX_MASK_TIERED_HNSW;

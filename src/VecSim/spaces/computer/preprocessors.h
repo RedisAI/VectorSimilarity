@@ -128,8 +128,7 @@ template <typename DataType = float>
 class ScalarQuantizationPreprocessor : public PreprocessorInterface {
 public:
     ScalarQuantizationPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
-        : PreprocessorInterface(allocator), dim(dim),
-          quantized_bytes_count(dim * sizeof(int8_t)),
+        : PreprocessorInterface(allocator), dim(dim), quantized_bytes_count(dim * sizeof(int8_t)),
           input_bytes_count(dim * sizeof(DataType)) {}
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -195,8 +194,8 @@ private:
     static constexpr float SCALE = 127.0f;
 
     const size_t dim;
-    const size_t quantized_bytes_count;  // dim * sizeof(int8_t)
-    const size_t input_bytes_count;      // dim * sizeof(DataType)
+    const size_t quantized_bytes_count; // dim * sizeof(int8_t)
+    const size_t input_bytes_count;     // dim * sizeof(DataType)
 
     // Quantize a float vector to int8
     // For normalized vectors in [-1, 1], maps to [-127, 127]
