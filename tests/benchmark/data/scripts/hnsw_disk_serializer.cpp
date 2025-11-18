@@ -35,7 +35,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_disk.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
-#include "svs/core/io/binary.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -115,22 +114,48 @@ struct FileInfo {
     size_t dim;
 };
 
+// Helper to read fbin header from an open stream
+FileInfo readFbinHeader(std::ifstream &file, const std::string &filename) {
+    uint32_t num_vectors = 0;
+    uint32_t dim = 0;
+    file.read(reinterpret_cast<char *>(&num_vectors), sizeof(uint32_t));
+    file.read(reinterpret_cast<char *>(&dim), sizeof(uint32_t));
+
+    if (!file) {
+        throw std::runtime_error("Failed to read header from file: " + filename);
+    }
+
+    return {num_vectors, dim};
+}
+
 FileInfo getFbinInfo(const std::string &filename, VecSimType type) {
-    size_t type_size = getTypeSize(type);
-    auto dims = svs::io::binary::get_dims(filename, type_size);
-    return {dims.first, dims.second};
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file: " + filename);
+    }
+
+    auto info = readFbinHeader(file, filename);
+    return info;
 }
 
 // Template function to load vectors from fbin file
 template<typename T>
 size_t loadVectorsFromFbin(const std::string &filename, VecSimIndex *index,
-                           size_t num_vectors, size_t report_interval) {
-    auto reader = svs::io::binary::BinaryReader<T>(filename);
+                           size_t dim, size_t num_vectors, size_t report_interval) {
+    std::ifstream input(filename, std::ios::binary);
+    if (!input.is_open()) {
+        throw std::runtime_error("Cannot open input file: " + filename);
+    }
+
+    // Read and skip header
+    readFbinHeader(input, filename);
+
+    size_t vector_size_bytes = dim * sizeof(T);
+    std::vector<char> vector_buffer(vector_size_bytes);
     size_t vectors_added = 0;
 
-    for (auto vec : reader) {
-        // vec is a span-like object, we can get the data pointer
-        VecSimIndex_AddVector(index, vec.data(), vectors_added);
+    while (vectors_added < num_vectors && input.read(vector_buffer.data(), vector_size_bytes)) {
+        VecSimIndex_AddVector(index, vector_buffer.data(), vectors_added);
         vectors_added++;
 
         if (vectors_added % report_interval == 0 || vectors_added == num_vectors) {
@@ -138,7 +163,6 @@ size_t loadVectorsFromFbin(const std::string &filename, VecSimIndex *index,
                       << " (" << (vectors_added * 100 / num_vectors) << "%)" << std::flush;
         }
     }
-
     return vectors_added;
 }
 
@@ -169,70 +193,72 @@ size_t loadVectorsFromRaw(const std::string &filename, VecSimIndex *index,
     return vectors_added;
 }
 
+// Helper macro to dispatch to the appropriate loader based on data type
+#define DISPATCH_LOADER(LOADER_FUNC, data_type, ...) \
+    switch (data_type) { \
+        case VecSimType_FLOAT32: \
+            return LOADER_FUNC<float>(__VA_ARGS__); \
+        case VecSimType_FLOAT64: \
+            return LOADER_FUNC<double>(__VA_ARGS__); \
+        case VecSimType_BFLOAT16: \
+            return LOADER_FUNC<bfloat16>(__VA_ARGS__); \
+        case VecSimType_FLOAT16: \
+            return LOADER_FUNC<float16>(__VA_ARGS__); \
+        case VecSimType_INT8: \
+            return LOADER_FUNC<int8_t>(__VA_ARGS__); \
+        case VecSimType_UINT8: \
+            return LOADER_FUNC<uint8_t>(__VA_ARGS__); \
+        default: \
+            throw std::runtime_error("Unsupported data type"); \
+    }
+
 // Helper to load vectors based on file type and data type
 size_t loadVectors(FileType file_type, VecSimType data_type, const std::string &filename,
                    VecSimIndex *index, size_t dim, size_t num_vectors, size_t report_interval) {
     if (file_type == FileType::FBIN) {
-        switch (data_type) {
-            case VecSimType_FLOAT32:
-                return loadVectorsFromFbin<float>(filename, index, num_vectors, report_interval);
-            case VecSimType_FLOAT64:
-                return loadVectorsFromFbin<double>(filename, index, num_vectors, report_interval);
-            case VecSimType_BFLOAT16:
-                return loadVectorsFromFbin<bfloat16>(filename, index, num_vectors, report_interval);
-            case VecSimType_FLOAT16:
-                return loadVectorsFromFbin<float16>(filename, index, num_vectors, report_interval);
-            case VecSimType_INT8:
-                return loadVectorsFromFbin<int8_t>(filename, index, num_vectors, report_interval);
-            case VecSimType_UINT8:
-                return loadVectorsFromFbin<uint8_t>(filename, index, num_vectors, report_interval);
-            default:
-                throw std::runtime_error("Unsupported data type for fbin");
-        }
+        DISPATCH_LOADER(loadVectorsFromFbin, data_type, filename, index, dim, num_vectors, report_interval);
     } else {
-        switch (data_type) {
-            case VecSimType_FLOAT32:
-                return loadVectorsFromRaw<float>(filename, index, dim, num_vectors, report_interval);
-            case VecSimType_FLOAT64:
-                return loadVectorsFromRaw<double>(filename, index, dim, num_vectors, report_interval);
-            case VecSimType_BFLOAT16:
-                return loadVectorsFromRaw<bfloat16>(filename, index, dim, num_vectors, report_interval);
-            case VecSimType_FLOAT16:
-                return loadVectorsFromRaw<float16>(filename, index, dim, num_vectors, report_interval);
-            case VecSimType_INT8:
-                return loadVectorsFromRaw<int8_t>(filename, index, dim, num_vectors, report_interval);
-            case VecSimType_UINT8:
-                return loadVectorsFromRaw<uint8_t>(filename, index, dim, num_vectors, report_interval);
-            default:
-                throw std::runtime_error("Unsupported data type for raw");
-        }
+        DISPATCH_LOADER(loadVectorsFromRaw, data_type, filename, index, dim, num_vectors, report_interval);
     }
 }
 
+// Helper template to get the distance type for a given data type
+template<typename T> struct DistType { using type = float; };
+template<> struct DistType<float> { using type = float; };
+template<> struct DistType<double> { using type = double; };
+
 // Helper to save index based on type
+template<typename DataT>
+void saveIndexTyped(VecSimIndex *index, const std::string &output_file) {
+    using DistT = typename DistType<DataT>::type;
+    auto *hnsw = dynamic_cast<HNSWDiskIndex<DataT, DistT> *>(index);
+    hnsw->saveIndex(output_file);
+}
+
 void saveIndexByType(VecSimIndex *index, const std::string &output_file) {
     VecSimType type = VecSimIndex_BasicInfo(index).type;
 
-    if (type == VecSimType_FLOAT32) {
-        auto *hnsw = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
-        hnsw->saveIndex(output_file);
-    } else if (type == VecSimType_FLOAT64) {
-        auto *hnsw = dynamic_cast<HNSWDiskIndex<double, double> *>(index);
-        hnsw->saveIndex(output_file);
-    } else if (type == VecSimType_BFLOAT16) {
-        auto *hnsw = dynamic_cast<HNSWDiskIndex<bfloat16, float> *>(index);
-        hnsw->saveIndex(output_file);
-    } else if (type == VecSimType_FLOAT16) {
-        auto *hnsw = dynamic_cast<HNSWDiskIndex<float16, float> *>(index);
-        hnsw->saveIndex(output_file);
-    } else if (type == VecSimType_INT8) {
-        auto *hnsw = dynamic_cast<HNSWDiskIndex<int8_t, float> *>(index);
-        hnsw->saveIndex(output_file);
-    } else if (type == VecSimType_UINT8) {
-        auto *hnsw = dynamic_cast<HNSWDiskIndex<uint8_t, float> *>(index);
-        hnsw->saveIndex(output_file);
-    } else {
-        throw std::runtime_error("Invalid index data type");
+    switch (type) {
+        case VecSimType_FLOAT32:
+            saveIndexTyped<float>(index, output_file);
+            break;
+        case VecSimType_FLOAT64:
+            saveIndexTyped<double>(index, output_file);
+            break;
+        case VecSimType_BFLOAT16:
+            saveIndexTyped<bfloat16>(index, output_file);
+            break;
+        case VecSimType_FLOAT16:
+            saveIndexTyped<float16>(index, output_file);
+            break;
+        case VecSimType_INT8:
+            saveIndexTyped<int8_t>(index, output_file);
+            break;
+        case VecSimType_UINT8:
+            saveIndexTyped<uint8_t>(index, output_file);
+            break;
+        default:
+            throw std::runtime_error("Invalid index data type");
     }
 }
 

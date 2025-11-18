@@ -63,7 +63,6 @@ CreateQuantizedIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSi
     auto indexCalculator = new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
 
     // Create preprocessor container with space for 2 preprocessors (normalization + quantization)
-    const size_t n_preprocessors = (metric == VecSimMetric_Cosine && !is_normalized) ? 2 : 1;
     auto preprocessors =
         new (allocator) MultiPreprocessorsContainer<DataType, 2>(allocator, alignment);
 
