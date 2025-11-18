@@ -36,8 +36,8 @@
 #include "VecSim/algorithms/hnsw/hnsw.h" // For HNSWAddVectorState definition
 
 #ifdef BUILD_TESTS
-// #include "hnsw_serialization_utils.h"
-// #include "VecSim/utils/serializer.h"
+#include "hnsw_serialization_utils.h"
+#include "VecSim/utils/serializer.h"
 #endif
 
 // #include <deque>
@@ -121,7 +121,12 @@ struct GraphKey {
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
 template <typename DataType, typename DistType>
-class HNSWDiskIndex : public VecSimIndexAbstract<DataType, DistType> {
+class HNSWDiskIndex : public VecSimIndexAbstract<DataType, DistType>
+#ifdef BUILD_TESTS
+    ,
+                      public Serializer
+#endif
+{
 protected:
     // Index build parameters
     // size_t maxElements;
@@ -156,6 +161,7 @@ protected:
     rocksdb::DB *db;                 // RocksDB database, not owned by the index
     rocksdb::Options dbOptions;      // RocksDB options, not owned by the index
     rocksdb::ColumnFamilyHandle *cf; // RocksDB column family handle, not owned by the index
+    std::string dbPath;              // Path where RocksDB data is stored
 
     mutable std::shared_mutex indexDataGuard;
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
@@ -297,7 +303,8 @@ protected:
 public:
     HNSWDiskIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                   const IndexComponents<DataType, DistType> &components, rocksdb::DB *db,
-                  rocksdb::ColumnFamilyHandle *cf, size_t random_seed = 100);
+                  rocksdb::ColumnFamilyHandle *cf, const std::string &dbPath = "",
+                  size_t random_seed = 100);
     virtual ~HNSWDiskIndex();
 
     /*************************** Index API ***************************/
@@ -376,6 +383,10 @@ private:
     void replaceEntryPoint();
 
     /*****************************************************************/
+
+#ifdef BUILD_TESTS
+#include "hnsw_disk_serializer_declarations.h"
+#endif
 };
 
 constexpr size_t INITIAL_CAPACITY = 1000;
@@ -386,11 +397,12 @@ template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
     const IndexComponents<DataType, DistType> &components, rocksdb::DB *db,
-    rocksdb::ColumnFamilyHandle *cf, size_t random_seed)
+    rocksdb::ColumnFamilyHandle *cf, const std::string &dbPath, size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(INITIAL_CAPACITY, this->allocator), labelToIdMap(this->allocator), db(db),
-      cf(cf), indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      delta_list(), new_elements_meta_data(this->allocator), batchThreshold(10),
+      cf(cf), dbPath(dbPath), indexDataGuard(),
+      visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator), delta_list(),
+      new_elements_meta_data(this->allocator), batchThreshold(10),
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
       stagedGraphUpdates(this->allocator), stagedNeighborUpdates(this->allocator) {
 
@@ -721,9 +733,6 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(idType element_id,
     } else {
         max_common_level = global_max_level;
     }
-
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         candidatesMaxHeap<DistType> top_candidates =
@@ -1484,7 +1493,6 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
     if (status.ok()) {
-        // Parse using new format: [vector_data][neighbor_count][neighbor_ids...]
         deserializeGraphValue(graph_value, result);
     }
 }
@@ -1536,7 +1544,6 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
         // Get metadata for this vector
         DiskElementMetaData &metadata = idToMetaData[vectorId];
-        labelType label = metadata.label;
         size_t elementMaxLevel = metadata.topLevel;
 
         // Insert into graph if not the first element
@@ -2109,3 +2116,7 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
     entrypointNode = INVALID_ID;
     maxLevel = HNSW_INVALID_LEVEL;
 }
+
+#ifdef BUILD_TESTS
+#include "hnsw_disk_serializer.h"
+#endif

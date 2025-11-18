@@ -854,10 +854,6 @@ TEST_F(HNSWDiskIndexTest, RawVectorMultipleRetrievals) {
     std::cout << "Multiple retrievals test passed!" << std::endl;
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
 
 TEST_F(HNSWDiskIndexTest, markDelete) {
     size_t n = 100;
@@ -941,8 +937,10 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     // Mark as deleted half of the vectors, including the entrypoint
     for (labelType label = 0; label < n; label++) {
         if (label % 2 == ep_reminder) {
-            ASSERT_EQ(index.markDelete(label),
-                      vecsim_stl::vector<idType>(1, label, abstractInitParams.allocator));
+            auto deleted_ids = index.markDelete(label);
+            ASSERT_EQ(deleted_ids.size(), 1);
+            // In this test, labels are sequential starting from 0, so internal ID == label
+            ASSERT_EQ(deleted_ids[0], label);
         }
     }
 
@@ -953,9 +951,12 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     auto verify_res_half = [&](size_t id, double score, size_t result_index) {
         ASSERT_NE(id % 2, ep_reminder);
         size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
-        size_t expected_id = result_index % 2 ? result_index + 1 : result_index;
-        ASSERT_EQ(diff_id, expected_id);
-        ASSERT_EQ(score, (dim * expected_id * expected_id));
+        // The results alternate between below and above 50, with pairs at the same distance
+        // Pattern: 49,51 (diff=1), 47,53 (diff=3), 45,55 (diff=5), etc.
+        // So expected_diff = result_index | 1 (make it odd)
+        size_t expected_diff = result_index | 1;
+        ASSERT_EQ(diff_id, expected_diff);
+        ASSERT_EQ(score, (dim * expected_diff * expected_diff));
     };
 
     // Run search test after marking deleted

@@ -42,6 +42,7 @@ protected:
     static size_t M;
     static size_t EF_C;
     static size_t n_vectors;
+    static VecSimMetric metric;
 
     static bool is_multi;
     // Bitmask controlling which index types to include in benchmarks (uses IndexTypeFlags)
@@ -51,6 +52,7 @@ protected:
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;
+    static const char *ground_truth_file;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() {
