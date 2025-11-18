@@ -130,6 +130,132 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     }
 }
 
+// Benchmark TopK performance with marked deleted vectors
+// st.range(0) = ef_runtime
+// st.range(1) = k
+// st.range(2) = number of vectors to mark as deleted
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State &st) {
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
+
+    size_t iter = 0;
+
+    // Reload the index to get a fresh copy without any marked deleted vectors
+    std::string folder_path = BM_VecSimGeneral::AttachRootPath(BM_VecSimGeneral::hnsw_index_file);
+    auto start_time = std::chrono::steady_clock::now();
+    INDICES[INDEX_HNSW_DISK] = IndexPtr(HNSWDiskFactory::NewIndex(folder_path));
+    std::cout << "Reloading HNSW_DISK index from: " << folder_path << " took "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count()
+              << " ms" << std::endl;
+    
+    auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
+    auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
+
+    // Mark vectors as deleted before starting the benchmark
+    // We mark vectors starting from label 0, ensuring they exist in the index
+    std::vector<labelType> deleted_labels;
+    const size_t num_to_delete = st.range(2);
+    // std::cout << "Marking " << num_to_delete << " vectors as deleted" << std::endl;
+
+    // get psuedo random unique labels, but the same ones for all runs of the benchmark across different runs
+    // Divide N_VECTORS into num_to_delete equal strata and pick one from each
+    std::mt19937 rng(42); // Fixed seed for determinism
+    for (size_t i = 0; i < num_to_delete && i < N_VECTORS; i++) {
+        size_t stratum_start = (i * N_VECTORS) / num_to_delete;
+        size_t stratum_end = ((i + 1) * N_VECTORS) / num_to_delete;
+        size_t stratum_size = stratum_end - stratum_start;
+        
+        std::uniform_int_distribution<size_t> dist(0, stratum_size - 1);
+        labelType label = stratum_start + dist(rng);
+        deleted_labels.push_back(label);
+        disk_index->markDelete(label);
+    }
+
+    size_t total_marked = disk_index->getNumMarkedDeleted();
+    // std::cout << "Marked " << total_marked << " vectors as deleted" << std::endl;
+    st.counters["num_marked_deleted"] = total_marked;
+
+    // Get DB statistics before benchmark
+    auto stats = disk_index->getDBStatistics();
+    size_t io_bytes_before = 0;
+    if (stats) {
+        io_bytes_before = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+    }
+
+    std::atomic_int correct = 0;
+    size_t ef = st.range(0);
+    size_t k = st.range(1);
+    
+    for (auto _ : st) {
+        HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+        auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+        auto &q = QUERIES[iter % N_QUERIES];
+
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+        st.PauseTiming();
+        // std::cout << "\n=== Query iteration " << iter << " (query_id=" << (iter % N_QUERIES) << ") ===" << std::endl;
+        // std::cout << "HNSW returned " << VecSimQueryReply_Len(hnsw_results) << " results (k=" << k << ", ef=" << ef << ")" << std::endl;
+
+
+        // // print hnsw results
+        // std::cout << "HNSW results: " << std::endl;
+        // std::cout << "Label\tScore" << std::endl;
+        // for (const auto &res : hnsw_results->results) {
+        //     std::cout << res.id << "\t" << res.score << std::endl;
+        // }
+
+        // get all (100) ground truth results
+        auto gt_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(iter % N_QUERIES, 100);
+
+        // std::cout << "Label\tScore" << std::endl;
+        // for (const auto &res : gt_results->results) {
+        //     std::cout << res.id << "\t" << res.score << std::endl;
+        // }
+
+        // print deleted labels
+        // std::cout << "Deleted labels: " << std::endl;
+        // for (const auto &label : deleted_labels) {
+        //     std::cout << label << std::endl;
+        // }
+
+        auto filtered_res = new VecSimQueryReply(VecSimAllocator::newVecsimAllocator());
+        for (const auto &res : gt_results->results) {
+            if (std::find(deleted_labels.begin(), deleted_labels.end(), res.id) == deleted_labels.end()) {
+                filtered_res->results.emplace_back(res.id, res.score);
+                // Stop once we have k non-deleted results
+                if (filtered_res->results.size() >= k) {
+                    break;
+                }
+            }
+        }
+        if (filtered_res->results.size() < k) {
+            std::cout << "Not enough non-deleted ground truth results to compare against (only " << filtered_res->results.size() << " out of " << k << " requested)" << std::endl;
+        }
+
+        // std::cout << "Filtered ground truth has " << filtered_res->results.size() << " results (after checking against "
+        //           << deleted_labels.size() << " deleted labels)" << std::endl;
+        // std::cout << "Comparing top-" << k << " HNSW results against top-" << k << " filtered ground truth" << std::endl;
+        // std::cout << "Correct before: " << correct << " - ";
+        BM_VecSimGeneral::MeasureRecall(hnsw_results, filtered_res, correct);
+        // std::cout << "correct after: " << correct << std::endl;
+        // std::cout << "Current recall: " << (float)correct / (float)(k * (iter + 1))
+        //           << " (" << correct << "/" << (k * (iter + 1)) << " correct)" << std::endl;
+
+        VecSimQueryReply_Free(hnsw_results);
+        VecSimQueryReply_Free(filtered_res);
+        VecSimQueryReply_Free(gt_results);
+        st.ResumeTiming();
+        iter++;
+    }
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
+    if (stats) {
+        size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+        st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
+    }
+
+}
+
 template <typename index_type_t>
 
 void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short index_offset) {
@@ -141,6 +267,8 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
         iter++;
     }
 }
+
+
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned short index_offset) {
@@ -203,86 +331,6 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
 }
 
-// Benchmark TopK performance with marked deleted vectors
-// st.range(0) = ef_runtime
-// st.range(1) = k
-// st.range(2) = number of vectors to mark as deleted
-template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State &st) {
-    using data_t = typename index_type_t::data_t;
-    using dist_t = typename index_type_t::dist_t;
-
-    size_t ef = st.range(0);
-    size_t k = st.range(1);
-    size_t num_to_delete = st.range(2);
-    std::atomic_int correct = 0;
-    size_t iter = 0;
-    auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
-    auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
-
-    // Mark vectors as deleted before starting the benchmark
-    // We mark vectors starting from label 0, ensuring they exist in the index
-    // The vectors to delete come from the test_queries_file that were added to the index
-    std::vector<labelType> deleted_labels;
-    std::vector<labelType> newly_marked_labels;
-    size_t initial_marked_deleted = disk_index->getNumMarkedDeleted();
-
-    for (size_t i = 0; i < num_to_delete && i < N_VECTORS; i++) {
-        bool was_already_deleted = disk_index->isMarkedDeleted(i);
-        deleted_labels.push_back(i);
-        disk_index->markDelete(i);
-        if (!was_already_deleted) {
-            newly_marked_labels.push_back(i);
-        }
-    }
-
-    size_t actual_marked = disk_index->getNumMarkedDeleted() - initial_marked_deleted;
-    std::cout << "Marked " << actual_marked << " NEW vectors as deleted (total marked: "
-              << disk_index->getNumMarkedDeleted() << ")" << std::endl;
-    st.counters["num_marked_deleted"] = actual_marked;
-
-    // Get DB statistics before benchmark
-    auto stats = disk_index->getDBStatistics();
-    size_t io_bytes_before = 0;
-    if (stats) {
-        io_bytes_before = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
-    }
-
-    for (auto _ : st) {
-        HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
-        auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
-        auto &q = QUERIES[iter % N_QUERIES];
-        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
-        st.PauseTiming();
-        auto bf_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(iter % N_QUERIES, k);
-        BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
-        VecSimQueryReply_Free(bf_results);
-        VecSimQueryReply_Free(hnsw_results);
-        st.ResumeTiming();
-        iter++;
-    }
-
-    st.counters["Recall"] = (float)correct / (float)(k * iter);
-    if (stats) {
-        size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
-        st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
-    }
-
-    // Cleanup: Unmark all deleted vectors to restore index state for next benchmark run
-    // This ensures each benchmark configuration starts with a clean slate
-    // for (const auto &label : deleted_labels) {
-    //     // Get internal ID for this label
-    //     auto it = disk_index->labelToIdMap.find(label);
-    //     if (it != disk_index->labelToIdMap.end()) {
-    //         idType internalId = it->second;
-    //         // Unmark the DELETE_MARK flag
-    //         disk_index->unmarkAs<DELETE_MARK>(internalId);
-    //         disk_index->numMarkedDeleted--;
-    //     }
-    // }
-    // std::cout << "Cleaned up: unmarked " << deleted_labels.size() << " vectors" << std::endl;
-}
-
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Arg(10)                                                                                  \
@@ -319,12 +367,16 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
 // Test the performance impact of marked deleted vectors
 #define REGISTER_TopK_HNSW_DISK_MarkDeleted(BM_CLASS, BM_FUNC)                                    \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
-        ->Args({200, 10, 1})                                                                       \
-        ->Args({200, 10, 1000})                                                                    \
-        ->Args({200, 10, 50000})                                                                   \
+        ->Args({10, 10, 1000})                                                                      \
+        ->Args({10, 10, 10000})                                                                   \
+        ->Args({10, 10, 50000})                                                                   \
+        ->Args({200, 50, 1000})                                                                   \
+        ->Args({200, 50, 10000})                                                                   \
+        ->Args({200, 50, 50000})                                                                   \
         ->ArgNames({"ef_runtime", "k", "num_marked_deleted"})                                      \
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
+
 // {ef_runtime, k} (recall that always ef_runtime >= k)
 #define REGISTER_TopK_Tiered(BM_CLASS, BM_FUNC)                                                    \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
