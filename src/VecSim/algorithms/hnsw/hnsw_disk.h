@@ -1028,6 +1028,7 @@ candidatesLabelsMaxHeap<DistType> *HNSWDiskIndex<DataType, DistType>::searchBott
     } else {
         // If ep is marked as deleted, set initial lower bound to max, and don't insert to top
         // candidates heap
+        std::cout << "Entry point " << ep_id << " is marked as deleted" << std::endl;
         lowerBound = std::numeric_limits<DistType>::max();
         candidate_set.emplace(-lowerBound, ep_id);
     }
@@ -2096,6 +2097,7 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
                     entrypointNode = neighbors[i];
                     return;
                 }
+                std::cout << "Neighbor " << neighbors[i] << " is marked as deleted" << std::endl;
             }
         }
 
@@ -2106,6 +2108,8 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
                 !isMarkedDeleted(id)) {
                 entrypointNode = id;
                 return;
+            } else if (isMarkedDeleted(id)) {
+                std::cout << "Node " << id << " is marked as deleted" << std::endl;
             }
         }
 

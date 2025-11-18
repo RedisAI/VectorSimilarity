@@ -14,6 +14,10 @@
 the file.
 ***************************************/
 
+/**************************************
+  Benchmark definitions
+***************************************/
+
 // Memory benchmarks
 // BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), fp32_index_t)
 // (benchmark::State &st) { Memory(st, INDEX_BF); }
@@ -34,10 +38,16 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_
 (benchmark::State &st) { TopK_HNSW_DISK(st); }
 REGISTER_TopK_HNSW_DISK(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
 
+// TopK benchmark with marked deleted vectors
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK_MarkDeleted, HNSWDisk), fp32_index_t)
+(benchmark::State &st) { TopK_HNSW_DISK_MarkDeleted(st); }
+REGISTER_TopK_HNSW_DISK_MarkDeleted(BM_VecSimCommon, BM_FUNC_NAME(TopK_MarkDeleted, HNSWDisk));
+
 // AddLabel benchmarks
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
-(benchmark::State &st) { AddLabel(st); }
-REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
+// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
+// (benchmark::State &st) { AddLabel(st); }
+// REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
+
 
 // Range benchmarks
 // BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), fp32_index_t)
