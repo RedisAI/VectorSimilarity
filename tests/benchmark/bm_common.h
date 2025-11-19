@@ -149,7 +149,6 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
     // We mark vectors starting from label 0, ensuring they exist in the index
     std::vector<labelType> deleted_labels;
     const size_t num_to_delete = st.range(2);
-    // std::cout << "Marking " << num_to_delete << " vectors as deleted" << std::endl;
 
     // get psuedo random unique labels, but the same ones for all runs of the benchmark across different runs
     // Divide N_VECTORS into num_to_delete equal strata and pick one from each
@@ -166,7 +165,6 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
     }
 
     size_t total_marked = disk_index->getNumMarkedDeleted();
-    // std::cout << "Marked " << total_marked << " vectors as deleted" << std::endl;
     st.counters["num_marked_deleted"] = total_marked;
 
     // Get DB statistics before benchmark

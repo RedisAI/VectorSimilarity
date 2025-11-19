@@ -2079,7 +2079,6 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
 
     // Try to find a new entrypoint at the current max level
     while (maxLevel != HNSW_INVALID_LEVEL) {
-        std::cout << "maxLevel: " << maxLevel << std::endl;
         // First, try to find a neighbor of the old entrypoint at the top level
         GraphKey graphKey(old_entry_point_id, maxLevel);
         std::string graph_value;
