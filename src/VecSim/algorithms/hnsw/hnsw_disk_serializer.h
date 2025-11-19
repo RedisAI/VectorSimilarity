@@ -58,8 +58,10 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       delta_list(), new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
-      pendingVectorCount(0), stagedGraphUpdates(this->allocator),
-      stagedNeighborUpdates(this->allocator) {
+      pendingVectorCount(0), pendingDeleteIds(this->allocator), freeIdList(this->allocator),
+      stagedInsertUpdates(this->allocator),
+      stagedDeleteUpdates(this->allocator), stagedInsertNeighborUpdates(this->allocator),
+      stagedDeleteNeighborUpdates(this->allocator) {
 
     // Restore index fields from file (including batchThreshold)
     this->restoreIndexFields(input);
@@ -264,11 +266,17 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     if (!pendingVectorIds.empty()) {
         throw std::runtime_error("Serialization error: pendingVectorIds not empty after flush");
     }
-    if (!stagedGraphUpdates.empty()) {
-        throw std::runtime_error("Serialization error: stagedGraphUpdates not empty after flush");
+    if (!stagedInsertUpdates.empty()) {
+        throw std::runtime_error("Serialization error: stagedInsertUpdates not empty after flush");
     }
-    if (!stagedNeighborUpdates.empty()) {
-        throw std::runtime_error("Serialization error: stagedNeighborUpdates not empty after flush");
+    if (!stagedDeleteUpdates.empty()) {
+        throw std::runtime_error("Serialization error: stagedDeleteUpdates not empty after flush");
+    }
+    if (!stagedInsertNeighborUpdates.empty()) {
+        throw std::runtime_error("Serialization error: stagedInsertNeighborUpdates not empty after flush");
+    }
+    if (!stagedDeleteNeighborUpdates.empty()) {
+        throw std::runtime_error("Serialization error: stagedDeleteNeighborUpdates not empty after flush");
     }
     if (!rawVectorsInRAM.empty()) {
         throw std::runtime_error("Serialization error: rawVectorsInRAM not empty after flush");
@@ -692,8 +700,10 @@ void HNSWDiskIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
     this->pendingVectorIds.clear();
     this->pendingMetadata.clear();
     this->pendingVectorCount = 0;
-    this->stagedGraphUpdates.clear();
-    this->stagedNeighborUpdates.clear();
+    this->stagedInsertUpdates.clear();
+    this->stagedDeleteUpdates.clear();
+    this->stagedInsertNeighborUpdates.clear();
+    this->stagedDeleteNeighborUpdates.clear();
 
     // Resize visited nodes handler pool
     this->visitedNodesHandlerPool.resize(this->curElementCount);
