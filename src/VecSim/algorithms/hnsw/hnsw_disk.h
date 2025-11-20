@@ -243,6 +243,7 @@ public:
     // Batch processing methods
     void processBatch();
     void flushBatch(); // Force flush current batch
+    void setBatchThreshold(size_t threshold); // Set batch threshold
 
     // Helper methods
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
@@ -1569,6 +1570,11 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::flushBatch() {
     processBatch();
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::setBatchThreshold(size_t threshold) {
+    batchThreshold = threshold;
 }
 
 /********************************** Debug Methods **********************************/

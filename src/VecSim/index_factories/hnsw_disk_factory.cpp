@@ -291,7 +291,7 @@ VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
     // Using PID and timestamp to ensure uniqueness across multiple benchmark runs
     std::string temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid()) +
                           "_" + std::to_string(std::time(nullptr));
-
+    std::cerr << "Temporary checkpoint directory: " << temp_dir << std::endl;
     managed_rocksdb = std::make_unique<ManagedRocksDB>(checkpoint_dir, temp_dir);
 
     return NewIndex(folder_path, managed_rocksdb->getDB(), managed_rocksdb->getCF(), is_normalized);
