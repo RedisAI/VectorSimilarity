@@ -336,7 +336,7 @@ void BM_VecSimBasics<index_type_t>::FlushBatchDisk(benchmark::State &st) {
     }
     for (auto _ : st) {
         // add one vector to trigger flush
-        VecSimIndex_AddVector(hnsw_disk_index, QUERIES[flush_threshold-1%N_QUERIES].data(), flush_threshold-1);
+        VecSimIndex_AddVector(hnsw_disk_index, QUERIES[(flush_threshold-1)%N_QUERIES].data(), flush_threshold-1);
     }
 }
 
