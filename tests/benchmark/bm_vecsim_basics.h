@@ -326,8 +326,20 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::FlushBatchDisk(benchmark::State &st) {
+    // Create a LOCAL ManagedRocksDB instance for this benchmark
+    // This ensures we don't interfere with the global managed_rocksdb used by other benchmarks
+    std::string folder_path = BM_VecSimGeneral::AttachRootPath(BM_VecSimGeneral::hnsw_index_file);
+    std::string checkpoint_dir = HNSWDiskFactory::GetCheckpointDir(folder_path);
+    std::string temp_dir = "/tmp/hnsw_disk_flushbatch_" + std::to_string(getpid()) +
+                          "_" + std::to_string(std::time(nullptr));
+
+    // Create a local ManagedRocksDB that will be automatically cleaned up when it goes out of scope
+    auto local_managed_db = HNSWDiskFactory::CreateManagedRocksDB(checkpoint_dir, temp_dir);
+
+    // Create index using the local database
     auto hnsw_disk_index = dynamic_cast<HNSWDiskIndex<float, float>*>(
-            HNSWDiskFactory::NewIndex(BM_VecSimGeneral::AttachRootPath(BM_VecSimGeneral::hnsw_index_file), false));
+            HNSWDiskFactory::NewIndex(folder_path, local_managed_db->getDB(), local_managed_db->getCF(), false));
+
     size_t flush_threshold = st.range(0);
     hnsw_disk_index->setBatchThreshold(flush_threshold);
     for (size_t i = 0; i < flush_threshold-1; i++) {
@@ -338,6 +350,10 @@ void BM_VecSimBasics<index_type_t>::FlushBatchDisk(benchmark::State &st) {
         // add one vector to trigger flush
         VecSimIndex_AddVector(hnsw_disk_index, QUERIES[(flush_threshold-1)%N_QUERIES].data(), flush_threshold-1);
     }
+
+    // Clean up the index
+    VecSimIndex_Free(hnsw_disk_index);
+    // local_managed_db will be automatically destroyed here, cleaning up the temp directory
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)

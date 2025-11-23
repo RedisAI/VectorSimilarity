@@ -436,6 +436,10 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     pendingVectorIds.clear();
     pendingMetadata.clear();
 
+    // Clear raw vectors in RAM
+    rawVectorsInRAM.clear();
+    rawVectorsCache.clear();
+
     // Clear delta list and new elements metadata
     new_elements_meta_data.clear();
 
@@ -445,7 +449,7 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
 
     // Ensure all memory is properly released
     idToMetaData.shrink_to_fit();
-    
+
     // Note: db and cf are not owned by this class, so we don't delete them
     // Base class destructor will handle indexCalculator and preprocessors
 }

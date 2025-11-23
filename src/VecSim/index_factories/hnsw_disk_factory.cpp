@@ -24,89 +24,74 @@ namespace HNSWDiskFactory {
 #ifdef BUILD_TESTS
 
 // RAII wrapper to manage RocksDB database and temporary directory cleanup
-class ManagedRocksDB {
-private:
-    std::unique_ptr<rocksdb::DB> db;
-    rocksdb::ColumnFamilyHandle *cf = nullptr;
-    std::string temp_dir;
-    bool cleanup_temp_dir;  // Whether to delete temp_dir on destruction
+// Constructor for loading from checkpoint (with temp directory for writes)
+ManagedRocksDB::ManagedRocksDB(const std::string &checkpoint_dir, const std::string &temp_path)
+    : temp_dir(temp_path), cleanup_temp_dir(true) {
 
-public:
-    // Constructor for loading from checkpoint (with temp directory for writes)
-    // Copies the entire checkpoint to a temp location to ensure the original is never modified
-    ManagedRocksDB(const std::string &checkpoint_dir, const std::string &temp_path)
-        : temp_dir(temp_path), cleanup_temp_dir(true) {
+    // Create temp directory
+    std::filesystem::create_directories(temp_dir);
 
-        // Create temp directory
-        std::filesystem::create_directories(temp_dir);
-
-        // Copy the entire checkpoint to temp location to preserve the original
-        std::string temp_checkpoint = temp_dir + "/checkpoint_copy";
-        try {
-            std::filesystem::copy(checkpoint_dir, temp_checkpoint,
-                                std::filesystem::copy_options::recursive);
-        } catch (const std::filesystem::filesystem_error &e) {
-            // Clean up temp dir if copy failed
-            std::filesystem::remove_all(temp_dir);
-            throw std::runtime_error("Failed to copy checkpoint to temp location: " +
-                                   std::string(e.what()));
-        }
-
-        // Open RocksDB from the temp checkpoint copy
-        // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
-        rocksdb::Options options;
-        options.create_if_missing = false;  // Checkpoint copy should exist
-        options.error_if_exists = false;
-        options.statistics = rocksdb::CreateDBStatistics();
-
-        rocksdb::DB *db_ptr = nullptr;
-        rocksdb::Status status = rocksdb::DB::Open(options, temp_checkpoint, &db_ptr);
-        if (!status.ok()) {
-            // Clean up temp dir if DB open failed
-            std::filesystem::remove_all(temp_dir);
-            throw std::runtime_error("Failed to open RocksDB from temp checkpoint: " +
-                                   status.ToString());
-        }
-
-        db.reset(db_ptr);
-        cf = db->DefaultColumnFamily();
+    // Copy the entire checkpoint to temp location to preserve the original
+    std::string temp_checkpoint = temp_dir + "/checkpoint_copy";
+    try {
+        std::filesystem::copy(checkpoint_dir, temp_checkpoint,
+                            std::filesystem::copy_options::recursive);
+    } catch (const std::filesystem::filesystem_error &e) {
+        // Clean up temp dir if copy failed
+        std::filesystem::remove_all(temp_dir);
+        throw std::runtime_error("Failed to copy checkpoint to temp location: " +
+                               std::string(e.what()));
     }
 
-    // Constructor for creating new index (permanent location, no cleanup)
-    ManagedRocksDB(rocksdb::DB *db_ptr, const std::string &db_path)
-        : temp_dir(db_path), cleanup_temp_dir(false) {
-        db.reset(db_ptr);
-        cf = db->DefaultColumnFamily();
+    // Open RocksDB from the temp checkpoint copy
+    // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
+    rocksdb::Options options;
+    options.create_if_missing = false;  // Checkpoint copy should exist
+    options.error_if_exists = false;
+    options.statistics = rocksdb::CreateDBStatistics();
+
+    rocksdb::DB *db_ptr = nullptr;
+    rocksdb::Status status = rocksdb::DB::Open(options, temp_checkpoint, &db_ptr);
+    if (!status.ok()) {
+        // Clean up temp dir if DB open failed
+        std::filesystem::remove_all(temp_dir);
+        throw std::runtime_error("Failed to open RocksDB from temp checkpoint: " +
+                               status.ToString());
     }
 
-    // Destructor: closes DB and optionally cleans up temp directory
-    ~ManagedRocksDB() {
-        // Close DB first (unique_ptr handles this automatically)
-        db.reset();
+    db.reset(db_ptr);
+    cf = db->DefaultColumnFamily();
+}
 
-        // Delete temp directory only if it's actually temporary
-        if (cleanup_temp_dir && !temp_dir.empty() && std::filesystem::exists(temp_dir)) {
-            std::filesystem::remove_all(temp_dir);
-        }
+// Constructor for creating new index (permanent location, no cleanup)
+ManagedRocksDB::ManagedRocksDB(rocksdb::DB *db_ptr, const std::string &db_path)
+    : temp_dir(db_path), cleanup_temp_dir(false) {
+    db.reset(db_ptr);
+    cf = db->DefaultColumnFamily();
+}
+
+// Destructor: closes DB and optionally cleans up temp directory
+ManagedRocksDB::~ManagedRocksDB() {
+    // Close DB first (unique_ptr handles this automatically)
+    db.reset();
+
+    // Delete temp directory only if it's actually temporary
+    if (cleanup_temp_dir && !temp_dir.empty() && std::filesystem::exists(temp_dir)) {
+        std::filesystem::remove_all(temp_dir);
     }
-
-    // Disable copy and move to prevent resource management issues
-    ManagedRocksDB(const ManagedRocksDB&) = delete;
-    ManagedRocksDB& operator=(const ManagedRocksDB&) = delete;
-    ManagedRocksDB(ManagedRocksDB&&) = delete;
-    ManagedRocksDB& operator=(ManagedRocksDB&&) = delete;
-
-    // Accessors
-    rocksdb::DB* getDB() const { return db.get(); }
-    rocksdb::ColumnFamilyHandle* getCF() const { return cf; }
-    const std::string& getTempDir() const { return temp_dir; }
-};
+}
 
 // Static managed RocksDB instance for benchmark convenience wrapper
 // The destructor will automatically clean up the temp directory when:
 // 1. A new benchmark run replaces this with a new instance
 // 2. The program exits (static destructor is called)
 static std::unique_ptr<ManagedRocksDB> managed_rocksdb;
+
+// Factory function to create a managed RocksDB instance
+std::unique_ptr<ManagedRocksDB> CreateManagedRocksDB(const std::string &checkpoint_dir,
+                                                      const std::string &temp_dir) {
+    return std::make_unique<ManagedRocksDB>(checkpoint_dir, temp_dir);
+}
 
 // Helper function to create AbstractIndexInitParams from VecSimParams
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
