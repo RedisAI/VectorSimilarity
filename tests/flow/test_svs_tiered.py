@@ -404,7 +404,7 @@ def test_recall_after_deletion(test_logger):
     test_logger.info(f"Done deleting half of the index")
     assert index.svs_label_count() >= (num_elements // 2) - indices_ctx.tiered_svs_params.updateTriggerThreshold
     assert index.svs_label_count() <= (num_elements // 2) + indices_ctx.tiered_svs_params.updateTriggerThreshold
-    assert svs_index.index_size() == (num_elements // 2)
+    assert svs_index.index_size() == num_elements
 
     # Create a list of tuples of the vectors that left.
     vectors = [vectors[i] for i in range(1, num_elements, 2)]

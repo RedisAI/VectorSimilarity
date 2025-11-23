@@ -240,7 +240,7 @@ protected:
     }
 
     int deleteVectorsImpl(const labelType *labels, size_t n) {
-        if (indexSize() == 0) {
+        if (indexLabelCount() == 0) {
             return 0;
         }
 
@@ -280,22 +280,13 @@ protected:
             return;
 
         // SVS index instance should not be empty
-        if (indexSize() == 0) {
+        if (indexLabelCount() == 0) {
             this->impl_.reset();
             num_marked_deleted = 0;
             return;
         }
 
         num_marked_deleted += n;
-        // consolidate index if number of changes bigger than 50% of index size
-        const float consolidation_threshold = .5f;
-        // indexSize() should not be 0 see above lines
-        assert(indexSize() > 0);
-        // Note: if this function is called after deleteVectorsImpl, indexSize is already updated
-        if (static_cast<float>(num_marked_deleted) / indexSize() > consolidation_threshold) {
-            impl_->consolidate();
-            num_marked_deleted = 0;
-        }
     }
 
     bool isTwoLevelLVQ(const VecSimSvsQuantBits &qbits) {
@@ -330,7 +321,7 @@ public:
 
     ~SVSIndex() = default;
 
-    size_t indexSize() const override { return impl_ ? impl_->size() : 0; }
+    size_t indexSize() const override { return indexStorageSize(); }
 
     size_t indexStorageSize() const override { return impl_ ? impl_->view_data().size() : 0; }
 
@@ -342,7 +333,7 @@ public:
         if constexpr (isMulti) {
             return impl_ ? impl_->labelcount() : 0;
         } else {
-            return indexSize();
+            return impl_ ? impl_->size() : 0;
         }
     }
 
@@ -524,7 +515,7 @@ public:
                                 VecSimQueryParams *queryParams) const override {
         auto rep = new VecSimQueryReply(this->allocator);
         this->lastMode = STANDARD_KNN;
-        if (k == 0 || this->indexSize() == 0) {
+        if (k == 0 || this->indexLabelCount() == 0) {
             return rep;
         }
 
@@ -569,7 +560,7 @@ public:
                                  VecSimQueryParams *queryParams) const override {
         auto rep = new VecSimQueryReply(this->allocator);
         this->lastMode = RANGE_QUERY;
-        if (radius == 0 || this->indexSize() == 0) {
+        if (radius == 0 || this->indexLabelCount() == 0) {
             return rep;
         }
 
@@ -642,7 +633,7 @@ public:
         // take ownership of the blob copy and pass it to the batch iterator.
         auto *queryBlobCopyPtr = queryBlobCopy.release();
         // Ownership of queryBlobCopy moves to VecSimBatchIterator that will free it at the end.
-        if (indexSize() == 0) {
+        if (indexLabelCount() == 0) {
             return new (this->getAllocator())
                 NullSVS_BatchIterator(queryBlobCopyPtr, queryParams, this->getAllocator());
         } else {
@@ -652,7 +643,7 @@ public:
     }
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
-        size_t index_size = this->indexSize();
+        size_t index_size = this->indexLabelCount();
 
         // Calculate the ratio of the subset size to the total index size.
         double subsetRatio = (index_size == 0) ? 0.f : static_cast<double>(subsetSize) / index_size;
