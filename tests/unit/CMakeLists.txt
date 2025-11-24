@@ -47,7 +47,7 @@ add_executable(test_fp16 ../utils/test_main_with_timeout.cpp ../utils/mock_threa
 add_executable(test_int8 ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_int8.cpp unit_test_utils.cpp)
 add_executable(test_uint8 ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_uint8.cpp unit_test_utils.cpp)
 add_executable(test_index_test_utils ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_index_test_utils.cpp unit_test_utils.cpp)
-add_executable(test_svs ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp unit_test_utils.cpp)
+add_executable(test_svs ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp test_svs_fp16.cpp unit_test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest VectorSimilarity)
