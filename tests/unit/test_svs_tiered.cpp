@@ -805,7 +805,7 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
         VecSimIndex_DeleteVector(svs_index, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
-    ASSERT_EQ(svs_index->indexSize(), n / 2);
+    ASSERT_EQ(svs_index->indexLabelCount(), n / 2);
     k = n * 2 / 3;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -820,7 +820,7 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
         VecSimIndex_DeleteVector(flat_index, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n / 6);
-    ASSERT_EQ(svs_index->indexSize(), n / 2);
+    ASSERT_EQ(svs_index->indexLabelCount(), n / 2);
     k = n / 4;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -834,7 +834,7 @@ TYPED_TEST(SVSTieredIndexTest, KNNSearch) {
         GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
-    ASSERT_EQ(svs_index->indexSize(), 0);
+    ASSERT_EQ(svs_index->indexLabelCount(), 0);
     k = n / 3;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -1043,27 +1043,33 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
 
     // Override a vector while in the backend
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1);
-    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->indexSize(), n + 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 1);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 1);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
 
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
     // Delete the overriden vector
     VecSimIndex_DeleteVector(tiered_index, 1);
-    ASSERT_EQ(tiered_index->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 1);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n - 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 
-    // Delete another arbirtrary vector
+    // Delete another arbitrary vector
     VecSimIndex_DeleteVector(tiered_index, 0);
-    ASSERT_EQ(tiered_index->indexSize(), n - 2);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 2);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n - 2);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 2);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 2);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 2);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 
     // Empty Index
@@ -1077,6 +1083,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 0);
 }
 
 TYPED_TEST(SVSTieredIndexTest, manageIndexOwnership) {
@@ -2566,17 +2574,22 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 
     // Overwrite inplace
+    size_t expected_marked_deleted = 0;
     TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
     tiered_index->addVector(overwritten_vec, vec_label);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 3);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+    // Validate that the vector is marked as deleted.
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
 
-    // Validate that the vector is removed in place.
+    // Delete the vector, we now have 1 valid vectors and 2 marked deleted.
     tiered_index->deleteVector(vec_label);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
-    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
-    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 3);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 2);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 2);
 }
 
 TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
@@ -2668,7 +2681,7 @@ TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
     mock_thread_pool.thread_pool_join();
     // Verify that vectors were moved to SVS as expected
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
-    auto sz_b = tiered_index->GetBackendIndex()->indexSize();
+    auto sz_b = tiered_index->GetBackendIndex()->indexLabelCount();
     EXPECT_LE(sz_f, this->getUpdateThreshold());
     EXPECT_EQ(sz_f + sz_b, 2 * n_labels);
 }
@@ -2737,25 +2750,23 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
 
-    // Delete all the vectors and wait for the thread pool to finish running the update jobs.
     for (size_t i = 0; i < threshold; i++) {
         tiered_index->deleteVector(i);
     }
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), threshold);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, threshold);
 
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    mock_thread_pool.init_threads();
-    mock_thread_pool.thread_pool_join();
-
-    ASSERT_EQ(tiered_index->indexSize(), n - threshold);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n - threshold);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     auto size_before_gc = tiered_index->getAllocationSize();
 
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
     ASSERT_EQ(tiered_index->indexSize(), n - threshold);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n - threshold);
     auto size_after_gc = tiered_index->getAllocationSize();
     // Expect that the size of the index was reduced.
@@ -2817,7 +2828,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
     mock_thread_pool.thread_pool_join();
     // Verify that vectors were moved to SVS as expected
     auto sz_f = tiered_index->GetFlatIndex()->indexSize();
-    auto sz_b = tiered_index->GetBackendIndex()->indexSize();
+    auto sz_b = tiered_index->GetBackendIndex()->indexLabelCount();
     EXPECT_LE(sz_f, update_threshold);
     EXPECT_EQ(sz_f + sz_b, n);
 }

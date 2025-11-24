@@ -262,20 +262,18 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     // Delete almost all vectors
-    // First delete small amount of vector to prevent consolidation.
-    const size_t first_batch_deletion = 10;
-    ASSERT_EQ(svs_index->deleteVectors(ids.data(), first_batch_deletion), first_batch_deletion);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n - first_batch_deletion);
-    ASSERT_EQ(svs_index->getNumMarkedDeleted(), first_batch_deletion);
-
-    // Now delete enough vectors to trigger consolidation.
     const size_t keep_num = 1;
-    ASSERT_EQ(svs_index->deleteVectors(ids.data() + first_batch_deletion,
-                                       n - keep_num - first_batch_deletion),
-              n - keep_num - first_batch_deletion);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), keep_num);
-    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), keep_num);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - keep_num);
 
+    // Delete rest of the vectors
+    // num_marked_deleted should reset.
+    ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
     VecSimIndex_Free(index);
 }
 
@@ -453,14 +451,18 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector) {
     for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - 1);
 
     // Reinsert the same vectors under the same ids.
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor value).
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
 
     // Run the same query again.
     runTopKSearchTest(index, query, k, verify_res);
@@ -513,14 +515,18 @@ TYPED_TEST(SVSTest, svs_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - 1);
 
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i + 10,
                                           i / 10); // i / 10 is in integer (take the "floor" value).
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
 
     // Run the same query again.
     auto verify_res_different_id = [&](size_t id, double score, size_t index) {
@@ -920,7 +926,8 @@ TYPED_TEST(SVSTest, test_delete_vector) {
 
     // Here the shift should happen.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n - 1);
 
     TEST_DATA_T query[] = {0.0, 0.0};
     auto verify_res = [&](size_t id, double score, size_t index) {
@@ -3024,7 +3031,8 @@ TYPED_TEST(SVSTest, logging_runtime_params) {
         index->addVector(v[i].data(), ids[i]);
     }
     ASSERT_EQ(svs_index->getNumMarkedDeleted(), 10);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 10);
+    ASSERT_EQ(index->indexLabelCount(), n);
 
     float query[] = {50, 50, 50, 50};
     auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
