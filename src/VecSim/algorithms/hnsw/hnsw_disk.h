@@ -1972,7 +1972,8 @@ vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() con
 template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
     // TODO: Implement vector deletion
-    // For now, just a stub implementation
+    // For now, just mark the vector as deleted
+    markDelete(label);
     return 0;
 }
 
@@ -2065,7 +2066,7 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
 
     // Mark as deleted
     markAs<DELETE_MARK>(internalId);
-    __atomic_fetch_add(&numMarkedDeleted, 1, 0);
+    this->numMarkedDeleted++;
 
     // If this is the entrypoint, we need to replace it
     if (internalId == entrypointNode) {
@@ -2084,23 +2085,23 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
     // This method is called when the current entrypoint is marked as deleted
     // We need to find a new entrypoint from the remaining non-deleted nodes
-
     idType old_entry_point_id = entrypointNode;
 
     // Try to find a new entrypoint at the current max level
     while (maxLevel != HNSW_INVALID_LEVEL) {
         // First, try to find a neighbor of the old entrypoint at the top level
         GraphKey graphKey(old_entry_point_id, maxLevel);
-        std::string neighbors_data;
+        std::string graph_value;
         rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &neighbors_data);
+            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
-        if (status.ok() && !neighbors_data.empty()) {
-            size_t num_neighbors = neighbors_data.size() / sizeof(idType);
-            const idType *neighbors = reinterpret_cast<const idType *>(neighbors_data.data());
+        if (status.ok() && !graph_value.empty()) {
+            // Correctly deserialize the graph value to get neighbors
+            vecsim_stl::vector<idType> neighbors(this->allocator);
+            deserializeGraphValue(graph_value, neighbors);
 
             // Try to find a non-deleted neighbor
-            for (size_t i = 0; i < num_neighbors; i++) {
+            for (size_t i = 0; i < neighbors.size(); i++) {
                 if (!isMarkedDeleted(neighbors[i])) {
                     entrypointNode = neighbors[i];
                     return;
