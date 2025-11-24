@@ -242,7 +242,9 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     // Delete almost all vectors
     const size_t keep_num = 10;
     ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), keep_num);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - keep_num);
 
     auto verify_res_after_delete = [&](size_t id, double score, size_t index) {
         EXPECT_EQ(id, n - keep_num + index);
@@ -252,6 +254,12 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     // Thread 0: Couldn't find key.
     runTopKSearchTest(index, query, keep_num, verify_res_after_delete, nullptr, BY_ID);
 
+    // Delete rest of the vectors
+    // num_marked_deleted should reset.
+    ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
     VecSimIndex_Free(index);
 }
 
@@ -334,14 +342,18 @@ TYPED_TEST(FP16SVSTest, svs_reindexing_same_vector) {
     for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - 1);
 
     // Reinsert the same vectors under the same ids.
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor value).
         this->GenerateAndAddVector(index, dim, i, i / 10);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
 
     // Run the same query again.
     runTopKSearchTest(index, query, k, verify_res);
@@ -388,14 +400,18 @@ TYPED_TEST(FP16SVSTest, svs_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - 1);
 
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
         this->GenerateAndAddVector(index, dim, i + 10,
                                    i / 10); // i / 10 is in integer (take the "floor" value).
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
 
     // Run the same query again.
     auto verify_res_different_id = [&](size_t id, double score, size_t index) {
@@ -787,7 +803,8 @@ TYPED_TEST(FP16SVSTest, test_delete_vector) {
 
     // Here the shift should happen.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n - 1);
 
     float16 query[dim];
     this->GenerateVector(query, dim, 0.0);
@@ -2750,7 +2767,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
         VecSimIndex_DeleteVector(svs_index, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
-    ASSERT_EQ(svs_index->indexSize(), n / 2);
+    ASSERT_EQ(svs_index->indexLabelCount(), n / 2);
     k = n * 2 / 3;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -2765,7 +2782,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
         VecSimIndex_DeleteVector(flat_index, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n / 6);
-    ASSERT_EQ(svs_index->indexSize(), n / 2);
+    ASSERT_EQ(svs_index->indexLabelCount(), n / 2);
     k = n / 4;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -2779,7 +2796,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
         this->GenerateAndAddVector(flat_index, dim, i, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
-    ASSERT_EQ(svs_index->indexSize(), 0);
+    ASSERT_EQ(svs_index->indexLabelCount(), 0);
     k = n / 3;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
