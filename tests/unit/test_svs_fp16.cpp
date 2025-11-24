@@ -242,7 +242,9 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     // Delete almost all vectors
     const size_t keep_num = 10;
     ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), keep_num);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - keep_num);
 
     auto verify_res_after_delete = [&](size_t id, double score, size_t index) {
         EXPECT_EQ(id, n - keep_num + index);
@@ -252,6 +254,12 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     // Thread 0: Couldn't find key.
     runTopKSearchTest(index, query, keep_num, verify_res_after_delete, nullptr, BY_ID);
 
+    // Delete rest of the vectors
+    // num_marked_deleted should reset.
+    ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
     VecSimIndex_Free(index);
 }
 
@@ -334,14 +342,18 @@ TYPED_TEST(FP16SVSTest, svs_reindexing_same_vector) {
     for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - 1);
 
     // Reinsert the same vectors under the same ids.
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor value).
         this->GenerateAndAddVector(index, dim, i, i / 10);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
 
     // Run the same query again.
     runTopKSearchTest(index, query, k, verify_res);
@@ -388,14 +400,18 @@ TYPED_TEST(FP16SVSTest, svs_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n - 1; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n - 1);
 
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
         this->GenerateAndAddVector(index, dim, i + 10,
                                    i / 10); // i / 10 is in integer (take the "floor" value).
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
 
     // Run the same query again.
     auto verify_res_different_id = [&](size_t id, double score, size_t index) {
@@ -787,7 +803,8 @@ TYPED_TEST(FP16SVSTest, test_delete_vector) {
 
     // Here the shift should happen.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n - 1);
 
     float16 query[dim];
     this->GenerateVector(query, dim, 0.0);
@@ -2296,7 +2313,7 @@ protected:
         float16 vector[dim];
         this->GenerateVector(vector, dim, 0.5f, 1.0f);
         labelType vector_label = 1;
-        VecSimIndex_AddVector(tiered_index, vector, vector_label);
+            VecSimIndex_AddVector(tiered_index, vector, vector_label);
         ASSERT_EQ(tiered_index->indexSize(), 1);
         ASSERT_EQ(tiered_index->indexLabelCount(), 1);
         ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
@@ -2309,8 +2326,8 @@ protected:
             VecSim_Normalize(vec_to_compare, dim, VecSimType_FLOAT16);
         }
         if (!is_compressed) {
-            auto vec_stored_data =
-                tiered_index->GetFlatIndex()->getStoredVectorDataByLabel(vector_label);
+                auto vec_stored_data =
+                    tiered_index->GetFlatIndex()->getStoredVectorDataByLabel(vector_label);
             ASSERT_NO_FATAL_FAILURE(CompareVectors(
                 reinterpret_cast<const float16 *>(vec_stored_data[0].data()), vec_to_compare, dim));
         }
@@ -2327,12 +2344,12 @@ protected:
         ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), 1);
 
         if (!is_compressed) {
-            auto vec_stored_data =
-                tiered_index->GetBackendIndex()->getStoredVectorDataByLabel(vector_label);
+                auto vec_stored_data =
+                    tiered_index->GetBackendIndex()->getStoredVectorDataByLabel(vector_label);
             ASSERT_NO_FATAL_FAILURE(CompareVectors(
                 reinterpret_cast<const float16 *>(vec_stored_data[0].data()), vec_to_compare, dim));
+            }
         }
-    }
 };
 
 TYPED_TEST_SUITE(FP16SVSTieredIndexTest, SVSDataTypeSet);
@@ -2345,155 +2362,155 @@ TYPED_TEST(FP16SVSTieredIndexTest, CreateIndexInstanceSingle) {
 }
 
 TYPED_TEST(FP16SVSTieredIndexTest, RangeTestSingle) {
-    // Scalar quantization accuracy is insufficient for this test.
-    if (this->isFallbackToSQ()) {
-        GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
-    }
-    size_t dim = 4;
-    size_t k = 11;
+        // Scalar quantization accuracy is insufficient for this test.
+        if (this->isFallbackToSQ()) {
+            GTEST_SKIP() << "SVS Scalar quantization accuracy is insufficient for this test.";
+        }
+        size_t dim = 4;
+        size_t k = 11;
 
     size_t n = k * 3;
 
     auto edge_delta = (k - 0.8);
-    auto mid_delta = edge_delta / 2;
-    // `range` for querying the "edges" of the index and get k results.
-    double range = dim * edge_delta * edge_delta; // L2 distance.
-    // `half_range` for querying a point in the "middle" of the index and get k results around
-    // it.
-    double half_range = dim * mid_delta * mid_delta; // L2 distance.
+        auto mid_delta = edge_delta / 2;
+        // `range` for querying the "edges" of the index and get k results.
+        double range = dim * edge_delta * edge_delta; // L2 distance.
+        // `half_range` for querying a point in the "middle" of the index and get k results around
+        // it.
+        double half_range = dim * mid_delta * mid_delta; // L2 distance.
 
-    // Create TieredSVS index instance with a mock queue.
-    SVSParams params = {
-        .dim = dim,
-        .metric = VecSimMetric_L2,
+        // Create TieredSVS index instance with a mock queue.
+        SVSParams params = {
+            .dim = dim,
+            .metric = VecSimMetric_L2,
         .epsilon = 3.0,
-    };
+        };
 
-    this->SetTypeParams(params);
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
-    ASSERT_NO_FATAL_FAILURE(this->verify_index(tiered_index));
+        this->SetTypeParams(params);
+        VecSimParams svs_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_NO_FATAL_FAILURE(this->verify_index(tiered_index));
 
-    auto svs_index = tiered_index->GetBackendIndex();
-    auto flat_index = tiered_index->GetFlatIndex();
+        auto svs_index = tiered_index->GetBackendIndex();
+        auto flat_index = tiered_index->GetFlatIndex();
 
-    float16 query_0[dim];
-    this->GenerateVector(query_0, dim, 0);
-    float16 query_1mid[dim];
-    this->GenerateVector(query_1mid, dim, n / 3);
-    float16 query_2mid[dim];
-    this->GenerateVector(query_2mid, dim, n * 2 / 3);
-    float16 query_n[dim];
-    this->GenerateVector(query_n, dim, n - 1);
+        float16 query_0[dim];
+        this->GenerateVector(query_0, dim, 0);
+        float16 query_1mid[dim];
+        this->GenerateVector(query_1mid, dim, n / 3);
+        float16 query_2mid[dim];
+        this->GenerateVector(query_2mid, dim, n * 2 / 3);
+        float16 query_n[dim];
+        this->GenerateVector(query_n, dim, n - 1);
 
-    // Search for vectors when the index is empty.
-    runRangeQueryTest(tiered_index, query_0, range, nullptr, 0);
+        // Search for vectors when the index is empty.
+        runRangeQueryTest(tiered_index, query_0, range, nullptr, 0);
 
-    // Define the verification functions.
-    auto ver_res_0 = [&](size_t id, double score, size_t index) {
-        EXPECT_EQ(id, index);
-        // The expected score is the distance to the first vector of `id` label.
+        // Define the verification functions.
+        auto ver_res_0 = [&](size_t id, double score, size_t index) {
+            EXPECT_EQ(id, index);
+            // The expected score is the distance to the first vector of `id` label.
         auto element = id;
-        EXPECT_DOUBLE_EQ(score, dim * element * element);
-    };
+            EXPECT_DOUBLE_EQ(score, dim * element * element);
+        };
 
-    auto ver_res_1mid_by_id = [&](size_t id, double score, size_t index) {
+        auto ver_res_1mid_by_id = [&](size_t id, double score, size_t index) {
         size_t q_id = vecsim_types::FP16_to_FP32(query_1mid[0]);
         double expected_score = id > q_id ? (id - q_id) : (q_id - id);
-        expected_score = expected_score * expected_score * dim;
-        EXPECT_DOUBLE_EQ(score, expected_score);
-    };
+            expected_score = expected_score * expected_score * dim;
+            EXPECT_DOUBLE_EQ(score, expected_score);
+        };
 
-    auto ver_res_2mid_by_id = [&](size_t id, double score, size_t index) {
+        auto ver_res_2mid_by_id = [&](size_t id, double score, size_t index) {
         size_t q_id = vecsim_types::FP16_to_FP32(query_2mid[0]);
         double expected_score = id > q_id ? (id - q_id) : (q_id - id);
-        expected_score = expected_score * expected_score * dim;
-        EXPECT_DOUBLE_EQ(score, expected_score);
-    };
+            expected_score = expected_score * expected_score * dim;
+            EXPECT_DOUBLE_EQ(score, expected_score);
+        };
 
-    auto ver_res_1mid_by_score = [&](size_t id, double score, size_t index) {
+        auto ver_res_1mid_by_score = [&](size_t id, double score, size_t index) {
         size_t q_id = vecsim_types::FP16_to_FP32(query_1mid[0]);
-        EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
-        ver_res_1mid_by_id(id, score, index);
-    };
+            EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
+            ver_res_1mid_by_id(id, score, index);
+        };
 
-    auto ver_res_2mid_by_score = [&](size_t id, double score, size_t index) {
+        auto ver_res_2mid_by_score = [&](size_t id, double score, size_t index) {
         size_t q_id = vecsim_types::FP16_to_FP32(query_2mid[0]);
-        EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
-        ver_res_2mid_by_id(id, score, index);
-    };
+            EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
+            ver_res_2mid_by_id(id, score, index);
+        };
 
-    auto ver_res_n = [&](size_t id, double score, size_t index) {
+        auto ver_res_n = [&](size_t id, double score, size_t index) {
         EXPECT_EQ(id, n - 1 - index);
         auto element = index;
-        EXPECT_DOUBLE_EQ(score, dim * element * element);
-    };
+            EXPECT_DOUBLE_EQ(score, dim * element * element);
+        };
 
-    // Insert n/2 vectors to the main index.
-    for (size_t i = 0; i < (n + 1) / 2; i++) {
+        // Insert n/2 vectors to the main index.
+        for (size_t i = 0; i < (n + 1) / 2; i++) {
         this->GenerateAndAddVector(svs_index, dim, i, i);
-    }
-    ASSERT_EQ(tiered_index->indexSize(), (n + 1) / 2);
-    ASSERT_EQ(tiered_index->indexSize(), svs_index->indexSize());
+        }
+        ASSERT_EQ(tiered_index->indexSize(), (n + 1) / 2);
+        ASSERT_EQ(tiered_index->indexSize(), svs_index->indexSize());
 
-    auto allocator = tiered_index->getAllocator();
+        auto allocator = tiered_index->getAllocator();
 
-    // Search for `range` with the flat index empty.
-    size_t cur_memory_usage = allocator->getAllocationSize();
-    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
-    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
-    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
-    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
-    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+        // Search for `range` with the flat index empty.
+        size_t cur_memory_usage = allocator->getAllocationSize();
+        runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+        runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+        runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+        runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+        ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
-    // Insert n/2 vectors to the flat index.
-    for (size_t i = (n + 1) / 2; i < n; i++) {
+        // Insert n/2 vectors to the flat index.
+        for (size_t i = (n + 1) / 2; i < n; i++) {
         this->GenerateAndAddVector(flat_index, dim, i, i);
-    }
-    ASSERT_EQ(tiered_index->indexSize(), n);
-    ASSERT_EQ(tiered_index->indexSize(), svs_index->indexSize() + flat_index->indexSize());
+        }
+        ASSERT_EQ(tiered_index->indexSize(), n);
+        ASSERT_EQ(tiered_index->indexSize(), svs_index->indexSize() + flat_index->indexSize());
 
-    cur_memory_usage = allocator->getAllocationSize();
-    // Search for `range` so all the vectors will be from the SVS index.
-    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
-    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
-    // Search for `range` so all the vectors will be from the flat index.
-    runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
-    // Search for `range` so some of the results will be from the main and some from the flat
-    // index.
-    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
-    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
-    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
-    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
-    // Memory usage should not change.
-    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+        cur_memory_usage = allocator->getAllocationSize();
+        // Search for `range` so all the vectors will be from the SVS index.
+        runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+        runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+        // Search for `range` so all the vectors will be from the flat index.
+        runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
+        // Search for `range` so some of the results will be from the main and some from the flat
+        // index.
+        runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+        runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
+        runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+        runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+        // Memory usage should not change.
+        ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
-    // Add some overlapping vectors to the main and flat index.
-    // adding directly to the underlying indexes to avoid jobs logic.
-    // The main index will have vectors 0 - 2n/3 and the flat index will have vectors n/3 - n
-    for (size_t i = n / 3; i < n / 2; i++) {
+        // Add some overlapping vectors to the main and flat index.
+        // adding directly to the underlying indexes to avoid jobs logic.
+        // The main index will have vectors 0 - 2n/3 and the flat index will have vectors n/3 - n
+        for (size_t i = n / 3; i < n / 2; i++) {
         this->GenerateAndAddVector(flat_index, dim, i, i);
-    }
-    for (size_t i = n / 2; i < n * 2 / 3; i++) {
+        }
+        for (size_t i = n / 2; i < n * 2 / 3; i++) {
         this->GenerateAndAddVector(svs_index, dim, i, i);
-    }
+        }
 
-    cur_memory_usage = allocator->getAllocationSize();
-    // Search for `range` so all the vectors will be from the main index.
-    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
-    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
-    // Search for `range` so all the vectors will be from the flat index.
-    runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
-    // Search for `range` so some of the results will be from the main and some from the flat
-    // index.
-    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
-    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
-    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
-    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
-    // Memory usage should not change.
-    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
-}
+        cur_memory_usage = allocator->getAllocationSize();
+        // Search for `range` so all the vectors will be from the main index.
+        runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+        runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+        // Search for `range` so all the vectors will be from the flat index.
+        runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
+        // Search for `range` so some of the results will be from the main and some from the flat
+        // index.
+        runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+        runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
+        runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+        runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+        // Memory usage should not change.
+        ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+    }
 
 TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
     // Scalar quantization accuracy is insufficient for this test.
@@ -2627,7 +2644,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
         VecSimIndex_DeleteVector(svs_index, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
-    ASSERT_EQ(svs_index->indexSize(), n / 2);
+    ASSERT_EQ(svs_index->indexLabelCount(), n / 2);
     k = n * 2 / 3;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -2642,7 +2659,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
         VecSimIndex_DeleteVector(flat_index, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n / 6);
-    ASSERT_EQ(svs_index->indexSize(), n / 2);
+    ASSERT_EQ(svs_index->indexLabelCount(), n / 2);
     k = n / 4;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -2656,7 +2673,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
         this->GenerateAndAddVector(flat_index, dim, i, i);
     }
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
-    ASSERT_EQ(svs_index->indexSize(), 0);
+    ASSERT_EQ(svs_index->indexLabelCount(), 0);
     k = n / 3;
     cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -2760,7 +2777,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, BatchIterator) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
         this->verify_index(tiered_index);
