@@ -3126,8 +3126,19 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n);
     auto size_before_gc = tiered_index->getAllocationSize();
 
+    auto jobs_before_gc = mock_thread_pool.jobQ.size();
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
+    // Expected that GC jobs were added to the queue.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
+    // Run GC twice.
+    VecSimTieredIndex_GC(tiered_index);
+    // Expected that no new GC jobs were added to the queue.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
+    // Wait for any pending jobs to complete. As far as SVS GC is done via a job.
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    // Validate sizes after GC.
     ASSERT_EQ(tiered_index->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - threshold);
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n - threshold);
