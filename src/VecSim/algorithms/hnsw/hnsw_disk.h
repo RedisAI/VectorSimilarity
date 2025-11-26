@@ -179,9 +179,6 @@ protected:
     size_t deleteBatchThreshold = 10; // Adjust based on memory/latency requirements
     vecsim_stl::vector<idType> pendingDeleteIds;
 
-    // ID recycling mechanism to prevent unbounded growth of idToMetaData
-    vecsim_stl::vector<idType> freeIdList; // Pool of deleted IDs available for reuse
-
     // In-memory graph updates staging (for delayed disk operations)
     struct GraphUpdate {
         idType node_id;
@@ -211,7 +208,6 @@ protected:
     };
 
     vecsim_stl::vector<NeighborUpdate> stagedInsertNeighborUpdates;
-    vecsim_stl::vector<NeighborUpdate> stagedDeleteNeighborUpdates;
 
     // Temporary storage for raw vectors in RAM (until flush batch)
     // Maps idType -> raw vector data (stored as string for simplicity)
@@ -417,10 +413,9 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator), delta_list(),
       new_elements_meta_data(this->allocator), batchThreshold(10),
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
-      pendingDeleteIds(this->allocator), freeIdList(this->allocator),
+      pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
-      stagedDeleteUpdates(this->allocator), stagedInsertNeighborUpdates(this->allocator),
-      stagedDeleteNeighborUpdates(this->allocator) {
+      stagedDeleteUpdates(this->allocator), stagedInsertNeighborUpdates(this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -451,13 +446,11 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     stagedInsertUpdates.clear();
     stagedDeleteUpdates.clear();
     stagedInsertNeighborUpdates.clear();
-    stagedDeleteNeighborUpdates.clear();
 
     // Clear pending vectors
     pendingVectorIds.clear();
     pendingMetadata.clear();
     pendingDeleteIds.clear();
-    freeIdList.clear();
 
     // Clear delta list and new elements metadata
     delta_list.clear();
@@ -682,18 +675,9 @@ template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::addVector(
     const void *vector, labelType label
 ) {
-    // Allocate ID: first try to reuse a deleted ID from the free list
-    idType newElementId;
-    if (!freeIdList.empty()) {
-        // Reuse a deleted ID
-        newElementId = freeIdList.back();
-        freeIdList.pop_back();
-        idToMetaData[newElementId].flags = 0;
-    } else {
-        // No free IDs available, allocate a new one
-        newElementId = curElementCount;
-        curElementCount++;
-    }
+    // Allocate a new ID
+    idType newElementId = curElementCount;
+    curElementCount++;
 
     // Store raw vector in RAM first (until flush batch)
     // We need to store the original vector before preprocessing
@@ -703,16 +687,9 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
 
-    // Store the processed vector in memory immediately
-    // Note: We need to handle the case where we're reusing an ID
-    if (newElementId < this->vectors->size()) {
-        // Reusing an existing slot - update the element
-        this->vectors->updateElement(newElementId, processedBlobs.getStorageBlob());
-    } else {
-        // New slot - add the element
-        size_t containerId = this->vectors->size();
-        this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
-    }
+    // Store the processed vector in memory
+    size_t containerId = this->vectors->size();
+    this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
 
     // Create new element ID and metadata
     size_t elementMaxLevel = getRandomLevel(mult);
@@ -1727,7 +1704,6 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
 
     // Clear any previous staged updates (for deletions)
     stagedDeleteUpdates.clear();
-    stagedDeleteNeighborUpdates.clear();
 
     // Process each deleted node
     for (idType deleted_id : pendingDeleteIds) {
@@ -1779,7 +1755,6 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                     }
 
                     // Repair connections: connect this neighbor to other neighbors of deleted node
-                    // This follows the algorithm from the paper
                     size_t max_M = (level == 0) ? M0 : M;
 
                     // Build candidate set from deleted node's neighbors (excluding the current neighbor)
@@ -1832,16 +1807,11 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
         if (raw_it != rawVectorsInRAM.end()) {
             rawVectorsInRAM.erase(raw_it);
         }
-
-        // Add the deleted ID to the free list for recycling
-        freeIdList.push_back(deleted_id);
-
-        // Note: We don't decrement curElementCount - it represents the highest ID + 1
-        // The numMarkedDeleted was already incremented in markDelete
     }
 
     // Flush all staged graph updates to disk in a single batch operation
-    flushStagedGraphUpdates(stagedDeleteUpdates, stagedDeleteNeighborUpdates);
+    vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
+    flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
 
     // Clear the pending delete IDs
     pendingDeleteIds.clear();
@@ -2193,7 +2163,8 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedUpdates() {
     // Flush both insert and delete staged updates
     // Note: This is a non-const method that modifies the staging areas
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
-    flushStagedGraphUpdates(stagedDeleteUpdates, stagedDeleteNeighborUpdates);
+    vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
+    flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
 }
 
 template <typename DataType, typename DistType>
@@ -2206,8 +2177,6 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintStagedUpdates() const {
               stagedInsertNeighborUpdates.size());
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Delete Graph Updates: %zu",
               stagedDeleteUpdates.size());
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Delete Neighbor Updates: %zu",
-              stagedDeleteNeighborUpdates.size());
 }
 
 // Add missing method implementations for benchmark framework
