@@ -1278,8 +1278,6 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
     delete results;
 }
 
-// Test staged repair: when getNeighbors encounters stale edges to deleted nodes,
-// they are staged for cleanup and flushed with the next batch
 TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
     const size_t dim = 64;
     const size_t n = 50;

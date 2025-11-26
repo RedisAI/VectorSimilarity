@@ -129,10 +129,6 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     }
 }
 
-// Benchmark TopK performance with marked deleted vectors
-// st.range(0) = ef_runtime
-// st.range(1) = k
-// st.range(2) = number of vectors to mark as deleted
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State &st) {
     using data_t = typename index_type_t::data_t;
@@ -220,10 +216,6 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
 
 }
 
-// Benchmark TopK performance after actually deleting vectors (with graph repair)
-// st.range(0) = ef_runtime
-// st.range(1) = k
-// st.range(2) = number of vectors to delete
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State &st) {
     using data_t = typename index_type_t::data_t;
