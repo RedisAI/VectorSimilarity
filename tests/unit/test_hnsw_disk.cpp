@@ -1191,15 +1191,10 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
     index.flushDeleteBatch();
 
     // Verify index state
-    // With ID recycling: indexSize() returns curElementCount (highest ID + 1)
-    // During interleaved operations, when deleteBatchThreshold (10) is reached,
-    // processDeleteBatch() is called and deleted IDs are added to freeIdList.
-    // Subsequent insertions reuse these freed IDs instead of allocating new ones.
-    // This prevents unbounded growth of curElementCount in steady-state workloads.
-    // The exact value depends on when the batch threshold is triggered during interleaving.
-    // indexSize() should be less than initial_count + insert_count due to ID reuse.
-    ASSERT_LE(index.indexSize(), initial_count + insert_count);
-    ASSERT_GE(index.indexSize(), initial_count);
+    // indexSize() returns curElementCount (highest ID + 1)
+    // Without ID recycling, curElementCount grows with each insertion.
+    // After initial_count insertions + insert_count new insertions = initial_count + insert_count
+    ASSERT_EQ(index.indexSize(), initial_count + insert_count);
     // indexLabelCount() returns labelToIdMap.size() which reflects active (non-deleted) labels
     // So it should be: initial_count - delete_count + insert_count = 100 - 20 + 20 = 100
     ASSERT_EQ(index.indexLabelCount(), initial_count - delete_count + insert_count);
@@ -1267,11 +1262,9 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
     index.flushDeleteBatch();
 
     // Final verification
-    // With ID recycling: The 10 new vectors (120-129) reuse freed IDs from previous deletions.
-    // indexSize() remains bounded and doesn't grow to initial_count + total_inserts.
-    // It should be less than or equal to the size after Phase 2 plus any new IDs allocated.
-    ASSERT_LE(index.indexSize(), initial_count + insert_count + 10);
-    ASSERT_GE(index.indexSize(), initial_count);
+    // Without ID recycling, indexSize() grows with each insertion.
+    // Total insertions: initial_count + 20 (Phase 2) + 10 (Phase 6) = initial_count + 30
+    ASSERT_EQ(index.indexSize(), initial_count + 30);
     // indexLabelCount() = initial_count - total_deletes + total_inserts = 100 - 30 + 30 = 100
     size_t expected_label_count = initial_count - 30 + 30; // deleted 30 total, added 30 total
     ASSERT_EQ(index.indexLabelCount(), expected_label_count);
