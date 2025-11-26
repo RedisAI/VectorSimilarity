@@ -197,6 +197,10 @@ protected:
     vecsim_stl::vector<GraphUpdate> stagedInsertUpdates;
     vecsim_stl::vector<GraphUpdate> stagedDeleteUpdates;
 
+    // Staged repair updates: opportunistic cleanup when stale edges are filtered during reads
+    // Mutable to allow staging from const search methods (single-threaded)
+    mutable vecsim_stl::vector<GraphUpdate> stagedRepairUpdates;
+
     // Track which nodes need their neighbor lists updated (for bidirectional connections)
     struct NeighborUpdate {
         idType node_id;
@@ -207,6 +211,7 @@ protected:
             : node_id(node_id), level(level), new_neighbor_id(new_neighbor_id) {}
     };
 
+    // Can maybe merge with stagedInsertUpdates
     vecsim_stl::vector<NeighborUpdate> stagedInsertNeighborUpdates;
 
     // Temporary storage for raw vectors in RAM (until flush batch)
@@ -235,7 +240,7 @@ protected:
     std::string serializeGraphValue(const void* vector_data, const vecsim_stl::vector<idType>& neighbors) const;
     void deserializeGraphValue(const std::string& value, vecsim_stl::vector<idType>& neighbors) const;
     const void* getVectorFromGraphValue(const std::string& value) const;
-    
+
 public:
     // Pure virtual methods from VecSimIndexInterface
     int addVector(const void *blob, labelType label) override;
@@ -257,7 +262,7 @@ public:
     // Helper methods
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
     void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
-    
+
     // Manual control of staged updates
     void flushStagedUpdates(); // Manually flush any pending staged updates
 
@@ -267,9 +272,9 @@ protected:
                                   vecsim_stl::vector<NeighborUpdate>& neighborUpdates);
 
     // New method for handling neighbor connection updates when neighbor lists are full
-    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor, 
+    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor,
                                        size_t level, DistType distance);
-    
+
     // void patchDeltaList(std::unordered_map<idType, std::vector<idType>> &delta_list,
     //                     vecsim_stl::vector<DiskElementMetaData> &new_elements_meta_data,
     //                     std::unordered_map<idType, idType> &new_ids_mapping);
@@ -415,7 +420,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
       pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
-      stagedDeleteUpdates(this->allocator), stagedInsertNeighborUpdates(this->allocator) {
+      stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
+      stagedInsertNeighborUpdates(this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -445,6 +451,7 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     // Clear any staged updates before destruction
     stagedInsertUpdates.clear();
     stagedDeleteUpdates.clear();
+    stagedRepairUpdates.clear();
     stagedInsertNeighborUpdates.clear();
 
     // Clear pending vectors
@@ -1591,6 +1598,10 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
             for (size_t i = 0; i < update.neighbors.size(); i++) {
                 result.push_back(update.neighbors[i]);
             }
+            // Filter out deleted nodes
+            auto new_end = std::remove_if(result.begin(), result.end(),
+                [this](idType id) { return isMarkedDeleted(id); });
+            result.erase(new_end, result.end());
             return;
         }
     }
@@ -1601,6 +1612,22 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
             for (size_t i = 0; i < update.neighbors.size(); i++) {
                 result.push_back(update.neighbors[i]);
             }
+            // Filter out deleted nodes
+            auto new_end = std::remove_if(result.begin(), result.end(),
+                [this](idType id) { return isMarkedDeleted(id); });
+            result.erase(new_end, result.end());
+            return;
+        }
+    }
+
+    // Also check staged repair updates (already cleaned neighbors waiting to be flushed)
+    for (const auto &update : stagedRepairUpdates) {
+        if (update.node_id == nodeId && update.level == level) {
+            result.reserve(update.neighbors.size());
+            for (size_t i = 0; i < update.neighbors.size(); i++) {
+                result.push_back(update.neighbors[i]);
+            }
+            // No need to filter - lazy repair updates are already cleaned
             return;
         }
     }
@@ -1613,6 +1640,28 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
     if (status.ok()) {
         deserializeGraphValue(graph_value, result);
+        size_t original_size = result.size();
+
+        // Filter out deleted nodes
+        auto new_end = std::remove_if(result.begin(), result.end(),
+            [this](idType id) { return isMarkedDeleted(id); });
+        result.erase(new_end, result.end());
+
+        // Lazy repair: if we filtered any deleted nodes, stage for cleanup
+        // Threshold: stage if at least 1 deleted node was filtered
+        if (result.size() < original_size) {
+            // Check if this node is already in stagedRepairUpdates (avoid duplicates)
+            bool already_staged = false;
+            for (const auto &update : stagedRepairUpdates) {
+                if (update.node_id == nodeId && update.level == level) {
+                    already_staged = true;
+                    break;
+                }
+            }
+            if (!already_staged) {
+                stagedRepairUpdates.emplace_back(nodeId, level, result, this->allocator);
+            }
+        }
     }
 }
 
@@ -1812,6 +1861,11 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
     // Flush all staged graph updates to disk in a single batch operation
     vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
     flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
+
+    // Flush staged repair updates (opportunistic cleanup from getNeighbors)
+    if (!stagedRepairUpdates.empty()) {
+        flushStagedGraphUpdates(stagedRepairUpdates, emptyNeighborUpdates);
+    }
 
     // Clear the pending delete IDs
     pendingDeleteIds.clear();
@@ -2165,6 +2219,11 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedUpdates() {
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
     vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
     flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
+
+    // Also flush staged repair updates (opportunistic cleanup from getNeighbors)
+    if (!stagedRepairUpdates.empty()) {
+        flushStagedGraphUpdates(stagedRepairUpdates, emptyNeighborUpdates);
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -2177,6 +2236,8 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintStagedUpdates() const {
               stagedInsertNeighborUpdates.size());
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Delete Graph Updates: %zu",
               stagedDeleteUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Repair Updates: %zu",
+              stagedRepairUpdates.size());
 }
 
 // Add missing method implementations for benchmark framework
@@ -2258,7 +2319,7 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id,
 
 template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
-    
+
     return this->allocator->getAllocationSize();
 }
 

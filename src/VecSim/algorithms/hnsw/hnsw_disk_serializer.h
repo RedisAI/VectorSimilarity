@@ -60,7 +60,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
       pendingVectorCount(0), pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
-      stagedDeleteUpdates(this->allocator), stagedInsertNeighborUpdates(this->allocator) {
+      stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
+      stagedInsertNeighborUpdates(this->allocator) {
 
     // Restore index fields from file (including batchThreshold)
     this->restoreIndexFields(input);
