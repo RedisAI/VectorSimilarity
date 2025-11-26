@@ -682,12 +682,10 @@ template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::addVector(
     const void *vector, labelType label
 ) {
-    // Allocate a new ID
-    idType newElementId = curElementCount;
-    curElementCount++;
 
     // Store raw vector in RAM first (until flush batch)
     // We need to store the original vector before preprocessing
+    idType newElementId = curElementCount;
     const char* raw_data = reinterpret_cast<const char*>(vector);
     rawVectorsInRAM[newElementId] = std::string(raw_data, this->inputBlobSize);
 
@@ -714,8 +712,11 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     idToMetaData[newElementId] = new_element;
     labelToIdMap[label] = newElementId;
 
+    // Increment vector count immediately
+    curElementCount++;
+
+
     // Resize visited nodes handler pool to accommodate new elements
-    // Use curElementCount as the size since it represents the highest ID + 1
     visitedNodesHandlerPool.resize(curElementCount);
 
     // Add only the vector ID to pending vectors for indexing
@@ -855,71 +856,73 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
         // If neighbors list is empty, this is a deletion - remove the key from disk
         if (update.neighbors.empty()) {
             graphBatch.Delete(cf, newKey.asSlice());
-        } else {
-            const void* raw_vector_data = nullptr;
+            continue;
+        } 
+        
+        const void* raw_vector_data = nullptr;
 
-            // Try to read existing graph value from disk first
-            std::string key_str = newKey.asSlice().ToString();
-            auto cache_it = existingGraphValueCache.find(key_str);
+        // Try to read existing graph value from disk first
+        std::string key_str = newKey.asSlice().ToString();
+        auto cache_it = existingGraphValueCache.find(key_str);
 
-            if (cache_it == existingGraphValueCache.end()) {
-                // Not in cache, try to read from disk
-                std::string existing_graph_value;
-                rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, newKey.asSlice(), &existing_graph_value);
+        if (cache_it == existingGraphValueCache.end()) {
+            // Not in cache, try to read from disk
+            std::string existing_graph_value;
+            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, newKey.asSlice(), &existing_graph_value);
+
+            if (status.ok()) {
+                // Cache it
+                existingGraphValueCache[key_str] = existing_graph_value;
+                cache_it = existingGraphValueCache.find(key_str);
+            }
+        }
+
+        if (cache_it != existingGraphValueCache.end()) {
+            // Reuse the raw vector data from the cached graph value
+            raw_vector_data = getVectorFromGraphValue(cache_it->second);
+        }
+
+        // If we couldn't get raw vector data from existing graph value at this level,
+        // try to get it from level 0 (which should always exist for valid nodes)
+        if (raw_vector_data == nullptr && update.level > 0) {
+            GraphKey level0Key(update.node_id, 0);
+            std::string level0_key_str = level0Key.asSlice().ToString();
+            auto level0_cache_it = existingGraphValueCache.find(level0_key_str);
+
+            if (level0_cache_it == existingGraphValueCache.end()) {
+                std::string level0_graph_value;
+                rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, level0Key.asSlice(), &level0_graph_value);
 
                 if (status.ok()) {
-                    // Cache it
-                    existingGraphValueCache[key_str] = existing_graph_value;
-                    cache_it = existingGraphValueCache.find(key_str);
+                    existingGraphValueCache[level0_key_str] = level0_graph_value;
+                    level0_cache_it = existingGraphValueCache.find(level0_key_str);
                 }
             }
 
-            if (cache_it != existingGraphValueCache.end()) {
-                // Reuse the raw vector data from the cached graph value
-                raw_vector_data = getVectorFromGraphValue(cache_it->second);
+            if (level0_cache_it != existingGraphValueCache.end()) {
+                raw_vector_data = getVectorFromGraphValue(level0_cache_it->second);
             }
-
-            // If we couldn't get raw vector data from existing graph value at this level,
-            // try to get it from level 0 (which should always exist for valid nodes)
-            if (raw_vector_data == nullptr && update.level > 0) {
-                GraphKey level0Key(update.node_id, 0);
-                std::string level0_key_str = level0Key.asSlice().ToString();
-                auto level0_cache_it = existingGraphValueCache.find(level0_key_str);
-
-                if (level0_cache_it == existingGraphValueCache.end()) {
-                    std::string level0_graph_value;
-                    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, level0Key.asSlice(), &level0_graph_value);
-
-                    if (status.ok()) {
-                        existingGraphValueCache[level0_key_str] = level0_graph_value;
-                        level0_cache_it = existingGraphValueCache.find(level0_key_str);
-                    }
-                }
-
-                if (level0_cache_it != existingGraphValueCache.end()) {
-                    raw_vector_data = getVectorFromGraphValue(level0_cache_it->second);
-                }
-            }
-
-            // If we still couldn't get raw vector data, try getRawVector as last resort
-            if (raw_vector_data == nullptr) {
-                raw_vector_data = getRawVector(update.node_id);
-            }
-
-            // If we still don't have raw vector data, skip this update
-            // This can happen if the node was deleted or never properly flushed
-            if (raw_vector_data == nullptr) {
-                this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                         "WARNING: Skipping graph update for node %u at level %zu - no raw vector data available",
-                         update.node_id, update.level);
-                continue;
-            }
-
-            // Serialize with new format: [raw_vector_data][neighbor_count][neighbor_ids...]
-            std::string graph_value = serializeGraphValue(raw_vector_data, update.neighbors);
-
-            graphBatch.Put(cf, newKey.asSlice(), graph_value);
         }
+
+        // If we still couldn't get raw vector data, try getRawVector as last resort
+        if (raw_vector_data == nullptr) {
+            raw_vector_data = getRawVector(update.node_id);
+        }
+
+        // If we still don't have raw vector data, skip this update
+        // This can happen if the node was deleted or never properly flushed
+        if (raw_vector_data == nullptr) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                        "WARNING: Skipping graph update for node %u at level %zu - no raw vector data available",
+                        update.node_id, update.level);
+            continue;
+        }
+
+        // Serialize with new format: [raw_vector_data][neighbor_count][neighbor_ids...]
+        std::string graph_value = serializeGraphValue(raw_vector_data, update.neighbors);
+
+        graphBatch.Put(cf, newKey.asSlice(), graph_value);
+        
     }
 
     // Write graph updates to disk first
