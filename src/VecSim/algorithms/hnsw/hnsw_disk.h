@@ -1736,50 +1736,124 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                 }
 
                 if (is_bidirectional) {
-                    // Remove the deleted node from neighbor's neighbor list
-                    vecsim_stl::vector<idType> updated_neighbors(this->allocator);
+                    // ===== Graph Repair Strategy =====
+                    // When deleting a node, we need to repair its neighbors' connections to maintain
+                    // graph quality and navigability. We use a heuristic-based approach similar to
+                    // the regular HNSW implementation (see hnsw.h::repairConnectionsForDeletion).
+                    //
+                    // Strategy:
+                    // 1. Collect candidates: existing neighbors + deleted node's neighbors
+                    // 2. Calculate distances using quantized vectors (fast, in-memory)
+                    // 3. Apply getNeighborsByHeuristic2 to select best neighbors
+                    // 4. This ensures high-quality connections that maintain search performance
+
+                    size_t max_M = (level == 0) ? M0 : M;
+
+                    // Build candidate set with distances
+                    // Candidates include: existing neighbors (minus deleted) + deleted node's neighbors
+                    candidatesList<DistType> candidates(this->allocator);
+                    const void* neighbor_data = getDataByInternalId(neighbor_id);
+
+                    // Add existing neighbors (excluding the deleted node) with their distances
                     for (idType nn : neighbor_neighbors) {
-                        if (nn != deleted_id) {
-                            updated_neighbors.push_back(nn);
+                        if (nn != deleted_id && nn < curElementCount && !isMarkedDeleted(nn)) {
+                            const void* nn_data = getDataByInternalId(nn);
+                            DistType dist = this->calcDistance(nn_data, neighbor_data);
+                            candidates.emplace_back(dist, nn);
                         }
                     }
 
-                    // Repair connections: connect this neighbor to other neighbors of deleted node
-                    size_t max_M = (level == 0) ? M0 : M;
-
-                    // Build candidate set from deleted node's neighbors (excluding the current neighbor)
-                    vecsim_stl::vector<idType> candidates(this->allocator);
+                    // Add deleted node's neighbors (excluding current neighbor) as repair candidates
                     for (idType candidate_id : deleted_node_neighbors) {
                         if (candidate_id != neighbor_id &&
                             candidate_id < curElementCount &&
                             !isMarkedDeleted(candidate_id)) {
-                            candidates.push_back(candidate_id);
+
+                            // Check if already in candidates to avoid duplicates
+                            bool already_added = false;
+                            for (const auto& [dist, id] : candidates) {
+                                if (id == candidate_id) {
+                                    already_added = true;
+                                    break;
+                                }
+                            }
+
+                            if (!already_added) {
+                                const void* candidate_data = getDataByInternalId(candidate_id);
+                                DistType dist = this->calcDistance(candidate_data, neighbor_data);
+                                candidates.emplace_back(dist, candidate_id);
+                            }
                         }
                     }
 
-                    // Add best candidates to fill up to max_M connections
-                    for (idType candidate_id : candidates) {
-                        if (updated_neighbors.size() >= max_M) {
-                            break;
+                    // Track which neighbors were originally connected (before repair)
+                    vecsim_stl::vector<bool> original_neighbors_set(curElementCount, false, this->allocator);
+                    for (idType nn : neighbor_neighbors) {
+                        if (nn != deleted_id && nn < curElementCount) {
+                            original_neighbors_set[nn] = true;
                         }
+                    }
 
-                        // Check if candidate is already in the neighbor list
-                        bool already_connected = false;
-                        for (idType existing : updated_neighbors) {
-                            if (existing == candidate_id) {
-                                already_connected = true;
-                                break;
-                            }
+                    // Apply heuristic to select best neighbors if we have more than max_M
+                    vecsim_stl::vector<idType> updated_neighbors(this->allocator);
+                    if (candidates.size() > max_M) {
+                        // Use the same heuristic as during insertion for consistency
+                        vecsim_stl::vector<idType> removed_candidates(this->allocator);
+                        getNeighborsByHeuristic2(candidates, max_M, removed_candidates);
+
+                        // Extract selected neighbor IDs
+                        updated_neighbors.reserve(candidates.size());
+                        for (const auto& [dist, id] : candidates) {
+                            updated_neighbors.push_back(id);
                         }
-
-                        if (!already_connected) {
-                            // Add this candidate as a new neighbor
-                            updated_neighbors.push_back(candidate_id);
+                    } else {
+                        // If we have fewer candidates than max_M, use them all
+                        updated_neighbors.reserve(candidates.size());
+                        for (const auto& [dist, id] : candidates) {
+                            updated_neighbors.push_back(id);
                         }
                     }
 
                     // Stage the update for this neighbor (for deletions)
                     stagedDeleteUpdates.emplace_back(neighbor_id, level, updated_neighbors, this->allocator);
+
+                    // Handle bidirectional edge updates for new connections
+                    // For each new neighbor that wasn't originally connected, we need to add
+                    // the repaired neighbor to their neighbor list (if bidirectional)
+                    for (idType new_neighbor_id : updated_neighbors) {
+                        if (!original_neighbors_set[new_neighbor_id]) {
+                            // This is a new connection created by repair
+                            // Check if the new neighbor already points back to the repaired neighbor
+                            vecsim_stl::vector<idType> new_neighbor_neighbors(this->allocator);
+                            getNeighbors(new_neighbor_id, level, new_neighbor_neighbors);
+
+                            bool already_bidirectional = false;
+                            for (idType nn : new_neighbor_neighbors) {
+                                if (nn == neighbor_id) {
+                                    already_bidirectional = true;
+                                    break;
+                                }
+                            }
+
+                            // If not bidirectional, add the reverse connection
+                            if (!already_bidirectional) {
+                                // Stage a neighbor update to add the bidirectional connection
+                                // This will be handled by adding neighbor_id to new_neighbor_id's list
+                                // We need to check if new_neighbor_id's list is full and apply heuristic if needed
+
+                                // For simplicity in the disk implementation, we'll add it if there's space
+                                // or let the opportunistic repair handle it during future operations
+                                size_t max_neighbors = (level == 0) ? M0 : M;
+                                if (new_neighbor_neighbors.size() < max_neighbors) {
+                                    // Add the reverse connection
+                                    new_neighbor_neighbors.push_back(neighbor_id);
+                                    stagedDeleteUpdates.emplace_back(new_neighbor_id, level, new_neighbor_neighbors, this->allocator);
+                                }
+                                // If the list is full, we skip adding the reverse edge
+                                // This creates a unidirectional edge, which is acceptable in HNSW
+                            }
+                        }
+                    }
                 }
             }
 
