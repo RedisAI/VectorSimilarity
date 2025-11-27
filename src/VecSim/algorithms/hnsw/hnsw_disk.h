@@ -201,6 +201,11 @@ protected:
     // Mutable to allow staging from const search methods (single-threaded)
     mutable vecsim_stl::vector<GraphUpdate> stagedRepairUpdates;
 
+    // Hash map for O(1) duplicate detection in stagedRepairUpdates
+    // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
+    // Mutable to allow updates from const search methods (single-threaded)
+    mutable std::unordered_set<uint64_t> stagedRepairSet;
+
     // Track which nodes need their neighbor lists updated (for bidirectional connections)
     struct NeighborUpdate {
         idType node_id;
@@ -267,6 +272,21 @@ public:
     void flushStagedUpdates(); // Manually flush any pending staged updates
 
 protected:
+    // Helper method to filter deleted nodes from a neighbor list (DRY principle)
+    // Returns true if any nodes were filtered out
+    inline bool filterDeletedNodes(vecsim_stl::vector<idType>& neighbors) const {
+        size_t original_size = neighbors.size();
+        auto new_end = std::remove_if(neighbors.begin(), neighbors.end(),
+            [this](idType id) { return isMarkedDeleted(id); });
+        neighbors.erase(new_end, neighbors.end());
+        return neighbors.size() < original_size;
+    }
+
+    // Helper to create a unique key for (node_id, level) pair for hash map
+    inline uint64_t makeRepairKey(idType node_id, size_t level) const {
+        return (static_cast<uint64_t>(node_id) << 32) | static_cast<uint64_t>(level);
+    }
+
     // New method for flushing staged graph updates to disk
     void flushStagedGraphUpdates(vecsim_stl::vector<GraphUpdate>& graphUpdates,
                                   vecsim_stl::vector<NeighborUpdate>& neighborUpdates);
@@ -452,6 +472,7 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     stagedInsertUpdates.clear();
     stagedDeleteUpdates.clear();
     stagedRepairUpdates.clear();
+    stagedRepairSet.clear();
     stagedInsertNeighborUpdates.clear();
 
     // Clear pending vectors
@@ -1525,10 +1546,8 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
             for (size_t i = 0; i < update.neighbors.size(); i++) {
                 result.push_back(update.neighbors[i]);
             }
-            // Filter out deleted nodes
-            auto new_end = std::remove_if(result.begin(), result.end(),
-                [this](idType id) { return isMarkedDeleted(id); });
-            result.erase(new_end, result.end());
+            // Filter out deleted nodes using helper
+            filterDeletedNodes(result);
             return;
         }
     }
@@ -1539,10 +1558,8 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
             for (size_t i = 0; i < update.neighbors.size(); i++) {
                 result.push_back(update.neighbors[i]);
             }
-            // Filter out deleted nodes
-            auto new_end = std::remove_if(result.begin(), result.end(),
-                [this](idType id) { return isMarkedDeleted(id); });
-            result.erase(new_end, result.end());
+            // Filter out deleted nodes using helper
+            filterDeletedNodes(result);
             return;
         }
     }
@@ -1555,13 +1572,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
                 result.push_back(update.neighbors[i]);
             }
             // Filter in case nodes were deleted after this repair was staged
-            size_t original_size = result.size();
-            auto new_end = std::remove_if(result.begin(), result.end(),
-                [this](idType id) { return isMarkedDeleted(id); });
-            result.erase(new_end, result.end());
-
-            // If we filtered more nodes, update the staged repair with the newer cleaned list
-            if (result.size() < original_size) {
+            if (filterDeletedNodes(result)) {
                 // Update the existing repair entry with the more up-to-date cleaned list
                 update.neighbors = result;
             }
@@ -1577,26 +1588,15 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
     if (status.ok()) {
         deserializeGraphValue(graph_value, result);
-        size_t original_size = result.size();
 
-        // Filter out deleted nodes
-        auto new_end = std::remove_if(result.begin(), result.end(),
-            [this](idType id) { return isMarkedDeleted(id); });
-        result.erase(new_end, result.end());
-
-        // Lazy repair: if we filtered any deleted nodes, stage for cleanup
-        // Threshold: stage if at least 1 deleted node was filtered
-        if (result.size() < original_size) {
-            // Check if this node is already in stagedRepairUpdates (avoid duplicates)
-            bool already_staged = false;
-            for (const auto &update : stagedRepairUpdates) {
-                if (update.node_id == nodeId && update.level == level) {
-                    already_staged = true;
-                    break;
-                }
-            }
-            if (!already_staged) {
+        // Filter out deleted nodes and check if any were filtered
+        if (filterDeletedNodes(result)) {
+            // Lazy repair: if we filtered any deleted nodes, stage for cleanup
+            // Use hash map for O(1) duplicate detection
+            uint64_t repair_key = makeRepairKey(nodeId, level);
+            if (stagedRepairSet.find(repair_key) == stagedRepairSet.end()) {
                 stagedRepairUpdates.emplace_back(nodeId, level, result, this->allocator);
+                stagedRepairSet.insert(repair_key);
             }
         }
     }
@@ -1892,6 +1892,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
         }
         // Clear all staged repairs (including filtered ones)
         stagedRepairUpdates.clear();
+        stagedRepairSet.clear();
     }
 
     // Clear the pending delete IDs
@@ -2250,6 +2251,7 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedUpdates() {
     // Also flush staged repair updates (opportunistic cleanup from getNeighbors)
     if (!stagedRepairUpdates.empty()) {
         flushStagedGraphUpdates(stagedRepairUpdates, emptyNeighborUpdates);
+        stagedRepairSet.clear();
     }
 }
 
