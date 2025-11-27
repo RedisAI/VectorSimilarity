@@ -1204,22 +1204,16 @@ const char* HNSWDiskIndex<DataType, DistType>::getRawVector(idType id) const {
         return data_ptr;
     }
 
-    // Check if already in disk cache
-    auto cache_it = rawVectorsDiskCache.find(id);
-    if (cache_it != rawVectorsDiskCache.end()) {
-        return cache_it->second.data();
-    }
-
     // If not in RAM or cache, retrieve from disk
     GraphKey graphKey(id, 0);
     std::string level0_graph_value;
     rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
 
     if (status.ok()) {
-        // Extract vector data and cache it
+        // Extract vector data
         const void* vector_data = getVectorFromGraphValue(level0_graph_value);
         if (vector_data != nullptr) {
-            // Cache the raw vector data by copying it from the graph value
+            // Cache the raw vector data
             const char* data_ptr = reinterpret_cast<const char*>(vector_data);
             rawVectorsDiskCache[id] = std::string(data_ptr, this->inputBlobSize);
             return rawVectorsDiskCache[id].data();
@@ -1554,13 +1548,23 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     }
 
     // Also check staged repair updates (already cleaned neighbors waiting to be flushed)
-    for (const auto &update : stagedRepairUpdates) {
+    for (auto &update : stagedRepairUpdates) {
         if (update.node_id == nodeId && update.level == level) {
             result.reserve(update.neighbors.size());
             for (size_t i = 0; i < update.neighbors.size(); i++) {
                 result.push_back(update.neighbors[i]);
             }
-            // No need to filter - lazy repair updates are already cleaned
+            // Filter in case nodes were deleted after this repair was staged
+            size_t original_size = result.size();
+            auto new_end = std::remove_if(result.begin(), result.end(),
+                [this](idType id) { return isMarkedDeleted(id); });
+            result.erase(new_end, result.end());
+
+            // If we filtered more nodes, update the staged repair with the newer cleaned list
+            if (result.size() < original_size) {
+                // Update the existing repair entry with the more up-to-date cleaned list
+                update.neighbors = result;
+            }
             return;
         }
     }
@@ -1687,6 +1691,9 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
     // Clear any previous staged updates (for deletions)
     stagedDeleteUpdates.clear();
 
+    // Create a set of IDs being deleted in this batch for quick lookup
+    std::unordered_set<idType> deletingIds(pendingDeleteIds.begin(), pendingDeleteIds.end());
+
     // Process each deleted node
     for (idType deleted_id : pendingDeleteIds) {
         // Skip if already processed or invalid
@@ -1709,8 +1716,9 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
 
             // For each neighbor of the deleted node
             for (idType neighbor_id : deleted_node_neighbors) {
-                // Skip if neighbor is also deleted or invalid
-                if (neighbor_id >= curElementCount || isMarkedDeleted(neighbor_id)) {
+                // Skip if neighbor is also deleted, invalid, or in the current deletion batch
+                if (neighbor_id >= curElementCount || isMarkedDeleted(neighbor_id) ||
+                    deletingIds.find(neighbor_id) != deletingIds.end()) {
                     continue;
                 }
 
@@ -1796,8 +1804,20 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
     flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
 
     // Flush staged repair updates (opportunistic cleanup from getNeighbors)
+    // But first, filter out any repairs for nodes that were just deleted
     if (!stagedRepairUpdates.empty()) {
-        flushStagedGraphUpdates(stagedRepairUpdates, emptyNeighborUpdates);
+        vecsim_stl::vector<GraphUpdate> filteredRepairUpdates(this->allocator);
+        for (const auto &update : stagedRepairUpdates) {
+            // Skip repairs for nodes that are in the deletion batch
+            if (deletingIds.find(update.node_id) == deletingIds.end()) {
+                filteredRepairUpdates.push_back(update);
+            }
+        }
+        if (!filteredRepairUpdates.empty()) {
+            flushStagedGraphUpdates(filteredRepairUpdates, emptyNeighborUpdates);
+        }
+        // Clear all staged repairs (including filtered ones)
+        stagedRepairUpdates.clear();
     }
 
     // Clear the pending delete IDs
