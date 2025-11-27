@@ -898,52 +898,37 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
     // Process each node's neighbor updates
     for (const auto& [node_id, levelMap] : neighborUpdatesByNode) {
         for (const auto& [level, newNeighbors] : levelMap) {
-        // Read existing graph value from disk
-        GraphKey neighborKey(node_id, level);
-        std::string existing_graph_value;
-        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_graph_value);
+            // Read existing graph value from disk
+            GraphKey neighborKey(node_id, level);
+            std::string existing_graph_value;
+            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_graph_value);
 
-        vecsim_stl::vector<idType> updated_neighbors(this->allocator);
-        const void* raw_vector_data = nullptr;
+            vecsim_stl::vector<idType> updated_neighbors(this->allocator);
 
-        if (status.ok()) {
-            // Parse existing neighbors using new format
-            deserializeGraphValue(existing_graph_value, updated_neighbors);
-            // Reuse the raw vector data from the existing graph value
-            raw_vector_data = getVectorFromGraphValue(existing_graph_value);
-        }
+            if (status.ok()) {
+                // Parse existing neighbors using new format
+                deserializeGraphValue(existing_graph_value, updated_neighbors);
+            }
 
-        // Add new neighbors (avoiding duplicates)
-        for (idType new_neighbor : newNeighbors) {
-            bool found = false;
-            for (size_t i = 0; i < updated_neighbors.size(); i++) {
-                if (updated_neighbors[i] == new_neighbor) {
-                    found = true;
-                    break;
+            // Add new neighbors (avoiding duplicates)
+            for (idType new_neighbor : newNeighbors) {
+                bool found = false;
+                for (size_t i = 0; i < updated_neighbors.size(); i++) {
+                    if (updated_neighbors[i] == new_neighbor) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    updated_neighbors.push_back(new_neighbor);
                 }
             }
-            if (!found) {
-                updated_neighbors.push_back(new_neighbor);
-            }
-        }
 
-        // If we couldn't get raw vector data from existing graph value, try getRawVector
-        if (raw_vector_data == nullptr) {
-            raw_vector_data = getRawVector(node_id);
-        }
+            const void* raw_vector_data = getRawVector(node_id);
 
-        // If we still don't have raw vector data, skip this update
-        // This can happen if the node was deleted or never properly flushed
-        if (raw_vector_data == nullptr) {
-            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                     "WARNING: Skipping neighbor update for node %u at level %zu - no raw vector data available",
-                     node_id, level);
-            continue;
-        }
-
-        // Serialize with new format and add to batch
-        std::string graph_value = serializeGraphValue(raw_vector_data, updated_neighbors);
-        neighborBatch.Put(cf, neighborKey.asSlice(), graph_value);
+            // Serialize with new format and add to batch
+            std::string graph_value = serializeGraphValue(raw_vector_data, updated_neighbors);
+            neighborBatch.Put(cf, neighborKey.asSlice(), graph_value);
         }
     }
 
