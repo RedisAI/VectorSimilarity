@@ -1404,3 +1404,363 @@ TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
         delete results;
     }
 }
+
+// Test that verifies bidirectional edge updates during graph repair
+TEST_F(HNSWDiskIndexTest, GraphRepairBidirectionalEdges) {
+    size_t n = 50;
+    size_t dim = 4;
+
+    // Create HNSW parameters with small M to make bidirectional updates more likely
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 4;  // Small M to test edge capacity limits
+    params.efConstruction = 50;
+    params.efRuntime = 20;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1024;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(),
+                                      default_cf, temp_dir);
+
+    // Add vectors in a clustered pattern to create predictable neighbor relationships
+    std::mt19937 rng(12345);
+    std::vector<std::vector<float>> vectors;
+
+    // Create 5 clusters of 10 vectors each
+    for (size_t cluster = 0; cluster < 5; cluster++) {
+        std::vector<float> cluster_center(dim);
+        for (size_t d = 0; d < dim; d++) {
+            cluster_center[d] = static_cast<float>(cluster * 10);
+        }
+
+        for (size_t i = 0; i < 10; i++) {
+            std::vector<float> vec(dim);
+            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+            for (size_t d = 0; d < dim; d++) {
+                vec[d] = cluster_center[d] + dist(rng);
+            }
+            vectors.push_back(vec);
+            labelType label = cluster * 10 + i;
+            int ret = index.addVector(vec.data(), label);
+            ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
+        }
+    }
+
+    // Flush to disk
+    index.flushBatch();
+    ASSERT_EQ(index.indexSize(), n);
+
+    // Delete a vector from the middle of a cluster (should trigger repair)
+    // Delete vector 15 (middle of cluster 1)
+    labelType deleted_label = 15;
+    int ret = index.deleteVector(deleted_label);
+    ASSERT_EQ(ret, 1) << "Failed to delete vector " << deleted_label;
+
+    // Flush the delete batch - this triggers graph repair
+    index.flushDeleteBatch();
+    ASSERT_EQ(index.getNumMarkedDeleted(), 1);
+
+    // Verify the index is still functional
+    VecSimQueryParams queryParams;
+    queryParams.hnswRuntimeParams.efRuntime = 20;
+
+    // Query with vectors from the same cluster
+    for (size_t i = 10; i < 20; i++) {
+        if (i == deleted_label) continue;
+
+        auto results = index.topKQuery(vectors[i].data(), 5, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+        ASSERT_GT(results->results.size(), 0);
+
+        // Verify deleted vector is not in results
+        for (const auto &result : results->results) {
+            ASSERT_NE(result.id, deleted_label) << "Deleted vector found in search results";
+        }
+
+        delete results;
+    }
+
+    // Delete multiple vectors to test batch repair with bidirectional updates
+    std::vector<labelType> deleted_labels = {5, 15, 25, 35};
+    for (labelType label : deleted_labels) {
+        if (label == 15) continue; // Already deleted
+        ret = index.deleteVector(label);
+        ASSERT_EQ(ret, 1) << "Failed to delete vector " << label;
+    }
+
+    // Flush and verify
+    index.flushDeleteBatch();
+    ASSERT_EQ(index.getNumMarkedDeleted(), 4);
+
+    // Verify graph connectivity is maintained
+    for (size_t i = 0; i < n; i++) {
+        if (std::find(deleted_labels.begin(), deleted_labels.end(), i) != deleted_labels.end()) {
+            continue;
+        }
+
+        auto results = index.topKQuery(vectors[i].data(), 3, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+
+        // Should find at least some neighbors
+        ASSERT_GT(results->results.size(), 0) << "No neighbors found for vector " << i;
+
+        // Verify no deleted vectors in results
+        for (const auto &result : results->results) {
+            bool is_deleted = std::find(deleted_labels.begin(), deleted_labels.end(),
+                                        result.id) != deleted_labels.end();
+            ASSERT_FALSE(is_deleted) << "Deleted vector " << result.id << " found in results";
+        }
+
+        delete results;
+    }
+}
+
+// Test that verifies unidirectional edges are cleaned up via opportunistic repair
+TEST_F(HNSWDiskIndexTest, UnidirectionalEdgeCleanup) {
+    size_t n = 30;
+    size_t dim = 4;
+
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 8;
+    params.efConstruction = 100;
+    params.efRuntime = 30;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1024;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(),
+                                      default_cf, temp_dir);
+
+    // Add vectors
+    std::mt19937 rng(99999);
+    std::vector<std::vector<float>> vectors;
+    for (labelType label = 0; label < n; label++) {
+        auto vec = createRandomVector(dim, rng);
+        vectors.push_back(vec);
+        int ret = index.addVector(vec.data(), label);
+        ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
+    }
+
+    // Flush to disk
+    index.flushBatch();
+    ASSERT_EQ(index.indexSize(), n);
+
+    // Delete some vectors - this may create unidirectional dangling edges
+    // (nodes that point to deleted nodes but are not in the deleted node's neighbor list)
+    std::vector<labelType> deleted_labels = {5, 10, 15, 20};
+    for (labelType label : deleted_labels) {
+        int ret = index.deleteVector(label);
+        ASSERT_EQ(ret, 1) << "Failed to delete vector " << label;
+    }
+
+    // Flush delete batch
+    index.flushDeleteBatch();
+    ASSERT_EQ(index.getNumMarkedDeleted(), deleted_labels.size());
+
+    // Perform searches - this triggers getNeighbors which will:
+    // 1. Filter out deleted nodes from neighbor lists
+    // 2. Stage repairs for nodes with dangling edges (opportunistic cleanup)
+    VecSimQueryParams queryParams;
+    queryParams.hnswRuntimeParams.efRuntime = 30;
+
+    // Do multiple searches to traverse the graph and trigger opportunistic repair
+    for (size_t i = 0; i < n; i++) {
+        if (std::find(deleted_labels.begin(), deleted_labels.end(), i) != deleted_labels.end()) {
+            continue;
+        }
+
+        auto results = index.topKQuery(vectors[i].data(), 5, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+
+        // Verify no deleted vectors in results
+        for (const auto &result : results->results) {
+            bool is_deleted = std::find(deleted_labels.begin(), deleted_labels.end(),
+                                        result.id) != deleted_labels.end();
+            ASSERT_FALSE(is_deleted) << "Deleted vector " << result.id << " found in search results";
+        }
+
+        delete results;
+    }
+
+    // Flush staged repair updates (cleanup of unidirectional dangling edges)
+    // This happens automatically during the next batch operation
+    index.flushDeleteBatch();
+
+    // Verify the graph is still functional after cleanup
+    for (size_t i = 0; i < 10; i++) {
+        if (std::find(deleted_labels.begin(), deleted_labels.end(), i) != deleted_labels.end()) {
+            continue;
+        }
+
+        auto results = index.topKQuery(vectors[i].data(), 5, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+        ASSERT_GT(results->results.size(), 0);
+
+        // Verify all results are non-deleted
+        for (const auto &result : results->results) {
+            bool is_deleted = std::find(deleted_labels.begin(), deleted_labels.end(),
+                                        result.id) != deleted_labels.end();
+            ASSERT_FALSE(is_deleted) << "Deleted vector found after opportunistic cleanup";
+        }
+
+        delete results;
+    }
+}
+
+// Test graph repair with heuristic selection
+TEST_F(HNSWDiskIndexTest, GraphRepairWithHeuristic) {
+    size_t n = 40;
+    size_t dim = 8;
+
+    // Create HNSW parameters with small M to force heuristic selection
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 3;  // Very small M to force heuristic pruning
+    params.efConstruction = 50;
+    params.efRuntime = 20;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1024;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(),
+                                      default_cf, temp_dir);
+
+    // Add vectors in a dense cluster to create many neighbor relationships
+    std::mt19937 rng(54321);
+    std::vector<std::vector<float>> vectors;
+
+    for (labelType label = 0; label < n; label++) {
+        std::vector<float> vec(dim);
+        std::uniform_real_distribution<float> dist(-2.0f, 2.0f);
+        for (size_t d = 0; d < dim; d++) {
+            vec[d] = dist(rng);
+        }
+        vectors.push_back(vec);
+        int ret = index.addVector(vec.data(), label);
+        ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
+    }
+
+    // Flush to disk
+    index.flushBatch();
+    ASSERT_EQ(index.indexSize(), n);
+
+    // Delete a vector that likely has many neighbors
+    // This will trigger repair with heuristic selection (candidates > max_M)
+    labelType deleted_label = 20;
+    int ret = index.deleteVector(deleted_label);
+    ASSERT_EQ(ret, 1);
+
+    // Flush delete batch - triggers graph repair with heuristic
+    index.flushDeleteBatch();
+    ASSERT_EQ(index.getNumMarkedDeleted(), 1);
+
+    // Verify search quality is maintained (heuristic selected good neighbors)
+    VecSimQueryParams queryParams;
+    queryParams.hnswRuntimeParams.efRuntime = 20;
+
+    for (size_t i = 0; i < n; i++) {
+        if (i == deleted_label) continue;
+
+        auto results = index.topKQuery(vectors[i].data(), 5, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+
+        // Should find neighbors despite small M
+        ASSERT_GT(results->results.size(), 0) << "No neighbors found for vector " << i;
+
+        // Verify deleted vector not in results
+        for (const auto &result : results->results) {
+            ASSERT_NE(result.id, deleted_label);
+        }
+
+        delete results;
+    }
+
+    // Delete multiple vectors to stress test the heuristic repair
+    std::vector<labelType> deleted_labels = {5, 10, 15, 20, 25, 30};
+    for (labelType label : deleted_labels) {
+        if (label == 20) continue; // Already deleted
+        ret = index.deleteVector(label);
+        ASSERT_EQ(ret, 1);
+    }
+
+    index.flushDeleteBatch();
+    ASSERT_EQ(index.getNumMarkedDeleted(), 6);
+
+    // Verify graph is still navigable
+    size_t successful_queries = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (std::find(deleted_labels.begin(), deleted_labels.end(), i) != deleted_labels.end()) {
+            continue;
+        }
+
+        auto results = index.topKQuery(vectors[i].data(), 3, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+
+        if (results->results.size() > 0) {
+            successful_queries++;
+        }
+
+        delete results;
+    }
+
+    // Most queries should succeed (graph should remain connected)
+    ASSERT_GT(successful_queries, (n - deleted_labels.size()) / 2)
+        << "Too many queries failed - graph may be disconnected";
+}
