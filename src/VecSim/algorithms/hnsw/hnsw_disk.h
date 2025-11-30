@@ -202,7 +202,12 @@ protected:
     vecsim_stl::vector<GraphUpdate> stagedDeleteUpdates;
 
     // Staged repair updates: opportunistic cleanup when stale edges are filtered during reads
-    // Mutable to allow staging from const search methods (single-threaded)
+    // Mutable to allow staging from const search methods.
+    // IMPORTANT: This class is NOT thread-safe. All operations (including const methods like
+    // getNeighbors and search) must be called from a single thread. The mutable fields below
+    // are modified during read operations for opportunistic graph cleanup.
+    // TODO: For multi-threaded support, these fields need proper synchronization or a different
+    // approach (e.g., returning repair suggestions instead of staging them directly).
     mutable vecsim_stl::vector<GraphUpdate> stagedRepairUpdates;
 
     // Hash maps for O(1) lookups in staged updates
@@ -214,8 +219,7 @@ protected:
     // Hash map for O(1) lookups and duplicate detection in stagedRepairUpdates
     // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
     // Value: index into stagedRepairUpdates vector
-    // Mutable to allow updates from const search methods (single-threaded)
-    // TODO: Remove the mutability of this field when we move to multi-threaded
+    // Mutable - see thread-safety note above for stagedRepairUpdates
     mutable std::unordered_map<uint64_t, size_t> stagedRepairMap;
 
     // Track which nodes need their neighbor lists updated (for bidirectional connections)
@@ -284,12 +288,13 @@ public:
     void flushStagedUpdates(); // Manually flush any pending staged updates
 
 protected:
-    // Helper method to filter deleted nodes from a neighbor list (DRY principle)
+    // Helper method to filter deleted or invalid nodes from a neighbor list (DRY principle)
     // Returns true if any nodes were filtered out
+    // Filters out: nodes marked as deleted, and nodes with invalid IDs (>= curElementCount)
     inline bool filterDeletedNodes(vecsim_stl::vector<idType>& neighbors) const {
         size_t original_size = neighbors.size();
         auto new_end = std::remove_if(neighbors.begin(), neighbors.end(),
-            [this](idType id) { return isMarkedDeleted(id); });
+            [this](idType id) { return id >= curElementCount || isMarkedDeleted(id); });
         neighbors.erase(new_end, neighbors.end());
         return neighbors.size() < original_size;
     }
@@ -1837,9 +1842,22 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                     }
 
                     // Stage the update for this neighbor (for deletions)
-                    uint64_t delete_key = makeRepairKey(neighbor_id, level);
-                    stagedDeleteMap[delete_key] = stagedDeleteUpdates.size();
-                    stagedDeleteUpdates.emplace_back(neighbor_id, level, updated_neighbors, this->allocator);
+                    // Use helper lambda to safely stage updates (merge if key exists)
+                    auto stageDeleteUpdate = [this](idType node_id, size_t lvl,
+                                                     vecsim_stl::vector<idType>& neighbors) {
+                        uint64_t key = makeRepairKey(node_id, lvl);
+                        auto existing_it = stagedDeleteMap.find(key);
+                        if (existing_it != stagedDeleteMap.end()) {
+                            // Update existing entry in place
+                            stagedDeleteUpdates[existing_it->second].neighbors = neighbors;
+                        } else {
+                            // Add new entry
+                            stagedDeleteMap[key] = stagedDeleteUpdates.size();
+                            stagedDeleteUpdates.emplace_back(node_id, lvl, neighbors, this->allocator);
+                        }
+                    };
+
+                    stageDeleteUpdate(neighbor_id, level, updated_neighbors);
 
                     // Handle bidirectional edge updates for new connections
                     // For each new neighbor that wasn't originally connected, we need to add
@@ -1871,9 +1889,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                                 if (new_neighbor_neighbors.size() < max_neighbors) {
                                     // Add the reverse connection
                                     new_neighbor_neighbors.push_back(neighbor_id);
-                                    uint64_t delete_key = makeRepairKey(new_neighbor_id, level);
-                                    stagedDeleteMap[delete_key] = stagedDeleteUpdates.size();
-                                    stagedDeleteUpdates.emplace_back(new_neighbor_id, level, new_neighbor_neighbors, this->allocator);
+                                    stageDeleteUpdate(new_neighbor_id, level, new_neighbor_neighbors);
                                 }
                                 // If the list is full, we skip adding the reverse edge
                                 // This creates a unidirectional edge, which is acceptable in HNSW
@@ -1886,18 +1902,32 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
             // Delete the node's graph entry at this level by staging an empty neighbor list
             // (or we could use a Delete operation in the batch)
             vecsim_stl::vector<idType> empty_neighbors(this->allocator);
-            uint64_t delete_key = makeRepairKey(deleted_id, level);
-            stagedDeleteMap[delete_key] = stagedDeleteUpdates.size();
+            uint64_t del_key = makeRepairKey(deleted_id, level);
+            // For deletion entries, always overwrite - the node is being deleted
+            stagedDeleteMap[del_key] = stagedDeleteUpdates.size();
             stagedDeleteUpdates.emplace_back(deleted_id, level, empty_neighbors, this->allocator);
         }
+    }
 
+    // Mark metadata as invalid and clean up raw vectors AFTER processing all nodes
+    // This ensures getNeighbors() and other methods work correctly during graph repair
+    for (idType deleted_id : pendingDeleteIds) {
+        if (deleted_id >= curElementCount || deleted_id >= idToMetaData.size()) {
+            continue;
+        }
         // Mark the metadata as invalid
         idToMetaData[deleted_id].label = INVALID_LABEL;
 
         // Remove raw vector from RAM if it exists
-        auto raw_it = rawVectorsInRAM.find(deleted_id);
-        if (raw_it != rawVectorsInRAM.end()) {
-            rawVectorsInRAM.erase(raw_it);
+        auto ram_it = rawVectorsInRAM.find(deleted_id);
+        if (ram_it != rawVectorsInRAM.end()) {
+            rawVectorsInRAM.erase(ram_it);
+        }
+
+        // Also remove from disk cache to prevent stale data access
+        auto cache_it = rawVectorsDiskCache.find(deleted_id);
+        if (cache_it != rawVectorsDiskCache.end()) {
+            rawVectorsDiskCache.erase(cache_it);
         }
     }
 

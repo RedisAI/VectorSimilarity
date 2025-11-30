@@ -1036,7 +1036,7 @@ TEST_F(HNSWDiskIndexTest, BatchedDeletionTest) {
     // Create HNSWDiskIndex
     rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();
     HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(),
-                                      default_cf);
+                                      default_cf, temp_dir);
 
     // Add vectors to the index
     std::mt19937 rng(42);
