@@ -31,6 +31,9 @@ public:
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const {
         return this->dist_func(7);
     }
+    virtual DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const {
+        return this->dist_func(7);
+    }
 };
 
 } // namespace dummyCalcultor

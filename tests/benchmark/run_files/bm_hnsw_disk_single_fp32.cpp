@@ -30,14 +30,7 @@ const char *BM_VecSimGeneral::ground_truth_file = "tests/benchmark/data/deep.gro
 #define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Single)
 #define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Async, Single)
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, Single)
-
-// Define benchmarks for different index types
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex_Single, float,
-                    float, INDEX_BF)
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
-                    INDEX_HNSW)
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSWDisk), fp32_index_t, HNSWDiskIndex, float, float,
-                    INDEX_HNSW_DISK)
+#define BM_FLUSH_BATCH_DISK         CONCAT_WITH_UNDERSCORE_ARCH(FlushBatchDisk, Single)
 
 #include "benchmark/bm_initialization/bm_hnsw_disk_initialize_fp32.h"
 BENCHMARK_MAIN();

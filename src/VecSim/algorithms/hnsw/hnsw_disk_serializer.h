@@ -56,7 +56,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      delta_list(), new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
+      new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
       pendingVectorCount(0), stagedGraphUpdates(this->allocator),
       stagedNeighborUpdates(this->allocator) {
@@ -276,11 +276,7 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     if (pendingVectorCount != 0) {
         throw std::runtime_error("Serialization error: pendingVectorCount not zero after flush");
     }
-    // Note: delta_list and new_elements_meta_data are currently unused legacy variables
-    // but we verify them for future-proofing
-    if (!delta_list.empty()) {
-        throw std::runtime_error("Serialization error: delta_list not empty after flush");
-    }
+
     if (!new_elements_meta_data.empty()) {
         throw std::runtime_error("Serialization error: new_elements_meta_data not empty after flush");
     }
