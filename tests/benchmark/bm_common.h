@@ -257,7 +257,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
         deleted_labels.push_back(label);
     }
 
-    // Measure the time spent on deleteVector calls (includes batch merge every 10 vectors)
+    // Measure the time spent on deleteVector calls (includes automatic batch processing)
     auto delete_start = std::chrono::high_resolution_clock::now();
     for (const auto &label : deleted_labels) {
         disk_index->deleteVector(label);
@@ -382,7 +382,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
         deleted_labels.push_back(label);
     }
 
-    // Measure the time spent on deleteVector calls (includes batch merge every 10 vectors)
+    // Measure the time spent on deleteVector calls (includes automatic batch processing)
     auto delete_start = std::chrono::high_resolution_clock::now();
     for (const auto &label : deleted_labels) {
         disk_index->deleteVector(label);

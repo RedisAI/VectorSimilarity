@@ -232,7 +232,7 @@ protected:
             : node_id(node_id), level(level), new_neighbor_id(new_neighbor_id) {}
     };
 
-    // Can maybe merge with stagedInsertUpdates
+    // TODO: Consider merging with stagedInsertUpdates
     vecsim_stl::vector<NeighborUpdate> stagedInsertNeighborUpdates;
 
     // Temporary storage for raw vectors in RAM (until flush batch)
@@ -432,6 +432,30 @@ public:
 private:
     // HNSW helper methods
     void replaceEntryPoint();
+
+    // Helper to stage a delete update, merging with existing entry if present
+    inline void stageDeleteUpdate(idType node_id, size_t level, vecsim_stl::vector<idType> &neighbors) {
+        uint64_t key = makeRepairKey(node_id, level);
+        auto existing_it = stagedDeleteMap.find(key);
+        if (existing_it != stagedDeleteMap.end()) {
+            stagedDeleteUpdates[existing_it->second].neighbors = neighbors;
+        } else {
+            stagedDeleteMap[key] = stagedDeleteUpdates.size();
+            stagedDeleteUpdates.emplace_back(node_id, level, neighbors, this->allocator);
+        }
+    }
+
+    // Graph repair helper for deletion - repairs a neighbor's connections after a node is deleted.
+    // This maintains graph quality and navigability using a heuristic-based approach.
+    // Parameters:
+    //   neighbor_id: The neighbor whose connections need repair
+    //   level: The graph level being repaired
+    //   deleted_id: The internal ID of the node being deleted
+    //   deleted_node_neighbors: Neighbors of the deleted node (potential repair candidates)
+    //   neighbor_neighbors: Current neighbors of neighbor_id (will be modified)
+    void repairNeighborConnections(idType neighbor_id, size_t level, idType deleted_id,
+                                   const vecsim_stl::vector<idType> &deleted_node_neighbors,
+                                   vecsim_stl::vector<idType> &neighbor_neighbors);
 
     /*****************************************************************/
 
@@ -1708,6 +1732,83 @@ void HNSWDiskIndex<DataType, DistType>::flushBatch() {
 }
 
 template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::repairNeighborConnections(
+    idType neighbor_id, size_t level, idType deleted_id,
+    const vecsim_stl::vector<idType> &deleted_node_neighbors,
+    vecsim_stl::vector<idType> &neighbor_neighbors) {
+
+    // ===== Graph Repair Strategy =====
+    // When deleting a node, we need to repair its neighbors' connections to maintain
+    // graph quality and navigability. We use a heuristic-based approach similar to
+    // the regular HNSW implementation (see hnsw.h::repairConnectionsForDeletion).
+    //
+    // Strategy:
+    // 1. Collect candidates: existing neighbors + deleted node's neighbors
+    // 2. Calculate distances using quantized vectors (fast, in-memory)
+    // 3. Apply getNeighborsByHeuristic2 to select best neighbors
+    // 4. This ensures high-quality connections that maintain search performance
+
+    size_t max_M = (level == 0) ? M0 : M;
+
+    // Build candidate set with distances
+    // Candidates include: existing neighbors (minus deleted) + deleted node's neighbors
+    candidatesList<DistType> candidates(this->allocator);
+    const void *neighbor_data = getDataByInternalId(neighbor_id);
+
+    // Use a hash set to track candidate IDs for O(1) duplicate detection
+    std::unordered_set<idType> candidate_ids;
+
+    // Add existing neighbors (excluding the deleted node) with their distances
+    for (idType nn : neighbor_neighbors) {
+        if (nn != deleted_id && nn < curElementCount && !isMarkedDeleted(nn)) {
+            const void *nn_data = getDataByInternalId(nn);
+            DistType dist = this->calcDistance(nn_data, neighbor_data);
+            candidates.emplace_back(dist, nn);
+            candidate_ids.insert(nn);
+        }
+    }
+
+    // Add deleted node's neighbors (excluding current neighbor) as repair candidates
+    for (idType candidate_id : deleted_node_neighbors) {
+        if (candidate_id != neighbor_id && candidate_id < curElementCount &&
+            !isMarkedDeleted(candidate_id)) {
+            // Check if already in candidates to avoid duplicates using O(1) hash set lookup
+            if (candidate_ids.find(candidate_id) == candidate_ids.end()) {
+                const void *candidate_data = getDataByInternalId(candidate_id);
+                DistType dist = this->calcDistance(candidate_data, neighbor_data);
+                candidates.emplace_back(dist, candidate_id);
+                candidate_ids.insert(candidate_id);
+            }
+        }
+    }
+
+    // Track original neighbors for bidirectional edge updates
+    vecsim_stl::unordered_set<idType> original_neighbors_set(this->allocator);
+    original_neighbors_set.reserve(neighbor_neighbors.size());
+    for (idType nn : neighbor_neighbors) {
+        if (nn != deleted_id && nn < curElementCount) {
+            original_neighbors_set.insert(nn);
+        }
+    }
+
+    // Apply heuristic to select best neighbors if we have more than max_M
+    vecsim_stl::vector<idType> updated_neighbors(this->allocator);
+    if (candidates.size() > max_M) {
+        vecsim_stl::vector<idType> removed_candidates(this->allocator);
+        getNeighborsByHeuristic2(candidates, max_M, removed_candidates);
+    }
+    // Extract selected neighbor IDs (works for both cases)
+    updated_neighbors.reserve(candidates.size());
+    for (const auto &[dist, id] : candidates) {
+        updated_neighbors.push_back(id);
+    }
+
+    // Stage the update for this neighbor
+    stageDeleteUpdate(neighbor_id, level, updated_neighbors);
+
+}
+
+template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
     if (pendingDeleteIds.empty()) return;
 
@@ -1760,184 +1861,9 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                 }
 
                 if (is_bidirectional) {
-                    // ===== Graph Repair Strategy =====
-                    // When deleting a node, we need to repair its neighbors' connections to maintain
-                    // graph quality and navigability. We use a heuristic-based approach similar to
-                    // the regular HNSW implementation (see hnsw.h::repairConnectionsForDeletion).
-                    //
-                    // Strategy:
-                    // 1. Collect candidates: existing neighbors + deleted node's neighbors
-                    // 2. Calculate distances using quantized vectors (fast, in-memory)
-                    // 3. Apply getNeighborsByHeuristic2 to select best neighbors
-                    // 4. This ensures high-quality connections that maintain search performance
-
-                    size_t max_M = (level == 0) ? M0 : M;
-
-                    // Build candidate set with distances
-                    // Candidates include: existing neighbors (minus deleted) + deleted node's neighbors
-                    candidatesList<DistType> candidates(this->allocator);
-                    const void* neighbor_data = getDataByInternalId(neighbor_id);
-
-                    // Use a hash set to track candidate IDs for O(1) duplicate detection
-                    std::unordered_set<idType> candidate_ids;
-
-                    // Add existing neighbors (excluding the deleted node) with their distances
-                    for (idType nn : neighbor_neighbors) {
-                        if (nn != deleted_id && nn < curElementCount && !isMarkedDeleted(nn)) {
-                            const void* nn_data = getDataByInternalId(nn);
-                            DistType dist = this->calcDistance(nn_data, neighbor_data);
-                            candidates.emplace_back(dist, nn);
-                            candidate_ids.insert(nn);
-                        }
-                    }
-
-                    // Add deleted node's neighbors (excluding current neighbor) as repair candidates
-                    for (idType candidate_id : deleted_node_neighbors) {
-                        if (candidate_id != neighbor_id &&
-                            candidate_id < curElementCount &&
-                            !isMarkedDeleted(candidate_id)) {
-
-                            // Check if already in candidates to avoid duplicates using O(1) hash set lookup
-                            if (candidate_ids.find(candidate_id) == candidate_ids.end()) {
-                                const void* candidate_data = getDataByInternalId(candidate_id);
-                                DistType dist = this->calcDistance(candidate_data, neighbor_data);
-                                candidates.emplace_back(dist, candidate_id);
-                                candidate_ids.insert(candidate_id);
-                            }
-                        }
-                    }
-
-                    vecsim_stl::unordered_set<idType> original_neighbors_set(this->allocator);
-                    original_neighbors_set.reserve(neighbor_neighbors.size());
-                    for (idType nn : neighbor_neighbors) {
-                        if (nn != deleted_id && nn < curElementCount) {
-                            original_neighbors_set.insert(nn);
-                        }
-                    }
-
-                    // Apply heuristic to select best neighbors if we have more than max_M
-                    vecsim_stl::vector<idType> updated_neighbors(this->allocator);
-                    if (candidates.size() > max_M) {
-                        // Use the same heuristic as during insertion for consistency
-                        vecsim_stl::vector<idType> removed_candidates(this->allocator);
-                        getNeighborsByHeuristic2(candidates, max_M, removed_candidates);
-
-                        // Extract selected neighbor IDs
-                        updated_neighbors.reserve(candidates.size());
-                        for (const auto& [dist, id] : candidates) {
-                            updated_neighbors.push_back(id);
-                        }
-                    } else {
-                        // If we have fewer candidates than max_M, use them all
-                        updated_neighbors.reserve(candidates.size());
-                        for (const auto& [dist, id] : candidates) {
-                            updated_neighbors.push_back(id);
-                        }
-                    }
-
-                    // Stage the update for this neighbor (for deletions)
-                    // Use helper lambda to safely stage updates (merge if key exists)
-                    auto stageDeleteUpdate = [this](idType node_id, size_t lvl,
-                                                     vecsim_stl::vector<idType>& neighbors) {
-                        uint64_t key = makeRepairKey(node_id, lvl);
-                        auto existing_it = stagedDeleteMap.find(key);
-                        if (existing_it != stagedDeleteMap.end()) {
-                            // Update existing entry in place
-                            stagedDeleteUpdates[existing_it->second].neighbors = neighbors;
-                        } else {
-                            // Add new entry
-                            stagedDeleteMap[key] = stagedDeleteUpdates.size();
-                            stagedDeleteUpdates.emplace_back(node_id, lvl, neighbors, this->allocator);
-                        }
-                    };
-
-                    stageDeleteUpdate(neighbor_id, level, updated_neighbors);
-
-                    // Handle bidirectional edge updates for new connections
-                    // For each new neighbor that wasn't originally connected, we need to add
-                    // the repaired neighbor to their neighbor list (if bidirectional)
-                    for (idType new_neighbor_id : updated_neighbors) {
-                        if (original_neighbors_set.find(new_neighbor_id) == original_neighbors_set.end()) {
-                            // This is a new connection created by repair
-                            // Check if the new neighbor already points back to the repaired neighbor
-                            vecsim_stl::vector<idType> new_neighbor_neighbors(this->allocator);
-                            getNeighbors(new_neighbor_id, level, new_neighbor_neighbors);
-
-                            bool already_bidirectional = false;
-                            for (idType nn : new_neighbor_neighbors) {
-                                if (nn == neighbor_id) {
-                                    already_bidirectional = true;
-                                    break;
-                                }
-                            }
-
-                            // If not bidirectional, add the reverse connection
-                            if (!already_bidirectional) {
-                                // Stage a neighbor update to add the bidirectional connection
-                                // This will be handled by adding neighbor_id to new_neighbor_id's list
-                                // We need to check if new_neighbor_id's list is full and apply heuristic
-                                // if needed
-
-                                size_t max_neighbors = (level == 0) ? M0 : M;
-                                if (new_neighbor_neighbors.size() < max_neighbors) {
-                                    // Space available - simply add the reverse connection
-                                    new_neighbor_neighbors.push_back(neighbor_id);
-                                    stageDeleteUpdate(new_neighbor_id, level, new_neighbor_neighbors);
-                                } else {
-                                    // List is full - apply heuristic to decide if we should replace
-                                    // an existing neighbor with the new repair edge.
-                                    // This maintains bidirectionality which is critical for HNSW
-                                    // recall quality (avoids "trap" nodes that are easy to enter
-                                    // but hard to exit during greedy search).
-
-                                    // Build candidate list: existing neighbors + the new repair edge
-                                    candidatesList<DistType> reverse_candidates(this->allocator);
-                                    reverse_candidates.reserve(new_neighbor_neighbors.size() + 1);
-
-                                    const void* new_neighbor_data = getDataByInternalId(new_neighbor_id);
-
-                                    // Add existing neighbors with their distances
-                                    for (idType nn : new_neighbor_neighbors) {
-                                        if (nn < curElementCount && !isMarkedDeleted(nn)) {
-                                            const void* nn_data = getDataByInternalId(nn);
-                                            DistType dist = this->calcDistance(nn_data, new_neighbor_data);
-                                            reverse_candidates.emplace_back(dist, nn);
-                                        }
-                                    }
-
-                                    // Add the repair edge (neighbor_id -> new_neighbor_id's reverse)
-                                    DistType repair_dist = this->calcDistance(neighbor_data, new_neighbor_data);
-                                    reverse_candidates.emplace_back(repair_dist, neighbor_id);
-
-                                    // Apply heuristic to select the best neighbors
-                                    vecsim_stl::vector<idType> removed_from_reverse(this->allocator);
-                                    getNeighborsByHeuristic2(reverse_candidates, max_neighbors, removed_from_reverse);
-
-                                    // Check if the repair edge was selected
-                                    bool repair_edge_selected = false;
-                                    for (const auto& [dist, id] : reverse_candidates) {
-                                        if (id == neighbor_id) {
-                                            repair_edge_selected = true;
-                                            break;
-                                        }
-                                    }
-
-                                    if (repair_edge_selected) {
-                                        // The heuristic chose the repair edge - update the neighbor list
-                                        vecsim_stl::vector<idType> updated_reverse_neighbors(this->allocator);
-                                        updated_reverse_neighbors.reserve(reverse_candidates.size());
-                                        for (const auto& [dist, id] : reverse_candidates) {
-                                            updated_reverse_neighbors.push_back(id);
-                                        }
-                                        stageDeleteUpdate(new_neighbor_id, level, updated_reverse_neighbors);
-                                    }
-                                    // If repair edge was not selected by heuristic, we accept the
-                                    // unidirectional edge - the heuristic determined that the existing
-                                    // neighbors are better for search quality
-                                }
-                            }
-                        }
-                    }
+                    // Repair connections using the dedicated helper method
+                    repairNeighborConnections(neighbor_id, level, deleted_id,
+                                              deleted_node_neighbors, neighbor_neighbors);
                 }
             }
 
@@ -2528,18 +2454,9 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
         return internal_ids;
     }
 
-    // Mark as deleted
+    // Mark as deleted (but don't clean up raw vectors yet - they're needed for graph repair
+    // in processDeleteBatch. Cleanup happens there after repair is complete.)
     markAs<DELETE_MARK>(internalId);
-    
-    auto raw_it = rawVectorsInRAM.find(internalId);
-    if (raw_it != rawVectorsInRAM.end()) {
-        rawVectorsInRAM.erase(raw_it);
-    }
-
-    auto disk_it = rawVectorsDiskCache.find(internalId);
-    if (disk_it != rawVectorsDiskCache.end()) {
-        rawVectorsDiskCache.erase(disk_it);
-    }
     this->numMarkedDeleted++;
 
     // If this is the entrypoint, we need to replace it
