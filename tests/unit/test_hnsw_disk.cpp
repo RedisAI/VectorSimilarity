@@ -1304,7 +1304,7 @@ TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
 
     // Create index components
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
-        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+        abstractInitParams.allocator, VecSimMetric_Cosine, dim, false);
 
     // Create HNSWDiskIndex
     rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();

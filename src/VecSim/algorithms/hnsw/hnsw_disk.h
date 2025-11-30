@@ -176,7 +176,11 @@ protected:
     vecsim_stl::vector<DiskElementMetaData> pendingMetadata; // Metadata for pending vectors
     size_t pendingVectorCount;                               // Count of vectors in memory
 
-    size_t deleteBatchThreshold = 10; // Adjust based on memory/latency requirements
+    /**
+     * Threshold for batching delete operations.
+     * When the number of pending deletions reaches this value, the deletions are processed in a batch.
+     */
+    size_t deleteBatchThreshold = 10;
     vecsim_stl::vector<idType> pendingDeleteIds;
 
     // In-memory graph updates staging (for delayed disk operations)
@@ -943,17 +947,12 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
                 deserializeGraphValue(existing_graph_value, updated_neighbors);
             }
 
-            // Add new neighbors (avoiding duplicates)
+            // Add new neighbors (avoiding duplicates) using a hash set for O(1) lookup
+            std::unordered_set<idType> neighbor_set(updated_neighbors.begin(), updated_neighbors.end());
             for (idType new_neighbor : newNeighbors) {
-                bool found = false;
-                for (size_t i = 0; i < updated_neighbors.size(); i++) {
-                    if (updated_neighbors[i] == new_neighbor) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
+                if (neighbor_set.find(new_neighbor) == neighbor_set.end()) {
                     updated_neighbors.push_back(new_neighbor);
+                    neighbor_set.insert(new_neighbor);
                 }
             }
 
@@ -1775,12 +1774,16 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                     candidatesList<DistType> candidates(this->allocator);
                     const void* neighbor_data = getDataByInternalId(neighbor_id);
 
+                    // Use a hash set to track candidate IDs for O(1) duplicate detection
+                    std::unordered_set<idType> candidate_ids;
+
                     // Add existing neighbors (excluding the deleted node) with their distances
                     for (idType nn : neighbor_neighbors) {
                         if (nn != deleted_id && nn < curElementCount && !isMarkedDeleted(nn)) {
                             const void* nn_data = getDataByInternalId(nn);
                             DistType dist = this->calcDistance(nn_data, neighbor_data);
                             candidates.emplace_back(dist, nn);
+                            candidate_ids.insert(nn);
                         }
                     }
 
@@ -1790,28 +1793,26 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                             candidate_id < curElementCount &&
                             !isMarkedDeleted(candidate_id)) {
 
-                            // Check if already in candidates to avoid duplicates
-                            bool already_added = false;
-                            for (const auto& [dist, id] : candidates) {
-                                if (id == candidate_id) {
-                                    already_added = true;
-                                    break;
-                                }
-                            }
-
-                            if (!already_added) {
+                            // Check if already in candidates to avoid duplicates using O(1) hash set lookup
+                            if (candidate_ids.find(candidate_id) == candidate_ids.end()) {
                                 const void* candidate_data = getDataByInternalId(candidate_id);
                                 DistType dist = this->calcDistance(candidate_data, neighbor_data);
                                 candidates.emplace_back(dist, candidate_id);
+                                candidate_ids.insert(candidate_id);
                             }
                         }
                     }
 
                     // Track which neighbors were originally connected (before repair)
-                    vecsim_stl::vector<bool> original_neighbors_set(curElementCount, false, this->allocator);
+                    // Use unordered_set instead of vector<bool> for memory efficiency:
+                    // - neighbor_neighbors typically has M or M0 elements (16-32)
+                    // - unordered_set uses ~4-8 bytes per element = 64-256 bytes total
+                    // - vector<bool> would use curElementCount/8 bytes (125KB for 1M vectors)
+                    vecsim_stl::unordered_set<idType> original_neighbors_set(this->allocator);
+                    original_neighbors_set.reserve(neighbor_neighbors.size());
                     for (idType nn : neighbor_neighbors) {
                         if (nn != deleted_id && nn < curElementCount) {
-                            original_neighbors_set[nn] = true;
+                            original_neighbors_set.insert(nn);
                         }
                     }
 
@@ -1844,7 +1845,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                     // For each new neighbor that wasn't originally connected, we need to add
                     // the repaired neighbor to their neighbor list (if bidirectional)
                     for (idType new_neighbor_id : updated_neighbors) {
-                        if (!original_neighbors_set[new_neighbor_id]) {
+                        if (original_neighbors_set.find(new_neighbor_id) == original_neighbors_set.end()) {
                             // This is a new connection created by repair
                             // Check if the new neighbor already points back to the repaired neighbor
                             vecsim_stl::vector<idType> new_neighbor_neighbors(this->allocator);
