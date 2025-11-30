@@ -41,6 +41,8 @@ then
     file_name="basic_uint8"
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
+elif [ "$BM_TYPE" = "bm-hnsw-disk-fp32-single" ]; then
+    file_name="bm-hnsw-disk-fp32-single"
 else
     echo "No files to download for BM_TYPE=$BM_TYPE"
     exit 0
