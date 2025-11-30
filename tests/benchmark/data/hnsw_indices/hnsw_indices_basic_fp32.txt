@@ -3,3 +3,8 @@ https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-te
 
 https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/fashion_images_multi_value-cosine-dim512-M64-efc512.hnsw_v3
 https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/fashion_images_multi_value-cosine-dim512-test_vectors.raw
+
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep-1M-cosine-dim96-M32-efc200-disk-vectors.zip
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep.query.public.10K.fbin
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep.groundtruth.1M.10K.ibin
+
