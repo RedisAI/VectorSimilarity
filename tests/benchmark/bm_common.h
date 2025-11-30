@@ -158,12 +158,16 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
         size_t stratum_start = (i * N_VECTORS) / num_to_delete;
         size_t stratum_end = ((i + 1) * N_VECTORS) / num_to_delete;
         size_t stratum_size = stratum_end - stratum_start;
-        
+
         std::uniform_int_distribution<size_t> dist(0, stratum_size - 1);
         labelType label = stratum_start + dist(rng);
         deleted_labels.push_back(label);
         disk_index->markDelete(label);
     }
+
+    // Create hash set for O(1) lookup during ground truth filtering
+    // With up to 50K deleted labels, this avoids O(n) linear search overhead
+    std::unordered_set<labelType> deleted_labels_set(deleted_labels.begin(), deleted_labels.end());
 
     size_t total_marked = disk_index->getNumMarkedDeleted();
     st.counters["num_marked_deleted"] = total_marked;
@@ -192,7 +196,8 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
 
         auto filtered_res = new VecSimQueryReply(VecSimAllocator::newVecsimAllocator());
         for (const auto &res : gt_results->results) {
-            if (std::find(deleted_labels.begin(), deleted_labels.end(), res.id) == deleted_labels.end()) {
+            // Use hash set for O(1) lookup instead of O(n) linear search
+            if (deleted_labels_set.find(res.id) == deleted_labels_set.end()) {
                 filtered_res->results.emplace_back(res.id, res.score);
                 // Stop once we have k non-deleted results
                 if (filtered_res->results.size() >= k) {
@@ -255,6 +260,10 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
     // Force flush any pending deletes to ensure graph is fully repaired
     disk_index->flushDeleteBatch();
 
+    // Create hash set for O(1) lookup during ground truth filtering
+    // With up to 50K deleted labels, this avoids O(n) linear search overhead
+    std::unordered_set<labelType> deleted_labels_set(deleted_labels.begin(), deleted_labels.end());
+
     size_t total_deleted = deleted_labels.size();
     st.counters["num_deleted"] = total_deleted;
 
@@ -282,7 +291,8 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
 
         auto filtered_res = new VecSimQueryReply(VecSimAllocator::newVecsimAllocator());
         for (const auto &res : gt_results->results) {
-            if (std::find(deleted_labels.begin(), deleted_labels.end(), res.id) == deleted_labels.end()) {
+            // Use hash set for O(1) lookup instead of O(n) linear search
+            if (deleted_labels_set.find(res.id) == deleted_labels_set.end()) {
                 filtered_res->results.emplace_back(res.id, res.score);
                 // Stop once we have k non-deleted results
                 if (filtered_res->results.size() >= k) {
