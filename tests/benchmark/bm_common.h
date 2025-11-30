@@ -323,7 +323,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({100, 100})                                                                         \
         ->Args({200, 100})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(10)                                                                           \
+        ->Iterations(100)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k, num_marked_deleted}
@@ -337,7 +337,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({200, 50, 10000})                                                                   \
         ->Args({200, 50, 50000})                                                                   \
         ->ArgNames({"ef_runtime", "k", "num_marked_deleted"})                                      \
-        ->Iterations(10)                                                                           \
+        ->Iterations(100)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k} (recall that always ef_runtime >= k)
