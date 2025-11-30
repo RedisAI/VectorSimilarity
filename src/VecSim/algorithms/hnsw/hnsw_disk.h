@@ -201,10 +201,18 @@ protected:
     // Mutable to allow staging from const search methods (single-threaded)
     mutable vecsim_stl::vector<GraphUpdate> stagedRepairUpdates;
 
-    // Hash map for O(1) duplicate detection in stagedRepairUpdates
+    // Hash maps for O(1) lookups in staged updates
     // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
+    // Value: index into the corresponding staged updates vector
+    std::unordered_map<uint64_t, size_t> stagedInsertMap;
+    std::unordered_map<uint64_t, size_t> stagedDeleteMap;
+
+    // Hash map for O(1) lookups and duplicate detection in stagedRepairUpdates
+    // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
+    // Value: index into stagedRepairUpdates vector
     // Mutable to allow updates from const search methods (single-threaded)
-    mutable std::unordered_set<uint64_t> stagedRepairSet;
+    // TODO: Remove the mutability of this field when we move to multi-threaded
+    mutable std::unordered_map<uint64_t, size_t> stagedRepairMap;
 
     // Track which nodes need their neighbor lists updated (for bidirectional connections)
     struct NeighborUpdate {
@@ -470,9 +478,11 @@ template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     // Clear any staged updates before destruction
     stagedInsertUpdates.clear();
+    stagedInsertMap.clear();
     stagedDeleteUpdates.clear();
+    stagedDeleteMap.clear();
     stagedRepairUpdates.clear();
-    stagedRepairSet.clear();
+    stagedRepairMap.clear();
     stagedInsertNeighborUpdates.clear();
 
     // Clear pending vectors
@@ -819,6 +829,8 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     }
 
     // Add to staged graph updates (for insertions)
+    uint64_t insert_key = makeRepairKey(new_node_id, level);
+    stagedInsertMap[insert_key] = stagedInsertUpdates.size();
     stagedInsertUpdates.emplace_back(new_node_id, level, neighbor_ids, this->allocator);
 
     // Stage updates to existing nodes to include the new node in their neighbor lists
@@ -1034,6 +1046,8 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
 
         // Stage this update - the neighbor's neighbor list will be completely replaced
         // We'll need to handle this specially in flushStagedGraphUpdates
+        uint64_t insert_key = makeRepairKey(selected_neighbor, level);
+        stagedInsertMap[insert_key] = stagedInsertUpdates.size();
         stagedInsertUpdates.emplace_back(selected_neighbor, level, selected_neighbor_ids,
                                         this->allocator);
 
@@ -1539,45 +1553,49 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     // Clear the result vector first
     result.clear();
 
-    // First check staged graph updates (check both insert and delete staging areas)
-    for (const auto &update : stagedInsertUpdates) {
-        if (update.node_id == nodeId && update.level == level) {
-            result.reserve(update.neighbors.size());
-            for (size_t i = 0; i < update.neighbors.size(); i++) {
-                result.push_back(update.neighbors[i]);
-            }
-            // Filter out deleted nodes using helper
-            filterDeletedNodes(result);
-            return;
+    // First check staged graph updates using hash maps for O(1) lookup
+    uint64_t lookup_key = makeRepairKey(nodeId, level);
+
+    // Check insert staging area
+    auto insert_it = stagedInsertMap.find(lookup_key);
+    if (insert_it != stagedInsertMap.end()) {
+        const auto &update = stagedInsertUpdates[insert_it->second];
+        result.reserve(update.neighbors.size());
+        for (size_t i = 0; i < update.neighbors.size(); i++) {
+            result.push_back(update.neighbors[i]);
         }
+        // Filter out deleted nodes using helper
+        filterDeletedNodes(result);
+        return;
     }
 
-    for (const auto &update : stagedDeleteUpdates) {
-        if (update.node_id == nodeId && update.level == level) {
-            result.reserve(update.neighbors.size());
-            for (size_t i = 0; i < update.neighbors.size(); i++) {
-                result.push_back(update.neighbors[i]);
-            }
-            // Filter out deleted nodes using helper
-            filterDeletedNodes(result);
-            return;
+    // Check delete staging area
+    auto delete_it = stagedDeleteMap.find(lookup_key);
+    if (delete_it != stagedDeleteMap.end()) {
+        const auto &update = stagedDeleteUpdates[delete_it->second];
+        result.reserve(update.neighbors.size());
+        for (size_t i = 0; i < update.neighbors.size(); i++) {
+            result.push_back(update.neighbors[i]);
         }
+        // Filter out deleted nodes using helper
+        filterDeletedNodes(result);
+        return;
     }
 
     // Also check staged repair updates (already cleaned neighbors waiting to be flushed)
-    for (auto &update : stagedRepairUpdates) {
-        if (update.node_id == nodeId && update.level == level) {
-            result.reserve(update.neighbors.size());
-            for (size_t i = 0; i < update.neighbors.size(); i++) {
-                result.push_back(update.neighbors[i]);
-            }
-            // Filter in case nodes were deleted after this repair was staged
-            if (filterDeletedNodes(result)) {
-                // Update the existing repair entry with the more up-to-date cleaned list
-                update.neighbors = result;
-            }
-            return;
+    auto repair_it = stagedRepairMap.find(lookup_key);
+    if (repair_it != stagedRepairMap.end()) {
+        auto &update = stagedRepairUpdates[repair_it->second];
+        result.reserve(update.neighbors.size());
+        for (size_t i = 0; i < update.neighbors.size(); i++) {
+            result.push_back(update.neighbors[i]);
         }
+        // Filter in case nodes were deleted after this repair was staged
+        if (filterDeletedNodes(result)) {
+            // Update the existing repair entry with the more up-to-date cleaned list
+            update.neighbors = result;
+        }
+        return;
     }
 
     // If not found in staged updates, check disk
@@ -1594,9 +1612,9 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
             // Lazy repair: if we filtered any deleted nodes, stage for cleanup
             // Use hash map for O(1) duplicate detection
             uint64_t repair_key = makeRepairKey(nodeId, level);
-            if (stagedRepairSet.find(repair_key) == stagedRepairSet.end()) {
+            if (stagedRepairMap.find(repair_key) == stagedRepairMap.end()) {
+                stagedRepairMap[repair_key] = stagedRepairUpdates.size();
                 stagedRepairUpdates.emplace_back(nodeId, level, result, this->allocator);
-                stagedRepairSet.insert(repair_key);
             }
         }
     }
@@ -1642,6 +1660,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
     // Clear any previous staged updates (for insertions)
     stagedInsertUpdates.clear();
+    stagedInsertMap.clear();
     stagedInsertNeighborUpdates.clear();
 
     // Process each pending vector ID (vectors are already stored in memory)
@@ -1671,6 +1690,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
     // Now flush all staged graph updates to disk in a single batch operation
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
+    stagedInsertMap.clear();
 
     // Clear the pending vector IDs
     pendingVectorIds.clear();
@@ -1690,6 +1710,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
 
     // Clear any previous staged updates (for deletions)
     stagedDeleteUpdates.clear();
+    stagedDeleteMap.clear();
 
     // Create a set of IDs being deleted in this batch for quick lookup
     std::unordered_set<idType> deletingIds(pendingDeleteIds.begin(), pendingDeleteIds.end());
@@ -1815,6 +1836,8 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                     }
 
                     // Stage the update for this neighbor (for deletions)
+                    uint64_t delete_key = makeRepairKey(neighbor_id, level);
+                    stagedDeleteMap[delete_key] = stagedDeleteUpdates.size();
                     stagedDeleteUpdates.emplace_back(neighbor_id, level, updated_neighbors, this->allocator);
 
                     // Handle bidirectional edge updates for new connections
@@ -1847,6 +1870,8 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                                 if (new_neighbor_neighbors.size() < max_neighbors) {
                                     // Add the reverse connection
                                     new_neighbor_neighbors.push_back(neighbor_id);
+                                    uint64_t delete_key = makeRepairKey(new_neighbor_id, level);
+                                    stagedDeleteMap[delete_key] = stagedDeleteUpdates.size();
                                     stagedDeleteUpdates.emplace_back(new_neighbor_id, level, new_neighbor_neighbors, this->allocator);
                                 }
                                 // If the list is full, we skip adding the reverse edge
@@ -1860,6 +1885,8 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
             // Delete the node's graph entry at this level by staging an empty neighbor list
             // (or we could use a Delete operation in the batch)
             vecsim_stl::vector<idType> empty_neighbors(this->allocator);
+            uint64_t delete_key = makeRepairKey(deleted_id, level);
+            stagedDeleteMap[delete_key] = stagedDeleteUpdates.size();
             stagedDeleteUpdates.emplace_back(deleted_id, level, empty_neighbors, this->allocator);
         }
 
@@ -1876,6 +1903,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
     // Flush all staged graph updates to disk in a single batch operation
     vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
     flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
+    stagedDeleteMap.clear();
 
     // Flush staged repair updates (opportunistic cleanup from getNeighbors)
     // But first, filter out any repairs for nodes that were just deleted
@@ -1892,7 +1920,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
         }
         // Clear all staged repairs (including filtered ones)
         stagedRepairUpdates.clear();
-        stagedRepairSet.clear();
+        stagedRepairMap.clear();
     }
 
     // Clear the pending delete IDs
@@ -2245,13 +2273,15 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedUpdates() {
     // Flush both insert and delete staged updates
     // Note: This is a non-const method that modifies the staging areas
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
+    stagedInsertMap.clear();
     vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
     flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
+    stagedDeleteMap.clear();
 
     // Also flush staged repair updates (opportunistic cleanup from getNeighbors)
     if (!stagedRepairUpdates.empty()) {
         flushStagedGraphUpdates(stagedRepairUpdates, emptyNeighborUpdates);
-        stagedRepairSet.clear();
+        stagedRepairMap.clear();
     }
 }
 
