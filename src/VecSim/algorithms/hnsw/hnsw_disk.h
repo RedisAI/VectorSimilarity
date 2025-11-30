@@ -509,7 +509,6 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
 
     // Ensure all memory is properly released
     idToMetaData.shrink_to_fit();
-    labelToIdMap.clear();
 
     // Note: db and cf are not owned by this class, so we don't delete them
     // Base class destructor will handle indexCalculator and preprocessors
@@ -1808,11 +1807,6 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                         }
                     }
 
-                    // Track which neighbors were originally connected (before repair)
-                    // Use unordered_set instead of vector<bool> for memory efficiency:
-                    // - neighbor_neighbors typically has M or M0 elements (16-32)
-                    // - unordered_set uses ~4-8 bytes per element = 64-256 bytes total
-                    // - vector<bool> would use curElementCount/8 bytes (125KB for 1M vectors)
                     vecsim_stl::unordered_set<idType> original_neighbors_set(this->allocator);
                     original_neighbors_set.reserve(neighbor_neighbors.size());
                     for (idType nn : neighbor_neighbors) {
@@ -1881,18 +1875,66 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                             if (!already_bidirectional) {
                                 // Stage a neighbor update to add the bidirectional connection
                                 // This will be handled by adding neighbor_id to new_neighbor_id's list
-                                // We need to check if new_neighbor_id's list is full and apply heuristic if needed
+                                // We need to check if new_neighbor_id's list is full and apply heuristic
+                                // if needed
 
-                                // For simplicity in the disk implementation, we'll add it if there's space
-                                // or let the opportunistic repair handle it during future operations
                                 size_t max_neighbors = (level == 0) ? M0 : M;
                                 if (new_neighbor_neighbors.size() < max_neighbors) {
-                                    // Add the reverse connection
+                                    // Space available - simply add the reverse connection
                                     new_neighbor_neighbors.push_back(neighbor_id);
                                     stageDeleteUpdate(new_neighbor_id, level, new_neighbor_neighbors);
+                                } else {
+                                    // List is full - apply heuristic to decide if we should replace
+                                    // an existing neighbor with the new repair edge.
+                                    // This maintains bidirectionality which is critical for HNSW
+                                    // recall quality (avoids "trap" nodes that are easy to enter
+                                    // but hard to exit during greedy search).
+
+                                    // Build candidate list: existing neighbors + the new repair edge
+                                    candidatesList<DistType> reverse_candidates(this->allocator);
+                                    reverse_candidates.reserve(new_neighbor_neighbors.size() + 1);
+
+                                    const void* new_neighbor_data = getDataByInternalId(new_neighbor_id);
+
+                                    // Add existing neighbors with their distances
+                                    for (idType nn : new_neighbor_neighbors) {
+                                        if (nn < curElementCount && !isMarkedDeleted(nn)) {
+                                            const void* nn_data = getDataByInternalId(nn);
+                                            DistType dist = this->calcDistance(nn_data, new_neighbor_data);
+                                            reverse_candidates.emplace_back(dist, nn);
+                                        }
+                                    }
+
+                                    // Add the repair edge (neighbor_id -> new_neighbor_id's reverse)
+                                    DistType repair_dist = this->calcDistance(neighbor_data, new_neighbor_data);
+                                    reverse_candidates.emplace_back(repair_dist, neighbor_id);
+
+                                    // Apply heuristic to select the best neighbors
+                                    vecsim_stl::vector<idType> removed_from_reverse(this->allocator);
+                                    getNeighborsByHeuristic2(reverse_candidates, max_neighbors, removed_from_reverse);
+
+                                    // Check if the repair edge was selected
+                                    bool repair_edge_selected = false;
+                                    for (const auto& [dist, id] : reverse_candidates) {
+                                        if (id == neighbor_id) {
+                                            repair_edge_selected = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (repair_edge_selected) {
+                                        // The heuristic chose the repair edge - update the neighbor list
+                                        vecsim_stl::vector<idType> updated_reverse_neighbors(this->allocator);
+                                        updated_reverse_neighbors.reserve(reverse_candidates.size());
+                                        for (const auto& [dist, id] : reverse_candidates) {
+                                            updated_reverse_neighbors.push_back(id);
+                                        }
+                                        stageDeleteUpdate(new_neighbor_id, level, updated_reverse_neighbors);
+                                    }
+                                    // If repair edge was not selected by heuristic, we accept the
+                                    // unidirectional edge - the heuristic determined that the existing
+                                    // neighbors are better for search quality
                                 }
-                                // If the list is full, we skip adding the reverse edge
-                                // This creates a unidirectional edge, which is acceptable in HNSW
                             }
                         }
                     }
@@ -2492,6 +2534,11 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
     auto raw_it = rawVectorsInRAM.find(internalId);
     if (raw_it != rawVectorsInRAM.end()) {
         rawVectorsInRAM.erase(raw_it);
+    }
+
+    auto disk_it = rawVectorsDiskCache.find(internalId);
+    if (disk_it != rawVectorsDiskCache.end()) {
+        rawVectorsDiskCache.erase(disk_it);
     }
     this->numMarkedDeleted++;
 
