@@ -253,12 +253,17 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
         std::uniform_int_distribution<size_t> dist(0, stratum_size - 1);
         labelType label = stratum_start + dist(rng);
         deleted_labels.push_back(label);
-        // Use deleteVector instead of markDelete - this processes batch and repairs graph
-        disk_index->deleteVector(label);
     }
 
+    // Measure the time spent on deleteVector calls (includes batch merge every 10 vectors)
+    auto delete_start = std::chrono::high_resolution_clock::now();
+    for (const auto &label : deleted_labels) {
+        disk_index->deleteVector(label);
+    }
     // Force flush any pending deletes to ensure graph is fully repaired
     disk_index->flushDeleteBatch();
+    auto delete_end = std::chrono::high_resolution_clock::now();
+    double delete_time_ms = std::chrono::duration<double, std::milli>(delete_end - delete_start).count();
 
     // Create hash set for O(1) lookup during ground truth filtering
     // With up to 50K deleted labels, this avoids O(n) linear search overhead
@@ -266,6 +271,8 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
 
     size_t total_deleted = deleted_labels.size();
     st.counters["num_deleted"] = total_deleted;
+    st.counters["delete_time_ms"] = delete_time_ms;
+    st.counters["delete_time_per_vector_ms"] = delete_time_ms / total_deleted;
 
     // Get DB statistics before benchmark
     auto stats = disk_index->getDBStatistics();
