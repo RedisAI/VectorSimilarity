@@ -29,11 +29,6 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk), fp32_
 (benchmark::State &st) { Disk(st, INDEX_HNSW_DISK); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk))->Iterations(1);
 
-// AddLabel benchmarks
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FLUSH_BATCH_DISK, fp32_index_t)
-(benchmark::State &st) { FlushBatchDisk(st); }
-REGISTER_FlushBatchDisk(BM_FLUSH_BATCH_DISK);
-
 // TopK benchmark
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { TopK_HNSW_DISK(st); }
@@ -44,6 +39,10 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK_MarkDeleted, HNSW
 (benchmark::State &st) { TopK_HNSW_DISK_MarkDeleted(st); }
 REGISTER_TopK_HNSW_DISK_MarkDeleted(BM_VecSimCommon, BM_FUNC_NAME(TopK_MarkDeleted, HNSWDisk));
 
+// AddLabel benchmarks
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FLUSH_BATCH_DISK, fp32_index_t)
+(benchmark::State &st) { FlushBatchDisk(st); }
+REGISTER_FlushBatchDisk(BM_FLUSH_BATCH_DISK);
 
 
 // Range benchmarks
