@@ -281,6 +281,12 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     if (pendingVectorCount != 0) {
         throw std::runtime_error("Serialization error: pendingVectorCount not zero after flush");
     }
+    if (!stagedRepairUpdates.empty()) {
+        throw std::runtime_error("Serialization error: stagedRepairUpdates not empty after flush");
+    }
+    if (pendingDeleteIds.size() != 0) {
+        throw std::runtime_error("Serialization error: pendingDeleteIds not empty after flush");
+    }
     // Note: delta_list and new_elements_meta_data are currently unused legacy variables
     // but we verify them for future-proofing
     if (!delta_list.empty()) {
