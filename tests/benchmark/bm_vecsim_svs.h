@@ -408,7 +408,7 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
 
     size_t num_deletions = st.range(0);
     auto mock_thread_pool = tieredIndexMock(st.range(1));
-    ASSERT_EQ(mock_thread_pool.thread_pool_size, 1);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, st.range(1));
     auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, 1);
 
     // Delete vectors, not yet triggering consolidation.
