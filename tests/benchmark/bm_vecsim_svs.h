@@ -407,7 +407,7 @@ template <typename index_type_t>
 void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
 
     size_t num_deletions = st.range(0);
-    auto mock_thread_pool = tieredIndexMock(1);
+    auto mock_thread_pool = tieredIndexMock(st.range(1));
     ASSERT_EQ(mock_thread_pool.thread_pool_size, 1);
     auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, 1);
 
@@ -421,6 +421,7 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
     ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, num_deletions);
     for (auto _ : st) {
         VecSimTieredIndex_GC(tiered_index);
+        mock_thread_pool.thread_pool_wait();
     };
     // num deleted should be 0
     info = VecSimIndex_DebugInfo(tiered_index);

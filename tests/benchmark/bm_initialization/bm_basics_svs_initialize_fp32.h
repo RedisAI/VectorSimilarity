@@ -19,11 +19,8 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_FUNC_NAME(BM_RunGC), DATA_TYPE_INDE
 BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_RunGC))
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1)
-    ->Arg(50)
-    ->Arg(100)
-    ->Arg(250)
-    ->Arg(500)
-    ->ArgName("num_deletions");
+    ->ArgsProduct({{50, 100, 500}, {1, 4}})
+    ->ArgNames({"num_deletions", "thread_count"});
 
 // AddLabel one by one
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_FUNC_NAME(BM_AddLabelOneByOne), DATA_TYPE_INDEX_T)
