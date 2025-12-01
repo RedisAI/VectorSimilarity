@@ -1007,7 +1007,7 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
 TEST_F(HNSWDiskIndexTest, BatchedDeletionTest) {
     // Test batched deletion functionality
     const size_t dim = 64;
-    const size_t n = 150; // More than deleteBatchThreshold (100)
+    const size_t n = 150; // More than deleteBatchThreshold (10)
 
     // Create HNSW parameters
     HNSWParams params;

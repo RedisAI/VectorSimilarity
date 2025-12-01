@@ -274,7 +274,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
     size_t total_deleted = deleted_labels.size();
     st.counters["num_deleted"] = total_deleted;
     st.counters["delete_time_ms"] = delete_time_ms;
-    st.counters["delete_time_per_vector_ms"] = delete_time_ms / total_deleted;
+    if (total_deleted > 0) {
+        st.counters["delete_time_per_vector_ms"] = delete_time_ms / total_deleted;
+    } else {
+        st.counters["delete_time_per_vector_ms"] = 0.0;
+    }
 
     // Get DB statistics before benchmark
     auto stats = disk_index->getDBStatistics();
