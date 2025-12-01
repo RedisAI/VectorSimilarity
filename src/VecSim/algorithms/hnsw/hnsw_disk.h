@@ -147,7 +147,6 @@ protected:
     // Index level generator of the top level for a new element
     mutable std::default_random_engine levelGenerator;
 
-    // Index global state - these should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
     size_t curElementCount;
     size_t numMarkedDeleted;
@@ -418,6 +417,11 @@ public:
     // Mark delete API
     vecsim_stl::vector<idType> markDelete(labelType label);
     size_t getNumMarkedDeleted() const { return numMarkedDeleted; }
+
+    // Batch deletion control (for benchmarking)
+    void setDeleteBatchThreshold(size_t threshold) { deleteBatchThreshold = threshold; }
+    size_t getDeleteBatchThreshold() const { return deleteBatchThreshold; }
+    size_t getPendingDeleteCount() const { return pendingDeleteIds.size(); }
 
     // Debug methods to inspect graph structure
     void debugPrintGraphStructure() const;
@@ -2435,8 +2439,6 @@ void HNSWDiskIndex<DataType, DistType>::releaseSharedLocks() {
 
 template <typename DataType, typename DistType>
 vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelType label) {
-    std::unique_lock<std::shared_mutex> index_data_lock(indexDataGuard);
-
     vecsim_stl::vector<idType> internal_ids(this->allocator);
 
     // Find the internal ID for this label
