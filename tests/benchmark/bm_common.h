@@ -347,11 +347,12 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-    size_t iter = 0;
+
 
     // Build a set of all ground truth vector IDs (to protect from deletion)
+    size_t num_iterations = st.iterations();
     std::unordered_set<labelType> gt_labels_set;
-    for (size_t q = 0; q < N_QUERIES; q++) {
+    for (size_t q = 0; q < std::min(num_iterations, N_QUERIES); q++) {
         auto gt_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(q, 100);
         for (const auto &res : gt_results->results) {
             gt_labels_set.insert(res.id);
@@ -415,6 +416,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
         io_bytes_before = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
     }
 
+    size_t iter = 0;
     std::atomic_int correct = 0;
     size_t ef = st.range(0);
     size_t k = st.range(1);

@@ -979,12 +979,17 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
                 deserializeGraphValue(existing_graph_value, updated_neighbors);
             }
 
-            // Add new neighbors (avoiding duplicates) using a hash set for O(1) lookup
-            std::unordered_set<idType> neighbor_set(updated_neighbors.begin(), updated_neighbors.end());
+            // Add new neighbors (avoiding duplicates)
             for (idType new_neighbor : newNeighbors) {
-                if (neighbor_set.find(new_neighbor) == neighbor_set.end()) {
+                bool found = false;
+                for (idType existing : updated_neighbors) {
+                    if (existing == new_neighbor) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
                     updated_neighbors.push_back(new_neighbor);
-                    neighbor_set.insert(new_neighbor);
                 }
             }
 
