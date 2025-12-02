@@ -470,6 +470,15 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
 
+    // const float* v_data = reinterpret_cast<const float*>(query_data);
+    // std::cout << "v_data[0]: " << v_data[0] << std::endl;
+    // std::cout << "v_data[n]: " << v_data[this->dim - 1] << std::endl;
+
+    // const int8_t* p_data = reinterpret_cast<const int8_t*>(processed_query);
+    // std::cout << "p_data[0]: " << static_cast<int>(p_data[0]) << std::endl;
+    // std::cout << "p_data[n]: " << static_cast<int>(p_data[this->dim - 1]) << std::endl << std::endl;
+
+
     // Get search parameters
     size_t query_ef = this->ef;
     void *timeoutCtx = nullptr;
@@ -632,9 +641,17 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     idType newElementId = curElementCount;
     const char* raw_data = reinterpret_cast<const char*>(vector);
     rawVectorsInRAM[newElementId] = std::string(raw_data, this->inputBlobSize);
-
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
+
+
+    // const float* v_data = reinterpret_cast<const float*>(vector);
+    // std::cout << "v_data[0]: " << v_data[0] << std::endl;
+    // std::cout << "v_data[n]: " << v_data[this->dim - 1] << std::endl;
+
+    // const int8_t* p_data = reinterpret_cast<const int8_t*>(processedBlobs.getStorageBlob());
+    // std::cout << "p_data[0]: " << static_cast<int>(p_data[0]) << std::endl;
+    // std::cout << "p_data[n]: " << static_cast<int>(p_data[this->dim - 1]) << std::endl << std::endl;
 
     // Store the processed vector in memory immediately
     size_t containerId = this->vectors->size();
@@ -1053,16 +1070,12 @@ template <typename DataType, typename DistType>
 const void *HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) const {
     assert(id < curElementCount);
 
-    if (id < this->vectors->size()) {
-        const void* result = this->vectors->getElement(id);
-        if (result != nullptr) {
-            return result;
-        }
+    const void* result = this->vectors->getElement(id);
+    if (result != nullptr) {
+        return result;
     }
 
-    this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-             "WARNING: Vector data not found for id %u", id);
-    return nullptr;
+    throw std::runtime_error("Vector data not found for id " + std::to_string(id));
 }
 
 template <typename DataType, typename DistType>
@@ -1229,10 +1242,18 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
             idType candidate = neighbors[i];
 
             assert (candidate < curElementCount && "candidate error: out of index range");
+            // const int8_t* q_data = reinterpret_cast<const int8_t*>(data_point);
+            // std::cout << "q_data[0]: " << static_cast<int>(q_data[0]) << std::endl;
+            // std::cout << "q_data[n]: " << static_cast<int>(q_data[this->dim - 1]) << std::endl;
+
+            // const int8_t* v_data = reinterpret_cast<const int8_t*>(getDataByInternalId(candidate));
+            // std::cout << "v_data[0]: " << static_cast<int>(v_data[0]) << std::endl;
+            // std::cout << "v_data[n]: " << static_cast<int>(v_data[this->dim - 1]) << std::endl;
 
             // Calculate distance to this candidate
             DistType d = this->calcDistance(data_point, getDataByInternalId(candidate));
-
+            
+            // std::cout << "d: " << d << " dim:" << this->dim << std::endl << std::endl;
             // If this candidate is closer, update our best candidate
             if (d < cur_dist) {
                 cur_dist = d;
@@ -1856,9 +1877,18 @@ template <typename DataType, typename DistType>
 VecSimIndexStatsInfo HNSWDiskIndex<DataType, DistType>::statisticInfo() const {
     VecSimIndexStatsInfo info = {};
     info.memory = this->getAllocationSize();
+
+    
+    // Processed vectors memory (stored in this->vectors container)
+    info.vectors_memory = this->vectors->size() * this->dataSize;
+
+    // RocksDB memory and disk usage
     info.db_memory = this->getDBMemorySize();
     info.db_disk = this->getDiskSize();
-    info.numberOfMarkedDeleted = 0; // TODO: Implement if needed
+
+    // Number of marked deleted elements
+    info.numberOfMarkedDeleted = this->numMarkedDeleted;
+
     return info;
 }
 

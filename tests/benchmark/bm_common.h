@@ -87,6 +87,7 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
         // Do nothing...
     }
     st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
+    st.counters["vectors_memory"] = (double)VecSimIndex_StatsInfo(index).vectors_memory;
 }
 
 // TopK search BM

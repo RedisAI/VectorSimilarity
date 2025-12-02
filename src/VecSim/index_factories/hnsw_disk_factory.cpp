@@ -97,8 +97,7 @@ std::unique_ptr<ManagedRocksDB> CreateManagedRocksDB(const std::string &checkpoi
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
 
-    size_t dataSize =
-        VecSimParams_GetDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
+    size_t dataSize = hnswParams->dim * sizeof(int8_t); // Quantized storage
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,

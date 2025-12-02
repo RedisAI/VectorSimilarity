@@ -185,6 +185,7 @@ public:
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
+            .vectors_memory = 0,
             .db_memory = 0,
             .db_disk = 0,
             .numberOfMarkedDeleted = 0,
