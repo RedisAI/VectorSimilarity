@@ -243,6 +243,7 @@ typedef enum {
     HNSW_SEARCH_JOB,
     HNSW_SWAP_JOB,
     SVS_BATCH_UPDATE_JOB,
+    SVS_GC_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 
