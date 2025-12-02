@@ -53,8 +53,8 @@ done
 echo "Installing RocksDB 10.5.1..."
 
 # Install dependencies
-sudo apt update
-sudo apt install -y build-essential cmake git wget \
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git wget \
     libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev \
     liblz4-dev libzstd-dev libgtest-dev pkg-config
 

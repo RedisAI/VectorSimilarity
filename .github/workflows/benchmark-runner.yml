@@ -62,7 +62,9 @@ jobs:
         run: |
           sudo .install/install_script.sh
           ./install_rocksdb_simple.sh
-          sudo apt install python3-pip -y
+          # Wait for any apt locks to be released
+          while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done
+          sudo apt-get install -y python3-pip
           pip3 install --upgrade pip PyYAML setuptools redisbench-admin
           pip3 install -r requirements.txt
       - name: Download pre-generated indices
