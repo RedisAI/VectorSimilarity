@@ -61,6 +61,7 @@ jobs:
       - name: Install benchmark dependencies
         run: |
           sudo .install/install_script.sh
+          ./install_rocksdb_simple.sh
           sudo apt install python3-pip -y
           pip3 install --upgrade pip PyYAML setuptools redisbench-admin
           pip3 install -r requirements.txt
