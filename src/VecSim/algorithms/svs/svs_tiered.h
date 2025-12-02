@@ -580,6 +580,8 @@ private:
                                  "running asynchronous GC for tiered SVS index");
         auto svs_index = index->GetSVSIndex();
         svs_index->setNumThreads(std::min(availableThreads, index->backendIndex->indexSize()));
+        std::cout << "running asynchronous GC for tiered SVS index with " << availableThreads
+                  << " threads\n";
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
     }
@@ -601,6 +603,7 @@ public:
     }
 
     void scheduleSVSIndexGC() {
+        std::cout << "scheduling asynchronous GC for tiered SVS index\n";
         // do not schedule if scheduled already
         if (indexGCScheduled.test_and_set()) {
             return;
@@ -611,6 +614,7 @@ public:
             this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
+        std::cout << "submitted jobs for asynchronous GC for tiered SVS index\n";
     }
 
 private:
