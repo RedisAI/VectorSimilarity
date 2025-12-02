@@ -41,6 +41,7 @@ on:
           - bm-batch-iter-uint8-single
           - bm-batch-iter-uint8-multi
           - bm-updated-fp32-single
+          - bm-hnsw-disk-fp32-single
           - bm-spaces
         description: 'Benchmarks set to run'
         default: benchmarks-all
