@@ -320,11 +320,14 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 #define REGISTER_TopK_HNSW_DISK(BM_CLASS, BM_FUNC)                                                 \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Args({10, 10})                                                                           \
-        ->Args({200, 10})                                                                          \
+        ->Args({100, 10})                                                                          \
+        ->Args({100, 50})                                                                         \
+        ->Args({200, 50})                                                                         \
         ->Args({100, 100})                                                                         \
         ->Args({200, 100})                                                                         \
+        ->Args({500, 100})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(100)                                                                           \
+        ->Iterations(1000)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k, num_marked_deleted}
