@@ -389,8 +389,9 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
 VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
     // Create a temporary directory
     // Using PID and timestamp to ensure uniqueness across multiple benchmark runs
-    std::string temp_dir = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid()) +
-                          "_" + std::to_string(std::time(nullptr));
+    std::string temp_dir = std::filesystem::temp_directory_path() / 
+        ("hnsw_disk_benchmark_" + std::to_string(getpid()) + "_" + 
+        std::to_string(std::time(nullptr)) + "_" + generate_random_string(8));
 
     // Check if the input is a zip file
     if (isZipFile(folder_path)) {
