@@ -1286,7 +1286,7 @@ TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
     HNSWParams params;
     params.dim = dim;
     params.type = VecSimType_FLOAT32;
-    params.metric = VecSimMetric_Cosine;
+    params.metric = VecSimMetric_L2;
     params.multi = false;
     params.M = 8;  // Small M to ensure neighbors are interconnected
     params.efConstruction = 100;
@@ -1304,7 +1304,7 @@ TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
 
     // Create index components
     IndexComponents<float, float> components = CreateIndexComponents<float, float>(
-        abstractInitParams.allocator, VecSimMetric_Cosine, dim, false);
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
 
     // Create HNSWDiskIndex
     rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();
