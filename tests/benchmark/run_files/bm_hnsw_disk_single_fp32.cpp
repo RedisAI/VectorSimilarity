@@ -22,9 +22,9 @@ size_t BM_VecSimGeneral::EF_C = 256;
 // Dataset file paths - using deep dataset
 // For HNSW disk, hnsw_index_file points to the folder containing index.hnsw_disk_v1 and rocksdb/
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/deep-10M-cosine-dim96-M32-efc200-disk-vectors";
+    "tests/benchmark/data/deep-1M-cosine-dim96-M32-efc200-disk-vectors";
 const char *BM_VecSimGeneral::test_queries_file = "tests/benchmark/data/deep.query.public.10K.fbin";
-const char *BM_VecSimGeneral::ground_truth_file = "tests/benchmark/data/deep.groundtruth.10M.10K.ibin"; // defined only for this benchmark
+const char *BM_VecSimGeneral::ground_truth_file = "tests/benchmark/data/deep.groundtruth.1M.10K.ibin"; // defined only for this benchmark
 
 #define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Single)
 #define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Single)

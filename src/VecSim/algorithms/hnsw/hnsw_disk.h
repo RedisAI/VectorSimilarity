@@ -894,7 +894,7 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
     std::vector<char> raw_vector_buffer(this->inputBlobSize);
 
     // First, handle new node insertions
-    for (const auto &update : stagedGraphUpdates) {
+    for (const auto &update : graphUpdates) {
         auto newKey = GraphKey(update.node_id, update.level);
 
         // If neighbors list is empty, this is a deletion - remove the key from disk
@@ -1613,7 +1613,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
     result.clear();
 
     // First check staged graph updates
-    for (const auto& update : stagedGraphUpdates) {
+    for (const auto& update : stagedInsertUpdates) {
         if (update.node_id == nodeId && update.level == level) {
             result.reserve(update.neighbors.size());
             for (size_t i = 0; i < update.neighbors.size(); i++) {
@@ -1886,11 +1886,6 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
             rawVectorsInRAM.erase(ram_it);
         }
 
-        // Also remove from disk cache to prevent stale data access
-        auto cache_it = rawVectorsDiskCache.find(deleted_id);
-        if (cache_it != rawVectorsDiskCache.end()) {
-            rawVectorsDiskCache.erase(cache_it);
-        }
     }
 
     // Flush all staged graph updates to disk in a single batch operation
@@ -2195,15 +2190,12 @@ void HNSWDiskIndex<DataType, DistType>::getDataByLabel(
     idType id = it->second;
 
     // Get the raw vector data
-    const void *raw_data = getRawVector(id);
-    if (raw_data == nullptr) {
+    std::vector<DataType> raw_vector(this->dim);
+    if (!getRawVector(id, raw_vector.data())) {
         return; // Vector not found
     }
 
-    // Copy the vector data
-    const DataType *data_ptr = static_cast<const DataType *>(raw_data);
-    std::vector<DataType> vec(data_ptr, data_ptr + this->dim);
-    vectors_output.push_back(std::move(vec));
+    vectors_output.push_back(std::move(raw_vector));
 }
 
 template <typename DataType, typename DistType>
