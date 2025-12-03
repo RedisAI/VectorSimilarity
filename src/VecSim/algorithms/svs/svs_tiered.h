@@ -213,6 +213,8 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
+    // Used to prevent scheduling multiple index GC jobs at the same time.
+    std::atomic_flag indexGCScheduled = ATOMIC_FLAG_INIT;
     // Used to prevent running multiple index update jobs in parallel.
     // Even if update jobs scheduled sequentially, they can be started in parallel.
     mutable std::mutex updateJobMutex;
@@ -510,6 +512,39 @@ private:
         index->updateSVSIndex(availableThreads);
     }
 
+    /**
+     * @brief Run SVS index GC in a thread-safe manner.
+     *
+     * This static wrapper function performs the following actions:
+     * - Acquires a lock on the index's mainIndexGuard to ensure thread safety during the GC
+     * - Configures the number of threads for the underlying SVS index update operation.
+     * - Calls the SVSIndex::runGC() method to perform the actual index update.
+     * - Clears the indexGCScheduled flag to allow future scheduling.
+     *
+     * @param idx Pointer to the VecSimIndex to be updated.
+     * @param availableThreads The number of threads available for the update operation. Current
+     * thread us used as well, so the minimal value is 1.
+     * @note no need to implement extra non-static method, as GC logic is simple enough to be done
+     * here.
+     */
+    static void SVSIndexGCWrapper(VecSimIndex *idx, size_t availableThreads) {
+        assert(availableThreads > 0);
+        auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
+        assert(index);
+
+        std::lock_guard lock{index->mainIndexGuard};
+        // Release the scheduled flag to allow scheduling again
+        index->indexGCScheduled.clear();
+
+        // Do SVS index GC
+        index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+                                 "running asynchronous GC for tiered SVS index");
+        auto svs_index = index->GetSVSIndex();
+        svs_index->setNumThreads(std::min(availableThreads, index->backendIndex->indexSize()));
+        // VecSimIndexAbstract::runGC() is protected
+        static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+    }
+
 #ifdef BUILD_TESTS
 public:
 #endif
@@ -522,6 +557,19 @@ public:
         auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
         auto jobs = SVSMultiThreadJob::createJobs(
             this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this, total_threads,
+            std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
+        this->submitJobs(jobs);
+    }
+
+    void scheduleSVSIndexGC() {
+        // do not schedule if scheduled already
+        if (indexGCScheduled.test_and_set()) {
+            return;
+        }
+
+        auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
+        auto jobs = SVSMultiThreadJob::createJobs(
+            this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
@@ -856,10 +904,8 @@ public:
 
     void runGC() override {
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
-                   "running asynchronous GC for tiered SVS index");
-        std::unique_lock<std::shared_mutex> backend_lock{this->mainIndexGuard};
-        // VecSimIndexAbstract::runGC() is protected
-        static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
+                   "scheduling asynchronous GC for tiered SVS index");
+        scheduleSVSIndexGC();
     }
 
     void acquireSharedLocks() override {
