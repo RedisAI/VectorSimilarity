@@ -147,7 +147,6 @@ protected:
     // Index level generator of the top level for a new element
     mutable std::default_random_engine levelGenerator;
 
-    // Index global state - these should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
     size_t curElementCount;
     size_t numMarkedDeleted;
@@ -175,6 +174,13 @@ protected:
     vecsim_stl::vector<DiskElementMetaData> pendingMetadata; // Metadata for pending vectors
     size_t pendingVectorCount;                               // Count of vectors in memory
 
+    /**
+     * Threshold for batching delete operations.
+     * When the number of pending deletions reaches this value, the deletions are processed in a batch.
+     */
+    size_t deleteBatchThreshold = 10;
+    vecsim_stl::vector<idType> pendingDeleteIds;
+
     // In-memory graph updates staging (for delayed disk operations)
     struct GraphUpdate {
         idType node_id;
@@ -189,7 +195,30 @@ protected:
     };
 
     // Staging area for graph updates during batch processing
-    vecsim_stl::vector<GraphUpdate> stagedGraphUpdates;
+    // Separate staging areas for insertions and deletions to avoid conflicts
+    vecsim_stl::vector<GraphUpdate> stagedInsertUpdates;
+    vecsim_stl::vector<GraphUpdate> stagedDeleteUpdates;
+
+    // Staged repair updates: opportunistic cleanup when stale edges are filtered during reads
+    // Mutable to allow staging from const search methods.
+    // IMPORTANT: This class is NOT thread-safe. All operations (including const methods like
+    // getNeighbors and search) must be called from a single thread. The mutable fields below
+    // are modified during read operations for opportunistic graph cleanup.
+    // TODO: For multi-threaded support, these fields need proper synchronization or a different
+    // approach (e.g., returning repair suggestions instead of staging them directly).
+    mutable vecsim_stl::vector<GraphUpdate> stagedRepairUpdates;
+
+    // Hash maps for O(1) lookups in staged updates
+    // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
+    // Value: index into the corresponding staged updates vector
+    std::unordered_map<uint64_t, size_t> stagedInsertMap;
+    std::unordered_map<uint64_t, size_t> stagedDeleteMap;
+
+    // Hash map for O(1) lookups and duplicate detection in stagedRepairUpdates
+    // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
+    // Value: index into stagedRepairUpdates vector
+    // Mutable - see thread-safety note above for stagedRepairUpdates
+    mutable std::unordered_map<uint64_t, size_t> stagedRepairMap;
 
     // Track which nodes need their neighbor lists updated (for bidirectional connections)
     struct NeighborUpdate {
@@ -201,7 +230,8 @@ protected:
             : node_id(node_id), level(level), new_neighbor_id(new_neighbor_id) {}
     };
 
-    vecsim_stl::vector<NeighborUpdate> stagedNeighborUpdates;
+    // TODO: Consider merging with stagedInsertUpdates
+    vecsim_stl::vector<NeighborUpdate> stagedInsertNeighborUpdates;
 
     // Temporary storage for raw vectors in RAM (until flush batch)
     // Maps idType -> raw vector data (stored as string for simplicity)
@@ -228,7 +258,7 @@ protected:
     std::string serializeGraphValue(const void* vector_data, const vecsim_stl::vector<idType>& neighbors) const;
     void deserializeGraphValue(const std::string& value, vecsim_stl::vector<idType>& neighbors) const;
     const void* getVectorFromGraphValue(const std::string& value) const;
-    
+
 public:
     // Pure virtual methods from VecSimIndexInterface
     int addVector(const void *blob, labelType label) override;
@@ -243,6 +273,9 @@ public:
     // Batch processing methods
     void processBatch();
     void flushBatch(); // Force flush current batch
+
+    void processDeleteBatch();
+    void flushDeleteBatch(); // Force flush current delete batch
     void setBatchThreshold(size_t threshold); // Set batch threshold
 
     // Helper methods
@@ -253,16 +286,33 @@ public:
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
     void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
-    
+
     // Manual control of staged updates
     void flushStagedUpdates(); // Manually flush any pending staged updates
 
 protected:
+    // Helper method to filter deleted or invalid nodes from a neighbor list (DRY principle)
+    // Returns true if any nodes were filtered out
+    // Filters out: nodes marked as deleted, and nodes with invalid IDs (>= curElementCount)
+    inline bool filterDeletedNodes(vecsim_stl::vector<idType>& neighbors) const {
+        size_t original_size = neighbors.size();
+        auto new_end = std::remove_if(neighbors.begin(), neighbors.end(),
+            [this](idType id) { return id >= curElementCount || isMarkedDeleted(id); });
+        neighbors.erase(new_end, neighbors.end());
+        return neighbors.size() < original_size;
+    }
+
+    // Helper to create a unique key for (node_id, level) pair for hash map
+    inline uint64_t makeRepairKey(idType node_id, size_t level) const {
+        return (static_cast<uint64_t>(node_id) << 32) | static_cast<uint64_t>(level);
+    }
+
     // New method for flushing staged graph updates to disk
-    void flushStagedGraphUpdates();
+    void flushStagedGraphUpdates(vecsim_stl::vector<GraphUpdate>& graphUpdates,
+                                  vecsim_stl::vector<NeighborUpdate>& neighborUpdates);
 
     // New method for handling neighbor connection updates when neighbor lists are full
-    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor, 
+    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor,
                                        size_t level, DistType distance);
    
 
@@ -289,7 +339,7 @@ public:
                           candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const;
 
     // Raw vector storage and retrieval methods
-    void getRawVector(idType id, void* output_buffer) const;
+    bool getRawVector(idType id, void* output_buffer) const;
 
 protected:
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx = nullptr,
@@ -364,6 +414,11 @@ public:
     vecsim_stl::vector<idType> markDelete(labelType label);
     size_t getNumMarkedDeleted() const { return numMarkedDeleted; }
 
+    // Batch deletion control (for benchmarking)
+    void setDeleteBatchThreshold(size_t threshold) { deleteBatchThreshold = threshold; }
+    size_t getDeleteBatchThreshold() const { return deleteBatchThreshold; }
+    size_t getPendingDeleteCount() const { return pendingDeleteIds.size(); }
+
     // Debug methods to inspect graph structure
     void debugPrintGraphStructure() const;
     void debugPrintNodeNeighbors(idType node_id) const;
@@ -377,6 +432,30 @@ public:
 private:
     // HNSW helper methods
     void replaceEntryPoint();
+
+    // Helper to stage a delete update, merging with existing entry if present
+    inline void stageDeleteUpdate(idType node_id, size_t level, vecsim_stl::vector<idType> &neighbors) {
+        uint64_t key = makeRepairKey(node_id, level);
+        auto existing_it = stagedDeleteMap.find(key);
+        if (existing_it != stagedDeleteMap.end()) {
+            stagedDeleteUpdates[existing_it->second].neighbors = neighbors;
+        } else {
+            stagedDeleteMap[key] = stagedDeleteUpdates.size();
+            stagedDeleteUpdates.emplace_back(node_id, level, neighbors, this->allocator);
+        }
+    }
+
+    // Graph repair helper for deletion - repairs a neighbor's connections after a node is deleted.
+    // This maintains graph quality and navigability using a heuristic-based approach.
+    // Parameters:
+    //   neighbor_id: The neighbor whose connections need repair
+    //   level: The graph level being repaired
+    //   deleted_id: The internal ID of the node being deleted
+    //   deleted_node_neighbors: Neighbors of the deleted node (potential repair candidates)
+    //   neighbor_neighbors: Current neighbors of neighbor_id (will be modified)
+    void repairNeighborConnections(idType neighbor_id, size_t level, idType deleted_id,
+                                   const vecsim_stl::vector<idType> &deleted_node_neighbors,
+                                   vecsim_stl::vector<idType> &neighbor_neighbors);
 
     /*****************************************************************/
 
@@ -400,7 +479,10 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       new_elements_meta_data(this->allocator), batchThreshold(10),
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
-      stagedGraphUpdates(this->allocator), stagedNeighborUpdates(this->allocator) {
+      pendingDeleteIds(this->allocator),
+      stagedInsertUpdates(this->allocator),
+      stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
+      stagedInsertNeighborUpdates(this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -428,12 +510,18 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
 template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     // Clear any staged updates before destruction
-    stagedGraphUpdates.clear();
-    stagedNeighborUpdates.clear();
+    stagedInsertUpdates.clear();
+    stagedInsertMap.clear();
+    stagedDeleteUpdates.clear();
+    stagedDeleteMap.clear();
+    stagedRepairUpdates.clear();
+    stagedRepairMap.clear();
+    stagedInsertNeighborUpdates.clear();
 
     // Clear pending vectors
     pendingVectorIds.clear();
     pendingMetadata.clear();
+    pendingDeleteIds.clear();
 
     // Clear raw vectors in RAM
     rawVectorsInRAM.clear();
@@ -636,6 +724,7 @@ template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::addVector(
     const void *vector, labelType label
 ) {
+
     // Store raw vector in RAM first (until flush batch)
     // We need to store the original vector before preprocessing
     idType newElementId = curElementCount;
@@ -644,16 +733,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
 
-
-    // const float* v_data = reinterpret_cast<const float*>(vector);
-    // std::cout << "v_data[0]: " << v_data[0] << std::endl;
-    // std::cout << "v_data[n]: " << v_data[this->dim - 1] << std::endl;
-
-    // const int8_t* p_data = reinterpret_cast<const int8_t*>(processedBlobs.getStorageBlob());
-    // std::cout << "p_data[0]: " << static_cast<int>(p_data[0]) << std::endl;
-    // std::cout << "p_data[n]: " << static_cast<int>(p_data[this->dim - 1]) << std::endl << std::endl;
-
-    // Store the processed vector in memory immediately
+    // Store the processed vector in memory
     size_t containerId = this->vectors->size();
     this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
 
@@ -661,6 +741,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     size_t elementMaxLevel = getRandomLevel(mult);
     DiskElementMetaData new_element(label, elementMaxLevel);
 
+    // Ensure capacity for the new element ID
     if (newElementId >= indexCapacity()) {
         size_t new_cap = ((newElementId + this->blockSize) / this->blockSize) * this->blockSize;
         visitedNodesHandlerPool.resize(new_cap);
@@ -674,6 +755,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
     // Increment vector count immediately
     curElementCount++;
+
 
     // Resize visited nodes handler pool to accommodate new elements
     visitedNodesHandlerPool.resize(curElementCount);
@@ -757,8 +839,10 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
         neighbor_ids.push_back(top_candidates_list[i].second);
     }
 
-    // Add to staged graph updates
-    stagedGraphUpdates.emplace_back(new_node_id, level, neighbor_ids, this->allocator);
+    // Add to staged graph updates (for insertions)
+    uint64_t insert_key = makeRepairKey(new_node_id, level);
+    stagedInsertMap[insert_key] = stagedInsertUpdates.size();
+    stagedInsertUpdates.emplace_back(new_node_id, level, neighbor_ids, this->allocator);
 
     // Stage updates to existing nodes to include the new node in their neighbor lists
     for (const auto &neighbor_data : top_candidates_list) {
@@ -782,7 +866,7 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
 
         if (current_neighbor_count < max_M_cur) {
             // Neighbor has capacity, just add the new node
-            stagedNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
+            stagedInsertNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
         } else {
             // Neighbor is full, need to re-evaluate connections using revisitNeighborConnections
             // logic
@@ -794,8 +878,10 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
-    if (stagedGraphUpdates.empty() && stagedNeighborUpdates.empty()) {
+void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
+    vecsim_stl::vector<GraphUpdate>& graphUpdates,
+    vecsim_stl::vector<NeighborUpdate>& neighborUpdates) {
+    if (graphUpdates.empty() && neighborUpdates.empty()) {
         return;
     }
 
@@ -811,7 +897,20 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
     for (const auto &update : stagedGraphUpdates) {
         auto newKey = GraphKey(update.node_id, update.level);
 
-        getRawVector(update.node_id, raw_vector_buffer.data());
+        // If neighbors list is empty, this is a deletion - remove the key from disk
+        if (update.neighbors.empty()) {
+            graphBatch.Delete(cf, newKey.asSlice());
+            continue;
+        }
+
+        // Get raw vector data
+        
+        if (!getRawVector(update.node_id, raw_vector_buffer.data())) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                        "WARNING: Skipping graph update for node %u at level %zu - no raw vector data available",
+                        update.node_id, update.level);
+            continue;
+        }
 
         // Serialize with new format: [raw_vector_data][neighbor_count][neighbor_ids...]
         std::string graph_value = serializeGraphValue(raw_vector_buffer.data(), update.neighbors);
@@ -831,7 +930,7 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
     // Group neighbor updates by node and level for efficient processing
     std::unordered_map<idType, std::unordered_map<size_t, vecsim_stl::vector<idType>>> neighborUpdatesByNode;
 
-    for (const auto& update : stagedNeighborUpdates) {
+    for (const auto& update : neighborUpdates) {
         auto& levelMap = neighborUpdatesByNode[update.node_id];
         auto it = levelMap.find(update.level);
         if (it == levelMap.end()) {
@@ -847,30 +946,31 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
     // Process each node's neighbor updates (reuse the buffer from above)
     for (const auto& [node_id, levelMap] : neighborUpdatesByNode) {
         for (const auto& [level, newNeighbors] : levelMap) {
-        // Read existing graph value from disk
-        GraphKey neighborKey(node_id, level);
-        std::string existing_graph_value;
-        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_graph_value);
+            // Read existing graph value from disk
+            GraphKey neighborKey(node_id, level);
+            std::string existing_graph_value;
+            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_graph_value);
 
-        vecsim_stl::vector<idType> updated_neighbors(this->allocator);
-        if (status.ok()) {
-            // Parse existing neighbors using new format
-            deserializeGraphValue(existing_graph_value, updated_neighbors);
-        }
+            vecsim_stl::vector<idType> updated_neighbors(this->allocator);
 
-        // Add new neighbors (avoiding duplicates)
-        for (idType new_neighbor : newNeighbors) {
-            bool found = false;
-            for (size_t i = 0; i < updated_neighbors.size(); i++) {
-                if (updated_neighbors[i] == new_neighbor) {
-                    found = true;
-                    break;
+            if (status.ok()) {
+                // Parse existing neighbors using new format
+                deserializeGraphValue(existing_graph_value, updated_neighbors);
+            }
+
+            // Add new neighbors (avoiding duplicates)
+            for (idType new_neighbor : newNeighbors) {
+                bool found = false;
+                for (idType existing : updated_neighbors) {
+                    if (existing == new_neighbor) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    updated_neighbors.push_back(new_neighbor);
                 }
             }
-            if (!found) {
-                updated_neighbors.push_back(new_neighbor);
-            }
-        }
 
         getRawVector(node_id, raw_vector_buffer.data());
 
@@ -888,8 +988,8 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates() {
     }
 
     // Clear staged updates after successful flush
-    stagedGraphUpdates.clear();
-    stagedNeighborUpdates.clear();
+    graphUpdates.clear();
+    neighborUpdates.clear();
 }
 
 template <typename DataType, typename DistType>
@@ -908,7 +1008,7 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
                   "  WARNING: Could not read existing neighbors for node %u at level %zu",
                   selected_neighbor, level);
         // Fall back to simple neighbor update
-        stagedNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
+        stagedInsertNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
         return;
     }
 
@@ -961,16 +1061,18 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
 
         // Stage this update - the neighbor's neighbor list will be completely replaced
         // We'll need to handle this specially in flushStagedGraphUpdates
-        stagedGraphUpdates.emplace_back(selected_neighbor, level, selected_neighbor_ids,
+        uint64_t insert_key = makeRepairKey(selected_neighbor, level);
+        stagedInsertMap[insert_key] = stagedInsertUpdates.size();
+        stagedInsertUpdates.emplace_back(selected_neighbor, level, selected_neighbor_ids,
                                         this->allocator);
 
         // Also stage the bidirectional connection from new node to selected neighbor
-        stagedNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
+        stagedInsertNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
 
     } else {
         // The new node was not selected, so we only need to stage the unidirectional connection
         // from new node to selected neighbor
-        stagedNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
+        stagedInsertNeighborUpdates.emplace_back(new_node_id, level, selected_neighbor);
     }
 }
 
@@ -1079,12 +1181,13 @@ const void *HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) co
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buffer) const {
+bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buffer) const {
 
     if (id >= curElementCount) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                  "WARNING: getRawVector called with invalid id %u (current count: %zu)",
                  id, curElementCount);
+                 return false;
     }
 
     // First check RAM (for vectors not yet flushed)
@@ -1092,11 +1195,11 @@ void HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
     if (it != rawVectorsInRAM.end()) {
         const char* data_ptr = it->second.data();
         std::memcpy(output_buffer, data_ptr, this->inputBlobSize);
-        return;
+        return true;
         
     }
 
-    // If not in RAM, retrieve from disk
+    // If not in RAM or cache, retrieve from disk
     GraphKey graphKey(id, 0);
     std::string level0_graph_value;
     rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
@@ -1107,13 +1210,18 @@ void HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
         if (vector_data != nullptr) {
             // Must copy to output buffer since level0_graph_value will be destroyed
             std::memcpy(output_buffer, vector_data, this->inputBlobSize);
-            return;
+            return true;
         }
+    } else if (status.IsNotFound()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                 "WARNING: Raw vector not found in RAM or on disk for id %u (isMarkedDeleted: %d)",
+                 id, isMarkedDeleted(id));
     } else {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "WARNING: Failed to retrieve raw vector for id %u: %s", id,
                   status.ToString().c_str());
     }
+    return false;
 
 }
 
@@ -1408,7 +1516,7 @@ size_t HNSWDiskIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::indexLabelCount() const {
-    return this->curElementCount;
+    return labelToIdMap.size();
 }
 
 /********************************** Helper Methods **********************************/
@@ -1433,15 +1541,49 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     // Clear the result vector first
     result.clear();
 
-    // First check staged graph updates
-    for (const auto &update : stagedGraphUpdates) {
-        if (update.node_id == nodeId && update.level == level) {
-            result.reserve(update.neighbors.size());
-            for (size_t i = 0; i < update.neighbors.size(); i++) {
-                result.push_back(update.neighbors[i]);
-            }
-            return;
+    // First check staged graph updates using hash maps for O(1) lookup
+    uint64_t lookup_key = makeRepairKey(nodeId, level);
+
+    // Check insert staging area
+    auto insert_it = stagedInsertMap.find(lookup_key);
+    if (insert_it != stagedInsertMap.end()) {
+        const auto &update = stagedInsertUpdates[insert_it->second];
+        result.reserve(update.neighbors.size());
+        for (size_t i = 0; i < update.neighbors.size(); i++) {
+            result.push_back(update.neighbors[i]);
         }
+        // Filter out deleted nodes using helper
+        filterDeletedNodes(result);
+        return;
+    }
+
+    // Check delete staging area
+    auto delete_it = stagedDeleteMap.find(lookup_key);
+    if (delete_it != stagedDeleteMap.end()) {
+        const auto &update = stagedDeleteUpdates[delete_it->second];
+        result.reserve(update.neighbors.size());
+        for (size_t i = 0; i < update.neighbors.size(); i++) {
+            result.push_back(update.neighbors[i]);
+        }
+        // Filter out deleted nodes using helper
+        filterDeletedNodes(result);
+        return;
+    }
+
+    // Also check staged repair updates (already cleaned neighbors waiting to be flushed)
+    auto repair_it = stagedRepairMap.find(lookup_key);
+    if (repair_it != stagedRepairMap.end()) {
+        auto &update = stagedRepairUpdates[repair_it->second];
+        result.reserve(update.neighbors.size());
+        for (size_t i = 0; i < update.neighbors.size(); i++) {
+            result.push_back(update.neighbors[i]);
+        }
+        // Filter in case nodes were deleted after this repair was staged
+        if (filterDeletedNodes(result)) {
+            // Update the existing repair entry with the more up-to-date cleaned list
+            update.neighbors = result;
+        }
+        return;
     }
 
     // If not found in staged updates, check disk
@@ -1452,6 +1594,16 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
     if (status.ok()) {
         deserializeGraphValue(graph_value, result);
+        // Filter out deleted nodes and check if any were filtered
+        if (filterDeletedNodes(result)) {
+            // Lazy repair: if we filtered any deleted nodes, stage for cleanup
+            // Use hash map for O(1) duplicate detection
+            uint64_t repair_key = makeRepairKey(nodeId, level);
+            if (stagedRepairMap.find(repair_key) == stagedRepairMap.end()) {
+                stagedRepairMap[repair_key] = stagedRepairUpdates.size();
+                stagedRepairUpdates.emplace_back(nodeId, level, result, this->allocator);
+            }
+        }
     }
 }
 
@@ -1494,6 +1646,10 @@ void HNSWDiskIndex<DataType, DistType>::searchPendingVectors(
     const void *query_data, candidatesLabelsMaxHeap<DistType> &top_candidates, size_t k) const {
     for (size_t i = 0; i < pendingVectorCount; i++) {
         idType vectorId = pendingVectorIds[i];
+        if (isMarkedDeleted(vectorId)) {
+            // Skip deleted vectors
+            continue;
+        }
 
         // Get the vector data from memory
         const void* vector_data = rawVectorsInRAM.find(vectorId)->second.data();
@@ -1523,13 +1679,18 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
         return;
     }
 
-    // Clear any previous staged updates
-    stagedGraphUpdates.clear();
-    stagedNeighborUpdates.clear();
+    // Clear any previous staged updates (for insertions)
+    stagedInsertUpdates.clear();
+    stagedInsertMap.clear();
+    stagedInsertNeighborUpdates.clear();
 
     // Process each pending vector ID (vectors are already stored in memory)
     for (size_t i = 0; i < pendingVectorCount; i++) {
         idType vectorId = pendingVectorIds[i];
+        if (isMarkedDeleted(vectorId)) {
+            // Skip deleted vectors
+            continue;
+        }
 
         // Get the vector data from memory
         const void* vector_data = this->vectors->getElement(vectorId);
@@ -1549,7 +1710,8 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
     }
 
     // Now flush all staged graph updates to disk in a single batch operation
-    flushStagedGraphUpdates();
+    flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
+    stagedInsertMap.clear();
 
     // Clear the pending vector IDs
     pendingVectorIds.clear();
@@ -1561,6 +1723,206 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::flushBatch() {
     processBatch();
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::repairNeighborConnections(
+    idType neighbor_id, size_t level, idType deleted_id,
+    const vecsim_stl::vector<idType> &deleted_node_neighbors,
+    vecsim_stl::vector<idType> &neighbor_neighbors) {
+
+    // ===== Graph Repair Strategy =====
+    // When deleting a node, we need to repair its neighbors' connections to maintain
+    // graph quality and navigability. We use a heuristic-based approach similar to
+    // the regular HNSW implementation (see hnsw.h::repairConnectionsForDeletion).
+    //
+    // Strategy:
+    // 1. Collect candidates: existing neighbors + deleted node's neighbors
+    // 2. Calculate distances using quantized vectors (fast, in-memory)
+    // 3. Apply getNeighborsByHeuristic2 to select best neighbors
+    // 4. This ensures high-quality connections that maintain search performance
+
+    size_t max_M = (level == 0) ? M0 : M;
+
+    // Build candidate set with distances
+    // Candidates include: existing neighbors (minus deleted) + deleted node's neighbors
+    candidatesList<DistType> candidates(this->allocator);
+    const void *neighbor_data = getDataByInternalId(neighbor_id);
+
+    // Use a hash set to track candidate IDs for O(1) duplicate detection
+    std::unordered_set<idType> candidate_ids;
+
+    // Add existing neighbors (excluding the deleted node) with their distances
+    for (idType nn : neighbor_neighbors) {
+        if (nn != deleted_id && nn < curElementCount && !isMarkedDeleted(nn)) {
+            const void *nn_data = getDataByInternalId(nn);
+            DistType dist = this->calcDistance(nn_data, neighbor_data);
+            candidates.emplace_back(dist, nn);
+            candidate_ids.insert(nn);
+        }
+    }
+
+    // Add deleted node's neighbors (excluding current neighbor) as repair candidates
+    for (idType candidate_id : deleted_node_neighbors) {
+        if (candidate_id != neighbor_id && candidate_id < curElementCount &&
+            !isMarkedDeleted(candidate_id)) {
+            // Check if already in candidates to avoid duplicates using O(1) hash set lookup
+            if (candidate_ids.find(candidate_id) == candidate_ids.end()) {
+                const void *candidate_data = getDataByInternalId(candidate_id);
+                DistType dist = this->calcDistance(candidate_data, neighbor_data);
+                candidates.emplace_back(dist, candidate_id);
+                candidate_ids.insert(candidate_id);
+            }
+        }
+    }
+
+    // Track original neighbors for bidirectional edge updates
+    vecsim_stl::unordered_set<idType> original_neighbors_set(this->allocator);
+    original_neighbors_set.reserve(neighbor_neighbors.size());
+    for (idType nn : neighbor_neighbors) {
+        if (nn != deleted_id && nn < curElementCount) {
+            original_neighbors_set.insert(nn);
+        }
+    }
+
+    // Apply heuristic to select best neighbors if we have more than max_M
+    vecsim_stl::vector<idType> updated_neighbors(this->allocator);
+    if (candidates.size() > max_M) {
+        vecsim_stl::vector<idType> removed_candidates(this->allocator);
+        getNeighborsByHeuristic2(candidates, max_M, removed_candidates);
+    }
+    // Extract selected neighbor IDs (works for both cases)
+    updated_neighbors.reserve(candidates.size());
+    for (const auto &[dist, id] : candidates) {
+        updated_neighbors.push_back(id);
+    }
+
+    // Stage the update for this neighbor
+    stageDeleteUpdate(neighbor_id, level, updated_neighbors);
+
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
+    if (pendingDeleteIds.empty()) return;
+
+    // Clear any previous staged updates (for deletions)
+    stagedDeleteUpdates.clear();
+    stagedDeleteMap.clear();
+
+    // Create a set of IDs being deleted in this batch for quick lookup
+    std::unordered_set<idType> deletingIds(pendingDeleteIds.begin(), pendingDeleteIds.end());
+
+    // Process each deleted node
+    for (idType deleted_id : pendingDeleteIds) {
+        // Skip if already processed or invalid
+        if (deleted_id >= curElementCount || deleted_id >= idToMetaData.size()) {
+            continue;
+        }
+
+        const DiskElementMetaData &metadata = idToMetaData[deleted_id];
+        if (metadata.label == INVALID_LABEL) {
+            continue; // Already deleted
+        }
+
+        size_t topLevel = metadata.topLevel;
+
+        // Process each level of the deleted node
+        for (size_t level = 0; level <= topLevel; level++) {
+            // Get the deleted node's neighbors at this level
+            vecsim_stl::vector<idType> deleted_node_neighbors(this->allocator);
+            getNeighbors(deleted_id, level, deleted_node_neighbors);
+
+            // For each neighbor of the deleted node
+            for (idType neighbor_id : deleted_node_neighbors) {
+                // Skip if neighbor is also deleted, invalid, or in the current deletion batch
+                if (neighbor_id >= curElementCount || isMarkedDeleted(neighbor_id) ||
+                    deletingIds.find(neighbor_id) != deletingIds.end()) {
+                    continue;
+                }
+
+                // Get the neighbor's current neighbor list
+                vecsim_stl::vector<idType> neighbor_neighbors(this->allocator);
+                getNeighbors(neighbor_id, level, neighbor_neighbors);
+
+                // Check if this is a bidirectional edge
+                bool is_bidirectional = false;
+                for (idType nn : neighbor_neighbors) {
+                    if (nn == deleted_id) {
+                        is_bidirectional = true;
+                        break;
+                    }
+                }
+
+                if (is_bidirectional) {
+                    // Repair connections using the dedicated helper method
+                    repairNeighborConnections(neighbor_id, level, deleted_id,
+                                              deleted_node_neighbors, neighbor_neighbors);
+                }
+            }
+
+            // Delete the node's graph entry at this level by staging an empty neighbor list
+            // (or we could use a Delete operation in the batch)
+            vecsim_stl::vector<idType> empty_neighbors(this->allocator);
+            uint64_t del_key = makeRepairKey(deleted_id, level);
+            // For deletion entries, always overwrite - the node is being deleted
+            stagedDeleteMap[del_key] = stagedDeleteUpdates.size();
+            stagedDeleteUpdates.emplace_back(deleted_id, level, empty_neighbors, this->allocator);
+        }
+    }
+
+    // Mark metadata as invalid and clean up raw vectors AFTER processing all nodes
+    // This ensures getNeighbors() and other methods work correctly during graph repair
+    for (idType deleted_id : pendingDeleteIds) {
+        if (deleted_id >= curElementCount || deleted_id >= idToMetaData.size()) {
+            continue;
+        }
+        // Mark the metadata as invalid
+        idToMetaData[deleted_id].label = INVALID_LABEL;
+
+        // Remove raw vector from RAM if it exists
+        auto ram_it = rawVectorsInRAM.find(deleted_id);
+        if (ram_it != rawVectorsInRAM.end()) {
+            rawVectorsInRAM.erase(ram_it);
+        }
+
+        // Also remove from disk cache to prevent stale data access
+        auto cache_it = rawVectorsDiskCache.find(deleted_id);
+        if (cache_it != rawVectorsDiskCache.end()) {
+            rawVectorsDiskCache.erase(cache_it);
+        }
+    }
+
+    // Flush all staged graph updates to disk in a single batch operation
+    vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
+    flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
+    stagedDeleteMap.clear();
+
+    // Flush staged repair updates (opportunistic cleanup from getNeighbors)
+    // But first, filter out any repairs for nodes that were just deleted
+    if (!stagedRepairUpdates.empty()) {
+        vecsim_stl::vector<GraphUpdate> filteredRepairUpdates(this->allocator);
+        for (const auto &update : stagedRepairUpdates) {
+            // Skip repairs for nodes that are in the deletion batch
+            if (deletingIds.find(update.node_id) == deletingIds.end()) {
+                filteredRepairUpdates.push_back(update);
+            }
+        }
+        if (!filteredRepairUpdates.empty()) {
+            flushStagedGraphUpdates(filteredRepairUpdates, emptyNeighborUpdates);
+        }
+        // Clear all staged repairs (including filtered ones)
+        stagedRepairUpdates.clear();
+        stagedRepairMap.clear();
+    }
+
+    // Clear the pending delete IDs
+    pendingDeleteIds.clear();
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::flushDeleteBatch() {
+    processDeleteBatch();
 }
 
 template <typename DataType, typename DistType>
@@ -1781,23 +2143,33 @@ void HNSWDiskIndex<DataType, DistType>::debugValidateGraphConnectivity() const {
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::flushStagedUpdates() {
-    // Implement the logic to manually flush any pending staged updates
-    // This could involve writing any pending staged updates to disk
-    // or clearing the staged updates if they are no longer needed
-    // For example, you might want to call flushStagedGraphUpdates() here
-    flushStagedGraphUpdates();
+    // Flush both insert and delete staged updates
+    // Note: This is a non-const method that modifies the staging areas
+    flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
+    stagedInsertMap.clear();
+    vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
+    flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
+    stagedDeleteMap.clear();
+
+    // Also flush staged repair updates (opportunistic cleanup from getNeighbors)
+    if (!stagedRepairUpdates.empty()) {
+        flushStagedGraphUpdates(stagedRepairUpdates, emptyNeighborUpdates);
+        stagedRepairMap.clear();
+    }
 }
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::debugPrintStagedUpdates() const {
-    // Implement the logic to debug print staged updates
-    // This could involve logging the contents of stagedGraphUpdates and stagedNeighborUpdates
-    // or any other relevant information
+    // Print both insert and delete staged updates
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Staged Updates ===");
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Graph Updates: %zu",
-              stagedGraphUpdates.size());
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Neighbor Updates: %zu",
-              stagedNeighborUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Insert Graph Updates: %zu",
+              stagedInsertUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Insert Neighbor Updates: %zu",
+              stagedInsertNeighborUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Delete Graph Updates: %zu",
+              stagedDeleteUpdates.size());
+    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Repair Updates: %zu",
+              stagedRepairUpdates.size());
 }
 
 // Add missing method implementations for benchmark framework
@@ -1810,9 +2182,28 @@ void HNSWDiskIndex<DataType, DistType>::fitMemory() {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::getDataByLabel(
     labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
-    // TODO: Implement data retrieval by label
-    // For now, just a stub implementation
     vectors_output.clear();
+
+    std::shared_lock<std::shared_mutex> index_data_lock(indexDataGuard);
+
+    // Check if label exists in the map
+    auto it = labelToIdMap.find(label);
+    if (it == labelToIdMap.end()) {
+        return; // Label not found
+    }
+
+    idType id = it->second;
+
+    // Get the raw vector data
+    const void *raw_data = getRawVector(id);
+    if (raw_data == nullptr) {
+        return; // Vector not found
+    }
+
+    // Copy the vector data
+    const DataType *data_ptr = static_cast<const DataType *>(raw_data);
+    std::vector<DataType> vec(data_ptr, data_ptr + this->dim);
+    vectors_output.push_back(std::move(vec));
 }
 
 template <typename DataType, typename DistType>
@@ -1825,18 +2216,29 @@ HNSWDiskIndex<DataType, DistType>::getStoredVectorDataByLabel(labelType label) c
 
 template <typename DataType, typename DistType>
 vecsim_stl::set<labelType> HNSWDiskIndex<DataType, DistType>::getLabelsSet() const {
-    // TODO: Implement labels set retrieval
-    // For now, just a stub implementation
+    std::shared_lock<std::shared_mutex> index_data_lock(indexDataGuard);
     vecsim_stl::set<labelType> labels(this->allocator);
+    for (const auto &it : labelToIdMap) {
+        labels.insert(it.first);
+    }
     return labels;
 }
 
 template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::deleteVector(labelType label) {
-    // TODO: Implement vector deletion
-    // For now, just mark the vector as deleted
-    markDelete(label);
-    return 0;
+
+    vecsim_stl::vector<idType> deleted_ids = markDelete(label);
+    if (deleted_ids.empty()) {
+        return 0; // Label not found or already deleted
+    }
+
+    pendingDeleteIds.insert(pendingDeleteIds.end(), deleted_ids.begin(), deleted_ids.end());
+
+    if (pendingDeleteIds.size() >= deleteBatchThreshold) {
+        processDeleteBatch();
+    }
+
+    return 1;
 }
 
 template <typename DataType, typename DistType>
@@ -1849,7 +2251,7 @@ double HNSWDiskIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType id,
 
 template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
-    
+
     return this->allocator->getAllocationSize();
 }
 
@@ -1916,8 +2318,6 @@ void HNSWDiskIndex<DataType, DistType>::releaseSharedLocks() {
 
 template <typename DataType, typename DistType>
 vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelType label) {
-    std::unique_lock<std::shared_mutex> index_data_lock(indexDataGuard);
-
     vecsim_stl::vector<idType> internal_ids(this->allocator);
 
     // Find the internal ID for this label
@@ -1935,7 +2335,8 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
         return internal_ids;
     }
 
-    // Mark as deleted
+    // Mark as deleted (but don't clean up raw vectors yet - they're needed for graph repair
+    // in processDeleteBatch. Cleanup happens there after repair is complete.)
     markAs<DELETE_MARK>(internalId);
     this->numMarkedDeleted++;
 
