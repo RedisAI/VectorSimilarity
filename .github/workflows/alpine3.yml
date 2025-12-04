@@ -6,5 +6,5 @@ jobs:
   alpine3:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: alpine:3
+      container: alpine:3.22
       pre-checkout-script: apk add bash git
