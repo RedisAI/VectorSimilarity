@@ -98,8 +98,17 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
                                         QUERY_TYPE_HYBRID),
               VecSimParamResolverErr_InvalidPolicy_NExits);
 
-    rparams[1].value = "batches";
-    rparams[1].valLen = strlen("batches");
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = VECSIM_POLICY_INVALID,
+                                  .valLen = strlen(VECSIM_POLICY_INVALID)};
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSimParamResolverErr_InvalidPolicy_NExits);
+
+    rparams[1].value = VECSIM_POLICY_BATCHES;
+    rparams[1].valLen = strlen(VECSIM_POLICY_BATCHES);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSim_OK);
@@ -109,8 +118,8 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     // Both params are "hybrid policy".
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
-                                  .value = "ADhOC_bf",
-                                  .valLen = strlen("ADhOC_bf")};
+                                  .value = VECSIM_POLICY_ADHOC_BF,
+                                  .valLen = strlen(VECSIM_POLICY_ADHOC_BF)};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSimParamResolverErr_AlreadySet);
@@ -131,8 +140,8 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
 
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
-                                  .value = "batches",
-                                  .valLen = strlen("batches")};
+                                  .value = VECSIM_POLICY_BATCHES,
+                                  .valLen = strlen(VECSIM_POLICY_BATCHES)};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSim_OK);

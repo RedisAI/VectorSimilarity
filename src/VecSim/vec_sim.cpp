@@ -152,10 +152,12 @@ static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
     if (qparams->searchMode != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
-    if (!strcasecmp(rparam.value, "batches")) {
+    if (!strcasecmp(rparam.value, VECSIM_POLICY_BATCHES)) {
         qparams->searchMode = HYBRID_BATCHES;
-    } else if (!strcasecmp(rparam.value, "adhoc_bf")) {
+    } else if (!strcasecmp(rparam.value, VECSIM_POLICY_ADHOC_BF)) {
         qparams->searchMode = HYBRID_ADHOC_BF;
+    } else if (!strcasecmp(rparam.value, VECSIM_POLICY_INVALID)) {
+        return VecSimParamResolverErr_InvalidPolicy_NExits;
     } else {
         return VecSimParamResolverErr_InvalidPolicy_NExits;
     }
