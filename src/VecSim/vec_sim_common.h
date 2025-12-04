@@ -22,6 +22,11 @@ extern "C" {
 #define INVALID_LABEL      SIZE_MAX
 #define UNUSED(x)          (void)(x)
 
+// Hybrid policy values
+#define VECSIM_POLICY_ADHOC_BF "adhoc_bf"
+#define VECSIM_POLICY_BATCHES  "batches"
+#define VECSIM_POLICY_INVALID  "invalid_policy"
+
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
