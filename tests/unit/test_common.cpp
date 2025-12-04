@@ -98,6 +98,16 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
                                         QUERY_TYPE_HYBRID),
               VecSimParamResolverErr_InvalidPolicy_NExits);
 
+
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                .nameLen = strlen("HYBRID_POLICY"),
+                .value = VECSIM_POLICY_INVALID,
+                .valLen = strlen(VECSIM_POLICY_INVALID)};
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                QUERY_TYPE_HYBRID),
+              VecSimParamResolverErr_InvalidPolicy_NExits);
+
     rparams[1].value = "batches";
     rparams[1].valLen = strlen("batches");
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
