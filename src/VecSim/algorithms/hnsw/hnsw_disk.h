@@ -2249,9 +2249,23 @@ uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
 
 template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getDBMemorySize() const {
-    uint64_t db_mem_size = 0;
-    this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &db_mem_size);
-    return db_mem_size;
+    // Get comprehensive RocksDB memory usage by summing all components:
+    // 1. Memtables (active, unflushed immutable, and pinned immutable)
+    // 2. Table readers (filter and index blocks not in block cache)
+    // 3. Block cache (uncompressed data blocks)
+    // 4. Pinned blocks (blocks pinned by iterators)
+
+    uint64_t memtables = 0;
+    uint64_t table_readers = 0;
+    uint64_t block_cache = 0;
+    uint64_t pinned_blocks = 0;
+
+    this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &memtables);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kEstimateTableReadersMem, &table_readers);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kBlockCacheUsage, &block_cache);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kBlockCachePinnedUsage, &pinned_blocks);
+
+    return memtables + table_readers + block_cache + pinned_blocks;
 }
 
 template <typename DataType, typename DistType>
@@ -2263,7 +2277,9 @@ uint64_t HNSWDiskIndex<DataType, DistType>::getDiskSize() const {
 
 template <typename DataType, typename DistType>
 std::shared_ptr<rocksdb::Statistics> HNSWDiskIndex<DataType, DistType>::getDBStatistics() const {
-    return this->dbOptions.statistics;
+    // Get statistics directly from the database instead of from the cached dbOptions copy
+    // because GetOptions() returns a copy that doesn't preserve the shared_ptr to statistics
+    return this->db->GetOptions().statistics;
 }
 
 // Missing virtual method implementations for HNSWDiskIndex

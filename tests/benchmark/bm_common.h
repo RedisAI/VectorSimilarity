@@ -109,10 +109,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
 
     // Get DB statistics if available
-    auto db_stats = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index)->getDBStatistics();
-    size_t byte_reads = 0;
+    auto hnsw_disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
+    auto db_stats = hnsw_disk_index->getDBStatistics();
+    size_t cache_misses = 0;
     if (db_stats) {
-        byte_reads = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+        cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
 
     for (auto _ : st) {
@@ -131,9 +132,13 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     st.counters["Recall"] = (float)correct / (float)(k * iter);
 
     if (db_stats) {
-        byte_reads = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO) - byte_reads;
-        st.counters["byte_reads"] = static_cast<double>(byte_reads) / iter;
+        cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - cache_misses;
+        st.counters["cache_misses_per_query"] = static_cast<double>(cache_misses) / iter;
     }
+
+    // Output RocksDB memory usage
+    uint64_t db_memory = hnsw_disk_index->getDBMemorySize();
+    st.counters["rocksdb_memory"] = static_cast<double>(db_memory);
 }
 
 // Benchmark TopK performance with marked deleted vectors
