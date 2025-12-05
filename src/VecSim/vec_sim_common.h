@@ -328,6 +328,7 @@ typedef struct {
  */
 typedef struct {
     size_t memory;
+    size_t vectors_memory;
     size_t db_memory;
     size_t db_disk;
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered

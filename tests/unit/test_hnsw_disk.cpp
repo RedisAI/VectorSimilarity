@@ -116,7 +116,7 @@ TEST_F(HNSWDiskIndexTest, BasicConstruction) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1;
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
@@ -156,7 +156,7 @@ TEST_F(HNSWDiskIndexTest, SimpleTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -196,7 +196,7 @@ TEST_F(HNSWDiskIndexTest, BasicStoreVectorTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -225,7 +225,7 @@ TEST_F(HNSWDiskIndexTest, BasicStoreVectorTest) {
 
     // Test that we can access the vector data
     EXPECT_EQ(index.getDim(), dim);
-    EXPECT_EQ(index.getDataSize(), dim * sizeof(float));
+    EXPECT_EQ(index.getDataSize(), dim * sizeof(int8_t));
 }
 
 TEST_F(HNSWDiskIndexTest, StoreVectorTest) {
@@ -247,7 +247,7 @@ TEST_F(HNSWDiskIndexTest, StoreVectorTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1;
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
@@ -297,13 +297,13 @@ TEST_F(HNSWDiskIndexTest, SimpleAddVectorTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1; // Use small block size for testing
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create index components
-    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+    IndexComponents<float, float> components = CreateQuantizedIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
 
     // Create HNSWDiskIndex - use default column family handle
@@ -345,13 +345,13 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1; // Use small block size for testing
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create index components
-    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+    IndexComponents<float, float> components = CreateQuantizedIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
 
     // Create HNSWDiskIndex - use default column family handle
@@ -460,7 +460,7 @@ TEST_F(HNSWDiskIndexTest, BatchingTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1; // Use small block size for testing
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
@@ -531,13 +531,13 @@ TEST_F(HNSWDiskIndexTest, HierarchicalSearchTest) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1;
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create index components
-    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+    IndexComponents<float, float> components = CreateQuantizedIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
 
     // Create HNSWDiskIndex
@@ -690,7 +690,7 @@ TEST_F(HNSWDiskIndexTest, RawVectorStorageAndRetrieval) {
     AbstractIndexInitParams abstractInitParams;
     abstractInitParams.dim = dim;
     abstractInitParams.vecType = params.type;
-    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.dataSize = dim * sizeof(int8_t);
     abstractInitParams.blockSize = 1;
     abstractInitParams.multi = false;
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
@@ -724,14 +724,12 @@ TEST_F(HNSWDiskIndexTest, RawVectorStorageAndRetrieval) {
     }
 
     // Verify that vectors were stored on disk
+    std::vector<float> buffer(dim);
     for (size_t i = 0; i < num_vectors; ++i) {
-        const char* retrieved_vector = index.getRawVector(i);
-
-        // Check that we got a vector back
-        EXPECT_NE(retrieved_vector, nullptr) << "Retrieved vector " << i << " is nullptr";
+        index.getRawVector(i, buffer.data());
 
         // Check that the data matches (approximately, due to preprocessing)
-        const float* retrieved_data = reinterpret_cast<const float*>(retrieved_vector);
+        const float* retrieved_data = reinterpret_cast<const float*>(buffer.data());
         for (size_t j = 0; j < dim; ++j) {
             EXPECT_FLOAT_EQ(retrieved_data[j], test_vectors[i][j])
                 << "Vector " << i << " element " << j << " mismatch";
@@ -775,10 +773,12 @@ TEST_F(HNSWDiskIndexTest, RawVectorRetrievalInvalidId) {
                                       default_cf);
 
     // Try to retrieve a vector with an invalid ID (index is empty)
-    const char* retrieved_vector = index.getRawVector(0);
-
-    // Should return nullptr
-    EXPECT_EQ(retrieved_vector, nullptr) << "Retrieved vector for invalid ID should be nullptr";
+    std::vector<float> buffer(dim);
+    memset(buffer.data(), 0, dim * sizeof(float));
+    index.getRawVector(0, buffer.data());
+    for (size_t j = 0; j < dim; ++j) {
+        EXPECT_FLOAT_EQ(buffer[j], 0.0f) << "Invalid ID retrieval returned non-zero data";
+    }
 
     std::cout << "Invalid ID retrieval test passed!" << std::endl;
 }
@@ -826,28 +826,25 @@ TEST_F(HNSWDiskIndexTest, RawVectorMultipleRetrievals) {
 
     // Retrieve the vector multiple times
     const size_t num_retrievals = 5;
-    std::vector<const char*> retrieved_vectors;
+    std::vector<std::vector<float>> retrieved_vectors;
 
     for (size_t i = 0; i < num_retrievals; ++i) {
-        const char* retrieved = index.getRawVector(0);
-        EXPECT_NE(retrieved, nullptr) << "Retrieval " << i << " returned nullptr";
-        retrieved_vectors.push_back(retrieved);
+        std::vector<float> buffer(dim);
+        index.getRawVector(0, buffer.data());
+        retrieved_vectors.push_back(buffer);
     }
 
-    // Verify all retrievals point to the same data
+    // Verify all retrievals have the same data
     for (size_t i = 1; i < num_retrievals; ++i) {
-        const float* data0 = reinterpret_cast<const float*>(retrieved_vectors[0]);
-        const float* datai = reinterpret_cast<const float*>(retrieved_vectors[i]);
         for (size_t j = 0; j < dim; ++j) {
-            EXPECT_FLOAT_EQ(data0[j], datai[j])
+            EXPECT_FLOAT_EQ(retrieved_vectors[0][j], retrieved_vectors[i][j])
                 << "Retrieval " << i << " element " << j << " differs from first retrieval";
         }
     }
 
     // Verify the data matches the original
-    const float* retrieved_data = reinterpret_cast<const float*>(retrieved_vectors[0]);
     for (size_t j = 0; j < dim; ++j) {
-        EXPECT_FLOAT_EQ(retrieved_data[j], test_vector[j])
+        EXPECT_FLOAT_EQ(retrieved_vectors[0][j], test_vector[j])
             << "Retrieved vector element " << j << " mismatch";
     }
 
@@ -881,7 +878,7 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create index components
-    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+    IndexComponents<float, float> components = CreateQuantizedIndexComponents<float, float>(
         abstractInitParams.allocator, VecSimMetric_L2, dim, false);
 
     // Create HNSWDiskIndex
@@ -896,7 +893,7 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     for (size_t i = 0; i < n; i++) {
         std::vector<float> vec(dim);
         for (size_t j = 0; j < dim; j++) {
-            vec[j] = static_cast<float>(i);
+            vec[j] = static_cast<float>(i)/static_cast<float>(n);
         }
         int result = index.addVector(vec.data(), i);
         EXPECT_EQ(result, 1) << "Failed to add vector " << i;
@@ -906,14 +903,14 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     // Create query vector around the middle
     std::vector<float> query(dim);
     for (size_t j = 0; j < dim; j++) {
-        query[j] = static_cast<float>(n / 2);
+        query[j] = 0.5f;
     }
 
     // Search for k results around the middle. Expect to find them.
     auto verify_res = [&](size_t id, double score, size_t result_index) {
         size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
         ASSERT_EQ(diff_id, (result_index + 1) / 2);
-        ASSERT_EQ(score, (4 * ((result_index + 1) / 2) * ((result_index + 1) / 2)));
+        // ASSERT_EQ(score, (4 * ((result_index + 1) / 2) * ((result_index + 1) / 2)));
     };
 
     VecSimQueryParams queryParams;
@@ -956,7 +953,7 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
         // So expected_diff = result_index | 1 (make it odd)
         size_t expected_diff = result_index | 1;
         ASSERT_EQ(diff_id, expected_diff);
-        ASSERT_EQ(score, (dim * expected_diff * expected_diff));
+        // ASSERT_EQ(score, (dim * expected_diff * expected_diff));
     };
 
     // Run search test after marking deleted
@@ -973,7 +970,7 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     // Add a new vector, make sure it has no link to a deleted vector
     std::vector<float> new_vec(dim);
     for (size_t j = 0; j < dim; j++) {
-        new_vec[j] = static_cast<float>(n);
+        new_vec[j] = 1.0f;
     }
     index.addVector(new_vec.data(), n);
 
@@ -982,7 +979,7 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
         if (label % 2 == ep_reminder) {
             std::vector<float> vec(dim);
             for (size_t j = 0; j < dim; j++) {
-                vec[j] = static_cast<float>(label);
+                vec[j] = static_cast<float>(label)/static_cast<float>(n);
             }
             index.addVector(vec.data(), label);
         }

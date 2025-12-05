@@ -136,6 +136,10 @@ public:
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
         return indexCalculator->calcDistance(vector_data1, vector_data2, this->dim);
     }
+    
+    DistType calcDistanceRaw(const void *vector_data1, const void *vector_data2) const {
+        return indexCalculator->calcDistanceRaw(vector_data1, vector_data2, this->dim);
+    }
 
     /**
      * @brief Preprocess a blob for both storage and query.
@@ -181,6 +185,7 @@ public:
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
+            .vectors_memory = 0,
             .db_memory = 0,
             .db_disk = 0,
             .numberOfMarkedDeleted = 0,

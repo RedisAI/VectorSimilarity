@@ -13,6 +13,7 @@
 #include <memory>
 #include <cassert>
 #include <cmath>
+#include <iostream>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
@@ -216,5 +217,10 @@ private:
                 output_vec[i] = static_cast<int8_t>(std::round(scaled));
             }
         }
+
+        // std::cout << "quantized_0: " << static_cast<int>(output_vec[0]) << std::endl;
+        // std::cout << "original_0: " << input_vec[0] << std::endl;
+        // std::cout << "quantized_n: " << static_cast<int>(output_vec[dim - 1]) << std::endl;
+        // std::cout << "original_n: " << input_vec[dim - 1] << std::endl;
     }
 };

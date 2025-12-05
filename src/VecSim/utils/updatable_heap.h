@@ -41,9 +41,12 @@ public:
     inline void emplace(Priority p, Value v) override;
     inline bool empty() const override;
     inline void pop() override;
+    inline bool exists(Value v) const;
     inline const std::pair<Priority, Value> top() const override;
     inline size_t size() const override;
-
+    // Random order iteration
+    const auto begin() const { return this->priorityToValue.begin(); }
+    const auto end() const { return this->priorityToValue.end(); }
 private:
     inline auto top_ptr() const;
 };
@@ -110,4 +113,8 @@ void updatable_max_heap<Priority, Value>::emplace(Priority p, Value v) {
     }
 }
 
+template <typename Priority, typename Value>
+bool updatable_max_heap<Priority, Value>::exists(Value v) const {
+    return valueToNode.find(v) != valueToNode.end();
+}
 } // namespace vecsim_stl
