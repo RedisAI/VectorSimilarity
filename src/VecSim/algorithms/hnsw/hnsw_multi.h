@@ -222,6 +222,7 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     // force_copy == true.
     auto queryBlobCopy = this->preprocessQuery(queryBlob, true);
+    this->num_searches.fetch_add(1, std::memory_order_relaxed);
 
     // take ownership of the blob copy and pass it to the batch iterator.
     auto *queryBlobCopyPtr = queryBlobCopy.release();

@@ -18,7 +18,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          HNSWSerializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       HNSWSerializer(version), epsilon(params->epsilon), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator), num_searches(0),
+      num_visited_nodes(0) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();

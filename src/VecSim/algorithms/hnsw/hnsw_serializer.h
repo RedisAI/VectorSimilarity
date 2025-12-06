@@ -26,6 +26,7 @@ public:
     };
 
     explicit HNSWSerializer(EncodingVersion version = EncodingVersion::V4);
+    virtual ~HNSWSerializer() = default;
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 
@@ -35,6 +36,7 @@ public:
 
 protected:
     EncodingVersion m_version;
+    virtual void saveIndexIMP(std::ofstream &output) = 0;
 
 private:
     void saveIndexFields(std::ofstream &output) const = 0;
