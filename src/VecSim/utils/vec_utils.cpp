@@ -53,6 +53,10 @@ const char *VecSimCommonStrings::EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 const char *VecSimCommonStrings::NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
+const char *VecSimCommonStrings::NUM_SEARCHES = "NUM_SEARCHES";
+const char *VecSimCommonStrings::NUM_VISITED_NODES = "NUM_VISITED_NODES";
+const char *VecSimCommonStrings::NUM_VISITED_NODES_HIGHER_LEVELS =
+    "NUM_VISITED_NODES_HIGHER_LEVELS";
 
 const char *VecSimCommonStrings::SVS_SEARCH_WS_STRING = "SEARCH_WINDOW_SIZE";
 const char *VecSimCommonStrings::SVS_CONSTRUCTION_WS_STRING = "CONSTRUCTION_WINDOW_SIZE";

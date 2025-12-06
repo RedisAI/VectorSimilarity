@@ -118,6 +118,8 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
         this->index->lockNodeLinks(node_graph_data);
         ElementLevelData &node_level_data = this->index->getElementLevelData(node_graph_data, 0);
         if (node_level_data.numLinks > 0) {
+            // Increment visited nodes counter - we're visiting this node's neighbors
+            this->index->num_visited_nodes.fetch_add(1, std::memory_order_relaxed);
 
             // Pre-fetch first candidate tag address.
             __builtin_prefetch(visited_list->getElementsTags() + node_level_data.links[0]);

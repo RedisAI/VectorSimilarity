@@ -94,11 +94,39 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned sho
     size_t k = st.range(1);
     std::atomic_int correct = 0;
     size_t iter = 0;
+
+    // Get initial metrics
+    auto index = GET_INDEX(INDEX_HNSW + index_offset);
+    VecSimIndexDebugInfo info_before = VecSimIndex_DebugInfo(index);
+    size_t num_searches_before = info_before.hnswInfo.num_searches;
+    size_t num_visited_nodes_before = info_before.hnswInfo.num_visited_nodes;
+    size_t num_visited_nodes_higher_levels_before =
+        info_before.hnswInfo.num_visited_nodes_higher_levels;
+
     for (auto _ : st) {
         RunTopK_HNSW(st, ef, iter, k, correct, index_offset);
         iter++;
     }
+
+    // Get final metrics
+    VecSimIndexDebugInfo info_after = VecSimIndex_DebugInfo(index);
+    size_t num_searches_after = info_after.hnswInfo.num_searches;
+    size_t num_visited_nodes_after = info_after.hnswInfo.num_visited_nodes;
+    size_t num_visited_nodes_higher_levels_after =
+        info_after.hnswInfo.num_visited_nodes_higher_levels;
+
+    // Calculate deltas
+    size_t total_searches = num_searches_after - num_searches_before;
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["Avg_visited_nodes_level_0"] =
+        total_searches > 0 ? (double)total_visited_nodes / (double)total_searches : 0.0;
+    st.counters["Avg_visited_nodes_higher_levels"] =
+        total_searches > 0 ? (double)total_visited_nodes_higher_levels / (double)total_searches
+                           : 0.0;
 }
 
 template <typename index_type_t>
@@ -111,6 +139,12 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW));
     size_t total_iters = 50;
     VecSimQueryReply *all_results[total_iters];
+
+    // Get initial metrics from the backend HNSW index
+    auto hnsw_index = GET_INDEX(INDEX_HNSW + index_offset);
+    VecSimIndexDebugInfo info_before = VecSimIndex_DebugInfo(hnsw_index);
+    size_t num_searches_before = info_before.hnswInfo.num_searches;
+    size_t num_visited_nodes_before = info_before.hnswInfo.num_visited_nodes;
 
     auto parallel_knn_search = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
@@ -134,6 +168,15 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         }
     }
 
+    // Get final metrics
+    VecSimIndexDebugInfo info_after = VecSimIndex_DebugInfo(hnsw_index);
+    size_t num_searches_after = info_after.hnswInfo.num_searches;
+    size_t num_visited_nodes_after = info_after.hnswInfo.num_visited_nodes;
+
+    // Calculate deltas
+    size_t total_searches = num_searches_after - num_searches_before;
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+
     // Measure recall
     for (iter = 0; iter < total_iters; iter++) {
         auto bf_results =
@@ -147,6 +190,8 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 
     st.counters["Recall"] = (float)correct / (float)(k * iter);
     st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
+    st.counters["Avg_visited_nodes_level_0"] =
+        total_searches > 0 ? (double)total_visited_nodes / (double)total_searches : 0.0;
 }
 
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \

@@ -123,9 +123,14 @@ protected:
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
     mutable std::shared_mutex indexDataGuard;
 
+public:
+    mutable std::atomic_size_t num_searches;
+    mutable std::atomic_size_t num_visited_nodes;
+    mutable std::atomic_size_t num_visited_nodes_higher_levels;
+
+protected:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
-
 #include "hnsw_serializer_declarations.h"
 #endif
 
@@ -531,6 +536,8 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     ElementLevelData &node_level = getElementLevelData(cur_element, layer);
     linkListSize num_links = node_level.getNumLinks();
     if (num_links > 0) {
+        // Increment visited nodes counter - we're visiting this node's neighbors
+        num_visited_nodes.fetch_add(1, std::memory_order_relaxed);
 
         const char *cur_data, *next_data;
         // Pre-fetch first candidate tag address.
@@ -616,6 +623,8 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     linkListSize num_links = node_level.getNumLinks();
 
     if (num_links > 0) {
+        // Increment visited nodes counter - we're visiting this node's neighbors
+        num_visited_nodes.fetch_add(1, std::memory_order_relaxed);
 
         const char *cur_data, *next_data;
         // Pre-fetch first candidate tag address.
@@ -1209,6 +1218,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
     // Don't allow choosing a deleted node as an entry point upon searching for neighbors
     // candidates (that is, we're NOT running a query, but inserting a new vector).
     idType bestNonDeletedCand = bestCand;
+    size_t visited_count = 0;
 
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
@@ -1228,6 +1238,9 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             if (isInProcess(candidate)) {
                 continue;
             }
+            if (running_query) {
+                visited_count++;
+            }
             DistType d = this->calcDistance(vector_data, getDataByInternalId(candidate));
             if (d < curDist) {
                 curDist = d;
@@ -1245,6 +1258,9 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
     } while (changed);
     if (!running_query) {
         bestCand = bestNonDeletedCand;
+    } else {
+        // Update the counter for higher level visited nodes
+        num_visited_nodes_higher_levels.fetch_add(visited_count, std::memory_order_relaxed);
     }
 }
 
@@ -1617,7 +1633,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator), num_searches(0),
+      num_visited_nodes(0), num_visited_nodes_higher_levels(0) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -1963,6 +1980,9 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         return rep;
     }
 
+    // Increment search counter
+    num_searches.fetch_add(1, std::memory_order_relaxed);
+
     auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
@@ -2077,6 +2097,10 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
     if (curElementCount == 0) {
         return rep;
     }
+
+    // Increment search counter
+    num_searches.fetch_add(1, std::memory_order_relaxed);
+
     auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
     void *timeoutCtx = nullptr;
@@ -2120,6 +2144,10 @@ VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
     info.hnswInfo.entrypoint = ep_id != INVALID_ID ? getExternalLabel(ep_id) : INVALID_LABEL;
     info.hnswInfo.visitedNodesPoolSize = this->visitedNodesHandlerPool.getPoolSize();
     info.hnswInfo.numberOfMarkedDeletedNodes = this->getNumMarkedDeleted();
+    info.hnswInfo.num_searches = this->num_searches.load(std::memory_order_relaxed);
+    info.hnswInfo.num_visited_nodes = this->num_visited_nodes.load(std::memory_order_relaxed);
+    info.hnswInfo.num_visited_nodes_higher_levels =
+        this->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
     return info;
 }
 
@@ -2135,7 +2163,7 @@ template <typename DataType, typename DistType>
 VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() const {
     VecSimIndexDebugInfo info = this->debugInfo();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 17;
+    size_t numberOfInfoFields = 20;
     auto *infoIterator = new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
     infoIterator->addInfoField(
@@ -2185,6 +2213,22 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
         .fieldName = VecSimCommonStrings::NUM_MARKED_DELETED,
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.numberOfMarkedDeletedNodes}}});
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::NUM_SEARCHES,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.num_searches}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::NUM_VISITED_NODES,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.num_visited_nodes}}});
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::NUM_VISITED_NODES_HIGHER_LEVELS,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{
+                             .uintegerValue = info.hnswInfo.num_visited_nodes_higher_levels}}});
 
     return infoIterator;
 }

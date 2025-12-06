@@ -340,8 +340,11 @@ typedef struct {
     double epsilon;        // Epsilon parameter for HNSW graph accuracy/latency for range search.
     size_t max_level;      // Number of graph levels.
     size_t entrypoint;     // Entrypoint vector label.
-    size_t visitedNodesPoolSize;       // The max number of parallel graph scans so far.
-    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
+    size_t visitedNodesPoolSize;            // The max number of parallel graph scans so far.
+    size_t numberOfMarkedDeletedNodes;      // The number of nodes that are marked as deleted.
+    size_t num_searches;                    // Total number of searches performed.
+    size_t num_visited_nodes;               // Total number of nodes visited during searches.
+    size_t num_visited_nodes_higher_levels; // Total number of nodes visited in higher levels (> 0).
 } hnswInfoStruct;
 
 typedef struct {

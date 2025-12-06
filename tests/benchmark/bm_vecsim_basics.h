@@ -291,6 +291,14 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     HNSWRuntimeParams hnswRuntimeParams = {.epsilon = epsilon};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
 
+    // Get initial metrics
+    auto index = GET_INDEX(INDEX_HNSW);
+    VecSimIndexDebugInfo info_before = VecSimIndex_DebugInfo(index);
+    size_t num_searches_before = info_before.hnswInfo.num_searches;
+    size_t num_visited_nodes_before = info_before.hnswInfo.num_visited_nodes;
+    size_t num_visited_nodes_higher_levels_before =
+        info_before.hnswInfo.num_visited_nodes_higher_levels;
+
     for (auto _ : st) {
         auto hnsw_results = VecSimIndex_RangeQuery(
             GET_INDEX(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
@@ -307,8 +315,27 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         iter++;
         st.ResumeTiming();
     }
+
+    // Get final metrics
+    VecSimIndexDebugInfo info_after = VecSimIndex_DebugInfo(index);
+    size_t num_searches_after = info_after.hnswInfo.num_searches;
+    size_t num_visited_nodes_after = info_after.hnswInfo.num_visited_nodes;
+    size_t num_visited_nodes_higher_levels_after =
+        info_after.hnswInfo.num_visited_nodes_higher_levels;
+
+    // Calculate deltas
+    size_t total_searches = num_searches_after - num_searches_before;
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Avg. results number"] = (double)total_res / iter;
     st.counters["Recall"] = (float)total_res / total_res_bf;
+    st.counters["Avg_visited_nodes_level_0"] =
+        total_searches > 0 ? (double)total_visited_nodes / (double)total_searches : 0.0;
+    st.counters["Avg_visited_nodes_higher_levels"] =
+        total_searches > 0 ? (double)total_visited_nodes_higher_levels / (double)total_searches
+                           : 0.0;
 }
 
 template <typename index_type_t>
@@ -338,15 +365,9 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     assert(VecSimIndex_IndexSize(index) % BM_VecSimGeneral::block_size == overhead);
     assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
 
-    std::cout << "Added " << added_vec_count << " vectors to reach block size boundary."
-              << std::endl;
-    std::cout << "Index size is now " << VecSimIndex_IndexSize(index) << std::endl;
-    std::cout << "Last label is " << curr_label - 1 << std::endl;
-
     // Benchmark loop: repeatedly delete/add same vector to trigger grow-shrink cycles
     labelType label_to_update = curr_label - 1;
     size_t index_cap = index->indexMetaDataCapacity();
-    std::cout << "index_cap after adding vectors " << index_cap << std::endl;
     assert(index_cap == initial_index_cap + BM_VecSimGeneral::block_size);
 
     for (auto _ : st) {
@@ -370,9 +391,10 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
         assert(index->indexMetaDataCapacity() == index_cap);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
+    st.counters["vectors_added"] = static_cast<float>(added_vec_count);
+    st.counters["index_cap_change"] = static_cast<float>(index_cap) - static_cast<float>(initial_index_cap);
 
     // Clean-up all the new vectors to restore the index size to its original value.
-
     size_t new_label_count = index->indexLabelCount();
     for (size_t label = initial_label_count; label < new_label_count; label++) {
         // If index is tiered HNSW, remove directly from the underline HNSW.

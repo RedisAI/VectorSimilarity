@@ -53,6 +53,9 @@ public:
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
     static const char *NUM_MARKED_DELETED;
+    static const char *NUM_SEARCHES;
+    static const char *NUM_VISITED_NODES;
+    static const char *NUM_VISITED_NODES_HIGHER_LEVELS;
     // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *SVS_SEARCH_WS_STRING;

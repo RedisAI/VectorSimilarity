@@ -22,7 +22,7 @@ using float16 = vecsim_types::float16;
 // Map index types to their expected number of debug iterator fields
 namespace DebugInfoIteratorFieldCount {
 constexpr size_t FLAT = 10;
-constexpr size_t HNSW = 17;
+constexpr size_t HNSW = 18;
 constexpr size_t SVS = 24;
 constexpr size_t TIERED_HNSW = 15;
 constexpr size_t TIERED_SVS = 17;
@@ -406,6 +406,20 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue,
                       info.hnswInfo.numberOfMarkedDeletedNodes);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::NUM_SEARCHES)) {
+            // Number of searches.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.hnswInfo.num_searches);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::NUM_VISITED_NODES)) {
+            // Number of visited nodes.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.hnswInfo.num_visited_nodes);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::NUM_VISITED_NODES_HIGHER_LEVELS)) {
+            // Number of visited nodes in higher levels.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue,
+                      info.hnswInfo.num_visited_nodes_higher_levels);
         } else {
             FAIL();
         }
@@ -757,6 +771,9 @@ std::vector<std::string> getHNSWFields() {
     fields.push_back(VecSimCommonStrings::HNSW_ENTRYPOINT);
     fields.push_back(VecSimCommonStrings::EPSILON_STRING);
     fields.push_back(VecSimCommonStrings::NUM_MARKED_DELETED);
+    fields.push_back(VecSimCommonStrings::NUM_SEARCHES);
+    fields.push_back(VecSimCommonStrings::NUM_VISITED_NODES);
+    fields.push_back(VecSimCommonStrings::NUM_VISITED_NODES_HIGHER_LEVELS);
     return fields;
 }
 
