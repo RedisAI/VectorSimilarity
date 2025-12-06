@@ -392,7 +392,7 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
     st.counters["vectors_added"] = static_cast<float>(added_vec_count);
-    st.counters["index_cap_change"] = index_cap - initial_index_cap;
+    st.counters["index_cap_change"] = static_cast<float>(index_cap) - static_cast<float>(initial_index_cap);
 
     // Clean-up all the new vectors to restore the index size to its original value.
     size_t new_label_count = index->indexLabelCount();
