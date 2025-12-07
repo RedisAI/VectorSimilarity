@@ -182,6 +182,8 @@ protected:
     size_t deleteBatchThreshold = 10;
     vecsim_stl::vector<idType> pendingDeleteIds;
 
+    bool useRawData = false;
+
     // In-memory graph updates staging (for delayed disk operations)
     struct GraphUpdate {
         idType node_id;
@@ -1442,7 +1444,7 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
     std::vector<char> vector_data(this->inputBlobSize);
     getNeighborsAndVector(curNodeId, level, neighbors, vector_data.data());
     // Calculate distance to candidate with raw data
-    if (top_candidates.exists(curNodeId)) {
+    if (useRawData && top_candidates.exists(curNodeId)) {
 
         DistType dist = this->calcDistanceRaw(data_point_raw, vector_data.data());
         emplaceToHeap(top_candidates, dist, curNodeId);
