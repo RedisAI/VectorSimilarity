@@ -16,14 +16,37 @@
 #include <fstream>
 #include <filesystem>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <ctime>
 #include <cstdlib>
 #include <array>
 #include <memory>
+#include <random>
 
 namespace HNSWDiskFactory {
 
 #ifdef BUILD_TESTS
+
+/**
+ * @brief Generate a random alphanumeric string of the specified length
+ * @param length The length of the string to generate
+ * @return A random string containing only alphanumeric characters
+ */
+static std::string generate_random_string(size_t length) {
+    static const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static const size_t charset_size = sizeof(charset) - 1;
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<size_t> dist(0, charset_size - 1);
+
+    std::string result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        result += charset[dist(gen)];
+    }
+    return result;
+}
 
 /**
  * @brief Check if a file is a zip archive by examining its magic bytes
@@ -75,55 +98,59 @@ private:
     std::string extracted_folder_path;  // Path to the extracted index folder within temp_dir
     bool cleanup_temp_dir;  // Whether to delete temp_dir on destruction
 
+    // Private constructor - use static factory methods
+    ManagedRocksDB() : cleanup_temp_dir(false) {}
+
 public:
-    // Constructor for loading from a zip file (extracts to temp directory)
-    ManagedRocksDB(const std::string &zip_path, const std::string &temp_path, bool from_zip)
-        : temp_dir(temp_path), cleanup_temp_dir(true) {
+    // Factory method for loading from a zip file (extracts to temp directory)
+    static std::unique_ptr<ManagedRocksDB> fromZipFile(const std::string &zip_path,
+                                                        const std::string &temp_path) {
+        auto instance = std::unique_ptr<ManagedRocksDB>(new ManagedRocksDB());
+        instance->temp_dir = temp_path;
+        instance->extracted_folder_path = temp_path;
+        instance->cleanup_temp_dir = true;
 
         // Create temp directory
-        std::filesystem::create_directories(temp_dir);
+        std::filesystem::create_directories(instance->temp_dir);
 
-        if (from_zip) {
-            // Extract the zip file to temp directory
-            try {
-                extractZipToDirectory(zip_path, temp_dir);
-            } catch (const std::exception &e) {
-                std::filesystem::remove_all(temp_dir);
-                throw std::runtime_error("Failed to extract zip file: " + std::string(e.what()));
-            }
+        // Extract the zip file to temp directory
+        try {
+            extractZipToDirectory(zip_path, instance->temp_dir);
+        } catch (const std::exception &e) {
+            std::filesystem::remove_all(instance->temp_dir);
+            throw std::runtime_error("Failed to extract zip file: " + std::string(e.what()));
+        }
 
-            // Find the extracted folder - it should contain index.hnsw_disk_v1 and rocksdb/
-            // The zip might contain the folder at root level or directly contain the files
-            extracted_folder_path = temp_dir;
-            std::string index_file = temp_dir + "/index.hnsw_disk_v1";
-            std::string rocksdb_dir = temp_dir + "/rocksdb";
+        // Find the extracted folder - it should contain index.hnsw_disk_v1 and rocksdb/
+        // The zip might contain the folder at root level or directly contain the files
+        std::string index_file = instance->temp_dir + "/index.hnsw_disk_v1";
+        std::string rocksdb_dir = instance->temp_dir + "/rocksdb";
 
-            if (!std::filesystem::exists(index_file) || !std::filesystem::exists(rocksdb_dir)) {
-                // Check if there's a single subdirectory containing the files
-                for (const auto &entry : std::filesystem::directory_iterator(temp_dir)) {
-                    if (entry.is_directory()) {
-                        std::string sub_index = entry.path().string() + "/index.hnsw_disk_v1";
-                        std::string sub_rocksdb = entry.path().string() + "/rocksdb";
-                        if (std::filesystem::exists(sub_index) &&
-                            std::filesystem::exists(sub_rocksdb)) {
-                            extracted_folder_path = entry.path().string();
-                            break;
-                        }
+        if (!std::filesystem::exists(index_file) || !std::filesystem::exists(rocksdb_dir)) {
+            // Check if there's a single subdirectory containing the files
+            for (const auto &entry : std::filesystem::directory_iterator(instance->temp_dir)) {
+                if (entry.is_directory()) {
+                    std::string sub_index = entry.path().string() + "/index.hnsw_disk_v1";
+                    std::string sub_rocksdb = entry.path().string() + "/rocksdb";
+                    if (std::filesystem::exists(sub_index) &&
+                        std::filesystem::exists(sub_rocksdb)) {
+                        instance->extracted_folder_path = entry.path().string();
+                        break;
                     }
                 }
             }
+        }
 
-            // Verify the structure exists
-            if (!std::filesystem::exists(extracted_folder_path + "/index.hnsw_disk_v1") ||
-                !std::filesystem::exists(extracted_folder_path + "/rocksdb")) {
-                std::filesystem::remove_all(temp_dir);
-                throw std::runtime_error(
-                    "Invalid zip structure: expected index.hnsw_disk_v1 and rocksdb/ directory");
-            }
+        // Verify the structure exists
+        if (!std::filesystem::exists(instance->extracted_folder_path + "/index.hnsw_disk_v1") ||
+            !std::filesystem::exists(instance->extracted_folder_path + "/rocksdb")) {
+            std::filesystem::remove_all(instance->temp_dir);
+            throw std::runtime_error(
+                "Invalid zip structure: expected index.hnsw_disk_v1 and rocksdb/ directory");
         }
 
         // Open RocksDB from the extracted checkpoint
-        std::string checkpoint_dir = extracted_folder_path + "/rocksdb";
+        std::string checkpoint_dir = instance->extracted_folder_path + "/rocksdb";
         rocksdb::Options options;
         options.create_if_missing = false;
         options.error_if_exists = false;
@@ -132,30 +159,34 @@ public:
         rocksdb::DB *db_ptr = nullptr;
         rocksdb::Status status = rocksdb::DB::Open(options, checkpoint_dir, &db_ptr);
         if (!status.ok()) {
-            std::filesystem::remove_all(temp_dir);
+            std::filesystem::remove_all(instance->temp_dir);
             throw std::runtime_error("Failed to open RocksDB from extracted checkpoint: " +
                                      status.ToString());
         }
 
-        db.reset(db_ptr);
-        cf = db->DefaultColumnFamily();
+        instance->db.reset(db_ptr);
+        instance->cf = instance->db->DefaultColumnFamily();
+        return instance;
     }
 
-    // Constructor for loading from checkpoint directory (copies to temp location)
-    ManagedRocksDB(const std::string &checkpoint_dir, const std::string &temp_path)
-        : temp_dir(temp_path), cleanup_temp_dir(true) {
+    // Factory method for loading from checkpoint directory (copies to temp location)
+    static std::unique_ptr<ManagedRocksDB> fromCheckpointDir(const std::string &checkpoint_dir,
+                                                              const std::string &temp_path) {
+        auto instance = std::unique_ptr<ManagedRocksDB>(new ManagedRocksDB());
+        instance->temp_dir = temp_path;
+        instance->cleanup_temp_dir = true;
 
         // Create temp directory
-        std::filesystem::create_directories(temp_dir);
+        std::filesystem::create_directories(instance->temp_dir);
 
         // Copy the entire checkpoint to temp location to preserve the original
-        std::string temp_checkpoint = temp_dir + "/checkpoint_copy";
+        std::string temp_checkpoint = instance->temp_dir + "/checkpoint_copy";
         try {
             std::filesystem::copy(checkpoint_dir, temp_checkpoint,
                                 std::filesystem::copy_options::recursive);
         } catch (const std::filesystem::filesystem_error &e) {
             // Clean up temp dir if copy failed
-            std::filesystem::remove_all(temp_dir);
+            std::filesystem::remove_all(instance->temp_dir);
             throw std::runtime_error("Failed to copy checkpoint to temp location: " +
                                    std::string(e.what()));
         }
@@ -171,20 +202,25 @@ public:
         rocksdb::Status status = rocksdb::DB::Open(options, temp_checkpoint, &db_ptr);
         if (!status.ok()) {
             // Clean up temp dir if DB open failed
-            std::filesystem::remove_all(temp_dir);
+            std::filesystem::remove_all(instance->temp_dir);
             throw std::runtime_error("Failed to open RocksDB from temp checkpoint: " +
                                    status.ToString());
         }
 
-        db.reset(db_ptr);
-        cf = db->DefaultColumnFamily();
+        instance->db.reset(db_ptr);
+        instance->cf = instance->db->DefaultColumnFamily();
+        return instance;
     }
 
-    // Constructor for creating new index (permanent location, no cleanup)
-    ManagedRocksDB(rocksdb::DB *db_ptr, const std::string &db_path)
-        : temp_dir(db_path), cleanup_temp_dir(false) {
-        db.reset(db_ptr);
-        cf = db->DefaultColumnFamily();
+    // Factory method for creating new index (permanent location, no cleanup)
+    static std::unique_ptr<ManagedRocksDB> fromExistingDB(rocksdb::DB *db_ptr,
+                                                          const std::string &db_path) {
+        auto instance = std::unique_ptr<ManagedRocksDB>(new ManagedRocksDB());
+        instance->temp_dir = db_path;
+        instance->cleanup_temp_dir = false;
+        instance->db.reset(db_ptr);
+        instance->cf = instance->db->DefaultColumnFamily();
+        return instance;
     }
 
     // Destructor: closes DB and optionally cleans up temp directory
@@ -289,7 +325,7 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
     }
 
     // Store in RAII wrapper (will close DB on exit, but won't delete directory)
-    managed_rocksdb = std::make_unique<ManagedRocksDB>(db_ptr, dbPath);
+    managed_rocksdb = ManagedRocksDB::fromExistingDB(db_ptr, dbPath);
 
     // Create AbstractIndexInitParams
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
@@ -389,14 +425,14 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
 VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
     // Create a temporary directory
     // Using PID and timestamp to ensure uniqueness across multiple benchmark runs
-    std::string temp_dir = std::filesystem::temp_directory_path() / 
-        ("hnsw_disk_benchmark_" + std::to_string(getpid()) + "_" + 
-        std::to_string(std::time(nullptr)) + "_" + generate_random_string(8));
+    std::string temp_dir = (std::filesystem::temp_directory_path() /
+        ("hnsw_disk_benchmark_" + std::to_string(getpid()) + "_" +
+        std::to_string(std::time(nullptr)) + "_" + generate_random_string(8))).string();
 
     // Check if the input is a zip file
     if (isZipFile(folder_path)) {
         // Load from zip file - extract and open RocksDB from extracted location
-        managed_rocksdb = std::make_unique<ManagedRocksDB>(folder_path, temp_dir, true);
+        managed_rocksdb = ManagedRocksDB::fromZipFile(folder_path, temp_dir);
 
         // Use the extracted folder path for loading the index
         std::string extracted_path = managed_rocksdb->getExtractedFolderPath();
@@ -413,7 +449,7 @@ VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
             "\nMake sure the index was saved with the checkpoint-based format.");
     }
 
-    managed_rocksdb = std::make_unique<ManagedRocksDB>(checkpoint_dir, temp_dir);
+    managed_rocksdb = ManagedRocksDB::fromCheckpointDir(checkpoint_dir, temp_dir);
 
     return NewIndex(folder_path, managed_rocksdb->getDB(), managed_rocksdb->getCF(), is_normalized);
 }

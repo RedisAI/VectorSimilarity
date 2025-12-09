@@ -87,8 +87,9 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
  *         Either at root level or inside a single subdirectory
  *
  * @note CHECKPOINT PRESERVATION:
- *       - For folder input: The checkpoint is copied to /tmp/hnsw_disk_benchmark_<pid>_<timestamp>/
- *       - For zip input: The zip is extracted to /tmp/hnsw_disk_benchmark_<pid>_<timestamp>/
+ *       - For folder input: The checkpoint is copied to <temp_dir>/hnsw_disk_benchmark_<pid>_<timestamp>_<random>/
+ *       - For zip input: The zip is extracted to <temp_dir>/hnsw_disk_benchmark_<pid>_<timestamp>_<random>/
+ *       - <temp_dir> is the system temporary directory (std::filesystem::temp_directory_path())
  *       - All RocksDB operations use the temporary copy
  *       - The original files remain completely unchanged
  *
