@@ -70,18 +70,28 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
 
 /**
  * Convenience wrapper to load a disk-based HNSW index with automatic database management.
- * Opens the checkpoint database and loads the index from the specified folder.
+ * Opens the checkpoint database and loads the index from the specified folder or zip file.
  * The original checkpoint is NEVER modified - all operations use a temporary copy.
  *
- * @param folder_path Path to the folder containing the index
+ * @param folder_path Path to the folder containing the index, OR path to a zip file
+ *                    containing the index folder structure
  * @param is_normalized Whether vectors are already normalized (for Cosine metric optimization)
  * @return VecSimIndex* Pointer to the loaded HNSWDiskIndex, or throws on error
  *
+ * @note ZIP FILE SUPPORT:
+ *       - If folder_path points to a zip file (detected by magic bytes), it will be
+ *         extracted to a temporary directory before loading
+ *       - The zip file should contain:
+ *           - index.hnsw_disk_v1 (index metadata file)
+ *           - rocksdb/ (RocksDB checkpoint directory)
+ *         Either at root level or inside a single subdirectory
+ *
  * @note CHECKPOINT PRESERVATION:
- *       - The entire checkpoint is copied to /tmp/hnsw_disk_benchmark_<pid>_<timestamp>/checkpoint_copy
- *       - All RocksDB operations (reads and writes) use the temporary copy
- *       - The original checkpoint remains completely unchanged across all benchmark runs
- *       - This ensures consistent benchmark results when running the same benchmark multiple times
+ *       - For folder input: The checkpoint is copied to <temp_dir>/hnsw_disk_benchmark_<pid>_<timestamp>_<random>/
+ *       - For zip input: The zip is extracted to <temp_dir>/hnsw_disk_benchmark_<pid>_<timestamp>_<random>/
+ *       - <temp_dir> is the system temporary directory (std::filesystem::temp_directory_path())
+ *       - All RocksDB operations use the temporary copy
+ *       - The original files remain completely unchanged
  *
  * @note CLEANUP GUARANTEES:
  *       - Temporary directory is automatically cleaned up via RAII (ManagedRocksDB destructor)
