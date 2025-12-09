@@ -353,12 +353,10 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-
-
     // Build a set of all ground truth vector IDs (to protect from deletion)
-    size_t num_iterations = st.iterations();
+    // Note: We collect GT labels for ALL queries, not just st.iterations() which returns 0 before the loop
     std::unordered_set<labelType> gt_labels_set;
-    for (size_t q = 0; q < std::min(num_iterations, N_QUERIES); q++) {
+    for (size_t q = 0; q < N_QUERIES; q++) {
         auto gt_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(q, 100);
         for (const auto &res : gt_results->results) {
             gt_labels_set.insert(res.id);

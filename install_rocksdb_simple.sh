@@ -51,10 +51,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "Installing RocksDB 10.5.1..."
-
+sudo systemctl stop unattended-upgrades || true
+sudo pkill -9 unattended-upgr || true
 # Install dependencies
-sudo apt update
-sudo apt install -y build-essential cmake git wget \
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git wget unzip \
     libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev \
     liblz4-dev libzstd-dev libgtest-dev pkg-config
 
