@@ -1667,7 +1667,14 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const {
-    getNeighborsAndVector(labelToIdMap.at(nodeId), level, result, vector_data);
+    // Check if label exists in the map (it won't if it's been marked as deleted)
+    auto it = labelToIdMap.find(nodeId);
+    if (it == labelToIdMap.end()) {
+        // Label doesn't exist (has been marked as deleted), return empty neighbors
+        result.clear();
+        return;
+    }
+    getNeighborsAndVector(it->second, level, result, vector_data);
 }
 
 template <typename DataType, typename DistType>
