@@ -339,8 +339,7 @@ void BM_VecSimBasics<index_type_t>::FlushBatchDisk(benchmark::State &st) {
         VecSimIndex_AddVector(hnsw_disk_index, QUERIES[(flush_threshold-1)%N_QUERIES].data(), flush_threshold-1);
     }
 
-    // Clean up the index
-    VecSimIndex_Free(hnsw_disk_index);
+    // Index will be automatically freed by IndexPtr when INDICES[INDEX_HNSW_DISK] is reassigned or destroyed
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
