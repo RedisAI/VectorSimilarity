@@ -22,22 +22,15 @@ size_t BM_VecSimGeneral::EF_C = 256;
 // Dataset file paths - using deep dataset
 // For HNSW disk, hnsw_index_file points to the folder containing index.hnsw_disk_v1 and rocksdb/
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/deep-100K-L2-dim96-M32-efc200-disk-vectors";
+    "tests/benchmark/data/deep-1M-L2-dim96-M32-efc200-disk-vectors";
 const char *BM_VecSimGeneral::test_queries_file = "tests/benchmark/data/deep.query.public.10K.fbin";
-const char *BM_VecSimGeneral::ground_truth_file = "tests/benchmark/data/deep.groundtruth.100K.10K.ibin"; // defined only for this benchmark
+const char *BM_VecSimGeneral::ground_truth_file = "tests/benchmark/data/deep.groundtruth.1M.10K.ibin"; // defined only for this benchmark
 
 #define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Single)
 #define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Single)
 #define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Async, Single)
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, Single)
-
-// Define benchmarks for different index types
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex_Single, float,
-                    float, INDEX_BF)
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
-                    INDEX_HNSW)
-DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSWDisk), fp32_index_t, HNSWDiskIndex, float, float,
-                    INDEX_HNSW_DISK)
+#define BM_FLUSH_BATCH_DISK         CONCAT_WITH_UNDERSCORE_ARCH(FlushBatchDisk, Single)
 
 #include "benchmark/bm_initialization/bm_hnsw_disk_initialize_fp32.h"
 BENCHMARK_MAIN();

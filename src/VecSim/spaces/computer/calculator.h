@@ -23,6 +23,7 @@ public:
     virtual ~IndexCalculatorInterface() = default;
 
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
+    virtual DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const = 0;
 };
 
 /**
@@ -39,7 +40,7 @@ public:
     DistanceCalculatorInterface(std::shared_ptr<VecSimAllocator> allocator, DistFuncType dist_func)
         : IndexCalculatorInterface<DistType>(allocator), dist_func(dist_func) {}
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
-
+    virtual DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const = 0;
 protected:
     DistFuncType dist_func;
 };
@@ -55,5 +56,29 @@ public:
 
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         return this->dist_func(v1, v2, dim);
+    }
+    DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const override {
+        return this->dist_func(v1, v2, dim);
+    }
+};
+
+template <typename DistType>
+class DistanceCalculatorQuantized
+    : public DistanceCalculatorInterface<DistType, spaces::dist_func_t<DistType>> {
+protected:
+    spaces::dist_func_t<DistType> raw_dist_func;
+
+public:
+    DistanceCalculatorQuantized(std::shared_ptr<VecSimAllocator> allocator,
+                                spaces::dist_func_t<DistType> quant_dist_func, spaces::dist_func_t<DistType> raw_dist_func)
+        : DistanceCalculatorInterface<DistType, spaces::dist_func_t<DistType>>(allocator,
+                                                                               quant_dist_func),
+          raw_dist_func(raw_dist_func) {}
+
+    DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
+        return this->dist_func(v1, v2, dim);
+    }
+    DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const {
+        return this->raw_dist_func(v1, v2, dim) * 16129; // multiply by 127^2
     }
 };
