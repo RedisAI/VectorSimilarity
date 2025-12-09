@@ -24,40 +24,6 @@ namespace HNSWDiskFactory {
 #ifdef BUILD_TESTS
 
 /**
- * RAII wrapper for RocksDB database management.
- * Handles automatic cleanup of temporary directories and database resources.
- */
-class ManagedRocksDB {
-private:
-    std::unique_ptr<rocksdb::DB> db;
-    rocksdb::ColumnFamilyHandle *cf = nullptr;
-    std::string temp_dir;
-    bool cleanup_temp_dir;  // Whether to delete temp_dir on destruction
-
-public:
-    // Constructor for loading from checkpoint (with temp directory for writes)
-    // Copies the entire checkpoint to a temp location to ensure the original is never modified
-    ManagedRocksDB(const std::string &checkpoint_dir, const std::string &temp_path);
-
-    // Constructor for creating new index (permanent location, no cleanup)
-    ManagedRocksDB(rocksdb::DB *db_ptr, const std::string &db_path);
-
-    // Destructor: closes DB and optionally cleans up temp directory
-    ~ManagedRocksDB();
-
-    // Disable copy and move to prevent resource management issues
-    ManagedRocksDB(const ManagedRocksDB&) = delete;
-    ManagedRocksDB& operator=(const ManagedRocksDB&) = delete;
-    ManagedRocksDB(ManagedRocksDB&&) = delete;
-    ManagedRocksDB& operator=(ManagedRocksDB&&) = delete;
-
-    // Accessors
-    rocksdb::DB* getDB() const { return db.get(); }
-    rocksdb::ColumnFamilyHandle* getCF() const { return cf; }
-    const std::string& getTempDir() const { return temp_dir; }
-};
-
-/**
  * Get the checkpoint directory path for a given index file.
  *
  * @param location Path to the index file (.hnsw_disk_v1)
@@ -67,17 +33,6 @@ public:
  *       For example: "index.hnsw_disk_v1" -> "index_rocksdb"
  */
 std::string GetCheckpointDir(const std::string &location);
-
-/**
- * Create a managed RocksDB instance for testing/benchmarking.
- * The returned object will automatically clean up the temp directory when destroyed.
- *
- * @param checkpoint_dir Path to the RocksDB checkpoint directory
- * @param temp_dir Path to the temporary directory for the checkpoint copy
- * @return std::unique_ptr<ManagedRocksDB> Managed RocksDB instance
- */
-std::unique_ptr<ManagedRocksDB> CreateManagedRocksDB(const std::string &checkpoint_dir,
-                                                      const std::string &temp_dir);
 
 /**
  * Factory function to load a serialized disk-based HNSW index from a file.

@@ -224,7 +224,7 @@ public:
     }
 
 // Destructor: closes DB and optionally cleans up temp directory
-ManagedRocksDB::~ManagedRocksDB() {
+    ~ManagedRocksDB() {
     // Close DB first (unique_ptr handles this automatically)
     db.reset();
 
@@ -252,12 +252,6 @@ ManagedRocksDB::~ManagedRocksDB() {
 // 1. A new benchmark run replaces this with a new instance
 // 2. The program exits (static destructor is called)
 static std::unique_ptr<ManagedRocksDB> managed_rocksdb;
-
-// Factory function to create a managed RocksDB instance
-std::unique_ptr<ManagedRocksDB> CreateManagedRocksDB(const std::string &checkpoint_dir,
-                                                      const std::string &temp_dir) {
-    return std::make_unique<ManagedRocksDB>(checkpoint_dir, temp_dir);
-}
 
 // Helper function to create AbstractIndexInitParams from VecSimParams
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
