@@ -489,8 +489,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_BatchSize(benchma
     for (const auto &label : deleted_labels) {
         size_t pending_before = disk_index->getPendingDeleteCount();
         disk_index->deleteVector(label);
-        // Count when a batch flush was triggered
-        if (disk_index->getPendingDeleteCount() < pending_before) {
+        size_t pending_after = disk_index->getPendingDeleteCount();
+        // Count when a batch flush was triggered:
+        // - Normal case: pending count decreased (batch_size > 1)
+        // - Edge case: pending was 0 before and is 0 after (batch_size = 1, immediate flush)
+        if (pending_after < pending_before || (pending_before == 0 && pending_after == 0 && batch_size == 1)) {
             batch_flushes++;
         }
     }
