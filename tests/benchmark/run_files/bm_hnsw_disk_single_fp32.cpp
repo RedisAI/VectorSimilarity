@@ -12,9 +12,9 @@ bool BM_VecSimGeneral::is_multi = false;
 // Only enable HNSW_DISK for this benchmark
 uint32_t BM_VecSimGeneral::enabled_index_types = IndexTypeFlags::INDEX_MASK_HNSW_DISK;
 
-// Configure using deep dataset (100K vectors, 96 dimensions)
+// Configure using deep dataset (1M vectors, 96 dimensions)
 size_t BM_VecSimGeneral::n_queries = 100;
-size_t BM_VecSimGeneral::n_vectors = 100000;
+size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 96;
 size_t BM_VecSimGeneral::M = 32;
 size_t BM_VecSimGeneral::EF_C = 256;
