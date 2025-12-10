@@ -21,6 +21,7 @@ include(CMakeDependentOption)
 # elsewhere let user disable SVS
 cmake_dependent_option(USE_SVS "Build with SVS library support" ON "SVS_SUPPORTED" OFF)
 
+set(SVS_LVQ_SUPPORTED 0)
 if(USE_SVS)
     message(STATUS "SVS support enabled")
     # Configure SVS build
@@ -47,6 +48,7 @@ if(USE_SVS)
     endif()
 
     cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
+    set(SVS_SHARED_LIB OFF CACHE BOOL "Force disable SVS shared library" FORCE)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         if (GLIBC_2_28_FOUND)
             set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.0.11/svs-shared-library-0.0.11-reduced-clang.tar.gz" CACHE STRING "SVS URL")
