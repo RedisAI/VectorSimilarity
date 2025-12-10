@@ -35,6 +35,7 @@ public:
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_HNSW_DISK(benchmark::State &st);
+    static void TopK_HNSW_DISK_Parallel(benchmark::State &st);
     static void TopK_HNSW_DISK_MarkDeleted(benchmark::State &st);
     static void TopK_HNSW_DISK_DeleteLabel(benchmark::State &st);
     // Same as DeleteLabel but excludes ground truth vectors from deletion to keep recall stable
@@ -132,6 +133,125 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     if (db_stats) {
         byte_reads = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO) - byte_reads;
         st.counters["byte_reads"] = static_cast<double>(byte_reads) / iter;
+    }
+}
+
+// Run TopK using disk-based HNSW index vs BF to measure recall (parallel).
+// This benchmark uses the global mock_thread_pool to drive concurrent queries.
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st) {
+    size_t ef = st.range(0);
+    size_t k = st.range(1);
+    size_t concurrency = st.range(2);
+
+    auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
+    auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
+
+    auto *pool = BM_VecSimGeneral::mock_thread_pool;
+
+    if (!disk_index || !pool || concurrency == 0) {
+        // Fallback: single-threaded behavior if the pool is not available or misconfigured.
+        TopK_HNSW_DISK(st);
+        st.counters["concurrency"] = static_cast<double>(concurrency ? concurrency : 1);
+        return;
+    }
+
+    auto db_stats = disk_index->getDBStatistics();
+    size_t byte_reads_before = 0;
+    if (db_stats) {
+        byte_reads_before = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+    }
+
+    // Limit by the number of distinct queries we actually have.
+    const size_t max_queries = static_cast<size_t>(N_QUERIES);
+
+    size_t global_q = 0;
+    std::atomic_int correct{0};
+
+    auto t_start = std::chrono::high_resolution_clock::now();
+
+    // We cycle through the query set without reusing any particular query index
+    // more than once. To avoid hot-cache effects we always advance the global
+    // query index and never wrap it around.
+
+    for (auto _ : st) {
+        if (global_q >= max_queries) {
+            // We've exhausted the unique queries; keep iterating to satisfy
+            // Google Benchmark's expectations but do no more work.
+            continue;
+        }
+
+        size_t batch_start = global_q;
+        size_t batch_end = std::min(batch_start + concurrency, max_queries);
+        size_t actual_batch = batch_end - batch_start;
+
+        if (actual_batch == 0) {
+            continue;
+        }
+
+        global_q = batch_end;
+
+        std::vector<VecSimQueryReply *> all_results(actual_batch, nullptr);
+        std::vector<AsyncJob *> jobs(actual_batch);
+        std::vector<JobCallback> cbs(actual_batch);
+
+        for (size_t i = 0; i < actual_batch; ++i) {
+            size_t q_idx = batch_start + i;
+
+            auto allocator = disk_index->getAllocator();
+            auto search_job = new (allocator)
+                tieredIndexMock::SearchJobMock(allocator, [](AsyncJob *job) {
+                    auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+                    HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
+                    auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+                    size_t q_idx_inner = search_job->iter;
+
+                    auto hnsw_results = VecSimIndex_TopKQuery(
+                        GET_INDEX(INDEX_HNSW_DISK),
+                        QUERIES[q_idx_inner].data(),
+                        search_job->k,
+                        &query_params,
+                        BY_SCORE);
+
+                    // all_results points to a single slot for this job.
+                    search_job->all_results[0] = hnsw_results;
+                    delete job;
+                },
+                                               hnsw_index, k, ef, q_idx, &all_results[i]);
+
+            jobs[i] = search_job;
+            cbs[i] = search_job->Execute;
+        }
+
+        pool->submit_callback_internal(jobs.data(), cbs.data(), actual_batch);
+        pool->thread_pool_wait();
+
+        // Measure recall for this batch using fresh GT queries (avoid reuse => avoid hot cache).
+        for (size_t i = 0; i < actual_batch; ++i) {
+            size_t q_idx = batch_start + i;
+            auto bf_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(q_idx, k);
+            BM_VecSimGeneral::MeasureRecall(all_results[i], bf_results, correct);
+
+            VecSimQueryReply_Free(bf_results);
+            VecSimQueryReply_Free(all_results[i]);
+        }
+    }
+
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+    size_t executed_queries = global_q;
+
+    st.counters["concurrency"] = static_cast<double>(concurrency);
+    st.counters["num_queries"] = static_cast<double>(executed_queries);
+    st.counters["total_time_ms"] = total_ms;
+    st.counters["Recall"] = executed_queries ?
+        static_cast<double>(correct.load()) / static_cast<double>(k * executed_queries) : 0.0;
+
+    if (db_stats && executed_queries > 0) {
+        size_t byte_reads_after = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+        size_t total_bytes = byte_reads_after - byte_reads_before;
+        st.counters["byte_reads"] = static_cast<double>(total_bytes) / executed_queries;
     }
 }
 
@@ -763,6 +883,24 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({100, 100})                                                                         \
         ->Args({200, 100})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
+        ->Iterations(10)                                                                           \
+        ->Unit(benchmark::kMillisecond)
+
+#define REGISTER_TopK_HNSW_DISK_PARALLEL(BM_CLASS, BM_FUNC)                                        \
+    BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
+        ->Args({10, 10, 10})                                                                       \
+        ->Args({200, 10, 10})                                                                      \
+        ->Args({100, 100, 10})                                                                     \
+        ->Args({200, 100, 10})                                                                     \
+        ->Args({10, 10, 20})                                                                       \
+        ->Args({200, 10, 20})                                                                      \
+        ->Args({100, 100, 20})                                                                     \
+        ->Args({200, 100, 20})                                                                     \
+        ->Args({10, 10, 30})                                                                       \
+        ->Args({200, 10, 30})                                                                      \
+        ->Args({100, 100, 30})                                                                     \
+        ->Args({200, 100, 30})                                                                     \
+        ->ArgNames({"ef_runtime", "k", "concurrency"})                                             \
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
