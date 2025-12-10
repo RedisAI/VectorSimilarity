@@ -34,6 +34,13 @@
 #   - AWS CLI must be installed and configured with appropriate credentials
 #   - S3 bucket must be accessible with write permissions
 #
+# Environment Variables:
+#   S3_BUCKET     - S3 bucket path (default: s3://dev.cto.redis/VectorSimilarity/deep1b)
+#   S3_BASE_URL   - Base URL for downloads (default: https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b)
+#
+# Example with custom S3 bucket:
+#   S3_BUCKET="s3://my-bucket/my-path" ./zip_and_upload_to_s3.sh my_folder
+#
 ################################################################################
 
 # Exit immediately if a command exits with a non-zero status
@@ -64,8 +71,18 @@ fi
 FOLDER_PATH="$1"
 
 # S3 bucket configuration
-# Change this if you want to upload to a different S3 location
-S3_BUCKET="s3://dev.cto.redis/VectorSimilarity/deep1b"
+# Can be overridden by setting the S3_BUCKET environment variable
+# Example: S3_BUCKET="s3://my-bucket/my-path" ./zip_and_upload_to_s3.sh <folder>
+S3_BUCKET="${S3_BUCKET:-s3://dev.cto.redis/VectorSimilarity/deep1b}"
+
+# Construct the HTTPS URL from the S3 bucket path
+# This can be overridden if you need a custom URL format
+if [ -z "$S3_BASE_URL" ]; then
+    # Extract bucket name and path from s3://bucket-name/path format
+    S3_BUCKET_NAME=$(echo "$S3_BUCKET" | sed 's|s3://||' | cut -d'/' -f1)
+    S3_BUCKET_PATH=$(echo "$S3_BUCKET" | sed 's|s3://||' | cut -d'/' -f2-)
+    S3_BASE_URL="https://${S3_BUCKET_NAME}.s3.amazonaws.com/${S3_BUCKET_PATH}"
+fi
 
 # Validate that the folder exists
 if [ ! -d "$FOLDER_PATH" ]; then
@@ -115,11 +132,12 @@ FOLDER_BASENAME=$(basename "$FOLDER_ABS")
 #     ├── file1
 #     └── file2
 cd "$FOLDER_PARENT"
-zip -r "$FOLDER_ABS/../$ZIP_FILE" "$FOLDER_BASENAME"
+zip -r "$ZIP_FILE" "$FOLDER_BASENAME"
 cd - > /dev/null  # Return to previous directory silently
 
 # Verify that the zip file was created successfully
-ZIP_FILE_PATH="$FOLDER_ABS/../$ZIP_FILE"
+# The zip file is created in the parent directory of the folder
+ZIP_FILE_PATH="$FOLDER_PARENT/$ZIP_FILE"
 if [ ! -f "$ZIP_FILE_PATH" ]; then
     echo "Error: Failed to create zip file"
     exit 1
@@ -142,28 +160,20 @@ echo ""
 
 # Upload the zip file to S3 using AWS CLI
 # Note: Ensure AWS CLI is configured with appropriate credentials
+# If upload fails, the script will exit automatically due to 'set -e'
 aws s3 cp "$ZIP_FILE_PATH" "$S3_BUCKET/$ZIP_FILE"
 
-# Check if upload was successful
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "=== Upload Complete ==="
-    echo "S3 URL: https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/$ZIP_FILE"
-    echo ""
-    echo "To download this file:"
-    echo "  # Using AWS CLI:"
-    echo "  aws s3 cp $S3_BUCKET/$ZIP_FILE ."
-    echo ""
-    echo "  # Using wget:"
-    echo "  wget https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/$ZIP_FILE"
-    echo ""
-    echo "To extract after download:"
-    echo "  unzip $ZIP_FILE"
-else
-    echo "Error: Failed to upload to S3"
-    echo "Please check:"
-    echo "  1. AWS CLI is installed and configured"
-    echo "  2. You have write permissions to the S3 bucket"
-    echo "  3. Network connectivity is available"
-    exit 1
-fi
+# If we reach here, upload was successful
+echo ""
+echo "=== Upload Complete ==="
+echo "S3 URL: $S3_BASE_URL/$ZIP_FILE"
+echo ""
+echo "To download this file:"
+echo "  # Using AWS CLI:"
+echo "  aws s3 cp $S3_BUCKET/$ZIP_FILE ."
+echo ""
+echo "  # Using wget (if publicly accessible):"
+echo "  wget $S3_BASE_URL/$ZIP_FILE"
+echo ""
+echo "To extract after download:"
+echo "  unzip $ZIP_FILE"
