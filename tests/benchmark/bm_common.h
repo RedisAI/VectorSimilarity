@@ -13,6 +13,19 @@
 
 size_t BM_VecSimGeneral::block_size = 1024;
 
+// Helper function to calculate percentile from a sorted vector
+static double calculate_percentile(std::vector<double> &values, double percentile) {
+    if (values.empty()) {
+        return 0.0;
+    }
+    std::sort(values.begin(), values.end());
+    size_t index = static_cast<size_t>(values.size() * percentile);
+    if (index >= values.size()) {
+        index = values.size() - 1;
+    }
+    return values[index];
+}
+
 // Class for common bm for basic index and updated index.
 template <typename index_type_t>
 class BM_VecSimCommon : public BM_VecSimIndex<index_type_t> {
@@ -117,11 +130,18 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
 
+    // Collect individual query times for percentile calculation
+    std::vector<double> query_times;
+
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         auto &q = QUERIES[iter % N_QUERIES];
         auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+
+        // Collect execution time from the query reply
+        query_times.push_back(VecSimQueryReply_GetExecutionTime(hnsw_results));
+
         st.PauseTiming();
         auto bf_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(iter % N_QUERIES, k);
         BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
@@ -131,6 +151,14 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+
+    // Calculate and report percentiles
+    if (!query_times.empty()) {
+        double sum = std::accumulate(query_times.begin(), query_times.end(), 0.0);
+        st.counters["ms_per_query"] = sum / query_times.size();
+        st.counters["p50_ms"] = calculate_percentile(query_times, 0.50);
+        st.counters["p99_ms"] = calculate_percentile(query_times, 0.99);
+    }
 
     if (db_stats) {
         cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - cache_misses;
@@ -162,6 +190,8 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
         return;
     }
 
+    pool->reconfigure_threads(concurrency);
+
     auto db_stats = disk_index->getDBStatistics();
     size_t byte_reads_before = 0;
     if (db_stats) {
@@ -170,40 +200,31 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
 
     // Limit by the number of distinct queries we actually have.
     const size_t max_queries = static_cast<size_t>(N_QUERIES);
+    const size_t num_queries = max_queries;
 
-    size_t global_q = 0;
-    std::atomic_int correct{0};
-
-    auto t_start = std::chrono::high_resolution_clock::now();
-
-    // We cycle through the query set without reusing any particular query index
-    // more than once. To avoid hot-cache effects we always advance the global
-    // query index and never wrap it around.
-
+    // We perform the full parallel run once (Iterations=1), but keep the
+    // benchmark loop structure so Google Benchmark measures the body time
+    // correctly.
     for (auto _ : st) {
-        if (global_q >= max_queries) {
-            // We've exhausted the unique queries; keep iterating to satisfy
-            // Google Benchmark's expectations but do no more work.
-            continue;
+        (void)_;
+
+        std::atomic_int correct{0};
+
+        size_t bytes_read_before = 0;
+        if (db_stats) {
+            bytes_read_before = db_stats->getTickerCount(rocksdb::Tickers::BYTES_READ);
         }
 
-        size_t batch_start = global_q;
-        size_t batch_end = std::min(batch_start + concurrency, max_queries);
-        size_t actual_batch = batch_end - batch_start;
+        auto t_start = std::chrono::high_resolution_clock::now();
 
-        if (actual_batch == 0) {
-            continue;
-        }
+        // Submit all queries once (0..num_queries-1) and let the thread pool, whose
+        // size equals `concurrency`, drain the work queue. We never reuse a query
+        // index, so there is no hot-cache bias from repeated queries.
+        std::vector<VecSimQueryReply *> all_results(num_queries, nullptr);
+        std::vector<AsyncJob *> jobs(num_queries);
+        std::vector<JobCallback> cbs(num_queries);
 
-        global_q = batch_end;
-
-        std::vector<VecSimQueryReply *> all_results(actual_batch, nullptr);
-        std::vector<AsyncJob *> jobs(actual_batch);
-        std::vector<JobCallback> cbs(actual_batch);
-
-        for (size_t i = 0; i < actual_batch; ++i) {
-            size_t q_idx = batch_start + i;
-
+        for (size_t q_idx = 0; q_idx < num_queries; ++q_idx) {
             auto allocator = disk_index->getAllocator();
             auto search_job = new (allocator)
                 tieredIndexMock::SearchJobMock(allocator, [](AsyncJob *job) {
@@ -223,41 +244,61 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
                     search_job->all_results[0] = hnsw_results;
                     delete job;
                 },
-                                               hnsw_index, k, ef, q_idx, &all_results[i]);
+                                               hnsw_index, k, ef, q_idx, &all_results[q_idx]);
 
-            jobs[i] = search_job;
-            cbs[i] = search_job->Execute;
+            jobs[q_idx] = search_job;
+            cbs[q_idx] = search_job->Execute;
         }
 
-        pool->submit_callback_internal(jobs.data(), cbs.data(), actual_batch);
+        pool->submit_callback_internal(jobs.data(), cbs.data(), num_queries);
         pool->thread_pool_wait();
 
-        // Measure recall for this batch using fresh GT queries (avoid reuse => avoid hot cache).
-        for (size_t i = 0; i < actual_batch; ++i) {
-            size_t q_idx = batch_start + i;
+        // Collect individual query times for percentile calculation
+        std::vector<double> query_times;
+        query_times.reserve(num_queries);
+
+        // Measure recall using fresh GT queries; each query index is used once.
+        for (size_t q_idx = 0; q_idx < num_queries; ++q_idx) {
             auto bf_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(q_idx, k);
-            BM_VecSimGeneral::MeasureRecall(all_results[i], bf_results, correct);
+            BM_VecSimGeneral::MeasureRecall(all_results[q_idx], bf_results, correct);
+
+            // Collect execution time from the query reply
+            query_times.push_back(VecSimQueryReply_GetExecutionTime(all_results[q_idx]));
 
             VecSimQueryReply_Free(bf_results);
-            VecSimQueryReply_Free(all_results[i]);
+            VecSimQueryReply_Free(all_results[q_idx]);
         }
-    }
 
-    auto t_end = std::chrono::high_resolution_clock::now();
-    double total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
 
-    size_t executed_queries = global_q;
+        size_t executed_queries = num_queries;
 
-    st.counters["concurrency"] = static_cast<double>(concurrency);
-    st.counters["num_queries"] = static_cast<double>(executed_queries);
-    st.counters["total_time_ms"] = total_ms;
-    st.counters["Recall"] = executed_queries ?
-        static_cast<double>(correct.load()) / static_cast<double>(k * executed_queries) : 0.0;
+        // Calculate and report percentiles from individual query times
+        double ms_per_query = 0.0;
+        if (!query_times.empty()) {
+            double sum = std::accumulate(query_times.begin(), query_times.end(), 0.0);
+            ms_per_query = sum / query_times.size();
+            st.counters["p50_ms"] = calculate_percentile(query_times, 0.50);
+            st.counters["p99_ms"] = calculate_percentile(query_times, 0.99);
+        }
 
-    if (db_stats && executed_queries > 0) {
-        size_t byte_reads_after = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
-        size_t total_bytes = byte_reads_after - byte_reads_before;
-        st.counters["byte_reads"] = static_cast<double>(total_bytes) / executed_queries;
+        double qps = total_ms > 0.0 ?
+            static_cast<double>(executed_queries) / (total_ms / 1000.0) : 0.0;
+
+        // st.counters["concurrency"] = static_cast<double>(concurrency);
+        // st.counters["num_queries"] = static_cast<double>(executed_queries);
+        st.counters["total_time_ms"] = total_ms;
+        st.counters["ms_per_query"] = ms_per_query;
+        st.counters["qps"] = qps;
+        st.counters["Recall"] = executed_queries ?
+            static_cast<double>(correct.load()) / static_cast<double>(k * executed_queries) : 0.0;
+
+        if (db_stats && executed_queries > 0) {
+            size_t bytes_read_after = db_stats->getTickerCount(rocksdb::Tickers::BYTES_READ);
+            size_t total_bytes = bytes_read_after - bytes_read_before;
+            st.counters["byte_reads"] = static_cast<double>(total_bytes) / executed_queries;
+        }
     }
 }
 
@@ -314,13 +355,20 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
     std::atomic_int correct = 0;
     size_t ef = st.range(0);
     size_t k = st.range(1);
-    
+
+    // Collect individual query times for percentile calculation
+    std::vector<double> query_times;
+
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         auto &q = QUERIES[iter % N_QUERIES];
 
         auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+
+        // Collect execution time from the query reply
+        query_times.push_back(VecSimQueryReply_GetExecutionTime(hnsw_results));
+
         st.PauseTiming();
 
         // get all (100) ground truth results
@@ -350,6 +398,15 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+
+    // Calculate and report percentiles
+    if (!query_times.empty()) {
+        double sum = std::accumulate(query_times.begin(), query_times.end(), 0.0);
+        st.counters["ms_per_query"] = sum / query_times.size();
+        st.counters["p50_ms"] = calculate_percentile(query_times, 0.50);
+        st.counters["p99_ms"] = calculate_percentile(query_times, 0.99);
+    }
+
     if (stats) {
         size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
@@ -421,12 +478,19 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
     size_t ef = st.range(0);
     size_t k = st.range(1);
 
+    // Collect individual query times for percentile calculation
+    std::vector<double> query_times;
+
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         auto &q = QUERIES[iter % N_QUERIES];
 
         auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+
+        // Collect execution time from the query reply
+        query_times.push_back(VecSimQueryReply_GetExecutionTime(hnsw_results));
+
         st.PauseTiming();
 
         // Get all (100) ground truth results
@@ -457,6 +521,15 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+
+    // Calculate and report percentiles
+    if (!query_times.empty()) {
+        double sum = std::accumulate(query_times.begin(), query_times.end(), 0.0);
+        st.counters["ms_per_query"] = sum / query_times.size();
+        st.counters["p50_ms"] = calculate_percentile(query_times, 0.50);
+        st.counters["p99_ms"] = calculate_percentile(query_times, 0.99);
+    }
+
     if (stats) {
         size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
@@ -545,12 +618,19 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
     size_t ef = st.range(0);
     size_t k = st.range(1);
 
+    // Collect individual query times for percentile calculation
+    std::vector<double> query_times;
+
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         auto &q = QUERIES[iter % N_QUERIES];
 
         auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, q.data(), k, &query_params, BY_SCORE);
+
+        // Collect execution time from the query reply
+        query_times.push_back(VecSimQueryReply_GetExecutionTime(hnsw_results));
+
         st.PauseTiming();
 
         // Ground truth is unchanged since we protected all GT vectors from deletion
@@ -564,6 +644,15 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+
+    // Calculate and report percentiles
+    if (!query_times.empty()) {
+        double sum = std::accumulate(query_times.begin(), query_times.end(), 0.0);
+        st.counters["ms_per_query"] = sum / query_times.size();
+        st.counters["p50_ms"] = calculate_percentile(query_times, 0.50);
+        st.counters["p99_ms"] = calculate_percentile(query_times, 0.99);
+    }
+
     if (stats) {
         size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
@@ -910,7 +999,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({100, 100, 30})                                                                     \
         ->Args({200, 100, 30})                                                                     \
         ->ArgNames({"ef_runtime", "k", "concurrency"})                                             \
-        ->Iterations(10)                                                                           \
+        ->Iterations(1)                                                                            \
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k, num_marked_deleted}

@@ -190,7 +190,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
             auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
             mock_thread_pool.ctx->index_strong_ref = indices[INDEX_HNSW_DISK].get_shared();
-            mock_thread_pool.init_threads();
+            // Threads will be started on-demand by the benchmark via reconfigure_threads().
         }
     }
 

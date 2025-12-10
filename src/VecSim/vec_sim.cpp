@@ -15,6 +15,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/types/bfloat16.h"
 #include <cassert>
+#include <chrono>
 #include "memory.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
@@ -280,8 +281,16 @@ extern "C" VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const voi
                                                    VecSimQueryReply_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
+
+    auto start_time = std::chrono::high_resolution_clock::now();
     VecSimQueryReply *results;
     results = index->topKQuery(queryBlob, k, queryParams);
+    auto end_time = std::chrono::high_resolution_clock::now();
+
+    // Measure execution time in milliseconds
+    auto duration = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(
+        end_time - start_time);
+    results->execution_time_ms = duration.count();
 
     if (order == BY_ID) {
         sort_results_by_id(results);

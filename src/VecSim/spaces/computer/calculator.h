@@ -78,7 +78,7 @@ public:
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         return this->dist_func(v1, v2, dim);
     }
-    DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const {
+    DistType calcDistanceRaw(const void *v1, const void *v2, size_t dim) const override {
         return this->raw_dist_func(v1, v2, dim) * 16129; // multiply by 127^2
     }
 };

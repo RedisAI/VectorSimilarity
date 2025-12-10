@@ -15,13 +15,11 @@
 #include <thread>
 #include <condition_variable>
 #include <bitset>
+#include <atomic>
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 
-// MAX_POOL_SIZE and pool_execution_mask_t to be adjusted to each other.
-static const size_t MAX_POOL_SIZE = 16;
-using pool_execution_mask_t = std::atomic_uint_fast16_t;
 
 class tieredIndexMock {
 
@@ -33,15 +31,16 @@ private:
     // from the queue and the execution starts.
     // We turn the bit off after the execute callback returns to mark the job is done.
     class ExecutionsStatus {
-        pool_execution_mask_t executions_status = 0; // Using atomic for thread safety
+        std::atomic<size_t> in_flight{0};
+
     public:
-        void MarkInProcess(size_t thread_index) {
-            executions_status.fetch_or(1 << thread_index, std::memory_order_relaxed);
+        void MarkInProcess(size_t /*thread_index*/) {
+            in_flight.fetch_add(1, std::memory_order_relaxed);
         }
-        void MarkDone(size_t thread_index) {
-            executions_status.fetch_and(~(1 << thread_index), std::memory_order_relaxed);
+        void MarkDone(size_t /*thread_index*/) {
+            in_flight.fetch_sub(1, std::memory_order_relaxed);
         }
-        bool AllDone() const { return executions_status.load(std::memory_order_relaxed) == 0; }
+        bool AllDone() const { return in_flight.load(std::memory_order_relaxed) == 0; }
     };
 
     ExecutionsStatus executions_status;
@@ -128,4 +127,7 @@ public:
 
     void thread_pool_join();
     void thread_pool_wait(size_t waiting_duration = 10);
+
+    // Reconfigure the thread pool to have exactly `new_size` workers.
+    void reconfigure_threads(size_t new_size);
 };

@@ -24,6 +24,8 @@ extern "C" size_t VecSimQueryReply_Len(VecSimQueryReply *qr) { return qr->result
 
 extern "C" VecSimQueryReply_Code VecSimQueryReply_GetCode(VecSimQueryReply *qr) { return qr->code; }
 
+extern "C" double VecSimQueryReply_GetExecutionTime(VecSimQueryReply *qr) { return qr->execution_time_ms; }
+
 extern "C" void VecSimQueryReply_Free(VecSimQueryReply *qr) { delete qr; }
 
 extern "C" VecSimQueryReply_Iterator *VecSimQueryReply_GetIterator(VecSimQueryReply *results) {
