@@ -95,6 +95,7 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
         // Do nothing...
     }
     st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
+    st.counters["vectors_memory"] = (double)VecSimIndex_StatsInfo(index).vectors_memory;
 }
 
 // TopK search BM
@@ -109,10 +110,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
 
     // Get DB statistics if available
-    auto db_stats = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index)->getDBStatistics();
-    size_t byte_reads = 0;
+    auto hnsw_disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
+    auto db_stats = hnsw_disk_index->getDBStatistics();
+    size_t cache_misses = 0;
     if (db_stats) {
-        byte_reads = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+        cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
 
     for (auto _ : st) {
@@ -131,9 +133,13 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
     st.counters["Recall"] = (float)correct / (float)(k * iter);
 
     if (db_stats) {
-        byte_reads = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO) - byte_reads;
-        st.counters["byte_reads"] = static_cast<double>(byte_reads) / iter;
+        cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - cache_misses;
+        st.counters["cache_misses_per_query"] = static_cast<double>(cache_misses) / iter;
     }
+
+    // Output RocksDB memory usage
+    uint64_t db_memory = hnsw_disk_index->getDBMemorySize();
+    st.counters["rocksdb_memory"] = static_cast<double>(db_memory);
 }
 
 // Run TopK using disk-based HNSW index vs BF to measure recall (parallel).
@@ -879,11 +885,14 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 #define REGISTER_TopK_HNSW_DISK(BM_CLASS, BM_FUNC)                                                 \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Args({10, 10})                                                                           \
-        ->Args({200, 10})                                                                          \
+        ->Args({100, 10})                                                                          \
+        ->Args({100, 50})                                                                         \
+        ->Args({200, 50})                                                                         \
         ->Args({100, 100})                                                                         \
         ->Args({200, 100})                                                                         \
+        ->Args({500, 100})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(10)                                                                           \
+        ->Iterations(1000)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 #define REGISTER_TopK_HNSW_DISK_PARALLEL(BM_CLASS, BM_FUNC)                                        \
@@ -915,7 +924,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({200, 50, 10000})                                                                   \
         ->Args({200, 50, 25000})                                                                   \
         ->ArgNames({"ef_runtime", "k", "num_marked_deleted"})                                      \
-        ->Iterations(10)                                                                           \
+        ->Iterations(100)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k, num_deleted}

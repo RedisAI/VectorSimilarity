@@ -191,12 +191,12 @@ public:
                                    std::string(e.what()));
         }
 
-        // Open RocksDB from the temp checkpoint copy
-        // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
-        rocksdb::Options options;
-        options.create_if_missing = false;  // Checkpoint copy should exist
-        options.error_if_exists = false;
-        options.statistics = rocksdb::CreateDBStatistics();
+    // Open RocksDB from the temp checkpoint copy
+    // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
+    rocksdb::Options options;
+    options.create_if_missing = false;  // Checkpoint copy should exist
+    options.error_if_exists = false;
+    options.statistics = rocksdb::CreateDBStatistics();
 
         rocksdb::DB *db_ptr = nullptr;
         rocksdb::Status status = rocksdb::DB::Open(options, temp_checkpoint, &db_ptr);
@@ -223,10 +223,10 @@ public:
         return instance;
     }
 
-    // Destructor: closes DB and optionally cleans up temp directory
+// Destructor: closes DB and optionally cleans up temp directory
     ~ManagedRocksDB() {
-        // Close DB first (unique_ptr handles this automatically)
-        db.reset();
+    // Close DB first (unique_ptr handles this automatically)
+    db.reset();
 
         // Delete temp directory only if it's actually temporary
         if (cleanup_temp_dir && !temp_dir.empty() && std::filesystem::exists(temp_dir)) {
@@ -257,8 +257,7 @@ static std::unique_ptr<ManagedRocksDB> managed_rocksdb;
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
 
-    size_t dataSize =
-        VecSimParams_GetDataSize(hnswParams->type, hnswParams->dim, hnswParams->metric);
+    size_t dataSize = hnswParams->dim * sizeof(int8_t); // Quantized storage
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,

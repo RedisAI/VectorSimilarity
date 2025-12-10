@@ -56,7 +56,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      delta_list(), new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
+      new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
       pendingVectorCount(0), pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
@@ -214,14 +214,14 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, EncodingVersion version) {
 // #ifdef HNSW_DISK_SERIALIZE_VECTORS_TO_FILE
     // NEW METHOD: Load vectors from metadata file
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-             "Loading vectors from metadata file (HNSW_DISK_SERIALIZE_VECTORS_TO_FILE enabled)");
-    restoreVectorsFromFile(input, version);
+    // this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+    //          "Loading vectors from metadata file (HNSW_DISK_SERIALIZE_VECTORS_TO_FILE enabled)");
+    // restoreVectorsFromFile(input, version);
 // #else
-//     // CURRENT METHOD: Load vectors from RocksDB (default for backward compatibility)
-//     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-//              "Loading vectors from RocksDB checkpoint (default method)");
-//     restoreVectorsFromRocksDB(version);
+    // CURRENT METHOD: Load vectors from RocksDB (default for backward compatibility)
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+             "Loading vectors from RocksDB checkpoint (default method)");
+    restoreVectorsFromRocksDB(version);
 // #endif
 }
 
@@ -287,11 +287,7 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     if (pendingDeleteIds.size() != 0) {
         throw std::runtime_error("Serialization error: pendingDeleteIds not empty after flush");
     }
-    // Note: delta_list and new_elements_meta_data are currently unused legacy variables
-    // but we verify them for future-proofing
-    if (!delta_list.empty()) {
-        throw std::runtime_error("Serialization error: delta_list not empty after flush");
-    }
+
     if (!new_elements_meta_data.empty()) {
         throw std::runtime_error("Serialization error: new_elements_meta_data not empty after flush");
     }
