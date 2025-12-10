@@ -182,7 +182,7 @@ protected:
     size_t deleteBatchThreshold = 10;
     vecsim_stl::vector<idType> pendingDeleteIds;
 
-    bool useRawData = false;
+    bool useRawData = true;
 
     // In-memory graph updates staging (for delayed disk operations)
     struct GraphUpdate {
