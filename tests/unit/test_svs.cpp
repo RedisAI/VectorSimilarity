@@ -3158,6 +3158,44 @@ TEST(SVSTest, scalar_quantization_query) {
     }
 }
 
+TEST(SVSTest, compute_distance) {
+    // Test svs::distance computation for custom data allocations and alignments
+    using namespace svs::distance;
+
+    const size_t dim = 4;
+    uint8_t *raw_a = (uint8_t *)malloc(dim * sizeof(float) + 1);
+    uint8_t *raw_b = (uint8_t *)malloc(dim * sizeof(float) + 1);
+    float *a = reinterpret_cast<float *>(raw_a + 1);
+    float *b = reinterpret_cast<float *>(raw_b + 1);
+    // float* a = (float*)malloc(dim * sizeof(float) + 1);
+    // float* b = (float*)malloc(dim * sizeof(float) + 1);
+
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = static_cast<float>(i);
+        b[i] = static_cast<float>(i * 2);
+    }
+
+    auto dist_l2 = svs::distance::compute(svs::DistanceL2{}, std::span(a, dim), std::span(b, dim));
+    auto dist_ip = svs::distance::compute(svs::DistanceIP{}, std::span(a, dim), std::span(b, dim));
+
+    auto dist_l2_avx2 =
+        svs::distance::L2Impl<svs::Dynamic, float, float,
+                              svs::distance::AVX_AVAILABILITY::AVX2>::compute(a, b,
+                                                                              svs::lib::MaybeStatic(
+                                                                                  dim));
+    auto dist_ip_avx2 =
+        svs::distance::IPImpl<svs::Dynamic, float, float,
+                              svs::distance::AVX_AVAILABILITY::AVX2>::compute(a, b,
+                                                                              svs::lib::MaybeStatic(
+                                                                                  dim));
+
+    EXPECT_DOUBLE_EQ(dist_l2, dist_l2_avx2);
+    EXPECT_DOUBLE_EQ(dist_ip, dist_ip_avx2);
+
+    free(raw_a);
+    free(raw_b);
+}
+
 #else // HAVE_SVS
 
 TEST(SVSTest, svs_not_supported) {
