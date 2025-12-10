@@ -400,6 +400,16 @@ public:
     uint64_t getDiskSize() const;
     std::shared_ptr<rocksdb::Statistics> getDBStatistics() const;
 
+    // Get detailed RocksDB memory breakdown
+    struct RocksDBMemoryBreakdown {
+        uint64_t memtables;
+        uint64_t table_readers;
+        uint64_t block_cache;
+        uint64_t pinned_blocks;
+        uint64_t total;
+    };
+    RocksDBMemoryBreakdown getDBMemoryBreakdown() const;
+
 public:
     // Public methods for testing
     size_t indexSize() const override;
@@ -2281,6 +2291,25 @@ template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
 
     return this->allocator->getAllocationSize();
+}
+
+template <typename DataType, typename DistType>
+typename HNSWDiskIndex<DataType, DistType>::RocksDBMemoryBreakdown
+HNSWDiskIndex<DataType, DistType>::getDBMemoryBreakdown() const {
+    RocksDBMemoryBreakdown breakdown;
+    breakdown.memtables = 0;
+    breakdown.table_readers = 0;
+    breakdown.block_cache = 0;
+    breakdown.pinned_blocks = 0;
+
+    this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &breakdown.memtables);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kEstimateTableReadersMem, &breakdown.table_readers);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kBlockCacheUsage, &breakdown.block_cache);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kBlockCachePinnedUsage, &breakdown.pinned_blocks);
+    
+    breakdown.total = breakdown.memtables + breakdown.table_readers +
+                      breakdown.block_cache + breakdown.pinned_blocks;
+    return breakdown;
 }
 
 template <typename DataType, typename DistType>
