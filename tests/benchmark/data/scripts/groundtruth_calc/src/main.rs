@@ -331,10 +331,14 @@ fn run(start: Instant) -> Result<()> {
 /// Load an .fbin file into a Vec of fixed-size vectors.
 fn load_fbin_vectors(path: &Path) -> Result<Vec<[f32; DIM]>> {
     let mut file = File::open(path)?;
+
+    // Get file size to validate header
+    let file_size = file.metadata()?.len() as usize;
+
     let mut header = [0u8; 8];
     file.read_exact(&mut header)?;
 
-    let nvecs = i32::from_le_bytes(header[0..4].try_into()?) as usize;
+    let nvecs_header = i32::from_le_bytes(header[0..4].try_into()?) as usize;
     let dim_in_file = i32::from_le_bytes(header[4..8].try_into()?) as usize;
 
     if dim_in_file != DIM {
@@ -343,6 +347,24 @@ fn load_fbin_vectors(path: &Path) -> Result<Vec<[f32; DIM]>> {
             path, dim_in_file, DIM
         )
         .into());
+    }
+
+    // Calculate actual number of vectors from file size
+    let data_size = file_size - 8; // subtract header
+    let bytes_per_vector = DIM * std::mem::size_of::<f32>();
+    let nvecs_actual = data_size / bytes_per_vector;
+
+    eprintln!("DEBUG: File {:?}", path);
+    eprintln!("DEBUG: File size: {} bytes ({:.2} MB)", file_size, file_size as f64 / 1024.0 / 1024.0);
+    eprintln!("DEBUG: Header claims: nvecs={}, dim={}", nvecs_header, dim_in_file);
+    eprintln!("DEBUG: Actual vectors based on file size: {}", nvecs_actual);
+
+    // Use actual count from file size, not header (header may be wrong)
+    let nvecs = nvecs_actual;
+
+    if nvecs_header != nvecs_actual {
+        eprintln!("WARNING: Header nvecs ({}) doesn't match file size ({}). Using file size.",
+                  nvecs_header, nvecs_actual);
     }
 
     // Allocate the final vector storage directly
