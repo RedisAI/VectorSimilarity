@@ -3163,6 +3163,13 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCParallel) {
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
+    // Run GC on empty index
+    VecSimTieredIndex_GC(tiered_index);
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
     // Insert n vectors directly to SVS.
     std::srand(10); // create pseudo random generator with any arbitrary seed.
     for (size_t i = 0; i < n; i++) {
@@ -3225,6 +3232,13 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCInPlaceMode) {
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    // Run GC on empty index
+    VecSimTieredIndex_GC(tiered_index);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
     // Insert n vectors directly to SVS.
     std::srand(10); // create pseudo random generator with any arbitrary seed.
     for (size_t i = 0; i < n; i++) {
@@ -3237,8 +3251,6 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCInPlaceMode) {
 
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
-
-    VecSim_SetWriteMode(VecSim_WriteInPlace);
 
     // Run the mess of add, delete, GC
     for (size_t i = 0; i < threshold; i++) {
