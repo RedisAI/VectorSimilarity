@@ -208,7 +208,26 @@ fn run(start: Instant) -> Result<()> {
         .collect();
 
     if pending_ids.is_empty() {
-        log_with_times(start, "All queries have been processed. Nothing to do.");
+        log_with_times(start, "All queries have been processed.");
+
+        // Still perform merge if requested
+        if let Some(merge_path) = &config.merge_output {
+            log_with_times(
+                start,
+                &format!("Merging per-query results into {:?}...", merge_path),
+            );
+            merge_results(
+                &config.results_dir,
+                merge_path,
+                total_queries,
+                config.k,
+            )?;
+            log_with_times(
+                start,
+                &format!("Merged groundtruth written to {:?}", merge_path),
+            );
+        }
+
         return Ok(());
     }
 
