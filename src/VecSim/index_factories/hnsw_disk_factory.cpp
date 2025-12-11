@@ -196,7 +196,6 @@ public:
         rocksdb::Options options;
         options.create_if_missing = false;  // Checkpoint copy should exist
         options.error_if_exists = false;
-        options.use_direct_reads = true;
         options.statistics = rocksdb::CreateDBStatistics();
 
         rocksdb::DB *db_ptr = nullptr;
@@ -316,7 +315,6 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
     rocksdb::Options options;
     options.create_if_missing = true;
     options.error_if_exists = false;
-    options.use_direct_reads = true;
     options.statistics = rocksdb::CreateDBStatistics();
 
     rocksdb::DB *db_ptr = nullptr;
