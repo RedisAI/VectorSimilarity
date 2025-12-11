@@ -3245,6 +3245,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCInPlaceMode) {
         // Run GC for every 64 iterations.
         if (i % 64 == 0) {
             VecSimTieredIndex_GC(tiered_index);
+            ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+            ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
         }
         // Add a new vector
         TEST_DATA_T vector[dim];
