@@ -345,20 +345,18 @@ fn load_fbin_vectors(path: &Path) -> Result<Vec<[f32; DIM]>> {
         .into());
     }
 
-    let mut raw_floats = vec![0f32; nvecs * DIM];
-    // Safety: f32 and [u8; 4] have the same in-memory representation. We
-    // read into a temporary buffer and convert using from_le_bytes.
-    let mut buf = vec![0u8; nvecs * DIM * 4];
-    file.read_exact(&mut buf)?;
-
-    for (i, chunk) in buf.chunks_exact(4).enumerate() {
-        raw_floats[i] = f32::from_le_bytes(chunk.try_into()?);
-    }
-
+    // Allocate the final vector storage directly
     let mut vectors = Vec::with_capacity(nvecs);
-    for vec_chunk in raw_floats.chunks_exact(DIM) {
+
+    // Read vectors one at a time to avoid allocating a huge temporary buffer
+    let mut vec_buf = [0u8; DIM * 4];
+    for _ in 0..nvecs {
+        file.read_exact(&mut vec_buf)?;
+
         let mut v = [0f32; DIM];
-        v.copy_from_slice(vec_chunk);
+        for (i, chunk) in vec_buf.chunks_exact(4).enumerate() {
+            v[i] = f32::from_le_bytes(chunk.try_into()?);
+        }
         vectors.push(v);
     }
 
