@@ -579,6 +579,10 @@ private:
         index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
                                  "running asynchronous GC for tiered SVS index");
         auto svs_index = index->GetSVSIndex();
+        if (index->backendIndex->indexSize() == 0) {
+            // No need to run GC on an empty index.
+            return;
+        }
         svs_index->setNumThreads(std::min(availableThreads, index->backendIndex->indexSize()));
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
@@ -1009,6 +1013,21 @@ public:
     }
 
     void runGC() override {
+        if (this->getWriteMode() == VecSim_WriteInPlace) {
+            TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
+                       "running synchronous GC for tiered SVS index in write-in-place mode");
+            // In write-in-place mode, we run GC synchronously.
+            std::lock_guard lock{this->mainIndexGuard};
+            if (this->backendIndex->indexSize() == 0) {
+                // No need to run GC on an empty index.
+                return;
+            }
+            // Force signle thread for write-in-place mode.
+            this->GetSVSIndex()->setNumThreads(1);
+            // VecSimIndexAbstract::runGC() is protected
+            static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
+            return;
+        }
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "scheduling asynchronous GC for tiered SVS index");
         scheduleSVSIndexGC();
