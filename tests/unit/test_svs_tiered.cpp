@@ -3258,7 +3258,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCInPlaceMode) {
     // Final GC after all operations.
     VecSimTieredIndex_GC(tiered_index);
 
-    // Validate if no jos scheduled to the queue.
+    // Validate if no jobs scheduled to the queue.
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Validate sizes after GC.

@@ -1022,7 +1022,7 @@ public:
                 // No need to run GC on an empty index.
                 return;
             }
-            // Force signle thread for write-in-place mode.
+            // Force single thread for write-in-place mode.
             this->GetSVSIndex()->setNumThreads(1);
             // VecSimIndexAbstract::runGC() is protected
             static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
