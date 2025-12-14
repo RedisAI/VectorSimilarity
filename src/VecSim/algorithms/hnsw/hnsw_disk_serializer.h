@@ -56,7 +56,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
+       batchThreshold(0), // Will be restored from file
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
       pendingVectorCount(0), pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
@@ -288,9 +288,6 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
         throw std::runtime_error("Serialization error: pendingDeleteIds not empty after flush");
     }
 
-    if (!new_elements_meta_data.empty()) {
-        throw std::runtime_error("Serialization error: new_elements_meta_data not empty after flush");
-    }
 
     // Save index metadata and graph (in-memory data only)
     this->saveIndexFields(output);

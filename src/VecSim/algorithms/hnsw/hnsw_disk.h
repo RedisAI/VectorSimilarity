@@ -166,9 +166,6 @@ protected:
     mutable std::shared_mutex indexDataGuard;
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
 
-    // Global batch operation state
-    mutable vecsim_stl::vector<DiskElementMetaData> new_elements_meta_data;
-
     // Batch processing state
     size_t batchThreshold; // Number of vectors to accumulate before batch update
     vecsim_stl::vector<idType> pendingVectorIds;             // Vector IDs waiting to be indexed
@@ -239,8 +236,7 @@ protected:
     // Temporary storage for raw vectors in RAM (until flush batch)
     // Maps idType -> raw vector data (stored as string for simplicity)
     std::unordered_map<idType, std::string> rawVectorsInRAM;
-    // Cache for raw vectors retrieved from disk (to avoid redundant reads)
-    std::unordered_map<idType, std::string> rawVectorsCache;
+
 
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
@@ -335,6 +331,7 @@ public:
     void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const;
     bool isMarkedDeleted(idType id) const;
+    bool isMarkedDeleted(labelType id) const;
     labelType getExternalLabel(idType id) const;
 
     // Helper methods for emplacing to heaps (overloaded for idType and labelType)
@@ -498,7 +495,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       idToMetaData(INITIAL_CAPACITY, this->allocator), labelToIdMap(this->allocator), db(db),
       cf(cf), dbPath(dbPath), indexDataGuard(),
       visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      new_elements_meta_data(this->allocator), batchThreshold(10),
+      batchThreshold(10),
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
       pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
@@ -546,10 +543,6 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
 
     // Clear raw vectors in RAM
     rawVectorsInRAM.clear();
-    rawVectorsCache.clear();
-
-    // Clear delta list and new elements metadata
-    new_elements_meta_data.clear();
 
     // Clear main data structures
     idToMetaData.clear();
@@ -1334,6 +1327,15 @@ bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(idType id) const {
 }
 
 template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(labelType id) const {
+    auto it = labelToIdMap.find(id);
+    if (it == labelToIdMap.end()) {
+        return true;
+    }
+    return isMarkedAs<DELETE_MARK>(it->second);
+}
+
+template <typename DataType, typename DistType>
 std::pair<idType, size_t> HNSWDiskIndex<DataType, DistType>::safeGetEntryPointState() const {
     std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     return std::make_pair(entrypointNode, maxLevel);
@@ -1454,10 +1456,14 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
     std::vector<char> vector_data(this->inputBlobSize);
     getNeighborsAndVector(curNodeId, level, neighbors, vector_data.data());
     // Calculate distance to candidate with raw data
-    if (useRawData && top_candidates.exists(curNodeId)) {
+    if (useRawData && !isMarkedDeleted(curNodeId)) {
 
         DistType dist = this->calcDistanceRaw(data_point_raw, vector_data.data());
-        emplaceToHeap(top_candidates, dist, curNodeId);
+        if (lowerBound > dist || top_candidates.size() < ef ) {
+            emplaceToHeap(top_candidates, dist, curNodeId);
+        }
+        if (top_candidates.size() > ef)
+            top_candidates.pop();
     }
     
 
@@ -1470,6 +1476,7 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
                 continue;
             }
             visited_set->insert(candidate_id);
+            // TODO: possibly use cached raw vectors 
             DistType cur_dist =
                 this->calcDistance(data_point, getDataByInternalId(candidate_id));
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
