@@ -192,6 +192,16 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             mock_thread_pool.ctx->index_strong_ref = indices[INDEX_HNSW_DISK].get_shared();
             // Threads will be started on-demand by the benchmark via reconfigure_threads().
         }
+
+        // Set up job queue for async operations on the disk index
+        auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(indices[INDEX_HNSW_DISK].get());
+        if (disk_index && BM_VecSimGeneral::mock_thread_pool) {
+            auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
+            disk_index->setJobQueue(&mock_thread_pool.jobQ, mock_thread_pool.ctx,
+                                    tieredIndexMock::submit_callback);
+            // Initialize threads for async processing
+            mock_thread_pool.init_threads();
+        }
     }
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
