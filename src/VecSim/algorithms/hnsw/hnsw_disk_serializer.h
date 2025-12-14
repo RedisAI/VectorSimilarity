@@ -419,7 +419,6 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
     res.memory_usage = this->getAllocationSize();
 
     // Track connections
-    size_t connections_checked = 0;
     size_t double_connections = 0;
     size_t num_deleted = 0;
     size_t max_level_in_graph = 0;
@@ -511,7 +510,6 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
 
             // Track in-degree
             inbound_connections_num[neighborId][gk->level]++;
-            connections_checked++;
         }
 
         // Store all edges for this node at this level

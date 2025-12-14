@@ -32,8 +32,9 @@ using VecSimQueryResultContainer = vecsim_stl::vector<VecSimQueryResult>;
 struct VecSimQueryReply {
     VecSimQueryResultContainer results;
     VecSimQueryReply_Code code;
+    double execution_time_ms = 0.0;
 
     VecSimQueryReply(std::shared_ptr<VecSimAllocator> allocator,
                      VecSimQueryReply_Code code = VecSim_QueryReply_OK)
-        : results(allocator), code(code) {}
+        : results(allocator), code(code), execution_time_ms(0.0) {}
 };

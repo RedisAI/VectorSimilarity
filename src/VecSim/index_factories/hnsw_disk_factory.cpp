@@ -191,12 +191,12 @@ public:
                                    std::string(e.what()));
         }
 
-    // Open RocksDB from the temp checkpoint copy
-    // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
-    rocksdb::Options options;
-    options.create_if_missing = false;  // Checkpoint copy should exist
-    options.error_if_exists = false;
-    options.statistics = rocksdb::CreateDBStatistics();
+        // Open RocksDB from the temp checkpoint copy
+        // All writes (WAL, SST, MANIFEST, etc.) will go to the temp location
+        rocksdb::Options options;
+        options.create_if_missing = false;  // Checkpoint copy should exist
+        options.error_if_exists = false;
+        options.statistics = rocksdb::CreateDBStatistics();
 
         rocksdb::DB *db_ptr = nullptr;
         rocksdb::Status status = rocksdb::DB::Open(options, temp_checkpoint, &db_ptr);

@@ -175,13 +175,23 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         std::cerr << "[Init] Loading HNSW_DISK from folder: " << folder_path << std::endl;
 
         // Load the index from folder (opens checkpoint and redirects writes to temp)
-        indices[INDEX_HNSW_DISK] = IndexPtr(
-            HNSWDiskFactory::NewIndex(folder_path));
+        indices[INDEX_HNSW_DISK] = IndexPtr(HNSWDiskFactory::NewIndex(folder_path));
 
         auto took = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
         std::cerr << "[Init] Loaded HNSW_DISK from folder. indexSize="
                       << VecSimIndex_IndexSize(indices[INDEX_HNSW_DISK])
                       << ", took " << took << " ms" << std::endl;
+
+        // If no tiered index is enabled, but we want to benchmark parallel HNSW_DISK queries,
+        // create a mock thread pool that owns a strong reference to the disk index and
+        // launches background worker threads. This lets disk-only benchmarks drive parallel
+        // searches without involving TieredHNSW.
+        if (!BM_VecSimGeneral::mock_thread_pool) {
+            BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
+            auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
+            mock_thread_pool.ctx->index_strong_ref = indices[INDEX_HNSW_DISK].get_shared();
+            // Threads will be started on-demand by the benchmark via reconfigure_threads().
+        }
     }
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_BF) {
