@@ -2800,6 +2800,13 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCParallel) {
     ASSERT_INDEX(tiered_index);
     auto allocator = tiered_index->getAllocator();
 
+    // Run GC on empty index
+    VecSimTieredIndex_GC(tiered_index);
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
     // Insert n vectors directly to SVS.
     std::srand(10); // create pseudo random generator with any arbitrary seed.
     for (size_t i = 0; i < n; i++) {
@@ -2835,6 +2842,75 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCParallel) {
     VecSimTieredIndex_GC(tiered_index);
     // Wait for any pending jobs to complete. As far as SVS GC is done via a job.
     mock_thread_pool.thread_pool_join();
+
+    // Validate sizes after GC.
+    auto tiered_size = tiered_index->indexSize();
+    auto flat_size = tiered_index->GetFlatIndex()->indexSize();
+    auto backend_size = tiered_index->GetBackendIndex()->indexSize();
+    ASSERT_EQ(tiered_size, n);
+    ASSERT_EQ(tiered_size, backend_size + flat_size);
+    // Expect that GC cleaned all the deleted vectors.
+    ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), backend_size);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, runGCInPlaceMode) {
+    // Create TieredSVS index instance with a mock queue.
+    size_t dim = 4;
+    size_t threshold = 1024;
+    const size_t n = threshold * 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Force trigger the first update job for 64 first vectors.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 64);
+    ASSERT_INDEX(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    // Run GC on empty index
+    VecSimTieredIndex_GC(tiered_index);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    // Insert n vectors directly to SVS.
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index->GetBackendIndex(), vector, i);
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+
+    // Run the mess of add, delete, GC
+    for (size_t i = 0; i < threshold; i++) {
+        // Run GC for every 64 iterations.
+        if (i % 64 == 0) {
+            VecSimTieredIndex_GC(tiered_index);
+            ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+            ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+        }
+        // Add a new vector
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, n + i);
+        // Delete an existing vector
+        tiered_index->deleteVector(i + threshold);
+    }
+    // Final GC after all operations.
+    VecSimTieredIndex_GC(tiered_index);
+
+    // Validate if no jobs scheduled to the queue.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Validate sizes after GC.
     auto tiered_size = tiered_index->indexSize();
