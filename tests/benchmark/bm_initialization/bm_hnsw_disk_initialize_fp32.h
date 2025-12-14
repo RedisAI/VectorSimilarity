@@ -106,8 +106,8 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC_DISK, fp32_index
 
     // Configure thread pool size from benchmark argument and start threads
     size_t thread_count = st.range(1);
+    mock_thread_pool.thread_pool_size = thread_count;
     mock_thread_pool.init_threads();
-    mock_thread_pool.reconfigure_threads(thread_count);
 
     // Get initial state
     auto *index = indices[INDEX_HNSW_DISK].get();
@@ -116,6 +116,8 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC_DISK, fp32_index
     // Measure the AddLabel_AsyncIngest benchmark
     auto start_time = std::chrono::high_resolution_clock::now();
     AddLabel_AsyncIngest(st);
+    // Wait for all jobs to complete before measuring end time
+    mock_thread_pool.thread_pool_wait();
     auto end_time = std::chrono::high_resolution_clock::now();
 
     // Calculate stats
@@ -131,7 +133,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC_DISK, fp32_index
 }
 BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC_DISK)
     ->Unit(benchmark::kNanosecond)
-    ->Iterations(BM_VecSimGeneral::block_size)
+    ->Iterations(10000)
     ->Args({INDEX_HNSW_DISK, 1})
     ->Args({INDEX_HNSW_DISK, 4})
     ->Args({INDEX_HNSW_DISK, 8})

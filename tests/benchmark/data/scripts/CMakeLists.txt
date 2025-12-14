@@ -21,7 +21,15 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(ROCKSDB REQUIRED IMPORTED_TARGET rocksdb)
 
 # Create the executable
-add_executable(hnsw_disk_serializer hnsw_disk_serializer.cpp)
+add_executable(hnsw_disk_serializer
+    hnsw_disk_serializer.cpp
+    ${CMAKE_SOURCE_DIR}/tests/utils/mock_thread_pool.cpp
+)
+
+# Include the mock_thread_pool header
+target_include_directories(hnsw_disk_serializer PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/utils
+)
 
 # Link against VecSim and RocksDB (using CMake targets from parent project)
 target_link_libraries(hnsw_disk_serializer

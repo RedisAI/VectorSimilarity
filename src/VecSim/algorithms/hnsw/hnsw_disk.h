@@ -331,6 +331,10 @@ protected:
     // Lock for swapping between pending and processing batches
     mutable std::mutex batchSwapGuard;
 
+    // Lock for protecting vectors container during concurrent access
+    // Needed because addElement can resize the container, invalidating pointers
+    mutable std::shared_mutex vectorsGuard;
+
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
     // default (shallow) copy constructor is disabled.
@@ -363,6 +367,7 @@ public:
                                      vecsim_stl::updatable_max_heap<DistType, idType> &top_candidates, size_t level);
 
     // Batch processing methods
+    void singleThreadProcessBatch();
     void processBatch();
     void flushBatch(); // Force flush current batch
 
@@ -867,9 +872,12 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
 
-    // Store the processed vector in memory
-    size_t containerId = this->vectors->size();
-    this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
+    // Store the processed vector in memory (protected by vectorsGuard)
+    {
+        std::unique_lock<std::shared_mutex> lock(vectorsGuard);
+        size_t containerId = this->vectors->size();
+        this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
+    }
 
     // Create new element ID and metadata
     size_t elementMaxLevel = getRandomLevel(mult);
@@ -1321,6 +1329,8 @@ template <typename DataType, typename DistType>
 const void *HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) const {
     assert(id < curElementCount);
 
+    // Acquire shared lock to prevent concurrent resize of vectors container
+    std::shared_lock<std::shared_mutex> lock(vectorsGuard);
     const void* result = this->vectors->getElement(id);
     if (result != nullptr) {
         return result;
@@ -1919,17 +1929,7 @@ void HNSWDiskIndex<DataType, DistType>::searchPendingVectors(
 /********************************** Batch Processing Methods **********************************/
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::processBatch() {
-    // Lock to swap batches atomically
-    std::lock_guard<std::mutex> batchLock(batchSwapGuard);
-
-    if (pendingVectorCount == 0) {
-        return;
-    }
-
-    // Check if job queue is available for multi-threaded processing
-    if (SubmitJobsToQueue == nullptr) {
-        // Fall back to single-threaded processing
+void HNSWDiskIndex<DataType, DistType>:: singleThreadProcessBatch(){
         // Clear any previous staged updates (for insertions)
         stagedInsertUpdates.clear();
         stagedInsertMap.clear();
@@ -1962,6 +1962,21 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
         rawVectorsInRAM.clear();
         pendingMetadata.clear();
         pendingVectorCount = 0;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::processBatch() {
+    // Lock to swap batches atomically
+    std::lock_guard<std::mutex> batchLock(batchSwapGuard);
+
+    if (pendingVectorCount == 0) {
+        return;
+    }
+
+    // Check if job queue is available for multi-threaded processing
+    if (SubmitJobsToQueue == nullptr) {
+        // Fall back to single-threaded processing
+        singleThreadProcessBatch();
         return;
     }
 

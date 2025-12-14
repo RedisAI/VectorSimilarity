@@ -5,7 +5,7 @@
  * It supports both .raw files (no header) and .fbin files (with header).
  *
  * Usage:
- *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction]
+ *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads]
  *
  * Arguments:
  *   input_file      - Binary file containing vectors (.raw or .fbin)
@@ -17,14 +17,15 @@
  *   type            - Data type: FLOAT32, FLOAT64, BFLOAT16, FLOAT16, INT8, UINT8
  *   M               - HNSW M parameter (default: 64)
  *   efConstruction  - HNSW efConstruction parameter (default: 512)
+ *   threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)
  *
  * Examples:
  *   # Using .raw file (dimension required)
  *   ./hnsw_disk_serializer dbpedia-cosine-dim768-test_vectors.raw \
  *       dbpedia-cosine-dim768-M64-efc512 768 Cosine FLOAT32 64 512
  *
- *   # Using .fbin file (auto-detect dimension)
- *   ./hnsw_disk_serializer vectors.fbin output 0 Cosine FLOAT32 64 512
+ *   # Using .fbin file (auto-detect dimension) with 8 threads
+ *   ./hnsw_disk_serializer vectors.fbin output 0 Cosine FLOAT32 64 512 8
  *
  *   # Using .fbin file (verify dimension)
  *   ./hnsw_disk_serializer vectors.fbin output 768 Cosine FLOAT32 64 512
@@ -35,6 +36,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_disk.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "mock_thread_pool.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -43,6 +45,7 @@
 #include <filesystem>
 #include <chrono>
 #include <unistd.h>
+#include <thread>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -264,7 +267,7 @@ void saveIndexByType(VecSimIndex *index, const std::string &output_file) {
 
 int main(int argc, char *argv[]) {
     if (argc < 6) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction]\n";
+        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads]\n";
         std::cerr << "\nArguments:\n";
         std::cerr << "  input_file      - Binary file (.raw or .fbin)\n";
         std::cerr << "  output_name     - Base name for output files\n";
@@ -273,6 +276,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "  type            - Data type: FLOAT32, FLOAT64, BFLOAT16, FLOAT16, INT8, UINT8\n";
         std::cerr << "  M               - HNSW M parameter (default: 64)\n";
         std::cerr << "  efConstruction  - HNSW efConstruction parameter (default: 512)\n";
+        std::cerr << "  threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)\n";
         return 1;
     }
 
@@ -283,6 +287,7 @@ int main(int argc, char *argv[]) {
     VecSimType type = parseType(argv[5]);
     size_t M = (argc > 6) ? std::stoull(argv[6]) : 64;
     size_t efConstruction = (argc > 7) ? std::stoull(argv[7]) : 512;
+    size_t num_threads = (argc > 8) ? std::stoull(argv[8]) : 4;
 
     // Check if input file exists
     if (!std::filesystem::exists(input_file)) {
@@ -340,6 +345,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Type:           " << getTypeName(type) << "\n";
     std::cout << "M:              " << M << "\n";
     std::cout << "efConstruction: " << efConstruction << "\n";
+    std::cout << "Threads:        " << (num_threads > 0 ? std::to_string(num_threads) : "single-threaded") << "\n";
     std::cout << "Number of vectors: " << num_vectors << "\n";
     std::cout << "==================================\n\n";
 
@@ -376,6 +382,57 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Set up multi-threaded processing if requested
+    std::unique_ptr<tieredIndexMock> mock_thread_pool;
+    if (num_threads > 0) {
+        mock_thread_pool = std::make_unique<tieredIndexMock>();
+        mock_thread_pool->ctx->index_strong_ref.reset(index, [](VecSimIndex*) {
+            // Custom deleter that does nothing - we manage index lifetime separately
+        });
+        mock_thread_pool->thread_pool_size = num_threads;
+        mock_thread_pool->init_threads();
+
+        // Configure the disk index to use the job queue
+        if (type == VecSimType_FLOAT32) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
+            if (disk_index) {
+                disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                        tieredIndexMock::submit_callback);
+            }
+        } else if (type == VecSimType_FLOAT64) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<double, double> *>(index);
+            if (disk_index) {
+                disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                        tieredIndexMock::submit_callback);
+            }
+        } else if (type == VecSimType_BFLOAT16) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<bfloat16, float> *>(index);
+            if (disk_index) {
+                disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                        tieredIndexMock::submit_callback);
+            }
+        } else if (type == VecSimType_FLOAT16) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<float16, float> *>(index);
+            if (disk_index) {
+                disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                        tieredIndexMock::submit_callback);
+            }
+        } else if (type == VecSimType_INT8) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<int8_t, float> *>(index);
+            if (disk_index) {
+                disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                        tieredIndexMock::submit_callback);
+            }
+        } else if (type == VecSimType_UINT8) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<uint8_t, float> *>(index);
+            if (disk_index) {
+                disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                        tieredIndexMock::submit_callback);
+            }
+        }
+        std::cout << "Multi-threaded indexing enabled with " << num_threads << " threads\n";
+    }
+
     std::cout << "Index created successfully\n";
     std::cout << "Loading vectors from file...\n";
 
@@ -397,6 +454,40 @@ int main(int argc, char *argv[]) {
 
     if (vectors_added != num_vectors) {
         std::cerr << "Warning: Expected " << num_vectors << " vectors but added " << vectors_added << "\n";
+    }
+
+    // Wait for all background jobs to complete if using multi-threaded indexing
+    if (mock_thread_pool) {
+        std::cout << "Waiting for background indexing jobs to complete...\n";
+        mock_thread_pool->thread_pool_wait();
+
+        // Flush any remaining pending vectors and wait for those jobs too
+        if (type == VecSimType_FLOAT32) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
+            if (disk_index) disk_index->flushBatch();
+        } else if (type == VecSimType_FLOAT64) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<double, double> *>(index);
+            if (disk_index) disk_index->flushBatch();
+        } else if (type == VecSimType_BFLOAT16) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<bfloat16, float> *>(index);
+            if (disk_index) disk_index->flushBatch();
+        } else if (type == VecSimType_FLOAT16) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<float16, float> *>(index);
+            if (disk_index) disk_index->flushBatch();
+        } else if (type == VecSimType_INT8) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<int8_t, float> *>(index);
+            if (disk_index) disk_index->flushBatch();
+        } else if (type == VecSimType_UINT8) {
+            auto *disk_index = dynamic_cast<HNSWDiskIndex<uint8_t, float> *>(index);
+            if (disk_index) disk_index->flushBatch();
+        }
+
+        // Wait again for the flush batch jobs to complete
+        mock_thread_pool->thread_pool_wait();
+        std::cout << "All background jobs completed.\n";
+
+        // Stop the thread pool before saving
+        mock_thread_pool->thread_pool_join();
     }
 
     auto index_time = std::chrono::high_resolution_clock::now();
@@ -443,6 +534,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Total size:     " << (metadata_size + checkpoint_size) / (1024.0 * 1024.0) << " MB\n";
 
     // Cleanup
+    if (mock_thread_pool) {
+        mock_thread_pool.reset();
+    }
     VecSimIndex_Free(index);
     std::filesystem::remove_all(rocksdb_path);
 
