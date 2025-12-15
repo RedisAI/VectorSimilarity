@@ -52,7 +52,7 @@ struct Config {
 
     /// Output directory for per-query groundtruth .ibin files.
     #[arg(short = 'o', long = "output", value_name = "DIR")]
-    results_dir: PathBuf,
+    results_dir: Option<PathBuf>,
 
     /// Number of nearest neighbors to compute per query (k).
     #[arg(long = "k", value_name = "NUMBER", default_value_t = 100)]
@@ -77,6 +77,22 @@ struct Config {
     /// Merge existing per-query results without computing (requires --merge-output).
     #[arg(long = "merge-only")]
     merge_only: bool,
+
+    /// Validate a groundtruth file (requires --groundtruth, --queries, --base).
+    #[arg(long = "validate")]
+    validate: bool,
+
+    /// Path to groundtruth .ibin file to validate (used with --validate).
+    #[arg(short = 'g', long = "groundtruth", value_name = "PATH")]
+    groundtruth_path: Option<PathBuf>,
+
+    /// Number of queries to sample for validation (default: 10).
+    #[arg(long = "validate-samples", value_name = "NUMBER", default_value_t = 10)]
+    validate_samples: usize,
+
+    /// Number of non-neighbors to sample per query for validation (default: 1000).
+    #[arg(long = "validate-non-neighbors", value_name = "NUMBER", default_value_t = 1000)]
+    validate_non_neighbors: usize,
 
     /// Increase verbosity (currently a placeholder, reserved for future use).
     #[arg(long = "verbose", short = 'v', action = ArgAction::Count)]
@@ -157,22 +173,47 @@ fn main() {
 fn run(start: Instant) -> Result<()> {
     let mut config = Config::parse();
 
+    // Handle --validate mode
+    if config.validate {
+        let groundtruth_path = config.groundtruth_path.as_ref().ok_or(
+            "--validate requires --groundtruth to be specified"
+        )?;
+        let query_path = config.query_path.as_ref().ok_or(
+            "--validate requires --queries to be specified"
+        )?;
+        let base_path = config.base_path.as_ref().ok_or(
+            "--validate requires --base to be specified"
+        )?;
+
+        return run_validate(
+            start,
+            groundtruth_path,
+            query_path,
+            base_path,
+            config.validate_samples,
+            config.validate_non_neighbors,
+        );
+    }
+
     // Handle --merge-only mode
     if config.merge_only {
         let merge_path = config.merge_output.as_ref().ok_or(
             "--merge-only requires --merge-output to be specified"
         )?;
+        let results_dir = config.results_dir.as_ref().ok_or(
+            "--merge-only requires --output to be specified"
+        )?;
 
         log_with_times(start, "Running in merge-only mode...");
 
         // Count the number of query result files
-        let completed = detect_completed_queries(&config.results_dir)?;
+        let completed = detect_completed_queries(results_dir)?;
         let num_queries = completed.len();
 
         if num_queries == 0 {
             return Err(format!(
                 "No query result files found in {:?}",
-                config.results_dir
+                results_dir
             ).into());
         }
 
@@ -195,7 +236,7 @@ fn run(start: Instant) -> Result<()> {
             &format!("Merging per-query results into {:?}...", merge_path),
         );
         merge_results(
-            &config.results_dir,
+            results_dir,
             merge_path,
             num_queries,
             config.k,
@@ -208,12 +249,15 @@ fn run(start: Instant) -> Result<()> {
         return Ok(());
     }
 
-    // Normal mode: require query and base paths
+    // Normal mode: require query, base, and output paths
     let query_path = config.query_path.as_ref().ok_or(
-        "--queries is required (unless using --merge-only)"
+        "--queries is required (unless using --merge-only or --validate)"
     )?;
     let base_path = config.base_path.as_ref().ok_or(
-        "--base is required (unless using --merge-only)"
+        "--base is required (unless using --merge-only or --validate)"
+    )?;
+    let results_dir = config.results_dir.as_ref().ok_or(
+        "--output is required (unless using --validate)"
     )?;
 
     if config.num_workers.is_none() {
@@ -251,10 +295,10 @@ fn run(start: Instant) -> Result<()> {
         start,
         &format!(
             "Scanning results directory {:?} for completed queries...",
-            config.results_dir
+            results_dir
         ),
     );
-    let completed = detect_completed_queries(&config.results_dir)?;
+    let completed = detect_completed_queries(results_dir)?;
     let total_queries = queries.len();
     let already_completed = completed.len();
     log_with_times(
@@ -280,7 +324,7 @@ fn run(start: Instant) -> Result<()> {
                 &format!("Merging per-query results into {:?}...", merge_path),
             );
             merge_results(
-                &config.results_dir,
+                results_dir,
                 merge_path,
                 total_queries,
                 config.k,
@@ -321,7 +365,7 @@ fn run(start: Instant) -> Result<()> {
         config.progress_interval
     };
 
-    fs::create_dir_all(&config.results_dir)?;
+    fs::create_dir_all(results_dir)?;
 
     let mut handles = Vec::with_capacity(num_workers);
 
@@ -333,7 +377,7 @@ fn run(start: Instant) -> Result<()> {
         let pending = Arc::clone(&pending);
         let next_index = Arc::clone(&next_index);
         let completed_counter = Arc::clone(&completed_counter);
-        let results_dir = config.results_dir.clone();
+        let results_dir_clone = results_dir.clone();
         let k = config.k;
         let progress_interval = progress_interval_effective;
         let start_for_thread = start;
@@ -355,7 +399,7 @@ fn run(start: Instant) -> Result<()> {
                     &base,
                     &base_norms,
                     k,
-                    &results_dir,
+                    &results_dir_clone,
                 ) {
                     log_error_with_times(
                         start_for_thread,
@@ -396,7 +440,7 @@ fn run(start: Instant) -> Result<()> {
             &format!("Merging per-query results into {:?}...", merge_path),
         );
         merge_results(
-            &config.results_dir,
+            results_dir,
             merge_path,
             total_queries,
             config.k,
@@ -408,6 +452,195 @@ fn run(start: Instant) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run validation mode: verify groundtruth file format and content correctness.
+fn run_validate(
+    start: Instant,
+    groundtruth_path: &Path,
+    query_path: &Path,
+    base_path: &Path,
+    num_samples: usize,
+    num_non_neighbors: usize,
+) -> Result<()> {
+    log_with_times(start, "Running in validation mode...");
+
+    // Step 1: Load and validate groundtruth file structure
+    log_with_times(start, &format!("Loading groundtruth from {:?}...", groundtruth_path));
+    let (gt_num_queries, gt_k, groundtruth) = load_groundtruth(groundtruth_path)?;
+    log_with_times(
+        start,
+        &format!("Groundtruth: {} queries, k={}", gt_num_queries, gt_k),
+    );
+
+    // Step 2: Load query vectors
+    log_with_times(start, &format!("Loading query vectors from {:?}...", query_path));
+    let queries = load_fbin_vectors(query_path)?;
+    log_with_times(start, &format!("Loaded {} query vectors", queries.len()));
+
+    if queries.len() != gt_num_queries {
+        return Err(format!(
+            "Query count mismatch: groundtruth has {} queries, but query file has {}",
+            gt_num_queries, queries.len()
+        ).into());
+    }
+
+    // Step 3: Load base vectors
+    log_with_times(start, &format!("Loading base vectors from {:?}...", base_path));
+    let base = load_fbin_vectors(base_path)?;
+    log_with_times(start, &format!("Loaded {} base vectors", base.len()));
+
+    let num_base = base.len();
+
+    // Step 4: Validate structure - check indices are in valid range and no duplicates
+    log_with_times(start, "Validating groundtruth structure...");
+    for qid in 0..gt_num_queries {
+        let neighbors = &groundtruth[qid];
+        let mut seen = HashSet::new();
+        for (rank, &idx) in neighbors.iter().enumerate() {
+            if idx < 0 || idx as usize >= num_base {
+                return Err(format!(
+                    "Query {}: neighbor at rank {} has invalid index {} (base has {} vectors)",
+                    qid, rank, idx, num_base
+                ).into());
+            }
+            if !seen.insert(idx) {
+                return Err(format!(
+                    "Query {}: duplicate neighbor index {} at rank {}",
+                    qid, idx, rank
+                ).into());
+            }
+        }
+    }
+    log_with_times(start, "Structure validation passed: all indices valid, no duplicates");
+
+    // Step 5: Sample-based content validation
+    let actual_samples = num_samples.min(gt_num_queries);
+    log_with_times(
+        start,
+        &format!("Validating content with {} sampled queries...", actual_samples),
+    );
+
+    // Use deterministic sampling (evenly spaced queries)
+    let step = if actual_samples > 1 {
+        gt_num_queries / actual_samples
+    } else {
+        1
+    };
+
+    let query_norms = compute_norms(&queries);
+    let base_norms = compute_norms(&base);
+
+    for i in 0..actual_samples {
+        let qid = i * step;
+        let q_vec = &queries[qid];
+        let q_norm = query_norms[qid];
+        let neighbors = &groundtruth[qid];
+
+        // Compute distances to all neighbors and verify they're sorted
+        let neighbor_dists: Vec<(i32, f32)> = neighbors
+            .iter()
+            .map(|&idx| {
+                let dist = squared_l2_distance(q_vec, q_norm, &base[idx as usize], base_norms[idx as usize]);
+                (idx, dist)
+            })
+            .collect();
+
+        // Check distances are in ascending order
+        for j in 1..neighbor_dists.len() {
+            if neighbor_dists[j].1 < neighbor_dists[j - 1].1 {
+                return Err(format!(
+                    "Query {}: neighbors not sorted by distance. Rank {} (idx={}, dist={}) < Rank {} (idx={}, dist={})",
+                    qid, j, neighbor_dists[j].0, neighbor_dists[j].1,
+                    j - 1, neighbor_dists[j - 1].0, neighbor_dists[j - 1].1
+                ).into());
+            }
+        }
+
+        // Get the k-th neighbor distance (worst in top-k)
+        let worst_topk_dist = neighbor_dists.last().map(|(_, d)| *d).unwrap_or(f32::MAX);
+
+        // Sample random non-neighbors and verify they're farther
+        let neighbor_set: HashSet<i32> = neighbors.iter().cloned().collect();
+        let mut rng_state = (qid as u64).wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
+
+        let mut violations = 0;
+        let samples_to_check = num_non_neighbors.min(num_base - neighbors.len());
+
+        for _ in 0..samples_to_check {
+            // Simple LCG random number generator
+            rng_state = rng_state.wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
+            let rand_idx = (rng_state >> 17) as usize % num_base;
+
+            if neighbor_set.contains(&(rand_idx as i32)) {
+                continue;
+            }
+
+            let dist = squared_l2_distance(q_vec, q_norm, &base[rand_idx], base_norms[rand_idx]);
+            if dist < worst_topk_dist {
+                violations += 1;
+                if violations <= 3 {
+                    log_error_with_times(
+                        start,
+                        &format!(
+                            "Query {}: non-neighbor {} (dist={}) is closer than k-th neighbor (dist={})",
+                            qid, rand_idx, dist, worst_topk_dist
+                        ),
+                    );
+                }
+            }
+        }
+
+        if violations > 0 {
+            return Err(format!(
+                "Query {}: found {} non-neighbors closer than the k-th neighbor",
+                qid, violations
+            ).into());
+        }
+
+        log_with_times(
+            start,
+            &format!(
+                "Query {} validated: distances sorted, {} non-neighbors checked",
+                qid, samples_to_check
+            ),
+        );
+    }
+
+    log_with_times(start, "=== VALIDATION PASSED ===");
+    log_with_times(
+        start,
+        &format!(
+            "Groundtruth file {:?} is valid ({} queries, k={})",
+            groundtruth_path, gt_num_queries, gt_k
+        ),
+    );
+
+    Ok(())
+}
+
+/// Load a groundtruth .ibin file. Returns (num_queries, k, data).
+fn load_groundtruth(path: &Path) -> Result<(usize, usize, Vec<Vec<i32>>)> {
+    let mut file = File::open(path)?;
+    let mut header = [0u8; 8];
+    file.read_exact(&mut header)?;
+
+    let num_queries = i32::from_le_bytes(header[0..4].try_into()?) as usize;
+    let k = i32::from_le_bytes(header[4..8].try_into()?) as usize;
+
+    let mut groundtruth = Vec::with_capacity(num_queries);
+    let mut row_buf = vec![0u8; k * 4];
+
+    for _ in 0..num_queries {
+        file.read_exact(&mut row_buf)?;
+        let row: Vec<i32> = row_buf
+            .chunks_exact(4)
+            .map(|chunk| i32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        groundtruth.push(row);
+    }
+
+    Ok((num_queries, k, groundtruth))
 }
 
 /// Load an .fbin file into a Vec of fixed-size vectors.
