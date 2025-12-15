@@ -1536,7 +1536,7 @@ size_t HNSWDiskIndex<DataType, DistType>::indexCapacity() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::indexSize() const {
-    return this->curElementCount;
+    return this->curElementCount - this->numMarkedDeleted;
 }
 
 template <typename DataType, typename DistType>

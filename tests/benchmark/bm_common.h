@@ -987,16 +987,16 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 #define REGISTER_TopK_HNSW_DISK_PARALLEL(BM_CLASS, BM_FUNC)                                        \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Args({10, 10, 10})                                                                       \
-        ->Args({200, 10, 10})                                                                      \
-        ->Args({100, 100, 10})                                                                     \
-        ->Args({200, 100, 10})                                                                     \
         ->Args({10, 10, 20})                                                                       \
-        ->Args({200, 10, 20})                                                                      \
-        ->Args({100, 100, 20})                                                                     \
-        ->Args({200, 100, 20})                                                                     \
         ->Args({10, 10, 30})                                                                       \
+        ->Args({200, 10, 10})                                                                      \
+        ->Args({200, 10, 20})                                                                      \
         ->Args({200, 10, 30})                                                                      \
+        ->Args({100, 100, 10})                                                                     \
+        ->Args({100, 100, 20})                                                                     \
         ->Args({100, 100, 30})                                                                     \
+        ->Args({200, 100, 10})                                                                     \
+        ->Args({200, 100, 20})                                                                     \
         ->Args({200, 100, 30})                                                                     \
         ->ArgNames({"ef_runtime", "k", "concurrency"})                                             \
         ->Iterations(1)                                                                            \
