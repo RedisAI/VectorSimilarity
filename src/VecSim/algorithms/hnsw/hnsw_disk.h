@@ -295,10 +295,6 @@ protected:
     void *jobQueueCtx;
     SubmitCB SubmitJobsToQueue;
 
-    // Reader-writer lock for RocksDB operations
-    // Multiple threads can read concurrently, but writes must be exclusive
-    mutable std::shared_mutex rocksDbGuard;
-
     // Lock for protecting staged updates during merge from parallel insert jobs
     // Uses shared_mutex for better read concurrency - multiple readers can access simultaneously
     mutable std::shared_mutex stagedUpdatesGuard;
@@ -891,7 +887,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // We need to store the original vector before preprocessing
     const char* raw_data = reinterpret_cast<const char*>(vector);
     {
-        std::unique_lock<std::shared_mutex> lock(rawVectorsGuard);
+        std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
         rawVectorsInRAM[newElementId] = std::string(raw_data, this->inputBlobSize);
     }
     // Preprocess the vector
@@ -899,7 +895,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
     // Store the processed vector in memory (protected by vectorsGuard)
     {
-        std::unique_lock<std::shared_mutex> lock(vectorsGuard);
+        std::lock_guard<std::shared_mutex> lock(vectorsGuard);
         size_t containerId = this->vectors->size();
         this->vectors->addElement(processedBlobs.getStorageBlob(), containerId);
     }
@@ -910,7 +906,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
     // Ensure capacity for the new element ID (protected by indexDataGuard)
     {
-        std::unique_lock<std::shared_mutex> lock(indexDataGuard);
+        std::lock_guard<std::shared_mutex> lock(indexDataGuard);
         if (newElementId >= indexCapacity()) {
             size_t new_cap = ((newElementId + this->blockSize) / this->blockSize) * this->blockSize;
             visitedNodesHandlerPool.resize(new_cap);
@@ -1032,12 +1028,8 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
         // Read the neighbor's current neighbor count from disk to check capacity
         GraphKey neighborKey(selected_neighbor, level);
         std::string existing_neighbors_data;
-        rocksdb::Status status;
-        {
-            std::shared_lock<std::shared_mutex> lock(rocksDbGuard);
-            status =
-                db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
-        }
+        rocksdb::Status status =
+            db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
 
         size_t current_neighbor_count = 0;
         if (status.ok()) {
@@ -1182,11 +1174,8 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
     // TODO: perhaps cache the neigbhors for stage update
     GraphKey neighborKey(selected_neighbor, level);
     std::string graph_value;
-    rocksdb::Status status;
-    {
-        std::shared_lock<std::shared_mutex> lock(rocksDbGuard);
-        status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &graph_value);
-    }
+    rocksdb::Status status =
+        db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &graph_value);
 
     if (!status.ok()) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -1391,14 +1380,11 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
         }
     }
 
-    // If not in RAM or cache, retrieve from disk with shared lock for thread safety
+    // If not in RAM or cache, retrieve from disk (RocksDB is thread-safe)
     GraphKey graphKey(id, 0);
     std::string level0_graph_value;
-    rocksdb::Status status;
-    {
-        std::shared_lock<std::shared_mutex> lock(rocksDbGuard);
-        status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
-    }
+    rocksdb::Status status =
+        db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
 
     if (status.ok()) {
         // Extract vector data
@@ -1582,14 +1568,11 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
     do {
         changed = false;
 
-        // Read neighbors from RocksDB for the current node at this level with shared lock
+        // Read neighbors from RocksDB for the current node at this level (RocksDB is thread-safe)
         GraphKey graphKey(bestCand, level);
         std::string graph_value;
-        rocksdb::Status status;
-        {
-            std::shared_lock<std::shared_mutex> lock(rocksDbGuard);
-            status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-        }
+        rocksdb::Status status =
+            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
         if (!status.ok()) {
             // No neighbors found for this node at this level, stop searching
@@ -1866,11 +1849,8 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     GraphKey graphKey(nodeId, level);
 
     std::string graph_value;
-    rocksdb::Status status;
-    {
-        std::shared_lock<std::shared_mutex> lock(rocksDbGuard);
-        status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-    }
+    rocksdb::Status status =
+        db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
     if (status.ok()) {
         deserializeGraphValue(graph_value, result);
@@ -1879,7 +1859,7 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
             // Lazy repair: if we filtered any deleted nodes, stage for cleanup
             // Use hash map for O(1) duplicate detection
             // Note: stagedRepairMap and stagedRepairUpdates are protected by stagedUpdatesGuard
-            std::unique_lock<std::shared_mutex> repairLock(stagedUpdatesGuard);
+            std::lock_guard<std::shared_mutex> repairLock(stagedUpdatesGuard);
             uint64_t repair_key = makeRepairKey(nodeId, level);
             if (stagedRepairMap.find(repair_key) == stagedRepairMap.end()) {
                 stagedRepairMap[repair_key] = stagedRepairUpdates.size();
@@ -1925,11 +1905,8 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, siz
     GraphKey graphKey(nodeId, level);
 
     std::string graph_value;
-    rocksdb::Status status;
-    {
-        std::shared_lock<std::shared_mutex> lock(rocksDbGuard);
-        status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-    }
+    rocksdb::Status status =
+        db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
     if (status.ok()) {
         deserializeGraphValue(graph_value, result);
@@ -2076,7 +2053,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
     // Move corresponding raw vectors to processing batch
     {
-        std::unique_lock<std::shared_mutex> lock(rawVectorsGuard);
+        std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
         for (idType id : processingBatch->vectorIds) {
             auto it = rawVectorsInRAM.find(id);
             if (it != rawVectorsInRAM.end()) {
@@ -2114,7 +2091,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
     idType currentEntryPoint;
     size_t currentMaxLevel;
     {
-        std::unique_lock<std::shared_mutex> lock(indexDataGuard);
+        std::lock_guard<std::shared_mutex> lock(indexDataGuard);
         currentEntryPoint = entrypointNode;
         currentMaxLevel = maxLevel;
 
@@ -2280,21 +2257,16 @@ void HNSWDiskIndex<DataType, DistType>::executeInsertJob(HNSWDiskInsertJob *job)
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::executeFlushJob(HNSWDiskFlushJob *job) {
-    // Acquire exclusive lock for RocksDB writes
-    std::unique_lock<std::shared_mutex> lock(rocksDbGuard);
-
-    // Flush all staged updates to RocksDB
+    // Flush all staged updates to RocksDB (RocksDB is thread-safe for writes)
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
 
     // Clear staging - must hold stagedUpdatesGuard to prevent race with getNeighbors
     {
-        std::unique_lock<std::shared_mutex> stagingLock(stagedUpdatesGuard);
+        std::lock_guard<std::shared_mutex> stagingLock(stagedUpdatesGuard);
         stagedInsertMap.clear();
         stagedInsertUpdates.clear();
         stagedInsertNeighborUpdates.clear();
     }
-
-    lock.unlock();
 
     // Clear processing batch (raw vectors now persisted to disk)
     processingBatch->clear();
@@ -2323,7 +2295,7 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::mergeLocalStagedUpdates(
     vecsim_stl::vector<GraphUpdate> &localGraphUpdates,
     vecsim_stl::vector<NeighborUpdate> &localNeighborUpdates) {
-    std::unique_lock<std::shared_mutex> lock(stagedUpdatesGuard);
+    std::lock_guard<std::shared_mutex> lock(stagedUpdatesGuard);
 
     // Merge graph updates
     for (auto &update : localGraphUpdates) {
@@ -2504,7 +2476,7 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
 
         // Remove raw vector from RAM if it exists - requires exclusive lock
         {
-            std::unique_lock<std::shared_mutex> lock(rawVectorsGuard);
+            std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
             auto ram_it = rawVectorsInRAM.find(deleted_id);
             if (ram_it != rawVectorsInRAM.end()) {
                 rawVectorsInRAM.erase(ram_it);
@@ -2957,7 +2929,7 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
     vecsim_stl::vector<idType> internal_ids(this->allocator);
 
     // Protect all accesses to labelToIdMap, idToMetaData, entrypointNode, maxLevel
-    std::unique_lock<std::shared_mutex> lock(indexDataGuard);
+    std::lock_guard<std::shared_mutex> lock(indexDataGuard);
 
     // Find the internal ID for this label
     auto it = labelToIdMap.find(label);
