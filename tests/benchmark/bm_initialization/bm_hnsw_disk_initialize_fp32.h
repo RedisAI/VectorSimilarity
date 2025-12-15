@@ -29,10 +29,20 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk), fp32_
 (benchmark::State &st) { Disk(st, INDEX_HNSW_DISK); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Disk, HNSWDisk))->Iterations(1);
 
-// TopK benchmark
+// AddLabel benchmarks
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
+(benchmark::State &st) { AddLabel(st); }
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_HNSW_DISK);
+
+// TopK benchmark (single-threaded)
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { TopK_HNSW_DISK(st); }
 REGISTER_TopK_HNSW_DISK(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSWDisk));
+
+// TopK benchmark (parallel)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopKParallel, HNSWDisk), fp32_index_t)
+(benchmark::State &st) { TopK_HNSW_DISK_Parallel(st); }
+REGISTER_TopK_HNSW_DISK_PARALLEL(BM_VecSimCommon, BM_FUNC_NAME(TopKParallel, HNSWDisk));
 
 // TopK benchmark with marked deleted vectors
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK_MarkDeleted, HNSWDisk), fp32_index_t)
@@ -47,7 +57,7 @@ REGISTER_TopK_HNSW_DISK_DeleteLabel(BM_VecSimCommon, BM_FUNC_NAME(TopK_DeleteLab
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FLUSH_BATCH_DISK, fp32_index_t)
 (benchmark::State &st) { FlushBatchDisk(st); }
 REGISTER_FlushBatchDisk(BM_FLUSH_BATCH_DISK);
-
+//
 // TopK benchmark after deleting vectors (with graph repair), protecting GT vectors for stable recall
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK_DeleteLabel_ProtectGT, HNSWDisk), fp32_index_t)
 (benchmark::State &st) { TopK_HNSW_DISK_DeleteLabel_ProtectGT(st); }

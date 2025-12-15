@@ -63,6 +63,11 @@ size_t VecSimQueryReply_Len(VecSimQueryReply *results);
 VecSimQueryReply_Code VecSimQueryReply_GetCode(VecSimQueryReply *results);
 
 /**
+ * @brief Get the execution time of a query in milliseconds.
+ */
+double VecSimQueryReply_GetExecutionTime(VecSimQueryReply *results);
+
+/**
  * @brief Release the entire query results list.
  */
 void VecSimQueryReply_Free(VecSimQueryReply *results);
