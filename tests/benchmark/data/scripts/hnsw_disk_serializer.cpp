@@ -393,44 +393,53 @@ int main(int argc, char *argv[]) {
         mock_thread_pool->init_threads();
 
         // Configure the disk index to use the job queue
+        // Use a larger batch threshold for bulk loading (default 10 is too small)
+        const size_t bulk_batch_threshold = 1000;
         if (type == VecSimType_FLOAT32) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
             if (disk_index) {
                 disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
                                         tieredIndexMock::submit_callback);
+                disk_index->setBatchThreshold(bulk_batch_threshold);
             }
         } else if (type == VecSimType_FLOAT64) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<double, double> *>(index);
             if (disk_index) {
                 disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
                                         tieredIndexMock::submit_callback);
+                disk_index->setBatchThreshold(bulk_batch_threshold);
             }
         } else if (type == VecSimType_BFLOAT16) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<bfloat16, float> *>(index);
             if (disk_index) {
                 disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
                                         tieredIndexMock::submit_callback);
+                disk_index->setBatchThreshold(bulk_batch_threshold);
             }
         } else if (type == VecSimType_FLOAT16) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<float16, float> *>(index);
             if (disk_index) {
                 disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
                                         tieredIndexMock::submit_callback);
+                disk_index->setBatchThreshold(bulk_batch_threshold);
             }
         } else if (type == VecSimType_INT8) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<int8_t, float> *>(index);
             if (disk_index) {
                 disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
                                         tieredIndexMock::submit_callback);
+                disk_index->setBatchThreshold(bulk_batch_threshold);
             }
         } else if (type == VecSimType_UINT8) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<uint8_t, float> *>(index);
             if (disk_index) {
                 disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
                                         tieredIndexMock::submit_callback);
+                disk_index->setBatchThreshold(bulk_batch_threshold);
             }
         }
         std::cout << "Multi-threaded indexing enabled with " << num_threads << " threads\n";
+        std::cout << "Batch threshold set to " << bulk_batch_threshold << "\n";
     }
 
     std::cout << "Index created successfully\n";
@@ -459,7 +468,45 @@ int main(int argc, char *argv[]) {
     // Wait for all background jobs to complete if using multi-threaded indexing
     if (mock_thread_pool) {
         std::cout << "Waiting for background indexing jobs to complete...\n";
-        mock_thread_pool->thread_pool_wait();
+
+        // Custom wait loop with progress reporting
+        auto start_time = std::chrono::steady_clock::now();
+        size_t last_indexed = 0;
+        while (true) {
+            // Check if queue is empty and all jobs done
+            if (mock_thread_pool->isIdle()) {
+                break;
+            }
+
+            // Print progress every second
+            size_t current_indexed = VecSimIndex_IndexSize(index);
+            size_t pending = 0;
+            size_t processing = 0;
+            size_t queue_size = mock_thread_pool->jobQ.size();
+
+            if (type == VecSimType_FLOAT32) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
+                if (disk_index) {
+                    pending = disk_index->getPendingInsertCount();
+                    processing = disk_index->getProcessingBatchCount();
+                }
+            }
+
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time).count();
+
+            if (current_indexed != last_indexed || elapsed % 5 == 0) {
+                std::cout << "\rIndexed: " << current_indexed << "/" << num_vectors
+                          << " | Pending: " << pending
+                          << " | Processing: " << processing
+                          << " | Queue: " << queue_size
+                          << " | Time: " << elapsed << "s    " << std::flush;
+                last_indexed = current_indexed;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        std::cout << "\n";
 
         // Flush any remaining pending vectors and wait for those jobs too
         if (type == VecSimType_FLOAT32) {

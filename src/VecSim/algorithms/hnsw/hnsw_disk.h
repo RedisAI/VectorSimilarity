@@ -554,6 +554,8 @@ public:
     void setDeleteBatchThreshold(size_t threshold) { deleteBatchThreshold = threshold; }
     size_t getDeleteBatchThreshold() const { return deleteBatchThreshold; }
     size_t getPendingDeleteCount() const { return pendingDeleteIds.size(); }
+    size_t getPendingInsertCount() const { return pendingVectorCount; }
+    size_t getProcessingBatchCount() const { return processingBatch ? processingBatch->count : 0; }
 
     // Job queue configuration (for multi-threaded processing)
     void setJobQueue(void *jobQueue_, void *jobQueueCtx_, SubmitCB submitCb_) {
@@ -2061,10 +2063,28 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
 
     batchInProgress.store(true);
 
-    // Move pending data to processing batch (double-buffering)
-    processingBatch->vectorIds = std::move(pendingVectorIds);
-    processingBatch->rawVectors = std::move(rawVectorsInRAM);
-    processingBatch->count = pendingVectorCount;
+    // Bound the batch size to prevent large batches when vectors accumulate
+    // while a previous batch is processing
+    size_t vectorsToMove = std::min(pendingVectorCount, batchThreshold);
+
+    // Move only up to batchThreshold vectors to processing batch (bounded double-buffering)
+    processingBatch->vectorIds.assign(
+        pendingVectorIds.begin(),
+        pendingVectorIds.begin() + vectorsToMove
+    );
+    processingBatch->count = vectorsToMove;
+
+    // Move corresponding raw vectors to processing batch
+    {
+        std::unique_lock<std::shared_mutex> lock(rawVectorsGuard);
+        for (idType id : processingBatch->vectorIds) {
+            auto it = rawVectorsInRAM.find(id);
+            if (it != rawVectorsInRAM.end()) {
+                processingBatch->rawVectors[id] = std::move(it->second);
+                rawVectorsInRAM.erase(it);
+            }
+        }
+    }
 
     // Copy processed vectors to processing batch (prevents race with main thread resizing vectors)
     {
@@ -2078,13 +2098,12 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
         }
     }
 
-    // Clear pending structures for new vectors
-    pendingVectorIds = vecsim_stl::vector<idType>(this->allocator);
-    {
-        std::unique_lock<std::shared_mutex> lock(rawVectorsGuard);
-        rawVectorsInRAM.clear();
-    }
-    pendingVectorCount = 0;
+    // Remove moved vectors from pending structures, keep remaining for next batch
+    pendingVectorIds.erase(
+        pendingVectorIds.begin(),
+        pendingVectorIds.begin() + vectorsToMove
+    );
+    pendingVectorCount -= vectorsToMove;
 
     // Clear any previous staged updates
     stagedInsertUpdates.clear();
@@ -2286,6 +2305,18 @@ void HNSWDiskIndex<DataType, DistType>::executeFlushJob(HNSWDiskFlushJob *job) {
     // Clean up flush job
     pendingFlushJob = nullptr;
     delete job;
+
+    // Check if there are more pending vectors to process
+    // This ensures we process accumulated vectors in bounded batches
+    bool shouldTriggerNextBatch = false;
+    {
+        std::lock_guard<std::mutex> lock(batchSwapGuard);
+        shouldTriggerNextBatch = (pendingVectorCount >= batchThreshold);
+    }
+
+    if (shouldTriggerNextBatch) {
+        processBatch();
+    }
 }
 
 template <typename DataType, typename DistType>
