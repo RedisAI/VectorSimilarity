@@ -42,13 +42,13 @@ Checkpoint/resume:\n\
   detected and skipped on subsequent runs.",
 )]
 struct Config {
-    /// Path to the query vectors .fbin file.
+    /// Path to the query vectors .fbin file (not required with --merge-only).
     #[arg(short = 'q', long = "queries", value_name = "PATH")]
-    query_path: PathBuf,
+    query_path: Option<PathBuf>,
 
-    /// Path to the base vectors .fbin file (e.g., 100M base vectors).
+    /// Path to the base vectors .fbin file (not required with --merge-only).
     #[arg(short = 'b', long = "base", value_name = "PATH")]
-    base_path: PathBuf,
+    base_path: Option<PathBuf>,
 
     /// Output directory for per-query groundtruth .ibin files.
     #[arg(short = 'o', long = "output", value_name = "DIR")]
@@ -73,6 +73,10 @@ struct Config {
     /// Optional path to write a single merged groundtruth .ibin file.
     #[arg(long = "merge-output", value_name = "PATH")]
     merge_output: Option<PathBuf>,
+
+    /// Merge existing per-query results without computing (requires --merge-output).
+    #[arg(long = "merge-only")]
+    merge_only: bool,
 
     /// Increase verbosity (currently a placeholder, reserved for future use).
     #[arg(long = "verbose", short = 'v', action = ArgAction::Count)]
@@ -153,6 +157,65 @@ fn main() {
 fn run(start: Instant) -> Result<()> {
     let mut config = Config::parse();
 
+    // Handle --merge-only mode
+    if config.merge_only {
+        let merge_path = config.merge_output.as_ref().ok_or(
+            "--merge-only requires --merge-output to be specified"
+        )?;
+
+        log_with_times(start, "Running in merge-only mode...");
+
+        // Count the number of query result files
+        let completed = detect_completed_queries(&config.results_dir)?;
+        let num_queries = completed.len();
+
+        if num_queries == 0 {
+            return Err(format!(
+                "No query result files found in {:?}",
+                config.results_dir
+            ).into());
+        }
+
+        // Verify we have consecutive query IDs from 0 to num_queries-1
+        let max_qid = *completed.iter().max().unwrap();
+        if max_qid != num_queries - 1 {
+            return Err(format!(
+                "Missing query results: found {} files but max query ID is {}",
+                num_queries, max_qid
+            ).into());
+        }
+
+        log_with_times(
+            start,
+            &format!("Found {} completed query results", num_queries),
+        );
+
+        log_with_times(
+            start,
+            &format!("Merging per-query results into {:?}...", merge_path),
+        );
+        merge_results(
+            &config.results_dir,
+            merge_path,
+            num_queries,
+            config.k,
+        )?;
+        log_with_times(
+            start,
+            &format!("Merged groundtruth written to {:?}", merge_path),
+        );
+
+        return Ok(());
+    }
+
+    // Normal mode: require query and base paths
+    let query_path = config.query_path.as_ref().ok_or(
+        "--queries is required (unless using --merge-only)"
+    )?;
+    let base_path = config.base_path.as_ref().ok_or(
+        "--base is required (unless using --merge-only)"
+    )?;
+
     if config.num_workers.is_none() {
         let default_workers = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -162,16 +225,16 @@ fn run(start: Instant) -> Result<()> {
 
     log_with_times(
         start,
-        &format!("Loading query vectors from {:?}...", config.query_path),
+        &format!("Loading query vectors from {:?}...", query_path),
     );
-    let queries = load_fbin_vectors(&config.query_path)?;
+    let queries = load_fbin_vectors(query_path)?;
     log_with_times(start, &format!("Loaded {} query vectors", queries.len()));
 
     log_with_times(
         start,
-        &format!("Loading base vectors from {:?}...", config.base_path),
+        &format!("Loading base vectors from {:?}...", base_path),
     );
-    let base = load_fbin_vectors(&config.base_path)?;
+    let base = load_fbin_vectors(base_path)?;
     log_with_times(start, &format!("Loaded {} base vectors", base.len()));
 
     if base.is_empty() || queries.is_empty() {
