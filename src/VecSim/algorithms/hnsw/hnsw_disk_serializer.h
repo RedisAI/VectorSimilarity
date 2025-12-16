@@ -457,7 +457,8 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
     }
 
     // Validate entry point
-    if (elementCount > 0 && this->entrypointNode == INVALID_ID) {
+    EntryPointState state = this->entryPointState.load(std::memory_order_acquire);
+    if (elementCount > 0 && state.entrypointNode == INVALID_ID) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "checkIntegrity failed: no entry point set for non-empty index");
         return res;
@@ -614,8 +615,13 @@ void HNSWDiskIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input)
     Serializer::readBinaryPOD(input, tempElementCount);
     this->curElementCount.store(tempElementCount, std::memory_order_release);
     Serializer::readBinaryPOD(input, this->numMarkedDeleted);
-    Serializer::readBinaryPOD(input, this->maxLevel);
-    Serializer::readBinaryPOD(input, this->entrypointNode);
+    // Read entry point state (maxLevel and entrypointNode are now atomic)
+    size_t tempMaxLevel;
+    idType tempEntrypointNode;
+    Serializer::readBinaryPOD(input, tempMaxLevel);
+    Serializer::readBinaryPOD(input, tempEntrypointNode);
+    this->entryPointState.store(EntryPointState(tempEntrypointNode, tempMaxLevel),
+                                std::memory_order_release);
 
     // Restore batch processing configuration
     Serializer::readBinaryPOD(input, this->batchThreshold);
@@ -746,8 +752,11 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) c
     // Save index state
     Serializer::writeBinaryPOD(output, elementCount);
     Serializer::writeBinaryPOD(output, this->numMarkedDeleted);
-    Serializer::writeBinaryPOD(output, this->maxLevel);
-    Serializer::writeBinaryPOD(output, this->entrypointNode);
+    // Write entry point state (maxLevel and entrypointNode are now atomic)
+    EntryPointState state = this->entryPointState.load(std::memory_order_acquire);
+    size_t maxLevelToSave = static_cast<size_t>(state.maxLevel);
+    Serializer::writeBinaryPOD(output, maxLevelToSave);
+    Serializer::writeBinaryPOD(output, state.entrypointNode);
 
     // Save batch processing configuration
     Serializer::writeBinaryPOD(output, this->batchThreshold);
