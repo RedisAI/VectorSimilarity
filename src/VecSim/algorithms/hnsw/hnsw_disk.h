@@ -2971,8 +2971,8 @@ vecsim_stl::vector<idType> HNSWDiskIndex<DataType, DistType>::markDelete(labelTy
     this->numMarkedDeleted++;
 
     // If this is the entrypoint, we need to replace it
-    // Note: replaceEntryPoint is called while holding indexDataGuard
-    if (internalId == entrypointNode) {
+    EntryPointState currentState = entryPointState.load(std::memory_order_acquire);
+    if (internalId == currentState.entrypointNode) {
         replaceEntryPoint();
     }
 
