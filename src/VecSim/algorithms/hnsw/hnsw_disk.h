@@ -192,7 +192,12 @@ protected:
             : node_id(node_id), level(level), neighbors(allocator) {
             this->neighbors = neighbors;
         }
+        // eq operator
+        bool operator==(const GraphUpdate &other) const {
+            return node_id == other.node_id && level == other.level;
+        }
     };
+
 
     // Staging area for graph updates during batch processing
     // Separate staging areas for insertions and deletions to avoid conflicts
@@ -285,6 +290,7 @@ public:
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
     void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     void getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
+    size_t getNeighborsCount(idType nodeId, size_t level) const;
     void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
 
     // Manual control of staged updates
@@ -863,19 +869,8 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
         DistType distance = neighbor_data.first;
 
         // Check if the neighbor's neighbor list has capacity
-        // For disk-based implementation, we need to determine if we need to re-evaluate the
-        // neighbor's connections
-
-        // Read the neighbor's current neighbor count from disk to check capacity
-        GraphKey neighborKey(selected_neighbor, level);
-        std::string existing_neighbors_data;
-        rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
-
-        size_t current_neighbor_count = 0;
-        if (status.ok()) {
-            current_neighbor_count = existing_neighbors_data.size() / sizeof(idType);
-        }
+        // Use the helper function to get the current neighbor count (checks staged updates too)
+        size_t current_neighbor_count = getNeighborsCount(selected_neighbor, level);
 
         if (current_neighbor_count < max_M_cur) {
             // Neighbor has capacity, just add the new node
@@ -1244,6 +1239,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
                                            size_t ef) const {
 
     std::unordered_set<idType> visited_set;
+    visited_set.reserve(10000);
 
     vecsim_stl::updatable_max_heap<DistType, idType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
@@ -1281,6 +1277,7 @@ vecsim_stl::updatable_max_heap<DistType, labelType>
 HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *data_point_raw, const void *data_point, size_t layer,
                                            size_t ef) const {
     std::unordered_set<idType> visited_set;
+    visited_set.reserve(10000);
 
     vecsim_stl::updatable_max_heap<DistType, labelType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
@@ -1695,6 +1692,36 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(labelType nodeId, 
 }
 
 template <typename DataType, typename DistType>
+size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_t level) const {
+    // First check staged graph updates using hash maps for O(1) lookup
+    uint64_t lookup_key = makeRepairKey(nodeId, level);
+
+    // Check insert staging area
+    auto insert_it = stagedInsertMap.find(lookup_key);
+    if (insert_it != stagedInsertMap.end()) {
+        const auto &update = stagedInsertUpdates[insert_it->second];
+       
+        return update.neighbors.size();
+    }
+
+    // If not found in staged updates, check disk
+    GraphKey graphKey(nodeId, level);
+    std::string graph_value;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+
+    if (status.ok()) {
+        
+        const char* ptr = graph_value.data();
+        ptr += this->inputBlobSize;
+        size_t neighbor_count = *reinterpret_cast<const size_t*>(ptr);
+        
+        return neighbor_count;
+    }
+
+    return 0; // Not found
+}
+
+template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::searchPendingVectors(
     const void *query_data, candidatesLabelsMaxHeap<DistType> &top_candidates, size_t k) const {
     for (size_t i = 0; i < pendingVectorCount; i++) {
@@ -1761,6 +1788,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
             maxLevel = elementMaxLevel;
         }
     }
+    std::cout << "processBatch memory: " << this->getAllocationSize()/1024/1024 << " MB" << std::endl;
 
     // Now flush all staged graph updates to disk in a single batch operation
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
