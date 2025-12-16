@@ -197,8 +197,21 @@ protected:
     // multithreaded scenario.
     std::atomic<size_t> curElementCount;
     size_t numMarkedDeleted;
-    idType entrypointNode;
-    size_t maxLevel; // this is the top level of the entry point's element
+
+    // Packed entry point state for lock-free atomic access
+    // Layout: [entrypointNode (32 bits) | maxLevel (32 bits)]
+    // This allows atomic read/write of both values together without locking
+    static constexpr uint32_t INVALID_MAX_LEVEL = UINT32_MAX;
+    struct alignas(8) EntryPointState {
+        idType entrypointNode;
+        uint32_t maxLevel;
+
+        EntryPointState() : entrypointNode(INVALID_ID), maxLevel(INVALID_MAX_LEVEL) {}
+        EntryPointState(idType ep, size_t level)
+            : entrypointNode(ep), maxLevel(static_cast<uint32_t>(level)) {}
+    };
+    static_assert(sizeof(EntryPointState) == 8, "EntryPointState must be 8 bytes for atomic ops");
+    std::atomic<EntryPointState> entryPointState;
 
     // Index data
     // vecsim_stl::vector<DataBlock> graphDataBlocks;
