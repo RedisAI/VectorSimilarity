@@ -323,9 +323,9 @@ protected:
 public:
     // Methods needed by benchmark framework
     const void *getDataByInternalId(idType id) const;
-    vecsim_stl::updatable_max_heap<DistType, idType> searchLayer(idType ep_id, const void *data_point_raw, const void *data_point, size_t level,
+    vecsim_stl::updatable_max_heap<DistType, idType> searchLayer(idType ep_id, const void *data_point, size_t level,
                                             size_t ef) const;
-    vecsim_stl::updatable_max_heap<DistType, labelType> searchLayerLabels(idType ep_id, const void *data_point_raw, const void *data_point, size_t level,
+    vecsim_stl::updatable_max_heap<DistType, labelType> searchLayerLabels(idType ep_id, const void *data_point, size_t level,
                                             size_t ef) const;
     template <bool running_query>
     void greedySearchLevel(const void *data_point, size_t level, idType &curr_element,
@@ -344,13 +344,17 @@ public:
                        DistType dist, idType id) const;
 
     template <typename Identifier>
-    void processCandidate(Identifier candidate_id, const void* data_point_raw, const void *data_point, size_t level, size_t ef,
+    void processCandidate(Identifier candidate_id, const void *data_point, size_t level, size_t ef,
                           std::unordered_set<idType> *visited_set,
                           vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
                           candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const;
 
     // Raw vector storage and retrieval methods
     bool getRawVector(idType id, void* output_buffer) const;
+
+    // Re-rank candidates using raw float32 distances for improved recall
+    void rerankWithRawDistances(vecsim_stl::updatable_max_heap<DistType, labelType>& candidates,
+                                const void* query_data, size_t k) const;
 
 protected:
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx = nullptr,
@@ -594,13 +598,19 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
         return rep; // Empty index or error
     }
 
-    auto results = searchLayerLabels(bottom_layer_ep, query_data, processed_query , 0, query_ef);
-    
+    // Step 2: Search bottom layer using quantized distances
+    auto results = searchLayerLabels(bottom_layer_ep, processed_query, 0, query_ef);
+
     if (pendingVectorCount > 0) {
         // Search pending vectors using the helper method
         searchPendingVectors(query_data, results, k);
-
     }
+
+    // Step 3: Re-rank candidates using raw float32 distances for improved recall
+    if (useRawData && !results.empty()) {
+        rerankWithRawDistances(results, query_data, k);
+    }
+
     while (results.size() > k) {
         results.pop();
     }
@@ -811,7 +821,7 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(idType element_id,
 
     for (auto level = static_cast<int>(max_common_level); level >= 0; level--) {
         vecsim_stl::updatable_max_heap<DistType, idType> top_candidates =
-            searchLayer(curr_element, raw_vector_data, vector_data, level, efConstruction);
+            searchLayer(curr_element, vector_data, level, efConstruction);
 
         // If the entry point was marked deleted between iterations, we may receive an empty
         // candidates set.
@@ -1236,8 +1246,54 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
 }
 
 template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::rerankWithRawDistances(
+    vecsim_stl::updatable_max_heap<DistType, labelType>& candidates,
+    const void* query_data, size_t k) const {
+
+    if (candidates.empty()) {
+        return;
+    }
+
+    // Extract all candidates from the heap
+    std::vector<std::pair<DistType, labelType>> candidate_list;
+    candidate_list.reserve(candidates.size());
+    while (!candidates.empty()) {
+        candidate_list.push_back(candidates.top());
+        candidates.pop();
+    }
+
+    // Buffer for raw vector data
+    std::vector<char> raw_vector_buffer(this->inputBlobSize);
+
+    // Recalculate distances using raw float32 vectors
+    for (auto& candidate : candidate_list) {
+        labelType label = candidate.second;
+
+        // Find internal ID for this label
+        auto it = labelToIdMap.find(label);
+        if (it == labelToIdMap.end()) {
+            // Label not found (might have been deleted), keep original distance
+            continue;
+        }
+        idType internal_id = it->second;
+
+        // Get raw vector and recalculate distance
+        if (getRawVector(internal_id, raw_vector_buffer.data())) {
+            DistType raw_dist = this->calcDistanceRaw(query_data, raw_vector_buffer.data());
+            candidate.first = raw_dist;
+        }
+        // If getRawVector fails, keep the original quantized distance
+    }
+
+    // Re-insert all candidates with updated distances
+    for (const auto& candidate : candidate_list) {
+        candidates.emplace(candidate.first, candidate.second);
+    }
+}
+
+template <typename DataType, typename DistType>
 vecsim_stl::updatable_max_heap<DistType, idType>
-HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point_raw, const void *data_point, size_t layer,
+HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
 
     std::unordered_set<idType> visited_set;
@@ -1265,7 +1321,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
         }
         candidate_set.pop();
 
-        processCandidate(curr_el_pair.second, data_point_raw, data_point, layer, ef,
+        processCandidate(curr_el_pair.second, data_point, layer, ef,
                          &visited_set, top_candidates,
                          candidate_set, lowerBound);
     }
@@ -1275,7 +1331,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
 
 template <typename DataType, typename DistType>
 vecsim_stl::updatable_max_heap<DistType, labelType>
-HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *data_point_raw, const void *data_point, size_t layer,
+HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
     std::unordered_set<idType> visited_set;
 
@@ -1302,7 +1358,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *d
         }
         candidate_set.pop();
 
-        processCandidate(getExternalLabel(curr_el_pair.second), data_point_raw, data_point, layer, ef,
+        processCandidate(getExternalLabel(curr_el_pair.second), data_point, layer, ef,
                          &visited_set, top_candidates,
                          candidate_set, lowerBound);
     }
@@ -1435,21 +1491,13 @@ size_t HNSWDiskIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
 template <typename DataType, typename DistType>
 template <typename Identifier>
 void HNSWDiskIndex<DataType, DistType>::processCandidate(
-    Identifier curNodeId, const void* data_point_raw, const void *data_point, size_t level, size_t ef, std::unordered_set<idType> *visited_set,
+    Identifier curNodeId, const void *data_point, size_t level, size_t ef, std::unordered_set<idType> *visited_set,
     vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
     assert(visited_set != nullptr);
     // Add neighbors to candidate set for further exploration
     vecsim_stl::vector<idType> neighbors(this->allocator);
-    std::vector<char> vector_data(this->inputBlobSize);
-    getNeighborsAndVector(curNodeId, level, neighbors, vector_data.data());
-    // Calculate distance to candidate with raw data
-    if (useRawData && top_candidates.exists(curNodeId)) {
-
-        DistType dist = this->calcDistanceRaw(data_point_raw, vector_data.data());
-        emplaceToHeap(top_candidates, dist, curNodeId);
-    }
-    
+    getNeighbors(curNodeId, level, neighbors);
 
     if (!neighbors.empty()) {
         for (idType candidate_id : neighbors) {
