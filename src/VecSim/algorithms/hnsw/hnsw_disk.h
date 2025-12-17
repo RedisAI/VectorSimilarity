@@ -139,20 +139,10 @@ struct HNSWDiskInsertJob : public AsyncJob {
     idType vectorId;
     size_t elementMaxLevel;
 
-    // Snapshot of entry point state at job creation time
-    idType entryPointSnapshot;
-    size_t maxLevelSnapshot;
-
-    // Retry counter for error handling
-    std::atomic<int> retryCount{0};
-    static constexpr int MAX_RETRIES = 3;
-
     HNSWDiskInsertJob(std::shared_ptr<VecSimAllocator> allocator, idType vectorId_,
-                      size_t elementMaxLevel_, idType entryPoint_, size_t maxLevel_,
-                      JobCallback insertCb, VecSimIndex *index_)
+                      size_t elementMaxLevel_, JobCallback insertCb, VecSimIndex *index_)
         : AsyncJob(allocator, HNSW_DISK_INSERT_VECTOR_JOB, insertCb, index_), vectorId(vectorId_),
-          elementMaxLevel(elementMaxLevel_), entryPointSnapshot(entryPoint_),
-          maxLevelSnapshot(maxLevel_) {}
+          elementMaxLevel(elementMaxLevel_) {}
 };
 
 /**
@@ -2112,14 +2102,10 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
     stagedInsertMap.clear();
     stagedInsertNeighborUpdates.clear();
 
-    // Snapshot entry point state
-    idType currentEntryPoint = entrypointNode;
-    size_t currentMaxLevel = maxLevel;
-
-    // First pass: Update entry point for any vectors with higher levels
-    // Note: idToMetaData access still needs indexDataGuard for resize protection
+    // First pass: Set entry point if not set, or update if we have a higher level vector
+    // This mirrors the original disk-poc algorithm where entry point is updated during processing
     {
-        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+        std::unique_lock<std::shared_mutex> lock(indexDataGuard);
         for (size_t i = 0; i < processingBatch->count; i++) {
             idType vectorId = processingBatch->vectorIds[i];
             // Use direct flag check to avoid recursive lock (isMarkedDeleted takes shared lock)
@@ -2127,21 +2113,14 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
                 continue;
 
             DiskElementMetaData &metadata = idToMetaData[vectorId];
-            if (currentEntryPoint == INVALID_ID || metadata.topLevel > currentMaxLevel) {
-                currentEntryPoint = vectorId;
-                currentMaxLevel = metadata.topLevel;
+            if (entrypointNode == INVALID_ID || metadata.topLevel > maxLevel) {
+                entrypointNode = vectorId;
+                maxLevel = metadata.topLevel;
             }
         }
     }
 
-    // Update global entry point if changed
-    if (currentEntryPoint != entrypointNode || currentMaxLevel != maxLevel) {
-        entrypointNode = currentEntryPoint;
-        maxLevel = currentMaxLevel;
-    }
-
-    // Count valid vectors and create jobs
-    size_t validVectorCount = 0;
+    // Create jobs for all vectors (entry point check is done in executeInsertJob)
     vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
     jobs.reserve(processingBatch->count);
 
@@ -2150,18 +2129,10 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
         if (isMarkedDeleted(vectorId))
             continue;
 
-        // Skip if this is the entry point (already set, no connections needed)
-        if (vectorId == currentEntryPoint && validVectorCount == 0) {
-            validVectorCount++;
-            continue;
-        }
-
-        validVectorCount++;
         DiskElementMetaData &metadata = idToMetaData[vectorId];
 
         HNSWDiskInsertJob *job =
             new (this->allocator) HNSWDiskInsertJob(this->allocator, vectorId, metadata.topLevel,
-                                                    currentEntryPoint, currentMaxLevel,
                                                     executeInsertJobWrapper, this);
         jobs.push_back(job);
     }
@@ -2231,33 +2202,47 @@ void HNSWDiskIndex<DataType, DistType>::executeInsertJob(HNSWDiskInsertJob *job)
         return;
     }
 
-    // Thread-local staging for this job
-    // vecsim_stl::vector<GraphUpdate> localGraphUpdates(this->allocator);
-    // vecsim_stl::vector<NeighborUpdate> localNeighborUpdates(this->allocator);
-
-
     // Get vector data from processing batch (read-only, thread-safe)
-    // Use local copies to avoid race with main thread resizing vectors container
     auto rawIt = processingBatch->rawVectors.find(job->vectorId);
     if (rawIt == processingBatch->rawVectors.end()) {
-        throw std::runtime_error("Raw vector not found in processing batch");
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "Raw vector not found in processing batch for vectorId %u", job->vectorId);
+        if (pendingInsertJobsCounter.fetch_sub(1) == 1) {
+            submitSingleJob(pendingFlushJob);
+        }
+        delete job;
+        return;
     }
     const void *raw_vector_data = rawIt->second.data();
 
     auto procIt = processingBatch->processedVectors.find(job->vectorId);
     if (procIt == processingBatch->processedVectors.end()) {
-        throw std::runtime_error("Processed vector not found in processing batch");
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "Processed vector not found in processing batch for vectorId %u", job->vectorId);
+        if (pendingInsertJobsCounter.fetch_sub(1) == 1) {
+            submitSingleJob(pendingFlushJob);
+        }
+        delete job;
+        return;
     }
     const void *vector_data = procIt->second.data();
 
-    // Skip if this is the entry point (no connections to make)
-    if (job->vectorId != job->entryPointSnapshot) {
-        // Insert into graph - reads from RocksDB are protected by shared lock
-        // The insertElementToGraph method will stage updates
-        insertElementToGraph(job->vectorId, job->elementMaxLevel, job->entryPointSnapshot,
-                                job->maxLevelSnapshot, raw_vector_data, vector_data);
+    // Read current entry point state dynamically (like the original disk-poc algorithm)
+    // This allows jobs to benefit from entry point updates made by previously completed jobs
+    idType currentEntryPoint;
+    size_t currentMaxLevel;
+    {
+        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+        currentEntryPoint = entrypointNode;
+        currentMaxLevel = maxLevel;
     }
 
+    // Skip if this is the entry point (no connections to make for the first element)
+    if (job->vectorId != currentEntryPoint && currentEntryPoint != INVALID_ID) {
+        // Insert into graph using the original algorithm
+        insertElementToGraph(job->vectorId, job->elementMaxLevel, currentEntryPoint,
+                             currentMaxLevel, raw_vector_data, vector_data);
+    }
 
     // Decrement counter and submit flush job if this is the last insert job
     if (pendingInsertJobsCounter.fetch_sub(1) == 1) {
