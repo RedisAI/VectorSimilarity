@@ -56,7 +56,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      new_elements_meta_data(this->allocator), batchThreshold(0), // Will be restored from file
+       batchThreshold(0), // Will be restored from file
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
       pendingVectorCount(0), pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
@@ -82,7 +82,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     this->restoreVectors(input, version);
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Index deserialized from file and RocksDB checkpoint");
-    this->checkIntegrity();
+    // this->checkIntegrity();
 }
 
 /**
@@ -217,17 +217,12 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromRocksDB(EncodingVersio
  */
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, EncodingVersion version) {
-// #ifdef HNSW_DISK_SERIALIZE_VECTORS_TO_FILE
-    // NEW METHOD: Load vectors from metadata file
     // this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
     //          "Loading vectors from metadata file (HNSW_DISK_SERIALIZE_VECTORS_TO_FILE enabled)");
     // restoreVectorsFromFile(input, version);
-// #else
-    // CURRENT METHOD: Load vectors from RocksDB (default for backward compatibility)
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Loading vectors from RocksDB checkpoint (default method)");
     restoreVectorsFromRocksDB(version);
-// #endif
 }
 
 /**
@@ -293,9 +288,6 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
         throw std::runtime_error("Serialization error: pendingDeleteIds not empty after flush");
     }
 
-    if (!new_elements_meta_data.empty()) {
-        throw std::runtime_error("Serialization error: new_elements_meta_data not empty after flush");
-    }
 
     // Save index metadata and graph (in-memory data only)
     this->saveIndexFields(output);

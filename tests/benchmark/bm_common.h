@@ -90,13 +90,19 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Disk(benchmark::State &st, IndexTypeIndex index_type) {
-    auto index = GET_INDEX(index_type);
+    auto index = static_cast<HNSWDiskIndex<data_t, dist_t> *>(GET_INDEX(index_type));
 
     for (auto _ : st) {
         // Do nothing...
     }
+    // Output detailed RocksDB memory usage breakdown
+    auto mem_breakdown = index->getDBMemoryBreakdown();
+    st.counters["rocksdb_memory_total"] = static_cast<double>(mem_breakdown.total);
+    st.counters["rocksdb_memtables"] = static_cast<double>(mem_breakdown.memtables);
+    st.counters["rocksdb_table_readers"] = static_cast<double>(mem_breakdown.table_readers);
+    st.counters["rocksdb_block_cache"] = static_cast<double>(mem_breakdown.block_cache);
+    st.counters["rocksdb_pinned_blocks"] = static_cast<double>(mem_breakdown.pinned_blocks);
     st.counters["db_disk"] = (double)VecSimIndex_StatsInfo(index).db_disk;
-    st.counters["db_memory"] = (double)VecSimIndex_StatsInfo(index).db_memory;
 }
 
 template <typename index_type_t>
@@ -107,6 +113,7 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
     for (auto _ : st) {
         // Do nothing...
     }
+
     st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
     st.counters["vectors_memory"] = (double)VecSimIndex_StatsInfo(index).vectors_memory;
 }
@@ -165,9 +172,13 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         st.counters["cache_misses_per_query"] = static_cast<double>(cache_misses) / iter;
     }
 
-    // Output RocksDB memory usage
-    uint64_t db_memory = hnsw_disk_index->getDBMemorySize();
-    st.counters["rocksdb_memory"] = static_cast<double>(db_memory);
+    // Output detailed RocksDB memory usage breakdown
+    auto mem_breakdown = hnsw_disk_index->getDBMemoryBreakdown();
+    st.counters["rocksdb_memory_total"] = static_cast<double>(mem_breakdown.total);
+    st.counters["rocksdb_memtables"] = static_cast<double>(mem_breakdown.memtables);
+    st.counters["rocksdb_table_readers"] = static_cast<double>(mem_breakdown.table_readers);
+    st.counters["rocksdb_block_cache"] = static_cast<double>(mem_breakdown.block_cache);
+    st.counters["rocksdb_pinned_blocks"] = static_cast<double>(mem_breakdown.pinned_blocks);
 }
 
 // Run TopK using disk-based HNSW index vs BF to measure recall (parallel).
@@ -193,9 +204,9 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
     pool->reconfigure_threads(concurrency);
 
     auto db_stats = disk_index->getDBStatistics();
-    size_t byte_reads_before = 0;
+    size_t block_cache_miss = 0;
     if (db_stats) {
-        byte_reads_before = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+        block_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
 
     // Limit by the number of distinct queries we actually have.
@@ -288,16 +299,15 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
 
         // st.counters["concurrency"] = static_cast<double>(concurrency);
         // st.counters["num_queries"] = static_cast<double>(executed_queries);
+        st.counters["avg_ms"] = ms_per_query;
         st.counters["total_time_ms"] = total_ms;
-        st.counters["ms_per_query"] = ms_per_query;
         st.counters["qps"] = qps;
         st.counters["Recall"] = executed_queries ?
             static_cast<double>(correct.load()) / static_cast<double>(k * executed_queries) : 0.0;
 
         if (db_stats && executed_queries > 0) {
-            size_t bytes_read_after = db_stats->getTickerCount(rocksdb::Tickers::BYTES_READ);
-            size_t total_bytes = bytes_read_after - bytes_read_before;
-            st.counters["byte_reads"] = static_cast<double>(total_bytes) / executed_queries;
+            size_t total_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - block_cache_miss;
+            st.counters["cache_misses_per_query"] = static_cast<double>(total_cache_miss) / executed_queries;
         }
     }
 }
@@ -412,6 +422,13 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
     }
 
+    // Output detailed RocksDB memory usage breakdown
+    auto mem_breakdown = disk_index->getDBMemoryBreakdown();
+    st.counters["rocksdb_memory_total"] = static_cast<double>(mem_breakdown.total);
+    st.counters["rocksdb_memtables"] = static_cast<double>(mem_breakdown.memtables);
+    st.counters["rocksdb_table_readers"] = static_cast<double>(mem_breakdown.table_readers);
+    st.counters["rocksdb_block_cache"] = static_cast<double>(mem_breakdown.block_cache);
+    st.counters["rocksdb_pinned_blocks"] = static_cast<double>(mem_breakdown.pinned_blocks);
 }
 
 template <typename index_type_t>
@@ -987,16 +1004,16 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 #define REGISTER_TopK_HNSW_DISK_PARALLEL(BM_CLASS, BM_FUNC)                                        \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Args({10, 10, 10})                                                                       \
-        ->Args({200, 10, 10})                                                                      \
-        ->Args({100, 100, 10})                                                                     \
-        ->Args({200, 100, 10})                                                                     \
         ->Args({10, 10, 20})                                                                       \
-        ->Args({200, 10, 20})                                                                      \
-        ->Args({100, 100, 20})                                                                     \
-        ->Args({200, 100, 20})                                                                     \
         ->Args({10, 10, 30})                                                                       \
+        ->Args({200, 10, 10})                                                                      \
+        ->Args({200, 10, 20})                                                                      \
         ->Args({200, 10, 30})                                                                      \
+        ->Args({100, 100, 10})                                                                     \
+        ->Args({100, 100, 20})                                                                     \
         ->Args({100, 100, 30})                                                                     \
+        ->Args({200, 100, 10})                                                                     \
+        ->Args({200, 100, 20})                                                                     \
         ->Args({200, 100, 30})                                                                     \
         ->ArgNames({"ef_runtime", "k", "concurrency"})                                             \
         ->Iterations(1)                                                                            \

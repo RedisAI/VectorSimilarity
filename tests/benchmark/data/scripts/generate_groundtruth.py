@@ -126,7 +126,14 @@ def compute_groundtruth_chunked(base_vectors, query_vectors, k=100, batch_size=1
         distances = query_norms + base_norms - 2 * dot_products  # (batch_size, n_base)
 
         # Find k nearest neighbors (smallest distances)
-        nearest_indices = np.argsort(distances, axis=1)[:, :k]
+        # Use argpartition for O(n) complexity instead of argsort's O(n log n)
+        # argpartition puts the k smallest elements in the first k positions (unsorted)
+        # then we sort just those k elements to get them in order
+        partitioned_indices = np.argpartition(distances, k-1, axis=1)[:, :k]
+        # Sort the k nearest neighbors by distance
+        k_distances = np.take_along_axis(distances, partitioned_indices, axis=1)
+        sorted_k_indices = np.argsort(k_distances, axis=1)
+        nearest_indices = np.take_along_axis(partitioned_indices, sorted_k_indices, axis=1)
         groundtruth[batch_start:batch_end] = nearest_indices
 
         elapsed = time.time() - start_time

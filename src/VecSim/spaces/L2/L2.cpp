@@ -132,3 +132,32 @@ float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
     return float(INTEGER_L2Sqr(pVect1, pVect2, dimension));
 }
+
+// 4-bit (INT4) L2 squared distance
+// pVect1 and pVect2 are packed 4-bit vectors: two 4-bit values per byte
+// Low nibble (bits 0-3) contains even indices, high nibble (bits 4-7) contains odd indices
+// Values are in range [0, 15], representing normalized floats in [-1, 1]
+float INT4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        size_t byte_idx = i / 2;
+        int val1, val2;
+
+        if (i % 2 == 0) {
+            // Low nibble (bits 0-3)
+            val1 = pVect1[byte_idx] & 0x0F;
+            val2 = pVect2[byte_idx] & 0x0F;
+        } else {
+            // High nibble (bits 4-7)
+            val1 = (pVect1[byte_idx] >> 4) & 0x0F;
+            val2 = (pVect2[byte_idx] >> 4) & 0x0F;
+        }
+
+        int diff = val1 - val2;
+        res += diff * diff;
+    }
+    return static_cast<float>(res);
+}

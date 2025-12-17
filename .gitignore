@@ -66,3 +66,7 @@ wordlist.dic
 
 # ignore all files in the .cursor directory
 .cursor/
+
+# ignore perf outputs
+perf.data*
+*.svg

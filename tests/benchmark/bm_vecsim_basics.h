@@ -106,6 +106,9 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
         VecSimIndex_DeleteVector(
             GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)), label);
     }
+    if (st.range(0) == INDEX_HNSW_DISK) {
+        dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(index)->flushDeleteBatch();
+    }
     assert(VecSimIndex_IndexSize(index) == initial_index_size);
 }
 
@@ -338,8 +341,6 @@ void BM_VecSimBasics<index_type_t>::FlushBatchDisk(benchmark::State &st) {
         // add one vector to trigger flush
         VecSimIndex_AddVector(hnsw_disk_index, QUERIES[(flush_threshold-1)%N_QUERIES].data(), flush_threshold-1);
     }
-
-    // Index will be automatically freed by IndexPtr when INDICES[INDEX_HNSW_DISK] is reassigned or destroyed
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
