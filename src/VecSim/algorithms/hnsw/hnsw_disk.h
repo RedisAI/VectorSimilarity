@@ -1788,7 +1788,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
             maxLevel = elementMaxLevel;
         }
     }
-    std::cout << "processBatch memory: " << this->getAllocationSize()/1024/1024 << " MB" << std::endl;
+    // std::cout << "processBatch memory: " << this->getAllocationSize()/1024/1024 << " MB" << std::endl;
 
     // Now flush all staged graph updates to disk in a single batch operation
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
