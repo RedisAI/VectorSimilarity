@@ -253,11 +253,17 @@ public:
 // 2. The program exits (static destructor is called)
 static std::unique_ptr<ManagedRocksDB> managed_rocksdb;
 
+// Flag to enable 4-bit quantization (default: false = use 8-bit quantization)
+static bool use4BitQuantization = false;
+
 // Helper function to create AbstractIndexInitParams from VecSimParams
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
 
-    size_t dataSize = hnswParams->dim * sizeof(int8_t); // Quantized storage
+    // Calculate dataSize based on quantization mode
+    // 8-bit quantization: 1 byte per dimension
+    // 4-bit quantization: 2 values per byte, so (dim + 1) / 2 bytes for packed values
+    size_t dataSize = use4BitQuantization ? (hnswParams->dim + 1) / 2 : hnswParams->dim * sizeof(int8_t);
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
@@ -332,7 +338,7 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
     // Create the appropriate disk index based on data type
     if (hnswParams->type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateQuantizedIndexComponents<float, float>(
-            abstractInitParams.allocator, hnswParams->metric, abstractInitParams.dim, false);
+            abstractInitParams.allocator, hnswParams->metric, abstractInitParams.dim, false, use4BitQuantization);
         return new (abstractInitParams.allocator) HNSWDiskIndex<float, float>(
             hnswParams, abstractInitParams, indexComponents, managed_rocksdb->getDB(),
             managed_rocksdb->getCF(), dbPath);
@@ -408,7 +414,7 @@ VecSimIndex *NewIndex(const std::string &folder_path, rocksdb::DB *db,
     // Create the appropriate disk index based on data type
     if (params.type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateQuantizedIndexComponents<float, float>(
-            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
+            abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized, use4BitQuantization);
         return NewDiskIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
                                                        indexComponents, db, cf, version);
     } else {

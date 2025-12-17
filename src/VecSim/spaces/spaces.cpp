@@ -100,6 +100,21 @@ dist_func_t<float> GetDistFunc<uint8_t, float>(VecSimMetric metric, size_t dim,
     throw std::invalid_argument("Invalid metric");
 }
 
+// Get distance function for 4-bit (INT4) quantized vectors
+template <>
+dist_func_t<float> GetDistFunc_INT4<float>(VecSimMetric metric, size_t dim,
+                                           unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+        return Cosine_INT4_GetDistFunc(dim, alignment);
+    case VecSimMetric_IP:
+        return IP_INT4_GetDistFunc(dim, alignment);
+    case VecSimMetric_L2:
+        return L2_INT4_GetDistFunc(dim, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
 template <>
 normalizeVector_f<float> GetNormalizeFunc<float>(void) {
     return normalizeVector_imp<float>;

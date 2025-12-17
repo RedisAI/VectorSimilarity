@@ -153,3 +153,65 @@ float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float norm_v2 = *reinterpret_cast<const float *>(pVect2 + dimension);
     return 1.0f - float(INTEGER_InnerProductImp(pVect1, pVect2, dimension)) / (norm_v1 * norm_v2);
 }
+
+// 4-bit (INT4) Inner Product
+// pVect1 and pVect2 are packed 4-bit vectors: two 4-bit values per byte
+// Low nibble (bits 0-3) contains even indices, high nibble (bits 4-7) contains odd indices
+// Values are in range [0, 15], representing normalized floats in [-1, 1]
+float INT4_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        size_t byte_idx = i / 2;
+        int val1, val2;
+
+        if (i % 2 == 0) {
+            // Low nibble (bits 0-3)
+            val1 = pVect1[byte_idx] & 0x0F;
+            val2 = pVect2[byte_idx] & 0x0F;
+        } else {
+            // High nibble (bits 4-7)
+            val1 = (pVect1[byte_idx] >> 4) & 0x0F;
+            val2 = (pVect2[byte_idx] >> 4) & 0x0F;
+        }
+
+        res += val1 * val2;
+    }
+    return 1.0f - static_cast<float>(res);
+}
+
+// 4-bit (INT4) Cosine similarity
+// Expects norm values stored after the packed vector data
+float INT4_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Calculate the number of bytes used for packed 4-bit values
+    size_t packed_bytes = (dimension + 1) / 2;
+
+    // Norms are stored after the packed data
+    float norm_v1 = *reinterpret_cast<const float *>(pVect1 + packed_bytes);
+    float norm_v2 = *reinterpret_cast<const float *>(pVect2 + packed_bytes);
+
+    int res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        size_t byte_idx = i / 2;
+        int val1, val2;
+
+        if (i % 2 == 0) {
+            // Low nibble (bits 0-3)
+            val1 = pVect1[byte_idx] & 0x0F;
+            val2 = pVect2[byte_idx] & 0x0F;
+        } else {
+            // High nibble (bits 4-7)
+            val1 = (pVect1[byte_idx] >> 4) & 0x0F;
+            val2 = (pVect2[byte_idx] >> 4) & 0x0F;
+        }
+
+        res += val1 * val2;
+    }
+
+    return 1.0f - static_cast<float>(res) / (norm_v1 * norm_v2);
+}

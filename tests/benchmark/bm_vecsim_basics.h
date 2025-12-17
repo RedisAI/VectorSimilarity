@@ -106,6 +106,9 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
         VecSimIndex_DeleteVector(
             GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)), label);
     }
+    if (st.range(0) == INDEX_HNSW_DISK) {
+        dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(index)->flushDeleteBatch();
+    }
     assert(VecSimIndex_IndexSize(index) == initial_index_size);
 }
 

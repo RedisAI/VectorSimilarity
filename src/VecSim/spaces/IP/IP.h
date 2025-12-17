@@ -30,3 +30,7 @@ float INT8_Cosine(const void *pVect1, const void *pVect2, size_t dimension);
 
 float UINT8_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
 float UINT8_Cosine(const void *pVect1, const void *pVect2, size_t dimension);
+
+// 4-bit packed vectors: two 4-bit values per byte
+float INT4_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
+float INT4_Cosine(const void *pVect1, const void *pVect2, size_t dimension);
