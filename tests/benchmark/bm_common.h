@@ -90,13 +90,19 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::Disk(benchmark::State &st, IndexTypeIndex index_type) {
-    auto index = GET_INDEX(index_type);
+    auto index = static_cast<HNSWDiskIndex<data_t, dist_t> *>(GET_INDEX(index_type));
 
     for (auto _ : st) {
         // Do nothing...
     }
+    // Output detailed RocksDB memory usage breakdown
+    auto mem_breakdown = index->getDBMemoryBreakdown();
+    st.counters["rocksdb_memory_total"] = static_cast<double>(mem_breakdown.total);
+    st.counters["rocksdb_memtables"] = static_cast<double>(mem_breakdown.memtables);
+    st.counters["rocksdb_table_readers"] = static_cast<double>(mem_breakdown.table_readers);
+    st.counters["rocksdb_block_cache"] = static_cast<double>(mem_breakdown.block_cache);
+    st.counters["rocksdb_pinned_blocks"] = static_cast<double>(mem_breakdown.pinned_blocks);
     st.counters["db_disk"] = (double)VecSimIndex_StatsInfo(index).db_disk;
-    st.counters["db_memory"] = (double)VecSimIndex_StatsInfo(index).db_memory;
 }
 
 template <typename index_type_t>
@@ -107,6 +113,7 @@ void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex 
     for (auto _ : st) {
         // Do nothing...
     }
+
     st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
     st.counters["vectors_memory"] = (double)VecSimIndex_StatsInfo(index).vectors_memory;
 }
@@ -165,9 +172,13 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         st.counters["cache_misses_per_query"] = static_cast<double>(cache_misses) / iter;
     }
 
-    // Output RocksDB memory usage
-    uint64_t db_memory = hnsw_disk_index->getDBMemorySize();
-    st.counters["rocksdb_memory"] = static_cast<double>(db_memory);
+    // Output detailed RocksDB memory usage breakdown
+    auto mem_breakdown = hnsw_disk_index->getDBMemoryBreakdown();
+    st.counters["rocksdb_memory_total"] = static_cast<double>(mem_breakdown.total);
+    st.counters["rocksdb_memtables"] = static_cast<double>(mem_breakdown.memtables);
+    st.counters["rocksdb_table_readers"] = static_cast<double>(mem_breakdown.table_readers);
+    st.counters["rocksdb_block_cache"] = static_cast<double>(mem_breakdown.block_cache);
+    st.counters["rocksdb_pinned_blocks"] = static_cast<double>(mem_breakdown.pinned_blocks);
 }
 
 // Run TopK using disk-based HNSW index vs BF to measure recall (parallel).
@@ -411,6 +422,13 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
     }
 
+    // Output detailed RocksDB memory usage breakdown
+    auto mem_breakdown = disk_index->getDBMemoryBreakdown();
+    st.counters["rocksdb_memory_total"] = static_cast<double>(mem_breakdown.total);
+    st.counters["rocksdb_memtables"] = static_cast<double>(mem_breakdown.memtables);
+    st.counters["rocksdb_table_readers"] = static_cast<double>(mem_breakdown.table_readers);
+    st.counters["rocksdb_block_cache"] = static_cast<double>(mem_breakdown.block_cache);
+    st.counters["rocksdb_pinned_blocks"] = static_cast<double>(mem_breakdown.pinned_blocks);
 }
 
 template <typename index_type_t>

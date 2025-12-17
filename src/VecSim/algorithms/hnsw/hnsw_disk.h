@@ -166,9 +166,6 @@ protected:
     mutable std::shared_mutex indexDataGuard;
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
 
-    // Global batch operation state
-    mutable vecsim_stl::vector<DiskElementMetaData> new_elements_meta_data;
-
     // Batch processing state
     size_t batchThreshold; // Number of vectors to accumulate before batch update
     vecsim_stl::vector<idType> pendingVectorIds;             // Vector IDs waiting to be indexed
@@ -182,7 +179,7 @@ protected:
     size_t deleteBatchThreshold = 10;
     vecsim_stl::vector<idType> pendingDeleteIds;
 
-    bool useRawData = false;
+    bool useRawData = true;
 
     // In-memory graph updates staging (for delayed disk operations)
     struct GraphUpdate {
@@ -195,7 +192,12 @@ protected:
             : node_id(node_id), level(level), neighbors(allocator) {
             this->neighbors = neighbors;
         }
+        // eq operator
+        bool operator==(const GraphUpdate &other) const {
+            return node_id == other.node_id && level == other.level;
+        }
     };
+
 
     // Staging area for graph updates during batch processing
     // Separate staging areas for insertions and deletions to avoid conflicts
@@ -239,8 +241,7 @@ protected:
     // Temporary storage for raw vectors in RAM (until flush batch)
     // Maps idType -> raw vector data (stored as string for simplicity)
     std::unordered_map<idType, std::string> rawVectorsInRAM;
-    // Cache for raw vectors retrieved from disk (to avoid redundant reads)
-    std::unordered_map<idType, std::string> rawVectorsCache;
+
 
 protected:
     HNSWDiskIndex() = delete; // default constructor is disabled.
@@ -289,6 +290,7 @@ public:
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
     void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     void getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
+    size_t getNeighborsCount(idType nodeId, size_t level) const;
     void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
 
     // Manual control of staged updates
@@ -335,6 +337,7 @@ public:
     void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const;
     bool isMarkedDeleted(idType id) const;
+    bool isMarkedDeleted(labelType id) const;
     labelType getExternalLabel(idType id) const;
 
     // Helper methods for emplacing to heaps (overloaded for idType and labelType)
@@ -403,6 +406,16 @@ public:
     uint64_t getDBMemorySize() const;
     uint64_t getDiskSize() const;
     std::shared_ptr<rocksdb::Statistics> getDBStatistics() const;
+
+    // Get detailed RocksDB memory breakdown
+    struct RocksDBMemoryBreakdown {
+        uint64_t memtables;
+        uint64_t table_readers;
+        uint64_t block_cache;
+        uint64_t pinned_blocks;
+        uint64_t total;
+    };
+    RocksDBMemoryBreakdown getDBMemoryBreakdown() const;
 
 public:
     // Public methods for testing
@@ -492,7 +505,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       idToMetaData(INITIAL_CAPACITY, this->allocator), labelToIdMap(this->allocator), db(db),
       cf(cf), dbPath(dbPath), indexDataGuard(),
       visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-      new_elements_meta_data(this->allocator), batchThreshold(10),
+      batchThreshold(10),
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
       pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
@@ -540,10 +553,6 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
 
     // Clear raw vectors in RAM
     rawVectorsInRAM.clear();
-    rawVectorsCache.clear();
-
-    // Clear delta list and new elements metadata
-    new_elements_meta_data.clear();
 
     // Clear main data structures
     idToMetaData.clear();
@@ -870,19 +879,8 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
         DistType distance = neighbor_data.first;
 
         // Check if the neighbor's neighbor list has capacity
-        // For disk-based implementation, we need to determine if we need to re-evaluate the
-        // neighbor's connections
-
-        // Read the neighbor's current neighbor count from disk to check capacity
-        GraphKey neighborKey(selected_neighbor, level);
-        std::string existing_neighbors_data;
-        rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_neighbors_data);
-
-        size_t current_neighbor_count = 0;
-        if (status.ok()) {
-            current_neighbor_count = existing_neighbors_data.size() / sizeof(idType);
-        }
+        // Use the helper function to get the current neighbor count (checks staged updates too)
+        size_t current_neighbor_count = getNeighborsCount(selected_neighbor, level);
 
         if (current_neighbor_count < max_M_cur) {
             // Neighbor has capacity, just add the new node
@@ -1297,6 +1295,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
                                            size_t ef) const {
 
     std::unordered_set<idType> visited_set;
+    visited_set.reserve(10000);
 
     vecsim_stl::updatable_max_heap<DistType, idType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
@@ -1334,6 +1333,7 @@ vecsim_stl::updatable_max_heap<DistType, labelType>
 HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
     std::unordered_set<idType> visited_set;
+    visited_set.reserve(10000);
 
     vecsim_stl::updatable_max_heap<DistType, labelType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
@@ -1377,6 +1377,15 @@ labelType HNSWDiskIndex<DataType, DistType>::getExternalLabel(idType id) const {
 template <typename DataType, typename DistType>
 bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(idType id) const {
     return id < idToMetaData.size() && isMarkedAs<DELETE_MARK>(id);
+}
+
+template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(labelType id) const {
+    auto it = labelToIdMap.find(id);
+    if (it == labelToIdMap.end()) {
+        return true;
+    }
+    return isMarkedAs<DELETE_MARK>(it->second);
 }
 
 template <typename DataType, typename DistType>
@@ -1508,6 +1517,7 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
                 continue;
             }
             visited_set->insert(candidate_id);
+            // TODO: possibly use cached raw vectors 
             DistType cur_dist =
                 this->calcDistance(data_point, getDataByInternalId(candidate_id));
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
@@ -1726,6 +1736,36 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(labelType nodeId, 
 }
 
 template <typename DataType, typename DistType>
+size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_t level) const {
+    // First check staged graph updates using hash maps for O(1) lookup
+    uint64_t lookup_key = makeRepairKey(nodeId, level);
+
+    // Check insert staging area
+    auto insert_it = stagedInsertMap.find(lookup_key);
+    if (insert_it != stagedInsertMap.end()) {
+        const auto &update = stagedInsertUpdates[insert_it->second];
+       
+        return update.neighbors.size();
+    }
+
+    // If not found in staged updates, check disk
+    GraphKey graphKey(nodeId, level);
+    std::string graph_value;
+    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+
+    if (status.ok()) {
+        
+        const char* ptr = graph_value.data();
+        ptr += this->inputBlobSize;
+        size_t neighbor_count = *reinterpret_cast<const size_t*>(ptr);
+        
+        return neighbor_count;
+    }
+
+    return 0; // Not found
+}
+
+template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::searchPendingVectors(
     const void *query_data, candidatesLabelsMaxHeap<DistType> &top_candidates, size_t k) const {
     for (size_t i = 0; i < pendingVectorCount; i++) {
@@ -1792,6 +1832,7 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
             maxLevel = elementMaxLevel;
         }
     }
+    // std::cout << "processBatch memory: " << this->getAllocationSize()/1024/1024 << " MB" << std::endl;
 
     // Now flush all staged graph updates to disk in a single batch operation
     flushStagedGraphUpdates(stagedInsertUpdates, stagedInsertNeighborUpdates);
@@ -2329,6 +2370,25 @@ template <typename DataType, typename DistType>
 uint64_t HNSWDiskIndex<DataType, DistType>::getAllocationSize() const {
 
     return this->allocator->getAllocationSize();
+}
+
+template <typename DataType, typename DistType>
+typename HNSWDiskIndex<DataType, DistType>::RocksDBMemoryBreakdown
+HNSWDiskIndex<DataType, DistType>::getDBMemoryBreakdown() const {
+    RocksDBMemoryBreakdown breakdown;
+    breakdown.memtables = 0;
+    breakdown.table_readers = 0;
+    breakdown.block_cache = 0;
+    breakdown.pinned_blocks = 0;
+
+    this->db->GetIntProperty(rocksdb::DB::Properties::kSizeAllMemTables, &breakdown.memtables);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kEstimateTableReadersMem, &breakdown.table_readers);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kBlockCacheUsage, &breakdown.block_cache);
+    this->db->GetIntProperty(rocksdb::DB::Properties::kBlockCachePinnedUsage, &breakdown.pinned_blocks);
+    
+    breakdown.total = breakdown.memtables + breakdown.table_readers +
+                      breakdown.block_cache + breakdown.pinned_blocks;
+    return breakdown;
 }
 
 template <typename DataType, typename DistType>
