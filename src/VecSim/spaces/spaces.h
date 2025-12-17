@@ -22,6 +22,10 @@ using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 template <typename DataType, typename DistType>
 dist_func_t<DistType> GetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
 
+// Get distance function for 4-bit (INT4) quantized vectors
+template <typename DistType>
+dist_func_t<DistType> GetDistFunc_INT4(VecSimMetric metric, size_t dim, unsigned char *alignment);
+
 template <typename DataType>
 using normalizeVector_f = void (*)(void *input_vector, const size_t dim);
 

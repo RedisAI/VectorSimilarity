@@ -25,3 +25,6 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension);
 float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
+
+// 4-bit packed vectors: two 4-bit values per byte
+float INT4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);

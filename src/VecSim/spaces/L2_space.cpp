@@ -417,4 +417,15 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
+dist_func_t<float> L2_INT4_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    // For now, only naive implementation - SIMD optimizations can be added later
+    dist_func_t<float> ret_dist_func = INT4_L2Sqr;
+    return ret_dist_func;
+}
+
 } // namespace spaces

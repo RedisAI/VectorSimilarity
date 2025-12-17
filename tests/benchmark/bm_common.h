@@ -193,9 +193,9 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
     pool->reconfigure_threads(concurrency);
 
     auto db_stats = disk_index->getDBStatistics();
-    size_t byte_reads_before = 0;
+    size_t block_cache_miss = 0;
     if (db_stats) {
-        byte_reads_before = db_stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
+        block_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
 
     // Limit by the number of distinct queries we actually have.
@@ -288,16 +288,15 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
 
         // st.counters["concurrency"] = static_cast<double>(concurrency);
         // st.counters["num_queries"] = static_cast<double>(executed_queries);
+        st.counters["avg_ms"] = ms_per_query;
         st.counters["total_time_ms"] = total_ms;
-        st.counters["ms_per_query"] = ms_per_query;
         st.counters["qps"] = qps;
         st.counters["Recall"] = executed_queries ?
             static_cast<double>(correct.load()) / static_cast<double>(k * executed_queries) : 0.0;
 
         if (db_stats && executed_queries > 0) {
-            size_t bytes_read_after = db_stats->getTickerCount(rocksdb::Tickers::BYTES_READ);
-            size_t total_bytes = bytes_read_after - bytes_read_before;
-            st.counters["byte_reads"] = static_cast<double>(total_bytes) / executed_queries;
+            size_t total_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - block_cache_miss;
+            st.counters["cache_misses_per_query"] = static_cast<double>(total_cache_miss) / executed_queries;
         }
     }
 }
@@ -987,16 +986,16 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
 #define REGISTER_TopK_HNSW_DISK_PARALLEL(BM_CLASS, BM_FUNC)                                        \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Args({10, 10, 10})                                                                       \
-        ->Args({200, 10, 10})                                                                      \
-        ->Args({100, 100, 10})                                                                     \
-        ->Args({200, 100, 10})                                                                     \
         ->Args({10, 10, 20})                                                                       \
-        ->Args({200, 10, 20})                                                                      \
-        ->Args({100, 100, 20})                                                                     \
-        ->Args({200, 100, 20})                                                                     \
         ->Args({10, 10, 30})                                                                       \
+        ->Args({200, 10, 10})                                                                      \
+        ->Args({200, 10, 20})                                                                      \
         ->Args({200, 10, 30})                                                                      \
+        ->Args({100, 100, 10})                                                                     \
+        ->Args({100, 100, 20})                                                                     \
         ->Args({100, 100, 30})                                                                     \
+        ->Args({200, 100, 10})                                                                     \
+        ->Args({200, 100, 20})                                                                     \
         ->Args({200, 100, 30})                                                                     \
         ->ArgNames({"ef_runtime", "k", "concurrency"})                                             \
         ->Iterations(1)                                                                            \

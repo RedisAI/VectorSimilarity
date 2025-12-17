@@ -31,4 +31,8 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
                                             const void *arch_opt = nullptr);
 dist_func_t<float> Cosine_SQ8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                           const void *arch_opt = nullptr);
+dist_func_t<float> IP_INT4_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
+                                       const void *arch_opt = nullptr);
+dist_func_t<float> Cosine_INT4_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
+                                           const void *arch_opt = nullptr);
 } // namespace spaces
