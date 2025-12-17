@@ -181,6 +181,12 @@ protected:
 
     bool useRawData = true;
 
+public:
+    // Search metrics counters (for benchmarking)
+    mutable std::atomic_size_t num_visited_nodes;
+    mutable std::atomic_size_t num_visited_nodes_higher_levels;
+
+protected:
     // In-memory graph updates staging (for delayed disk operations)
     struct GraphUpdate {
         idType node_id;
@@ -423,6 +429,7 @@ public:
     size_t indexCapacity() const override;
     size_t indexLabelCount() const override;
     size_t getRandomLevel(double reverse_size);
+    size_t getMaxLevel() const { return maxLevel; }
 
     // Flagging API
     template <Flags FLAG>
@@ -507,8 +514,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       batchThreshold(10),
       pendingVectorIds(this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
-      pendingDeleteIds(this->allocator),
-      stagedInsertUpdates(this->allocator),
+      pendingDeleteIds(this->allocator), num_visited_nodes(0),
+      num_visited_nodes_higher_levels(0), stagedInsertUpdates(this->allocator),
       stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
       stagedInsertNeighborUpdates(this->allocator) {
 
@@ -1279,8 +1286,11 @@ void HNSWDiskIndex<DataType, DistType>::rerankWithRawDistances(
         if (getRawVector(internal_id, raw_vector_buffer.data())) {
             DistType raw_dist = this->calcDistanceRaw(query_data, raw_vector_buffer.data());
             candidate.first = raw_dist;
+        } else {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                "Failed to fetch all raw vectors during reranking, skipping reranking.");
+            return;
         }
-        // If getRawVector fails, keep the original quantized distance
     }
 
     // Re-insert all candidates with updated distances
@@ -1402,6 +1412,7 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
     bool changed;
     idType bestCand = curr_element;
     idType bestNonDeletedCand = bestCand;
+    size_t visited_count = 0;
 
     do {
         changed = false;
@@ -1425,18 +1436,12 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
             idType candidate = neighbors[i];
 
             assert (candidate < curElementCount && "candidate error: out of index range");
-            // const int8_t* q_data = reinterpret_cast<const int8_t*>(data_point);
-            // std::cout << "q_data[0]: " << static_cast<int>(q_data[0]) << std::endl;
-            // std::cout << "q_data[n]: " << static_cast<int>(q_data[this->dim - 1]) << std::endl;
-
-            // const int8_t* v_data = reinterpret_cast<const int8_t*>(getDataByInternalId(candidate));
-            // std::cout << "v_data[0]: " << static_cast<int>(v_data[0]) << std::endl;
-            // std::cout << "v_data[n]: " << static_cast<int>(v_data[this->dim - 1]) << std::endl;
-
+            if (running_query) {
+                visited_count++;
+            }
             // Calculate distance to this candidate
             DistType d = this->calcDistance(data_point, getDataByInternalId(candidate));
-            
-            // std::cout << "d: " << d << " dim:" << this->dim << std::endl << std::endl;
+
             // If this candidate is closer, update our best candidate
             if (d < cur_dist) {
                 cur_dist = d;
@@ -1455,6 +1460,8 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
         curr_element = bestNonDeletedCand;
     } else {
         curr_element = bestCand;
+        // Update the counter for higher level visited nodes
+        num_visited_nodes_higher_levels.fetch_add(visited_count, std::memory_order_relaxed);
     }
 }
 
@@ -1509,6 +1516,8 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
     getNeighbors(curNodeId, level, neighbors);
 
     if (!neighbors.empty()) {
+        num_visited_nodes.fetch_add(1, std::memory_order_relaxed);
+
         for (idType candidate_id : neighbors) {
             // Skip invalid neighbors
             assert(candidate_id < curElementCount);
@@ -1826,6 +1835,12 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
         // Insert into graph if not the first element
         if (entrypointNode != INVALID_ID) {
             insertElementToGraph(vectorId, elementMaxLevel, entrypointNode, maxLevel, raw_vector_data, vector_data);
+            // If the new element has a higher level than the current max level,
+            // it becomes the new entry point
+            if (elementMaxLevel > maxLevel) {
+                entrypointNode = vectorId;
+                maxLevel = elementMaxLevel;
+            }
         } else {
             // First element becomes the entry point
             entrypointNode = vectorId;
