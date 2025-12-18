@@ -393,8 +393,8 @@ int main(int argc, char *argv[]) {
         mock_thread_pool->init_threads();
 
         // Configure the disk index to use the job queue
-        // Use a larger batch threshold for bulk loading (default 10 is too small)
-        const size_t bulk_batch_threshold = 1000;
+        // With sibling injection, larger batches work well (vectors in batch can discover each other)
+        const size_t bulk_batch_threshold = 10;
         if (type == VecSimType_FLOAT32) {
             auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
             if (disk_index) {
@@ -509,27 +509,55 @@ int main(int argc, char *argv[]) {
         std::cout << "\n";
 
         // Flush any remaining pending vectors and wait for those jobs too
-        if (type == VecSimType_FLOAT32) {
-            auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
-            if (disk_index) disk_index->flushBatch();
-        } else if (type == VecSimType_FLOAT64) {
-            auto *disk_index = dynamic_cast<HNSWDiskIndex<double, double> *>(index);
-            if (disk_index) disk_index->flushBatch();
-        } else if (type == VecSimType_BFLOAT16) {
-            auto *disk_index = dynamic_cast<HNSWDiskIndex<bfloat16, float> *>(index);
-            if (disk_index) disk_index->flushBatch();
-        } else if (type == VecSimType_FLOAT16) {
-            auto *disk_index = dynamic_cast<HNSWDiskIndex<float16, float> *>(index);
-            if (disk_index) disk_index->flushBatch();
-        } else if (type == VecSimType_INT8) {
-            auto *disk_index = dynamic_cast<HNSWDiskIndex<int8_t, float> *>(index);
-            if (disk_index) disk_index->flushBatch();
-        } else if (type == VecSimType_UINT8) {
-            auto *disk_index = dynamic_cast<HNSWDiskIndex<uint8_t, float> *>(index);
-            if (disk_index) disk_index->flushBatch();
+        // Keep flushing until all pending vectors are processed
+        size_t pending = 1; // Start with non-zero to enter loop
+        while (pending > 0) {
+            // First wait for any in-progress batch to complete
+            mock_thread_pool->thread_pool_wait();
+
+            // Now try to flush remaining pending vectors
+            if (type == VecSimType_FLOAT32) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
+                if (disk_index) {
+                    disk_index->flushBatch();
+                    pending = disk_index->getPendingInsertCount();
+                }
+            } else if (type == VecSimType_FLOAT64) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<double, double> *>(index);
+                if (disk_index) {
+                    disk_index->flushBatch();
+                    pending = disk_index->getPendingInsertCount();
+                }
+            } else if (type == VecSimType_BFLOAT16) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<bfloat16, float> *>(index);
+                if (disk_index) {
+                    disk_index->flushBatch();
+                    pending = disk_index->getPendingInsertCount();
+                }
+            } else if (type == VecSimType_FLOAT16) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<float16, float> *>(index);
+                if (disk_index) {
+                    disk_index->flushBatch();
+                    pending = disk_index->getPendingInsertCount();
+                }
+            } else if (type == VecSimType_INT8) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<int8_t, float> *>(index);
+                if (disk_index) {
+                    disk_index->flushBatch();
+                    pending = disk_index->getPendingInsertCount();
+                }
+            } else if (type == VecSimType_UINT8) {
+                auto *disk_index = dynamic_cast<HNSWDiskIndex<uint8_t, float> *>(index);
+                if (disk_index) {
+                    disk_index->flushBatch();
+                    pending = disk_index->getPendingInsertCount();
+                }
+            } else {
+                break; // Unknown type, exit loop
+            }
         }
 
-        // Wait again for the flush batch jobs to complete
+        // Final wait for all jobs to complete
         mock_thread_pool->thread_pool_wait();
         std::cout << "All background jobs completed.\n";
 
