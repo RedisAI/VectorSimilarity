@@ -3156,6 +3156,75 @@ TEST(SVSTest, scalar_quantization_query) {
     }
 }
 
+#if defined(__linux__) && defined(__x86_64__)
+TEST(SVSTest, compute_distance) {
+    // Test svs::distance computation for custom data allocations and alignments
+    constexpr size_t dim = 4;
+
+    // get system pagesize
+    size_t page_size = sysconf(_SC_PAGESIZE);
+    ASSERT_GT(page_size, 16);
+
+    // Allocate two consecutive pages: one for data, one as a guard (inaccessible)
+    uint8_t *raw_a = (uint8_t *)mmap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE,
+                                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(raw_a, MAP_FAILED);
+    // Protect the second page to prevent access
+    ASSERT_EQ(mprotect(raw_a + page_size, page_size, PROT_NONE), 0);
+
+    // Allocate the second buffer
+    uint8_t *raw_b = (uint8_t *)mmap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE,
+                                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(raw_b, MAP_FAILED);
+    // Protect the second page to prevent access
+    ASSERT_EQ(mprotect(raw_b + page_size, page_size, PROT_NONE), 0);
+
+    // use last bytes of page for data
+    // Note: Accessing above 'dim' should trigger Memory Access Error.
+    constexpr size_t data_size = dim * sizeof(float);
+    float *a = reinterpret_cast<float *>(raw_a + page_size - data_size);
+    float *b = reinterpret_cast<float *>(raw_b + page_size - data_size);
+
+    std::iota(a, a + dim, 1.f);
+    std::iota(b, b + dim, 2.f);
+
+    // Verify default implementation
+    auto dist_l2 = svs::distance::compute(svs::DistanceL2{}, std::span(a, dim), std::span(b, dim));
+    EXPECT_GT(dist_l2, 0.0);
+    auto dist_ip = svs::distance::compute(svs::DistanceIP{}, std::span(a, dim), std::span(b, dim));
+    EXPECT_GT(dist_ip, 0.0);
+
+    // Verify AVX2 and AVX512 implementations
+    if (svs::detail::avx_runtime_flags.is_avx2_supported()) {
+        // AVX2 implementations
+        auto dist_l2_avx2 = svs::distance::
+            L2Impl<svs::Dynamic, float, float, svs::distance::AVX_AVAILABILITY::AVX2>::compute(
+                a, b, svs::lib::MaybeStatic(dim));
+        auto dist_ip_avx2 = svs::distance::
+            IPImpl<svs::Dynamic, float, float, svs::distance::AVX_AVAILABILITY::AVX2>::compute(
+                a, b, svs::lib::MaybeStatic(dim));
+        EXPECT_DOUBLE_EQ(dist_l2, dist_l2_avx2);
+        EXPECT_DOUBLE_EQ(dist_ip, dist_ip_avx2);
+    }
+
+    if (svs::detail::avx_runtime_flags.is_avx512f_supported()) {
+        // AVX512 implementations
+        auto dist_l2_avx512 = svs::distance::
+            L2Impl<svs::Dynamic, float, float, svs::distance::AVX_AVAILABILITY::AVX512>::compute(
+                a, b, svs::lib::MaybeStatic(dim));
+        auto dist_ip_avx512 = svs::distance::
+            IPImpl<svs::Dynamic, float, float, svs::distance::AVX_AVAILABILITY::AVX512>::compute(
+                a, b, svs::lib::MaybeStatic(dim));
+        EXPECT_DOUBLE_EQ(dist_l2, dist_l2_avx512);
+        EXPECT_DOUBLE_EQ(dist_ip, dist_ip_avx512);
+    }
+
+    // unmap pages
+    munmap(raw_a, 2 * page_size);
+    munmap(raw_b, 2 * page_size);
+}
+#endif // defined(__linux__) && defined(__x86_64__)
+
 #else // HAVE_SVS
 
 TEST(SVSTest, svs_not_supported) {
