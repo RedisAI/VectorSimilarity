@@ -3158,7 +3158,7 @@ TEST(SVSTest, scalar_quantization_query) {
     }
 }
 
-#ifdef __linux__
+#if defined(__linux__) && defined(__x86_64__)
 TEST(SVSTest, compute_distance) {
     // Test svs::distance computation for custom data allocations and alignments
     constexpr size_t dim = 4;
@@ -3196,7 +3196,6 @@ TEST(SVSTest, compute_distance) {
     auto dist_ip = svs::distance::compute(svs::DistanceIP{}, std::span(a, dim), std::span(b, dim));
     EXPECT_GT(dist_ip, 0.0);
 
-#ifdef __x86_64__
     // Verify AVX2 and AVX512 implementations
     if (svs::detail::avx_runtime_flags.is_avx2_supported()) {
         // AVX2 implementations
@@ -3221,13 +3220,12 @@ TEST(SVSTest, compute_distance) {
         EXPECT_DOUBLE_EQ(dist_l2, dist_l2_avx512);
         EXPECT_DOUBLE_EQ(dist_ip, dist_ip_avx512);
     }
-#endif // __x86_64__
 
     // unmap pages
     munmap(raw_a, 2 * page_size);
     munmap(raw_b, 2 * page_size);
 }
-#endif // __linux__
+#endif // defined(__linux__) && defined(__x86_64__)
 
 #else // HAVE_SVS
 
