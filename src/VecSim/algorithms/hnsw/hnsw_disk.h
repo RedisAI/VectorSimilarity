@@ -396,6 +396,9 @@ public:
     void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     void getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     size_t getNeighborsCount(idType nodeId, size_t level) const;
+    // Thread-safe atomic check-and-add for neighbor updates
+    // Returns true if neighbor was added (had capacity), false if full (needs re-evaluation)
+    bool tryAddNeighborIfCapacity(idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity);
     void searchPendingVectors(const void* query_data, candidatesLabelsMaxHeap<DistType>& top_candidates, size_t k) const;
 
     // Manual control of staged updates
@@ -1032,15 +1035,9 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
         idType selected_neighbor = neighbor_data.second;
         DistType distance = neighbor_data.first;
 
-        // Check if the neighbor's neighbor list has capacity
-        // Use the helper function to get the current neighbor count (checks staged updates too)
-        size_t current_neighbor_count = getNeighborsCount(selected_neighbor, level);
-
-        if (current_neighbor_count < max_M_cur) {
-            // Neighbor has capacity, just add the new node
-            std::unique_lock<std::shared_mutex> lock(stagedUpdatesGuard);
-            stagedInsertNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
-        } else {
+        // Use atomic check-and-add to prevent race conditions where multiple threads
+        // think there's capacity and all add neighbors, exceeding max_M_cur
+        if (!tryAddNeighborIfCapacity(selected_neighbor, level, new_node_id, max_M_cur)) {
             // Neighbor is full, need to re-evaluate connections using revisitNeighborConnections
             // logic
             stageRevisitNeighborConnections(new_node_id, selected_neighbor, level, distance);
@@ -2009,15 +2006,35 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(labelType nodeId, 
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_t level) const {
-    // First check staged graph updates using hash maps for O(1) lookup
     uint64_t lookup_key = makeRepairKey(nodeId, level);
+    size_t base_count = 0;
+    bool foundInStaged = false;
+    size_t incrementalCount = 0;
 
-    // Check insert staging area
-    auto insert_it = stagedInsertMap.find(lookup_key);
-    if (insert_it != stagedInsertMap.end()) {
-        const auto &update = stagedInsertUpdates[insert_it->second];
-       
-        return update.neighbors.size();
+    // Check staged updates under lock for thread safety
+    {
+        std::shared_lock<std::shared_mutex> lock(stagedUpdatesGuard);
+
+        // Check insert staging area (complete neighbor list replacements)
+        auto insert_it = stagedInsertMap.find(lookup_key);
+        if (insert_it != stagedInsertMap.end()) {
+            const auto &update = stagedInsertUpdates[insert_it->second];
+            base_count = update.neighbors.size();
+            foundInStaged = true;
+        }
+
+        // Count incremental neighbor updates for this node/level
+        // These are additions on top of the base neighbor list
+        for (const auto &update : stagedInsertNeighborUpdates) {
+            if (update.node_id == nodeId && update.level == level) {
+                incrementalCount++;
+            }
+        }
+    }
+
+    if (foundInStaged) {
+        // Return staged count + incremental updates
+        return base_count + incrementalCount;
     }
 
     // If not found in staged updates, check disk
@@ -2026,15 +2043,82 @@ size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_
     rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
     if (status.ok()) {
-        
         const char* ptr = graph_value.data();
         ptr += this->inputBlobSize;
         size_t neighbor_count = *reinterpret_cast<const size_t*>(ptr);
-        
-        return neighbor_count;
+
+        // Return disk count + incremental updates from staging
+        return neighbor_count + incrementalCount;
     }
 
-    return 0; // Not found
+    return incrementalCount; // Only incremental updates if not found elsewhere
+}
+
+template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::tryAddNeighborIfCapacity(
+    idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity) {
+    // Atomic check-and-add: under a single lock, check capacity and add if there's room
+    // This prevents race conditions where multiple threads think there's capacity
+
+    uint64_t lookup_key = makeRepairKey(nodeId, level);
+
+    std::unique_lock<std::shared_mutex> lock(stagedUpdatesGuard);
+
+    size_t base_count = 0;
+    bool foundInStaged = false;
+    size_t incrementalCount = 0;
+
+    // Check insert staging area (complete neighbor list replacements)
+    auto insert_it = stagedInsertMap.find(lookup_key);
+    if (insert_it != stagedInsertMap.end()) {
+        const auto &update = stagedInsertUpdates[insert_it->second];
+        base_count = update.neighbors.size();
+        foundInStaged = true;
+    }
+
+    // Count incremental neighbor updates for this node/level
+    for (const auto &update : stagedInsertNeighborUpdates) {
+        if (update.node_id == nodeId && update.level == level) {
+            incrementalCount++;
+        }
+    }
+
+    size_t current_count;
+    if (foundInStaged) {
+        current_count = base_count + incrementalCount;
+    } else {
+        // Need to check disk (release lock temporarily for I/O, then re-acquire and re-check)
+        lock.unlock();
+
+        GraphKey graphKey(nodeId, level);
+        std::string graph_value;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+
+        size_t disk_count = 0;
+        if (status.ok()) {
+            const char* ptr = graph_value.data();
+            ptr += this->inputBlobSize;
+            disk_count = *reinterpret_cast<const size_t*>(ptr);
+        }
+
+        // Re-acquire lock and re-count incremental updates (they may have changed)
+        lock.lock();
+        incrementalCount = 0;
+        for (const auto &update : stagedInsertNeighborUpdates) {
+            if (update.node_id == nodeId && update.level == level) {
+                incrementalCount++;
+            }
+        }
+        current_count = disk_count + incrementalCount;
+    }
+
+    // Now atomically decide and add
+    if (current_count < maxCapacity) {
+        stagedInsertNeighborUpdates.emplace_back(nodeId, level, newNeighborId);
+        return true;  // Successfully added
+    }
+
+    return false;  // Neighbor is full, needs re-evaluation
 }
 
 template <typename DataType, typename DistType>
@@ -2198,20 +2282,23 @@ void HNSWDiskIndex<DataType, DistType>::processBatch() {
     stagedInsertMap.clear();
     stagedInsertNeighborUpdates.clear();
 
-    // First pass: Set entry point if not set, or update if we have a higher level vector
-    // This mirrors the original disk-poc algorithm where entry point is updated during processing
+    // Set entry point only if it doesn't exist (matches original disk-poc algorithm)
+    // In the original algorithm, only the first vector becomes entry point when graph is empty.
+    // Subsequent vectors always insert using the existing entry point.
     {
         std::unique_lock<std::shared_mutex> lock(indexDataGuard);
-        for (size_t i = 0; i < processingBatch->count; i++) {
-            idType vectorId = processingBatch->vectorIds[i];
-            // Use direct flag check to avoid recursive lock (isMarkedDeleted takes shared lock)
-            if (__atomic_load_n(&idToMetaData[vectorId].flags, 0) & DELETE_MARK)
-                continue;
+        if (entrypointNode == INVALID_ID) {
+            // Find first non-deleted vector to be the entry point
+            for (size_t i = 0; i < processingBatch->count; i++) {
+                idType vectorId = processingBatch->vectorIds[i];
+                // Use direct flag check to avoid recursive lock (isMarkedDeleted takes shared lock)
+                if (__atomic_load_n(&idToMetaData[vectorId].flags, 0) & DELETE_MARK)
+                    continue;
 
-            DiskElementMetaData &metadata = idToMetaData[vectorId];
-            if (entrypointNode == INVALID_ID || metadata.topLevel > maxLevel) {
+                DiskElementMetaData &metadata = idToMetaData[vectorId];
                 entrypointNode = vectorId;
                 maxLevel = metadata.topLevel;
+                break;  // Only set first non-deleted vector as entry point
             }
         }
     }
