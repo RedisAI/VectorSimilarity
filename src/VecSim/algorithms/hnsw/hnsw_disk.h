@@ -276,6 +276,7 @@ public:
 
     // Batch processing methods
     void processBatch();
+    void processBatchInternal(); // Internal version, assumes lock is held
     void flushBatch(); // Force flush current batch
 
     void processDeleteBatch();
@@ -288,6 +289,7 @@ public:
     void emplaceHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
                        idType id) const;
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
+    void getNeighbors(labelType label, size_t level, vecsim_stl::vector<idType>& result) const;
     void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     void getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     size_t getNeighborsCount(idType nodeId, size_t level) const;
@@ -574,6 +576,10 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = STANDARD_KNN;
 
+    // Take shared lock for the entire query - protects access to vectors container,
+    // metadata, and pending vectors from concurrent modifications by addVector/processBatch
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+
     if ((curElementCount == 0 && pendingVectorCount == 0) || k == 0) {
         return rep;
     }
@@ -581,15 +587,6 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     // Preprocess the query
     auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
-
-    // const float* v_data = reinterpret_cast<const float*>(query_data);
-    // std::cout << "v_data[0]: " << v_data[0] << std::endl;
-    // std::cout << "v_data[n]: " << v_data[this->dim - 1] << std::endl;
-
-    // const int8_t* p_data = reinterpret_cast<const int8_t*>(processed_query);
-    // std::cout << "p_data[0]: " << static_cast<int>(p_data[0]) << std::endl;
-    // std::cout << "p_data[n]: " << static_cast<int>(p_data[this->dim - 1]) << std::endl << std::endl;
-
 
     // Get search parameters
     size_t query_ef = this->ef;
@@ -753,6 +750,8 @@ template <typename DataType, typename DistType>
 int HNSWDiskIndex<DataType, DistType>::addVector(
     const void *vector, labelType label
 ) {
+    // Take exclusive lock for thread-safe metadata updates
+    std::unique_lock<std::shared_mutex> lock(indexDataGuard);
 
     // Store raw vector in RAM first (until flush batch)
     // We need to store the original vector before preprocessing
@@ -793,9 +792,9 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     pendingVectorIds.push_back(newElementId);
     pendingVectorCount++;
 
-    // Process batch if threshold reached
+    // Process batch if threshold reached (lock already held)
     if (pendingVectorCount >= batchThreshold) {
-        processBatch();
+        processBatchInternal();
     }
 
     return 1; // Success
@@ -1015,13 +1014,11 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
                                                                         idType selected_neighbor,
                                                                         size_t level,
                                                                         DistType distance) {
-    // Read the neighbor's current neighbor list from disk
-    // TODO: perhaps cache the neigbhors for stage update
-    GraphKey neighborKey(selected_neighbor, level);
-    std::string graph_value;
-    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &graph_value);
+    // Use getNeighbors() which checks all staged maps and RocksDB
+    vecsim_stl::vector<idType> existing_neighbors(this->allocator);
+    getNeighbors(selected_neighbor, level, existing_neighbors);
 
-    if (!status.ok()) {
+    if (existing_neighbors.empty()) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "  WARNING: Could not read existing neighbors for node %u at level %zu",
                   selected_neighbor, level);
@@ -1029,10 +1026,6 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
         stagedInsertNeighborUpdates.emplace_back(selected_neighbor, level, new_node_id);
         return;
     }
-
-    // Parse existing neighbors using new format
-    vecsim_stl::vector<idType> existing_neighbors(this->allocator);
-    deserializeGraphValue(graph_value, existing_neighbors);
 
     // Collect all candidates: existing neighbors + new node
     candidatesList<DistType> candidates(this->allocator);
@@ -1099,15 +1092,15 @@ idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const void *query_
                                                               void *timeoutCtx,
                                                               VecSimQueryReply_Code *rc) const {
     if (rc) *rc = VecSim_QueryReply_OK;
-    
-    // auto [curr_element, max_level] = safeGetEntryPointState();
-    auto curr_element = entrypointNode;
-    auto max_level = maxLevel;
+
+    // Read entry point state directly - caller must hold shared lock on indexDataGuard
+    idType curr_element = entrypointNode;
+    size_t max_level_local = maxLevel;
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
     DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element));
-    for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; --level) {
+    for (size_t level = max_level_local; level > 0 && curr_element != INVALID_ID; --level) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist);
     }
     return curr_element;
@@ -1406,19 +1399,14 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
     do {
         changed = false;
 
-        // Read neighbors from RocksDB for the current node at this level
-        GraphKey graphKey(bestCand, level);
-        std::string graph_value;
-        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+        // Get neighbors using getNeighbors() which checks staged maps first
+        vecsim_stl::vector<idType> neighbors(this->allocator);
+        getNeighbors(bestCand, level, neighbors);
 
-        if (!status.ok()) {
+        if (neighbors.empty()) {
             // No neighbors found for this node at this level, stop searching
             break;
         }
-
-        // Parse the neighbors using new format
-        vecsim_stl::vector<idType> neighbors(this->allocator);
-        deserializeGraphValue(graph_value, neighbors);
 
         // Check each neighbor to find a better candidate
         for (size_t i = 0; i < neighbors.size(); i++) {
@@ -1656,16 +1644,15 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
     // Also check staged repair updates (already cleaned neighbors waiting to be flushed)
     auto repair_it = stagedRepairMap.find(lookup_key);
     if (repair_it != stagedRepairMap.end()) {
-        auto &update = stagedRepairUpdates[repair_it->second];
+        const auto &update = stagedRepairUpdates[repair_it->second];
         result.reserve(update.neighbors.size());
         for (size_t i = 0; i < update.neighbors.size(); i++) {
             result.push_back(update.neighbors[i]);
         }
         // Filter in case nodes were deleted after this repair was staged
-        if (filterDeletedNodes(result)) {
-            // Update the existing repair entry with the more up-to-date cleaned list
-            update.neighbors = result;
-        }
+        // Note: We don't update the staged repair here to avoid race conditions
+        // during concurrent reads. The repair will be applied during the next write.
+        filterDeletedNodes(result);
         return;
     }
 
@@ -1677,17 +1664,33 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
     if (status.ok()) {
         deserializeGraphValue(graph_value, result);
-        // Filter out deleted nodes and check if any were filtered
-        if (filterDeletedNodes(result)) {
-            // Lazy repair: if we filtered any deleted nodes, stage for cleanup
-            // Use hash map for O(1) duplicate detection
-            uint64_t repair_key = makeRepairKey(nodeId, level);
-            if (stagedRepairMap.find(repair_key) == stagedRepairMap.end()) {
-                stagedRepairMap[repair_key] = stagedRepairUpdates.size();
-                stagedRepairUpdates.emplace_back(nodeId, level, result, this->allocator);
-            }
+    }
+
+    // Also add any pending neighbor additions from stagedInsertNeighborUpdates
+    for (const auto& update : stagedInsertNeighborUpdates) {
+        if (update.node_id == nodeId && update.level == level) {
+            result.push_back(update.new_neighbor_id);
         }
     }
+
+    // Filter out deleted nodes
+    // Note: We don't do lazy repair here to avoid race conditions during
+    // concurrent reads. Repairs should be done during write operations.
+    filterDeletedNodes(result);
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::getNeighbors(labelType label, size_t level,
+                                                     vecsim_stl::vector<idType> &result) const {
+    // Convert label to internal ID and delegate to the idType version
+    auto it = labelToIdMap.find(label);
+    if (it == labelToIdMap.end()) {
+        // Label doesn't exist, return empty result
+        // This can happen if the label is INVALID_LABEL or if the label was deleted
+        result.clear();
+        return;
+    }
+    getNeighbors(it->second, level, result);
 }
 
 template <typename DataType, typename DistType>
@@ -1740,11 +1743,10 @@ size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_
     // First check staged graph updates using hash maps for O(1) lookup
     uint64_t lookup_key = makeRepairKey(nodeId, level);
 
-    // Check insert staging area
+    // Check insert staging area - if found, this is a complete replacement
     auto insert_it = stagedInsertMap.find(lookup_key);
     if (insert_it != stagedInsertMap.end()) {
         const auto &update = stagedInsertUpdates[insert_it->second];
-       
         return update.neighbors.size();
     }
 
@@ -1753,16 +1755,21 @@ size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_
     std::string graph_value;
     rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
 
+    size_t base_count = 0;
     if (status.ok()) {
-        
         const char* ptr = graph_value.data();
         ptr += this->inputBlobSize;
-        size_t neighbor_count = *reinterpret_cast<const size_t*>(ptr);
-        
-        return neighbor_count;
+        base_count = *reinterpret_cast<const size_t*>(ptr);
     }
 
-    return 0; // Not found
+    // Also count any pending neighbor additions from stagedInsertNeighborUpdates
+    for (const auto& update : stagedInsertNeighborUpdates) {
+        if (update.node_id == nodeId && update.level == level) {
+            base_count++;
+        }
+    }
+
+    return base_count;
 }
 
 template <typename DataType, typename DistType>
@@ -1799,6 +1806,15 @@ void HNSWDiskIndex<DataType, DistType>::searchPendingVectors(
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::processBatch() {
+    // Take exclusive lock for thread-safe batch processing
+    std::unique_lock<std::shared_mutex> lock(indexDataGuard);
+    processBatchInternal();
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::processBatchInternal() {
+    // Internal version - assumes caller holds exclusive lock on indexDataGuard
+
     if (pendingVectorCount == 0) {
         return;
     }
