@@ -49,6 +49,7 @@ public:
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_HNSW_DISK(benchmark::State &st);
     static void TopK_HNSW_DISK_Parallel(benchmark::State &st);
+    static void TopK_HNSW_DISK_Parallel_WithInserts(benchmark::State &st);
     static void TopK_HNSW_DISK_MarkDeleted(benchmark::State &st);
     static void TopK_HNSW_DISK_DeleteLabel(benchmark::State &st);
     // Same as DeleteLabel but excludes ground truth vectors from deletion to keep recall stable
@@ -309,6 +310,151 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
             size_t total_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - block_cache_miss;
             st.counters["cache_misses_per_query"] = static_cast<double>(total_cache_miss) / executed_queries;
         }
+    }
+}
+
+// Run TopK using disk-based HNSW index with concurrent inserts from a background writer thread.
+// Measures search QPS and insert throughput while both run concurrently.
+// Test ends when all searches complete; insert count at that time is recorded.
+// st.range(0) = ef_runtime
+// st.range(1) = k
+// st.range(2) = concurrency (number of search threads)
+// st.range(3) = batch_threshold (vectors accumulated before graph update)
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel_WithInserts(benchmark::State &st) {
+    size_t ef = st.range(0);
+    size_t k = st.range(1);
+    size_t concurrency = st.range(2);
+    size_t batch_threshold = st.range(3);
+
+    // Note: We don't reload the index here to avoid cleanup issues.
+    // Each run will add vectors to the existing index.
+    auto hnsw_index = GET_INDEX(INDEX_HNSW_DISK);
+    auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
+
+    auto *pool = BM_VecSimGeneral::mock_thread_pool;
+
+    if (!disk_index || !pool || concurrency == 0) {
+        st.SkipWithError("Disk index or thread pool not available");
+        return;
+    }
+
+    pool->reconfigure_threads(concurrency);
+    disk_index->setBatchThreshold(batch_threshold);
+
+    // Load insert vectors from file
+    const char *inserts_file = "tests/benchmark/data/deep1B-inserts-100K.fbin";
+    std::string inserts_path = BM_VecSimGeneral::AttachRootPath(inserts_file);
+    std::ifstream file(inserts_path, std::ios::binary);
+    if (!file.is_open()) {
+        st.SkipWithError("Failed to open inserts file");
+        return;
+    }
+
+    uint32_t num_insert_vectors = 0;
+    uint32_t insert_dim = 0;
+    file.read(reinterpret_cast<char *>(&num_insert_vectors), sizeof(uint32_t));
+    file.read(reinterpret_cast<char *>(&insert_dim), sizeof(uint32_t));
+
+    size_t index_dim = disk_index->getDim();
+    if (insert_dim != index_dim) {
+        st.SkipWithError("Insert vectors dimension mismatch");
+        return;
+    }
+
+    // Read all insert vectors into memory
+    std::vector<std::vector<float>> insert_vectors(num_insert_vectors);
+    for (size_t i = 0; i < num_insert_vectors; i++) {
+        insert_vectors[i].resize(insert_dim);
+        file.read(reinterpret_cast<char *>(insert_vectors[i].data()), insert_dim * sizeof(float));
+    }
+    file.close();
+
+    // Get starting label for inserts (after existing vectors)
+    labelType next_label = disk_index->indexSize();
+
+    const size_t num_queries = static_cast<size_t>(N_QUERIES);
+
+    for (auto _ : st) {
+        (void)_;
+
+        std::atomic_int correct{0};
+        std::atomic<size_t> vectors_inserted{0};
+        std::atomic<bool> stop_writer{false};
+
+        auto t_start = std::chrono::high_resolution_clock::now();
+
+        // Start background writer thread - inserts continuously until stopped
+        std::thread writer_thread([&]() {
+            size_t insert_idx = 0;
+            while (!stop_writer.load(std::memory_order_relaxed) && insert_idx < num_insert_vectors) {
+                disk_index->addVector(insert_vectors[insert_idx].data(), next_label + insert_idx);
+                vectors_inserted.fetch_add(1, std::memory_order_relaxed);
+                insert_idx++;
+            }
+        });
+
+        // Submit all search queries
+        std::vector<VecSimQueryReply *> all_results(num_queries, nullptr);
+        std::vector<AsyncJob *> jobs(num_queries);
+        std::vector<JobCallback> cbs(num_queries);
+
+        for (size_t q_idx = 0; q_idx < num_queries; ++q_idx) {
+            auto allocator = disk_index->getAllocator();
+            auto search_job = new (allocator)
+                tieredIndexMock::SearchJobMock(allocator, [](AsyncJob *job) {
+                    auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+                    HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
+                    auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+                    size_t q_idx_inner = search_job->iter;
+
+                    auto hnsw_results = VecSimIndex_TopKQuery(
+                        GET_INDEX(INDEX_HNSW_DISK),
+                        QUERIES[q_idx_inner].data(),
+                        search_job->k,
+                        &query_params,
+                        BY_SCORE);
+
+                    search_job->all_results[0] = hnsw_results;
+                    delete job;
+                },
+                                               hnsw_index, k, ef, q_idx, &all_results[q_idx]);
+
+            jobs[q_idx] = search_job;
+            cbs[q_idx] = search_job->Execute;
+        }
+
+        pool->submit_callback_internal(jobs.data(), cbs.data(), num_queries);
+        pool->thread_pool_wait();
+
+        // Stop writer and record time when searches complete
+        auto t_end = std::chrono::high_resolution_clock::now();
+        stop_writer.store(true, std::memory_order_relaxed);
+        writer_thread.join();
+
+        double total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+        size_t final_vectors_inserted = vectors_inserted.load();
+
+        // Measure recall
+        for (size_t q_idx = 0; q_idx < num_queries; ++q_idx) {
+            auto bf_results = BM_VecSimIndex<fp32_index_t>::TopKGroundTruth(q_idx, k);
+            BM_VecSimGeneral::MeasureRecall(all_results[q_idx], bf_results, correct);
+            VecSimQueryReply_Free(bf_results);
+            VecSimQueryReply_Free(all_results[q_idx]);
+        }
+
+        double qps = total_ms > 0.0 ?
+            static_cast<double>(num_queries) / (total_ms / 1000.0) : 0.0;
+        double inserts_per_sec = total_ms > 0.0 ?
+            static_cast<double>(final_vectors_inserted) / (total_ms / 1000.0) : 0.0;
+
+        st.counters["total_time_ms"] = total_ms;
+        st.counters["search_qps"] = qps;
+        st.counters["insert_qps"] = inserts_per_sec;
+        st.counters["Recall"] = num_queries ?
+            static_cast<double>(correct.load()) / static_cast<double>(k * num_queries) : 0.0;
+        st.counters["vectors_inserted"] = static_cast<double>(final_vectors_inserted);
+        st.counters["index_size_after"] = static_cast<double>(disk_index->indexSize());
     }
 }
 
@@ -1016,6 +1162,23 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({200, 100, 20})                                                                     \
         ->Args({200, 100, 30})                                                                     \
         ->ArgNames({"ef_runtime", "k", "concurrency"})                                             \
+        ->Iterations(1)                                                                            \
+        ->Unit(benchmark::kMillisecond)
+
+// {ef_runtime, k, concurrency, batch_threshold}
+// Test parallel search with concurrent background inserts (single writer thread)
+#define REGISTER_TopK_HNSW_DISK_PARALLEL_WITH_INSERTS(BM_CLASS, BM_FUNC)                           \
+    BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
+        ->Args({200, 10, 10, 10})                                                                  \
+        ->Args({200, 10, 20, 10})                                                                  \
+        ->Args({200, 10, 30, 10})                                                                  \
+        ->Args({200, 10, 10, 100})                                                                 \
+        ->Args({200, 10, 20, 100})                                                                 \
+        ->Args({200, 10, 30, 100})                                                                 \
+        ->Args({200, 10, 10, 1000})                                                                \
+        ->Args({200, 10, 20, 1000})                                                                \
+        ->Args({200, 10, 30, 1000})                                                                \
+        ->ArgNames({"ef_runtime", "k", "concurrency", "batch_threshold"})                          \
         ->Iterations(1)                                                                            \
         ->Unit(benchmark::kMillisecond)
 
