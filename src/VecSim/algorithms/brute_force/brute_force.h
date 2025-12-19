@@ -80,6 +80,8 @@ public:
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
     }
+
+    size_t indexMetaDataCapacity() const override { return idToLabelMapping.capacity(); }
 #endif
 
 protected:
