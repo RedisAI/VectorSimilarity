@@ -943,18 +943,28 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     }
 
     ASSERT_EQ(index.getNumMarkedDeleted(), n / 2);
-    ASSERT_EQ(index.indexSize(), n);
+    // indexSize() returns active elements (curElementCount - numMarkedDeleted) in disk mode
+    ASSERT_EQ(index.indexSize(), n / 2);
 
     // Search for k results around the middle. Expect to find only non-deleted results.
     auto verify_res_half = [&](size_t id, double score, size_t result_index) {
+        // Verify the result is not from the deleted set
         ASSERT_NE(id % 2, ep_reminder);
         size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
         // The results alternate between below and above 50, with pairs at the same distance
-        // Pattern: 49,51 (diff=1), 47,53 (diff=3), 45,55 (diff=5), etc.
-        // So expected_diff = result_index | 1 (make it odd)
-        size_t expected_diff = result_index | 1;
+        // If ep_reminder == 0 (deleted even), remaining are odd: 49,51 (diff=1), 47,53 (diff=3), etc.
+        //   Pattern: expected_diff = (result_index + 1) | 1 = make it odd, starting from 1
+        // If ep_reminder == 1 (deleted odd), remaining are even: 50 (diff=0), 48,52 (diff=2), etc.
+        //   Pattern: expected_diff = ((result_index + 1) / 2) * 2 = pairs of even numbers
+        size_t expected_diff;
+        if (ep_reminder == 0) {
+            // Deleted even, remaining odd
+            expected_diff = (result_index + 1) | 1;
+        } else {
+            // Deleted odd, remaining even
+            expected_diff = ((result_index + 1) / 2) * 2;
+        }
         ASSERT_EQ(diff_id, expected_diff);
-        // ASSERT_EQ(score, (dim * expected_diff * expected_diff));
     };
 
     // Run search test after marking deleted
@@ -986,7 +996,11 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
         }
     }
 
-    ASSERT_EQ(index.indexSize(), n + n / 2 + 1);
+    // indexSize() returns active elements (curElementCount - numMarkedDeleted)
+    // curElementCount = n + 1 + n/2 = 151 (original + 1 new + re-added)
+    // numMarkedDeleted = n/2 = 50
+    // indexSize() = 151 - 50 = 101 = n + 1
+    ASSERT_EQ(index.indexSize(), n + 1);
     ASSERT_EQ(index.getNumMarkedDeleted(), n / 2);
 
     // Search for k results around the middle again. Expect to find the same results we
@@ -1063,8 +1077,9 @@ TEST_F(HNSWDiskIndexTest, BatchedDeletionTest) {
     index.flushDeleteBatch();
 
     // Verify the index size and label count
-    // Note: indexSize includes marked deleted vectors
-    ASSERT_EQ(index.indexSize(), n);
+    // indexSize() returns active elements (curElementCount - numMarkedDeleted)
+    // deleted_count = n/2
+    ASSERT_EQ(index.indexSize(), n - deleted_count);
     ASSERT_EQ(index.indexLabelCount(), n - deleted_count);
 
     // Verify that deleted vectors cannot be deleted again (they don't exist)
@@ -1189,10 +1204,11 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
     index.flushDeleteBatch();
 
     // Verify index state
-    // indexSize() returns curElementCount (highest ID + 1)
-    // Without ID recycling, curElementCount grows with each insertion.
-    // After initial_count insertions + insert_count new insertions = initial_count + insert_count
-    ASSERT_EQ(index.indexSize(), initial_count + insert_count);
+    // indexSize() returns active elements (curElementCount - numMarkedDeleted)
+    // curElementCount = initial_count + insert_count (no ID recycling)
+    // numMarkedDeleted = delete_count
+    // indexSize() = initial_count + insert_count - delete_count
+    ASSERT_EQ(index.indexSize(), initial_count + insert_count - delete_count);
     // indexLabelCount() returns labelToIdMap.size() which reflects active (non-deleted) labels
     // So it should be: initial_count - delete_count + insert_count = 100 - 20 + 20 = 100
     ASSERT_EQ(index.indexLabelCount(), initial_count - delete_count + insert_count);
@@ -1260,9 +1276,11 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
     index.flushDeleteBatch();
 
     // Final verification
-    // Without ID recycling, indexSize() grows with each insertion.
-    // Total insertions: initial_count + 20 (Phase 2) + 10 (Phase 6) = initial_count + 30
-    ASSERT_EQ(index.indexSize(), initial_count + 30);
+    // indexSize() returns active elements (curElementCount - numMarkedDeleted)
+    // curElementCount = initial_count + 30 (total insertions)
+    // numMarkedDeleted = 30 (total deletions)
+    // indexSize() = initial_count + 30 - 30 = initial_count
+    ASSERT_EQ(index.indexSize(), initial_count);
     // indexLabelCount() = initial_count - total_deletes + total_inserts = 100 - 30 + 30 = 100
     size_t expected_label_count = initial_count - 30 + 30; // deleted 30 total, added 30 total
     ASSERT_EQ(index.indexLabelCount(), expected_label_count);

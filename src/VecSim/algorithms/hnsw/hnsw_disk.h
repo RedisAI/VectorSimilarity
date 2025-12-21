@@ -368,13 +368,14 @@ protected:
     static constexpr size_t NUM_CACHE_STRIPES = 64;  // Power of 2 for efficient modulo
 
     // Cache stripe structure - each stripe is cache-line aligned to prevent false sharing
-    struct CacheStripe {
+    struct alignas(64) CacheStripe {
         std::shared_mutex guard;
         std::unordered_map<uint64_t, std::vector<idType>> cache;
         std::unordered_set<uint64_t> dirty;
         // Track nodes created in current batch (never written to disk yet)
         // This helps avoid disk lookups for new nodes
         std::unordered_set<uint64_t> newNodes;
+        char padding[64]; // Ensure no overlap
 
         CacheStripe() = default;
         CacheStripe(const CacheStripe&) = delete;
@@ -485,9 +486,12 @@ public:
     void writeDirtyNodesToDisk(const vecsim_stl::vector<uint64_t> &modifiedNodes,
                                const void *newVectorRawData, idType newVectorId);
 
-    // Synchronous fallback for batchless mode without job queue
-    void executeInsertAndWriteSynchronously(idType vectorId, size_t elementMaxLevel,
-                                            const void *rawVectorData, const void *processedVectorData);
+    // Unified core function for graph insertion - used by both single-threaded and multi-threaded paths
+    // immediateFlush: true = write to disk immediately (single-threaded), false = batched writes (multi-threaded)
+    void executeGraphInsertionCore(idType vectorId, size_t elementMaxLevel,
+                                   idType entryPoint, size_t globalMaxLevel,
+                                   const void *rawVectorData, const void *processedVectorData,
+                                   bool immediateFlush);
 
     // Helper to write a single vector's entry to disk
     void writeVectorToDisk(idType vectorId, const void *rawVectorData,
@@ -517,6 +521,8 @@ protected:
     inline bool filterDeletedNodes(vecsim_stl::vector<idType>& neighbors) const {
         size_t original_size = neighbors.size();
         size_t elementCount = curElementCount.load(std::memory_order_acquire);
+        // Hold shared lock to prevent idToMetaData resize during access
+        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
         size_t metadataSize = idToMetaData.size();
         auto new_end = std::remove_if(neighbors.begin(), neighbors.end(),
             [this, elementCount, metadataSize](idType id) {
@@ -568,7 +574,7 @@ public:
                        DistType dist, idType id) const;
 
     template <typename Identifier>
-    void processCandidate(Identifier candidate_id, const void *data_point, size_t level, size_t ef,
+    void processCandidate(idType curNodeId, const void *data_point, size_t level, size_t ef,
                           std::unordered_set<idType> *visited_set,
                           vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
                           candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const;
@@ -1068,9 +1074,11 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // Each vector is processed immediately and written to disk
     // Get entry point info
     idType currentEntryPoint;
+    size_t currentMaxLevel;
     {
         std::shared_lock<std::shared_mutex> lock(indexDataGuard);
         currentEntryPoint = entrypointNode;
+        currentMaxLevel = maxLevel;
     }
 
     // Handle first vector (becomes entry point)
@@ -1099,7 +1107,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
     // Check if we have a job queue for async processing
     if (SubmitJobsToQueue != nullptr) {
-        // Create job with vector data copies
+        // Multi-threaded: submit job for async processing
         std::string rawVectorCopy(raw_data, this->inputBlobSize);
         std::string processedVectorCopy(
             reinterpret_cast<const char *>(processedBlobs.getStorageBlob()),
@@ -1112,9 +1120,10 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
         submitSingleJob(job);
     } else {
-        // Synchronous fallback
-        executeInsertAndWriteSynchronously(newElementId, elementMaxLevel, vector,
-                                           processedBlobs.getStorageBlob());
+        // Single-threaded: execute inline with immediate disk write
+        executeGraphInsertionCore(newElementId, elementMaxLevel, currentEntryPoint,
+                                  currentMaxLevel, vector, processedBlobs.getStorageBlob(),
+                                  true /* immediateFlush */);
     }
 
     return 1;
@@ -1709,7 +1718,9 @@ HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *d
         }
         candidate_set.pop();
 
-        processCandidate(getExternalLabel(curr_el_pair.second), data_point, layer, ef,
+        // Pass internal ID to processCandidate - getNeighbors expects idType, not labelType
+        // The emplaceHeap overload handles conversion to labelType for top_candidates
+        processCandidate(curr_el_pair.second, data_point, layer, ef,
                          &visited_set, top_candidates,
                          candidate_set, lowerBound);
     }
@@ -1859,7 +1870,7 @@ size_t HNSWDiskIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
 template <typename DataType, typename DistType>
 template <typename Identifier>
 void HNSWDiskIndex<DataType, DistType>::processCandidate(
-    Identifier curNodeId, const void *data_point, size_t level, size_t ef, std::unordered_set<idType> *visited_set,
+    idType curNodeId, const void *data_point, size_t level, size_t ef, std::unordered_set<idType> *visited_set,
     vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
     assert(visited_set != nullptr);
@@ -1954,7 +1965,9 @@ size_t HNSWDiskIndex<DataType, DistType>::indexCapacity() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::indexSize() const {
-    return this->curElementCount - this->numMarkedDeleted;
+    // Return active element count (curElementCount never decreases in disk mode,
+    // so we subtract numMarkedDeleted to get the actual number of active elements)
+    return curElementCount.load(std::memory_order_acquire) - this->numMarkedDeleted;
 }
 
 template <typename DataType, typename DistType>
@@ -1986,7 +1999,6 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
     uint64_t lookup_key = makeRepairKey(nodeId, level);
     bool foundInCache = false;
-    bool foundOnDisk = false;
 
     // Step 1: Check cache first (source of truth for pending updates)
     {
@@ -2042,20 +2054,15 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
         if (status.ok()) {
             deserializeGraphValue(graph_value, result);
-            foundOnDisk = true;
         }
     }
 
-    // Filter out deleted nodes and check if any were filtered
-    if (filterDeletedNodes(result) && foundOnDisk) {
-        // Lazy repair: if we filtered any deleted nodes from disk data, stage for cleanup
-        std::lock_guard<std::shared_mutex> repairLock(stagedUpdatesGuard);
-        uint64_t repair_key = makeRepairKey(nodeId, level);
-        if (stagedRepairMap.find(repair_key) == stagedRepairMap.end()) {
-            stagedRepairMap[repair_key] = stagedRepairUpdates.size();
-            stagedRepairUpdates.emplace_back(nodeId, level, result, this->allocator);
-        }
-    }
+    // Note: We do NOT filter deleted nodes here. During search, we need to explore
+    // through deleted nodes to find non-deleted neighbors. The filtering happens in
+    // processCandidate when adding to top_candidates (via isMarkedDeletedUnsafe check).
+    //
+    // Lazy repair for deleted nodes is handled separately when we detect stale edges
+    // during graph maintenance operations, not during search.
 }
 
 template <typename DataType, typename DistType>
@@ -3284,9 +3291,10 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry_point_id = entrypointNode;
     size_t currentMaxLevel = maxLevel;
 
-    // Try to find a new entrypoint at the current max level
-    while (currentMaxLevel > 0) {
-        // First, try to find a neighbor of the old entrypoint at the top level
+    // Try to find a new entrypoint at the current max level (including level 0)
+    // Use a do-while or check >= 0 to include level 0
+    while (true) {
+        // First, try to find a neighbor of the old entrypoint at this level
         GraphKey graphKey(old_entry_point_id, currentMaxLevel);
         std::string graph_value;
         rocksdb::Status status =
@@ -3299,7 +3307,8 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
 
             // Try to find a non-deleted neighbor
             for (size_t i = 0; i < neighbors.size(); i++) {
-                if (!(idToMetaData[neighbors[i]].flags & DELETE_MARK)) {
+                if (neighbors[i] < idToMetaData.size() &&
+                    !(idToMetaData[neighbors[i]].flags & DELETE_MARK)) {
                     entrypointNode = neighbors[i];
                     maxLevel = currentMaxLevel;
                     return;
@@ -3312,7 +3321,7 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
         for (idType id = 0; id < elementCount; id++) {
             if (id != old_entry_point_id && id < idToMetaData.size() &&
                 idToMetaData[id].label != INVALID_LABEL &&
-                idToMetaData[id].topLevel == currentMaxLevel &&
+                idToMetaData[id].topLevel >= currentMaxLevel &&
                 !(idToMetaData[id].flags & DELETE_MARK)) {
                 entrypointNode = id;
                 maxLevel = currentMaxLevel;
@@ -3321,6 +3330,7 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
         }
 
         // No non-deleted nodes at this level, decrease maxLevel and try again
+        if (currentMaxLevel == 0) break;
         currentMaxLevel--;
     }
 
@@ -3863,9 +3873,6 @@ void HNSWDiskIndex<DataType, DistType>::executeSingleInsertJob(HNSWDiskSingleIns
         return;
     }
 
-    const void *raw_vector = job->rawVectorData.data();
-    const void *processed_vector = job->processedVectorData.data();
-
     // Get current entry point
     idType currentEntryPoint;
     size_t currentMaxLevel;
@@ -3875,86 +3882,60 @@ void HNSWDiskIndex<DataType, DistType>::executeSingleInsertJob(HNSWDiskSingleIns
         currentMaxLevel = maxLevel;
     }
 
-    if (currentEntryPoint == INVALID_ID || job->vectorId == currentEntryPoint) {
-        // This is the entry point or no entry point set - nothing to connect
-        // Still need to remove from rawVectorsInRAM
-        {
-            std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
-            rawVectorsInRAM.erase(job->vectorId);
-        }
-        delete job;
-        return;
-    }
-
-    // Track modified nodes for disk write
-    vecsim_stl::vector<uint64_t> modifiedNodes(this->allocator);
-
-    // Insert into graph using batchless method (updates cache immediately)
-    insertElementToGraphBatchless(job->vectorId, job->elementMaxLevel, currentEntryPoint,
-                                  currentMaxLevel, raw_vector, processed_vector, modifiedNodes);
-
-    // Check if we should flush dirty nodes to disk (batched disk writes for performance)
-    // Use atomic counter for fast threshold check without locking
-    bool shouldFlush = (diskWriteBatchThreshold > 0 &&
-                        totalDirtyCount_.load(std::memory_order_relaxed) >= diskWriteBatchThreshold);
-
-    if (shouldFlush) {
-        flushDirtyNodesToDisk();
-    }
-
-    // Update entry point if this vector has higher level
-    if (job->elementMaxLevel > currentMaxLevel) {
-        std::unique_lock<std::shared_mutex> lock(indexDataGuard);
-        if (job->elementMaxLevel > maxLevel) {
-            entrypointNode = job->vectorId;
-            maxLevel = job->elementMaxLevel;
-        }
-    }
+    // Use unified core function with batched flush (multi-threaded mode)
+    executeGraphInsertionCore(job->vectorId, job->elementMaxLevel, currentEntryPoint,
+                              currentMaxLevel, job->rawVectorData.data(),
+                              job->processedVectorData.data(),
+                              false /* immediateFlush = batched */);
 
     delete job;
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::executeInsertAndWriteSynchronously(
-    idType vectorId, size_t elementMaxLevel, const void *rawVectorData,
-    const void *processedVectorData) {
+void HNSWDiskIndex<DataType, DistType>::executeGraphInsertionCore(
+    idType vectorId, size_t elementMaxLevel,
+    idType entryPoint, size_t globalMaxLevel,
+    const void *rawVectorData, const void *processedVectorData,
+    bool immediateFlush) {
 
-    // Get current entry point
-    idType currentEntryPoint;
-    size_t currentMaxLevel;
-    {
-        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
-        currentEntryPoint = entrypointNode;
-        currentMaxLevel = maxLevel;
-    }
-
-    if (currentEntryPoint == INVALID_ID || vectorId == currentEntryPoint) {
-        // Still need to remove from rawVectorsInRAM
-        {
+    if (entryPoint == INVALID_ID || vectorId == entryPoint) {
+        // Entry point or first vector - nothing to connect
+        if (immediateFlush) {
             std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
             rawVectorsInRAM.erase(vectorId);
         }
         return;
     }
 
-    // Track modified nodes
+    // Track modified nodes for disk write
     vecsim_stl::vector<uint64_t> modifiedNodes(this->allocator);
 
-    // Insert into graph
-    insertElementToGraphBatchless(vectorId, elementMaxLevel, currentEntryPoint, currentMaxLevel,
-                                  rawVectorData, processedVectorData, modifiedNodes);
-
-    // Write to disk
-    writeDirtyNodesToDisk(modifiedNodes, rawVectorData, vectorId);
-
-    // Remove raw vector from RAM now that it's on disk
+    // Hold shared lock during graph insertion to prevent idToMetaData resize
+    // while we're reading from it in searchLayer/processCandidate
     {
-        std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
-        rawVectorsInRAM.erase(vectorId);
+        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+        // Insert into graph using cache-based method
+        insertElementToGraphBatchless(vectorId, elementMaxLevel, entryPoint, globalMaxLevel,
+                                      rawVectorData, processedVectorData, modifiedNodes);
     }
 
-    // Update entry point if needed
-    if (elementMaxLevel > currentMaxLevel) {
+    // Handle disk writes based on mode
+    if (immediateFlush) {
+        // Single-threaded: write immediately
+        writeDirtyNodesToDisk(modifiedNodes, rawVectorData, vectorId);
+
+        std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
+        rawVectorsInRAM.erase(vectorId);
+    } else {
+        // Multi-threaded: batched writes based on threshold
+        if (diskWriteBatchThreshold > 0 &&
+            totalDirtyCount_.load(std::memory_order_relaxed) >= diskWriteBatchThreshold) {
+            flushDirtyNodesToDisk();
+        }
+    }
+
+    // Update entry point if this vector has higher level
+    if (elementMaxLevel > globalMaxLevel) {
         std::unique_lock<std::shared_mutex> lock(indexDataGuard);
         if (elementMaxLevel > maxLevel) {
             entrypointNode = vectorId;
