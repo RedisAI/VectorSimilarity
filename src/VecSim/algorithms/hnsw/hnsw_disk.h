@@ -33,7 +33,6 @@
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
-#include "VecSim/algorithms/hnsw/sparse_visited_set.h"
 #include "VecSim/algorithms/hnsw/hnsw.h" // For HNSWAddVectorState definition
 #include "VecSim/utils/updatable_heap.h"
 
