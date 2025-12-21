@@ -258,6 +258,7 @@ typedef enum {
     SVS_BATCH_UPDATE_JOB,
     HNSW_DISK_INSERT_VECTOR_JOB,
     HNSW_DISK_FLUSH_UPDATES_JOB,
+    HNSW_DISK_SINGLE_INSERT_JOB, // Batchless: single vector insert from start to disk write
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 

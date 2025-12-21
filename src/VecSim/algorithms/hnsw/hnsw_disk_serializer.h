@@ -62,7 +62,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       stagedInsertUpdates(this->allocator),
       stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
       stagedInsertNeighborUpdates(this->allocator),
-      jobQueue(nullptr), jobQueueCtx(nullptr), SubmitJobsToQueue(nullptr) {
+      jobQueue(nullptr), jobQueueCtx(nullptr), SubmitJobsToQueue(nullptr),
+      cacheStripes_(new CacheStripe[NUM_CACHE_STRIPES]) {
 
     // Restore index fields from file (including batchThreshold)
     this->restoreIndexFields(input);
