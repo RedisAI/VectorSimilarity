@@ -693,7 +693,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(INITIAL_CAPACITY, this->allocator), labelToIdMap(this->allocator), db(db),
       cf(cf), dbPath(dbPath), indexDataGuard(),
-      visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator), pendingMetadata(this->allocator), pendingVectorCount(0),
+      visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       pendingDeleteIds(this->allocator), num_visited_nodes(0),
       num_visited_nodes_higher_levels(0), stagedInsertUpdates(this->allocator),
       stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
