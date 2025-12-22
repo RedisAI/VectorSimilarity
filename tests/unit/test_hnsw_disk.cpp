@@ -375,11 +375,8 @@ TEST_F(HNSWDiskIndexTest, AddVectorTest) {
     auto test_vector2 = createRandomVector(dim, rng);
     normalizeVector(test_vector2);
 
-    // Add vector to batch (should be stored in memory)
+    // Add vector (written to disk immediately in batchless mode)
     index.addVector(test_vector2.data(), label2);
-
-    // Force flush the batch to disk
-    index.flushBatch();
 
     // Test 3: Query to verify both vectors were added correctly
     VecSimQueryParams queryParams;
@@ -494,10 +491,7 @@ TEST_F(HNSWDiskIndexTest, BatchingTest) {
     EXPECT_EQ(index.indexSize(), 15);
     EXPECT_EQ(index.indexLabelCount(), 15);
 
-    // Force flush to process the batch
-    index.flushBatch();
-
-    // Verify that vectors are now on disk
+    // Vectors are written to disk immediately in batchless mode
     EXPECT_EQ(index.indexSize(), 15);
     EXPECT_EQ(index.indexLabelCount(), 15);
 
@@ -586,8 +580,7 @@ TEST_F(HNSWDiskIndexTest, HierarchicalSearchTest) {
         index.addVector(test_vectors[i].data(), labels[i]);
     }
 
-    // Force flush to process all vectors
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
 
     std::cout << "\n=== Index state after adding vectors ===" << std::endl;
     std::cout << "Index size: " << index.indexSize() << std::endl;
@@ -1057,8 +1050,7 @@ TEST_F(HNSWDiskIndexTest, BatchedDeletionTest) {
         index.addVector(vec.data(), label);
     }
 
-    // Flush any pending batches
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
 
     // Verify all vectors were added
     ASSERT_EQ(index.indexSize(), n);
@@ -1168,8 +1160,7 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Flush any pending batches
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
 
     ASSERT_EQ(index.indexSize(), initial_count);
     ASSERT_EQ(index.indexLabelCount(), initial_count);
@@ -1199,8 +1190,7 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
         ASSERT_EQ(insert_ret, 1) << "Failed to add vector " << insert_label;
     }
 
-    // Flush any pending batches
-    index.flushBatch();
+    // Vectors are written to disk immediately, flush pending deletes
     index.flushDeleteBatch();
 
     // Verify index state
@@ -1271,8 +1261,7 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
         }
     }
 
-    // Flush any pending batches
-    index.flushBatch();
+    // Vectors are written to disk immediately, flush pending deletes
     index.flushDeleteBatch();
 
     // Final verification
@@ -1337,8 +1326,7 @@ TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Flush to disk so all graph data is persisted
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
 
     ASSERT_EQ(index.indexSize(), n);
     ASSERT_EQ(index.indexLabelCount(), n);
@@ -1479,8 +1467,7 @@ TEST_F(HNSWDiskIndexTest, GraphRepairBidirectionalEdges) {
         }
     }
 
-    // Flush to disk
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
     ASSERT_EQ(index.indexSize(), n);
 
     // Delete a vector from the middle of a cluster (should trigger repair)
@@ -1594,8 +1581,7 @@ TEST_F(HNSWDiskIndexTest, UnidirectionalEdgeCleanup) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Flush to disk
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
     ASSERT_EQ(index.indexSize(), n);
 
     // Delete some vectors - this may create unidirectional dangling edges
@@ -1711,8 +1697,7 @@ TEST_F(HNSWDiskIndexTest, GraphRepairWithHeuristic) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Flush to disk
-    index.flushBatch();
+    // Vectors are written to disk immediately in batchless mode
     ASSERT_EQ(index.indexSize(), n);
 
     // Delete a vector that likely has many neighbors

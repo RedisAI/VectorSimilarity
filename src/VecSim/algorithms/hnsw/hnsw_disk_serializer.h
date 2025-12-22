@@ -56,16 +56,14 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-       batchThreshold(0), // Will be restored from file
-      pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
-      pendingVectorCount(0), pendingDeleteIds(this->allocator),
+      pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
       stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
       stagedInsertNeighborUpdates(this->allocator),
       jobQueue(nullptr), jobQueueCtx(nullptr), SubmitJobsToQueue(nullptr),
-      cacheStripes_(new CacheStripe[NUM_CACHE_STRIPES]) {
+      cacheSegments_(new CacheSegment[NUM_CACHE_SEGMENTS]) {
 
-    // Restore index fields from file (including batchThreshold)
+    // Restore index fields from file
     this->restoreIndexFields(input);
 
     // Validate the restored fields
@@ -260,14 +258,11 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, Enc
  */
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
-    // Flush any pending updates before saving to ensure consistent snapshot
-    this->flushStagedUpdates();
-    this->flushBatch();
+    // Flush any pending delete updates before saving to ensure consistent snapshot
+    this->flushStagedDeleteUpdates();
+    this->flushDirtyNodesToDisk();
     // Verify that all pending state has been flushed
     // These assertions ensure data integrity during serialization
-    if (!pendingVectorIds.empty()) {
-        throw std::runtime_error("Serialization error: pendingVectorIds not empty after flush");
-    }
     if (!stagedInsertUpdates.empty()) {
         throw std::runtime_error("Serialization error: stagedInsertUpdates not empty after flush");
     }
@@ -279,9 +274,6 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     }
     if (!rawVectorsInRAM.empty()) {
         throw std::runtime_error("Serialization error: rawVectorsInRAM not empty after flush");
-    }
-    if (pendingVectorCount != 0) {
-        throw std::runtime_error("Serialization error: pendingVectorCount not zero after flush");
     }
     if (!stagedRepairUpdates.empty()) {
         throw std::runtime_error("Serialization error: stagedRepairUpdates not empty after flush");
@@ -612,8 +604,10 @@ void HNSWDiskIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input)
     Serializer::readBinaryPOD(input, this->maxLevel);
     Serializer::readBinaryPOD(input, this->entrypointNode);
 
-    // Restore batch processing configuration
-    Serializer::readBinaryPOD(input, this->batchThreshold);
+    // Restore batch processing configuration (legacy field, now unused - read and discard)
+    size_t legacyBatchThreshold;
+    Serializer::readBinaryPOD(input, legacyBatchThreshold);
+    (void)legacyBatchThreshold; // Suppress unused warning
 
     // Restore dbPath (string: length + data)
     size_t dbPathLength;
@@ -700,9 +694,6 @@ void HNSWDiskIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
              "RocksDB checkpoint loaded. Vectors will be loaded on-demand from disk during queries.");
 
     // Clear any pending state (must be empty after deserialization)
-    this->pendingVectorIds.clear();
-    this->pendingMetadata.clear();
-    this->pendingVectorCount = 0;
     this->stagedInsertUpdates.clear();
     this->stagedDeleteUpdates.clear();
     this->stagedInsertNeighborUpdates.clear();
@@ -745,8 +736,9 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) c
     Serializer::writeBinaryPOD(output, this->maxLevel);
     Serializer::writeBinaryPOD(output, this->entrypointNode);
 
-    // Save batch processing configuration
-    Serializer::writeBinaryPOD(output, this->batchThreshold);
+    // Save batch processing configuration (legacy field for compatibility, write 0)
+    size_t legacyBatchThreshold = 0;
+    Serializer::writeBinaryPOD(output, legacyBatchThreshold);
 
     // Save dbPath (string: length + data)
     size_t dbPathLength = this->dbPath.length();
