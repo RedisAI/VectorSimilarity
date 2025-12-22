@@ -422,6 +422,13 @@ public:
     // Atomic check-and-add for cache - returns true if added, false if at capacity
     bool tryAddNeighborToCacheIfCapacity(idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity);
 
+private:
+    // Helper to load neighbors from disk into cache if not already present
+    // Returns true if data is available in cache after call, false otherwise
+    // Caller must hold lock on cacheSegment.guard (will be temporarily released during disk I/O)
+    void loadNeighborsFromDiskIfNeeded(uint64_t key, CacheSegment& cacheSegment,
+                                        std::unique_lock<std::shared_mutex>& lock);
+
     // Write dirty cache entries to disk
     void writeDirtyNodesToDisk(const vecsim_stl::vector<uint64_t> &modifiedNodes,
                                const void *newVectorRawData, idType newVectorId);
@@ -2666,6 +2673,51 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsFromCache(
     filterDeletedNodes(result);
 }
 
+// Helper to load neighbors from disk into cache if not already present
+// Caller must hold unique_lock on cacheSegment.guard (will be temporarily released during disk I/O)
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::loadNeighborsFromDiskIfNeeded(
+    uint64_t key, CacheSegment& cacheSegment, std::unique_lock<std::shared_mutex>& lock) {
+
+    auto it = cacheSegment.cache.find(key);
+    if (it != cacheSegment.cache.end()) {
+        return; // Already in cache
+    }
+
+    // Check if this is a new node (never written to disk) - skip disk lookup
+    bool isNewNode = (cacheSegment.newNodes.find(key) != cacheSegment.newNodes.end());
+
+    if (!isNewNode) {
+        // First modification of existing node - need to load current state from disk
+        idType nodeId = static_cast<idType>(key >> 32);
+        size_t level = static_cast<size_t>(key & 0xFFFFFFFF);
+
+        lock.unlock();
+        vecsim_stl::vector<idType> diskNeighbors(this->allocator);
+        GraphKey graphKey(nodeId, level);
+        std::string graph_value;
+        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+        if (status.ok()) {
+            deserializeGraphValue(graph_value, diskNeighbors);
+        }
+        lock.lock();
+
+        // Re-check: another thread might have populated it
+        if (cacheSegment.cache.find(key) == cacheSegment.cache.end()) {
+            // Convert vecsim_stl::vector to std::vector
+            std::vector<idType> cacheEntry;
+            cacheEntry.reserve(diskNeighbors.size());
+            for (idType id : diskNeighbors) {
+                cacheEntry.push_back(id);
+            }
+            cacheSegment.cache[key] = std::move(cacheEntry);
+        }
+    } else {
+        // New node - initialize with empty neighbor list
+        cacheSegment.cache[key] = std::vector<idType>();
+    }
+}
+
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::addNeighborToCache(
     idType nodeId, size_t level, idType newNeighborId) {
@@ -2676,38 +2728,8 @@ void HNSWDiskIndex<DataType, DistType>::addNeighborToCache(
 
     std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
 
-    auto it = cacheSegment.cache.find(key);
-    if (it == cacheSegment.cache.end()) {
-        // Check if this is a new node (never written to disk) - skip disk lookup
-        bool isNewNode = (cacheSegment.newNodes.find(key) != cacheSegment.newNodes.end());
-
-        if (!isNewNode) {
-            // First modification of existing node - need to load current state from disk
-            lock.unlock();
-            vecsim_stl::vector<idType> diskNeighbors(this->allocator);
-            GraphKey graphKey(nodeId, level);
-            std::string graph_value;
-            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-            if (status.ok()) {
-                deserializeGraphValue(graph_value, diskNeighbors);
-            }
-            lock.lock();
-
-            // Re-check: another thread might have populated it
-            if (cacheSegment.cache.find(key) == cacheSegment.cache.end()) {
-                // Convert vecsim_stl::vector to std::vector
-                std::vector<idType> cacheEntry;
-                cacheEntry.reserve(diskNeighbors.size());
-                for (idType id : diskNeighbors) {
-                    cacheEntry.push_back(id);
-                }
-                cacheSegment.cache[key] = std::move(cacheEntry);
-            }
-        } else {
-            // New node - initialize with empty neighbor list
-            cacheSegment.cache[key] = std::vector<idType>();
-        }
-    }
+    // Load from disk if not in cache (handles newNodes check internally)
+    loadNeighborsFromDiskIfNeeded(key, cacheSegment, lock);
 
     // Add new neighbor (avoid duplicates)
     auto &neighbors = cacheSegment.cache[key];
@@ -2732,30 +2754,8 @@ bool HNSWDiskIndex<DataType, DistType>::tryAddNeighborToCacheIfCapacity(
 
     std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
 
-    auto it = cacheSegment.cache.find(key);
-    if (it == cacheSegment.cache.end()) {
-        // First modification - need to load current state from disk
-        lock.unlock();
-        vecsim_stl::vector<idType> diskNeighbors(this->allocator);
-        GraphKey graphKey(nodeId, level);
-        std::string graph_value;
-        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-        if (status.ok()) {
-            deserializeGraphValue(graph_value, diskNeighbors);
-        }
-        lock.lock();
-
-        // Re-check: another thread might have populated it
-        if (cacheSegment.cache.find(key) == cacheSegment.cache.end()) {
-            // Convert vecsim_stl::vector to std::vector
-            std::vector<idType> cacheEntry;
-            cacheEntry.reserve(diskNeighbors.size());
-            for (idType id : diskNeighbors) {
-                cacheEntry.push_back(id);
-            }
-            cacheSegment.cache[key] = std::move(cacheEntry);
-        }
-    }
+    // Load from disk if not in cache (handles newNodes check internally)
+    loadNeighborsFromDiskIfNeeded(key, cacheSegment, lock);
 
     // Atomic check-and-add under the lock
     auto &neighbors = cacheSegment.cache[key];
@@ -2964,6 +2964,9 @@ void HNSWDiskIndex<DataType, DistType>::flushDirtyNodesToDisk() {
     std::vector<char> rawVectorBuffer(this->inputBlobSize);
     std::unordered_set<idType> successfulLevel0Ids;
 
+    // Track all nodes we're trying to write (for error recovery)
+    vecsim_stl::vector<uint64_t> allNodesToFlush(this->allocator);
+
     // Process each segment independently
     for (size_t s = 0; s < NUM_CACHE_SEGMENTS; ++s) {
         auto& cacheSegment = cacheSegments_[s];
@@ -3020,15 +3023,10 @@ void HNSWDiskIndex<DataType, DistType>::flushDirtyNodesToDisk() {
             GraphKey graphKey(nodeId, level);
             std::string value = serializeGraphValue(rawVectorBuffer.data(), neighbors);
             batch.Put(cf, graphKey.asSlice(), value);
+            allNodesToFlush.push_back(key);
 
             if (level == 0) {
                 successfulLevel0Ids.insert(nodeId);
-            }
-
-            // Clear newNodes flag for this node (brief exclusive lock)
-            {
-                std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-                cacheSegment.newNodes.erase(key);
             }
         }
     }
@@ -3039,10 +3037,26 @@ void HNSWDiskIndex<DataType, DistType>::flushDirtyNodesToDisk() {
         if (!status.ok()) {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                       "ERROR: Failed to flush dirty nodes to disk: %s", status.ToString().c_str());
-            // Note: On failure, data is lost. In production DBs, this is typically fatal.
-            // The nodes were already removed from dirty set, so they won't be retried.
-            // Consider: re-adding to dirty set on failure if recovery is needed.
+
+            // On failure, re-add nodes to dirty set so they'll be retried
+            for (uint64_t key : allNodesToFlush) {
+                size_t segment = getSegmentIndex(key);
+                auto& cacheSegment = cacheSegments_[segment];
+                std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
+                if (cacheSegment.dirty.insert(key).second) {
+                    totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+            return; // Don't clear newNodes or remove raw vectors on failure
         }
+    }
+
+    // Success: Clear newNodes flags for all flushed nodes
+    for (uint64_t key : allNodesToFlush) {
+        size_t segment = getSegmentIndex(key);
+        auto& cacheSegment = cacheSegments_[segment];
+        std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
+        cacheSegment.newNodes.erase(key);
     }
 
     // Remove raw vectors for level 0 nodes that were written to disk
