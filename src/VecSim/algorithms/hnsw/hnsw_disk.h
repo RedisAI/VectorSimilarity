@@ -335,7 +335,6 @@ protected:
         // Track nodes created in current batch (never written to disk yet)
         // This helps avoid disk lookups for new nodes
         std::unordered_set<uint64_t> newNodes;
-        char padding[64]; // Ensure no overlap
 
         CacheSegment() = default;
         CacheSegment(const CacheSegment&) = delete;
@@ -360,7 +359,18 @@ protected:
         return key % NUM_CACHE_SEGMENTS;
     }
 
-    // Threshold for flushing dirty nodes to disk (0 = flush after each insert, default = batch)
+    // Threshold for flushing dirty nodes to disk, expressed as a count of dirty nodes.
+    // - Unit: number of distinct dirty nodes tracked in `totalDirtyCount_` across all cache segments.
+    // - Behavior:
+    //     * 0  : flush after each insert/update (no batching).
+    //     * >0 : accumulate dirty nodes and flush once the global dirty count reaches this threshold.
+    // - Tradeoffs:
+    //     * Lower values (including 0) reduce the amount of data lost on crash and smooth memory usage,
+    //       but increase the number of RocksDB writes and flush operations (higher write amplification
+    //       and potentially higher latency per insert).
+    //     * Higher values reduce the frequency of disk writes and can improve bulk-insert throughput,
+    //       but increase peak memory usage for cached/dirty nodes and may cause longer flush pauses
+    //       when the batch is written, as well as more data at risk between flushes.
     size_t diskWriteBatchThreshold = 1000;
 
     // Lock for protecting dirty nodes flush operations (global flush serialization)
@@ -1000,26 +1010,37 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
     // Handle first vector (becomes entry point)
     if (currentEntryPoint == INVALID_ID) {
+        bool becameEntryPoint = false;
         std::unique_lock<std::shared_mutex> lock(indexDataGuard);
         if (entrypointNode == INVALID_ID) {
             entrypointNode = newElementId;
             maxLevel = elementMaxLevel;
+            becameEntryPoint = true;
+        } else {
+            // Another thread already set the entry point - update our local state
+            currentEntryPoint = entrypointNode;
+            currentMaxLevel = maxLevel;
         }
-        // Write initial vector to disk with empty neighbors
-        vecsim_stl::vector<idType> emptyNeighbors(this->allocator);
-        for (size_t level = 0; level <= elementMaxLevel; level++) {
-            GraphKey graphKey(newElementId, level);
-            std::string value = serializeGraphValue(vector, emptyNeighbors);
-            auto writeOptions = rocksdb::WriteOptions();
-            writeOptions.disableWAL = true;
-            db->Put(writeOptions, cf, graphKey.asSlice(), value);
+        lock.unlock();
+        // If we became the entry point, write initial vector to disk
+        if (becameEntryPoint) {
+            // Write initial vector to disk with empty neighbors
+            vecsim_stl::vector<idType> emptyNeighbors(this->allocator);
+            for (size_t level = 0; level <= elementMaxLevel; level++) {
+                GraphKey graphKey(newElementId, level);
+                std::string value = serializeGraphValue(vector, emptyNeighbors);
+                auto writeOptions = rocksdb::WriteOptions();
+                writeOptions.disableWAL = true;
+                db->Put(writeOptions, cf, graphKey.asSlice(), value);
+            }
+            // Remove raw vector from RAM now that it's on disk
+            {
+                std::lock_guard<std::shared_mutex> rawLock(rawVectorsGuard);
+                rawVectorsInRAM.erase(newElementId);
+            }
+            return 1;
         }
-        // Remove raw vector from RAM now that it's on disk
-        {
-            std::lock_guard<std::shared_mutex> rawLock(rawVectorsGuard);
-            rawVectorsInRAM.erase(newElementId);
-        }
-        return 1;
+        // Fall through to normal graph insertion with updated entry point
     }
 
     // Check if we have a job queue for async processing
@@ -1561,6 +1582,7 @@ bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(labelType id) const {
 
 template <typename DataType, typename DistType>
 std::pair<idType, size_t> HNSWDiskIndex<DataType, DistType>::safeGetEntryPointState() const {
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     return std::make_pair(entrypointNode, maxLevel);
 }
 
@@ -3212,9 +3234,17 @@ void HNSWDiskIndex<DataType, DistType>::executeGraphInsertionCore(
         writeDirtyNodesToDisk(modifiedNodes, rawVectorData, vectorId);
         std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
         rawVectorsInRAM.erase(vectorId);
-    } else if (totalDirtyCount_.load(std::memory_order_relaxed) >= diskWriteBatchThreshold) {
-        // Threshold reached: flush all dirty nodes
-        flushDirtyNodesToDisk();
+    } else {
+        // Check if flush is needed based on dirty count OR raw vector memory accumulation
+        // This prevents unbounded memory growth when vectors are added but threshold isn't reached
+        bool shouldFlush = totalDirtyCount_.load(std::memory_order_relaxed) >= diskWriteBatchThreshold;
+        if (!shouldFlush) {
+            std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
+            shouldFlush = rawVectorsInRAM.size() >= diskWriteBatchThreshold;
+        }
+        if (shouldFlush) {
+            flushDirtyNodesToDisk();
+        }
     }
     // else: batching enabled but threshold not reached, keep accumulating
 
