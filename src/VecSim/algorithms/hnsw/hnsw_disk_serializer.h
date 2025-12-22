@@ -74,9 +74,6 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     // Add a constant offset to avoid seed=0 for empty indexes
     this->levelGenerator.seed(200 + this->curElementCount.load(std::memory_order_acquire));
 
-    // Initialize processing batch for double-buffering (needed for async operations)
-    this->processingBatch = std::make_unique<ProcessingBatch>(this->allocator);
-
     // Restore graph and vectors from file
     this->restoreGraph(input, version);
     this->restoreVectors(input, version);

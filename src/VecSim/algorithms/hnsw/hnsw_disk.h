@@ -146,18 +146,9 @@ struct HNSWDiskInsertJob : public AsyncJob {
           elementMaxLevel(elementMaxLevel_) {}
 };
 
-/**
- * Definition of a job that flushes staged graph updates to RocksDB.
- * This job must execute after all insert jobs complete.
- */
-struct HNSWDiskFlushJob : public AsyncJob {
-    HNSWDiskFlushJob(std::shared_ptr<VecSimAllocator> allocator, JobCallback flushCb,
-                     VecSimIndex *index_)
-        : AsyncJob(allocator, HNSW_DISK_FLUSH_UPDATES_JOB, flushCb, index_) {}
-};
 
 /**
- * Definition of a batchless job that inserts a single vector completely from start to end.
+ * Definition of the job that inserts a single vector completely from start to end.
  * Each job is self-contained and writes directly to disk upon completion.
  * No batching or staging - optimized for workloads where disk write is cheap
  * but reading (searching for neighbors) is the bottleneck.
@@ -310,37 +301,6 @@ protected:
     // Uses shared_mutex for better read concurrency - multiple readers can access simultaneously
     mutable std::shared_mutex stagedUpdatesGuard;
 
-    // Atomic counter for pending insert jobs (for synchronization with flush job)
-    std::atomic<size_t> pendingInsertJobsCounter{0};
-
-    // Flag indicating if a batch is currently being processed
-    std::atomic<bool> batchInProgress{false};
-
-    // Reference to the flush job that will be submitted after all insert jobs complete
-    HNSWDiskFlushJob *pendingFlushJob = nullptr;
-
-    // Double-buffering for pending vectors
-    // processingBatch contains vectors currently being inserted by worker threads
-    struct ProcessingBatch {
-        vecsim_stl::vector<idType> vectorIds;
-        std::unordered_map<idType, std::string> rawVectors;         // Original float vectors
-        std::unordered_map<idType, std::string> processedVectors;   // Processed/quantized vectors
-        size_t count = 0;
-
-        ProcessingBatch(std::shared_ptr<VecSimAllocator> allocator) : vectorIds(allocator) {}
-
-        void clear() {
-            vectorIds.clear();
-            rawVectors.clear();
-            processedVectors.clear();
-            count = 0;
-        }
-    };
-    std::unique_ptr<ProcessingBatch> processingBatch;
-
-    // Lock for swapping between pending and processing batches
-    mutable std::mutex batchSwapGuard;
-
     // Lock for protecting vectors container during concurrent access
     // Needed because addElement can resize the container, invalidating pointers
     mutable std::shared_mutex vectorsGuard;
@@ -476,12 +436,7 @@ public:
     void emplaceHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
                        idType id) const;
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
-    void getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
-    void getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const;
     size_t getNeighborsCount(idType nodeId, size_t level) const;
-    // Thread-safe atomic check-and-add for neighbor updates
-    // Returns true if neighbor was added (had capacity), false if full (needs re-evaluation)
-    bool tryAddNeighborIfCapacity(idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity);
 
     // Manual control of staged delete updates
     void flushStagedDeleteUpdates(); // Manually flush any pending staged delete updates
@@ -515,10 +470,11 @@ protected:
     void flushStagedGraphUpdates(vecsim_stl::vector<GraphUpdate>& graphUpdates,
                                   vecsim_stl::vector<NeighborUpdate>& neighborUpdates);
 
-    // New method for handling neighbor connection updates when neighbor lists are full
-    void stageRevisitNeighborConnections(idType new_node_id, idType selected_neighbor,
-                                       size_t level, DistType distance);
-   
+    // Re-evaluate neighbor connections when a neighbor's list is full
+    // Applies heuristic to select best neighbors including the new node
+    void revisitNeighborConnections(idType new_node_id, idType selected_neighbor,
+                                    size_t level, DistType distance,
+                                    vecsim_stl::vector<uint64_t> &modifiedNodes);
 
 public:
     // Methods needed by benchmark framework
@@ -757,19 +713,10 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
         throw std::runtime_error("HNSW index parameter M cannot be 1");
     mult = 1 / log(1.0 * M);
     levelGenerator.seed(random_seed);
-
-    // Initialize processing batch for double-buffering
-    processingBatch = std::make_unique<ProcessingBatch>(this->allocator);
 }
 
 template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
-    // Clean up any pending flush job
-    if (pendingFlushJob) {
-        delete pendingFlushJob;
-        pendingFlushJob = nullptr;
-    }
-
     // Clear any staged updates before destruction
     stagedInsertUpdates.clear();
     stagedInsertMap.clear();
@@ -1200,10 +1147,9 @@ void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType new_node_id,
-                                                                        idType selected_neighbor,
-                                                                        size_t level,
-                                                                        DistType distance) {
+void HNSWDiskIndex<DataType, DistType>::revisitNeighborConnections(
+    idType new_node_id, idType selected_neighbor, size_t level, DistType distance,
+    vecsim_stl::vector<uint64_t> &modifiedNodes) {
     // Read the neighbor's current neighbor list from cache (source of truth)
     vecsim_stl::vector<idType> existing_neighbors(this->allocator);
     getNeighborsFromCache(selected_neighbor, level, existing_neighbors);
@@ -1216,52 +1162,28 @@ void HNSWDiskIndex<DataType, DistType>::stageRevisitNeighborConnections(idType n
     candidates.emplace_back(distance, new_node_id);
 
     // Add existing neighbors with their distances to the selected neighbor
-    const void* selected_neighbor_data = getDataByInternalId(selected_neighbor);
-    for (size_t j = 0; j < existing_neighbors.size(); j++) {
-        idType existing_neighbor_id = existing_neighbors[j];
-        const void *existing_neighbor_data = getDataByInternalId(existing_neighbor_id);
-        DistType existing_distance =
-            this->calcDistance(existing_neighbor_data, selected_neighbor_data);
-        candidates.emplace_back(existing_distance, existing_neighbor_id);
+    const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
+    for (idType existing_neighbor_id : existing_neighbors) {
+        const void *existing_data = getDataByInternalId(existing_neighbor_id);
+        DistType existing_dist = this->calcDistance(existing_data, selected_neighbor_data);
+        candidates.emplace_back(existing_dist, existing_neighbor_id);
     }
 
-    // Use the heuristic to select the best neighbors (similar to revisitNeighborConnections in
-    // hnsw.h)
-    size_t max_M_cur = level ? M : M0;
-
     // Apply the neighbor selection heuristic
+    size_t max_M_cur = level ? M : M0;
     vecsim_stl::vector<idType> removed_candidates(this->allocator);
     getNeighborsByHeuristic2(candidates, max_M_cur, removed_candidates);
 
-    // Check if the new node was selected as a neighbor
-    bool new_node_selected = false;
+    // Extract selected neighbor IDs
+    vecsim_stl::vector<idType> new_neighbors(this->allocator);
+    new_neighbors.reserve(candidates.size());
     for (const auto &candidate : candidates) {
-        if (candidate.second == new_node_id) {
-            new_node_selected = true;
-            break;
-        }
+        new_neighbors.push_back(candidate.second);
     }
 
-    if (new_node_selected) {
-        // The new node was selected, so we need to update the neighbor's neighbor list
-        // Extract the selected neighbor IDs and update cache directly
-        vecsim_stl::vector<idType> selected_neighbor_ids(this->allocator);
-        selected_neighbor_ids.reserve(candidates.size());
-        for (const auto &candidate : candidates) {
-            selected_neighbor_ids.push_back(candidate.second);
-        }
-
-        // Update the selected_neighbor's neighbor list in cache (not a new node)
-        setNeighborsInCache(selected_neighbor, level, selected_neighbor_ids, false /* isNewNode */);
-
-        // Also add bidirectional connection from new node to selected neighbor
-        addNeighborToCache(new_node_id, level, selected_neighbor);
-
-    } else {
-        // The new node was not selected, so we only need to add unidirectional connection
-        // from new node to selected neighbor
-        addNeighborToCache(new_node_id, level, selected_neighbor);
-    }
+    // Update cache with the new neighbor list
+    setNeighborsInCache(selected_neighbor, level, new_neighbors);
+    modifiedNodes.push_back(makeRepairKey(selected_neighbor, level));
 }
 
 template <typename DataType, typename DistType>
@@ -1435,15 +1357,6 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVectorInternal(idType id, void* ou
         if (it != rawVectorsInRAM.end()) {
             const char* data_ptr = it->second.data();
             std::memcpy(output_buffer, data_ptr, this->inputBlobSize);
-            return true;
-        }
-    }
-
-    // Also check processingBatch (for vectors being processed by worker threads)
-    if (processingBatch) {
-        auto pit = processingBatch->rawVectors.find(id);
-        if (pit != processingBatch->rawVectors.end()) {
-            std::memcpy(output_buffer, pit->second.data(), this->inputBlobSize);
             return true;
         }
     }
@@ -1933,84 +1846,6 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(idType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const {
-    // Clear the result vector first
-    result.clear();
-
-    uint64_t lookup_key = makeRepairKey(nodeId, level);
-    bool foundNeighborsInCache = false;
-
-    // Step 1: Check cache first (source of truth for pending updates)
-    {
-        size_t segment = getSegmentIndex(lookup_key);
-        auto& cacheSegment = cacheSegments_[segment];
-        std::shared_lock<std::shared_mutex> cacheLock(cacheSegment.guard);
-        auto it = cacheSegment.cache.find(lookup_key);
-        if (it != cacheSegment.cache.end()) {
-            result.reserve(it->second.size());
-            for (idType id : it->second) {
-                result.push_back(id);
-            }
-            foundNeighborsInCache = true;
-        } else if (cacheSegment.newNodes.find(lookup_key) != cacheSegment.newNodes.end()) {
-            // New node not yet connected - return empty neighbors
-            foundNeighborsInCache = true;
-        }
-    }
-
-    // Check rawVectorsInRAM with shared lock
-    bool foundVectorInRAM = false;
-    {
-        std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
-        auto it = rawVectorsInRAM.find(nodeId);
-        if (it != rawVectorsInRAM.end()) {
-            std::memcpy(vector_data, it->second.data(), this->inputBlobSize);
-            foundVectorInRAM = true;
-        }
-    }
-    // Check processingBatch if not found in RAM
-    if (!foundVectorInRAM && processingBatch) {
-        auto it = processingBatch->rawVectors.find(nodeId);
-        if (it != processingBatch->rawVectors.end()) {
-            std::memcpy(vector_data, it->second.data(), this->inputBlobSize);
-            foundVectorInRAM = true;
-        }
-    }
-    if (foundNeighborsInCache && foundVectorInRAM) {
-        return;
-    }
-
-    // If not found in cache, check disk
-    GraphKey graphKey(nodeId, level);
-    std::string graph_value;
-    rocksdb::Status status =
-        db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-
-    if (status.ok()) {
-        // Only update neighbors if we didn't find them in cache
-        if (!foundNeighborsInCache) {
-            deserializeGraphValue(graph_value, result);
-        }
-        // Only update vector if we didn't find it in RAM
-        if (!foundVectorInRAM) {
-            std::memcpy(vector_data, graph_value.data(), this->inputBlobSize);
-        }
-    }
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getNeighborsAndVector(labelType nodeId, size_t level, vecsim_stl::vector<idType>& result, void* vector_data) const {
-    // Check if label exists in the map (it won't if it's been marked as deleted)
-    auto it = labelToIdMap.find(nodeId);
-    if (it == labelToIdMap.end()) {
-        // Label doesn't exist (has been marked as deleted), return empty neighbors
-        result.clear();
-        return;
-    }
-    getNeighborsAndVector(it->second, level, result, vector_data);
-}
-
-template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_t level) const {
     uint64_t lookup_key = makeRepairKey(nodeId, level);
 
@@ -2042,77 +1877,6 @@ size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_
     }
 
     return 0;
-}
-
-template <typename DataType, typename DistType>
-bool HNSWDiskIndex<DataType, DistType>::tryAddNeighborIfCapacity(
-    idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity) {
-    // Atomic check-and-add using cache segments: O(1) lookup, 1/64th lock contention
-    // The cache is the source of truth - it contains either disk data or pending updates
-
-    uint64_t key = makeRepairKey(nodeId, level);
-    size_t segment = getSegmentIndex(key);
-    auto& cacheSegment = cacheSegments_[segment];
-
-    // First, try with just a shared lock for the common case (already in cache)
-    {
-        std::shared_lock<std::shared_mutex> readLock(cacheSegment.guard);
-        auto it = cacheSegment.cache.find(key);
-        if (it != cacheSegment.cache.end()) {
-            // Fast path: already in cache, check if we can add
-            if (it->second.size() >= maxCapacity) {
-                return false;  // Full, no need to upgrade lock
-            }
-        }
-    }
-
-    // Need to modify - get exclusive lock
-    std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
-
-    auto it = cacheSegment.cache.find(key);
-    if (it == cacheSegment.cache.end()) {
-        // Check if this is a new node (never written to disk) - skip disk lookup
-        bool isNewNode = (cacheSegment.newNodes.find(key) != cacheSegment.newNodes.end());
-
-        if (!isNewNode) {
-            // Not in cache and not a new node - need to load from disk
-            // Keep lock held to avoid multiple threads loading the same data
-            vecsim_stl::vector<idType> diskNeighbors(this->allocator);
-            GraphKey graphKey(nodeId, level);
-            std::string graph_value;
-            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-            if (status.ok()) {
-                deserializeGraphValue(graph_value, diskNeighbors);
-            }
-
-            std::vector<idType> cacheEntry;
-            cacheEntry.reserve(diskNeighbors.size());
-            for (idType id : diskNeighbors) {
-                cacheEntry.push_back(id);
-            }
-            cacheSegment.cache[key] = std::move(cacheEntry);
-        } else {
-            // New node - initialize with empty neighbor list
-            cacheSegment.cache[key] = std::vector<idType>();
-        }
-    }
-
-    // Now we have the current neighbor list in cache - check capacity
-    auto& neighbors = cacheSegment.cache[key];
-    if (neighbors.size() < maxCapacity) {
-        // Check for duplicates
-        if (std::find(neighbors.begin(), neighbors.end(), newNeighborId) == neighbors.end()) {
-            neighbors.push_back(newNeighborId);
-            // Mark as dirty and increment atomic counter
-            auto insertResult = cacheSegment.dirty.insert(key);
-            if (insertResult.second) {
-                totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
-        return true;  // Successfully added (or already present)
-    }
-
-    return false;  // Neighbor list is full, needs re-evaluation
 }
 
 /********************************** Multi-threaded Job Execution **********************************/
@@ -3315,38 +3079,8 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
             modifiedNodes.push_back(makeRepairKey(selected_neighbor, level));
         } else {
             // Full - need to re-evaluate using heuristic
-            // Get current neighbors (might have changed since check)
-            vecsim_stl::vector<idType> existing_neighbors(this->allocator);
-            getNeighborsFromCache(selected_neighbor, level, existing_neighbors);
-
-            candidatesList<DistType> candidates(this->allocator);
-            candidates.reserve(existing_neighbors.size() + 1);
-
-            // Add new node
-            candidates.emplace_back(distance, new_node_id);
-
-            // Add existing neighbors with their distances
-            const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
-            for (idType existing_neighbor_id : existing_neighbors) {
-                const void *existing_data = getDataByInternalId(existing_neighbor_id);
-                DistType existing_dist = this->calcDistance(existing_data, selected_neighbor_data);
-                candidates.emplace_back(existing_dist, existing_neighbor_id);
-            }
-
-            // Apply heuristic
-            vecsim_stl::vector<idType> removed_candidates(this->allocator);
-            getNeighborsByHeuristic2(candidates, max_M_cur, removed_candidates);
-
-            // Extract selected neighbor IDs
-            vecsim_stl::vector<idType> new_neighbors(this->allocator);
-            new_neighbors.reserve(candidates.size());
-            for (const auto &candidate : candidates) {
-                new_neighbors.push_back(candidate.second);
-            }
-
-            // Update cache with the new neighbor list
-            setNeighborsInCache(selected_neighbor, level, new_neighbors);
-            modifiedNodes.push_back(makeRepairKey(selected_neighbor, level));
+            revisitNeighborConnections(new_node_id, selected_neighbor, level, distance,
+                                       modifiedNodes);
         }
     }
 
