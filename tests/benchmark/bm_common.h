@@ -137,6 +137,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         cache_misses = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
 
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = hnsw_disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        hnsw_disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
     // Collect individual query times for percentile calculation
     std::vector<double> query_times;
 
@@ -157,7 +162,21 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK(benchmark::State &st) {
         st.ResumeTiming();
         iter++;
     }
+
+    // Get final metrics
+    size_t num_visited_nodes_after = hnsw_disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_after =
+        hnsw_disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+    // Calculate deltas
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["avg_visited_L0"] = iter > 0 ? (double)total_visited_nodes / (double)iter : 0.0;
+    st.counters["avg_visited_upper"] =
+        iter > 0 ? (double)total_visited_nodes_higher_levels / (double)iter : 0.0;
 
     // Calculate and report percentiles
     if (!query_times.empty()) {
@@ -208,6 +227,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
     if (db_stats) {
         block_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS);
     }
+
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
 
     // Limit by the number of distinct queries we actually have.
     const size_t max_queries = static_cast<size_t>(N_QUERIES);
@@ -309,6 +333,22 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_Parallel(benchmark::State &st
             size_t total_cache_miss = db_stats->getTickerCount(rocksdb::Tickers::BLOCK_CACHE_MISS) - block_cache_miss;
             st.counters["cache_misses_per_query"] = static_cast<double>(total_cache_miss) / executed_queries;
         }
+
+        // Get final metrics for visited nodes tracking
+        size_t num_visited_nodes_after = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+        size_t num_visited_nodes_higher_levels_after =
+            disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+        // Calculate deltas
+        size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+        size_t total_visited_nodes_higher_levels =
+            num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
+        st.counters["avg_visited_L0"] =
+            executed_queries > 0 ? (double)total_visited_nodes / (double)executed_queries : 0.0;
+        st.counters["avg_visited_upper"] =
+            executed_queries > 0 ? (double)total_visited_nodes_higher_levels / (double)executed_queries
+                                 : 0.0;
     }
 }
 
@@ -366,6 +406,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
     size_t ef = st.range(0);
     size_t k = st.range(1);
 
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
     // Collect individual query times for percentile calculation
     std::vector<double> query_times;
 
@@ -407,7 +452,21 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_MarkDeleted(benchmark::State 
         st.ResumeTiming();
         iter++;
     }
+
+    // Get final metrics
+    size_t num_visited_nodes_after = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_after =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+    // Calculate deltas
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["avg_visited_L0"] = iter > 0 ? (double)total_visited_nodes / (double)iter : 0.0;
+    st.counters["avg_visited_upper"] =
+        iter > 0 ? (double)total_visited_nodes_higher_levels / (double)iter : 0.0;
 
     // Calculate and report percentiles
     if (!query_times.empty()) {
@@ -495,6 +554,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
     size_t ef = st.range(0);
     size_t k = st.range(1);
 
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
     // Collect individual query times for percentile calculation
     std::vector<double> query_times;
 
@@ -537,7 +601,21 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel(benchmark::State 
         st.ResumeTiming();
         iter++;
     }
+
+    // Get final metrics
+    size_t num_visited_nodes_after = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_after =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+    // Calculate deltas
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["avg_visited_L0"] = iter > 0 ? (double)total_visited_nodes / (double)iter : 0.0;
+    st.counters["avg_visited_upper"] =
+        iter > 0 ? (double)total_visited_nodes_higher_levels / (double)iter : 0.0;
 
     // Calculate and report percentiles
     if (!query_times.empty()) {
@@ -635,6 +713,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
     size_t ef = st.range(0);
     size_t k = st.range(1);
 
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
     // Collect individual query times for percentile calculation
     std::vector<double> query_times;
 
@@ -660,7 +743,21 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_ProtectGT(benchma
         st.ResumeTiming();
         iter++;
     }
+
+    // Get final metrics
+    size_t num_visited_nodes_after = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_after =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+    // Calculate deltas
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["avg_visited_L0"] = iter > 0 ? (double)total_visited_nodes / (double)iter : 0.0;
+    st.counters["avg_visited_upper"] =
+        iter > 0 ? (double)total_visited_nodes_higher_levels / (double)iter : 0.0;
 
     // Calculate and report percentiles
     if (!query_times.empty()) {
@@ -753,6 +850,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_BatchSize(benchma
     std::atomic_int correct = 0;
     size_t k = 10; // Fixed k for batch size testing
 
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
@@ -782,7 +884,22 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_BatchSize(benchma
         st.ResumeTiming();
         iter++;
     }
+
+    // Get final metrics
+    size_t num_visited_nodes_after = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_after =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+    // Calculate deltas
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["avg_visited_L0"] = iter > 0 ? (double)total_visited_nodes / (double)iter : 0.0;
+    st.counters["avg_visited_upper"] =
+        iter > 0 ? (double)total_visited_nodes_higher_levels / (double)iter : 0.0;
+
     if (stats) {
         size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;
@@ -854,6 +971,11 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_Stress(benchmark:
     std::atomic_int correct = 0;
     size_t k = 10; // Fixed k for stress testing
 
+    // Get initial metrics for visited nodes tracking
+    size_t num_visited_nodes_before = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_before =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
     for (auto _ : st) {
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
@@ -886,7 +1008,22 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW_DISK_DeleteLabel_Stress(benchmark:
         st.ResumeTiming();
         iter++;
     }
+
+    // Get final metrics
+    size_t num_visited_nodes_after = disk_index->num_visited_nodes.load(std::memory_order_relaxed);
+    size_t num_visited_nodes_higher_levels_after =
+        disk_index->num_visited_nodes_higher_levels.load(std::memory_order_relaxed);
+
+    // Calculate deltas
+    size_t total_visited_nodes = num_visited_nodes_after - num_visited_nodes_before;
+    size_t total_visited_nodes_higher_levels =
+        num_visited_nodes_higher_levels_after - num_visited_nodes_higher_levels_before;
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["avg_visited_L0"] = iter > 0 ? (double)total_visited_nodes / (double)iter : 0.0;
+    st.counters["avg_visited_upper"] =
+        iter > 0 ? (double)total_visited_nodes_higher_levels / (double)iter : 0.0;
+
     if (stats) {
         size_t io_bytes_after = stats->getTickerCount(rocksdb::Tickers::BYTES_COMPRESSED_TO);
         st.counters["io_bytes_per_query"] = static_cast<double>(io_bytes_after - io_bytes_before) / iter;

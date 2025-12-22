@@ -205,21 +205,18 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromRocksDB(EncodingVersio
  *
  * This method determines whether to load vectors from the metadata file or from RocksDB.
  *
- * The choice is controlled by a compile-time flag:
- * - HNSW_DISK_SERIALIZE_VECTORS_TO_FILE: If defined, vectors are loaded from the metadata file
- * - Otherwise (default): Vectors are loaded from RocksDB for backward compatibility
+ * The choice is controlled by uncommenting the relevant lines in the code.
  *
  * @param input Input file stream (used if loading from file)
  * @param version Encoding version
  */
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, EncodingVersion version) {
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Loading vectors from serialized file");
+    restoreVectorsFromFile(input, version);
     // this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-    //          "Loading vectors from metadata file (HNSW_DISK_SERIALIZE_VECTORS_TO_FILE enabled)");
-    // restoreVectorsFromFile(input, version);
-    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-             "Loading vectors from RocksDB checkpoint (default method)");
-    restoreVectorsFromRocksDB(version);
+             // "Loading vectors from RocksDB checkpoint (default method)");
+    // restoreVectorsFromRocksDB(version);
 }
 
 /**

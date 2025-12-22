@@ -74,9 +74,14 @@ protected:
     static VecSimQueryReply *TopKGroundTruth(size_t query_id, size_t k);
 
 private:
+    // Flag to control whether to build HNSW_DISK from scratch or load from serialized index
+    static constexpr bool BUILD_HNSW_DISK_FROM_SCRATCH = false;
+
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
     static void loadTestVectors(const std::string &test_file, VecSimType type);
+    static void buildHNSWDiskFromScratch(VecSimType type);
+    static void loadHNSWDiskFromFolder();
 };
 
 template <typename index_type_t>
@@ -167,20 +172,11 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     
 
     if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW_DISK) {
-        auto t0 = clock::now();
-
-        // Load from pre-built disk index folder (hnsw_index_file points to folder for disk index)
-        std::string folder_path = AttachRootPath(hnsw_index_file);
-
-        std::cerr << "[Init] Loading HNSW_DISK from folder: " << folder_path << std::endl;
-
-        // Load the index from folder (opens checkpoint and redirects writes to temp)
-        indices[INDEX_HNSW_DISK] = IndexPtr(HNSWDiskFactory::NewIndex(folder_path));
-
-        auto took = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
-        std::cerr << "[Init] Loaded HNSW_DISK from folder. indexSize="
-                      << VecSimIndex_IndexSize(indices[INDEX_HNSW_DISK])
-                      << ", took " << took << " ms" << std::endl;
+        if (BUILD_HNSW_DISK_FROM_SCRATCH) {
+            buildHNSWDiskFromScratch(type);
+        } else {
+            loadHNSWDiskFromFolder();
+        }
 
         // If no tiered index is enabled, but we want to benchmark parallel HNSW_DISK queries,
         // create a mock thread pool that owns a strong reference to the disk index and
@@ -302,4 +298,97 @@ VecSimQueryReply *BM_VecSimIndex<index_type_t>::TopKGroundTruth(size_t query_id,
         res->results.push_back(VecSimQueryResult{.id = (size_t)query[i], .score = 0.0});
     }
     return res;
+}
+
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::loadHNSWDiskFromFolder() {
+    using clock = std::chrono::high_resolution_clock;
+    auto t0 = clock::now();
+
+    // Load from pre-built disk index folder (hnsw_index_file points to folder for disk index)
+    std::string folder_path = AttachRootPath(hnsw_index_file);
+
+    std::cerr << "[Init] Loading HNSW_DISK from folder: " << folder_path << std::endl;
+
+    // Load the index from folder (opens checkpoint and redirects writes to temp)
+    indices[INDEX_HNSW_DISK] = IndexPtr(HNSWDiskFactory::NewIndex(folder_path));
+
+    auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(indices[INDEX_HNSW_DISK].get());
+    auto took = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
+    std::cerr << "[Init] Loaded HNSW_DISK from folder. indexSize="
+                  << VecSimIndex_IndexSize(indices[INDEX_HNSW_DISK])
+                  << ", maxLevel=" << disk_index->getMaxLevel()
+                  << ", took " << took << " ms" << std::endl;
+}
+
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::buildHNSWDiskFromScratch(VecSimType type) {
+    using clock = std::chrono::high_resolution_clock;
+    auto t0 = clock::now();
+
+    // Build index from scratch using 100K vectors file
+    constexpr const char *FBIN_PATH = "tests/benchmark/data/deep.base.1M.fbin";
+    constexpr size_t BATCH_SIZE = 1000;
+
+    // Create temporary RocksDB directory
+    std::string rocksdb_path = "/tmp/hnsw_disk_benchmark_" + std::to_string(getpid());
+    std::filesystem::create_directories(rocksdb_path);
+
+    std::cerr << "[Init] Building HNSW_DISK from scratch using: " << FBIN_PATH << std::endl;
+
+    // Create HNSW disk index parameters
+    HNSWDiskParams disk_params;
+    disk_params.type = type;
+    disk_params.dim = dim;
+    disk_params.metric = VecSimMetric_L2;
+    disk_params.multi = false;
+    disk_params.initialCapacity = 0;
+    disk_params.blockSize = block_size;
+    disk_params.M = 32;
+    disk_params.efConstruction = 200;
+    disk_params.efRuntime = 10;
+    disk_params.epsilon = HNSW_DEFAULT_EPSILON;
+    disk_params.dbPath = rocksdb_path.c_str();
+
+    VecSimParams vecsimParams;
+    vecsimParams.algo = VecSimAlgo_HNSWLIB_DISK;
+    vecsimParams.algoParams.hnswDiskParams = disk_params;
+
+    indices[INDEX_HNSW_DISK] = IndexPtr(VecSimIndex_New(&vecsimParams));
+
+    // Load vectors from fbin file
+    std::ifstream file(AttachRootPath(FBIN_PATH), std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open vectors file for HNSW_DISK index");
+    }
+    uint32_t file_num_vectors = 0, file_dim = 0;
+    file.read(reinterpret_cast<char *>(&file_num_vectors), sizeof(uint32_t));
+    file.read(reinterpret_cast<char *>(&file_dim), sizeof(uint32_t));
+
+    std::vector<float> batch_buffer;
+    batch_buffer.resize(BATCH_SIZE * file_dim);
+
+    size_t processed = 0;
+    while (processed < file_num_vectors) {
+        size_t in_batch = std::min(BATCH_SIZE, static_cast<size_t>(file_num_vectors) - processed);
+        size_t floats_to_read = in_batch * file_dim;
+        file.read(reinterpret_cast<char *>(batch_buffer.data()),
+                  floats_to_read * sizeof(float));
+        if (!file) {
+            throw std::runtime_error("Failed to read vectors from fbin file for HNSW_DISK index");
+        }
+        for (size_t j = 0; j < in_batch; ++j) {
+            size_t i = processed + j;
+            const float *vec_ptr = batch_buffer.data() + j * file_dim;
+            VecSimIndex_AddVector(indices[INDEX_HNSW_DISK], vec_ptr, i);
+        }
+        processed += in_batch;
+    }
+
+    auto *disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(indices[INDEX_HNSW_DISK].get());
+    auto took = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
+    std::cerr << "[Init] Built HNSW_DISK from scratch. indexSize="
+                  << VecSimIndex_IndexSize(indices[INDEX_HNSW_DISK])
+                  << ", maxLevel=" << disk_index->getMaxLevel()
+                  << ", took " << took << " ms" << std::endl;
 }
