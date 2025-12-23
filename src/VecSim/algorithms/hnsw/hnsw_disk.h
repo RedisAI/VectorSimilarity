@@ -320,7 +320,6 @@ protected:
         // Track nodes created in current batch (never written to disk yet)
         // This helps avoid disk lookups for new nodes
         std::unordered_set<uint64_t> newNodes;
-        char padding[64]; // Ensure no overlap
 
         CacheSegment() = default;
         CacheSegment(const CacheSegment&) = delete;
