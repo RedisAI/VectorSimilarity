@@ -445,21 +445,21 @@ int main(int argc, char *argv[]) {
                 break;
             }
             
-            // Print progress every 1 seconds
+            // Print progress every 5 seconds
             size_t current_indexed = VecSimIndex_IndexSize(index);
             size_t queue_size = mock_thread_pool->jobQ.size();
 
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - start_time).count();
 
-            if (current_indexed != last_indexed || elapsed % 1 == 0) {
+            if (current_indexed != last_indexed || elapsed % 5 == 0) {
                 std::cout << "\rIndexed: " << current_indexed << "/" << num_vectors
                           << " | Queue: " << queue_size
                           << " | Time: " << elapsed << "s    " << std::flush;
                 last_indexed = current_indexed;
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
         std::cout << "\n";
 
