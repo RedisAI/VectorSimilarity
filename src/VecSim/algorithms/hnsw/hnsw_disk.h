@@ -1541,6 +1541,7 @@ bool HNSWDiskIndex<DataType, DistType>::isMarkedDeleted(labelType id) const {
 
 template <typename DataType, typename DistType>
 std::pair<idType, size_t> HNSWDiskIndex<DataType, DistType>::safeGetEntryPointState() const {
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
     return std::make_pair(entrypointNode, maxLevel);
 }
 
@@ -3144,33 +3145,29 @@ void HNSWDiskIndex<DataType, DistType>::executeSingleInsertJob(HNSWDiskSingleIns
 
     // Get shared_ptr to raw vector from rawVectorsInRAM (just increments refcount, no copy)
     // This keeps the data alive even if erased from map before job finishes
-    std::shared_ptr<std::string> localRawRef;
-    {
+    std::shared_ptr<std::string> localRawRef = [&]() -> std::shared_ptr<std::string> {
         std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
         auto it = rawVectorsInRAM.find(job->vectorId);
         if (it == rawVectorsInRAM.end()) {
             // Vector was already erased (e.g., deleted before job executed)
-            delete job;
-            return;
+            return nullptr;
         }
-        localRawRef = it->second;  // Just increments refcount, no data copy
+        return it->second;
+    }();
+
+    if (!localRawRef) {
+        delete job;
+        return;
     }
 
     // Get processed vector from vectors container
-    const void *processedVector;
-    {
+    const void *processedVector = [&]() -> const void * {
         std::shared_lock<std::shared_mutex> lock(vectorsGuard);
-        processedVector = this->vectors->getElement(job->vectorId);
-    }
+        return this->vectors->getElement(job->vectorId);
+    }();
 
     // Get current entry point and max level
-    idType currentEntryPoint;
-    size_t currentMaxLevel;
-    {
-        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
-        currentEntryPoint = entrypointNode;
-        currentMaxLevel = maxLevel;
-    }
+    auto [currentEntryPoint, currentMaxLevel] = safeGetEntryPointState();
 
     // Use unified core function (batching controlled by diskWriteBatchThreshold)
     executeGraphInsertionCore(job->vectorId, job->elementMaxLevel, currentEntryPoint,
