@@ -8,7 +8,8 @@ This document describes the multi-threaded architecture of the HNSWDisk index, f
 
 ### 1. Lightweight Insert Jobs
 
-Each insert job is lightweight and only stores metadata (vectorId, elementMaxLevel). Vector data is looked up from shared storage when the job executes, minimizing memory usage when many jobs are queued.
+Each insert job (to the threadpool) is lightweight and only stores metadata (vectorId, elementMaxLevel). Vector data is looked up from shared storage when the job executes, minimizing memory usage when many jobs are queued.
+
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -39,12 +40,83 @@ struct alignas(64) CacheSegment {
 ```
 Note:
 NUM_CACHE_SEGMENTS can be changed which will cause better separation of the cache,
-but will require more RAM usage.
+but will require more RAM usage - can be configured by the user or by the expected
+number of vectors in the index.
 
 **Key benefits:**
 - Threads accessing different segments proceed in parallel.
 - Cache-line alignment (`alignas(64)`) prevents false sharing.
 - Hash-based segment distribution.
+
+#### Cache Memory Management
+
+**Current Behavior: No Eviction**
+
+The segment cache (`cacheSegment.cache`) currently **grows unboundedly** and is **never evicted**. Once a node's neighbor list is loaded into cache (either from disk or created during insert), it remains in memory indefinitely.
+
+**Why Cache is Source of Truth**
+
+The cache cannot simply be cleared because it serves as the **source of truth** for pending updates that haven't been flushed to disk yet. The Swap-and-Flush pattern relies on:
+1. Cache always having the latest neighbor lists
+2. `dirty` set tracking which nodes need to be written
+3. Flusher reading current cache state (not stale data)
+
+**Need to decide which strategy to implement (if any).**
+**Another option is to not use the neighbors cache at all and always read from disk**
+
+**1. LRU Eviction for Clean Entries**
+
+Evict least-recently-used entries that are **not dirty** (already persisted to disk):
+```cpp
+// Pseudocode
+if (cacheSize > maxCacheSize) {
+    for (auto& entry : lruOrder) {
+        if (!dirty.contains(entry.key)) {
+            cache.erase(entry.key);
+            if (--evicted >= targetEviction) break;
+        }
+    }
+}
+```
+*Pros:* Simple, safe (dirty entries always kept)
+*Cons:* Requires LRU tracking overhead (linked list + map)
+
+**2. Time-Based Eviction**
+
+Evict clean entries older than a threshold:
+```cpp
+// Pseudocode
+for (auto& entry : cache) {
+    if (!dirty.contains(entry.key) &&
+        now - entry.lastAccessTime > evictionTimeout) {
+        cache.erase(entry.key);
+    }
+}
+```
+*Pros:* Predictable memory behavior
+*Cons:* Requires timestamp tracking per entry
+
+**3. Write-Through with Immediate Eviction**
+
+After flushing to disk, immediately evict the written entries:
+```cpp
+// In flushDirtyNodesToDisk(), after successful write:
+for (uint64_t key : flushedNodes) {
+    cacheSegment.cache.erase(key);  // Evict after persist
+}
+```
+*Pros:* Minimal memory usage, no tracking overhead
+*Cons:* Increases disk reads on subsequent access
+
+**4. Size-Limited Cache with Eviction Policy**
+
+Configure maximum cache size and evict when exceeded:
+```cpp
+size_t maxCacheEntries = 100000;  // Configurable
+// On insert, check size and evict clean entries if needed
+```
+*Pros:* Bounded memory usage
+*Cons:* Need to choose appropriate eviction policy
 
 ### 3. Lock Hierarchy
 
@@ -65,7 +137,7 @@ std::atomic<size_t> totalDirtyCount_{0};  // Fast threshold check without lockin
 std::atomic<size_t> pendingSingleInsertJobs_{0};  // Track pending async jobs
 ```
 Note:
-We can think of more atomics that can be added to further improve performance.
+We can probably think of more atomics variables that can be added to further improve performance, I just used for the important ones.
 
 ## Concurrency Patterns
 
@@ -79,7 +151,7 @@ Phase 1: Read cache data under SHARED lock (concurrent writers allowed)
          - Build RocksDB WriteBatch
 
 Phase 2: Clear dirty flags under EXCLUSIVE lock (brief, per-segment)
-         - Atomically swap dirty set contents
+         - "Atomically" (under a lock) swap dirty set contents
          - Release lock immediately
 
 Phase 3: Write to disk (NO locks held)
@@ -253,13 +325,3 @@ std::shared_ptr<std::string> localRawRef;
 // Lock released, but data stays alive via localRawRef
 // Use localRawRef->data() for graph insertion and disk write
 ```
-
-## Thread Safety Summary
-
-| Operation | Thread Safety | Notes |
-|-----------|---------------|-------|
-| `addVector()` | ✅ Safe | Atomic ID allocation, locked metadata access |
-| `topKQuery()` | ✅ Safe | Read-only with lock-free deleted checks |
-| Cache read | ✅ Safe | Shared lock per segment |
-| Cache write | ✅ Safe | Exclusive lock per segment |
-| Disk flush | ✅ Safe | Swap-and-flush pattern |
