@@ -13,6 +13,7 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
+#include <optional>
 #include <vector>
 // #include "VecSim/containers/data_block.h"
 // #include "VecSim/containers/raw_data_container_interface.h"
@@ -143,17 +144,14 @@ class HNSWDiskIndex;
 struct HNSWDiskSingleInsertJob : public AsyncJob {
     idType vectorId;
     size_t elementMaxLevel;
-    // Store vector data directly in the job (no external references)
-    std::string rawVectorData;       // Original float32 vector
-    std::string processedVectorData; // Preprocessed/quantized vector for distance calculations
+    // No vector data stored - looked up from index when job executes
+    // This saves memory: 100M pending jobs don't need 100M vector copies
 
     HNSWDiskSingleInsertJob(std::shared_ptr<VecSimAllocator> allocator, idType vectorId_,
-                            size_t elementMaxLevel_, std::string &&rawVector,
-                            std::string &&processedVector, JobCallback insertCb,
+                            size_t elementMaxLevel_, JobCallback insertCb,
                             VecSimIndex *index_)
         : AsyncJob(allocator, HNSW_DISK_SINGLE_INSERT_JOB, insertCb, index_),
-          vectorId(vectorId_), elementMaxLevel(elementMaxLevel_),
-          rawVectorData(std::move(rawVector)), processedVectorData(std::move(processedVector)) {}
+          vectorId(vectorId_), elementMaxLevel(elementMaxLevel_) {}
 };
 
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
@@ -277,8 +275,9 @@ protected:
     vecsim_stl::vector<NeighborUpdate> stagedInsertNeighborUpdates;
 
     // Temporary storage for raw vectors in RAM (until flush batch)
-    // Maps idType -> raw vector data (stored as string for simplicity)
-    std::unordered_map<idType, std::string> rawVectorsInRAM;
+    // Maps idType -> raw vector data (using shared_ptr to avoid copying in job execution)
+    // When a job executes, it just increments refcount instead of copying the entire vector
+    std::unordered_map<idType, std::shared_ptr<std::string>> rawVectorsInRAM;
 
 
     /********************************** Multi-threading Support **********************************/
@@ -934,10 +933,12 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // We need to store the original vector before preprocessing
     // NOTE: In batchless mode, we still use rawVectorsInRAM so other concurrent jobs can access
     // the raw vectors of vectors that haven't been written to disk yet
+    // Using shared_ptr so job execution can just increment refcount instead of copying
     const char* raw_data = reinterpret_cast<const char*>(vector);
+    auto rawVectorPtr = std::make_shared<std::string>(raw_data, this->inputBlobSize);
     {
         std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
-        rawVectorsInRAM[newElementId] = std::string(raw_data, this->inputBlobSize);
+        rawVectorsInRAM[newElementId] = rawVectorPtr;
     }
     // Preprocess the vector
     ProcessedBlobs processedBlobs = this->preprocess(vector);
@@ -1009,14 +1010,9 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
     // Check if we have a job queue for async processing
     if (SubmitJobsToQueue != nullptr) {
         // Multi-threaded: submit job for async processing
-        std::string rawVectorCopy(raw_data, this->inputBlobSize);
-        std::string processedVectorCopy(
-            reinterpret_cast<const char *>(processedBlobs.getStorageBlob()),
-            this->dataSize);
-
+        // No vector copies in job - job will look up from rawVectorsInRAM and this->vectors
         auto *job = new (this->allocator) HNSWDiskSingleInsertJob(
-            this->allocator, newElementId, elementMaxLevel, std::move(rawVectorCopy),
-            std::move(processedVectorCopy),
+            this->allocator, newElementId, elementMaxLevel,
             HNSWDiskIndex<DataType, DistType>::executeSingleInsertJobWrapper, this);
 
         submitSingleJob(job);
@@ -1304,7 +1300,7 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
         std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
         auto it = rawVectorsInRAM.find(id);
         if (it != rawVectorsInRAM.end()) {
-            const char* data_ptr = it->second.data();
+            const char* data_ptr = it->second->data();
             std::memcpy(output_buffer, data_ptr, this->inputBlobSize);
             return true;
         }
@@ -1353,7 +1349,7 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVectorInternal(idType id, void* ou
         std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
         auto it = rawVectorsInRAM.find(id);
         if (it != rawVectorsInRAM.end()) {
-            const char* data_ptr = it->second.data();
+            const char* data_ptr = it->second->data();
             std::memcpy(output_buffer, data_ptr, this->inputBlobSize);
             return true;
         }
@@ -3146,7 +3142,28 @@ void HNSWDiskIndex<DataType, DistType>::executeSingleInsertJob(HNSWDiskSingleIns
         return;
     }
 
-    // Get current entry point
+    // Get shared_ptr to raw vector from rawVectorsInRAM (just increments refcount, no copy)
+    // This keeps the data alive even if erased from map before job finishes
+    std::shared_ptr<std::string> localRawRef;
+    {
+        std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
+        auto it = rawVectorsInRAM.find(job->vectorId);
+        if (it == rawVectorsInRAM.end()) {
+            // Vector was already erased (e.g., deleted before job executed)
+            delete job;
+            return;
+        }
+        localRawRef = it->second;  // Just increments refcount, no data copy
+    }
+
+    // Get processed vector from vectors container
+    const void *processedVector;
+    {
+        std::shared_lock<std::shared_mutex> lock(vectorsGuard);
+        processedVector = this->vectors->getElement(job->vectorId);
+    }
+
+    // Get current entry point and max level
     idType currentEntryPoint;
     size_t currentMaxLevel;
     {
@@ -3157,8 +3174,7 @@ void HNSWDiskIndex<DataType, DistType>::executeSingleInsertJob(HNSWDiskSingleIns
 
     // Use unified core function (batching controlled by diskWriteBatchThreshold)
     executeGraphInsertionCore(job->vectorId, job->elementMaxLevel, currentEntryPoint,
-                              currentMaxLevel, job->rawVectorData.data(),
-                              job->processedVectorData.data());
+                              currentMaxLevel, localRawRef->data(), processedVector);
 
     delete job;
 }

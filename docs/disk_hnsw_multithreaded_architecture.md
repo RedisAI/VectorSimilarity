@@ -2,16 +2,13 @@
 
 ## Overview
 
-This document describes the architectural changes introduced in the `dorer-disk-poc-add-delete-mt` branch compared to the original `disk-poc` branch. The focus is on multi-threading, synchronization, concurrency in writing to disk, and performance enhancements.
+This document describes the multi-threaded architecture of the HNSWDisk index, focusing on synchronization, concurrency in writing to disk, and performance enhancements.
 
-## Key Architectural Changes
+## Key Architectural Components
 
-### 1. Insertion Mode
+### 1. Lightweight Insert Jobs
 
-**Previous single threaded approach:** Vectors were accumulated in batches before being written to disk, requiring complex coordination between threads.
-
-
-**Current approach:** Each insert job is self-contained and can write directly to disk upon completion, optimized for workloads where disk writes are cheap but neighbor searching (reads from disk) is the bottleneck.
+Each insert job is lightweight and only stores metadata (vectorId, elementMaxLevel). Vector data is looked up from shared storage when the job executes, minimizing memory usage when many jobs are queued.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -19,10 +16,12 @@ This document describes the architectural changes introduced in the `dorer-disk-
 ├──────────────────────────────────────────────────────────────┤
 │ - vectorId                                                   │
 │ - elementMaxLevel                                            │
-│ - rawVectorData (copied into job - no external references)   │
-│ - processedVectorData (quantized vector for distance calc)   │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+At execution time, jobs access vector data via:
+- **Raw vectors**: `shared_ptr` from `rawVectorsInRAM` (refcount increment, no copy)
+- **Processed vectors**: Direct access from `this->vectors` container
 
 ### 2. Segmented Neighbor Cache
 
@@ -39,7 +38,7 @@ struct alignas(64) CacheSegment {
 };
 ```
 Note:
-NUM_CACHE_SEGMENTS can be changes which will be cause better separation of the cache,
+NUM_CACHE_SEGMENTS can be changed which will cause better separation of the cache,
 but will require more RAM usage.
 
 **Key benefits:**
@@ -146,10 +145,12 @@ addVector()
     │   └── executeGraphInsertionCore() [inline]
     │
     └── Multi-threaded path (with job queue):
-        ├── Create HNSWDiskSingleInsertJob (copies vector data)
+        ├── Create HNSWDiskSingleInsertJob (just vectorId + level, no vector copy)
         ├── Submit via SubmitJobsToQueue callback
         └── Worker thread executes:
             └── executeSingleInsertJob()
+                ├── Get shared_ptr to raw vector from rawVectorsInRAM
+                ├── Get processed vector from this->vectors
                 └── executeGraphInsertionCore()
 ```
 
@@ -159,12 +160,16 @@ addVector()
 struct HNSWDiskSingleInsertJob : public AsyncJob {
     idType vectorId;
     size_t elementMaxLevel;
-    std::string rawVectorData;       // Copied - no external references
-    std::string processedVectorData; // Quantized data for distance calc
+    // No vector data stored - looked up from index when job executes
+    // This saves memory: 100M pending jobs don't need 100M vector copies
 };
 ```
 
-Copying vector data into the job eliminates race conditions with the caller's buffer.
+Jobs look up vector data at execution time:
+- **Raw vectors**: Accessed via `shared_ptr` from `rawVectorsInRAM` (just increments refcount, no copy)
+- **Processed vectors**: Accessed from `this->vectors` container
+
+This eliminates memory duplication while maintaining thread safety through reference counting.
 
 ## Data Flow During Insert
 
@@ -222,12 +227,32 @@ Nodes created in the current batch are tracked in `cacheSegment.newNodes`:
 - Avoids disk lookups for vectors that haven't been written yet
 - Cleared after successful flush to disk
 
-### 4. Raw Vectors in RAM
+### 4. Raw Vectors in RAM with shared_ptr
 
-Raw vectors are kept in `rawVectorsInRAM` until flushed to disk:
+Raw vectors are stored in `rawVectorsInRAM` using `std::shared_ptr<std::string>`:
+
+```cpp
+std::unordered_map<idType, std::shared_ptr<std::string>> rawVectorsInRAM;
+```
+
+**Benefits:**
 - Allows concurrent jobs to access vectors before disk write
 - Eliminates redundant disk reads during graph construction
+- **Zero-copy job execution**: Jobs increment refcount instead of copying entire vector
+- **Safe concurrent deletion**: If vector is erased from map while job is executing, the `shared_ptr` keeps data alive until job completes
 - Protected by `rawVectorsGuard` (shared_mutex)
+
+**Execution flow:**
+```cpp
+// Job execution - no data copy, just refcount increment
+std::shared_ptr<std::string> localRawRef;
+{
+    std::shared_lock<std::shared_mutex> lock(rawVectorsGuard);
+    localRawRef = rawVectorsInRAM[job->vectorId];  // refcount++
+}
+// Lock released, but data stays alive via localRawRef
+// Use localRawRef->data() for graph insertion and disk write
+```
 
 ## Thread Safety Summary
 
