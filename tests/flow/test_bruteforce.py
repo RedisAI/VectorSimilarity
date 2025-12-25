@@ -5,6 +5,7 @@
 # (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
 # GNU Affero General Public License v3 (AGPLv3).
 
+import logging
 from common import *
 
 class Data:
@@ -41,7 +42,7 @@ class Data:
         dists = [dist for dist, _ in dists]
         return (keys, dists)
 
-def test_sanity_bf():
+def test_sanity_bf(test_logger):
     test_datas = []
 
     dist_funcs = [(VecSimMetric_Cosine, spatial.distance.cosine), (VecSimMetric_L2, spatial.distance.sqeuclidean)]
@@ -57,9 +58,9 @@ def test_sanity_bf():
         bf_labels, bf_distances = test_data.index.knn_query(test_data.query, k=k)
         assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
         assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
-        print(f"\nsanity test for {test_data.metric} and {test_data.type} pass")
+        test_logger.info(f"sanity test for {test_data.metric} and {test_data.type} pass")
 
-def test_bf_cosine():
+def test_bf_cosine(test_logger):
     dim = 128
     num_elements = 1000000
     k=10
@@ -88,13 +89,13 @@ def test_bf_cosine():
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
     end = time.time()
-    print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
 
 
-def test_bf_l2():
+def test_bf_l2(test_logger):
     dim = 128
     num_elements = 1000000
     k=10
@@ -122,12 +123,12 @@ def test_bf_l2():
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
     end = time.time()
-    print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
 
 
-def test_batch_iterator():
+def test_batch_iterator(test_logger):
     dim = 128
     num_elements = 1000000
 
@@ -173,12 +174,12 @@ def test_batch_iterator():
         labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
         returned_results_num += len(labels[0])
 
-    print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
+    test_logger.info(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
     assert (returned_results_num == num_elements)
     assert (iterations == np.ceil(num_elements/batch_size))
 
 
-def test_range_query():
+def test_range_query(test_logger):
     dim = 128
     num_elements = 1000000
 
@@ -203,7 +204,7 @@ def test_range_query():
     bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
     end = time.time()
     res_num = len(bf_labels[0])
-    print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds, got {res_num} results')
+    test_logger.info(f'lookup time for {num_elements} vectors with dim={dim} took {end - start} seconds, got {res_num} results')
 
     # Verify that we got exactly all vectors within the range
     dists = sorted([(spatial.distance.euclidean(query_data.flat, vec), key) for key, vec in vectors])
@@ -220,7 +221,7 @@ def test_range_query():
     assert len(bf_labels[0]) == 0
 
 
-def test_bf_multivalue():
+def test_bf_multivalue(test_logger):
     dim = 128
     num_labels = 50000
     num_per_label = 20
@@ -260,12 +261,12 @@ def test_bf_multivalue():
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
     end = time.time()
-    print(f'\nlookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
 
-def test_multi_range_query():
+def test_multi_range_query(test_logger):
     dim = 128
     num_labels = 20000
     per_label = 5
@@ -305,7 +306,7 @@ def test_multi_range_query():
     end = time.time()
     res_num = len(bf_labels[0])
 
-    print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds')
 
     # Recall should be 100%.
     assert res_num == len(keys)
@@ -330,16 +331,16 @@ class TestBfloat16():
     data = Data(VecSimType_BFLOAT16, VecSimMetric_L2, spatial.distance.sqeuclidean, vec_to_bfloat16, dim, num_labels, num_per_label)
 
     # Not testing bfloat16 cosine as type conversion biases mess up the results
-    def test_bf_bfloat16_L2(self):
+    def test_bf_bfloat16_L2(self, test_logger):
         k = 10
 
         keys, dists = self.data.measure_dists(k)
         bf_labels, bf_distances = self.data.index.knn_query(self.data.query, k=k)
         assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
         assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
-        print(f"\nsanity test for {self.data.metric} and {self.data.type} pass")
+        test_logger.info(f"sanity test for {self.data.metric} and {self.data.type} pass")
 
-    def test_bf_bfloat16_batch_iterator(self):
+    def test_bf_bfloat16_batch_iterator(self, test_logger):
         bfindex = self.data.index
         num_elements = self.num_labels
 
@@ -369,11 +370,11 @@ class TestBfloat16():
             labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
             returned_results_num += len(labels[0])
 
-        print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={self.dim}: {time.time() - start}')
+        test_logger.info(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={self.dim}: {time.time() - start}')
         assert (returned_results_num == num_elements)
         assert (iterations == np.ceil(num_elements/batch_size))
 
-    def test_bf_bfloat16_range_query(self):
+    def test_bf_bfloat16_range_query(self, test_logger):
         bfindex = self.data.index
         query_data = self.data.query
 
@@ -382,7 +383,7 @@ class TestBfloat16():
         bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
         end = time.time()
         res_num = len(bf_labels[0])
-        print(f'\nlookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
+        test_logger.info(f'lookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
 
         # Verify that we got exactly all vectors within the range
         results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data.flat, self.data.vectors, res_num)
@@ -397,7 +398,7 @@ class TestBfloat16():
         bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
         assert len(bf_labels[0]) == 0
 
-def test_bf_bfloat16_multivalue():
+def test_bf_bfloat16_multivalue(test_logger):
     num_labels=5_000
     num_per_label=20
     num_elements = num_labels * num_per_label
@@ -426,7 +427,7 @@ def test_bf_bfloat16_multivalue():
     bf_labels, bf_distances = data.index.knn_query(query_data, k=10)
     end = time.time()
 
-    print(f'\nlookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
@@ -439,16 +440,16 @@ class TestFloat16():
     data = Data(VecSimType_FLOAT16, VecSimMetric_L2, spatial.distance.sqeuclidean, vec_to_float16, dim, num_labels, num_per_label)
 
     # Not testing bfloat16 cosine as type conversion biases mess up the results
-    def test_bf_float16_L2(self):
+    def test_bf_float16_L2(self, test_logger):
         k = 10
 
         keys, dists = self.data.measure_dists(k)
         bf_labels, bf_distances = self.data.index.knn_query(self.data.query, k=k)
         assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
         assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
-        print(f"\nsanity test for {self.data.metric} and {self.data.type} pass")
+        test_logger.info(f"sanity test for {self.data.metric} and {self.data.type} pass")
 
-    def test_bf_float16_batch_iterator(self):
+    def test_bf_float16_batch_iterator(self, test_logger):
         bfindex = self.data.index
         num_elements = self.num_labels
 
@@ -478,11 +479,11 @@ class TestFloat16():
             labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
             returned_results_num += len(labels[0])
 
-        print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={self.dim}: {time.time() - start}')
+        test_logger.info(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={self.dim}: {time.time() - start}')
         assert (returned_results_num == num_elements)
         assert (iterations == np.ceil(num_elements/batch_size))
 
-    def test_bf_float16_range_query(self):
+    def test_bf_float16_range_query(self, test_logger):
         bfindex = self.data.index
         query_data = self.data.query
 
@@ -491,7 +492,7 @@ class TestFloat16():
         bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
         end = time.time()
         res_num = len(bf_labels[0])
-        print(f'\nlookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
+        test_logger.info(f'lookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
 
         # Verify that we got exactly all vectors within the range
         results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data.flat, self.data.vectors, res_num)
@@ -506,7 +507,7 @@ class TestFloat16():
         bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
         assert len(bf_labels[0]) == 0
 
-def test_bf_float16_multivalue():
+def test_bf_float16_multivalue(test_logger):
     num_labels=5_000
     num_per_label=20
     num_elements = num_labels * num_per_label
@@ -535,7 +536,7 @@ def test_bf_float16_multivalue():
     bf_labels, bf_distances = data.index.knn_query(query_data, k=10)
     end = time.time()
 
-    print(f'\nlookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
+    test_logger.info(f'lookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
@@ -601,7 +602,7 @@ class GeneralTest():
         return correct
 
     @classmethod
-    def knn(cls, index, label_vec_list, dist_func):
+    def knn(cls, index, label_vec_list, dist_func, test_logger=logging.getLogger(__name__)):
         k = 10
 
         results, keys = get_ground_truth_results(dist_func, cls.query_data[0], label_vec_list, k)
@@ -609,13 +610,13 @@ class GeneralTest():
         bf_labels, bf_distances = index.knn_query(cls.query_data, k=k)
         assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
         assert_allclose(bf_distances, [dists[:k]],  rtol=1e-5, atol=0)
-        print(f"\nsanity test for L2 and {cls.data_type} pass")
+        test_logger.info(f"sanity test for L2 and {cls.data_type} pass")
 
-    def test_L2(self):
+    def test_L2(self, test_logger):
         index, label_to_vec_list = self.get_cached_single_L2_index()
-        self.knn(index, label_to_vec_list, spatial.distance.sqeuclidean)
+        self.knn(index, label_to_vec_list, spatial.distance.sqeuclidean, test_logger)
 
-    def test_batch_iterator(self):
+    def test_batch_iterator(self, test_logger):
         index, _ = self.get_cached_single_L2_index()
         # num_elements = self.num_labels
         batch_size = 10
@@ -647,12 +648,12 @@ class GeneralTest():
             labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
             returned_results_num += len(labels[0])
 
-        print(f'Total search time for running batches of size {batch_size} for index with {self.num_elements} of dim={self.dim}: {time.time() - start}')
+        test_logger.info(f'Total search time for running batches of size {batch_size} for index with {self.num_elements} of dim={self.dim}: {time.time() - start}')
         assert (returned_results_num == self.num_elements)
         assert (iterations == np.ceil(self.num_elements/batch_size))
 
     ##### Should be explicitly called #####
-    def range_query(self, dist_func):
+    def range_query(self, dist_func, test_logger=logging.getLogger(__name__)):
         bfindex = self.create_index(VecSimMetric_Cosine)
         label_to_vec_list = self.create_add_vectors(bfindex)
         radius = bfindex.knn_query(self.query_data[0], k=100)[1][0][-1] # get the distance of the 100th closest vector as the radius
@@ -661,7 +662,8 @@ class GeneralTest():
         bf_labels, bf_distances = bfindex.range_query(self.query_data[0], radius=radius)
         end = time.time()
         res_num = len(bf_labels[0])
-        print(f'\nlookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
+        test_logger.info(f'lookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
+
 
         # Verify that we got exactly all vectors within the range
         results, keys = get_ground_truth_results(dist_func, self.query_data[0], label_to_vec_list, res_num)
@@ -676,7 +678,7 @@ class GeneralTest():
         bf_labels, bf_distances = bfindex.range_query(self.query_data[0], radius=0)
         assert len(bf_labels[0]) == 0
 
-    def multi_value(self, create_data_func, num_per_label = 5):
+    def multi_value(self, create_data_func, num_per_label = 5, test_logger=logging.getLogger(__name__)):
         # num_labels=5_000
         # num_per_label=20
         # num_elements = num_labels * num_per_label
@@ -710,7 +712,7 @@ class GeneralTest():
         bf_labels, bf_distances = index.knn_query(self.query_data[0], k=k)
         end = time.time()
 
-        print(f'\nlookup time for {self.num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={self.dim} took {end - start} seconds')
+        test_logger.info(f'lookup time for {self.num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={self.dim} took {end - start} seconds')
 
         assert_allclose(bf_labels, [keys],  rtol=1e-5)
         assert_allclose(bf_distances, [dists],  rtol=1e-5)

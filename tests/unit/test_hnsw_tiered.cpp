@@ -29,6 +29,11 @@ public:
     using dist_t = typename index_type_t::dist_t;
 
 protected:
+    VecSimWriteMode original_mode;
+    void SetUp() { original_mode = VecSimIndexInterface::asyncWriteMode; }
+
+    void TearDown() { VecSimIndexInterface::asyncWriteMode = original_mode; }
+
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
         return tiered_index->getHNSWIndex();
@@ -637,8 +642,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
 
     // Search for more vectors than the index size.
     k = n + 1;
-    runTopKSearchTest(tiered_index, query_0, k, n, ver_res_0);
-    runTopKSearchTest(tiered_index, query_n, k, n, ver_res_n);
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
 
     // Search for less vectors than the index size, but more than the flat and main index sizes.
     k = n * 5 / 6;
@@ -910,7 +915,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, MergeMulti) {
     // Search in the tiered index for more vectors than it has. Merging the results from the two
     // indexes should result in a list of unique vectors, even if the scores of the duplicates are
     // different.
-    runTopKSearchTest(tiered_index, query, 5, 3, [](size_t _, double __, size_t ___) {});
+    runTopKSearchTest(tiered_index, query, 5, [](size_t _, double __, size_t ___) {});
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
@@ -1087,7 +1092,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     auto allocator = tiered_index->getAllocator();
 
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector(tiered_index->getHNSWIndex(), dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->getHNSWIndex(), dim, i, i);
     }
 
     // Delete vectors one by one and run the resulted repair jobs.
@@ -2767,7 +2772,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     info = tiered_index->debugInfo();
     stats = tiered_index->statisticInfo();
 
@@ -2800,7 +2805,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
     if (TypeParam::isMulti()) {
-        GenerateAndAddVector(tiered_index, dim, 1, 1);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
         info = tiered_index->debugInfo();
         stats = tiered_index->statisticInfo();
 
@@ -2849,83 +2854,36 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
     auto allocator = tiered_index->getAllocator();
 
-    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
     VecSimIndexDebugInfo info = tiered_index->debugInfo();
     VecSimIndexDebugInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
 
     VecSimDebugInfoIterator *infoIterator = tiered_index->debugInfoIterator();
-    EXPECT_EQ(infoIterator->numberOfFields(), 15);
+    compareTieredIndexInfoToIterator(info, frontendIndexInfo, backendIndexInfo, infoIterator);
 
-    while (infoIterator->hasNext()) {
-        VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIterator);
+    VecSimDebugInfoIterator_Free(infoIterator);
+}
 
-        if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
-            // Algorithm type.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimCommonStrings::TIERED_STRING);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
-            // Vector type.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimType_ToString(info.commonInfo.basicInfo.type));
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
-            // Vector dimension.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.dim);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::METRIC_STRING)) {
-            // Metric.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimMetric_ToString(info.commonInfo.basicInfo.metric));
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
-            // Search mode.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
-            // Index size.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexSize);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
-            // Index label count.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexLabelCount);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
-            // Is the index multi value.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
-            // Memory.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-            compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING)) {
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(
-                infoField->fieldValue.uintegerValue,
-                info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold);
-        } else {
-            FAIL();
-        }
-    }
+TYPED_TEST(HNSWTieredIndexTest, debugInfoIteratorFieldOrder) {
+
+    namespace expected_output = test_utils::test_debug_info_iterator_order;
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
+                              .dim = dim,
+                              .metric = VecSimMetric_L2,
+                              .multi = TypeParam::isMulti()};
+    auto mock_thread_pool = tieredIndexMock();
+    auto index = test_utils::CreateNewTieredVecSimIndex(hnsw_params, mock_thread_pool);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    // Test the field order using the common function
+    expected_output::testDebugInfoIteratorFieldOrder(infoIterator,
+                                                     expected_output::getTieredHNSWFields());
+
     VecSimDebugInfoIterator_Free(infoIterator);
 }
 
@@ -2977,6 +2935,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti(),
                          .M = 32,
+                         .efConstruction = 3 * n,
                          .efRuntime = 3 * n};
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
@@ -3054,7 +3013,10 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
                     ASSERT_LE(res_label, i + n_labels);
                 }
             };
-            runTopKSearchTest(hnsw_index, vector, 10, ver_res);
+            // Run top K search over the tiered index so that internally in the runTopKSearchTest
+            // helper function we will identify that it is an async index and expect to get <= k
+            // results (rather than == k, as some nodes may be unreachable).
+            runTopKSearchTest(tiered_index, vector, 10, ver_res);
         }
     }
 
@@ -4243,12 +4205,6 @@ public:
             static_cast<DataType *>(blob)[i] *= 2;
         }
     }
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {
-        for (size_t i = 0; i < dim; i++) {
-            static_cast<DataType *>(blob)[i] *= 2;
-        }
-    }
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
         for (size_t i = 0; i < dim; i++) {
@@ -4388,4 +4344,114 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
         runBatchIteratorSearchTest(batchIterator, k, verify_res);
         VecSimBatchIterator_Free(batchIterator);
     }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
+    size_t dim = 4;
+    constexpr size_t blockSize = 10;
+    size_t resize_operations = 0;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = blockSize};
+    VecSimParams hnsw_params = CreateParams(params);
+
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = SIZE_MAX,
+                                       .primaryIndexParams = &hnsw_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 1}}};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_params));
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), 0);
+
+    // add a vector
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    mock_thread_pool.thread_iteration();
+    resize_operations++;
+
+    // first vector should trigger resize
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
+
+    // add up to block size
+    for (size_t i = 1; i < blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+        mock_thread_pool.thread_iteration();
+    }
+    // should not trigger resize
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
+
+    // add one more vector to trigger another resize
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, blockSize);
+    mock_thread_pool.thread_iteration();
+    resize_operations++;
+
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize + 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
+
+    // delete a vector to shrink data blocks
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1) << "Failed to delete vector 0";
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    tiered_index->executeReadySwapJobs();
+    resize_operations++;
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    // meta data capacity should not shrink
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+
+    // add this vector again and verify lock was acquired to resize
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    mock_thread_pool.thread_iteration();
+    resize_operations++;
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize + 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
+
+    // add up to block size (count = 2 blockSize), the lock shouldn't be acquired because no resize
+    // is required
+    for (size_t i = blockSize + 1; i < 2 * blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i);
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 2 * blockSize);
+    ASSERT_EQ(tiered_index->frontendIndex->indexMetaDataCapacity(), 0);
+    ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
+              hnsw_index->indexMetaDataCapacity() +
+                  tiered_index->frontendIndex->indexMetaDataCapacity());
 }

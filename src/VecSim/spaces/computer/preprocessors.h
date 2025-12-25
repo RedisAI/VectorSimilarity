@@ -34,8 +34,6 @@ public:
                                       size_t &input_blob_size) const = 0;
     virtual void preprocessQuery(const void *original_blob, void *&query_blob,
                                  size_t &input_blob_size, unsigned char alignment) const = 0;
-    virtual void preprocessQueryInPlace(void *original_blob, size_t input_blob_size,
-                                        unsigned char alignment) const = 0;
     virtual void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const = 0;
 };
 
@@ -127,13 +125,6 @@ public:
         }
         normalize_func(blob, this->dim);
         input_blob_size = processed_bytes_count;
-    }
-
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {
-        assert(blob);
-        assert(input_blob_size == this->processed_bytes_count);
-        normalize_func(blob, this->dim);
     }
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {

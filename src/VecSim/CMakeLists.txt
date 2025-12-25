@@ -46,12 +46,15 @@ target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if (TARGET svs::svs)
     target_link_libraries(VectorSimilarity svs::svs)
-    if(TARGET svs::svs_shared_library)
-        target_link_libraries(VectorSimilarity svs::svs_shared_library)
+    if(TARGET svs::svs_static_library)
+        target_link_libraries(VectorSimilarity svs::svs_static_library)
     endif()
 endif()
 
 if(VECSIM_BUILD_TESTS)
-    add_library(VectorSimilaritySerializer utils/serializer.cpp)
+    add_library(VectorSimilaritySerializer
+        algorithms/hnsw/hnsw_serializer.cpp
+        algorithms/svs/svs_serializer.cpp
+    )
     target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()

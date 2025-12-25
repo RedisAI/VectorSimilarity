@@ -22,13 +22,14 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	# NOTE: mock_thread_pool.cpp should appear *before* the benchmark files, so we can ensure that the thread pool
 	# globals are initialized before we use them in the benchmark classes (as globals initialization is done by order).
 	add_executable(bm_${benchmark} ../utils/mock_thread_pool.cpp bm_vecsim_general.cpp run_files/bm_${benchmark}.cpp)
-	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
+	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark gtest)
 endforeach()
+
+include(GoogleTest)
 
 if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 	add_compile_definitions(BENCHMARK_ARCH=arm64)
-	
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)
 	add_compile_definitions(BENCHMARK_ARCH=x86_64)
@@ -38,7 +39,7 @@ endif()
 # Spaces benchmarks								                                          #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8)
+set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8 sq8)
 foreach(data_type IN LISTS DATA_TYPE)
 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
 	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark)

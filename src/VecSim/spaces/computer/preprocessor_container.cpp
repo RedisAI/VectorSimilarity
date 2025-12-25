@@ -26,9 +26,6 @@ MemoryUtils::unique_blob PreprocessorsContainerAbstract::preprocessQuery(const v
     return maybeCopyToAlignedMem(original_blob, input_blob_size, force_copy);
 }
 
-void PreprocessorsContainerAbstract::preprocessQueryInPlace(void *blob,
-                                                            size_t input_blob_size) const {}
-
 void PreprocessorsContainerAbstract::preprocessStorageInPlace(void *blob,
                                                               size_t input_blob_size) const {}
 

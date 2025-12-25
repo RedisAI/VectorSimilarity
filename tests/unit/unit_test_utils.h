@@ -62,8 +62,10 @@ static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
     }
 }
 
+// use std::type_identity to force explicit template specification.
 template <typename data_t>
-int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
+int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id,
+                         typename std::type_identity<data_t>::type value = 1.0) {
     data_t v[dim];
     GenerateVector(v, dim, value);
     return VecSimIndex_AddVector(index, v, id);
@@ -110,8 +112,17 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
 
 TieredIndexParams CreateTieredParams(VecSimParams &primary_params,
                                      tieredIndexMock &mock_thread_pool);
-VecSimIndex *CreateNewTieredHNSWIndex(const HNSWParams &hnsw_params,
-                                      tieredIndexMock &mock_thread_pool);
+template <typename backend_index_params>
+VecSimIndex *CreateNewTieredVecSimIndex(const backend_index_params &hnsw_params,
+                                        tieredIndexMock &mock_thread_pool) {
+    VecSimParams primary_params = CreateParams(hnsw_params);
+    auto tiered_params = CreateTieredParams(primary_params, mock_thread_pool);
+    VecSimParams params = CreateParams(tiered_params);
+    VecSimIndex *index = VecSimIndex_New(&params);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    return index;
+}
 
 extern VecsimQueryType query_types[4];
 
@@ -135,14 +146,16 @@ VecSimQueryParams CreateQueryParams(const SVSRuntimeParams &RuntimeParams);
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
 inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2); }
-void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_res_num,
-                       std::function<void(size_t, double, size_t)> ResCB,
-                       VecSimQueryParams *params = nullptr,
-                       VecSimQueryReply_Order order = BY_SCORE);
+
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
                        VecSimQueryReply_Order order = BY_SCORE);
+
+template <bool withSet, typename data_t, typename dist_t>
+void runTopKTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
+                                  size_t k, std::function<void(size_t, double, size_t)> ResCB,
+                                  VecSimQueryParams *params = nullptr);
 
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(size_t, double, size_t)> ResCB,
@@ -152,20 +165,32 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
 void compareCommonInfo(CommonInfo info1, CommonInfo info2);
 void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
 void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
+void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
+
+void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params);
 
 void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
 void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
-void compareTieredHNSWIndexInfoToIterator(VecSimIndexDebugInfo info,
-                                          VecSimIndexDebugInfo frontendIndexInfo,
-                                          VecSimIndexDebugInfo backendIndexInfo,
-                                          VecSimDebugInfoIterator *infoIterator);
+void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
+                                      VecSimIndexDebugInfo frontendIndexInfo,
+                                      VecSimIndexDebugInfo backendIndexInfo,
+                                      VecSimDebugInfoIterator *infoIterator);
+
+void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);
+
+template <bool withSet, typename data_t = float, typename dist_t = float>
+void runRangeTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
+                                   double radius,
+                                   const std::function<void(size_t, double, size_t)> &ResCB,
+                                   size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
+                                   VecSimQueryParams *params = nullptr);
 
 size_t getLabelsLookupNodeSize();
 
@@ -187,6 +212,33 @@ TieredHNSWIndex<data_t, dist_t> *cast_to_tiered_index(VecSimIndex *index) {
     return dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
 }
 
+namespace test_debug_info_iterator_order {
+// Test debug info iterator field order (general function for all index types)
+void testDebugInfoIteratorFieldOrder(VecSimDebugInfoIterator *infoIterator,
+                                     const std::vector<std::string> &expectedFieldOrder);
+
+// Helper function: imitates addCommonInfoToIterator() from vec_sim_index.h (8 fields)
+std::vector<std::string> getCommonFields();
+
+// Get common expected field order for all tiered indexes (14 fields: imitates
+// VecSimTieredIndex::debugInfoIterator)
+std::vector<std::string> getTieredCommonFields();
+
+// Get expected field order for flat/brute force index (10 fields)
+std::vector<std::string> getFlatFields();
+
+// Get expected field order for HNSW index (17 fields)
+std::vector<std::string> getHNSWFields();
+
+// Get expected field order for SVS index (23 fields)
+std::vector<std::string> getSVSFields();
+
+// Get expected field order for tiered SVS index
+std::vector<std::string> getTieredSVSFields();
+
+// Get expected field order for tiered HNSW index
+std::vector<std::string> getTieredHNSWFields();
+} // namespace test_debug_info_iterator_order
 } // namespace test_utils
 
 // Test a specific exception type is thrown and prints the right message.

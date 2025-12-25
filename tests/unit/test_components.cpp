@@ -91,8 +91,6 @@ public:
         }
         static_cast<DataType *>(blob)[0] += value_to_add_storage;
     }
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {}
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
         assert(blob);
@@ -141,10 +139,7 @@ public:
                               size_t &input_blob_size) const override {
         /* do nothing*/
     }
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {
-        static_cast<DataType *>(blob)[0] += value_to_add_query;
-    }
+
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {}
     void preprocessQuery(const void *original_blob, void *&blob, size_t &input_blob_size,
                          unsigned char alignment) const override {
@@ -201,8 +196,6 @@ public:
         }
         static_cast<DataType *>(blob)[0] += value_to_add_storage;
     }
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {}
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {}
     void preprocessQuery(const void *original_blob, void *&blob, size_t &input_blob_size,
@@ -293,14 +286,6 @@ public:
                               size_t &input_blob_size) const override {
 
         this->preprocessGeneral(original_blob, blob, input_blob_size);
-    }
-    void preprocessQueryInPlace(void *blob, size_t input_blob_size,
-                                unsigned char alignment) const override {
-        // only supported if the blob in already large enough
-        assert(input_blob_size >= processed_bytes_count);
-        // set excess bytes to 0
-        memset((char *)blob + processed_bytes_count, excess_value,
-               input_blob_size - processed_bytes_count);
     }
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {

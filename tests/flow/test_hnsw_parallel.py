@@ -7,6 +7,7 @@
 import concurrent
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, wait
 
 from common import *
@@ -90,7 +91,7 @@ g_test_index.insert_random_vectors()
 g_test_index_multi = IndexTest(dim, num_elements, metric, data_type, multi_=True)
 g_test_index_multi.insert_random_vectors_multi(per_label)
 
-def test_parallel_search():
+def test_parallel_search(test_logger):
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
@@ -106,8 +107,8 @@ def test_parallel_search():
         total_search_time += time.time() - start
         total_correct += len(set(res_labels[0]).intersection(set(g_test_index.total_res_bf[i])))
 
-    print(f"Running sequential search, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
-          f" and {num_queries/total_search_time} query per seconds")
+    test_logger.info(f"Running sequential search, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
+                     f" and {num_queries/total_search_time} query per seconds")
 
     start = time.time()
     res_labels, _ = g_test_index.hnsw_index.knn_parallel(query_data, k, num_threads=n_threads)
@@ -117,21 +118,21 @@ def test_parallel_search():
     for i in range(num_queries):
         total_correct_parallel += len(set(g_test_index.total_res_bf[i]).intersection(set(res_labels[i])))
 
-    print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
-          f" and {num_queries / total_search_time_parallel} query per seconds")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using {n_threads} threads\n")
+    test_logger.info(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
+                     f" and {num_queries / total_search_time_parallel} query per seconds")
+    test_logger.info(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using {n_threads} threads\n")
 
     # Validate that the recall of the parallel search recall is the same as the sequential search recall.
     assert total_correct_parallel == total_correct
 
 
-def test_parallel_insert():
+def test_parallel_insert(test_logger):
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
 
-    print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took"
-          f" {g_test_index.sequential_insert_time} seconds")
+    test_logger.info(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took"
+                     f" {g_test_index.sequential_insert_time} seconds")
 
     parallel_index = create_hnsw_index(g_test_index.dim, g_test_index.num_elements, g_test_index.metric,
                                        g_test_index.data_type, ef_runtime=200)
@@ -144,8 +145,8 @@ def test_parallel_insert():
     for label in range(num_elements):
         assert_allclose(g_test_index.hnsw_index.get_vector(label), parallel_index.get_vector(label))
 
-    print(f"Inserting {num_elements} vectors of dim {dim} into HNSW in parallel took {parallel_insert_time} seconds")
-    print(f"Got {g_test_index.sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
+    test_logger.info(f"Inserting {num_elements} vectors of dim {dim} into HNSW in parallel took {parallel_insert_time} seconds")
+    test_logger.info(f"Got {g_test_index.sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
 
     query_data = np.float32(np.random.random((num_queries, dim)))
     g_test_index.compute_ground_truth_knn(query_data, k)
@@ -158,9 +159,9 @@ def test_parallel_insert():
     total_correct = 0
     for i in range(num_queries):
         total_correct += len(set(g_test_index.total_res_bf[i]).intersection(set(res_labels[i])))
-    print(f"Running parallel search over an index that was built by inserting vectors one by one, got"
-          f" {total_correct / (k * num_queries)} recall on {num_queries} queries,"
-          f" with {num_queries/total_search_time} query per second")
+    test_logger.info(f"Running parallel search over an index that was built by inserting vectors one by one, got"
+                     f" {total_correct / (k * num_queries)} recall on {num_queries} queries,"
+                     f" with {num_queries/total_search_time} query per second")
 
     # Run search with parallel index and assert that similar recall achieved.
     start = time.time()
@@ -170,13 +171,13 @@ def test_parallel_insert():
     total_correct_parallel = 0
     for i in range(num_queries):
         total_correct_parallel += len(set(g_test_index.total_res_bf[i]).intersection(set(res_labels[i])))
-    print(f"Running parallel search on index that was created using parallel insert, got "
-          f"{total_correct_parallel / (k * num_queries)} recall on {num_queries} queries, and"
-          f" {num_queries/total_search_time_parallel} query per second")
+    test_logger.info(f"Running parallel search on index that was created using parallel insert, got "
+                     f"{total_correct_parallel / (k * num_queries)} recall on {num_queries} queries, and"
+                     f" {num_queries/total_search_time_parallel} query per second")
     assert total_correct_parallel >= total_correct * 0.95  # 0.95 is an arbitrary threshold
 
 
-def test_parallel_insert_search():
+def test_parallel_insert_search(test_logger):
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
@@ -196,20 +197,20 @@ def test_parallel_insert_search():
 
     def run_queries():
         nonlocal res_labels_g
-        print(f"Running queries when index size is: {parallel_index.index_size()}")
+        test_logger.info(f"Running queries when index size is: {parallel_index.index_size()}")
         res_labels_g[:num_queries], _ = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
-        print(f"Done running queries, index size: {parallel_index.index_size()}")
+        test_logger.info(f"Done running queries, index size: {parallel_index.index_size()}")
         # Wait until 75% of the index is indexed, then run another batch of queries.
         while parallel_index.index_size() < 0.75 * float(num_elements):
             time.sleep(0.5)
-        print(f"Running queries again when index size is: {parallel_index.index_size()}")
+        test_logger.info(f"Running queries again when index size is: {parallel_index.index_size()}")
         res_labels_g[num_queries:], _ = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
-        print(f"Done running queries for the second time, index size: {parallel_index.index_size()}")
+        test_logger.info(f"Done running queries for the second time, index size: {parallel_index.index_size()}")
 
     t_insert = threading.Thread(target=insert_vectors)
     t_query = threading.Thread(target=run_queries)
-    print("Running KNN queries in parallel to inserting vectors to the index, start running queries after more 50% of"
-          " the vectors are indexed")
+    test_logger.info("Running KNN queries in parallel to inserting vectors to the index, start running queries after more 50% of"
+                     " the vectors are indexed")
     t_insert.start()
     # Wait until half of the index is indexed, then start run queries
     while parallel_index.index_size() < num_elements / 2:
@@ -230,10 +231,10 @@ def test_parallel_insert_search():
             total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(set(res_labels_g[res_ind])))
         assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for run no. {i + 1} of queries is: {total_correct_cur_chunk/(k*num_queries)}")
+        test_logger.info(f"Recall for run no. {i + 1} of queries is: {total_correct_cur_chunk/(k*num_queries)}")
 
 
-def test_parallel_with_range():
+def test_parallel_with_range(test_logger):
     num_queries = 10000
     radius = 3.0
     n_threads = min(os.cpu_count(), 8)
@@ -256,9 +257,9 @@ def test_parallel_with_range():
         total_results += g_test_index.total_res_bf[i].size
         overall_intersection_rate += res_labels_range[0].size / g_test_index.total_res_bf[i].size \
             if g_test_index.total_res_bf[i].size > 0 else 1
-    print(f"Range queries - running {num_queries} queries sequentially, average number of results is:"
-          f" {total_results/num_queries} and HNSW success rate is: {overall_intersection_rate/num_queries}."
-          f" query per seconds: {num_queries/total_search_time}")
+    test_logger.info(f"Range queries - running {num_queries} queries sequentially, average number of results is:"
+                     f" {total_results/num_queries} and HNSW success rate is: {overall_intersection_rate/num_queries}."
+                     f" query per seconds: {num_queries/total_search_time}")
 
     # Run range queries in parallel
     start = time.time()
@@ -271,21 +272,21 @@ def test_parallel_with_range():
         assert query_results_set.issubset(set(g_test_index.total_res_bf[i]))
         overall_intersection_rate_parallel += len(query_results_set) / g_test_index.total_res_bf[i].size \
             if g_test_index.total_res_bf[i].size > 0 else 1
-    print(f"Running the same {num_queries} queries in parallel, query per seconds is"
-          f" {num_queries/total_range_query_parallel_time}, and intersection rate is: "
-          f"{overall_intersection_rate_parallel/num_queries}")
+    test_logger.info(f"Running the same {num_queries} queries in parallel, query per seconds is"
+                     f" {num_queries/total_range_query_parallel_time}, and intersection rate is: "
+                     f"{overall_intersection_rate_parallel/num_queries}")
     assert overall_intersection_rate_parallel == overall_intersection_rate
-    print(f"Got improvement of {total_search_time/total_range_query_parallel_time} times using {n_threads} threads\n")
+    test_logger.info(f"Got improvement of {total_search_time/total_range_query_parallel_time} times using {n_threads} threads\n")
 
 
-def test_parallel_insert_multi():
+def test_parallel_insert_multi(test_logger):
     k = 10
     num_labels = int(g_test_index_multi.num_elements / g_test_index_multi.vectors_per_label)
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
 
-    print(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW ({per_label} vectors per label) sequentially"
-          f" took {g_test_index_multi.sequential_insert_time} seconds")
+    test_logger.info(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW ({per_label} vectors per label) sequentially"
+                     f" took {g_test_index_multi.sequential_insert_time} seconds")
 
     parallel_multi_index = create_hnsw_index(g_test_index_multi.dim, g_test_index_multi.num_elements,
                                              g_test_index_multi.metric, g_test_index_multi.data_type, ef_runtime=200,
@@ -307,9 +308,9 @@ def test_parallel_insert_multi():
         assert vectors_s.shape == vectors_p.shape
         assert set(vectors_s.flatten()) == set(vectors_p.flatten())
 
-    print(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW in parallel ({per_label} vectors per label)"
-          f" took {parallel_insert_time} seconds")
-    print(f"Got {g_test_index_multi.sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
+    test_logger.info(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW in parallel ({per_label} vectors per label)"
+                     f" took {parallel_insert_time} seconds")
+    test_logger.info(f"Got {g_test_index_multi.sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
 
     # Run queries over the multi-index
     query_data = np.float32(np.random.random((num_queries, dim)))
@@ -323,8 +324,8 @@ def test_parallel_insert_multi():
         res_labels, _ = g_test_index_multi.hnsw_index.knn_query(query, k)
         total_search_time += time.time() - start
         total_correct += len(set(res_labels[0]).intersection(g_test_index_multi.total_res_bf[i]))
-    print(f"Running search over baseline multi index, got {total_correct / (k * num_queries)} recall on {num_queries}"
-          f" queries, and {num_queries/total_search_time} query per second")
+    test_logger.info(f"Running search over baseline multi index, got {total_correct / (k * num_queries)} recall on {num_queries}"
+                     f" queries, and {num_queries/total_search_time} query per second")
 
     # Run search with parallel index and assert that similar recall achieved.
     start = time.time()
@@ -334,14 +335,14 @@ def test_parallel_insert_multi():
     for res_labels, ground_truth in zip(res_labels_parallel, g_test_index_multi.total_res_bf):
         total_correct_parallel += len(set(res_labels).intersection(set(ground_truth)))
 
-    print(f"Running parallel search over multi index built in parallel, got {total_correct_parallel / (k * num_queries)}"
-          f" recall on {num_queries} queries, and {num_queries/total_search_time_parallel} query per second")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using"
-          f" {n_threads} threads\n")
+    test_logger.info(f"Running parallel search over multi index built in parallel, got {total_correct_parallel / (k * num_queries)}"
+                     f" recall on {num_queries} queries, and {num_queries/total_search_time_parallel} query per second")
+    test_logger.info(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using"
+                     f" {n_threads} threads\n")
     assert total_correct_parallel >= total_correct * 0.95  # 0.95 is an arbitrary threshold
 
 
-def test_parallel_multi_insert_search():
+def test_parallel_multi_insert_search(test_logger):
     k = 10
     num_queries = 10000
     n_threads = min(os.cpu_count(), 8)
@@ -366,20 +367,20 @@ def test_parallel_multi_insert_search():
 
     def run_queries():
         nonlocal res_labels_g
-        print(f"Running queries when index size is: {parallel_multi_index.index_size()}")
+        test_logger.info(f"Running queries when index size is: {parallel_multi_index.index_size()}")
         res_labels_g[:num_queries], _ = parallel_multi_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
-        print(f"Done running queries, index size: {parallel_multi_index.index_size()}")
+        test_logger.info(f"Done running queries, index size: {parallel_multi_index.index_size()}")
         # Wait until 75% of the index is indexed, then run another batch of queries.
         while parallel_multi_index.index_size() < 0.75 * float(num_elements):
             time.sleep(0.5)
-        print(f"Running queries again when index size is: {parallel_multi_index.index_size()}")
+        test_logger.info(f"Running queries again when index size is: {parallel_multi_index.index_size()}")
         res_labels_g[num_queries:], _ = parallel_multi_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
-        print(f"Done running queries for the second time, index size: {parallel_multi_index.index_size()}")
+        test_logger.info(f"Done running queries for the second time, index size: {parallel_multi_index.index_size()}")
 
     t_insert = threading.Thread(target=insert_vectors)
     t_query = threading.Thread(target=run_queries)
-    print("Running KNN queries in parallel to inserting vectors to the multi index, start running queries after more"
-          " 50% of the vectors are indexed")
+    test_logger.info("Running KNN queries in parallel to inserting vectors to the multi index, start running queries after more"
+                     " 50% of the vectors are indexed")
     t_insert.start()
     # Wait until half of the index is indexed, then start run queries
     while parallel_multi_index.index_size() < num_elements / 2:
@@ -400,10 +401,10 @@ def test_parallel_multi_insert_search():
             total_correct_cur_chunk += len(set(g_test_index_multi.total_res_bf[j]).intersection(set(res_labels_g[res_ind])))
         assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for run no. {i + 1} of queries is: {total_correct_cur_chunk/(k*num_queries)}")
+        test_logger.info(f"Recall for run no. {i + 1} of queries is: {total_correct_cur_chunk/(k*num_queries)}")
 
 
-def test_parallel_batch_search():
+def test_parallel_batch_search(test_logger):
     num_queries = 10000
     batch_size = 100
     n_batches = 5
@@ -425,9 +426,9 @@ def test_parallel_batch_search():
         total_search_time += time.time() - start
         total_correct += len(res_labels.intersection(set(g_test_index.total_res_bf[i])))
 
-    print(f"Running sequential batched search of {n_batches} batches of size {batch_size}, over {num_queries} queries,"
-          f" got recall of {total_correct/(n_batches*batch_size*num_queries)} and "
-          f" {num_queries/total_search_time} query per second")
+    test_logger.info(f"Running sequential batched search of {n_batches} batches of size {batch_size}, over {num_queries} queries,"
+                     f" got recall of {total_correct/(n_batches*batch_size*num_queries)} and "
+                     f" {num_queries/total_search_time} query per second")
 
     total_results_parallel = {}
 
@@ -449,17 +450,17 @@ def test_parallel_batch_search():
     for i in range(num_queries):
         total_correct_parallel += len(set(g_test_index.total_res_bf[i]).intersection(total_results_parallel[i]))
 
-    print(f"Running parallel batched search of {n_batches} batches of size {batch_size}, over {num_queries} queries,"
-          f" got recall of {total_correct_parallel/(n_batches*batch_size*num_queries)} and "
-          f" {num_queries/total_search_time_parallel} query per second")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using "
-          f"{n_threads} threads\n")
+    test_logger.info(f"Running parallel batched search of {n_batches} batches of size {batch_size}, over {num_queries} queries,"
+                     f" got recall of {total_correct_parallel/(n_batches*batch_size*num_queries)} and "
+                     f" {num_queries/total_search_time_parallel} query per second")
+    test_logger.info(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using "
+                     f"{n_threads} threads\n")
 
     # Validate that the recall of the parallel search recall is the same as the sequential search recall.
     assert total_correct_parallel == total_correct
 
 
-def test_parallel_insert_batch_search():
+def test_parallel_insert_batch_search(test_logger):
     num_queries = 10000
     batch_size = 100
     n_batches = 5
@@ -486,8 +487,8 @@ def test_parallel_insert_batch_search():
         parallel_index.add_vector_parallel(g_test_index.data, range(num_elements), num_threads=int(n_threads/2))
 
     t_insert = threading.Thread(target=insert_vectors)
-    print("Running batched search in parallel to inserting vectors to the index, start running queries after more 50%"
-          " of the vectors are indexed")
+    test_logger.info("Running batched search in parallel to inserting vectors to the index, start running queries after more 50%"
+                     " of the vectors are indexed")
     t_insert.start()
     # Wait until half of the index is indexed, then start run queries
     while parallel_index.index_size() < num_elements / 2:
@@ -522,5 +523,5 @@ def test_parallel_insert_batch_search():
             total_correct_cur_chunk += len(set(g_test_index.total_res_bf[j]).intersection(total_results_parallel[res_ind]))
         assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for run no. {num_runs+1} of queries is:"
-              f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")
+        test_logger.info(f"Recall for run no. {num_runs+1} of queries is:"
+                         f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")

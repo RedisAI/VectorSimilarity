@@ -16,12 +16,8 @@ jobs:
   #   with:
   #     container: ubuntu:jammy
   #     run-valgrind: true
-  # alpine3:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: alpine:3
-  #     pre-checkout-script: apk add bash
-  #     run-valgrind: true
+  alpine3:
+    uses: ./.github/workflows/alpine3.yml
   # focal:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
@@ -61,5 +57,5 @@ jobs:
   #     container: alpine:3
   #     pre-checkout-script: apk add bash
   #     run-valgrind: false
-  macos:
-    uses: ./.github/workflows/macos.yml
+  # macos:
+  #   uses: ./.github/workflows/macos.yml

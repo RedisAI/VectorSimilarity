@@ -14,6 +14,7 @@
 #include "VecSim/query_results.h"
 
 #include <memory>
+#include <type_traits>
 
 #include "svs/index/vamana/iterator.h"
 
@@ -22,28 +23,15 @@
 template <typename Index, typename DataType>
 class SVS_BatchIterator : public VecSimBatchIterator {
 private:
-    using impl_type = svs::index::vamana::BatchIterator<Index, DataType>;
+    using query_type = std::span<const DataType>;
+    using mkbi_t = decltype(&Index::template make_batch_iterator<DataType>);
+    using impl_type = std::invoke_result_t<mkbi_t, Index, query_type, size_t>;
+
     using dist_type = typename Index::distance_type;
     size_t dim;
-    std::unique_ptr<impl_type> impl_;
-    decltype(impl_->begin()) curr_it;
-
-    static std::unique_ptr<impl_type> makeImpl(const Index *index, void *query_vector,
-                                               VecSimQueryParams *queryParams) {
-        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams);
-        const size_t batch_size = queryParams && queryParams->batchSize
-                                      ? queryParams->batchSize
-                                      : sp.buffer_config_.get_search_window_size();
-        // Base search parameters for the iterator schedule.
-        auto schedule = svs::index::vamana::DefaultSchedule{sp, batch_size};
-        std::span<const DataType> query{reinterpret_cast<DataType *>(query_vector),
-                                        index->dimensions()};
-
-        auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
-        auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
-        return std::make_unique<svs::index::vamana::BatchIterator<Index, DataType>>(
-            *index, query, schedule, cancel);
-    }
+    impl_type impl_;
+    typename impl_type::const_iterator curr_it;
+    size_t batch_size;
 
     VecSimQueryReply *getNextResultsImpl(size_t n_res) {
         auto rep = new VecSimQueryReply(this->allocator);
@@ -56,16 +44,18 @@ private:
             return rep;
         }
 
+        const auto bs = std::max(n_res, batch_size);
+
         for (size_t i = 0; i < n_res; i++) {
-            if (curr_it == impl_->end()) {
-                impl_->next(cancel);
+            if (curr_it == impl_.end()) {
+                impl_.next(bs, cancel);
                 if (cancel()) {
                     rep->code = VecSim_QueryReply_TimedOut;
                     rep->results.clear();
                     return rep;
                 }
-                curr_it = impl_->begin();
-                if (impl_->size() == 0) {
+                curr_it = impl_.begin();
+                if (impl_.size() == 0) {
                     return rep;
                 }
             }
@@ -77,12 +67,18 @@ private:
     }
 
 public:
-    SVS_BatchIterator(void *query_vector, const Index *index, VecSimQueryParams *queryParams,
-                      std::shared_ptr<VecSimAllocator> allocator)
+    SVS_BatchIterator(void *query_vector, const Index *index, const VecSimQueryParams *queryParams,
+                      std::shared_ptr<VecSimAllocator> allocator, bool is_two_level_lvq)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
-          dim{index->dimensions()}, impl_{makeImpl(index, query_vector, queryParams)} {
-        curr_it = impl_->begin();
+          dim{index->dimensions()}, impl_{index->make_batch_iterator(std::span{
+                                        static_cast<const DataType *>(query_vector), dim})},
+          curr_it{impl_.begin()} {
+        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams,
+                                                is_two_level_lvq);
+        batch_size = queryParams && queryParams->batchSize
+                         ? queryParams->batchSize
+                         : sp.buffer_config_.get_search_window_size();
     }
 
     VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override {
@@ -92,15 +88,11 @@ public:
         return rep;
     }
 
-    bool isDepleted() override { return curr_it == impl_->end() && impl_->done(); }
+    bool isDepleted() override { return curr_it == impl_.end() && impl_.done(); }
 
     void reset() override {
-        std::span<const DataType> query{reinterpret_cast<const DataType *>(this->getQueryBlob()),
-                                        dim};
-        auto timeoutCtx = this->getTimeoutCtx();
-        auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
-        impl_->update(query, cancel);
-        curr_it = impl_->begin();
+        impl_.update(std::span{static_cast<const DataType *>(this->getQueryBlob()), dim});
+        curr_it = impl_.begin();
     }
 };
 
@@ -108,7 +100,7 @@ public:
 class NullSVS_BatchIterator : public VecSimBatchIterator {
 private:
 public:
-    NullSVS_BatchIterator(void *query_vector, VecSimQueryParams *queryParams,
+    NullSVS_BatchIterator(void *query_vector, const VecSimQueryParams *queryParams,
                           std::shared_ptr<VecSimAllocator> allocator)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               allocator} {}

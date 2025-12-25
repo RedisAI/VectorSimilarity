@@ -29,21 +29,26 @@
  * @param allocator The allocator to use for the index.
  * @param dim The dimension of the vectors in the index.
  * @param vecType The type of the vectors in the index.
- * @param dataSize The size of stored vectors in bytes.
+ * @param storedDataSize The size of stored vectors (possibly after pre-processing) in bytes.
  * @param metric The metric to use in the index.
  * @param blockSize The block size to use in the index.
  * @param multi Determines if the index should multi-index or not.
  * @param logCtx The context to use for logging.
+ * @param inputBlobSize The size of input vectors/queries blob in bytes. May differ from dim *
+ * sizeof(vecType) when vectors have been externally preprocessed (e.g., cosine normalization adds
+ * extra bytes). For example, in tiered indexes, the backend receives preprocessed blobs, not raw
+ * input vectors.
  */
 struct AbstractIndexInitParams {
     std::shared_ptr<VecSimAllocator> allocator;
     size_t dim;
     VecSimType vecType;
-    size_t dataSize;
+    size_t storedDataSize;
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
     void *logCtx;
+    size_t inputBlobSize;
 };
 
 /**
@@ -70,18 +75,25 @@ struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
     VecSimType vecType;  // Datatype to index.
-    size_t dataSize;     // Vector size in bytes
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
-    PreprocessorsContainerAbstract *preprocessors;       // Stroage and query preprocessors.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
+    RawDataContainer *vectors;      // The raw vectors data container.
+private:
+    IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
+    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
 
-    RawDataContainer *vectors; // The raw vectors data container.
-
+    size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
+                          // sizeof(vecType) when vectors have been externally preprocessed (e.g.,
+                          // cosine normalization adds extra bytes). For example, in tiered indexes,
+                          // the backend receives preprocessed blobs, not raw input vectors.
+    size_t storedDataSize; // Vector element data size in bytes to be stored
+                           // (possibly after pre-processing and may differ from inputBlobSize if
+                           // NOT externally preprocessed).
+protected:
     /**
      * @brief Get the common info object
      *
@@ -105,14 +117,16 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params,
                         const IndexComponents<DataType, DistType> &components)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          dataSize(params.dataSize), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
+          metric(params.metric),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
+          isMulti(params.multi), logCallbackCtx(params.logCtx),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
+          inputBlobSize(params.inputBlobSize), storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
-        assert(dataSize);
+        assert(storedDataSize);
+        assert(inputBlobSize);
         this->vectors = new (this->allocator) DataBlocksContainer(
-            this->blockSize, this->dataSize, this->allocator, this->getAlignment());
+            this->blockSize, this->storedDataSize, this->allocator, this->getAlignment());
     }
 
     /**
@@ -160,13 +174,6 @@ public:
     MemoryUtils::unique_blob preprocessForStorage(const void *original_blob) const;
 
     /**
-     * @brief Preprocess a blob for query in place.
-     *
-     * @param blob will be directly modified, not copied.
-     */
-    void preprocessQueryInPlace(void *blob) const;
-
-    /**
      * @brief Preprocess a blob for storage in place.
      *
      * @param blob will be directly modified, not copied.
@@ -178,9 +185,11 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
-    inline size_t getDataSize() const { return dataSize; }
+    inline size_t getStoredDataSize() const { return storedDataSize; }
+    inline size_t getInputBlobSize() const { return inputBlobSize; }
     inline size_t getBlockSize() const { return blockSize; }
     inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
+
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
@@ -312,8 +321,14 @@ public:
      * label
      */
     virtual std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const = 0;
-
 #endif
+
+    /**
+     * Virtual functions that access the label lookup which is implemented in the derived classes
+     * Return all the labels in the index - this should be used for computing the number of distinct
+     * labels in a tiered index, and caller should hold the appropriate guards.
+     */
+    virtual vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
 protected:
     void runGC() override {}              // Do nothing, relevant for tiered index only.
@@ -323,28 +338,23 @@ protected:
 
 template <typename DataType, typename DistType>
 ProcessedBlobs VecSimIndexAbstract<DataType, DistType>::preprocess(const void *blob) const {
-    return this->preprocessors->preprocess(blob, this->dataSize);
+    return this->preprocessors->preprocess(blob, inputBlobSize);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessQuery(const void *queryBlob,
                                                          bool force_copy) const {
-    return this->preprocessors->preprocessQuery(queryBlob, this->dataSize, force_copy);
+    return this->preprocessors->preprocessQuery(queryBlob, inputBlobSize, force_copy);
 }
 
 template <typename DataType, typename DistType>
 MemoryUtils::unique_blob
 VecSimIndexAbstract<DataType, DistType>::preprocessForStorage(const void *original_blob) const {
-    return this->preprocessors->preprocessForStorage(original_blob, this->dataSize);
-}
-
-template <typename DataType, typename DistType>
-void VecSimIndexAbstract<DataType, DistType>::preprocessQueryInPlace(void *blob) const {
-    this->preprocessors->preprocessQueryInPlace(blob, this->dataSize);
+    return this->preprocessors->preprocessForStorage(original_blob, inputBlobSize);
 }
 
 template <typename DataType, typename DistType>
 void VecSimIndexAbstract<DataType, DistType>::preprocessStorageInPlace(void *blob) const {
-    this->preprocessors->preprocessStorageInPlace(blob, this->dataSize);
+    this->preprocessors->preprocessStorageInPlace(blob, inputBlobSize);
 }
