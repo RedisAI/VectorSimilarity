@@ -50,73 +50,68 @@ number of vectors in the index.
 
 #### Cache Memory Management
 
-**Current Behavior: No Eviction**
+**LRU Eviction Policy (Implemented)**
 
-The segment cache (`cacheSegment.cache`) currently **grows unboundedly** and is **never evicted**. Once a node's neighbor list is loaded into cache (either from disk or created during insert), it remains in memory indefinitely.
+The segment cache uses an **LRU (Least Recently Used) eviction policy** to bound memory usage. Each segment tracks access order using a doubly-linked list for O(1) operations:
+
+```cpp
+struct alignas(64) CacheSegment {
+    std::shared_mutex guard;
+    std::unordered_map<uint64_t, std::vector<idType>> cache;
+    std::unordered_set<uint64_t> dirty;
+    std::unordered_set<uint64_t> newNodes;
+
+    // LRU eviction support
+    std::list<uint64_t> lruOrder;                              // Access order (front = MRU)
+    std::unordered_map<uint64_t, std::list<uint64_t>::iterator> lruMap;  // O(1) lookup
+
+    void touchLRU(uint64_t key);      // Move key to front (most recently used)
+    void addToLRU(uint64_t key);      // Add new key to front
+    void removeFromLRU(uint64_t key); // Remove key from LRU tracking
+    uint64_t getLRU() const;          // Get least recently used key (back of list)
+    bool hasLRU() const;              // Check if LRU list has entries
+};
+
+```
+
+**Configuration API:**
+
+```cpp
+// Set max entries per segment (0 = unlimited). Total max = maxEntries * NUM_CACHE_SEGMENTS
+void setCacheMaxEntriesPerSegment(size_t maxEntries);
+size_t getCacheMaxEntriesPerSegment() const;
+
+// Get total cache entry count across all segments
+size_t getCacheTotalEntryCount() const;
+```
+
+**Eviction Rules:**
+1. Only **non-dirty entries** can be evicted (dirty entries must be flushed first to avoid data loss)
+2. Eviction is triggered when adding new entries and cache is at capacity
+3. LRU entries are evicted first (least recently accessed)
+4. Total max cache size = `maxCacheEntriesPerSegment * NUM_CACHE_SEGMENTS` (64 segments)
+
+**Example:**
+```cpp
+// Set limit of 10,000 entries per segment (640,000 total across 64 segments)
+index.setCacheMaxEntriesPerSegment(10000);
+
+// Disable limit (unlimited cache)
+index.setCacheMaxEntriesPerSegment(0);
+```
 
 **Why Cache is Source of Truth**
 
-The cache cannot simply be cleared because it serves as the **source of truth** for pending updates that haven't been flushed to disk yet. The Swap-and-Flush pattern relies on:
+The cache serves as the **source of truth** for pending updates that haven't been flushed to disk yet. The Swap-and-Flush pattern relies on:
 1. Cache always having the latest neighbor lists
 2. `dirty` set tracking which nodes need to be written
 3. Flusher reading current cache state (not stale data)
 
-**Need to decide which strategy to implement (if any).**
-**Another option is to not use the neighbors cache at all and always read from disk**
+This is why **dirty entries are never evicted** - they contain updates not yet persisted to disk
 
-**1. LRU Eviction for Clean Entries**
+**implementation/future optimization**
+Memory Overhead: std::list nodes are individually allocated on the heap. For a cache of 1M entries, that is 1M small allocations, which causes heap fragmentation and poor cache locality.
 
-Evict least-recently-used entries that are **not dirty** (already persisted to disk):
-```cpp
-// Pseudocode
-if (cacheSize > maxCacheSize) {
-    for (auto& entry : lruOrder) {
-        if (!dirty.contains(entry.key)) {
-            cache.erase(entry.key);
-            if (--evicted >= targetEviction) break;
-        }
-    }
-}
-```
-*Pros:* Simple, safe (dirty entries always kept)
-*Cons:* Requires LRU tracking overhead (linked list + map)
-
-**2. Time-Based Eviction**
-
-Evict clean entries older than a threshold:
-```cpp
-// Pseudocode
-for (auto& entry : cache) {
-    if (!dirty.contains(entry.key) &&
-        now - entry.lastAccessTime > evictionTimeout) {
-        cache.erase(entry.key);
-    }
-}
-```
-*Pros:* Predictable memory behavior
-*Cons:* Requires timestamp tracking per entry
-
-**3. Write-Through with Immediate Eviction**
-
-After flushing to disk, immediately evict the written entries:
-```cpp
-// In flushDirtyNodesToDisk(), after successful write:
-for (uint64_t key : flushedNodes) {
-    cacheSegment.cache.erase(key);  // Evict after persist
-}
-```
-*Pros:* Minimal memory usage, no tracking overhead
-*Cons:* Increases disk reads on subsequent access
-
-**4. Size-Limited Cache with Eviction Policy**
-
-Configure maximum cache size and evict when exceeded:
-```cpp
-size_t maxCacheEntries = 100000;  // Configurable
-// On insert, check size and evict clean entries if needed
-```
-*Pros:* Bounded memory usage
-*Cons:* Need to choose appropriate eviction policy
 
 ### 3. Lock Hierarchy
 

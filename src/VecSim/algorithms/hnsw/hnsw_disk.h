@@ -57,6 +57,7 @@
 #include <shared_mutex>
 #include <atomic>
 #include <array>
+#include <list>
 
 // Forward declaration for AsyncJob
 #include "VecSim/vec_sim_tiered_index.h"
@@ -312,6 +313,7 @@ protected:
     static constexpr size_t NUM_CACHE_SEGMENTS = 64;  // Power of 2 for efficient modulo
 
     // Cache segment structure - each segment is cache-line aligned to prevent false sharing
+    // Uses LRU eviction policy to limit memory usage
     struct alignas(64) CacheSegment {
         std::shared_mutex guard;
         std::unordered_map<uint64_t, std::vector<idType>> cache;
@@ -320,15 +322,59 @@ protected:
         // This helps avoid disk lookups for new nodes
         std::unordered_set<uint64_t> newNodes;
 
+        // LRU eviction support: doubly-linked list for O(1) access order updates
+        // Front = most recently used, Back = least recently used
+        std::list<uint64_t> lruOrder;
+        // Map from key to iterator in lruOrder for O(1) lookup
+        std::unordered_map<uint64_t, std::list<uint64_t>::iterator> lruMap;
+
         CacheSegment() = default;
         CacheSegment(const CacheSegment&) = delete;
         CacheSegment& operator=(const CacheSegment&) = delete;
         CacheSegment(CacheSegment&&) = delete;
         CacheSegment& operator=(CacheSegment&&) = delete;
+
+        // Move key to front of LRU list (most recently used)
+        void touchLRU(uint64_t key) {
+            auto it = lruMap.find(key);
+            if (it != lruMap.end()) {
+                lruOrder.erase(it->second);
+            }
+            lruOrder.push_front(key);
+            lruMap[key] = lruOrder.begin();
+        }
+
+        // Add new key to LRU list
+        void addToLRU(uint64_t key) {
+            lruOrder.push_front(key);
+            lruMap[key] = lruOrder.begin();
+        }
+
+        // Remove key from LRU list
+        void removeFromLRU(uint64_t key) {
+            auto it = lruMap.find(key);
+            if (it != lruMap.end()) {
+                lruOrder.erase(it->second);
+                lruMap.erase(it);
+            }
+        }
+
+        // Get the least recently used key (for eviction)
+        uint64_t getLRU() const {
+            return lruOrder.back();
+        }
+
+        bool hasLRU() const {
+            return !lruOrder.empty();
+        }
     };
 
     // Array of cache segments - using unique_ptr for lazy initialization
     mutable std::unique_ptr<CacheSegment[]> cacheSegments_;
+
+    // Maximum entries per cache segment (0 = unlimited)
+    // Total max cache entries = maxCacheEntriesPerSegment * NUM_CACHE_SEGMENTS
+    size_t maxCacheEntriesPerSegment_ = 10000;
 
     // Atomic counter for total dirty nodes (for fast threshold check without locking)
     mutable std::atomic<size_t> totalDirtyCount_{0};
@@ -617,6 +663,20 @@ public:
     size_t getDiskWriteBatchThreshold() const { return diskWriteBatchThreshold; }
     size_t getPendingDiskWriteCount() const { return totalDirtyCount_.load(std::memory_order_relaxed); }
     void flushDirtyNodesToDisk(); // Flush all pending dirty nodes to disk
+
+    // Cache eviction control
+    // Set max entries per segment (0 = unlimited). Total max = maxEntries * NUM_CACHE_SEGMENTS
+    void setCacheMaxEntriesPerSegment(size_t maxEntries) { maxCacheEntriesPerSegment_ = maxEntries; }
+    size_t getCacheMaxEntriesPerSegment() const { return maxCacheEntriesPerSegment_; }
+    // Get total cache entry count across all segments
+    size_t getCacheTotalEntryCount() const {
+        size_t total = 0;
+        for (size_t s = 0; s < NUM_CACHE_SEGMENTS; ++s) {
+            std::shared_lock<std::shared_mutex> lock(cacheSegments_[s].guard);
+            total += cacheSegments_[s].cache.size();
+        }
+        return total;
+    }
 
     // Job queue configuration (for multi-threaded processing)
     void setJobQueue(void *jobQueue_, void *jobQueueCtx_, SubmitCB submitCb_) {
@@ -2616,6 +2676,8 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsFromCache(
                 result.push_back(id);
             }
             filterDeletedNodes(result);
+            // Note: We don't update LRU here since it's a read-only operation
+            // LRU is updated on write/load to maintain const correctness
             return;
         }
 
@@ -2641,6 +2703,22 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsFromCache(
         // Double-check: another thread may have populated it
         auto it = cacheSegment.cache.find(key);
         if (it == cacheSegment.cache.end()) {
+            // Eviction: if cache is at capacity, evict LRU entries before adding
+            if (maxCacheEntriesPerSegment_ > 0) {
+                while (cacheSegment.cache.size() >= maxCacheEntriesPerSegment_ && cacheSegment.hasLRU()) {
+                    uint64_t evictKey = cacheSegment.getLRU();
+
+                    // Don't evict dirty nodes - they need to be written to disk first
+                    if (cacheSegment.dirty.find(evictKey) != cacheSegment.dirty.end()) {
+                        break;
+                    }
+
+                    cacheSegment.cache.erase(evictKey);
+                    cacheSegment.removeFromLRU(evictKey);
+                    cacheSegment.newNodes.erase(evictKey);
+                }
+            }
+
             // Copy from vecsim_stl::vector to std::vector
             std::vector<idType> cacheEntry;
             cacheEntry.reserve(result.size());
@@ -2648,6 +2726,10 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsFromCache(
                 cacheEntry.push_back(id);
             }
             cacheSegment.cache[key] = std::move(cacheEntry);
+            cacheSegment.addToLRU(key);
+        } else {
+            // Already populated by another thread - update LRU
+            cacheSegment.touchLRU(key);
         }
     }
 
@@ -2656,17 +2738,36 @@ void HNSWDiskIndex<DataType, DistType>::getNeighborsFromCache(
 
 // Helper to load neighbors from disk into cache if not already present
 // Caller must hold unique_lock on cacheSegment.guard (will be temporarily released during disk I/O)
+// Also handles LRU eviction when cache is at capacity
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::loadNeighborsFromDiskIfNeeded(
     uint64_t key, CacheSegment& cacheSegment, std::unique_lock<std::shared_mutex>& lock) {
 
     auto it = cacheSegment.cache.find(key);
     if (it != cacheSegment.cache.end()) {
-        return; // Already in cache
+        // Already in cache - update LRU and return
+        cacheSegment.touchLRU(key);
+        return;
     }
 
     // Check if this is a new node (never written to disk) - skip disk lookup
     bool isNewNode = (cacheSegment.newNodes.find(key) != cacheSegment.newNodes.end());
+
+    // Eviction: if cache is at capacity, evict LRU entries before adding
+    if (maxCacheEntriesPerSegment_ > 0) {
+        while (cacheSegment.cache.size() >= maxCacheEntriesPerSegment_ && cacheSegment.hasLRU()) {
+            uint64_t evictKey = cacheSegment.getLRU();
+
+            // Don't evict dirty nodes - they need to be written to disk first
+            if (cacheSegment.dirty.find(evictKey) != cacheSegment.dirty.end()) {
+                break;
+            }
+
+            cacheSegment.cache.erase(evictKey);
+            cacheSegment.removeFromLRU(evictKey);
+            cacheSegment.newNodes.erase(evictKey);
+        }
+    }
 
     if (!isNewNode) {
         // First modification of existing node - need to load current state from disk
@@ -2692,10 +2793,15 @@ void HNSWDiskIndex<DataType, DistType>::loadNeighborsFromDiskIfNeeded(
                 cacheEntry.push_back(id);
             }
             cacheSegment.cache[key] = std::move(cacheEntry);
+            cacheSegment.addToLRU(key);
+        } else {
+            // Already populated by another thread - update LRU
+            cacheSegment.touchLRU(key);
         }
     } else {
         // New node - initialize with empty neighbor list
         cacheSegment.cache[key] = std::vector<idType>();
+        cacheSegment.addToLRU(key);
     }
 }
 
@@ -2709,7 +2815,7 @@ void HNSWDiskIndex<DataType, DistType>::addNeighborToCache(
 
     std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
 
-    // Load from disk if not in cache (handles newNodes check internally)
+    // Load from disk if not in cache (handles newNodes check and LRU internally)
     loadNeighborsFromDiskIfNeeded(key, cacheSegment, lock);
 
     // Add new neighbor (avoid duplicates)
@@ -2717,6 +2823,9 @@ void HNSWDiskIndex<DataType, DistType>::addNeighborToCache(
     if (std::find(neighbors.begin(), neighbors.end(), newNeighborId) == neighbors.end()) {
         neighbors.push_back(newNeighborId);
     }
+
+    // Update LRU since we modified this entry
+    cacheSegment.touchLRU(key);
 
     // Mark as dirty (needs disk write) and increment atomic counter
     auto insertResult = cacheSegment.dirty.insert(key);
@@ -2735,7 +2844,7 @@ bool HNSWDiskIndex<DataType, DistType>::tryAddNeighborToCacheIfCapacity(
 
     std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
 
-    // Load from disk if not in cache (handles newNodes check internally)
+    // Load from disk if not in cache (handles newNodes check and LRU internally)
     loadNeighborsFromDiskIfNeeded(key, cacheSegment, lock);
 
     // Atomic check-and-add under the lock
@@ -2753,6 +2862,10 @@ bool HNSWDiskIndex<DataType, DistType>::tryAddNeighborToCacheIfCapacity(
 
     // Has capacity - add the neighbor
     neighbors.push_back(newNeighborId);
+
+    // Update LRU since we modified this entry
+    cacheSegment.touchLRU(key);
+
     auto insertResult = cacheSegment.dirty.insert(key);
     if (insertResult.second) {  // Only increment if newly inserted
         totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
@@ -2776,7 +2889,37 @@ void HNSWDiskIndex<DataType, DistType>::setNeighborsInCache(
     }
 
     std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
+
+    // Check if key already exists in cache
+    bool keyExists = cacheSegment.cache.find(key) != cacheSegment.cache.end();
+
+    // Eviction: if cache is at capacity and this is a new key, evict LRU entries
+    if (maxCacheEntriesPerSegment_ > 0 && !keyExists) {
+        while (cacheSegment.cache.size() >= maxCacheEntriesPerSegment_ && cacheSegment.hasLRU()) {
+            uint64_t evictKey = cacheSegment.getLRU();
+
+            // Don't evict dirty nodes - they need to be written to disk first
+            if (cacheSegment.dirty.find(evictKey) != cacheSegment.dirty.end()) {
+                // All remaining entries are dirty - can't evict without losing data
+                break;
+            }
+
+            // Remove from cache and LRU tracking
+            cacheSegment.cache.erase(evictKey);
+            cacheSegment.removeFromLRU(evictKey);
+            // Note: newNodes should have been cleared after flush, but clean up just in case
+            cacheSegment.newNodes.erase(evictKey);
+        }
+    }
+
     cacheSegment.cache[key] = std::move(cacheEntry);
+
+    // Update LRU tracking
+    if (keyExists) {
+        cacheSegment.touchLRU(key);  // Move to front (most recently used)
+    } else {
+        cacheSegment.addToLRU(key);  // Add as most recently used
+    }
 
     // If this is a new node, track it to avoid disk lookups
     if (isNewNode) {

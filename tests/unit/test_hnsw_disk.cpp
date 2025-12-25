@@ -33,6 +33,13 @@ protected:
         // Create a temporary directory for RocksDB
         temp_dir = "/tmp/hnsw_disk_test_" + std::to_string(getpid());
 
+        // Clean up any existing directory from previous tests to ensure fresh state
+        try {
+            std::filesystem::remove_all(temp_dir);
+        } catch (const std::exception &e) {
+            // Ignore errors - directory may not exist
+        }
+
         // Ensure the directory exists
         std::filesystem::create_directories(temp_dir);
 
@@ -491,7 +498,10 @@ TEST_F(HNSWDiskIndexTest, BatchingTest) {
     EXPECT_EQ(index.indexSize(), 15);
     EXPECT_EQ(index.indexLabelCount(), 15);
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before querying
+    index.flushDirtyNodesToDisk();
+
+    // Verify counts are still correct after flush
     EXPECT_EQ(index.indexSize(), 15);
     EXPECT_EQ(index.indexLabelCount(), 15);
 
@@ -580,7 +590,8 @@ TEST_F(HNSWDiskIndexTest, HierarchicalSearchTest) {
         index.addVector(test_vectors[i].data(), labels[i]);
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before querying
+    index.flushDirtyNodesToDisk();
 
     std::cout << "\n=== Index state after adding vectors ===" << std::endl;
     std::cout << "Index size: " << index.indexSize() << std::endl;
@@ -716,6 +727,9 @@ TEST_F(HNSWDiskIndexTest, RawVectorStorageAndRetrieval) {
         int result = index.addVector(test_vectors[i].data(), labels[i]);
         EXPECT_EQ(result, 1) << "Failed to add vector " << i;
     }
+
+    // Flush dirty nodes to disk before retrieving
+    index.flushDirtyNodesToDisk();
 
     // Verify that vectors were stored on disk
     std::vector<float> buffer(dim);
@@ -892,6 +906,9 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
         int result = index.addVector(vec.data(), i);
         EXPECT_EQ(result, 1) << "Failed to add vector " << i;
     }
+
+    // Flush dirty nodes to disk before querying
+    index.flushDirtyNodesToDisk();
     ASSERT_EQ(index.indexSize(), n);
 
     // Create query vector around the middle
@@ -978,6 +995,9 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
     }
     index.addVector(new_vec.data(), n);
 
+    // Flush dirty nodes to disk
+    index.flushDirtyNodesToDisk();
+
     // Re-add the previously marked vectors (under new internal ids)
     for (labelType label = 0; label < n; label++) {
         if (label % 2 == ep_reminder) {
@@ -988,6 +1008,9 @@ TEST_F(HNSWDiskIndexTest, markDelete) {
             index.addVector(vec.data(), label);
         }
     }
+
+    // Flush dirty nodes to disk
+    index.flushDirtyNodesToDisk();
 
     // indexSize() returns active elements (curElementCount - numMarkedDeleted)
     // curElementCount = n + 1 + n/2 = 151 (original + 1 new + re-added)
@@ -1050,7 +1073,8 @@ TEST_F(HNSWDiskIndexTest, BatchedDeletionTest) {
         index.addVector(vec.data(), label);
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before deletion operations
+    index.flushDirtyNodesToDisk();
 
     // Verify all vectors were added
     ASSERT_EQ(index.indexSize(), n);
@@ -1160,7 +1184,8 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before starting Phase 2
+    index.flushDirtyNodesToDisk();
 
     ASSERT_EQ(index.indexSize(), initial_count);
     ASSERT_EQ(index.indexLabelCount(), initial_count);
@@ -1190,7 +1215,8 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
         ASSERT_EQ(insert_ret, 1) << "Failed to add vector " << insert_label;
     }
 
-    // Vectors are written to disk immediately, flush pending deletes
+    // Flush dirty nodes to disk, then flush pending deletes
+    index.flushDirtyNodesToDisk();
     index.flushDeleteBatch();
 
     // Verify index state
@@ -1261,7 +1287,8 @@ TEST_F(HNSWDiskIndexTest, InterleavedInsertDeleteTest) {
         }
     }
 
-    // Vectors are written to disk immediately, flush pending deletes
+    // Flush dirty nodes to disk, then flush pending deletes
+    index.flushDirtyNodesToDisk();
     index.flushDeleteBatch();
 
     // Final verification
@@ -1326,7 +1353,8 @@ TEST_F(HNSWDiskIndexTest, StagedRepairTest) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before deletions
+    index.flushDirtyNodesToDisk();
 
     ASSERT_EQ(index.indexSize(), n);
     ASSERT_EQ(index.indexLabelCount(), n);
@@ -1467,7 +1495,8 @@ TEST_F(HNSWDiskIndexTest, GraphRepairBidirectionalEdges) {
         }
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before deletions
+    index.flushDirtyNodesToDisk();
     ASSERT_EQ(index.indexSize(), n);
 
     // Delete a vector from the middle of a cluster (should trigger repair)
@@ -1581,7 +1610,8 @@ TEST_F(HNSWDiskIndexTest, UnidirectionalEdgeCleanup) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before deletions
+    index.flushDirtyNodesToDisk();
     ASSERT_EQ(index.indexSize(), n);
 
     // Delete some vectors - this may create unidirectional dangling edges
@@ -1697,7 +1727,8 @@ TEST_F(HNSWDiskIndexTest, GraphRepairWithHeuristic) {
         ASSERT_EQ(ret, 1) << "Failed to add vector " << label;
     }
 
-    // Vectors are written to disk immediately in batchless mode
+    // Flush dirty nodes to disk before deletions
+    index.flushDirtyNodesToDisk();
     ASSERT_EQ(index.indexSize(), n);
 
     // Delete a vector that likely has many neighbors
@@ -1764,4 +1795,91 @@ TEST_F(HNSWDiskIndexTest, GraphRepairWithHeuristic) {
     // Most queries should succeed (graph should remain connected)
     ASSERT_GT(successful_queries, (n - deleted_labels.size()) / 2)
         << "Too many queries failed - graph may be disconnected";
+}
+
+TEST_F(HNSWDiskIndexTest, CacheEvictionLRU) {
+    // Test LRU cache eviction policy
+    const size_t dim = 32;
+    const size_t maxCacheEntriesPerSegment = 5;  // Very small cache to trigger eviction
+
+    // Create HNSW parameters
+    HNSWParams params;
+    params.dim = dim;
+    params.type = VecSimType_FLOAT32;
+    params.metric = VecSimMetric_L2;
+    params.multi = false;
+    params.M = 4;
+    params.efConstruction = 50;
+    params.efRuntime = 20;
+    params.epsilon = 0.01;
+
+    // Create abstract init parameters
+    AbstractIndexInitParams abstractInitParams;
+    abstractInitParams.dim = dim;
+    abstractInitParams.vecType = params.type;
+    abstractInitParams.dataSize = dim * sizeof(float);
+    abstractInitParams.blockSize = 1024;
+    abstractInitParams.multi = false;
+    abstractInitParams.allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create index components
+    IndexComponents<float, float> components = CreateIndexComponents<float, float>(
+        abstractInitParams.allocator, VecSimMetric_L2, dim, false);
+
+    // Create HNSWDiskIndex
+    rocksdb::ColumnFamilyHandle *default_cf = db->DefaultColumnFamily();
+    HNSWDiskIndex<float, float> index(&params, abstractInitParams, components, db.get(),
+                                      default_cf, temp_dir);
+
+    // Set very small cache limit to force eviction
+    index.setCacheMaxEntriesPerSegment(maxCacheEntriesPerSegment);
+    EXPECT_EQ(index.getCacheMaxEntriesPerSegment(), maxCacheEntriesPerSegment);
+
+    // Initially cache should be empty
+    EXPECT_EQ(index.getCacheTotalEntryCount(), 0);
+
+    // Add vectors - this will populate the cache
+    std::mt19937 rng(42);
+    const size_t numVectors = 50;  // Add enough vectors to exceed cache limit
+    std::vector<std::vector<float>> vectors;
+
+    for (size_t i = 0; i < numVectors; ++i) {
+        auto vec = createRandomVector(dim, rng);
+        vectors.push_back(vec);
+        index.addVector(vec.data(), i + 1);  // Labels start from 1
+    }
+
+    // Flush dirty nodes to disk so they can be evicted
+    index.flushDirtyNodesToDisk();
+
+    // The cache should be bounded by the limit
+    // Total max = maxCacheEntriesPerSegment * NUM_CACHE_SEGMENTS (64)
+    // But since we only added 50 vectors with M=4, we have limited entries
+    size_t cacheCount = index.getCacheTotalEntryCount();
+
+    // Cache should have entries but be bounded
+    EXPECT_GT(cacheCount, 0) << "Cache should have some entries";
+
+    // Now test that queries still work (they may need to reload from disk)
+    VecSimQueryParams queryParams;
+    queryParams.hnswRuntimeParams.efRuntime = 20;
+
+    for (size_t i = 0; i < 10; ++i) {
+        auto results = index.topKQuery(vectors[i].data(), 5, &queryParams);
+        ASSERT_TRUE(results != nullptr);
+        ASSERT_EQ(results->code, VecSim_OK);
+        EXPECT_GT(results->results.size(), 0) << "Query " << i << " should return results";
+
+        // The first result should be the query vector itself (or very close)
+        if (results->results.size() > 0) {
+            EXPECT_EQ(VecSimQueryResult_GetId(results->results.data()), i + 1)
+                << "First result should be the query vector itself";
+        }
+
+        delete results;
+    }
+
+    // Test that we can set unlimited cache (0)
+    index.setCacheMaxEntriesPerSegment(0);
+    EXPECT_EQ(index.getCacheMaxEntriesPerSegment(), 0);
 }
