@@ -74,31 +74,12 @@ struct alignas(64) CacheSegment {
 
 ```
 
-**Configuration API:**
-
-```cpp
-// Set max entries per segment (0 = unlimited). Total max = maxEntries * NUM_CACHE_SEGMENTS
-void setCacheMaxEntriesPerSegment(size_t maxEntries);
-size_t getCacheMaxEntriesPerSegment() const;
-
-// Get total cache entry count across all segments
-size_t getCacheTotalEntryCount() const;
-```
-
 **Eviction Rules:**
 1. Only **non-dirty entries** can be evicted (dirty entries must be flushed first to avoid data loss)
 2. Eviction is triggered when adding new entries and cache is at capacity
 3. LRU entries are evicted first (least recently accessed)
 4. Total max cache size = `maxCacheEntriesPerSegment * NUM_CACHE_SEGMENTS` (64 segments)
 
-**Example:**
-```cpp
-// Set limit of 10,000 entries per segment (640,000 total across 64 segments)
-index.setCacheMaxEntriesPerSegment(10000);
-
-// Disable limit (unlimited cache)
-index.setCacheMaxEntriesPerSegment(0);
-```
 
 **Why Cache is Source of Truth**
 
@@ -110,8 +91,8 @@ The cache serves as the **source of truth** for pending updates that haven't bee
 This is why **dirty entries are never evicted** - they contain updates not yet persisted to disk
 
 **implementation/future optimization**
-Memory Overhead: std::list nodes are individually allocated on the heap. For a cache of 1M entries, that is 1M small allocations, which causes heap fragmentation and poor cache locality.
-
+1. Memory Overhead: std::list nodes are individually allocated on the heap. For a cache of 1M entries, that is 1M small allocations, which causes heap fragmentation and poor cache locality.
+2. We can try different types of bounding the cache - maybe bound by time instead of number of entries.
 
 ### 3. Lock Hierarchy
 
@@ -124,19 +105,9 @@ Memory Overhead: std::list nodes are individually allocated on the heap. For a c
 | `diskWriteGuard` | `mutex` | Serializes global flush operations |
 | `cacheSegments_[i].guard` | `shared_mutex` | Per-segment cache, dirty set, newNodes |
 
-### 4. Atomic Variables
-
-```cpp
-std::atomic<size_t> curElementCount;      // Thread-safe element counting
-std::atomic<size_t> totalDirtyCount_{0};  // Fast threshold check without locking
-std::atomic<size_t> pendingSingleInsertJobs_{0};  // Track pending async jobs
-```
-Note:
-We can probably think of more atomics variables that can be added to further improve performance, I just used for the important ones.
-
 ## Concurrency Patterns
 
-### Swap-and-Flush Pattern (Critical for Preventing Lost Updates)
+### Swap-and-Flush Pattern (Critical for Preventing Lost Updates When Flushing to Disk)
 
 The `writeDirtyNodesToDisk` and `flushDirtyNodesToDisk` methods implement a two-phase approach:
 
@@ -156,8 +127,6 @@ Phase 3: Write to disk (NO locks held)
 
 This prevents the "Lost Update" race condition where a concurrent insert's changes could be lost.
 
-### Atomic Check-and-Add for Neighbor Lists
-
 ```cpp
 bool tryAddNeighborToCacheIfCapacity(nodeId, level, newNeighborId, maxCapacity) {
     // Under exclusive lock:
@@ -168,7 +137,7 @@ bool tryAddNeighborToCacheIfCapacity(nodeId, level, newNeighborId, maxCapacity) 
 }
 ```
 
-This atomic operation prevents race conditions when multiple threads add neighbors to the same node.
+This operation prevents race conditions when multiple threads add neighbors to the same node.
 
 ### Read-Copy-Update Pattern for Cache Access
 
@@ -200,6 +169,36 @@ if (diskWriteBatchThreshold == 0) {
     flushDirtyNodesToDisk();  // Flush ALL dirty nodes
 }
 ```
+
+### writeDirtyNodesToDisk vs flushDirtyNodesToDisk
+
+Both methods use the Swap-and-Flush pattern but serve different purposes:
+
+| Method | Purpose | When Used | Scope |
+|--------|---------|-----------|-------|
+| `writeDirtyNodesToDisk` | Write specific nodes from current insert | `diskWriteBatchThreshold == 0` (no batching) | Only nodes modified by the current insert operation |
+| `flushDirtyNodesToDisk` | Flush ALL dirty nodes across all segments | `totalDirtyCount_ >= threshold` (batch mode) | All dirty nodes accumulated from multiple inserts |
+
+**Why both are needed:**
+
+1. **`writeDirtyNodesToDisk(modifiedNodes, rawVectorData, newVectorId)`**
+   - Used in **non-batching mode** (threshold = 0)
+   - Takes explicit list of nodes modified by current insert
+   - Has direct access to `newVectorRawData` for the just-inserted vector (avoids lookup)
+   - More efficient for single-insert scenarios since it knows exactly which nodes changed
+   - Cleans up `rawVectorsInRAM` for just the current vector after write
+
+2. **`flushDirtyNodesToDisk()`**
+   - Used in **batching mode** (threshold > 0)
+   - Discovers dirty nodes by scanning all cache segments' `dirty` sets
+   - Must look up raw vector data for each node (from `rawVectorsInRAM` or disk)
+   - More efficient for high-throughput scenarios where many inserts are batched
+   - Cleans up `rawVectorsInRAM` for all level-0 nodes after successful flush
+   - Protected by `diskWriteGuard` mutex to serialize concurrent flush attempts
+
+**Performance tradeoff:**
+- Non-batching (`writeDirtyNodesToDisk`): Lower latency per insert, more disk I/O operations
+- Batching (`flushDirtyNodesToDisk`): Higher throughput, fewer but larger disk I/O operations
 
 ## Job Queue Integration
 
