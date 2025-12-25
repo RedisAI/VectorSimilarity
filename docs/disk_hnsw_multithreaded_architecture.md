@@ -120,7 +120,7 @@ Memory Overhead: std::list nodes are individually allocated on the heap. For a c
 | `indexDataGuard` | `shared_mutex` | `entrypointNode`, `maxLevel`, `idToMetaData`, `labelToIdMap` | Metadata access during graph construction |
 | `vectorsGuard` | `shared_mutex` | Vectors container (prevents resize during access) | Vectors access during graph construction |
 | `rawVectorsGuard` | `shared_mutex` | `rawVectorsInRAM` map | Raw vectors access during graph construction |
-| `stagedUpdatesGuard` | `shared_mutex` | Staged graph updates for deletions | 
+| `stagedUpdatesGuard` | `shared_mutex` | Staged graph updates (protects staged updates during merge from parallel insert jobs) |
 | `diskWriteGuard` | `mutex` | Serializes global flush operations |
 | `cacheSegments_[i].guard` | `shared_mutex` | Per-segment cache, dirty set, newNodes |
 
