@@ -56,14 +56,14 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
-       batchThreshold(0), // Will be restored from file
-      pendingVectorIds(this->allocator), pendingMetadata(this->allocator),
-      pendingVectorCount(0), pendingDeleteIds(this->allocator),
+      pendingDeleteIds(this->allocator),
       stagedInsertUpdates(this->allocator),
       stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
-      stagedInsertNeighborUpdates(this->allocator) {
+      stagedInsertNeighborUpdates(this->allocator),
+      jobQueue(nullptr), jobQueueCtx(nullptr), SubmitJobsToQueue(nullptr),
+      cacheSegments_(new CacheSegment[NUM_CACHE_SEGMENTS]) {
 
-    // Restore index fields from file (including batchThreshold)
+    // Restore index fields from file
     this->restoreIndexFields(input);
 
     // Validate the restored fields
@@ -72,7 +72,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
     // Initialize level generator with seed based on curElementCount for better distribution
     // Using curElementCount ensures different sequences for indexes with different sizes
     // Add a constant offset to avoid seed=0 for empty indexes
-    this->levelGenerator.seed(200 + this->curElementCount);
+    this->levelGenerator.seed(200 + this->curElementCount.load(std::memory_order_acquire));
 
     // Restore graph and vectors from file
     this->restoreGraph(input, version);
@@ -101,10 +101,11 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromFile(std::ifstream &input,
                                                                 EncodingVersion version) {
     auto start_time = std::chrono::steady_clock::now();
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
 
     // Read vectors directly from file
     // The vectors are stored as processed blobs (storage format)
-    for (idType id = 0; id < this->curElementCount; id++) {
+    for (idType id = 0; id < elementCount; id++) {
         // Allocate memory for the processed vector
         auto vector_blob = this->allocator->allocate_unique(this->dataSize);
 
@@ -129,7 +130,7 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromFile(std::ifstream &in
     double elapsed_seconds = std::chrono::duration<double>(end_time - start_time).count();
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Restored %zu processed vectors from metadata file in %f seconds",
-             this->curElementCount, elapsed_seconds);
+             elementCount, elapsed_seconds);
 }
 
 /**
@@ -154,7 +155,8 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromRocksDB(EncodingVersion version) {
     // Iterate through all elements and restore their processed vectors
     auto start_time = std::chrono::steady_clock::now();
-    for (idType id = 0; id < this->curElementCount; id++) {
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
+    for (idType id = 0; id < elementCount; id++) {
         // Retrieve the raw vector from RocksDB (stored in level-0 graph value)
         GraphKey graphKey(id, 0);
         std::string level0_graph_value;
@@ -195,7 +197,7 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectorsFromRocksDB(EncodingVersio
     double elapsed_seconds = std::chrono::duration<double>(end_time - start_time).count();
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Restored %zu processed vectors from RocksDB checkpoint in %f seconds",
-             this->curElementCount, elapsed_seconds);
+             this->curElementCount.load(std::memory_order_acquire), elapsed_seconds);
 }
 
 /**
@@ -250,14 +252,11 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, Enc
  */
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
-    // Flush any pending updates before saving to ensure consistent snapshot
-    this->flushStagedUpdates();
-    this->flushBatch();
+    // Flush any pending delete updates before saving to ensure consistent snapshot
+    this->flushStagedDeleteUpdates();
+    this->flushDirtyNodesToDisk();
     // Verify that all pending state has been flushed
     // These assertions ensure data integrity during serialization
-    if (!pendingVectorIds.empty()) {
-        throw std::runtime_error("Serialization error: pendingVectorIds not empty after flush");
-    }
     if (!stagedInsertUpdates.empty()) {
         throw std::runtime_error("Serialization error: stagedInsertUpdates not empty after flush");
     }
@@ -269,9 +268,6 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     }
     if (!rawVectorsInRAM.empty()) {
         throw std::runtime_error("Serialization error: rawVectorsInRAM not empty after flush");
-    }
-    if (pendingVectorCount != 0) {
-        throw std::runtime_error("Serialization error: pendingVectorCount not zero after flush");
     }
     if (!stagedRepairUpdates.empty()) {
         throw std::runtime_error("Serialization error: stagedRepairUpdates not empty after flush");
@@ -420,9 +416,10 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
 
     // Store all edges for efficient bidirectional checking: (node_id, level) -> set of neighbors
     std::unordered_map<idType, std::unordered_map<size_t, std::unordered_set<idType>>> all_edges;
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
 
     // First pass: count deleted and max level
-    for (idType id = 0; id < this->curElementCount; id++) {
+    for (idType id = 0; id < elementCount; id++) {
         if (this->isMarkedDeleted(id)) {
             num_deleted++;
         }
@@ -440,7 +437,7 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
     }
 
     // Validate entry point
-    if (this->curElementCount > 0 && this->entrypointNode == INVALID_ID) {
+    if (elementCount > 0 && this->entrypointNode == INVALID_ID) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "checkIntegrity failed: no entry point set for non-empty index");
         return res;
@@ -475,7 +472,7 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
             idType neighborId = neighbors[i];
 
             // Check for invalid neighbor
-            if (neighborId >= this->curElementCount || neighborId == gk->id) {
+            if (neighborId >= elementCount || neighborId == gk->id) {
                 this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                           "checkIntegrity failed: invalid neighbor %u for node %u at level %zu",
                           neighborId, gk->id, gk->level);
@@ -527,7 +524,7 @@ HNSWIndexMetaData HNSWDiskIndex<DataType, DistType>::checkIntegrity() const {
 
     // Check for isolated nodes (non-deleted nodes with no neighbors at any level)
     size_t isolated_count = 0;
-    for (idType id = 0; id < this->curElementCount; id++) {
+    for (idType id = 0; id < elementCount; id++) {
         // Skip deleted nodes
         if (this->isMarkedDeleted(id)) {
             continue;
@@ -592,13 +589,19 @@ void HNSWDiskIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input)
     Serializer::readBinaryPOD(input, this->mult);
 
     // Restore index state
-    Serializer::readBinaryPOD(input, this->curElementCount);
+    // Note: curElementCount is atomic, so we read into a temporary first
+    size_t tempElementCount;
+    Serializer::readBinaryPOD(input, tempElementCount);
+    this->curElementCount.store(tempElementCount, std::memory_order_release);
     Serializer::readBinaryPOD(input, this->numMarkedDeleted);
+    // Read entry point state
     Serializer::readBinaryPOD(input, this->maxLevel);
     Serializer::readBinaryPOD(input, this->entrypointNode);
 
-    // Restore batch processing configuration
-    Serializer::readBinaryPOD(input, this->batchThreshold);
+    // Restore batch processing configuration (legacy field, now unused - read and discard)
+    size_t legacyBatchThreshold;
+    Serializer::readBinaryPOD(input, legacyBatchThreshold);
+    (void)legacyBatchThreshold; // Suppress unused warning
 
     // Restore dbPath (string: length + data)
     size_t dbPathLength;
@@ -637,10 +640,12 @@ void HNSWDiskIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input)
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
                                                      EncodingVersion version) {
-    // Phase 1: Restore metadata for all elements
-    this->idToMetaData.resize(this->curElementCount);
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
 
-    for (idType id = 0; id < this->curElementCount; id++) {
+    // Phase 1: Restore metadata for all elements
+    this->idToMetaData.resize(elementCount);
+
+    for (idType id = 0; id < elementCount; id++) {
         labelType label;
         size_t topLevel;
         elementFlags flags;
@@ -683,19 +688,18 @@ void HNSWDiskIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
              "RocksDB checkpoint loaded. Vectors will be loaded on-demand from disk during queries.");
 
     // Clear any pending state (must be empty after deserialization)
-    this->pendingVectorIds.clear();
-    this->pendingMetadata.clear();
-    this->pendingVectorCount = 0;
     this->stagedInsertUpdates.clear();
     this->stagedDeleteUpdates.clear();
     this->stagedInsertNeighborUpdates.clear();
 
     // Resize visited nodes handler pool
-    this->visitedNodesHandlerPool.resize(this->curElementCount);
+    this->visitedNodesHandlerPool.resize(elementCount);
 }
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
+
     // Save index type
     Serializer::writeBinaryPOD(output, VecSimAlgo_HNSWLIB_DISK);
 
@@ -705,7 +709,7 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) c
     Serializer::writeBinaryPOD(output, this->metric);
     Serializer::writeBinaryPOD(output, this->blockSize);
     Serializer::writeBinaryPOD(output, this->isMulti);
-    Serializer::writeBinaryPOD(output, this->curElementCount); // Use curElementCount as initial capacity
+    Serializer::writeBinaryPOD(output, elementCount); // Use curElementCount as initial capacity
 
     // Save HNSW build parameters
     Serializer::writeBinaryPOD(output, this->M);
@@ -720,13 +724,15 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) c
     Serializer::writeBinaryPOD(output, this->mult);
 
     // Save index state
-    Serializer::writeBinaryPOD(output, this->curElementCount);
+    Serializer::writeBinaryPOD(output, elementCount);
     Serializer::writeBinaryPOD(output, this->numMarkedDeleted);
+    // Write entry point state
     Serializer::writeBinaryPOD(output, this->maxLevel);
     Serializer::writeBinaryPOD(output, this->entrypointNode);
 
-    // Save batch processing configuration
-    Serializer::writeBinaryPOD(output, this->batchThreshold);
+    // Save batch processing configuration (legacy field for compatibility, write 0)
+    size_t legacyBatchThreshold = 0;
+    Serializer::writeBinaryPOD(output, legacyBatchThreshold);
 
     // Save dbPath (string: length + data)
     size_t dbPathLength = this->dbPath.length();
@@ -736,8 +742,10 @@ void HNSWDiskIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) c
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
+
     // Phase 1: Save metadata for all elements
-    for (idType id = 0; id < this->curElementCount; id++) {
+    for (idType id = 0; id < elementCount; id++) {
         labelType label = this->idToMetaData[id].label;
         size_t topLevel = this->idToMetaData[id].topLevel;
         elementFlags flags = this->idToMetaData[id].flags;
@@ -787,9 +795,10 @@ void HNSWDiskIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::saveVectorsToFile(std::ofstream &output) const {
     auto start_time = std::chrono::steady_clock::now();
+    size_t elementCount = this->curElementCount.load(std::memory_order_acquire);
 
     // Save all processed vectors
-    for (idType id = 0; id < this->curElementCount; id++) {
+    for (idType id = 0; id < elementCount; id++) {
         // Get the processed vector from the vectors container
         const void *vector_data = this->vectors->getElement(id);
 
@@ -811,5 +820,5 @@ void HNSWDiskIndex<DataType, DistType>::saveVectorsToFile(std::ofstream &output)
     double elapsed_seconds = std::chrono::duration<double>(end_time - start_time).count();
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "Saved %zu processed vectors to metadata file in %f seconds",
-             this->curElementCount, elapsed_seconds);
+             elementCount, elapsed_seconds);
 }

@@ -128,6 +128,11 @@ public:
     void thread_pool_join();
     void thread_pool_wait(size_t waiting_duration = 10);
 
+    // Check if all jobs are complete (queue empty and no in-flight jobs)
+    bool isIdle() const {
+        return jobQ.empty() && executions_status.AllDone();
+    }
+
     // Reconfigure the thread pool to have exactly `new_size` workers.
     void reconfigure_threads(size_t new_size);
 };

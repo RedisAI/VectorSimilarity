@@ -187,6 +187,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
             auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
             mock_thread_pool.ctx->index_strong_ref = indices[INDEX_HNSW_DISK].get_shared();
             // Threads will be started on-demand by the benchmark via reconfigure_threads().
+            // NOTE: Job queue is NOT set here - individual benchmarks that need async
+            // processing should call setJobQueue() with appropriate thread configuration.
+            // The regular AddLabel benchmark uses single-threaded mode (no job queue).
         }
     }
 
