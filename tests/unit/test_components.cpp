@@ -998,7 +998,7 @@ TEST(PreprocessorsTest, QuantizationTest) {
     float *original_blob = static_cast<float *>(original_blob_alloc.get());
     test_utils::populate_float_vec(original_blob, elements);
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, elements);
     auto multiPPContainer =
         MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
     multiPPContainer.addPreprocessor(quant_preprocessor);
@@ -1056,7 +1056,7 @@ TEST(PreprocessorsTest, QuantizationTestWithCosine) {
     float *original_blob = static_cast<float *>(original_blob_alloc.get());
     test_utils::populate_float_vec(original_blob, elements);
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, elements);
     auto cosine_preprocessor =
         new (allocator) CosinePreprocessor<float>(allocator, elements, original_blob_size);
     auto multiPPContainer =
@@ -1113,7 +1113,7 @@ TEST(PreprocessorsTest, ReallocateVectorQuantizationTest) {
     float *original_blob = static_cast<float *>(original_blob_alloc.get());
     test_utils::populate_float_vec(original_blob, elements);
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, elements);
     auto dummy_preprocessor =
         new (allocator) dummyPreprocessors::DummyStoragePreprocessor<float>(allocator, 0.0f);
     auto multiPPContainer =
@@ -1157,7 +1157,7 @@ TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
         original_blob[i] = static_cast<float>(i + 2.5f);
     }
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, elements);
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, elements);
     auto cosine_preprocessor =
         new (allocator) CosinePreprocessor<float>(allocator, elements, original_blob_size);
     auto multiPPContainer =
@@ -1198,7 +1198,7 @@ TEST(PreprocessorsTest, QuantizationInPlaceTest) {
     // Create a float array with known values
     float original_data[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor(allocator, dim);
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
     auto dummy_preprocessor =
         new (allocator) dummyPreprocessors::DummyStoragePreprocessor<float>(allocator, 0.0f);
     auto multiPPContainer =
