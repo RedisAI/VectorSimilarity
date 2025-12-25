@@ -9,10 +9,11 @@
 
 #pragma once
 
-#include <cstddef>
-#include <memory>
+#include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
+#include <memory>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
