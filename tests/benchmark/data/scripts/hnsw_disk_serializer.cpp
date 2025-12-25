@@ -5,7 +5,7 @@
  * It supports both .raw files (no header) and .fbin files (with header).
  *
  * Usage:
- *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [diskWriteBatchThreshold]
+ *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [diskWriteBatchThreshold] [cacheMaxEntriesPerSegment]
  *
  * Arguments:
  *   input_file      - Binary file containing vectors (.raw or .fbin)
@@ -19,6 +19,7 @@
  *   efConstruction  - HNSW efConstruction parameter (default: 512)
  *   threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)
  *   diskWriteBatchThreshold - Threshold for disk write batching (default: 1, larger = fewer disk writes)
+ *   cacheMaxEntriesPerSegment - Max cache entries per segment (default: 10000, 0 = unlimited)
  *
  * Examples:
  *   # Using .raw file (dimension required)
@@ -268,7 +269,7 @@ void saveIndexByType(VecSimIndex *index, const std::string &output_file) {
 
 int main(int argc, char *argv[]) {
     if (argc < 6) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [diskWriteBatchThreshold]\n";
+        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [diskWriteBatchThreshold] [cacheMaxEntriesPerSegment]\n";
         std::cerr << "\nArguments:\n";
         std::cerr << "  input_file      - Binary file (.raw or .fbin)\n";
         std::cerr << "  output_name     - Base name for output files\n";
@@ -279,6 +280,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "  efConstruction  - HNSW efConstruction parameter (default: 512)\n";
         std::cerr << "  threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)\n";
         std::cerr << "  diskWriteBatchThreshold - Threshold for disk write batching (default: 1)\n";
+        std::cerr << "  cacheMaxEntriesPerSegment - Max cache entries per segment (default: 10000, 0 = unlimited)\n";
         return 1;
     }
 
@@ -291,6 +293,7 @@ int main(int argc, char *argv[]) {
     size_t efConstruction = (argc > 7) ? std::stoull(argv[7]) : 512;
     size_t num_threads = (argc > 8) ? std::stoull(argv[8]) : 4;
     size_t disk_write_batch_threshold = (argc > 9) ? std::stoull(argv[9]) : 1;
+    size_t cache_max_entries_per_segment = (argc > 10) ? std::stoull(argv[10]) : 10000;
 
     // Check if input file exists
     if (!std::filesystem::exists(input_file)) {
@@ -350,6 +353,7 @@ int main(int argc, char *argv[]) {
     std::cout << "efConstruction: " << efConstruction << "\n";
     std::cout << "Threads:        " << (num_threads > 0 ? std::to_string(num_threads) : "single-threaded") << "\n";
     std::cout << "DiskWriteBatchThreshold: " << disk_write_batch_threshold << "\n";
+    std::cout << "CacheMaxEntriesPerSegment: " << cache_max_entries_per_segment << " (0 = unlimited)\n";
     std::cout << "Number of vectors: " << num_vectors << "\n";
     std::cout << "==================================\n\n";
 
@@ -404,6 +408,9 @@ int main(int argc, char *argv[]) {
             // Set disk write batch threshold for better performance
             // Larger batches = fewer disk writes = faster indexing
             disk_index->setDiskWriteBatchThreshold(disk_write_batch_threshold);
+            // Set cache max entries per segment
+            // Total max cache entries = cache_max_entries_per_segment * NUM_CACHE_SEGMENTS (64)
+            disk_index->setCacheMaxEntriesPerSegment(cache_max_entries_per_segment);
         }
 
         std::cout << "Multi-threaded indexing enabled with " << num_threads << " threads\n";
