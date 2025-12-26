@@ -96,6 +96,46 @@ INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, Cosine, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, L2Sqr, 16);
 
-// Naive
+/**
+ * SQ8-to-SQ8 benchmarks: Both vectors are uint8 quantized with dequantization applied to both.
+ */
+class BM_VecSimSpaces_SQ8_Dist : public benchmark::Fixture {
+protected:
+    std::mt19937 rng;
+    size_t dim;
+    uint8_t *v1;
+    uint8_t *v2;
+
+public:
+    BM_VecSimSpaces_SQ8_Dist() { rng.seed(47); }
+    ~BM_VecSimSpaces_SQ8_Dist() = default;
+
+    void SetUp(const ::benchmark::State &state) {
+        dim = state.range(0);
+        // Allocate both vectors with extra space for min, delta and inv_norm
+        v1 = new uint8_t[dim + sizeof(float) * 3];
+        v2 = new uint8_t[dim + sizeof(float) * 3];
+        test_utils::populate_float_vec_to_sq8(v1, dim, 123);
+        test_utils::populate_float_vec_to_sq8(v2, dim, 1234);
+    }
+    void TearDown(const ::benchmark::State &state) {
+        delete[] v1;
+        delete[] v2;
+    }
+};
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+// AVX512_F_BW_VL_VNNI SQ8-to-SQ8 functions
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, AVX512F_BW_VL_VNNI, 16,
+                             avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, AVX512F_BW_VL_VNNI, 16,
+                                 avx512_f_bw_vl_vnni_supported);
+#endif // AVX512_F_BW_VL_VNNI
+#endif // x86_64
+
+// Naive SQ8-to-SQ8 algorithms
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, InnerProduct, 16);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, Cosine, 16);
 
 BENCHMARK_MAIN();

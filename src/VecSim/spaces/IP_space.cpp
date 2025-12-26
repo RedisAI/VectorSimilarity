@@ -589,4 +589,70 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
     return ret_dist_func;
 }
 
+// SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized)
+dist_func_t<float> IP_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignment,
+                                           const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = SQ8_Dist_InnerProduct;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ8_Dist_IP_implementation_SVE(dim);
+    }
+#endif
+#endif // AARCH64
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+        return Choose_SQ8_Dist_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // __x86_64__
+    return ret_dist_func;
+}
+
+// SQ8-to-SQ8 Cosine distance function (both vectors are uint8 quantized)
+dist_func_t<float> Cosine_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignment,
+                                               const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = SQ8_Dist_Cosine;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ8_Dist_Cosine_implementation_SVE(dim);
+    }
+#endif
+#endif // AARCH64
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+        return Choose_SQ8_Dist_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // __x86_64__
+    return ret_dist_func;
+}
+
 } // namespace spaces
