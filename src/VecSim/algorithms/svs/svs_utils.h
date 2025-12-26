@@ -15,11 +15,19 @@
 #include "svs/lib/float16.h"
 #include "svs/index/vamana/dynamic_index.h"
 
-#include <cpuid.h>
+#if HAVE_SVS_LVQ
+#include "svs/cpuid.h"
+#endif
+
 #include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <utility>
+
+// Maximum training threshold for SVS index, used to limit the size of training data
+constexpr size_t SVS_MAX_TRAINING_THRESHOLD = 100 * DEFAULT_BLOCK_SIZE; // 100 * 1024 vectors
+// Default wait time for the update job in microseconds
+constexpr size_t SVS_DEFAULT_UPDATE_JOB_WAIT_TIME = 5000; // 5 ms
 
 namespace svs_details {
 // VecSim->SVS data type conversion
@@ -41,87 +49,102 @@ using vecsim_dt = typename vecsim_dtype<T>::type;
 
 // SVS->VecSim distance conversion
 template <typename DistType>
-float toVecSimDistance(float);
+double toVecSimDistance(float);
 
 template <>
-inline float toVecSimDistance<svs::distance::DistanceL2>(float v) {
-    return v;
-}
-
-template <>
-inline float toVecSimDistance<svs::distance::DistanceIP>(float v) {
-    return 1.f - v;
+inline double toVecSimDistance<svs::distance::DistanceL2>(float v) {
+    return static_cast<double>(v);
 }
 
 template <>
-inline float toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
-    return 1.f - v;
+inline double toVecSimDistance<svs::distance::DistanceIP>(float v) {
+    return 1.0 - static_cast<double>(v);
 }
 
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceL2 dist, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    return toVecSimDistance<svs::distance::DistanceL2>(svs::distance::compute(dist, a, b));
-}
-
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceIP dist, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    return toVecSimDistance<svs::distance::DistanceIP>(svs::distance::compute(dist, a, b));
-}
-
-template <typename Ea, typename Eb, size_t Da, size_t Db>
-float computeVecSimDistance(svs::distance::DistanceCosineSimilarity /*dist*/, std::span<Ea, Da> a,
-                            std::span<Eb, Db> b) {
-    // VecSim uses IP for Cosine distance
-    return computeVecSimDistance(svs::distance::DistanceIP{}, a, b);
+template <>
+inline double toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
+    return 1.0 - static_cast<double>(v);
 }
 
 // VecSim allocator wrapper for SVS containers
 template <typename T>
-struct SVSAllocator {
-private:
-    std::shared_ptr<VecSimAllocator> allocator_;
+using SVSAllocator = VecsimSTLAllocator<T>;
 
-public:
-    // Type Aliases
-    using value_type = T;
+template <typename T, typename U>
+static T getOrDefault(T v, U def) {
+    return v != T{} ? v : static_cast<T>(def);
+}
 
-    // Constructor
-    SVSAllocator(std::shared_ptr<VecSimAllocator> vs_allocator)
-        : allocator_{std::move(vs_allocator)} {}
+inline svs::index::vamana::VamanaBuildParameters
+makeVamanaBuildParameters(const SVSParams &params) {
+    // clang-format off
+    // evaluate optimal default parameters; current assumption:
+    // * alpha (1.2 or 0.95) depends on metric: L2: > 1.0, IP, Cosine: < 1.0
+    //      In the Vamana algorithm implementation in SVS, the choice of alpha value
+    //      depends on the type of similarity measure used. For L2, which minimizes distance,
+    //      an alpha value greater than 1 is needed, typically around 1.2.
+    //      For Inner Product and Cosine, which maximize similarity or distance,
+    //      the alpha value should be less than 1, usually 0.9 or 0.95 works.
+    // * construction_window_size (200): similar to HNSW_EF_CONSTRUCTION
+    // * graph_max_degree (32): similar to HNSW_M * 2
+    // * max_candidate_pool_size (600): =~ construction_window_size * 3
+    // * prune_to (28): < graph_max_degree, optimal = graph_max_degree - 4
+    //      The prune_to parameter is a performance feature designed to enhance build time
+    //      by setting a small difference between this value and the maximum graph degree.
+    //      This acts as a threshold for how much pruning can reduce the number of neighbors.
+    //      Typically, a small gap of 4 or 8 is sufficient to improve build time
+    //      without compromising the quality of the graph.
+    // * use_search_history (true): now: is enabled if not disabled explicitly
+    //                              future: default value based on other index parameters
+    const auto construction_window_size = getOrDefault(params.construction_window_size, SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE);
+    const auto graph_max_degree = getOrDefault(params.graph_max_degree, SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE);
 
-    // Construct from another value type allocator.
-
-    // Allocation and Deallocation.
-    [[nodiscard]] constexpr value_type *allocate(std::size_t n) {
-        return static_cast<value_type *>(allocator_->allocate_aligned(n * sizeof(T), alignof(T)));
-    }
-
-    constexpr void deallocate(value_type *ptr, size_t count) noexcept {
-        allocator_->deallocate(ptr, count * sizeof(T));
-    }
-
-    // Support allocator type rebinding in LeanVec
-    template <typename U>
-    friend class SVSAllocator;
-
-    template <typename U>
-    SVSAllocator(SVSAllocator<U> other) : allocator_{other.allocator_} {}
-};
+    // More info about VamanaBuildParameters can be found there:
+    // https://intel.github.io/ScalableVectorSearch/python/vamana.html#svs.VamanaBuildParameters
+    return svs::index::vamana::VamanaBuildParameters{
+        getOrDefault(params.alpha, (params.metric == VecSimMetric_L2 ?
+            SVS_VAMANA_DEFAULT_ALPHA_L2 : SVS_VAMANA_DEFAULT_ALPHA_IP)),
+        graph_max_degree,
+        construction_window_size,
+        getOrDefault(params.max_candidate_pool_size, construction_window_size * 3),
+        getOrDefault(params.prune_to, graph_max_degree - 4),
+        params.use_search_history == VecSimOption_AUTO ? SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY :
+            params.use_search_history == VecSimOption_ENABLE,
+    };
+    // clang-format on
+}
 
 // Join default SVS search parameters with VecSim query runtime parameters
 inline svs::index::vamana::VamanaSearchParameters
 joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
-                 const VecSimQueryParams *queryParams) {
+                 const VecSimQueryParams *queryParams, bool is_two_level_lvq) {
     if (queryParams == nullptr) {
         return std::move(sp);
     }
 
     auto &rt_params = queryParams->svsRuntimeParams;
+    size_t sws = sp.buffer_config_.get_search_window_size();
+    size_t sbc = sp.buffer_config_.get_total_capacity();
+
+    // buffer capacity is changed only if window size is changed
     if (rt_params.windowSize > 0) {
-        sp.buffer_config({rt_params.windowSize});
+        sws = rt_params.windowSize;
+        if (rt_params.bufferCapacity > 0) {
+            // case 1: change both window size and buffer capacity
+            sbc = rt_params.bufferCapacity;
+        } else {
+            // case 2: change only window size
+            // In this case, set buffer capacity based on window size
+            if (!is_two_level_lvq) {
+                // set buffer capacity to windowSize
+                sbc = rt_params.windowSize;
+            } else {
+                // set buffer capacity to windowSize * 1.5 for Two-level LVQ
+                sbc = static_cast<size_t>(rt_params.windowSize * 1.5);
+            }
+        }
     }
+    sp.buffer_config({sws, sbc});
     switch (rt_params.searchHistory) {
     case VecSimOption_ENABLE:
         sp.search_buffer_visited_set(true);
@@ -148,17 +171,6 @@ inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
     return svs_bs;
 }
 
-// clang-format off
-inline bool check_cpuid() {
-    uint32_t eax, ebx, ecx, edx;
-    __cpuid(0, eax, ebx, ecx, edx);
-    std::string vendor_id = std::string((const char*)&ebx, 4) +
-                            std::string((const char*)&edx, 4) +
-                            std::string((const char*)&ecx, 4);
-    return (vendor_id == "GenuineIntel");
-}
-// clang-format on
-
 // Check if the SVS implementation supports Quantization mode
 // @param quant_bits requested SVS quantization mode
 // @return pair<fallbackMode, bool>
@@ -167,27 +179,29 @@ inline bool check_cpuid() {
 //       - primary bits, secondary/residual bits, dimesionality reduction, etc.
 //       which can be incompatible to each-other.
 inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuantBits quant_bits) {
-    // If HAVE_SVS_LVQ is not defined, we don't support any quantization mode
-    // else we check if the CPU supports SVS LVQ
-    bool supported = quant_bits == VecSimSvsQuant_NONE
+    switch (quant_bits) {
+    // non-quantized mode and scalar quantization are always supported
+    case VecSimSvsQuant_NONE:
+    case VecSimSvsQuant_Scalar:
+        return std::make_pair(quant_bits, true);
+    default:
+        // fallback to no quantization if we have no LVQ support in code
+        // or if the CPU doesn't support it
 #if HAVE_SVS_LVQ
-                     || check_cpuid() // Check if the CPU supports SVS LVQ
+        return svs::detail::intel_enabled() ? std::make_pair(quant_bits, true)
+                                            : std::make_pair(VecSimSvsQuant_Scalar, true);
+#else
+        return std::make_pair(VecSimSvsQuant_Scalar, true);
 #endif
-        ;
-
-    // If the quantization mode is not supported, we fallback to non-quantized mode
-    // - this is temporary solution until we have a basic quantization mode in SVS
-    // TODO: use basic SVS quantization as a fallback for unsupported modes
-    auto fallBack = supported ? quant_bits : VecSimSvsQuant_NONE;
-
-    // And always return true, as far as fallback mode is always supported
-    // Upon further decision changes, some cases should treated as not-supported
-    // So we will need return false.
-    return std::make_pair(fallBack, true);
+    }
+    assert(false && "Should never reach here");
+    // unreachable code, but to avoid compiler warning
+    return std::make_pair(VecSimSvsQuant_NONE, false);
 }
 } // namespace svs_details
 
-template <typename DataType, size_t QuantBits, size_t ResidualBits, class Enable = void>
+template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec,
+          class Enable = void>
 struct SVSStorageTraits {
     using allocator_type = svs_details::SVSAllocator<DataType>;
     // In SVS, the default allocator is designed for static indices,
@@ -199,16 +213,28 @@ struct SVSStorageTraits {
     // svs::Dynamic means runtime dimensionality in opposite to compile-time dimensionality
     using index_storage_type = svs::data::BlockedData<DataType, svs::Dynamic, allocator_type>;
 
-    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
-    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
-                                             std::shared_ptr<VecSimAllocator> allocator) {
-        const auto dim = data.dimensions();
-        const auto size = data.size();
+    static constexpr bool is_compressed() { return false; }
+
+    static constexpr VecSimSvsQuantBits get_compression_mode() {
+        return VecSimSvsQuant_NONE; // No compression for this storage
+    }
+
+    static blocked_type make_blocked_allocator(size_t block_size, size_t dim,
+                                               std::shared_ptr<VecSimAllocator> allocator) {
         // SVS storage element size and block size can be differ than VecSim
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
-        // Allocate initial SVS storage for index
         allocator_type data_allocator{std::move(allocator)};
-        blocked_type blocked_alloc{{svs_bs}, data_allocator};
+        return blocked_type{{svs_bs}, data_allocator};
+    }
+
+    template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
+    static index_storage_type create_storage(const Dataset &data, size_t block_size, Pool &pool,
+                                             std::shared_ptr<VecSimAllocator> allocator,
+                                             size_t /* leanvec_dim */) {
+        const auto dim = data.dimensions();
+        const auto size = data.size();
+        // Allocate initial SVS storage for index
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
         index_storage_type init_data{size, dim, blocked_alloc};
         // Copy data to allocated storage
         svs::threads::parallel_for(pool, svs::threads::StaticPartition(data.eachindex()),
@@ -220,8 +246,23 @@ struct SVSStorageTraits {
         return init_data;
     }
 
+    static index_storage_type load(const svs::lib::LoadTable &table, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return index_storage_type::load(table, blocked_alloc);
+    }
+
+    static index_storage_type load(const std::string &path, size_t block_size, size_t dim,
+                                   std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc = make_blocked_allocator(block_size, dim, std::move(allocator));
+        // Load the data from disk
+        return index_storage_type::load(path, blocked_alloc);
+    }
+
     // SVS storage element size can be differ than VecSim DataSize
-    static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0) {
+    static constexpr size_t element_size(size_t dims, size_t /*alignment*/ = 0,
+                                         size_t /*leanvec_dim*/ = 0) {
         return dims * sizeof(DataType);
     }
 
@@ -233,7 +274,15 @@ struct SVSGraphBuilder {
     using allocator_type = svs_details::SVSAllocator<SVSIdType>;
     using blocked_type = svs::data::Blocked<allocator_type>;
     using graph_data_type = svs::data::BlockedData<SVSIdType, svs::Dynamic, allocator_type>;
-    using graph_type = svs::graphs::SimpleGraphBase<SVSIdType, graph_data_type>;
+    using graph_type = svs::graphs::SimpleGraph<SVSIdType, blocked_type>;
+
+    static blocked_type make_blocked_allocator(size_t block_size, size_t graph_max_degree,
+                                               std::shared_ptr<VecSimAllocator> allocator) {
+        // SVS block size is a power of two, so we can use it directly
+        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(graph_max_degree));
+        allocator_type data_allocator{std::move(allocator)};
+        return blocked_type{{svs_bs}, data_allocator};
+    }
 
     // Build SVS Graph using custom allocator
     // The logic has been taken from one of `MutableVamanaIndex` constructors
@@ -243,12 +292,11 @@ struct SVSGraphBuilder {
     static graph_type build_graph(const svs::index::vamana::VamanaBuildParameters &parameters,
                                   const Data &data, DistType distance, Pool &threadpool,
                                   SVSIdType entry_point, size_t block_size,
-                                  std::shared_ptr<VecSimAllocator> allocator) {
-        auto svs_bs =
-            svs_details::SVSBlockSize(block_size, element_size(parameters.graph_max_degree));
+                                  std::shared_ptr<VecSimAllocator> allocator,
+                                  const svs::logging::logger_ptr &logger) {
         // Perform graph construction.
-        allocator_type data_allocator{std::move(allocator)};
-        blocked_type blocked_alloc{{svs_bs}, data_allocator};
+        auto blocked_alloc =
+            make_blocked_allocator(block_size, parameters.graph_max_degree, std::move(allocator));
         auto graph = graph_type{data.size(), parameters.graph_max_degree, blocked_alloc};
         // SVS incorporates an advanced software prefetching scheme with two parameters: step and
         // lookahead. These parameters determine how far ahead to prefetch data vectors
@@ -257,14 +305,32 @@ struct SVSGraphBuilder {
         auto prefetch_parameters =
             svs::index::vamana::extensions::estimate_prefetch_parameters(data);
         auto builder = svs::index::vamana::VamanaBuilder(
-            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters);
+            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters, logger);
 
         // Specific to the Vamana algorithm:
         // It builds in two rounds, one with alpha=1 and the second time with the user/config
         // provided alpha value.
-        builder.construct(1.0f, entry_point);
-        builder.construct(parameters.alpha, entry_point);
+        builder.construct(1.0f, entry_point, svs::logging::Level::Trace, logger);
+        builder.construct(parameters.alpha, entry_point, svs::logging::Level::Trace, logger);
         return graph;
+    }
+
+    static graph_type load(const svs::lib::LoadTable &table, size_t block_size,
+                           const svs::index::vamana::VamanaBuildParameters &parameters,
+                           std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc =
+            make_blocked_allocator(block_size, parameters.graph_max_degree, std::move(allocator));
+        // Load the graph from disk
+        return graph_type::load(table, blocked_alloc);
+    }
+
+    static graph_type load(const std::string &path, size_t block_size,
+                           const svs::index::vamana::VamanaBuildParameters &parameters,
+                           std::shared_ptr<VecSimAllocator> allocator) {
+        auto blocked_alloc =
+            make_blocked_allocator(block_size, parameters.graph_max_degree, std::move(allocator));
+        // Load the graph from disk
+        return graph_type::load(path, blocked_alloc);
     }
 
     // SVS Vamana graph element size
@@ -275,5 +341,110 @@ struct SVSGraphBuilder {
     }
 };
 
-// The sequential thread pool is used for single-threaded execution
-using VecSimSVSThreadPool = svs::threads::SequentialThreadPool;
+// Custom thread pool for SVS index
+// Based on svs::threads::NativeThreadPoolBase with changes:
+// * Number of threads is fixed on construction time
+// * Pool is resizable in bounds of pre-allocated threads
+class VecSimSVSThreadPoolImpl {
+public:
+    // Allocate `num_threads - 1` threads since the main thread participates in the work
+    // as well.
+    explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1)
+        : size_{num_threads}, threads_(num_threads - 1) {}
+
+    size_t capacity() const { return threads_.size() + 1; }
+    size_t size() const { return size_; }
+
+    // Support resize - do not modify threads container just limit the size
+    void resize(size_t new_size) {
+        std::lock_guard lock{use_mutex_};
+        size_ = std::clamp(new_size, size_t{1}, threads_.size() + 1);
+    }
+
+    void parallel_for(std::function<void(size_t)> f, size_t n) {
+        if (n > size_) {
+            throw svs::threads::ThreadingException("Number of tasks exceeds the thread pool size");
+        }
+        if (n == 0) {
+            return;
+        } else if (n == 1) {
+            // Run on the main function.
+            try {
+                f(0);
+            } catch (const std::exception &error) {
+                manage_exception_during_run(error.what());
+            }
+            return;
+        } else {
+            std::lock_guard lock{use_mutex_};
+            for (size_t i = 0; i < n - 1; ++i) {
+                threads_[i].assign({&f, i + 1});
+            }
+            // Run on the main function.
+            try {
+                f(0);
+            } catch (const std::exception &error) {
+                manage_exception_during_run(error.what());
+            }
+
+            // Wait until all threads are done.
+            // If any thread fails, then we're throwing.
+            for (size_t i = 0; i < size_ - 1; ++i) {
+                auto &thread = threads_[i];
+                thread.wait();
+                if (!thread.is_okay()) {
+                    manage_exception_during_run();
+                }
+            }
+        }
+    }
+
+    void manage_exception_during_run(const std::string &thread_0_message = {}) {
+        auto message = std::string{};
+        auto inserter = std::back_inserter(message);
+        if (!thread_0_message.empty()) {
+            fmt::format_to(inserter, "Thread 0: {}\n", thread_0_message);
+        }
+
+        // Manage all other exceptions thrown, restarting crashed threads.
+        for (size_t i = 0; i < size_ - 1; ++i) {
+            auto &thread = threads_[i];
+            thread.wait();
+            if (!thread.is_okay()) {
+                try {
+                    thread.unsafe_get_exception();
+                } catch (const std::exception &error) {
+                    fmt::format_to(inserter, "Thread {}: {}\n", i + 1, error.what());
+                }
+                // Restart the thread.
+                threads_[i].shutdown();
+                threads_[i] = svs::threads::Thread{};
+            }
+        }
+        throw svs::threads::ThreadingException{std::move(message)};
+    }
+
+private:
+    std::mutex use_mutex_;
+    size_t size_;
+    std::vector<svs::threads::Thread> threads_;
+};
+
+// Copy-movable wrapper for VecSimSVSThreadPoolImpl
+class VecSimSVSThreadPool {
+private:
+    std::shared_ptr<VecSimSVSThreadPoolImpl> pool_;
+
+public:
+    explicit VecSimSVSThreadPool(size_t num_threads = 1)
+        : pool_{std::make_shared<VecSimSVSThreadPoolImpl>(num_threads)} {}
+
+    size_t capacity() const { return pool_->capacity(); }
+    size_t size() const { return pool_->size(); }
+
+    void parallel_for(std::function<void(size_t)> f, size_t n) {
+        pool_->parallel_for(std::move(f), n);
+    }
+
+    void resize(size_t new_size) { pool_->resize(new_size); }
+};

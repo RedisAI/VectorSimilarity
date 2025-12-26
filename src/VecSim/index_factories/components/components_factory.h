@@ -14,10 +14,6 @@
 #include "VecSim/index_factories/components/preprocessors_factory.h"
 #include "VecSim/spaces/computer/calculator.h"
 
-PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim,
-                                                                bool is_normalized,
-                                                                unsigned char alignment);
-
 template <typename DataType, typename DistType>
 IndexComponents<DataType, DistType>
 CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric, size_t dim,
@@ -28,9 +24,8 @@ CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric m
     // Currently we have only one distance calculator implementation
     auto indexCalculator = new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
 
-    PreprocessorsContainerParams ppParams =
-        CreatePreprocessorsContainerParams(metric, dim, is_normalized, alignment);
-    auto preprocessors = CreatePreprocessorsContainer<DataType>(allocator, ppParams);
+    auto preprocessors =
+        CreatePreprocessorsContainer<DataType>(allocator, metric, dim, is_normalized, alignment);
 
     return {indexCalculator, preprocessors};
 }

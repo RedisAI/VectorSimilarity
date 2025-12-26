@@ -7,13 +7,13 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
+uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
-tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
@@ -26,10 +26,19 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, Single)
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex_Single, float,
-                    float, VecSimAlgo_BF)
+                    float, INDEX_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
-                    VecSimAlgo_HNSWLIB)
+                    INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
-                    VecSimAlgo_TIERED)
+                    INDEX_TIERED_HNSW)
+
+// Test Oscilations
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single),
+                            fp32_index_t)
+(benchmark::State &st) { UpdateAtBlockSize(st); }
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single), INDEX_BF);
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single), INDEX_HNSW);
+REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single),
+                           INDEX_TIERED_HNSW);
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 BENCHMARK_MAIN();

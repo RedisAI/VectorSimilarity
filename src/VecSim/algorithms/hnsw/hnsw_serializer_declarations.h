@@ -13,7 +13,8 @@
 public:
 HNSWIndex(std::ifstream &input, const HNSWParams *params,
           const AbstractIndexInitParams &abstractInitParams,
-          const IndexComponents<DataType, DistType> &components, EncodingVersion version);
+          const IndexComponents<DataType, DistType> &components,
+          HNSWSerializer::EncodingVersion version);
 
 // Validates the connections between vectors
 HNSWIndexMetaData checkIntegrity() const;
@@ -22,16 +23,17 @@ HNSWIndexMetaData checkIntegrity() const;
 virtual void saveIndexIMP(std::ofstream &output) override;
 
 // used by index factory to load nodes connections
-void restoreGraph(std::ifstream &input, EncodingVersion version);
+void restoreGraph(std::ifstream &input, HNSWSerializer::EncodingVersion version);
 
 private:
 // Functions for index saving.
-void saveIndexFields(std::ofstream &output) const;
+void saveIndexFields(std::ofstream &output) const override;
 
 void saveGraph(std::ofstream &output) const;
 
 void saveLevel(std::ofstream &output, ElementLevelData &data) const;
-void restoreLevel(std::ifstream &input, ElementLevelData &data, EncodingVersion version);
+void restoreLevel(std::ifstream &input, ElementLevelData &data,
+                  HNSWSerializer::EncodingVersion version);
 void computeIndegreeForAll();
 
 // Functions for index loading.

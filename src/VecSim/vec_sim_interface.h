@@ -81,6 +81,8 @@ public:
 
     /**
      * @brief Return the number of unique labels in the index (which are not deleted).
+     * !!! Note: for tiered index, this should only be called in debug mode, as it may require
+     * locking the indexes and going over the labels sets, which is time-consuming. !!!
      *
      * @return index label count.
      */
@@ -215,5 +217,15 @@ public:
     }
 #ifdef BUILD_TESTS
     virtual void fitMemory() = 0;
+    /**
+     * @brief get the capacity of the meta data containers.
+     *
+     * @return The capacity of the meta data containers in number of elements.
+     * The value returned from this function may differ from the indexCapacity() function. For
+     * example, in HNSW, the capacity of the meta data containers is the capacity of the labels
+     * lookup table, while the capacity of the data containers is the capacity of the vectors
+     * container.
+     */
+    virtual size_t indexMetaDataCapacity() const = 0;
 #endif
 };

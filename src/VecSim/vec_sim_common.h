@@ -17,20 +17,44 @@ extern "C" {
 #include <stdbool.h>
 
 // Common definitions
-#define INVALID_ID    UINT_MAX
-#define INVALID_LABEL SIZE_MAX
-#define UNUSED(x)     (void)(x)
+#define DEFAULT_BLOCK_SIZE 1024
+#define INVALID_ID         UINT_MAX
+#define INVALID_LABEL      SIZE_MAX
+#define UNUSED(x)          (void)(x)
+
+// Hybrid policy values
+#define VECSIM_POLICY_ADHOC_BF "adhoc_bf"
+#define VECSIM_POLICY_BATCHES  "batches"
+#define VECSIM_POLICY_INVALID  "invalid_policy"
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
 #define HNSW_DEFAULT_EF_RT   10
 #define HNSW_DEFAULT_EPSILON 0.01
-#define DEFAULT_BLOCK_SIZE   1024
 
 #define HNSW_INVALID_LEVEL SIZE_MAX
 #define INVALID_JOB_ID     UINT_MAX
 #define INVALID_INFO       UINT_MAX
+
+// SVS-Vamana default parameters
+#define SVS_VAMANA_DEFAULT_ALPHA_L2                 1.2f
+#define SVS_VAMANA_DEFAULT_ALPHA_IP                 0.95f
+#define SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE         32
+#define SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE 200
+#define SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY       true
+#define SVS_VAMANA_DEFAULT_NUM_THREADS              1
+// NOTE: optimal training threshold may depend on the SVSIndex compression mode.
+// it might be good to implement a utility to compute default threshold based on index parameters
+// DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
+#define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
+// Default batch update threshold for SVS index.
+#define SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD   (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
+#define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
+// NOTE: No need to have SVS_VAMANA_DEFAULT_SEARCH_BUFFER_CAPACITY
+// as the default is determined by the search_window_size
+#define SVS_VAMANA_DEFAULT_LEANVEC_DIM 0
+#define SVS_VAMANA_DEFAULT_EPSILON     0.01f
 
 // Datatypes for indexing.
 typedef enum {
@@ -52,6 +76,12 @@ typedef enum {
     VecSimOption_ENABLE = 1,
     VecSimOption_DISABLE = 2,
 } VecSimOptionMode;
+
+typedef enum {
+    VecSimBool_TRUE = 1,
+    VecSimBool_FALSE = 0,
+    VecSimBool_UNSET = -1,
+} VecSimBool;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -133,17 +163,21 @@ typedef struct {
 } BFParams;
 
 typedef enum {
-    VecSimSvsQuant_NONE = 0,            // No quantization.
-    VecSimSvsQuant_8 = 8,               // 8-bit quantization
-    VecSimSvsQuant_4 = 4,               // 4-bit quantization
-    VecSimSvsQuant_4x4 = 4 | (4 << 10), // 4-bit quantization with 4-bit residuals
-    VecSimSvsQuant_4x8 = 4 | (8 << 10)  // 4-bit quantization with 8-bit residuals
+    VecSimSvsQuant_NONE = 0,           // No quantization.
+    VecSimSvsQuant_Scalar = 1,         // 8-bit scalar quantization
+    VecSimSvsQuant_4 = 4,              // 4-bit quantization
+    VecSimSvsQuant_8 = 8,              // 8-bit quantization
+    VecSimSvsQuant_4x4 = 4 | (4 << 8), // 4-bit quantization with 4-bit residuals
+    VecSimSvsQuant_4x8 = 4 | (8 << 8), // 4-bit quantization with 8-bit residuals
+    VecSimSvsQuant_4x8_LeanVec = 4 | (8 << 8) | (1 << 16), // LeanVec 4x8 quantization
+    VecSimSvsQuant_8x8_LeanVec = 8 | (8 << 8) | (1 << 16), // LeanVec 8x8 quantization
 } VecSimSvsQuantBits;
 
 typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t blockSize;
 
     /* SVS-Vamana specifics. See Intel ScalableVectorSearch documentation */
@@ -155,7 +189,10 @@ typedef struct {
     size_t prune_to;                 // Amount that candidates will be pruned.
     VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
+    size_t num_threads;                  // Maximum number of threads in threadpool.
     size_t search_window_size;           // Search window size to use during search.
+    size_t search_buffer_capacity;       // Search buffer capacity to use during search.
+    size_t leanvec_dim;                  // Leanvec dimension to use when LeanVec is enabled.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSParams;
 
@@ -164,6 +201,16 @@ typedef struct {
     size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
+
+// A struct that contains SVS tiered index specific params.
+typedef struct {
+    size_t trainingTriggerThreshold; // The flat index size threshold to trigger the initialization
+                                     // of backend index.
+    size_t updateTriggerThreshold; // The flat index size threshold to trigger the vectors migration
+                                   // to backend index.
+    size_t updateJobWaitTime;      // The time (microseconds) to wait for Redis threads reservation
+                                   // before executing the scheduled SVS Index update job.
+} TieredSVSParams;
 
 // A struct that contains the common tiered index params.
 typedef struct {
@@ -175,6 +222,7 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
+        TieredSVSParams tieredSVSParams;
     } specificParams;
 } TieredIndexParams;
 
@@ -199,6 +247,8 @@ typedef enum {
     HNSW_REPAIR_NODE_CONNECTIONS_JOB,
     HNSW_SEARCH_JOB,
     HNSW_SWAP_JOB,
+    SVS_BATCH_UPDATE_JOB,
+    SVS_GC_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 
@@ -208,7 +258,8 @@ typedef struct {
 } HNSWRuntimeParams;
 
 typedef struct {
-    size_t windowSize;              // Search window size for Vamana graph accuracy/latency tune.
+    size_t windowSize;     // Search window size for Vamana graph accuracy/latency tune.
+    size_t bufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.
     VecSimOptionMode searchHistory; // Enabling of the visited set for search.
     double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
 } SVSRuntimeParams;
@@ -297,25 +348,54 @@ typedef struct {
     char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
+typedef struct {
+    VecSimSvsQuantBits quantBits;  // Quantization flavor.
+    float alpha;                   // The pruning parameter.
+    size_t graphMaxDegree;         // Maximum degree in the graph.
+    size_t constructionWindowSize; // Search window size to use during graph construction.
+    size_t maxCandidatePoolSize;   // Limit on the number of neighbors considered during pruning.
+    size_t pruneTo;                // Amount that candidates will be pruned.
+    bool useSearchHistory;         // Either the contents of the search buffer can be used or
+                                   // the entire search history.
+    size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
+    size_t lastReservedThreads;    // Number of threads that were successfully reserved by the last
+                                   // ingestion operation.
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
+    size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
+    size_t searchBufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.
+    size_t leanvecDim;           // Leanvec dimension to use when LeanVec is enabled.
+    double epsilon; // Epsilon parameter for SVS graph accuracy/latency for range search.
+} svsInfoStruct;
+
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
 } HnswTieredInfo;
+
+typedef struct SvsTieredInfo {
+    size_t trainingTriggerThreshold;
+    size_t updateTriggerThreshold;
+    size_t updateJobWaitTime; // The time (microseconds) to wait for Redis threads reservation
+                              // before executing the scheduled SVS Index update job.
+    bool indexUpdateScheduled;
+} SvsTieredInfo;
 
 typedef struct {
 
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
+        svsInfoStruct svsInfo;
     } backendInfo; // The backend index info.
     union {
         HnswTieredInfo hnswTieredInfo;
+        SvsTieredInfo svsTieredInfo;
     } specificTieredBackendInfo;   // Info relevant for tiered index with a specific backend.
     CommonInfo backendCommonInfo;  // Common index info.
     CommonInfo frontendCommonInfo; // Common index info.
     bfInfoStruct bfInfo;           // The brute force index info.
 
     uint64_t management_layer_memory; // Memory consumption of the management layer.
-    bool backgroundIndexing;          // Determines if the index is currently being indexed in the
+    VecSimBool backgroundIndexing;    // Determines if the index is currently being indexed in the
                                       // background.
     size_t bufferLimit;               // Maximum number of vectors allowed in the flat buffer.
 } tieredInfoStruct;
@@ -329,6 +409,7 @@ typedef struct {
     union {
         bfInfoStruct bfInfo;
         hnswInfoStruct hnswInfo;
+        svsInfoStruct svsInfo;
         tieredInfoStruct tieredInfo;
     };
 } VecSimIndexDebugInfo;

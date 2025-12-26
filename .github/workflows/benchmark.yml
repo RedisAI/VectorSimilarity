@@ -41,6 +41,9 @@ on:
           - bm-batch-iter-uint8-single
           - bm-batch-iter-uint8-multi
           - bm-updated-fp32-single
+          - bm-svs-train-fp32
+          - bm-svs-train-fp16
+          - bm-basics-svs-fp32-single
           - bm-spaces
         description: 'Benchmarks set to run'
         default: benchmarks-all
@@ -68,7 +71,7 @@ jobs:
             "include": [
               {
                 "architecture": "arm64",
-                "instance-type": "i8g.xlarge",
+                "instance-type": "r8g.xlarge",
                 "ami-id": "ami-0d6c92b636b74f843"
               },
               {
@@ -79,7 +82,7 @@ jobs:
             ]
           }
           '
-          
+
           # Filter the matrix based on architecture
           if [ "${{ inputs.architecture }}" = "all" ]; then
             # Use the full matrix
@@ -88,7 +91,7 @@ jobs:
             # Filter to only the selected architecture
             FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq -c '{include: [.include[] | select(.architecture | contains("${{ inputs.architecture }}"))]}')
           fi
-          
+
           # Use multiline output delimiter syntax for GitHub Actions
           echo "matrix<<EOF" >> $GITHUB_OUTPUT
           echo "$FILTERED_MATRIX" >> $GITHUB_OUTPUT
@@ -106,4 +109,3 @@ jobs:
       architecture: ${{ matrix.architecture }}
       instance-type: ${{ matrix.instance-type }}
       ami-id: ${{ matrix.ami-id }}
-

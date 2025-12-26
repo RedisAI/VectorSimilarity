@@ -540,6 +540,27 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     this->CastToHNSW(index)->curElementCount = actual_element_count;
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWTest, debugInfoIteratorFieldOrder) {
+    namespace expected_output = test_utils::test_debug_info_iterator_order;
+
+    size_t d = 4;
+    HNSWParams params = {.dim = d, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    // Add a vector to ensure the index is not empty
+    GenerateAndAddVector<TEST_DATA_T>(index, d, 1, 1);
+
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    // Test the field order using the common function
+    expected_output::testDebugInfoIteratorFieldOrder(infoIterator,
+                                                     expected_output::getHNSWFields());
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {
     size_t n = 100;
     size_t d = 4;
@@ -1734,7 +1755,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
 
         // Verify that the index was loaded as expected.
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
-        ASSERT_EQ(serialized_hnsw_index->getVersion(), Serializer::EncodingVersion_V4);
+        ASSERT_EQ(serialized_hnsw_index->getVersion(), HNSWSerializer::EncodingVersion::V4);
 
         VecSimIndexDebugInfo info2 = VecSimIndex_DebugInfo(serialized_index);
         ASSERT_EQ(info2.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
@@ -1804,7 +1825,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationV3) {
         auto *serialized_hnsw_index = this->CastToHNSW(serialized_index);
 
         // Verify that the index was loaded as expected.
-        ASSERT_EQ(serialized_hnsw_index->getVersion(), Serializer::EncodingVersion_V3);
+        ASSERT_EQ(serialized_hnsw_index->getVersion(), HNSWSerializer::EncodingVersion::V3);
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
 
         VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(serialized_index);

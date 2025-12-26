@@ -16,7 +16,12 @@
 #include "unit_test_utils.h"
 #include "VecSim/containers/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#if HAVE_SVS
+#include "VecSim/index_factories/svs_factory.h"
+#include "VecSim/algorithms/svs/svs.h"
+#endif
 #include "mock_thread_pool.h"
 #include "tests_utils.h"
 #include "VecSim/index_factories/tiered_factory.h"
@@ -24,11 +29,16 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 
+#include "timeout_guard.h"
+
 #include <cstdlib>
 #include <limits>
 #include <cmath>
+#include <filesystem>
 #include <random>
 #include <cstdarg>
+#include <filesystem>
+#include <timeout_guard.h>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -88,8 +98,17 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
                                         QUERY_TYPE_HYBRID),
               VecSimParamResolverErr_InvalidPolicy_NExits);
 
-    rparams[1].value = "batches";
-    rparams[1].valLen = strlen("batches");
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = VECSIM_POLICY_INVALID,
+                                  .valLen = strlen(VECSIM_POLICY_INVALID)};
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSimParamResolverErr_InvalidPolicy_NExits);
+
+    rparams[1].value = VECSIM_POLICY_BATCHES;
+    rparams[1].valLen = strlen(VECSIM_POLICY_BATCHES);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSim_OK);
@@ -99,8 +118,8 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     // Both params are "hybrid policy".
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
-                                  .value = "ADhOC_bf",
-                                  .valLen = strlen("ADhOC_bf")};
+                                  .value = VECSIM_POLICY_ADHOC_BF,
+                                  .valLen = strlen(VECSIM_POLICY_ADHOC_BF)};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSimParamResolverErr_AlreadySet);
@@ -121,8 +140,8 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
 
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
-                                  .value = "batches",
-                                  .valLen = strlen("batches")};
+                                  .value = VECSIM_POLICY_BATCHES,
+                                  .valLen = strlen(VECSIM_POLICY_BATCHES)};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
               VecSim_OK);
@@ -484,7 +503,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     // Use a valid version
     output.seekp(0, std::ios_base::beg);
 
-    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V3);
+    Serializer::writeBinaryPOD(output, HNSWSerializer::EncodingVersion::V3);
     Serializer::writeBinaryPOD(output, 42);
     output.flush();
 
@@ -496,7 +515,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     // Use a valid version
     output.seekp(0, std::ios_base::beg);
 
-    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V3);
+    Serializer::writeBinaryPOD(output, HNSWSerializer::EncodingVersion::V3);
     Serializer::writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
     Serializer::writeBinaryPOD(output, size_t(128));
 
@@ -509,6 +528,41 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     output.close();
 }
+
+#if HAVE_SVS
+TEST_F(SerializerTest, SVSSerializer) {
+
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/bad_index_svs";
+    auto metadata_path = std::filesystem::path(this->file_name) / "metadata";
+
+    // Try to load an index from a directory that doesn't exist.
+    SVSParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 1024,
+        .metric = VecSimMetric_L2,
+    };
+    VecSimParams index_params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = params}};
+
+    ASSERT_EXCEPTION_MESSAGE(
+        SVSFactory::NewIndex(this->file_name, &index_params), std::runtime_error,
+        std::string("Failed to open metadata file: ") + metadata_path.string());
+
+    // Create directory and metadata file with invalid encoding version
+    std::filesystem::create_directories(this->file_name);
+    std::ofstream output(metadata_path, std::ios::binary);
+
+    // Write invalid encoding version (42)
+    Serializer::writeBinaryPOD(output, 42);
+    output.flush();
+    output.close();
+
+    ASSERT_EXCEPTION_MESSAGE(SVSFactory::NewIndex(this->file_name, &index_params),
+                             std::runtime_error, "Cannot load index: bad encoding version: 42");
+
+    // Clean up
+    std::filesystem::remove_all(this->file_name);
+}
+#endif
 
 struct logCtx {
 public:
@@ -523,7 +577,6 @@ void test_log_impl(void *ctx, const char *level, const char *message) {
 }
 
 TEST(CommonAPITest, testlogBasic) {
-
     logCtx log;
     log.prefix = "test log prefix: ";
 
@@ -568,16 +621,50 @@ TEST(CommonAPITest, testlogTieredIndex) {
     GenerateAndAddVector<float>(tiered_index, 4, 1);
     mock_thread_pool.thread_iteration();
     tiered_index->deleteVector(1);
-    ASSERT_EQ(log.logBuffer.size(), 4);
-    ASSERT_EQ(log.logBuffer[0],
-              "verbose: " + log.prefix + "Updating HNSW index capacity from 0 to 1024");
-    ASSERT_EQ(log.logBuffer[1],
+    auto buffer_as_string = [&]() {
+        std::string buffer;
+        for (size_t i = 0; i < log.logBuffer.size(); i++) {
+            buffer += log.logBuffer[i] + "\n";
+        }
+        return buffer;
+    };
+    ASSERT_EQ(log.logBuffer.size(), 8) << buffer_as_string();
+    size_t log_iter = 0;
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing FLAT index from 0 to 1024")
+        << "failed at log index:" << log_iter - 1 << "." << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 0 to 1024")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing HNSW index from 0 to 1024")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing FLAT index from 1024 to 0")
+        << "failed at log index:" << log_iter - 1 << "." << std::endl
+        << "expected log: " << buffer_as_string();
+
+    ASSERT_EQ(log.logBuffer[log_iter++],
               "verbose: " + log.prefix +
-                  "Tiered HNSW index GC: there are 1 ready swap jobs. Start executing 1 swap jobs");
-    ASSERT_EQ(log.logBuffer[2],
-              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0");
-    ASSERT_EQ(log.logBuffer[3],
-              "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs");
+                  "Tiered HNSW index GC: there are 1 ready swap jobs. Start executing 1 swap jobs")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Resizing HNSW index from 1024 to 0")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+
+    ASSERT_EQ(log.logBuffer[log_iter++],
+              "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs")
+        << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
 }
 
 TEST(CommonAPITest, NormalizeBfloat16) {
@@ -668,6 +755,82 @@ TEST(CommonAPITest, NormalizeUint8) {
     ASSERT_FLOAT_EQ(norm, 1.0);
 }
 
+/**
+ * This test verifies that a tiered index correctly returns the closest vectors when querying data
+ * distributed across both the flat and the backend indices, specifically when duplicate labels
+ * exist in both indices with different distances. It adds vectors with known scores, including such
+ * duplicates, and ensures that only the closer instance is returned. The test covers both top-K and
+ * range queries, validating result ordering by score and by ID.
+ */
+TEST(CommonAPITest, SearchDifferentScores) {
+    size_t dim = 4;
+    size_t constexpr k = 3;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = dynamic_cast<TieredHNSWIndex<float, float> *>(
+        test_utils::CreateNewTieredVecSimIndex(params, mock_thread_pool));
+    ASSERT_NE(tiered_index, nullptr);
+
+    auto hnsw_index = tiered_index->getHNSWIndex();
+    auto flat_index = tiered_index->frontendIndex;
+
+    // Define IDs and distance values for test vectors
+    // ids are intentionally in random order to verify sorting works correctly
+    size_t constexpr ids[k] = {54, 4, 15};
+    double constexpr res_values[k] = {2, 3, 100};
+    // Define a type for our result pair
+    using ResultPair = std::pair<size_t, double>; // (id, score)
+
+    // Create a vector of expected results - these are the scores we expect
+    // when querying with a zero vector (L2 distance = value²*dim)
+    std::vector<ResultPair> expected_results_by_score(k);
+
+    for (size_t i = 0; i < k; i++) {
+        expected_results_by_score[i] = {ids[i], res_values[i] * res_values[i] * dim};
+    }
+
+    // Insert duplicate vectors with same ID but different distances across the two indices.
+    // The index should return only the closer of the two.
+
+    // ID 54: closer in HNSW, farther in flat — expect to return HNSW version
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[0], res_values[0]);
+    GenerateAndAddVector<float>(flat_index, dim, ids[0], res_values[0] + 1);
+
+    // ID 4: closer in flat, farther in HNSW — expect to return flat version
+    GenerateAndAddVector<float>(flat_index, dim, ids[1], res_values[1]);
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[1], res_values[1] + 1);
+
+    // ID 15: identical in both indices — distance is large, should still return one instance
+    GenerateAndAddVector<float>(hnsw_index, dim, ids[2], res_values[2]);
+    GenerateAndAddVector<float>(flat_index, dim, ids[2], res_values[2]);
+
+    // Create a zero vector for querying - this makes scores directly proportional to vector values
+    float query_0[dim];
+    GenerateVector<float>(query_0, dim, 0);
+
+    // Verify results ordered by increasing score (distance).
+    double prev_score = 0; // all scores are positive
+    auto verify_by_score = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(prev_score, score); // prev_score < score
+        prev_score = score;
+        ASSERT_EQ(id, expected_results_by_score[res_index].first);
+        ASSERT_EQ(score, expected_results_by_score[res_index].second);
+    };
+
+    runTopKTieredIndexSearchTest<true>(tiered_index, query_0, k, verify_by_score, nullptr);
+    // Reset score tracking for range query
+    prev_score = 0;
+    // Use the largest score as the range to include all vectors
+    double range = expected_results_by_score.back().second;
+    runRangeTieredIndexSearchTest<true>(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
+}
+
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {
 protected:
     template <typename algo_params>
@@ -733,7 +896,8 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
     VecSimMetric metric = std::get<1>(GetParam());
 
     HNSWParams hnsw_params = {.type = type, .dim = 4, .metric = metric};
-    VecSimIndex *index = test_utils::CreateNewTieredHNSWIndex(hnsw_params, this->mock_thread_pool);
+    VecSimIndex *index =
+        test_utils::CreateNewTieredVecSimIndex(hnsw_params, this->mock_thread_pool);
 
     auto verify_data_size = [&](const auto &tiered_index) {
         auto hnsw_index = tiered_index->getHNSWIndex();
@@ -743,9 +907,9 @@ TEST_P(CommonTypeMetricTieredTests, TestDataSizeTieredHNSW) {
             (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
             expected += sizeof(float);
         }
-        size_t actual_hnsw = hnsw_index->getDataSize();
+        size_t actual_hnsw = hnsw_index->getStoredDataSize();
         ASSERT_EQ(actual_hnsw, expected);
-        size_t actual_bf = bf_index->getDataSize();
+        size_t actual_bf = bf_index->getStoredDataSize();
         ASSERT_EQ(actual_bf, expected);
     };
 
@@ -830,3 +994,111 @@ INSTANTIATE_TEST_SUITE_P(
         std::string test_name(type);
         return test_name + "_" + metric;
     });
+
+TEST(CommonAPITest, testSetTestLogContext) {
+    // Create an index with the log context
+    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .blockSize = 5};
+    VecSimIndex *index = test_utils::CreateNewIndex(bfParams, VecSimType_FLOAT32);
+    auto *bf_index = dynamic_cast<BruteForceIndex<float, float> *>(index);
+
+    std::string log_dir = "logs/tests/unit";
+    std::cout << "Log directory: " << log_dir << std::endl;
+    if (!std::filesystem::exists(log_dir)) {
+        std::filesystem::create_directories(log_dir);
+    }
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", "printed before setting context");
+    // Set the log context
+    const char *testContext = "test_context";
+    VecSim_SetTestLogContext(testContext, "unit");
+    std::string msg = "Test message with context";
+    // Trigger a log message
+    bf_index->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "%s", msg.c_str());
+
+    // check if the log message was written to the log file
+    std::string log_file = log_dir + "/test_context.log";
+    std::ifstream file(log_file);
+    ASSERT_TRUE(file.is_open()) << "Log file not found: " << log_file;
+    std::string line;
+    bool found = false;
+    while (std::getline(file, line)) {
+        if (line.find(msg) != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(found) << "Log message not found in log file: " << log_file;
+    VecSimIndex_Free(index);
+}
+
+TEST(UtilsTests, testMockThreadPool) {
+    const size_t num_repeats = 2;
+    const size_t num_submissions = 200;
+
+    auto TestBody = [=]() {
+        test_utils::TimeoutGuard guard(std::chrono::seconds(300));
+        // Create and test a mock thread pool several times
+        for (size_t i = 0; i < num_repeats; i++) {
+            // Create a mock thread pool and verify its properties
+            tieredIndexMock mock_thread_pool;
+            ASSERT_EQ(mock_thread_pool.ctx->index_strong_ref, nullptr);
+            ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+
+            // Create a new stub index to add to the mock thread pool
+            BFParams params = {.dim = 4, .metric = VecSimMetric_L2};
+            auto index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
+            mock_thread_pool.ctx->index_strong_ref.reset(index);
+            auto allocator = index->getAllocator();
+
+            // Very fast and simple job routine that increments a counter
+            // This is just to simulate a job that does some work.
+            std::atomic_int32_t job_counter = 0;
+            auto job_mock = [&job_counter](AsyncJob * /*unused*/) { job_counter++; };
+
+            // Define a mock job just to convert lambda with capture to a function pointer
+            class LambdaJob : public AsyncJob {
+            public:
+                LambdaJob(std::shared_ptr<VecSimAllocator> allocator, JobType type,
+                          std::function<void(AsyncJob *)> execute, VecSimIndex *index)
+                    : AsyncJob(allocator, type, executeJob, index), impl_(execute) {}
+
+                static void executeJob(AsyncJob *job) {
+                    static_cast<LambdaJob *>(job)->impl_(job);
+                    delete job; // Clean up the job after execution
+                }
+                std::function<void(AsyncJob *)> impl_;
+            };
+
+            mock_thread_pool.init_threads();
+            // Verify the job queue is empty
+            ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+
+            // Create a vector of jobs to submit to the mock thread pool
+            // The number of jobs is equal to the thread pool size, so they will all be executed in
+            // parallel
+            std::vector<AsyncJob *> jobs(mock_thread_pool.thread_pool_size);
+
+            // Submit jobs to the mock thread pool and wait several times
+            for (size_t j = 0; j < num_submissions; j++) {
+                job_counter.store(0); // Reset the counter for each iteration
+                // Generate jobs and submit them to the mock thread pool
+                std::generate(jobs.begin(), jobs.end(), [&]() {
+                    return new (allocator) LambdaJob(allocator, HNSW_SEARCH_JOB, job_mock, index);
+                });
+                mock_thread_pool.submit_callback_internal(jobs.data(), nullptr /*unused*/,
+                                                          jobs.size());
+                mock_thread_pool.thread_pool_wait();
+                // Verify the job queue is empty
+                ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+                // Verify counter was incremented
+                ASSERT_EQ(job_counter.load(), mock_thread_pool.thread_pool_size);
+            }
+            mock_thread_pool.thread_pool_join();
+        }
+
+        std::cerr << "Success" << std::endl;
+        std::exit(testing::Test::HasFailure() ? -1 : 0); // Exit with failure if any test failed
+    };
+
+    EXPECT_EXIT(TestBody(), ::testing::ExitedWithCode(0), "Success");
+}

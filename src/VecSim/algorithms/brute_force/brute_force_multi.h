@@ -63,8 +63,8 @@ public:
             const char *data = reinterpret_cast<const char *>(this->getDataByInternalId(id));
 
             // Create a vector with the full data (including any metadata like norms)
-            std::vector<char> vec(this->getDataSize());
-            memcpy(vec.data(), data, this->getDataSize());
+            std::vector<char> vec(this->getStoredDataSize());
+            memcpy(vec.data(), data, this->getStoredDataSize());
             vectors_output.push_back(std::move(vec));
         }
 
@@ -94,7 +94,15 @@ private:
             keys.insert(it.first);
         }
         return keys;
-    };
+    }
+
+    inline vecsim_stl::vector<idType> getElementIds(size_t label) const override {
+        auto it = labelToIdsLookup.find(label);
+        if (it == labelToIdsLookup.end()) {
+            return vecsim_stl::vector<idType>{this->allocator}; // return an empty collection
+        }
+        return it->second;
+    }
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() const override {

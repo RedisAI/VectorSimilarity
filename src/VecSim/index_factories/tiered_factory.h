@@ -13,7 +13,9 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "VecSim/algorithms/svs/svs_tiered.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/index_factories/factory_utils.h"
 
 namespace TieredFactory {
 
@@ -37,17 +39,10 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
                           .multi = hnsw_index->isMultiValue(),
                           .blockSize = hnsw_index->getBlockSize()};
 
-    std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
-    size_t dataSize = VecSimParams_GetDataSize(bf_params.type, bf_params.dim, bf_params.metric);
-
-    AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
-                                                  .dim = bf_params.dim,
-                                                  .vecType = bf_params.type,
-                                                  .dataSize = dataSize,
-                                                  .metric = bf_params.metric,
-                                                  .blockSize = bf_params.blockSize,
-                                                  .multi = bf_params.multi,
-                                                  .logCtx = nullptr};
+    AbstractIndexInitParams abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(&bf_params, nullptr, false);
+    assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
+    assert(hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
@@ -58,6 +53,41 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
         hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 } // namespace TieredHNSWFactory
+
+// The function below is exported to calculate a brute force index size in tests to align
+// with the logic of the TieredFactory::EstimateInitialSize(), which currently doesn’t have a
+// verification of the backend index algorithm. To be removed once a proper verification is
+// introduced.
+namespace TieredSVSFactory {
+
+#if HAVE_SVS
+template <typename DataType>
+inline VecSimIndex *NewIndex(const TieredIndexParams *params,
+                             VecSimIndexAbstract<DataType, float> *svs_index) {
+    // Initialize brute force index.
+    BFParams bf_params = {.type = svs_index->getType(),
+                          .dim = svs_index->getDim(),
+                          .metric = svs_index->getMetric(),
+                          .multi = svs_index->isMultiValue(),
+                          .blockSize = svs_index->getBlockSize()};
+
+    AbstractIndexInitParams abstractInitParams =
+        VecSimFactory::NewAbstractInitParams(&bf_params, params->primaryIndexParams->logCtx, false);
+    assert(svs_index->getInputBlobSize() == abstractInitParams.storedDataSize);
+    assert(svs_index->getStoredDataSize() == abstractInitParams.storedDataSize);
+    auto frontendIndex = static_cast<BruteForceIndex<DataType, float> *>(
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
+
+    // Create new tiered svs index
+    std::shared_ptr<VecSimAllocator> management_layer_allocator =
+        VecSimAllocator::newVecsimAllocator();
+
+    return new (management_layer_allocator)
+        TieredSVSIndex<DataType>(svs_index, frontendIndex, *params, management_layer_allocator);
+}
+#endif
+BFParams NewBFParams(const TieredIndexParams *params);
+} // namespace TieredSVSFactory
 #endif
 
 }; // namespace TieredFactory

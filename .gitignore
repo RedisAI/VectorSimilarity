@@ -1,5 +1,4 @@
-/tests/flow/logs/
-/tests/module/flow/logs
+**/logs/
 
 /.tox/
 /bin/
@@ -12,6 +11,7 @@
 # Ignore benchmark fetched data but not the source file
 /tests/benchmark/data/*
 !/tests/benchmark/data/hnsw_indices
+!/tests/benchmark/data/svs_indices/
 !/tests/benchmark/data/*.py
 
 # Prerequisites

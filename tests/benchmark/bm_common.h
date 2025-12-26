@@ -23,9 +23,10 @@ public:
     BM_VecSimCommon() = default;
     ~BM_VecSimCommon() = default;
 
+    // index_offset: Offset added to base index types to access variants (0=original, 1=updated)
+
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                             std::atomic_int &correct, unsigned short index_offset = 0,
-                             bool is_tiered = false);
+                             std::atomic_int &correct, unsigned short index_offset = 0);
 
     // Search for the K closest vectors to the query in the index. K is defined in the
     // test registration (initialization file).
@@ -36,24 +37,22 @@ public:
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
 
     // Does nothing but returning the index memory.
-    static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
-    static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
-    static void Memory_Tiered(benchmark::State &st, unsigned short index_offset = 0);
+    static void Memory(benchmark::State &st, IndexTypeIndex index_type);
 };
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                                  size_t k, std::atomic_int &correct,
-                                                 unsigned short index_offset, bool is_tiered) {
+                                                 unsigned short index_offset) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
-    auto hnsw_results = VecSimIndex_TopKQuery(
-        INDICES[is_tiered ? VecSimAlgo_TIERED : VecSimAlgo_HNSWLIB + index_offset],
-        QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
+    auto hnsw_results =
+        VecSimIndex_TopKQuery(GET_INDEX(INDEX_HNSW + index_offset),
+                              QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+    auto bf_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset),
                                             QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
 
     BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
@@ -64,34 +63,16 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned short index_offset) {
-    auto index = INDICES[VecSimAlgo_BF + index_offset];
+void BM_VecSimCommon<index_type_t>::Memory(benchmark::State &st, IndexTypeIndex index_type) {
+    auto index = GET_INDEX(index_type);
     index->fitMemory();
 
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
-}
-template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, unsigned short index_offset) {
-    auto index = INDICES[VecSimAlgo_HNSWLIB + index_offset];
-    index->fitMemory();
-
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
-}
-template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_Tiered(benchmark::State &st,
-                                                  unsigned short index_offset) {
-    auto index = INDICES[VecSimAlgo_TIERED + index_offset];
-    index->fitMemory();
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_StatsInfo(index).memory;
+    st.counters["memory"] =
+        benchmark::Counter((double)VecSimIndex_StatsInfo(index).memory,
+                           benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
 }
 
 // TopK search BM
@@ -101,8 +82,8 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
-                              QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset), QUERIES[iter % N_QUERIES].data(),
+                              k, nullptr, BY_SCORE);
         iter++;
     }
 }
@@ -126,8 +107,8 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     size_t k = st.range(1);
     std::atomic_int correct = 0;
     std::atomic_int iter = 0;
-    auto *tiered_index =
-        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(INDICES[VecSimAlgo_TIERED]);
+    auto tiered_index =
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW));
     size_t total_iters = 50;
     VecSimQueryReply *all_results[total_iters];
 
@@ -136,9 +117,9 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         size_t cur_iter = search_job->iter;
-        auto hnsw_results =
-            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_TIERED], QUERIES[cur_iter % N_QUERIES].data(),
-                                  search_job->k, &query_params, BY_SCORE);
+        auto hnsw_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_TIERED_HNSW),
+                                                  QUERIES[cur_iter % N_QUERIES].data(),
+                                                  search_job->k, &query_params, BY_SCORE);
         search_job->all_results[cur_iter] = hnsw_results;
         delete job;
     };
@@ -149,14 +130,14 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
                                            tiered_index, k, ef, iter++, all_results);
         tiered_index->submitSingleJob(search_job);
         if (iter == total_iters) {
-            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
+            BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
         }
     }
 
     // Measure recall
     for (iter = 0; iter < total_iters; iter++) {
         auto bf_results =
-            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+            VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset),
                                   QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
 
@@ -165,7 +146,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     }
 
     st.counters["Recall"] = (float)correct / (float)(k * iter);
-    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
 }
 
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \

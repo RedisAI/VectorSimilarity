@@ -11,6 +11,7 @@
 #include <random>
 #include <vector>
 #include "VecSim/spaces/normalize/compute_norm.h"
+#include "VecSim/types/float16.h"
 
 namespace test_utils {
 
@@ -41,15 +42,27 @@ static void populate_uint8_vec(uint8_t *v, size_t dim, int seed = 1234) {
 }
 
 // Assuming v is a memory allocation of size dim * sizeof(float)
-static void populate_float_vec(float *v, size_t dim, int seed = 1234) {
+static void populate_float_vec(float *v, size_t dim, int seed = 1234, float min = -1.0f,
+                               float max = 1.0f) {
 
     std::mt19937 gen(seed); // Mersenne Twister engine initialized with the fixed seed
 
-    // Define a distribution range for float values between -1.0 and 1.0
-    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    // Define a distribution range for float values
+    std::uniform_real_distribution<float> dis(min, max);
 
     for (size_t i = 0; i < dim; i++) {
         v[i] = dis(gen);
+    }
+}
+
+// Assuming v is a memory allocation of size dim * sizeof(float)
+static void populate_float16_vec(vecsim_types::float16 *v, const size_t dim, int seed = 1234,
+                                 float min = -1.0f, float max = 1.0f) {
+    float v_f[dim];
+    populate_float_vec(v_f, dim, seed, min, max);
+
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = vecsim_types::FP32_to_FP16(v_f[i]);
     }
 }
 
