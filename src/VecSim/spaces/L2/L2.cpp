@@ -132,3 +132,26 @@ float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
     return float(INTEGER_L2Sqr(pVect1, pVect2, dimension));
 }
+
+// Both vectors are uint8 quantized (SQ8-to-SQ8)
+float SQ8_Dist_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Get dequantization parameters for pVect1
+    const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+
+    // Get dequantization parameters for pVect2
+    const float min_val2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+
+    float res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        float dequantized_v1 = pVect1[i] * delta1 + min_val1;
+        float dequantized_v2 = pVect2[i] * delta2 + min_val2;
+        float diff = dequantized_v1 - dequantized_v2;
+        res += diff * diff;
+    }
+    return res;
+}
