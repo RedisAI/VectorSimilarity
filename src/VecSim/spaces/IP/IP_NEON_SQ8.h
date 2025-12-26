@@ -117,5 +117,4 @@ float SQ8_CosineSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dim
 
     // Assume vectors are normalized
     return 1.0f - SQ8_InnerProductSIMD16_NEON_IMP<residual>(pVect1v, pVect2v, dimension);
-    ;
 }

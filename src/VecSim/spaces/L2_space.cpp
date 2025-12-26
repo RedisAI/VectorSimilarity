@@ -428,6 +428,14 @@ dist_func_t<float> L2_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignment,
     dist_func_t<float> ret_dist_func = SQ8_Dist_L2Sqr;
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_SQ8_Dist_L2_implementation_NEON(dim);
+    }
+#endif
+#endif // AARCH64
+
 #ifdef CPU_FEATURES_ARCH_X86_64
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     if (dim < 16) {
