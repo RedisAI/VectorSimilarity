@@ -606,6 +606,11 @@ dist_func_t<float> IP_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_SQ8_Dist_IP_implementation_SVE(dim);
     }
 #endif
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_SQ8_Dist_IP_implementation_NEON(dim);
+    }
+#endif
 #endif // AARCH64
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -637,6 +642,11 @@ dist_func_t<float> Cosine_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignm
 #ifdef OPT_SVE
     if (features.sve) {
         return Choose_SQ8_Dist_Cosine_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_SQ8_Dist_Cosine_implementation_NEON(dim);
     }
 #endif
 #endif // AARCH64

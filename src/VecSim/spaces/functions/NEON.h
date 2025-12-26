@@ -31,6 +31,8 @@ dist_func_t<float> Choose_SQ8_IP_implementation_NEON(size_t dim);
 dist_func_t<float> Choose_SQ8_Cosine_implementation_NEON(size_t dim);
 
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized)
+dist_func_t<float> Choose_SQ8_Dist_IP_implementation_NEON(size_t dim);
+dist_func_t<float> Choose_SQ8_Dist_Cosine_implementation_NEON(size_t dim);
 dist_func_t<float> Choose_SQ8_Dist_L2_implementation_NEON(size_t dim);
 
 } // namespace spaces
