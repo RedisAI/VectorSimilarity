@@ -33,7 +33,7 @@ static inline void InnerProductStepSQ8(const float *&pVect1, const uint8_t *&pVe
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float *pVect1 = static_cast<const float *>(pVect1v);
     // pVect2 is a quantized uint8_t vector
     const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
@@ -79,21 +79,21 @@ float SQ8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimen
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
-    do {
+    while (pVect1 < pEnd1) {
         InnerProductStepSQ8(pVect1, pVect2, sum256, min_val_vec, delta_vec);
         InnerProductStepSQ8(pVect1, pVect2, sum256, min_val_vec, delta_vec);
-    } while (pVect1 < pEnd1);
+    }
 
     return my_mm256_reduce_add_ps(sum256);
 }
 
 template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1.0f - SQ8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    return 1.0f - SQ8_InnerProductImp_AVX2<residual>(pVect1v, pVect2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // For cosine, we assume the vectors are normalized
-    return 1.0f - SQ8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    return 1.0f - SQ8_InnerProductImp_AVX2<residual>(pVect1v, pVect2v, dimension);
 }

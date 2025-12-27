@@ -85,10 +85,10 @@ float SQ8_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dime
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
-    do {
+    while (pVect1 < pEnd1) {
         L2SqrStep(pVect1, pVect2, sum, min_val_vec, delta_vec);
         L2SqrStep(pVect1, pVect2, sum, min_val_vec, delta_vec);
-    } while (pVect1 < pEnd1);
+    }
 
     return my_mm256_reduce_add_ps(sum);
 }

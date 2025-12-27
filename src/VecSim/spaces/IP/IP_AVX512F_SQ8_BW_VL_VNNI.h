@@ -79,9 +79,9 @@ float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimensi
     }
 
     // Process remaining full chunks of 16 elements
-    do {
+    while (pVec1 < pEnd1) {
         SQ8_InnerProductStep(pVec1, pVec2, sum, min_val_vec, delta_vec);
-    } while (pVec1 < pEnd1);
+    }
 
     // Return the raw inner product result
     return _mm512_reduce_add_ps(sum);
@@ -92,7 +92,6 @@ float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *
                                                 size_t dimension) {
     // The inner product similarity is 1 - ip
     return 1.0f - SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
-    ;
 }
 
 template <unsigned char residual> // 0..15

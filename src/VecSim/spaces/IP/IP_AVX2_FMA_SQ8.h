@@ -85,10 +85,10 @@ float SQ8_InnerProductImp_FMA(const void *pVect1v, const void *pVect2v, size_t d
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
-    do {
+    while (pVect1 < pEnd1) {
         InnerProductStepSQ8_FMA(pVect1, pVect2, sum256, min_val_vec, delta_vec);
         InnerProductStepSQ8_FMA(pVect1, pVect2, sum256, min_val_vec, delta_vec);
-    } while (pVect1 < pEnd1);
+    }
 
     return my_mm256_reduce_add_ps(sum256);
 }

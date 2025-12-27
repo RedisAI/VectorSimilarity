@@ -82,9 +82,9 @@ float SQ8_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2
     }
 
     // Process remaining full chunks of 16 elements
-    do {
+    while (pVect1 < pEnd1) {
         SQ8_L2SqrStep(pVect1, pVect2, sum, min_val_vec, delta_vec);
-    } while (pVect1 < pEnd1);
+    }
 
     // Horizontal sum
     float result = _mm512_reduce_add_ps(sum);
