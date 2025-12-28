@@ -25,3 +25,6 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension);
 float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
+
+// SQ8-to-SQ8 L2 squared distance (both vectors are uint8 quantized)
+float SQ8_SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);

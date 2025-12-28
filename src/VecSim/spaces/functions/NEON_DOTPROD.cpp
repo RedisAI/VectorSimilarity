@@ -12,6 +12,7 @@
 #include "VecSim/spaces/IP/IP_NEON_DOTPROD_SQ8_SQ8.h"
 #include "VecSim/spaces/L2/L2_NEON_DOTPROD_INT8.h"
 #include "VecSim/spaces/L2/L2_NEON_DOTPROD_UINT8.h"
+#include "VecSim/spaces/L2/L2_NEON_DOTPROD_SQ8_SQ8.h"
 
 namespace spaces {
 
@@ -63,6 +64,12 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim) {
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_CosineSIMD64_NEON_DOTPROD);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_L2SqrSIMD64_NEON_DOTPROD);
     return ret_dist_func;
 }
 

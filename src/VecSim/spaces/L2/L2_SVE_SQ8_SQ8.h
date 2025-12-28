@@ -1,0 +1,156 @@
+/*
+ * Copyright (c) 2006-Present, Redis Ltd.
+ * All rights reserved.
+ *
+ * Licensed under your choice of the Redis Source Available License 2.0
+ * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
+ * GNU Affero General Public License v3 (AGPLv3).
+ */
+#pragma once
+#include "VecSim/spaces/space_includes.h"
+#include <arm_sve.h>
+
+/**
+ * SQ8-to-SQ8 L2 squared distance functions for SVE.
+ * Computes L2 squared distance between two SQ8 (scalar quantized 8-bit) vectors,
+ * where BOTH vectors are uint8 quantized.
+ *
+ * Uses algebraic optimization with INTEGER arithmetic throughout:
+ *
+ * L2² = Σ((q1[i]*δ1 + min1) - (q2[i]*δ2 + min2))²
+ *
+ * Let c = min1 - min2, then:
+ * L2² = δ1²*Σq1² + δ2²*Σq2² - 2*δ1*δ2*Σ(q1*q2) + 2*c*δ1*Σq1 - 2*c*δ2*Σq2 + dim*c²
+ *
+ * All sums are computed using integer dot product instructions, converted to float only at the end.
+ *
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]
+ */
+
+// Helper function to perform L2 squared step using integer dot product
+static inline void SQ8_SQ8_L2SqrStep_SVE(const uint8_t *pVec1, const uint8_t *pVec2, size_t &offset,
+                                         svuint32_t &dot_sum, svuint32_t &sqr1_sum,
+                                         svuint32_t &sqr2_sum, svuint32_t &sum1, svuint32_t &sum2,
+                                         const size_t chunk) {
+    svbool_t pg = svptrue_b8();
+
+    // Load uint8 vectors
+    svuint8_t v1_u8 = svld1_u8(pg, pVec1 + offset);
+    svuint8_t v2_u8 = svld1_u8(pg, pVec2 + offset);
+
+    // Compute dot product: q1*q2
+    dot_sum = svdot_u32(dot_sum, v1_u8, v2_u8);
+
+    // Compute sum of squares: q1*q1, q2*q2
+    sqr1_sum = svdot_u32(sqr1_sum, v1_u8, v1_u8);
+    sqr2_sum = svdot_u32(sqr2_sum, v2_u8, v2_u8);
+
+    // Compute element sums using dot product with ones vector
+    svuint8_t ones = svdup_u8(1);
+    sum1 = svdot_u32(sum1, v1_u8, ones);
+    sum2 = svdot_u32(sum2, v2_u8, ones);
+
+    offset += chunk;
+}
+
+// Common implementation for L2 squared distance between two SQ8 vectors
+template <bool partial_chunk, unsigned char additional_steps>
+float SQ8_SQ8_L2SqrSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
+    const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
+    const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
+    size_t offset = 0;
+
+    // Get dequantization parameters
+    const float min1 = *reinterpret_cast<const float *>(pVec1 + dimension);
+    const float delta1 = *reinterpret_cast<const float *>(pVec1 + dimension + sizeof(float));
+    const float min2 = *reinterpret_cast<const float *>(pVec2 + dimension);
+    const float delta2 = *reinterpret_cast<const float *>(pVec2 + dimension + sizeof(float));
+
+    // Get the number of 8-bit elements per vector at runtime
+    const size_t vl = svcntb();
+    const size_t chunk_size = 4 * vl;
+
+    // Integer accumulators (4x for ILP)
+    svuint32_t dot_sum0 = svdup_u32(0), dot_sum1 = svdup_u32(0);
+    svuint32_t dot_sum2 = svdup_u32(0), dot_sum3 = svdup_u32(0);
+    svuint32_t sqr1_sum0 = svdup_u32(0), sqr1_sum1 = svdup_u32(0);
+    svuint32_t sqr1_sum2 = svdup_u32(0), sqr1_sum3 = svdup_u32(0);
+    svuint32_t sqr2_sum0 = svdup_u32(0), sqr2_sum1 = svdup_u32(0);
+    svuint32_t sqr2_sum2 = svdup_u32(0), sqr2_sum3 = svdup_u32(0);
+    svuint32_t sum1_0 = svdup_u32(0), sum1_1 = svdup_u32(0);
+    svuint32_t sum1_2 = svdup_u32(0), sum1_3 = svdup_u32(0);
+    svuint32_t sum2_0 = svdup_u32(0), sum2_1 = svdup_u32(0);
+    svuint32_t sum2_2 = svdup_u32(0), sum2_3 = svdup_u32(0);
+
+    // Process 4 chunks at a time
+    const size_t number_of_chunks = dimension / chunk_size;
+    for (size_t i = 0; i < number_of_chunks; i++) {
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum0, sqr1_sum0, sqr2_sum0, sum1_0, sum2_0,
+                              vl);
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum1, sqr1_sum1, sqr2_sum1, sum1_1, sum2_1,
+                              vl);
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum2, sqr1_sum2, sqr2_sum2, sum1_2, sum2_2,
+                              vl);
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum3, sqr1_sum3, sqr2_sum3, sum1_3, sum2_3,
+                              vl);
+    }
+
+    // Handle remaining steps (0-3 complete chunks)
+    if constexpr (additional_steps >= 1) {
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum0, sqr1_sum0, sqr2_sum0, sum1_0, sum2_0,
+                              vl);
+    }
+    if constexpr (additional_steps >= 2) {
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum1, sqr1_sum1, sqr2_sum1, sum1_1, sum2_1,
+                              vl);
+    }
+    if constexpr (additional_steps >= 3) {
+        SQ8_SQ8_L2SqrStep_SVE(pVec1, pVec2, offset, dot_sum2, sqr1_sum2, sqr2_sum2, sum1_2, sum2_2,
+                              vl);
+    }
+
+    // Handle partial chunk if needed
+    if constexpr (partial_chunk) {
+        svbool_t pg = svwhilelt_b8_u64(offset, dimension);
+        svuint8_t v1_u8 = svld1_u8(pg, pVec1 + offset);
+        svuint8_t v2_u8 = svld1_u8(pg, pVec2 + offset);
+        svuint8_t ones = svdup_u8(1);
+
+        dot_sum3 = svdot_u32(dot_sum3, v1_u8, v2_u8);
+        sqr1_sum3 = svdot_u32(sqr1_sum3, v1_u8, v1_u8);
+        sqr2_sum3 = svdot_u32(sqr2_sum3, v2_u8, v2_u8);
+        sum1_3 = svdot_u32(sum1_3, v1_u8, ones);
+        sum2_3 = svdot_u32(sum2_3, v2_u8, ones);
+    }
+
+    // Combine accumulators
+    svbool_t pg32 = svptrue_b32();
+    svuint32_t dot_total = svadd_u32_x(pg32, svadd_u32_x(pg32, dot_sum0, dot_sum1),
+                                       svadd_u32_x(pg32, dot_sum2, dot_sum3));
+    svuint32_t sqr1_total = svadd_u32_x(pg32, svadd_u32_x(pg32, sqr1_sum0, sqr1_sum1),
+                                        svadd_u32_x(pg32, sqr1_sum2, sqr1_sum3));
+    svuint32_t sqr2_total = svadd_u32_x(pg32, svadd_u32_x(pg32, sqr2_sum0, sqr2_sum1),
+                                        svadd_u32_x(pg32, sqr2_sum2, sqr2_sum3));
+    svuint32_t sum1_total =
+        svadd_u32_x(pg32, svadd_u32_x(pg32, sum1_0, sum1_1), svadd_u32_x(pg32, sum1_2, sum1_3));
+    svuint32_t sum2_total =
+        svadd_u32_x(pg32, svadd_u32_x(pg32, sum2_0, sum2_1), svadd_u32_x(pg32, sum2_2, sum2_3));
+
+    // Horizontal sum to scalar integers
+    uint32_t dot_product = svaddv_u32(pg32, dot_total);
+    uint32_t sum_sqr1 = svaddv_u32(pg32, sqr1_total);
+    uint32_t sum_sqr2 = svaddv_u32(pg32, sqr2_total);
+    uint32_t v1_sum = svaddv_u32(pg32, sum1_total);
+    uint32_t v2_sum = svaddv_u32(pg32, sum2_total);
+
+    // Apply the algebraic formula:
+    // L2² = δ1²*Σq1² + δ2²*Σq2² - 2*δ1*δ2*Σ(q1*q2) + 2*c*δ1*Σq1 - 2*c*δ2*Σq2 + dim*c²
+    float c = min1 - min2;
+    return delta1 * delta1 * static_cast<float>(sum_sqr1) +
+           delta2 * delta2 * static_cast<float>(sum_sqr2) -
+           2.0f * delta1 * delta2 * static_cast<float>(dot_product) +
+           2.0f * c * delta1 * static_cast<float>(v1_sum) -
+           2.0f * c * delta2 * static_cast<float>(v2_sum) +
+           static_cast<float>(dimension) * c * c;
+}
+
