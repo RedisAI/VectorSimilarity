@@ -1076,7 +1076,7 @@ TEST(PreprocessorsTest, QuantizationTest) {
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(reinterpret_cast<const uint8_t *>(buffer),
                                                         expected_processed_blob,
                                                         quantized_blob_bytes_count));
-#if defined(NDEBUG)
+#if !defined(NDEBUG)
         EXPECT_EXIT(
             {
                 ProcessedBlobs processed_blobs =
