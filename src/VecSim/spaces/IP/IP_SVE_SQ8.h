@@ -122,8 +122,8 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
     }
 
     // Combine the accumulators
-    svfloat32_t dot_total = svadd_f32_x(pg, svadd_f32_x(pg, dot_sum0, dot_sum1),
-                                        svadd_f32_x(pg, dot_sum2, dot_sum3));
+    svfloat32_t dot_total =
+        svadd_f32_x(pg, svadd_f32_x(pg, dot_sum0, dot_sum1), svadd_f32_x(pg, dot_sum2, dot_sum3));
     svfloat32_t query_total = svadd_f32_x(pg, svadd_f32_x(pg, query_sum0, query_sum1),
                                           svadd_f32_x(pg, query_sum2, query_sum3));
 

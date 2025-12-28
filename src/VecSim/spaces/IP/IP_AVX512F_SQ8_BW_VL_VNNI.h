@@ -29,8 +29,8 @@
  */
 
 // Process 16 elements with algebraic optimization
-static inline void SQ8_InnerProductStep(const float *pVec1, const uint8_t *pVec2,
-                                        __m512 &dot_sum, __m512 &query_sum) {
+static inline void SQ8_InnerProductStep(const float *pVec1, const uint8_t *pVec2, __m512 &dot_sum,
+                                        __m512 &query_sum) {
     // Load 16 float elements from query
     __m512 v1 = _mm512_loadu_ps(pVec1);
 
@@ -117,10 +117,10 @@ float SQ8_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t 
     }
 
     // Combine accumulators
-    __m512 dot_total = _mm512_add_ps(_mm512_add_ps(dot_sum0, dot_sum1),
-                                     _mm512_add_ps(dot_sum2, dot_sum3));
-    __m512 query_total = _mm512_add_ps(_mm512_add_ps(query_sum0, query_sum1),
-                                       _mm512_add_ps(query_sum2, query_sum3));
+    __m512 dot_total =
+        _mm512_add_ps(_mm512_add_ps(dot_sum0, dot_sum1), _mm512_add_ps(dot_sum2, dot_sum3));
+    __m512 query_total =
+        _mm512_add_ps(_mm512_add_ps(query_sum0, query_sum1), _mm512_add_ps(query_sum2, query_sum3));
 
     // Reduce to scalar
     float dot_product = _mm512_reduce_add_ps(dot_total);

@@ -142,12 +142,12 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
     }
 
     // Combine the accumulators
-    svfloat32_t dot_total = svadd_f32_x(pg, svadd_f32_x(pg, dot_sum0, dot_sum1),
-                                        svadd_f32_x(pg, dot_sum2, dot_sum3));
-    svfloat32_t sum1_total = svadd_f32_x(pg, svadd_f32_x(pg, sum1_0, sum1_1),
-                                         svadd_f32_x(pg, sum1_2, sum1_3));
-    svfloat32_t sum2_total = svadd_f32_x(pg, svadd_f32_x(pg, sum2_0, sum2_1),
-                                         svadd_f32_x(pg, sum2_2, sum2_3));
+    svfloat32_t dot_total =
+        svadd_f32_x(pg, svadd_f32_x(pg, dot_sum0, dot_sum1), svadd_f32_x(pg, dot_sum2, dot_sum3));
+    svfloat32_t sum1_total =
+        svadd_f32_x(pg, svadd_f32_x(pg, sum1_0, sum1_1), svadd_f32_x(pg, sum1_2, sum1_3));
+    svfloat32_t sum2_total =
+        svadd_f32_x(pg, svadd_f32_x(pg, sum2_0, sum2_1), svadd_f32_x(pg, sum2_2, sum2_3));
 
     // Horizontal sum of all elements
     float dot_product = svaddv_f32(pg, dot_total);

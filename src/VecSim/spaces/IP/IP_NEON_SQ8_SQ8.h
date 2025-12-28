@@ -135,8 +135,7 @@ float SQ8_SQ8_InnerProductSIMD16_NEON_IMP(const void *pVec1v, const void *pVec2v
     }
 
     // Combine accumulators
-    float32x4_t dot_total =
-        vaddq_f32(vaddq_f32(dot_sum0, dot_sum1), vaddq_f32(dot_sum2, dot_sum3));
+    float32x4_t dot_total = vaddq_f32(vaddq_f32(dot_sum0, dot_sum1), vaddq_f32(dot_sum2, dot_sum3));
     float32x4_t sum1_total = vaddq_f32(vaddq_f32(sum1_0, sum1_1), vaddq_f32(sum1_2, sum1_3));
     float32x4_t sum2_total = vaddq_f32(vaddq_f32(sum2_0, sum2_1), vaddq_f32(sum2_2, sum2_3));
 

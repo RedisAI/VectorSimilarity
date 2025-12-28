@@ -42,10 +42,10 @@ static inline void SQ8_SQ8_InnerProductStep64(const uint8_t *pVec1, const uint8_
 
     // Convert to int16 (zero-extend) and compute dot products using VNNI
     // dpwssd: multiply pairs of int16, sum pairs to int32, accumulate
-    dot_acc0 = _mm512_dpwssd_epi32(dot_acc0, _mm512_cvtepu8_epi16(v1_lo),
-                                   _mm512_cvtepu8_epi16(v2_lo));
-    dot_acc1 = _mm512_dpwssd_epi32(dot_acc1, _mm512_cvtepu8_epi16(v1_hi),
-                                   _mm512_cvtepu8_epi16(v2_hi));
+    dot_acc0 =
+        _mm512_dpwssd_epi32(dot_acc0, _mm512_cvtepu8_epi16(v1_lo), _mm512_cvtepu8_epi16(v2_lo));
+    dot_acc1 =
+        _mm512_dpwssd_epi32(dot_acc1, _mm512_cvtepu8_epi16(v1_hi), _mm512_cvtepu8_epi16(v2_hi));
 
     // Sum of elements using SAD with zero (sums bytes in groups of 8 -> 8x 64-bit results)
     __m512i zero = _mm512_setzero_si512();
@@ -62,8 +62,8 @@ static inline void SQ8_SQ8_InnerProductStep32(const uint8_t *pVec1, const uint8_
     __m256i v2_256 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pVec2));
 
     // Convert to int16 (zero-extend) and compute dot product using VNNI
-    dot_acc = _mm512_dpwssd_epi32(dot_acc, _mm512_cvtepu8_epi16(v1_256),
-                                  _mm512_cvtepu8_epi16(v2_256));
+    dot_acc =
+        _mm512_dpwssd_epi32(dot_acc, _mm512_cvtepu8_epi16(v1_256), _mm512_cvtepu8_epi16(v2_256));
 
     // Sum of elements - extend to 512-bit and use SAD
     // Use zextsi256_si512 to properly zero the upper half
