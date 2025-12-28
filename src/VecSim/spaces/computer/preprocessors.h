@@ -204,58 +204,36 @@ public:
      * computation.
      *
      * Note: query_blob and query_blob_size are not modified, nor allocated by this function.
+     *
+     * Possible scenarios (currently only CASE 1 is implemented):
+     * - CASE 1: STORAGE BLOB NEEDS ALLOCATION (storage_blob == nullptr)
+     * - CASE 2: STORAGE BLOB EXISTS (storage_blob != nullptr)
+     *   - CASE 2A: STORAGE BLOB EXISTS and its size is insufficient (storage_blob_size < required_size) - reallocate storage
+     *   - CASE 2B: STORAGE AND QUERY SHARE MEMORY (storage_blob == query_blob) - reallocate storage
+     *   - CASE 2C: SEPARATE STORAGE AND QUERY BLOBS (storage_blob != query_blob) - quantize storage in-place
      */
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
                     unsigned char alignment) const override {
-        // CASE 1: STORAGE BLOB NEEDS ALLOCATION
-        if (!storage_blob) {
-            // Allocate aligned memory for the quantized storage blob
-            storage_blob = static_cast<OUTPUT_TYPE *>(
-                this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
+        // CASE 1: STORAGE BLOB NEEDS ALLOCATION - the only implemented case
+        assert(!storage_blob && "CASE 1: storage_blob must be nullptr");
 
-            // Quantize directly from original data
-            const DataType *input = static_cast<const DataType *>(original_blob);
-            quantize(input, static_cast<OUTPUT_TYPE *>(storage_blob));
-        }
-        // CASE 2: STORAGE BLOB EXISTS
-        else {
-            // CASE 2A: STORAGE AND QUERY SHARE MEMORY
-            if (storage_blob == query_blob) {
-                // Need to allocate a separate storage blob since query remains DataType
-                // while storage needs to be quantized
-                void *new_storage =
-                    this->allocator->allocate_aligned(this->storage_bytes_count, alignment);
+        // CASE 2A: STORAGE BLOB EXISTS and its size is insufficient - not implemented
+        // storage_blob && storage_blob_size < required_size
+        // CASE 2B: STORAGE EXISTS AND EQUALS QUERY BLOB - not implemented
+        // storage_blob && storage_blob == query_blob
+        // (if we want to handle this, we need to separate the blobs)
+        // CASE 2C: SEPARATE STORAGE AND QUERY BLOBS - not implemented
+        // storage_blob && storage_blob != query_blob
+        // We can quantize the storage blob in-place (if we already checked storage_blob_size is sufficient)
 
-                // Quantize from the shared blob (query_blob) to the new storage blob
-                quantize(static_cast<const DataType *>(query_blob),
-                         static_cast<OUTPUT_TYPE *>(new_storage));
+        // Allocate aligned memory for the quantized storage blob
+        storage_blob = static_cast<OUTPUT_TYPE *>(
+            this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
 
-                // Update storage_blob to point to the new memory
-                storage_blob = new_storage;
-            }
-            // CASE 2B: SEPARATE STORAGE AND QUERY BLOBS
-            else {
-                // Check if storage blob needs resizing
-                if (storage_blob_size < this->storage_bytes_count) {
-                    // Allocate new storage with correct size
-                    OUTPUT_TYPE *new_storage = static_cast<OUTPUT_TYPE *>(
-                        this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
-
-                    // Quantize from old storage to new storage
-                    quantize(static_cast<const DataType *>(storage_blob),
-                             static_cast<OUTPUT_TYPE *>(new_storage));
-
-                    // Free old storage and update pointer
-                    this->allocator->free_allocation(storage_blob);
-                    storage_blob = new_storage;
-                } else {
-                    // Storage blob is large enough, quantize in-place
-                    quantize(static_cast<const DataType *>(storage_blob),
-                             static_cast<OUTPUT_TYPE *>(storage_blob));
-                }
-            }
-        }
+        // Quantize directly from original data
+        const DataType *input = static_cast<const DataType *>(original_blob);
+        quantize(input, static_cast<OUTPUT_TYPE *>(storage_blob));
 
         storage_blob_size = this->storage_bytes_count;
     }

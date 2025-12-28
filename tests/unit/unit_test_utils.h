@@ -73,8 +73,20 @@ int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id,
 
 template <typename data_t>
 void CompareVectors(const data_t *v1, const data_t *v2, size_t dim) {
+    auto print_vector = [](const data_t *v, size_t dim) {
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < dim; i++) {
+            oss << +v[i]; // unary + promotes uint8_t to int for printing
+            if (i < dim - 1) oss << ", ";
+        }
+        oss << "]";
+        return oss.str();
+    };
     for (size_t i = 0; i < dim; i++) {
-        ASSERT_EQ(v1[i], v2[i]) << "Vectors are not equal at index " << i;
+        ASSERT_EQ(v1[i], v2[i]) << "Vectors are not equal at index " << i
+                                << "\nv1: " << print_vector(v1, dim)
+                                << "\nv2: " << print_vector(v2, dim);
     }
 }
 
