@@ -2567,6 +2567,17 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
         optimization.sve = 0;
     }
 #endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp && dim >= 64) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "NEON_DOTPROD with dim " << dim;
+        optimization.asimddp = 0;
+    }
+#endif
 #ifdef OPT_NEON
     if (optimization.asimd) {
         unsigned char alignment = 0;
@@ -2644,6 +2655,17 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
         ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
             << "SVE with dim " << dim;
         optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp && dim >= 64) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "NEON_DOTPROD with dim " << dim;
+        optimization.asimddp = 0;
     }
 #endif
 #ifdef OPT_NEON
