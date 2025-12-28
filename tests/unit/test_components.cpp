@@ -1033,11 +1033,6 @@ TEST(PreprocessorsTest, QuantizationTest) {
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
                                                         expected_processed_blob,
                                                         quantized_blob_bytes_count));
-
-        const float *storage_blob_metadata =
-            reinterpret_cast<const float *>(static_cast<const uint8_t *>(storage_blob) + dim);
-        float min = storage_blob_metadata[0];
-        float delta = storage_blob_metadata[1];
     }
 
     // Test preprocessForStorage
@@ -1103,4 +1098,97 @@ TEST(PreprocessorsTest, QuantizationTestPreprocessQueryNoAlignment) {
     // Verify content is unchanged
     EXPECT_NO_FATAL_FAILURE(
         CompareVectors<float>(static_cast<const float *>(query_blob.get()), original_blob, dim));
+}
+
+// Test edge case where all entries are equal
+TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 5;
+    constexpr unsigned char alignment = 0;
+    float original_blob[dim] = {3.5f, 3.5f, 3.5f, 3.5f, 3.5f};
+
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
+
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    size_t storage_blob_size = dim * sizeof(float);
+    size_t query_blob_size = dim * sizeof(float);
+
+    quant_preprocessor->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
+                                   query_blob_size, alignment);
+
+    ASSERT_NE(storage_blob, nullptr);
+
+    // When all values are equal: min == max, delta = 1, all quantized values should be 0
+    const uint8_t *quantized = static_cast<const uint8_t *>(storage_blob);
+    for (size_t i = 0; i < dim; ++i) {
+        ASSERT_EQ(quantized[i], 0) << "All equal values should quantize to 0";
+    }
+
+    // Verify metadata: min_val = 3.5f, delta = 1.0f (fallback when diff == 0)
+    const float *metadata = reinterpret_cast<const float *>(quantized + dim);
+    ASSERT_FLOAT_EQ(metadata[0], 3.5f); // min_val
+    ASSERT_FLOAT_EQ(metadata[1], 1.0f); // delta (fallback)
+
+    // Dequantize and verify: min + quantized * delta = 3.5 + 0 * 1 = 3.5
+    for (size_t i = 0; i < dim; ++i) {
+        float dequantized = metadata[0] + quantized[i] * metadata[1];
+        ASSERT_FLOAT_EQ(dequantized, original_blob[i]);
+    }
+
+    allocator->free_allocation(storage_blob);
+}
+
+// Test QuantPreprocessor API functions directly and verify blob sizes are modified
+TEST(PreprocessorsTest, QuantizationTestBlobSizeModification) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 5;
+    constexpr unsigned char alignment = 0;
+    constexpr size_t original_blob_size = dim * sizeof(float);
+    constexpr size_t expected_storage_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
+    float original_blob[dim] = {1, 2, 3, 4, 5};
+
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
+
+    // Test preprocess - storage_blob_size should be modified
+    {
+        void *storage_blob = nullptr;
+        void *query_blob = nullptr;
+        size_t storage_blob_size = original_blob_size;
+        size_t query_blob_size = original_blob_size;
+
+        quant_preprocessor->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
+                                       query_blob_size, alignment);
+
+        ASSERT_EQ(storage_blob_size, expected_storage_size)
+            << "preprocess should modify storage_blob_size";
+        ASSERT_EQ(query_blob_size, original_blob_size)
+            << "preprocess should not modify query_blob_size";
+
+        allocator->free_allocation(storage_blob);
+    }
+
+    // Test preprocessForStorage - input_blob_size should be modified
+    {
+        void *blob = nullptr;
+        size_t blob_size = original_blob_size;
+
+        quant_preprocessor->preprocessForStorage(original_blob, blob, blob_size);
+
+        ASSERT_EQ(blob_size, expected_storage_size)
+            << "preprocessForStorage should modify blob_size";
+
+        allocator->free_allocation(blob);
+    }
+
+    // Test preprocessQuery - size should NOT be modified (no-op)
+    {
+        void *blob = nullptr;
+        size_t blob_size = original_blob_size;
+
+        quant_preprocessor->preprocessQuery(original_blob, blob, blob_size, alignment);
+
+        ASSERT_EQ(blob_size, original_blob_size) << "preprocessQuery should not modify blob_size";
+        ASSERT_EQ(blob, nullptr) << "preprocessQuery should not allocate blob";
+    }
 }

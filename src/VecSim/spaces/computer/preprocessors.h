@@ -25,7 +25,7 @@ public:
         : VecsimBaseObject(allocator) {}
     // Note: input_blob_size is relevant for both storage blob and query blob, as we assume results
     // are the same size.
-    // Use the the overload below for different sizes.
+    // Use the overload below for different sizes.
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                             size_t &input_blob_size, unsigned char alignment) const = 0;
     virtual void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -51,7 +51,7 @@ public:
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
                     unsigned char alignment) const override {
-        // This assert verifies that that the current use of this function is for blobs of the same
+        // This assert verifies that the current use of this function is for blobs of the same
         // size, which is the case for the Cosine preprocessor. If we ever need to support different
         // sizes for storage and query blobs, we can remove the assert and implement the logic to
         // handle different sizes.
@@ -164,8 +164,8 @@ public:
                       "QuantPreprocessor only supports floating-point types");
     } // quantized + min + delta
 
-    // Helper function to perform quantization. This function is used by both preprocess and
-    // preprocessQuery and supports in-place quantization of the storage blob.
+    // Helper function to perform quantization. This function is used by the storage preprocessing
+    // methods.
     void quantize(const DataType *input, OUTPUT_TYPE *quantized) const {
         assert(input && quantized);
         // Find min and max values
@@ -179,9 +179,9 @@ public:
 
         // Quantize the values
         for (size_t i = 0; i < this->dim; i++) {
-            // We know (input - min) > 0
+            // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
-            // Deconstruction will yield the same original value for all vectors.
+            // reconstruction will yield the same original value for all vectors.
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((input[i] - min_val) * inv_delta));
         }
 
@@ -194,9 +194,8 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
-        // For backward compatibility - delegate to the two-size version with identical sizes
-        preprocess(original_blob, storage_blob, query_blob, input_blob_size, input_blob_size,
-                   alignment);
+        assert(false &&
+               "QuantPreprocessor does not support identical size for storage and query blobs");
     }
 
     /**
@@ -245,11 +244,9 @@ public:
 
     void preprocessForStorage(const void *original_blob, void *&blob,
                               size_t &input_blob_size) const override {
-        // Allocate quantized blob if needed
-        if (!blob) {
-            blob = this->allocator->allocate(storage_bytes_count);
-        }
+        assert(!blob && "storage_blob must be nullptr");
 
+        blob = this->allocator->allocate(storage_bytes_count);
         // Cast to appropriate types
         const DataType *input = static_cast<const DataType *>(original_blob);
         OUTPUT_TYPE *quantized = static_cast<OUTPUT_TYPE *>(blob);
