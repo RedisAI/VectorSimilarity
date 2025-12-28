@@ -1042,21 +1042,23 @@ TEST(PreprocessorsTest, QuantizationTest) {
 
     // Test preprocessForStorage
     {
-        auto storage_blob = multiPPContainer.preprocessForStorage(original_blob, original_blob_size);
+        auto storage_blob =
+            multiPPContainer.preprocessForStorage(original_blob, original_blob_size);
 
         ASSERT_NE(storage_blob.get(), nullptr);
-        EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(
-            static_cast<const uint8_t *>(storage_blob.get()), expected_processed_blob,
-            quantized_blob_bytes_count));
+        EXPECT_NO_FATAL_FAILURE(
+            CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob.get()),
+                                    expected_processed_blob, quantized_blob_bytes_count));
     }
 
-    // Test preprocessQuery (content should not be changed, only reallocated to the required alignment)
+    // Test preprocessQuery (content should not be changed, only reallocated to the required
+    // alignment)
     {
         auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
         ASSERT_NE(query_blob.get(), nullptr);
         // Verify content is unchanged (original floats, not quantized)
-        EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(
-            static_cast<const float *>(query_blob.get()), original_blob, dim));
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(static_cast<const float *>(query_blob.get()),
+                                                      original_blob, dim));
         // Check address is aligned
         unsigned char address_alignment = (uintptr_t)(query_blob.get()) % alignment;
         ASSERT_EQ(address_alignment, 0) << "expected alignment " << alignment;
@@ -1074,14 +1076,14 @@ TEST(PreprocessorsTest, QuantizationTest) {
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(reinterpret_cast<const uint8_t *>(buffer),
                                                         expected_processed_blob,
                                                         quantized_blob_bytes_count));
-        #if defined(NDEBUG)
-            EXPECT_EXIT(
-                {
-                    ProcessedBlobs processed_blobs = multiPPContainer.preprocess(
-                        buffer, sizeof(uint8_t));
-                },
-                testing::KilledBySignal(SIGABRT), "input_blob_size < processed_bytes_count");
-            #endif
+#if defined(NDEBUG)
+        EXPECT_EXIT(
+            {
+                ProcessedBlobs processed_blobs =
+                    multiPPContainer.preprocess(buffer, sizeof(uint8_t));
+            },
+            testing::KilledBySignal(SIGABRT), "input_blob_size < processed_bytes_count");
+#endif
     }
 }
 
@@ -1102,6 +1104,6 @@ TEST(PreprocessorsTest, QuantizationTestPreprocessQueryNoAlignment) {
     auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
     ASSERT_EQ(query_blob.get(), original_blob); // same memory address
     // Verify content is unchanged
-    EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(
-        static_cast<const float *>(query_blob.get()), original_blob, dim));
+    EXPECT_NO_FATAL_FAILURE(
+        CompareVectors<float>(static_cast<const float *>(query_blob.get()), original_blob, dim));
 }

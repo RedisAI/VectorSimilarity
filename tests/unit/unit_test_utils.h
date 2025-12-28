@@ -78,7 +78,8 @@ void CompareVectors(const data_t *v1, const data_t *v2, size_t dim) {
         oss << "[";
         for (size_t i = 0; i < dim; i++) {
             oss << +v[i]; // unary + promotes uint8_t to int for printing
-            if (i < dim - 1) oss << ", ";
+            if (i < dim - 1)
+                oss << ", ";
         }
         oss << "]";
         return oss.str();

@@ -160,6 +160,8 @@ public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) + 2 * sizeof(DataType)) {
+        static_assert(std::is_floating_point_v<DataType>,
+                      "QuantPreprocessor only supports floating-point types");
     } // quantized + min + delta
 
     // Helper function to perform quantization. This function is used by both preprocess and
@@ -208,9 +210,11 @@ public:
      * Possible scenarios (currently only CASE 1 is implemented):
      * - CASE 1: STORAGE BLOB NEEDS ALLOCATION (storage_blob == nullptr)
      * - CASE 2: STORAGE BLOB EXISTS (storage_blob != nullptr)
-     *   - CASE 2A: STORAGE BLOB EXISTS and its size is insufficient (storage_blob_size < required_size) - reallocate storage
+     *   - CASE 2A: STORAGE BLOB EXISTS and its size is insufficient
+     * (storage_blob_size < required_size) - reallocate storage
      *   - CASE 2B: STORAGE AND QUERY SHARE MEMORY (storage_blob == query_blob) - reallocate storage
-     *   - CASE 2C: SEPARATE STORAGE AND QUERY BLOBS (storage_blob != query_blob) - quantize storage in-place
+     *   - CASE 2C: SEPARATE STORAGE AND QUERY BLOBS (storage_blob != query_blob) - quantize storage
+     * in-place
      */
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
@@ -225,7 +229,8 @@ public:
         // (if we want to handle this, we need to separate the blobs)
         // CASE 2C: SEPARATE STORAGE AND QUERY BLOBS - not implemented
         // storage_blob && storage_blob != query_blob
-        // We can quantize the storage blob in-place (if we already checked storage_blob_size is sufficient)
+        // We can quantize the storage blob in-place (if we already checked storage_blob_size is
+        // sufficient)
 
         // Allocate aligned memory for the quantized storage blob
         storage_blob = static_cast<OUTPUT_TYPE *>(
