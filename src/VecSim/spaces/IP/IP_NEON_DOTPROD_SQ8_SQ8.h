@@ -31,7 +31,7 @@ SQ8_SQ8_InnerProductStep_NEON_DOTPROD(const uint8_t *&pVec1, const uint8_t *&pVe
                                       uint32x4_t &dot_sum, uint32x4_t &sum1, uint32x4_t &sum2) {
     // Ones vector for computing element sums via dot product (function-local to avoid
     // multiple definitions when header is included in multiple translation units)
-    static const constexpr uint8x16_t ones = vdupq_n_u8(1);
+    static const uint8x16_t ones = vdupq_n_u8(1);
 
     // Load 16 uint8 elements
     uint8x16_t v1 = vld1q_u8(pVec1);
