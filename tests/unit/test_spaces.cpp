@@ -2348,7 +2348,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
 }
 
 // Instantiate the test suite with dimensions to test
-INSTANTIATE_TEST_SUITE_P(SQ8InnerProductTest, SQ8SpacesOptimizationTest,
+INSTANTIATE_TEST_SUITE_P(SQ8OptFuncs, SQ8SpacesOptimizationTest,
                          testing::Range(16UL, 16 * 2UL + 1));
 
 TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
@@ -2467,3 +2467,219 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
+
+/* ======================== Tests SQ8_SQ8 ========================= */
+
+TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
+    size_t dim = 5;
+
+    // Create original vectors
+    float v1_orig[dim], v2_orig[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = float(i + 1.5);
+        v2_orig[i] = float(i + 1.5);
+    }
+
+    // Normalize both vectors for IP test
+    spaces::GetNormalizeFunc<float>()(v1_orig, dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig, dim);
+
+    // Create SQ8 compressed versions of both vectors
+    std::vector<uint8_t> v1_compressed = CreateSQ8CompressedVector(v1_orig, dim);
+    std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig, dim);
+
+    float dist =
+        SQ8_SQ8_InnerProduct((const void *)v1_compressed.data(), (const void *)v2_compressed.data(),
+                             dim);
+
+    // Since we're comparing identical normalized vectors, distance should be close to 0
+    ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_SQ8_InnerProduct failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
+    size_t dim = 5;
+
+    // Create original vectors
+    float v1_orig[dim], v2_orig[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = float(i + 1.5);
+        v2_orig[i] = float(i + 1.5);
+    }
+
+    // Normalize both vectors for Cosine test
+    spaces::GetNormalizeFunc<float>()(v1_orig, dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig, dim);
+
+    // Create SQ8 compressed versions of both vectors
+    std::vector<uint8_t> v1_compressed = CreateSQ8CompressedVector(v1_orig, dim);
+    std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig, dim);
+
+    float dist =
+        SQ8_SQ8_Cosine((const void *)v1_compressed.data(), (const void *)v2_compressed.data(), dim);
+
+    // Since we're comparing identical normalized vectors, cosine distance should be close to 0
+    ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_SQ8_Cosine failed to match expected distance";
+}
+
+class SQ8_SQ8_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    // Create original vectors
+    std::vector<float> v1_orig(dim);
+    std::vector<float> v2_orig(dim);
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = float(i + 1.5);
+        v2_orig[i] = float(i * 0.75 + 1.0);
+    }
+
+    // Normalize both vectors
+    spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig.data(), dim);
+
+    // Create SQ8 compressed versions of both vectors
+    std::vector<uint8_t> v1_compressed = CreateSQ8CompressedVector(v1_orig.data(), dim);
+    std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig.data(), dim);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_SQ8_InnerProduct(v1_compressed.data(), v2_compressed.data(), dim);
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "NEON with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
+
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
+
+    // Test default implementation
+    unsigned char alignment = 0;
+    arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_SQ8_InnerProduct)
+        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+        << "No optimization with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    // Create original vectors
+    std::vector<float> v1_orig(dim);
+    std::vector<float> v2_orig(dim);
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = float(i + 1.5);
+        v2_orig[i] = float(i * 0.75 + 1.0);
+    }
+
+    // Normalize both vectors
+    spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig.data(), dim);
+
+    // Create SQ8 compressed versions of both vectors
+    std::vector<uint8_t> v1_compressed = CreateSQ8CompressedVector(v1_orig.data(), dim);
+    std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig.data(), dim);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_SQ8_Cosine(v1_compressed.data(), v2_compressed.data(), dim);
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_NEON(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "NEON with dim " << dim;
+        optimization.asimd = 0;
+    }
+#endif
+
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
+
+    // Test default implementation
+    unsigned char alignment = 0;
+    arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_SQ8_Cosine)
+        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v1_compressed.data(), v2_compressed.data(), dim), 0.01)
+        << "No optimization with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+INSTANTIATE_TEST_SUITE_P(SQ8_SQ8OptFuncs, SQ8_SQ8_SpacesOptimizationTest,
+                         testing::Range(16UL, 16 * 2UL + 1));
