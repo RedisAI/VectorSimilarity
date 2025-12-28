@@ -2480,7 +2480,7 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
         v2_orig[i] = float(i + 1.5);
     }
 
-    // Normalize both vectors for IP test
+    // Normalize both vectors because it expects normalized vectors
     spaces::GetNormalizeFunc<float>()(v1_orig, dim);
     spaces::GetNormalizeFunc<float>()(v2_orig, dim);
 
@@ -2505,7 +2505,7 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
         v2_orig[i] = float(i + 1.5);
     }
 
-    // Normalize both vectors for Cosine test
+    // Normalize both vectors because it expects normalized vectors
     spaces::GetNormalizeFunc<float>()(v1_orig, dim);
     spaces::GetNormalizeFunc<float>()(v2_orig, dim);
 
