@@ -113,7 +113,6 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
 }
 
 // SQ8-to-SQ8 Inner Product distance function
-// Assumes both vectors are normalized.
 // Returns 1 - inner_product (distance form)
 template <unsigned char residual> // 0..15
 float SQ8_SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,

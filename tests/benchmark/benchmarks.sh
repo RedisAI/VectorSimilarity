@@ -99,6 +99,9 @@ elif [ "$BM_TYPE" = "bm-svs-train-fp16" ] ; then
 elif [ "$BM_TYPE" = "bm-basics-svs-fp32-single" ] ; then
     echo basics_svs_single_fp32
     echo basics_svs_single_fp32_LVQ8
+elif [ "$BM_TYPE" = "bm-spaces-sq8-full" ] ; then
+    echo spaces_sq8
+    echo spaces_sq8_sq8
 
 # Spaces benchmarks
 elif [ "$BM_TYPE" = "bm-spaces" ] ; then
