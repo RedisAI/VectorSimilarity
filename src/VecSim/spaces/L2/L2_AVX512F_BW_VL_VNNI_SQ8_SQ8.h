@@ -206,16 +206,19 @@ float SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVe
     // Apply the algebraic formula:
     // L2² = δ1²*Σq1² + δ2²*Σq2² - 2*δ1*δ2*Σ(q1*q2) + 2*c*δ1*Σq1 - 2*c*δ2*Σq2 + dim*c²
     // where c = min1 - min2
-    float c = min1 - min2;
-    float delta1_sq = delta1 * delta1;
-    float delta2_sq = delta2 * delta2;
+    // Use double precision for intermediate calculations to minimize floating-point errors
+    double c = static_cast<double>(min1) - static_cast<double>(min2);
+    double d1 = static_cast<double>(delta1);
+    double d2 = static_cast<double>(delta2);
+    double delta1_sq = d1 * d1;
+    double delta2_sq = d2 * d2;
 
-    float result = delta1_sq * static_cast<float>(sum_sqr1) +
-                   delta2_sq * static_cast<float>(sum_sqr2) -
-                   2.0f * delta1 * delta2 * static_cast<float>(dot_product) +
-                   2.0f * c * delta1 * static_cast<float>(sum_v1) -
-                   2.0f * c * delta2 * static_cast<float>(sum_v2) +
-                   static_cast<float>(dimension) * c * c;
+    double result = delta1_sq * static_cast<double>(sum_sqr1) +
+                    delta2_sq * static_cast<double>(sum_sqr2) -
+                    2.0 * d1 * d2 * static_cast<double>(dot_product) +
+                    2.0 * c * d1 * static_cast<double>(sum_v1) -
+                    2.0 * c * d2 * static_cast<double>(sum_v2) +
+                    static_cast<double>(dimension) * c * c;
 
-    return result;
+    return static_cast<float>(result);
 }
