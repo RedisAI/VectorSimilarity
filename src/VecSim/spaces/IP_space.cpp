@@ -665,6 +665,4 @@ dist_func_t<float> Cosine_UINT8_GetDistFunc(size_t dim, unsigned char *alignment
     return ret_dist_func;
 }
 
-
-
 } // namespace spaces

@@ -162,7 +162,6 @@ float SQ8_SQ8_InnerProductSIMD_SVE(const void *pVec1v, const void *pVec2v, size_
 // Returns 1 - inner_product (assumes vectors are pre-normalized)
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_SQ8_CosineSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
-    float ip = SQ8_SQ8_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(pVec1v, pVec2v,
-                                                                                 dimension);
-    return 1.0f - ip;
+    return 1.0f - SQ8_SQ8_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(pVec1v, pVec2v,
+                                                                                    dimension);
 }

@@ -22,10 +22,10 @@
 
 // Helper function to perform inner product step for 4 elements with dual dequantization
 static inline void SQ8_SQ8_InnerProductStep_NEON(const uint8_t *&pVec1, const uint8_t *&pVec2,
-                                                  float32x4_t &sum, const float32x4_t &min_val_vec1,
-                                                  const float32x4_t &delta_vec1,
-                                                  const float32x4_t &min_val_vec2,
-                                                  const float32x4_t &delta_vec2) {
+                                                 float32x4_t &sum, const float32x4_t &min_val_vec1,
+                                                 const float32x4_t &delta_vec1,
+                                                 const float32x4_t &min_val_vec2,
+                                                 const float32x4_t &delta_vec2) {
     // Load 4 uint8 elements from pVec1 and convert to float
     uint8x8_t v1_u8 = vld1_u8(pVec1);
     uint32x4_t v1_u32 = vmovl_u16(vget_low_u16(vmovl_u8(v1_u8)));
@@ -52,7 +52,8 @@ static inline void SQ8_SQ8_InnerProductStep_NEON(const uint8_t *&pVec1, const ui
 
 // Common implementation for inner product between two SQ8 vectors
 template <unsigned char residual> // 0..15
-float SQ8_SQ8_InnerProductSIMD16_NEON_IMP(const void *pVec1v, const void *pVec2v, size_t dimension) {
+float SQ8_SQ8_InnerProductSIMD16_NEON_IMP(const void *pVec1v, const void *pVec2v,
+                                          size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 

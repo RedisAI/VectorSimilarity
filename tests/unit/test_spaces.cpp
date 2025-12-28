@@ -2488,9 +2488,8 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
     std::vector<uint8_t> v1_compressed = CreateSQ8CompressedVector(v1_orig, dim);
     std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig, dim);
 
-    float dist =
-        SQ8_SQ8_InnerProduct((const void *)v1_compressed.data(), (const void *)v2_compressed.data(),
-                             dim);
+    float dist = SQ8_SQ8_InnerProduct((const void *)v1_compressed.data(),
+                                      (const void *)v2_compressed.data(), dim);
 
     // Since we're comparing identical normalized vectors, distance should be close to 0
     ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_SQ8_InnerProduct failed to match expected distance";
