@@ -1078,11 +1078,8 @@ TEST(PreprocessorsTest, QuantizationTest) {
                                                         quantized_blob_bytes_count));
 #if !defined(NDEBUG)
         EXPECT_EXIT(
-            {
-                ProcessedBlobs processed_blobs =
-                    multiPPContainer.preprocess(buffer, sizeof(uint8_t));
-            },
-            testing::KilledBySignal(SIGABRT), "input_blob_size < processed_bytes_count");
+            { multiPPContainer.preprocessStorageInPlace(buffer, sizeof(uint8_t)); },
+            testing::KilledBySignal(SIGABRT), "Input buffer too small for in-place quantization");
 #endif
     }
 }
