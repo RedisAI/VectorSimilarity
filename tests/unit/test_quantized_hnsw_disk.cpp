@@ -104,8 +104,7 @@ TEST_F(QuantizedHNSWDiskTest, BasicQuantization) {
 
     ASSERT_EQ(index->indexSize(), n_vectors);
 
-    // Flush batch to process vectors and build graph
-    index->flushBatch();
+    // Vectors are now written to disk immediately in batchless mode
 
     // Test query
     auto query = vectors[0];
@@ -182,8 +181,7 @@ TEST_F(QuantizedHNSWDiskTest, QuantizationAccuracy) {
     VecSimIndex_AddVector(index, v2.data(), 2);
     VecSimIndex_AddVector(index, v3.data(), 3);
 
-    // Flush batch to process vectors and build graph
-    index->flushBatch();
+    // Vectors are now written to disk immediately in batchless mode
 
     // Query with v1 - should find itself first
     auto *results = VecSimIndex_TopKQuery(index, v1.data(), 3, nullptr, BY_SCORE);

@@ -5,7 +5,7 @@
  * It supports both .raw files (no header) and .fbin files (with header).
  *
  * Usage:
- *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction]
+ *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [diskWriteBatchThreshold] [cacheMaxEntriesPerSegment]
  *
  * Arguments:
  *   input_file      - Binary file containing vectors (.raw or .fbin)
@@ -17,14 +17,17 @@
  *   type            - Data type: FLOAT32, FLOAT64, BFLOAT16, FLOAT16, INT8, UINT8
  *   M               - HNSW M parameter (default: 64)
  *   efConstruction  - HNSW efConstruction parameter (default: 512)
+ *   threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)
+ *   diskWriteBatchThreshold - Threshold for disk write batching (default: 1, larger = fewer disk writes)
+ *   cacheMaxEntriesPerSegment - Max cache entries per segment (default: 10000, 0 = unlimited)
  *
  * Examples:
  *   # Using .raw file (dimension required)
  *   ./hnsw_disk_serializer dbpedia-cosine-dim768-test_vectors.raw \
  *       dbpedia-cosine-dim768-M64-efc512 768 Cosine FLOAT32 64 512
  *
- *   # Using .fbin file (auto-detect dimension)
- *   ./hnsw_disk_serializer vectors.fbin output 0 Cosine FLOAT32 64 512
+ *   # Using .fbin file (auto-detect dimension) with 8 threads
+ *   ./hnsw_disk_serializer vectors.fbin output 0 Cosine FLOAT32 64 512 8
  *
  *   # Using .fbin file (verify dimension)
  *   ./hnsw_disk_serializer vectors.fbin output 768 Cosine FLOAT32 64 512
@@ -35,6 +38,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_disk.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "mock_thread_pool.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -43,6 +47,7 @@
 #include <filesystem>
 #include <chrono>
 #include <unistd.h>
+#include <thread>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -264,7 +269,7 @@ void saveIndexByType(VecSimIndex *index, const std::string &output_file) {
 
 int main(int argc, char *argv[]) {
     if (argc < 6) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction]\n";
+        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [diskWriteBatchThreshold] [cacheMaxEntriesPerSegment]\n";
         std::cerr << "\nArguments:\n";
         std::cerr << "  input_file      - Binary file (.raw or .fbin)\n";
         std::cerr << "  output_name     - Base name for output files\n";
@@ -273,6 +278,9 @@ int main(int argc, char *argv[]) {
         std::cerr << "  type            - Data type: FLOAT32, FLOAT64, BFLOAT16, FLOAT16, INT8, UINT8\n";
         std::cerr << "  M               - HNSW M parameter (default: 64)\n";
         std::cerr << "  efConstruction  - HNSW efConstruction parameter (default: 512)\n";
+        std::cerr << "  threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)\n";
+        std::cerr << "  diskWriteBatchThreshold - Threshold for disk write batching (default: 1)\n";
+        std::cerr << "  cacheMaxEntriesPerSegment - Max cache entries per segment (default: 10000, 0 = unlimited)\n";
         return 1;
     }
 
@@ -283,6 +291,9 @@ int main(int argc, char *argv[]) {
     VecSimType type = parseType(argv[5]);
     size_t M = (argc > 6) ? std::stoull(argv[6]) : 64;
     size_t efConstruction = (argc > 7) ? std::stoull(argv[7]) : 512;
+    size_t num_threads = (argc > 8) ? std::stoull(argv[8]) : 4;
+    size_t disk_write_batch_threshold = (argc > 9) ? std::stoull(argv[9]) : 1;
+    size_t cache_max_entries_per_segment = (argc > 10) ? std::stoull(argv[10]) : 10000;
 
     // Check if input file exists
     if (!std::filesystem::exists(input_file)) {
@@ -340,6 +351,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Type:           " << getTypeName(type) << "\n";
     std::cout << "M:              " << M << "\n";
     std::cout << "efConstruction: " << efConstruction << "\n";
+    std::cout << "Threads:        " << (num_threads > 0 ? std::to_string(num_threads) : "single-threaded") << "\n";
+    std::cout << "DiskWriteBatchThreshold: " << disk_write_batch_threshold << "\n";
+    std::cout << "CacheMaxEntriesPerSegment: " << cache_max_entries_per_segment << " (0 = unlimited)\n";
     std::cout << "Number of vectors: " << num_vectors << "\n";
     std::cout << "==================================\n\n";
 
@@ -376,6 +390,32 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Set up multi-threaded processing if requested
+    std::unique_ptr<tieredIndexMock> mock_thread_pool;
+    if (num_threads > 0) {
+        mock_thread_pool = std::make_unique<tieredIndexMock>();
+        mock_thread_pool->ctx->index_strong_ref.reset(index, [](VecSimIndex*) {
+            // Custom deleter that does nothing - we manage index lifetime separately
+        });
+        mock_thread_pool->thread_pool_size = num_threads;
+        mock_thread_pool->init_threads();
+
+        // Configure the disk index to use the job queue
+        auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
+        if (disk_index) {
+            disk_index->setJobQueue(&mock_thread_pool->jobQ, mock_thread_pool->ctx,
+                                    tieredIndexMock::submit_callback);
+            // Set disk write batch threshold for better performance
+            // Larger batches = fewer disk writes = faster indexing
+            disk_index->setDiskWriteBatchThreshold(disk_write_batch_threshold);
+            // Set cache max entries per segment
+            // Total max cache entries = cache_max_entries_per_segment * NUM_CACHE_SEGMENTS (64)
+            disk_index->setCacheMaxEntriesPerSegment(cache_max_entries_per_segment);
+        }
+
+        std::cout << "Multi-threaded indexing enabled with " << num_threads << " threads\n";
+    }
+
     std::cout << "Index created successfully\n";
     std::cout << "Loading vectors from file...\n";
 
@@ -397,6 +437,55 @@ int main(int argc, char *argv[]) {
 
     if (vectors_added != num_vectors) {
         std::cerr << "Warning: Expected " << num_vectors << " vectors but added " << vectors_added << "\n";
+    }
+
+    // Wait for all background jobs to complete if using multi-threaded indexing
+    if (mock_thread_pool) {
+        std::cout << "Waiting for background indexing jobs to complete...\n";
+
+        // Custom wait loop with progress reporting
+        auto start_time = std::chrono::steady_clock::now();
+        size_t last_indexed = 0;
+        while (true) {
+            // Check if queue is empty and all jobs done
+            if (mock_thread_pool->isIdle()) {
+                break;
+            }
+            
+            // Print progress every 5 seconds
+            size_t current_indexed = VecSimIndex_IndexSize(index);
+            size_t queue_size = mock_thread_pool->jobQ.size();
+
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time).count();
+
+            if (current_indexed != last_indexed || elapsed % 5 == 0) {
+                std::cout << "\rIndexed: " << current_indexed << "/" << num_vectors
+                          << " | Queue: " << queue_size
+                          << " | Time: " << elapsed << "s    " << std::flush;
+                last_indexed = current_indexed;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+        std::cout << "\n";
+
+        // Wait for all background jobs to complete (batchless mode - no pending vectors)
+        mock_thread_pool->thread_pool_wait();
+        std::cout << "All background jobs completed.\n";
+
+        // Flush any remaining dirty nodes to disk
+        std::cout << "Flushing remaining dirty nodes to disk...\n";
+
+        auto *disk_index = dynamic_cast<HNSWDiskIndex<float, float> *>(index);
+        if (disk_index) {
+            disk_index->flushDirtyNodesToDisk();
+        }
+
+        std::cout << "Dirty nodes flushed.\n";
+
+        // Stop the thread pool before saving
+        mock_thread_pool->thread_pool_join();
     }
 
     auto index_time = std::chrono::high_resolution_clock::now();
@@ -443,6 +532,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Total size:     " << (metadata_size + checkpoint_size) / (1024.0 * 1024.0) << " MB\n";
 
     // Cleanup
+    if (mock_thread_pool) {
+        mock_thread_pool.reset();
+    }
     VecSimIndex_Free(index);
     std::filesystem::remove_all(rocksdb_path);
 

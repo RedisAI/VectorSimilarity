@@ -332,7 +332,7 @@ void BM_VecSimBasics<index_type_t>::FlushBatchDisk(benchmark::State &st) {
     auto *hnsw_disk_index = dynamic_cast<HNSWDiskIndex<data_t, dist_t> *>(hnsw_index);
 
     size_t flush_threshold = st.range(0);
-    hnsw_disk_index->setBatchThreshold(flush_threshold);
+    hnsw_disk_index->setDiskWriteBatchThreshold(flush_threshold);
     for (size_t i = 0; i < flush_threshold-1; i++) {
         // add vectors to fill the batch
         VecSimIndex_AddVector(hnsw_disk_index, QUERIES[i%N_QUERIES].data(), i);
