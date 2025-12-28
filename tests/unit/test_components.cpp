@@ -1137,7 +1137,7 @@ TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     }
 
     allocator->free_allocation(storage_blob);
-    allocator->free_allocation(quant_preprocessor);
+    delete quant_preprocessor;
 }
 
 // Test QuantPreprocessor API functions directly and verify blob sizes are modified
@@ -1193,5 +1193,5 @@ TEST(PreprocessorsTest, QuantizationTestBlobSizeModification) {
         ASSERT_EQ(blob, nullptr) << "preprocessQuery should not allocate blob";
     }
 
-    allocator->free_allocation(quant_preprocessor);
+    delete quant_preprocessor;
 }
