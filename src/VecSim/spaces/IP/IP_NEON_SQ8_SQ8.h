@@ -22,7 +22,7 @@
  *
  * This saves 2 FMAs per 4-element step by deferring dequantization to scalar math at the end.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [inv_norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
  */
 
 // Helper function with algebraic optimization

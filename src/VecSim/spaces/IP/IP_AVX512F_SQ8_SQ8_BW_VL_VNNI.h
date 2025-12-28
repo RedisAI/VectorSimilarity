@@ -23,7 +23,7 @@
  * This allows using VNNI's _mm512_dpwssd_epi32 for efficient integer dot product,
  * then applying scalar corrections at the end.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [inv_norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
  */
 
 // Process 64 uint8 elements using VNNI with multiple accumulators for ILP

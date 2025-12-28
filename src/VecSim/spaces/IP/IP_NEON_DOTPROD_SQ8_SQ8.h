@@ -22,16 +22,17 @@
  *
  * All sums are computed using integer arithmetic, converted to float only at the end.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [inv_norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
  */
-
-// Ones vector for computing element sums via dot product
-static const uint8x16_t ones = vdupq_n_u8(1);
 
 // Helper function: computes dot product and element sums using integer arithmetic
 __attribute__((always_inline)) static inline void
 SQ8_SQ8_InnerProductStep_NEON_DOTPROD(const uint8_t *&pVec1, const uint8_t *&pVec2,
                                       uint32x4_t &dot_sum, uint32x4_t &sum1, uint32x4_t &sum2) {
+    // Ones vector for computing element sums via dot product (function-local to avoid
+    // multiple definitions when header is included in multiple translation units)
+    static const constexpr uint8x16_t ones = vdupq_n_u8(1);
+
     // Load 16 uint8 elements
     uint8x16_t v1 = vld1q_u8(pVec1);
     uint8x16_t v2 = vld1q_u8(pVec2);
@@ -74,6 +75,8 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP(const void *pVec1v, const void
     // Handle residual elements first (0-15 elements)
     constexpr size_t final_residual = residual % 16;
     if constexpr (final_residual > 0) {
+        // Ones vector for computing element sums via dot product
+        static const uint8x16_t ones = vdupq_n_u8(1);
         constexpr uint8x16_t mask = {
             0xFF,
             (final_residual >= 2) ? 0xFF : 0,
