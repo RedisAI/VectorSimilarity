@@ -169,7 +169,7 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 #ifdef OPT_NEON_DOTPROD
     // DOTPROD uses integer arithmetic - much faster than float-based NEON
-    if (features.asimddp && dim >= 64) {
+    if (features.asimddp) {
         return Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(dim);
     }
 #endif
@@ -206,9 +206,20 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ8_SQ8_Cosine_implementation_SVE2(dim);
+    }
+#endif
 #ifdef OPT_SVE
     if (features.sve) {
         return Choose_SQ8_SQ8_Cosine_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    // DOTPROD uses integer arithmetic - much faster than float-based NEON
+    if (features.asimddp) {
+        return Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
