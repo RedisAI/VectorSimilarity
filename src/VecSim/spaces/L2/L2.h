@@ -26,5 +26,5 @@ float INT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 
-// Both vectors are uint8 quantized (SQ8-to-SQ8)
-float SQ8_Dist_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
+// SQ8-to-SQ8: Both vectors are uint8 quantized
+float SQ8_SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);

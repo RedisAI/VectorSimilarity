@@ -55,7 +55,7 @@ static inline void SQ8_SQ8_L2SqrStep_NEON(const uint8_t *&pVec1, const uint8_t *
 
 // SQ8-to-SQ8 L2 squared distance function
 template <unsigned char residual> // 0..15
-float SQ8_Dist_L2SqrSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
+float SQ8_SQ8_L2SqrSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 

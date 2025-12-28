@@ -52,7 +52,7 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
 }
 
 // SQ8-to-SQ8: Both vectors are uint8 quantized
-float SQ8_Dist_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
@@ -75,7 +75,7 @@ float SQ8_Dist_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dim
 }
 
 // SQ8-to-SQ8: Both vectors are uint8 quantized (cosine version)
-float SQ8_Dist_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 

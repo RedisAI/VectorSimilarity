@@ -116,7 +116,7 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
 // Assumes both vectors are normalized.
 // Returns 1 - inner_product (distance form)
 template <unsigned char residual> // 0..15
-float SQ8_DistInnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
+float SQ8_SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                     size_t dimension) {
     float ip = SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
     return 1.0f - ip;
@@ -126,7 +126,7 @@ float SQ8_DistInnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const vo
 // Assumes both vectors are normalized.
 // Returns 1 - (inner_product)
 template <unsigned char residual> // 0..15
-float SQ8_DistCosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
+float SQ8_SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                               size_t dimension) {
     // Calculate inner product
     float ip = SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);

@@ -418,20 +418,20 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 }
 
 // SQ8-to-SQ8 L2 squared distance function (both vectors are uint8 quantized)
-dist_func_t<float> L2_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignment,
-                                           const void *arch_opt) {
+dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
+                                          const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = SQ8_Dist_L2Sqr;
+    dist_func_t<float> ret_dist_func = SQ8_SQ8_L2Sqr;
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_NEON
     if (features.asimd) {
-        return Choose_SQ8_Dist_L2_implementation_NEON(dim);
+        return Choose_SQ8_SQ8_L2_implementation_NEON(dim);
     }
 #endif
 #endif // AARCH64
@@ -443,7 +443,7 @@ dist_func_t<float> L2_SQ8_Dist_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (features.avx512f && features.avx512bw && features.avx512vnni) {
-        return Choose_SQ8_Dist_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+        return Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
 #endif // __x86_64__

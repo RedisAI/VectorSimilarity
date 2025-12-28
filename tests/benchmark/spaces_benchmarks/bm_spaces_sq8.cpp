@@ -99,7 +99,7 @@ INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, L2Sqr, 16);
 /**
  * SQ8-to-SQ8 benchmarks: Both vectors are uint8 quantized with dequantization applied to both.
  */
-class BM_VecSimSpaces_SQ8_Dist : public benchmark::Fixture {
+class BM_VecSimSpaces_SQ8_SQ8 : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
@@ -107,8 +107,8 @@ protected:
     uint8_t *v2;
 
 public:
-    BM_VecSimSpaces_SQ8_Dist() { rng.seed(47); }
-    ~BM_VecSimSpaces_SQ8_Dist() = default;
+    BM_VecSimSpaces_SQ8_SQ8() { rng.seed(47); }
+    ~BM_VecSimSpaces_SQ8_SQ8() = default;
 
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
@@ -127,29 +127,29 @@ public:
 #ifdef CPU_FEATURES_ARCH_AARCH64
 // NEON SQ8-to-SQ8 functions
 #ifdef OPT_NEON
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, NEON, 16, neon_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
 #endif // NEON
 // SVE SQ8-to-SQ8 functions
 #ifdef OPT_SVE
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, SVE, 16, sve_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, SVE, 16, sve_supported);
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
 #endif // SVE
 #endif // AARCH64
 
 #ifdef CPU_FEATURES_ARCH_X86_64
 // AVX512_F_BW_VL_VNNI SQ8-to-SQ8 functions
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, AVX512F_BW_VL_VNNI, 16,
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 16,
                                 avx512_f_bw_vl_vnni_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, AVX512F_BW_VL_VNNI, 16,
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 16,
                                  avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI
 #endif // x86_64
 
 // Naive SQ8-to-SQ8 algorithms
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, InnerProduct, 16);
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, Cosine, 16);
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_Dist, SQ8_Dist, L2Sqr, 16);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, InnerProduct, 16);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, Cosine, 16);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, L2Sqr, 16);
 
 BENCHMARK_MAIN();

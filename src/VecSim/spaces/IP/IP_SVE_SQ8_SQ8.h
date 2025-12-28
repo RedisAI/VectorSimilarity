@@ -153,7 +153,7 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
 // SQ8-to-SQ8 Inner Product distance function
 // Returns 1 - inner_product (distance form)
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ8_Dist_InnerProductSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
+float SQ8_SQ8_InnerProductSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
     return 1.0f - SQ8_SQ8_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(pVec1v, pVec2v,
                                                                                     dimension);
 }
@@ -161,7 +161,7 @@ float SQ8_Dist_InnerProductSIMD_SVE(const void *pVec1v, const void *pVec2v, size
 // SQ8-to-SQ8 Cosine distance function
 // Returns 1 - inner_product (assumes vectors are pre-normalized)
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ8_Dist_CosineSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
+float SQ8_SQ8_CosineSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
     float ip = SQ8_SQ8_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(pVec1v, pVec2v,
                                                                                  dimension);
     return 1.0f - ip;

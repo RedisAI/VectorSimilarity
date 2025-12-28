@@ -144,7 +144,7 @@ float SQ8_SQ8_InnerProductSIMD16_NEON_IMP(const void *pVec1v, const void *pVec2v
 // Assumes both vectors are normalized.
 // Returns 1 - inner_product (distance form)
 template <unsigned char residual> // 0..15
-float SQ8_Dist_InnerProductSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
+float SQ8_SQ8_InnerProductSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
     return 1.0f - SQ8_SQ8_InnerProductSIMD16_NEON_IMP<residual>(pVec1v, pVec2v, dimension);
 }
 
@@ -152,7 +152,7 @@ float SQ8_Dist_InnerProductSIMD16_NEON(const void *pVec1v, const void *pVec2v, s
 // Assumes both vectors are normalized.
 // Returns 1 - inner_product
 template <unsigned char residual> // 0..15
-float SQ8_Dist_CosineSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
+float SQ8_SQ8_CosineSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
     return 1.0f - SQ8_SQ8_InnerProductSIMD16_NEON_IMP<residual>(pVec1v, pVec2v, dimension);
 }
 

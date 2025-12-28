@@ -118,15 +118,15 @@ dist_func_t<float> Choose_SQ8_L2_implementation_SVE(size_t dim) {
 }
 
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized)
-dist_func_t<float> Choose_SQ8_Dist_IP_implementation_SVE(size_t dim) {
+dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_Dist_InnerProductSIMD_SVE, dim, svcntw);
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_InnerProductSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_Dist_Cosine_implementation_SVE(size_t dim) {
+dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_Dist_CosineSIMD_SVE, dim, svcntw);
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_CosineSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
 
