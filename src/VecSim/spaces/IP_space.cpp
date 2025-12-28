@@ -175,12 +175,9 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif // AARCH64
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    if (dim < 16) {
-        return ret_dist_func;
-    }
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    // AVX512 VNNI SQ8_SQ8 uses 64-element chunks
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
         return Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
@@ -213,12 +210,9 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
 #endif // AARCH64
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    if (dim < 16) {
-        return ret_dist_func;
-    }
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    // AVX512 VNNI SQ8_SQ8 uses 64-element chunks
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
         return Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif

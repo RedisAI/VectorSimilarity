@@ -2681,4 +2681,4 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(SQ8_SQ8OptFuncs, SQ8_SQ8_SpacesOptimizationTest,
-                         testing::Range(16UL, 16 * 2UL + 1));
+                         testing::Range(64UL, 64 * 2UL + 1));

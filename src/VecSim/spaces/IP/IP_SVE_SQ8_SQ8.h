@@ -13,41 +13,39 @@
 /**
  * SQ8-to-SQ8 distance functions for SVE.
  * These functions compute distance between two SQ8 (scalar quantized 8-bit) vectors,
- * where BOTH vectors are uint8 quantized and dequantization is applied to both
- * during computation.
+ * where BOTH vectors are uint8 quantized.
+ *
+ * Uses algebraic optimization to reduce operations per element:
+ *
+ * IP = Σ (v1[i]*δ1 + min1) * (v2[i]*δ2 + min2)
+ *    = δ1*δ2 * Σ(v1[i]*v2[i]) + δ1*min2 * Σv1[i] + δ2*min1 * Σv2[i] + dim*min1*min2
+ *
+ * This saves 2 FMAs per chunk by deferring dequantization to scalar math at the end.
  *
  * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [inv_norm (float)]
- * Dequantization formula: dequantized_value = quantized_value * delta + min_val
  */
 
-// Helper function to perform inner product step for one chunk with dual dequantization
-static inline void SQ8_SQ8_InnerProductStep_SVE(const uint8_t *&pVec1, const uint8_t *&pVec2,
-                                                size_t &offset, svfloat32_t &sum,
-                                                const svfloat32_t &min_val_vec1,
-                                                const svfloat32_t &delta_vec1,
-                                                const svfloat32_t &min_val_vec2,
-                                                const svfloat32_t &delta_vec2, const size_t chunk) {
+// Helper function to perform inner product step with algebraic optimization
+static inline void SQ8_SQ8_InnerProductStep_SVE(const uint8_t *pVec1, const uint8_t *pVec2,
+                                                size_t offset, svfloat32_t &dot_sum,
+                                                svfloat32_t &sum1, svfloat32_t &sum2,
+                                                const size_t chunk) {
     svbool_t pg = svptrue_b32();
 
     // Load uint8 elements from pVec1 and convert to float
     svuint32_t v1_u32 = svld1ub_u32(pg, pVec1 + offset);
     svfloat32_t v1_f = svcvt_f32_u32_x(pg, v1_u32);
 
-    // Dequantize v1: (val * delta1) + min_val1
-    svfloat32_t v1_dequant = svmla_f32_x(pg, min_val_vec1, v1_f, delta_vec1);
-
     // Load uint8 elements from pVec2 and convert to float
     svuint32_t v2_u32 = svld1ub_u32(pg, pVec2 + offset);
     svfloat32_t v2_f = svcvt_f32_u32_x(pg, v2_u32);
 
-    // Dequantize v2: (val * delta2) + min_val2
-    svfloat32_t v2_dequant = svmla_f32_x(pg, min_val_vec2, v2_f, delta_vec2);
+    // Accumulate dot product: dot_sum += v1 * v2 (no dequantization)
+    dot_sum = svmla_f32_x(pg, dot_sum, v1_f, v2_f);
 
-    // Compute dot product and add to sum: sum += v1_dequant * v2_dequant
-    sum = svmla_f32_x(pg, sum, v1_dequant, v2_dequant);
-
-    // Move to the next set of elements
-    offset += chunk;
+    // Accumulate element sums
+    sum1 = svadd_f32_x(pg, sum1, v1_f);
+    sum2 = svadd_f32_x(pg, sum2, v2_f);
 }
 
 // Common implementation for inner product between two SQ8 vectors
@@ -65,21 +63,27 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
     const float min2 = *reinterpret_cast<const float *>(pVec2 + dimension);
     const float delta2 = *reinterpret_cast<const float *>(pVec2 + dimension + sizeof(float));
 
-    // Create broadcast vectors for SIMD operations
     svbool_t pg = svptrue_b32();
-    svfloat32_t min_val_vec1 = svdup_f32(min1);
-    svfloat32_t delta_vec1 = svdup_f32(delta1);
-    svfloat32_t min_val_vec2 = svdup_f32(min2);
-    svfloat32_t delta_vec2 = svdup_f32(delta2);
 
     // Get the number of 32-bit elements per vector at runtime
     uint64_t chunk = svcntw();
 
-    // Multiple accumulators to increase instruction-level parallelism
-    svfloat32_t sum0 = svdup_f32(0.0f);
-    svfloat32_t sum1 = svdup_f32(0.0f);
-    svfloat32_t sum2 = svdup_f32(0.0f);
-    svfloat32_t sum3 = svdup_f32(0.0f);
+    // Multiple accumulators for instruction-level parallelism
+    // dot_sum: accumulates v1[i] * v2[i]
+    // sum1: accumulates v1[i]
+    // sum2: accumulates v2[i]
+    svfloat32_t dot_sum0 = svdup_f32(0.0f);
+    svfloat32_t dot_sum1 = svdup_f32(0.0f);
+    svfloat32_t dot_sum2 = svdup_f32(0.0f);
+    svfloat32_t dot_sum3 = svdup_f32(0.0f);
+    svfloat32_t sum1_0 = svdup_f32(0.0f);
+    svfloat32_t sum1_1 = svdup_f32(0.0f);
+    svfloat32_t sum1_2 = svdup_f32(0.0f);
+    svfloat32_t sum1_3 = svdup_f32(0.0f);
+    svfloat32_t sum2_0 = svdup_f32(0.0f);
+    svfloat32_t sum2_1 = svdup_f32(0.0f);
+    svfloat32_t sum2_2 = svdup_f32(0.0f);
+    svfloat32_t sum2_3 = svdup_f32(0.0f);
 
     // Handle partial chunk if needed
     if constexpr (partial_chunk) {
@@ -93,18 +97,16 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
             svuint32_t v1_u32 = svld1ub_u32(pg_partial, pVec1 + offset);
             svfloat32_t v1_f = svcvt_f32_u32_z(pg_partial, v1_u32);
 
-            // Dequantize v1
-            svfloat32_t v1_dequant = svmla_f32_z(pg_partial, min_val_vec1, v1_f, delta_vec1);
-
             // Load and convert v2 elements
             svuint32_t v2_u32 = svld1ub_u32(pg_partial, pVec2 + offset);
             svfloat32_t v2_f = svcvt_f32_u32_z(pg_partial, v2_u32);
 
-            // Dequantize v2
-            svfloat32_t v2_dequant = svmla_f32_z(pg_partial, min_val_vec2, v2_f, delta_vec2);
+            // Accumulate dot product (no dequantization)
+            dot_sum0 = svmla_f32_z(pg_partial, dot_sum0, v1_f, v2_f);
 
-            // Compute dot product and add to sum
-            sum0 = svmla_f32_z(pg_partial, sum0, v1_dequant, v2_dequant);
+            // Accumulate element sums
+            sum1_0 = svadd_f32_z(pg_partial, sum1_0, v1_f);
+            sum2_0 = svadd_f32_z(pg_partial, sum2_0, v2_f);
 
             // Move past the partial chunk
             offset += remaining;
@@ -117,37 +119,45 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
         (dimension - (partial_chunk ? dimension % chunk : 0)) / chunk_size;
 
     for (size_t i = 0; i < number_of_chunks; i++) {
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum0, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum1, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum2, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum3, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, dot_sum0, sum1_0, sum2_0, chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset + chunk, dot_sum1, sum1_1, sum2_1, chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset + 2 * chunk, dot_sum2, sum1_2, sum2_2,
+                                     chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset + 3 * chunk, dot_sum3, sum1_3, sum2_3,
+                                     chunk);
+        offset += chunk_size;
     }
 
     // Handle remaining steps (0-3)
     if constexpr (additional_steps > 0) {
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum0, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, dot_sum0, sum1_0, sum2_0, chunk);
+        offset += chunk;
     }
     if constexpr (additional_steps > 1) {
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum1, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, dot_sum1, sum1_1, sum2_1, chunk);
+        offset += chunk;
     }
     if constexpr (additional_steps > 2) {
-        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, sum2, min_val_vec1, delta_vec1,
-                                     min_val_vec2, delta_vec2, chunk);
+        SQ8_SQ8_InnerProductStep_SVE(pVec1, pVec2, offset, dot_sum2, sum1_2, sum2_2, chunk);
     }
 
     // Combine the accumulators
-    svfloat32_t sum = svadd_f32_z(pg, sum0, sum1);
-    sum = svadd_f32_z(pg, sum, sum2);
-    sum = svadd_f32_z(pg, sum, sum3);
+    svfloat32_t dot_total = svadd_f32_x(pg, svadd_f32_x(pg, dot_sum0, dot_sum1),
+                                        svadd_f32_x(pg, dot_sum2, dot_sum3));
+    svfloat32_t sum1_total = svadd_f32_x(pg, svadd_f32_x(pg, sum1_0, sum1_1),
+                                         svadd_f32_x(pg, sum1_2, sum1_3));
+    svfloat32_t sum2_total = svadd_f32_x(pg, svadd_f32_x(pg, sum2_0, sum2_1),
+                                         svadd_f32_x(pg, sum2_2, sum2_3));
 
-    // Horizontal sum of all elements in the vector
-    return svaddv_f32(pg, sum);
+    // Horizontal sum of all elements
+    float dot_product = svaddv_f32(pg, dot_total);
+    float v1_sum = svaddv_f32(pg, sum1_total);
+    float v2_sum = svaddv_f32(pg, sum2_total);
+
+    // Apply algebraic formula:
+    // IP = δ1*δ2 * Σ(v1*v2) + δ1*min2 * Σv1 + δ2*min1 * Σv2 + dim*min1*min2
+    return delta1 * delta2 * dot_product + delta1 * min2 * v1_sum + delta2 * min1 * v2_sum +
+           static_cast<float>(dimension) * min1 * min2;
 }
 
 // SQ8-to-SQ8 Inner Product distance function
