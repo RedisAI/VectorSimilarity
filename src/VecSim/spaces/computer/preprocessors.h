@@ -171,11 +171,15 @@ public:
 
         // Calculate scaling factor
         const DataType diff = (max_val - min_val);
+        // Delta = diff / 255.0f
         const DataType delta = (diff == DataType{0}) ? DataType{1} : diff / DataType{255};
         const DataType inv_delta = DataType{1} / delta;
 
         // Quantize the values
         for (size_t i = 0; i < this->dim; i++) {
+            // We know (input - min) > 0
+            // If min == max, all values are the same and should be quantized to 0.
+            // Deconstruction will yield the same original value for all vectors.
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((input[i] - min_val) * inv_delta));
         }
 

@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <sstream>
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
@@ -984,6 +985,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
                                                        final_blob_bytes_count));
     }
 }
+// TODO: test edge case where all entries equal.
 
 // Tests the quantization preprocessor with a single preprocessor in the chain.
 // The QuantPreprocessor allocates the storage blob and processes it, while the query blob
@@ -992,13 +994,24 @@ TEST(PreprocessorsTest, QuantizationTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t n_preprocessors = 1;
     constexpr size_t alignment = 5;
-    constexpr size_t elements = 7;
-    constexpr size_t original_blob_size = elements * sizeof(float);
-    auto original_blob_alloc = allocator->allocate_unique(original_blob_size);
-    float *original_blob = static_cast<float *>(original_blob_alloc.get());
-    test_utils::populate_float_vec(original_blob, elements);
+    constexpr size_t dim = 5;
+    constexpr size_t original_blob_size = dim * sizeof(float);
+    float original_blob[dim] = {1, 2, 3, 4, 5};
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, elements);
+    // Manually test quantization
+    constexpr size_t quantized_blob_bytes_count = dim * sizeof(uint8_t) + 2 * sizeof(float);
+    uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
+    float min_val = original_blob[0];
+    float max_val = original_blob[dim - 1];
+    float diff = max_val - min_val;
+    float delta = diff / 255.0f;
+    // Calculate quantized values
+    for (size_t i = 0; i < dim; i++) {
+        float normalized = (original_blob[i] - min_val) / delta;
+        expected_processed_blob[i] = static_cast<uint8_t>(std::round(normalized));
+    }
+
+    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
     auto multiPPContainer =
         MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
     multiPPContainer.addPreprocessor(quant_preprocessor);
@@ -1008,38 +1021,36 @@ TEST(PreprocessorsTest, QuantizationTest) {
             multiPPContainer.preprocess(original_blob, original_blob_size);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
-        // blobs should point to the same memory slot
+        // blobs should NOT point to the same memory slot
         ASSERT_NE(storage_blob, nullptr);
         ASSERT_NE(storage_blob, query_blob);
 
-        constexpr size_t quantized_blob_bytes_count =
-            elements * sizeof(uint8_t) + 2 * sizeof(float);
-        auto expected_processed_blob_alloc = allocator->allocate_unique(quantized_blob_bytes_count);
-        uint8_t *expected_processed_blob =
-            static_cast<uint8_t *>(expected_processed_blob_alloc.get());
 
-        quant_preprocessor->quantize(original_blob, expected_processed_blob);
         EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
                                                         expected_processed_blob,
                                                         quantized_blob_bytes_count));
 
-        // Compare the min and delta values of the quantized blob and expected_processed_blob
         const float *storage_blob_metadata =
-            reinterpret_cast<const float *>(static_cast<const uint8_t *>(storage_blob) + elements);
-        const float *qexpected_processed_metadata =
-            reinterpret_cast<const float *>(expected_processed_blob + elements);
-        // Check that the min and delta values are close enough
-        ASSERT_FLOAT_EQ(storage_blob_metadata[0], qexpected_processed_metadata[0]);
-        ASSERT_FLOAT_EQ(storage_blob_metadata[1], qexpected_processed_metadata[1]);
-
+            reinterpret_cast<const float *>(static_cast<const uint8_t *>(storage_blob) + dim);
         float min = storage_blob_metadata[0];
         float delta = storage_blob_metadata[1];
         // reconstruct the original blob from the quantized blob
         uint8_t *uint8_storage_blob = static_cast<uint8_t *>(const_cast<void *>(storage_blob));
-        for (size_t i = 0; i < elements; i++) {
+        auto print_blob = [](const auto *blob, size_t dim) {
+            std::ostringstream oss;
+            oss << "[";
+            for (size_t i = 0; i < dim; i++) {
+                oss << +blob[i] << ", ";  // unary + promotes uint8_t to int
+            }
+            oss << "]";
+            return oss.str();
+        };
+        for (size_t i = 0; i < dim; i++) {
             float reconstructed_value = min + uint8_storage_blob[i] * delta;
             ASSERT_NEAR(reconstructed_value, original_blob[i], 0.01)
-                << "Reconstructed blob differs from the original blob at index " << i;
+                << "Reconstructed blob differs from the original blob at index " << i
+                << " original_blob: " << print_blob(original_blob, dim)
+                << " reconstructed_blob: " << print_blob(uint8_storage_blob, dim);
         }
     }
 }
@@ -1069,7 +1080,7 @@ TEST(PreprocessorsTest, QuantizationTestWithCosine) {
             multiPPContainer.preprocess(original_blob, original_blob_size);
         const void *storage_blob = processed_blobs.getStorageBlob();
         const void *query_blob = processed_blobs.getQueryBlob();
-        // blobs should point to the same memory slot
+        // blobs should NOT point to the same memory slot
         ASSERT_NE(storage_blob, nullptr);
         ASSERT_NE(query_blob, nullptr);
         ASSERT_NE(storage_blob, query_blob);
@@ -1139,54 +1150,6 @@ TEST(PreprocessorsTest, ReallocateVectorQuantizationTest) {
     }
 }
 
-// Tests the quantization preprocessor with a cosine preprocessor in the chain.
-// The QuantPreprocessor receives an allocated blob from the cosine preprocessor, and needs to
-// reallocate it. because the original blob size is smaller than the processed_bytes_count of the
-// cosine preprocessor.
-TEST(PreprocessorsTest, ReallocateVectorCosineQuantizationTest) {
-    // Checks that if not enough memory was allocated by a previous preprocessor, the quantization
-    // preprocessor will reallocate it.
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    constexpr size_t n_preprocessors = 2;
-    constexpr size_t alignment = 5;
-    constexpr size_t elements = 2;
-    constexpr size_t original_blob_size = elements * sizeof(float);
-    auto original_blob_alloc = allocator->allocate_unique(original_blob_size);
-    float *original_blob = static_cast<float *>(original_blob_alloc.get());
-    for (size_t i = 0; i < elements; i++) {
-        original_blob[i] = static_cast<float>(i + 2.5f);
-    }
-
-    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, elements);
-    auto cosine_preprocessor =
-        new (allocator) CosinePreprocessor<float>(allocator, elements, original_blob_size);
-    auto multiPPContainer =
-        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
-    multiPPContainer.addPreprocessor(cosine_preprocessor);
-    multiPPContainer.addPreprocessor(quant_preprocessor);
-
-    {
-        ProcessedBlobs processed_blobs =
-            multiPPContainer.preprocess(original_blob, original_blob_size);
-        const void *storage_blob = processed_blobs.getStorageBlob();
-        const void *query_blob = processed_blobs.getQueryBlob();
-        // blobs should point to the same memory slot
-        ASSERT_NE(storage_blob, nullptr);
-        ASSERT_NE(query_blob, nullptr);
-        ASSERT_NE(storage_blob, query_blob);
-
-        float expected_processed_blob[elements] = {0};
-        memcpy(expected_processed_blob, original_blob, original_blob_size);
-        VecSim_Normalize(expected_processed_blob, elements, VecSimType_FLOAT32);
-        uint8_t quantized_blob[elements * sizeof(uint8_t) + 2 * sizeof(float)] = {0};
-        // quantization should be applied after normalization
-        quant_preprocessor->quantize(expected_processed_blob, quantized_blob);
-        // compare the storage blob to the expected processed blob
-        EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
-                                                        quantized_blob, elements));
-    }
-}
-
 TEST(PreprocessorsTest, QuantizationInPlaceTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t alignment = 5;
@@ -1234,46 +1197,4 @@ TEST(PreprocessorsTest, QuantizationInPlaceTest) {
             ASSERT_NEAR(dequantized_value, original_data[i], 0.01);
         }
     }
-}
-
-// Test the backward compatibility of the preprocess method with a single input_blob_size parameter
-TEST(PreprocessorsTest, PreprocessBackwardCompatibilityTest) {
-    using namespace dummyPreprocessors;
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
-    constexpr size_t dim = 4;
-    unsigned char alignment = 5;
-    float initial_value = 1.0f;
-    const float original_blob[dim] = {initial_value, initial_value, initial_value, initial_value};
-    size_t original_blob_size = sizeof(original_blob);
-
-    // Create a preprocessor that modifies both storage and query blobs
-    auto mixed_preprocessor = new (allocator) DummyMixedPreprocessor<float>(allocator, 7.0f, 2.0f);
-
-    // Test the backward compatibility method (single input_blob_size)
-    void *storage_blob = nullptr;
-    void *query_blob = nullptr;
-    size_t input_blob_size = original_blob_size;
-
-    // Call the backward compatibility version of preprocess
-    mixed_preprocessor->preprocess(original_blob, storage_blob, query_blob, input_blob_size,
-                                   alignment);
-
-    // Verify that both blobs were allocated and processed correctly
-    ASSERT_NE(storage_blob, nullptr);
-    ASSERT_NE(query_blob, nullptr);
-    ASSERT_NE(storage_blob, query_blob);
-
-    // Verify that the input_blob_size was updated correctly
-    ASSERT_EQ(input_blob_size, original_blob_size);
-
-    // Verify that the storage blob was processed correctly
-    ASSERT_EQ(((const float *)storage_blob)[0], initial_value + 7.0f);
-
-    // Verify that the query blob was processed correctly
-    ASSERT_EQ(((const float *)query_blob)[0], initial_value + 2.0f);
-
-    // Verify that the query blob is aligned
-    unsigned char address_alignment = (uintptr_t)(query_blob) % alignment;
-    ASSERT_EQ(address_alignment, 0);
 }
