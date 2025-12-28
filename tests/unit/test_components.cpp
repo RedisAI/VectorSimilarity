@@ -1194,5 +1194,4 @@ TEST(PreprocessorsTest, QuantizationTestBlobSizeModification) {
     }
 
     allocator->free_allocation(quant_preprocessor);
-
 }
