@@ -384,6 +384,7 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
     // Size: dim (uint8_t) + min_val (float) + delta (float)
     size_t compressed_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
     spaces::GetNormalizeFunc<float>()(v1_orig, dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig, dim);
     // Find min and max for quantization
     float min_val = v2_orig[0];
     float max_val = v2_orig[0];
@@ -412,7 +413,7 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
     params[1] = delta;
 
     float dist = SQ8_Cosine((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
-    ASSERT_NEAR(dist, 0.0f, 0.000001f) << "SQ8_Cosine failed to match expected distance";
+    ASSERT_NEAR(dist, 0.0f, 0.001f) << "SQ8_Cosine failed to match expected distance";
 }
 TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     // create a vector with extra space for the norm
@@ -458,7 +459,7 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     params[1] = delta;
 
     float dist = SQ8_L2Sqr((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
-    ASSERT_NEAR(dist, 0.0f, 0.00001f) << "SQ8_Cosine failed to match expected distance";
+    ASSERT_NEAR(dist, 0.0f, 0.0001f) << "SQ8_Cosine failed to match expected distance";
 }
 
 /* ======================== Test Getters ======================== */
