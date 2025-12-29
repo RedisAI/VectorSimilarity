@@ -145,24 +145,79 @@ private:
  * lower precision representation using OUTPUT_TYPE (uint8_t).
  * Query vectors remain as DataType for asymmetric distance computation.
  *
- * The quantized storage blob contains the quantized values along with metadata (min value and
- * scaling factor) in a single contiguous blob. The quantization is done by finding the minimum and
- * maximum values of the input vector, and then scaling the values to fit in the range of [0, 255].
+ * The quantized storage blob contains the quantized values along with metadata (min value,
+ * scaling factor, and precomputed sums for reconstruction) in a single contiguous blob.
+ * The quantization is done by finding the minimum and maximum values of the input vector,
+ * and then scaling the values to fit in the range of [0, 255].
  *
- * The quantized blob size is: dim_elements * sizeof(OUTPUT_TYPE) + 2 * sizeof(DataType)
+ * Storage layout:
+ * | quantized_values[dim] | min_val | delta | sum | (sum_squares for L2 only) |
+ *
+ * The quantized blob size is:
+ * - For L2:        dim * sizeof(OUTPUT_TYPE) + 4 * sizeof(DataType)
+ * - For IP/Cosine: dim * sizeof(OUTPUT_TYPE) + 3 * sizeof(DataType)
+ *
+ * Reconstruction formulas:
+ * Given quantized value q_i, the original value is reconstructed as:
+ *   x_i ≈ min + delta * q_i
+ *
+ * === Asymmetric distance (storage x quantized, query y remains float) ===
+ *
+ * For IP/Cosine:
+ *   IP(x, y) = Σ(x_i * y_i)
+ *            ≈ Σ((min + delta * q_i) * y_i)
+ *            = min * Σy_i + delta * Σ(q_i * y_i)
+ *            = min * sum_query + delta * quantized_dot_product
+ *   where sum_query = Σy_i is computed at query time.
+ *
+ * For L2:
+ *   ||x - y||² = Σx_i² - 2*Σ(x_i * y_i) + Σy_i²
+ *              = sum_squares - 2 * IP(x, y) + sum_sq_query
+ *   where:
+ *     - sum_squares = Σx_i² is precomputed and stored
+ *     - IP(x, y) is computed using the formula above
+ *     - sum_sq_query = Σy_i² is computed at query time
+ *
+ * === Symmetric distance (both x and y are quantized) ===
+ *
+ * For IP/Cosine:
+ *   IP(x, y) = Σ((min_x + delta_x * qx_i) * (min_y + delta_y * qy_i))
+ *            = dim * min_x * min_y
+ *              + min_x * delta_y * Σqy_i + min_y * delta_x * Σqx_i
+ *              + delta_x * delta_y * Σ(qx_i * qy_i)
+ *            = dim * min_x * min_y
+ *              + min_x * (sum_y - dim * min_y) + min_y * (sum_x - dim * min_x)
+ *              + delta_x * delta_y * Σ(qx_i * qy_i)
+ *            = min_x * sum_y + min_y * sum_x - dim * min_x * min_y
+ *              + delta_x * delta_y * Σ(qx_i * qy_i)
+ *   where:
+ *     - sum_x, sum_y are precomputed sums of original values
+ *     - Σqx_i = (sum_x - dim * min_x) / delta_x  (sum of quantized values, derived from stored sum)
+ *     - Σqy_i = (sum_y - dim * min_y) / delta_y
+ *
+ * For L2:
+ *   ||x - y||² = sum_sq_x + sum_sq_y - 2 * IP(x, y)
+ *   where sum_sq_x, sum_sq_y are precomputed sums of squared original values.
  */
-template <typename DataType>
+template <typename DataType, VecSimMetric Metric>
 class QuantPreprocessor : public PreprocessorInterface {
     using OUTPUT_TYPE = uint8_t;
 
+    // For L2:   store sum + sum_of_squares (2 extra values)
+    // For IP/Cosine: store only sum (1 extra value)
+    static constexpr size_t extra_values_count = (Metric == VecSimMetric_L2) ? 2 : 1;
+    static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
+                      Metric == VecSimMetric_Cosine,
+                  "QuantPreprocessor only supports L2, IP and Cosine metrics");
+
 public:
-    // Constructor for backward compatibility (single blob size)
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
-          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) + 2 * sizeof(DataType)) {
+          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
+                              (2 + extra_values_count) * sizeof(DataType)) {
         static_assert(std::is_floating_point_v<DataType>,
                       "QuantPreprocessor only supports floating-point types");
-    } // quantized + min + delta
+    }
 
     // Helper function to perform quantization. This function is used by the storage preprocessing
     // methods.
@@ -177,12 +232,23 @@ public:
         const DataType delta = (diff == DataType{0}) ? DataType{1} : diff / DataType{255};
         const DataType inv_delta = DataType{1} / delta;
 
+        // Compute sum (and sum of squares for L2) while quantizing
+        DataType sum = DataType{0};
+        DataType sum_squares = DataType{0};
+
         // Quantize the values
         for (size_t i = 0; i < this->dim; i++) {
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((input[i] - min_val) * inv_delta));
+
+            // Accumulate sum for all metrics
+            sum += input[i];
+            // Accumulate sum of squares only for L2 metric
+            if constexpr (Metric == VecSimMetric_L2) {
+                sum_squares += input[i] * input[i];
+            }
         }
 
         DataType *metadata = reinterpret_cast<DataType *>(quantized + this->dim);
@@ -190,6 +256,12 @@ public:
         // Store min_val, delta, in the metadata
         metadata[0] = min_val;
         metadata[1] = delta;
+
+        // Store sum (for all metrics) and sum_squares (for L2 only)
+        metadata[2] = sum;
+        if constexpr (Metric == VecSimMetric_L2) {
+            metadata[3] = sum_squares;
+        }
     }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
@@ -201,8 +273,9 @@ public:
     /**
      * Quantizes the storage blob (DataType → OUTPUT_TYPE) while leaving the query blob unchanged.
      *
-     * Storage vectors are quantized, while query vectors remain as DataType for asymmetric distance
-     * computation.
+     * Storage vectors are quantized to uint8_t values, with metadata (min, delta, sum, and
+     * sum_squares for L2) appended for distance reconstruction. Query vectors remain as DataType
+     * for asymmetric distance computation.
      *
      * Note: query_blob and query_blob_size are not modified, nor allocated by this function.
      *
