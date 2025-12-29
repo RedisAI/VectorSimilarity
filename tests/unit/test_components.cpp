@@ -999,23 +999,31 @@ TEST(PreprocessorsTest, QuantizationTest) {
     float original_blob[dim] = {1, 2, 3, 4, 5};
 
     // Manually test quantization
-    constexpr size_t quantized_blob_bytes_count = dim * sizeof(uint8_t) + 2 * sizeof(float);
+    // For L2 metric: quantized values + min + delta + sum + sum_squares = dim + 4 floats
+    constexpr size_t quantized_blob_bytes_count = dim * sizeof(uint8_t) + 4 * sizeof(float);
     uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
     float min_val = original_blob[0];
     float max_val = original_blob[dim - 1];
     float diff = max_val - min_val;
     float delta = diff / 255.0f;
-    // Calculate quantized values
+    // Calculate quantized values, sum and sum_squares
+    float sum = 0.0f;
+    float sum_squares = 0.0f;
     for (size_t i = 0; i < dim; i++) {
         float normalized = (original_blob[i] - min_val) / delta;
         expected_processed_blob[i] = static_cast<uint8_t>(std::round(normalized));
+        sum += original_blob[i];
+        sum_squares += original_blob[i] * original_blob[i];
     }
 
     float *metadata = reinterpret_cast<float *>(expected_processed_blob + dim);
     metadata[0] = min_val;
     metadata[1] = delta;
+    metadata[2] = sum;
+    metadata[3] = sum_squares;
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
     auto multiPPContainer =
         MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
     multiPPContainer.addPreprocessor(quant_preprocessor);
@@ -1088,7 +1096,8 @@ TEST(PreprocessorsTest, QuantizationTestPreprocessQueryNoAlignment) {
     constexpr size_t original_blob_size = dim * sizeof(float);
     float original_blob[dim] = {1, 2, 3, 4, 5};
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
     auto multiPPContainer =
         MultiPreprocessorsContainer<float, n_preprocessors>(allocator, no_alignment);
     multiPPContainer.addPreprocessor(quant_preprocessor);
@@ -1107,7 +1116,8 @@ TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     constexpr unsigned char alignment = 0;
     float original_blob[dim] = {3.5f, 3.5f, 3.5f, 3.5f, 3.5f};
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
 
     void *storage_blob = nullptr;
     void *query_blob = nullptr;
@@ -1130,68 +1140,123 @@ TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     ASSERT_FLOAT_EQ(metadata[0], 3.5f); // min_val
     ASSERT_FLOAT_EQ(metadata[1], 1.0f); // delta (fallback)
 
-    // Dequantize and verify: min + quantized * delta = 3.5 + 0 * 1 = 3.5
+    // Verify sum and sum_squares for L2 metric
+    float expected_sum = 3.5f * dim;
+    float expected_sum_squares = 3.5f * 3.5f * dim;
+    ASSERT_FLOAT_EQ(metadata[2], expected_sum);         // sum
+    ASSERT_FLOAT_EQ(metadata[3], expected_sum_squares); // sum_squares
+
+    // Reconstruct and verify: min + quantized * delta = 3.5 + 0 * 1 = 3.5
     for (size_t i = 0; i < dim; ++i) {
-        float dequantized = metadata[0] + quantized[i] * metadata[1];
-        ASSERT_FLOAT_EQ(dequantized, original_blob[i]);
+        float reconstructed = metadata[0] + quantized[i] * metadata[1];
+        ASSERT_FLOAT_EQ(reconstructed, original_blob[i]);
     }
 
     allocator->free_allocation(storage_blob);
     delete quant_preprocessor;
 }
 
-// Test QuantPreprocessor API functions directly and verify blob sizes are modified
-TEST(PreprocessorsTest, QuantizationTestBlobSizeModification) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    constexpr size_t dim = 5;
-    constexpr unsigned char alignment = 0;
-    constexpr size_t original_blob_size = dim * sizeof(float);
-    constexpr size_t expected_storage_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
+// Parameterized test class for QuantPreprocessor with different metrics
+class QuantPreprocessorMetricTest : public testing::TestWithParam<VecSimMetric> {
+protected:
+    static constexpr size_t dim = 5;
+    static constexpr unsigned char alignment = 0;
+    static constexpr size_t original_blob_size = dim * sizeof(float);
+
+    std::shared_ptr<VecSimAllocator> allocator;
     float original_blob[dim] = {1, 2, 3, 4, 5};
 
-    auto quant_preprocessor = new (allocator) QuantPreprocessor<float>(allocator, dim);
+    void SetUp() override { allocator = VecSimAllocator::newVecsimAllocator(); }
 
-    // Test preprocess - storage_blob_size should be modified
-    {
-        void *storage_blob = nullptr;
-        void *query_blob = nullptr;
-        size_t storage_blob_size = original_blob_size;
-        size_t query_blob_size = original_blob_size;
-
-        quant_preprocessor->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
-                                       query_blob_size, alignment);
-
-        ASSERT_EQ(storage_blob_size, expected_storage_size)
-            << "preprocess should modify storage_blob_size";
-        ASSERT_EQ(query_blob_size, original_blob_size)
-            << "preprocess should not modify query_blob_size";
-
-        allocator->free_allocation(storage_blob);
+    // Helper to get expected storage size based on metric
+    static size_t getExpectedStorageSize(VecSimMetric metric) {
+        // L2: dim + 4 floats (min, delta, sum, sum_squares)
+        // IP/Cosine: dim + 3 floats (min, delta, sum)
+        size_t extra_floats = (metric == VecSimMetric_L2) ? 4 : 3;
+        return dim * sizeof(uint8_t) + extra_floats * sizeof(float);
     }
 
-    // Test preprocessForStorage - input_blob_size should be modified
-    {
-        void *blob = nullptr;
-        size_t blob_size = original_blob_size;
+    // Helper to run quantization test for a specific metric
+    template <VecSimMetric Metric>
+    void runQuantizationTest() {
+        size_t expected_storage_size = getExpectedStorageSize(Metric);
 
-        quant_preprocessor->preprocessForStorage(original_blob, blob, blob_size);
+        auto quant_preprocessor = new (allocator) QuantPreprocessor<float, Metric>(allocator, dim);
 
-        ASSERT_EQ(blob_size, expected_storage_size)
-            << "preprocessForStorage should modify blob_size";
+        // Test preprocess
+        {
+            void *storage_blob = nullptr;
+            void *query_blob = nullptr;
+            size_t storage_blob_size = original_blob_size;
+            size_t query_blob_size = original_blob_size;
 
-        allocator->free_allocation(blob);
+            quant_preprocessor->preprocess(original_blob, storage_blob, query_blob,
+                                           storage_blob_size, query_blob_size, alignment);
+
+            ASSERT_NE(storage_blob, nullptr);
+            ASSERT_EQ(storage_blob_size, expected_storage_size);
+            ASSERT_EQ(query_blob_size, original_blob_size);
+
+            // Verify metadata
+            const uint8_t *quantized = static_cast<const uint8_t *>(storage_blob);
+            const float *metadata = reinterpret_cast<const float *>(quantized + dim);
+
+            float expected_sum = 1 + 2 + 3 + 4 + 5; // 15
+            ASSERT_FLOAT_EQ(metadata[0], 1.0f);     // min_val
+            ASSERT_GT(metadata[1], 0.0f);           // delta > 0
+            ASSERT_FLOAT_EQ(metadata[2], expected_sum);
+
+            if constexpr (Metric == VecSimMetric_L2) {
+                float expected_sum_sq = 1 + 4 + 9 + 16 + 25; // 55
+                ASSERT_FLOAT_EQ(metadata[3], expected_sum_sq);
+            }
+
+            allocator->free_allocation(storage_blob);
+        }
+
+        // Test preprocessForStorage
+        {
+            void *blob = nullptr;
+            size_t blob_size = original_blob_size;
+
+            quant_preprocessor->preprocessForStorage(original_blob, blob, blob_size);
+
+            ASSERT_EQ(blob_size, expected_storage_size);
+            allocator->free_allocation(blob);
+        }
+
+        // Test preprocessQuery - should be no-op
+        {
+            void *blob = nullptr;
+            size_t blob_size = original_blob_size;
+
+            quant_preprocessor->preprocessQuery(original_blob, blob, blob_size, alignment);
+
+            ASSERT_EQ(blob_size, original_blob_size);
+            ASSERT_EQ(blob, nullptr);
+        }
+
+        delete quant_preprocessor;
     }
+};
 
-    // Test preprocessQuery - size should NOT be modified (no-op)
-    {
-        void *blob = nullptr;
-        size_t blob_size = original_blob_size;
-
-        quant_preprocessor->preprocessQuery(original_blob, blob, blob_size, alignment);
-
-        ASSERT_EQ(blob_size, original_blob_size) << "preprocessQuery should not modify blob_size";
-        ASSERT_EQ(blob, nullptr) << "preprocessQuery should not allocate blob";
+TEST_P(QuantPreprocessorMetricTest, QuantizationBlobSizeAndMetadata) {
+    VecSimMetric metric = GetParam();
+    switch (metric) {
+    case VecSimMetric_L2:
+        runQuantizationTest<VecSimMetric_L2>();
+        break;
+    case VecSimMetric_IP:
+        runQuantizationTest<VecSimMetric_IP>();
+        break;
+    case VecSimMetric_Cosine:
+        runQuantizationTest<VecSimMetric_Cosine>();
+        break;
     }
-
-    delete quant_preprocessor;
 }
+
+INSTANTIATE_TEST_SUITE_P(QuantPreprocessorTests, QuantPreprocessorMetricTest,
+                         testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine),
+                         [](const testing::TestParamInfo<VecSimMetric> &info) {
+                             return VecSimMetric_ToString(info.param);
+                         });
