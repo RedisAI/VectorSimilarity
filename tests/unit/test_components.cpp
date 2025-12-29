@@ -994,9 +994,9 @@ TEST(PreprocessorsTest, QuantizationTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t n_preprocessors = 1;
     constexpr size_t alignment = 5;
-    constexpr size_t dim = 5;
+    constexpr size_t dim = 6;
     constexpr size_t original_blob_size = dim * sizeof(float);
-    float original_blob[dim] = {1, 2, 3, 4, 5};
+    float original_blob[dim] = {1, 2, 3, 4, 5, 6};
 
     // Manually test quantization
     // For L2 metric: quantized values + min + delta + sum + sum_squares = dim + 4 floats
