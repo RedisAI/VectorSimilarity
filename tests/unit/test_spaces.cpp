@@ -2622,6 +2622,9 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
 
+    // Note: CreateSQ8QuantizedVectorWithSumNorm is defined later in this file
+    // We test precomputed version in the dedicated SQ8_SQ8_PrecomputedOptFuncs tests
+
 #ifdef OPT_SVE2
     if (optimization.sve2) {
         unsigned char alignment = 0;
@@ -2810,6 +2813,9 @@ TEST_P(SQ8_SQ8_Precomputed_SpacesOptimizationTest, SQ8_SQ8_Precomputed_CosineTes
 
     // Baseline: original SQ8_SQ8 implementation
     float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
+    float baseline_precomputed = SQ8_SQ8_Cosine_Precomputed(v1_precomputed.data(), v2_precomputed.data(), dim);
+
+    ASSERT_NEAR(baseline, baseline_precomputed, 0.01) << "Precomputed should match baseline";
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {

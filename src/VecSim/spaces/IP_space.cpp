@@ -248,7 +248,7 @@ dist_func_t<float> IP_SQ8_SQ8_Precomputed_GetDistFunc(size_t dim, unsigned char 
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = SQ8_SQ8_InnerProduct; // Fallback to original
+    dist_func_t<float> ret_dist_func = SQ8_SQ8_InnerProduct_Precomputed; // Fallback to original
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
@@ -287,7 +287,7 @@ dist_func_t<float> Cosine_SQ8_SQ8_Precomputed_GetDistFunc(size_t dim, unsigned c
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = SQ8_SQ8_Cosine; // Fallback to original
+    dist_func_t<float> ret_dist_func = SQ8_SQ8_Cosine_Precomputed; // Fallback to original
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64

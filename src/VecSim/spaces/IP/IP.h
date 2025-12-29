@@ -19,8 +19,14 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension);
 // SQ8-to-SQ8: Both vectors are uint8 quantized
 float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
 
+// SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum/norm
+float SQ8_SQ8_InnerProduct_Precomputed(const void *pVect1v, const void *pVect2v, size_t dimension);
+
 // SQ8-to-SQ8: Both vectors are uint8 quantized and normalized
 float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension);
+
+// SQ8-to-SQ8: Both vectors are uint8 quantized (cosine version) with precomputed sum/norm
+float SQ8_SQ8_Cosine_Precomputed(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
 
