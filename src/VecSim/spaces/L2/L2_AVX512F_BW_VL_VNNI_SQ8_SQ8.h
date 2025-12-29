@@ -22,6 +22,8 @@
  * Let c = min1 - min2, then:
  * L2² = Σ(q1[i]*δ1 - q2[i]*δ2 + c)²
  *     = δ1²*Σq1² + δ2²*Σq2² - 2*δ1*δ2*Σ(q1*q2) + 2*c*δ1*Σq1 - 2*c*δ2*Σq2 + dim*c²
+ * 
+ * TODO: store the vector's norm(Σq²) and sum Σq of elements in the vector data, and use it here.
  *
  * This allows using VNNI's _mm512_dpwssd_epi32 for efficient integer operations,
  * then applying scalar corrections at the end.
