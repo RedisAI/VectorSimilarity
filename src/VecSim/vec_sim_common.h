@@ -239,6 +239,22 @@ struct VecSimParams {
     void *logCtx; // External context that stores the index log.
 };
 
+// Parameters for creating a disk-based vector index. Currently only HNSW Disk is supported.
+typedef struct VecSimHNSWDiskParams {
+    size_t dim;
+    VecSimType type;
+    VecSimMetric metric;
+    size_t M;
+    size_t efConstruction;
+    size_t efRuntime;
+    size_t blockSize;
+    bool multi;
+    void *storage; // Opaque pointer to disk storage
+    const char *indexName;
+    size_t indexNameLen;
+    void *logCtx;
+} VecSimHNSWDiskParams;
+
 /**
  * The specific job types in use (to be extended in the future by demand)
  */
