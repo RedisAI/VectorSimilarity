@@ -210,15 +210,6 @@ class QuantPreprocessor : public PreprocessorInterface {
                       Metric == VecSimMetric_Cosine,
                   "QuantPreprocessor only supports L2, IP and Cosine metrics");
 
-public:
-    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
-        : PreprocessorInterface(allocator), dim(dim),
-          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              (2 + extra_values_count) * sizeof(DataType)) {
-        static_assert(std::is_floating_point_v<DataType>,
-                      "QuantPreprocessor only supports floating-point types");
-    }
-
     // Helper function to perform quantization. This function is used by the storage preprocessing
     // methods.
     void quantize(const DataType *input, OUTPUT_TYPE *quantized) const {
@@ -262,6 +253,15 @@ public:
         if constexpr (Metric == VecSimMetric_L2) {
             metadata[3] = sum_squares;
         }
+    }
+
+public:
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        : PreprocessorInterface(allocator), dim(dim),
+          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
+                              (2 + extra_values_count) * sizeof(DataType)) {
+        static_assert(std::is_floating_point_v<DataType>,
+                      "QuantPreprocessor only supports floating-point types");
     }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
