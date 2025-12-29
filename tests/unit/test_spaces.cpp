@@ -2930,8 +2930,8 @@ TEST(SQ8_SQ8_Precomputed_EdgeCases, ZeroVectorTest) {
 
     // Get baseline from original implementation
     auto orig_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-    auto orig_v_zero = populate_float_vec_to_sq8(v_zero.data(), dim);
-    auto orig_v_nonzero = populate_float_vec_to_sq8(v_nonzero.data(), dim);
+    auto orig_v_zero = CreateSQ8QuantizedVector(v_zero.data(), dim);
+    auto orig_v_nonzero = CreateSQ8QuantizedVector(v_nonzero.data(), dim);
     float baseline = orig_func(orig_v_zero.data(), orig_v_nonzero.data(), dim);
 
     auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
@@ -2962,8 +2962,8 @@ TEST(SQ8_SQ8_Precomputed_EdgeCases, ConstantVectorTest) {
 
     // Get baseline from original implementation
     auto orig_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-    auto orig_v_const = populate_float_vec_to_sq8(v_const.data(), dim);
-    auto orig_v_random = populate_float_vec_to_sq8(v_random.data(), dim);
+    auto orig_v_const = CreateSQ8QuantizedVector(v_const.data(), dim);
+    auto orig_v_random = CreateSQ8QuantizedVector(v_random.data(), dim);
     float baseline = orig_func(orig_v_const.data(), orig_v_random.data(), dim);
 
     auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
@@ -2988,17 +2988,17 @@ TEST(SQ8_SQ8_Precomputed_EdgeCases, ExtremeValuesTest) {
         v2[i] = (i % 3 == 0) ? 1.0f : -1.0f;
     }
 
-    auto v1_quantized = CreateSQ8QuantizedVectorWithSumNorm(v1.data(), dim);
-    auto v2_quantized = CreateSQ8QuantizedVectorWithSumNorm(v2.data(), dim);
+    auto v1_precomputed = CreateSQ8QuantizedVectorWithSumNorm(v1.data(), dim);
+    auto v2_precomputed = CreateSQ8QuantizedVectorWithSumNorm(v2.data(), dim);
 
     // Get baseline from original implementation
     auto orig_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-    auto orig_v1 = populate_float_vec_to_sq8(v1.data(), dim);
-    auto orig_v2 = populate_float_vec_to_sq8(v2.data(), dim);
+    auto orig_v1 = CreateSQ8QuantizedVector(v1.data(), dim);
+    auto orig_v2 = CreateSQ8QuantizedVector(v2.data(), dim);
     float baseline = orig_func(orig_v1.data(), orig_v2.data(), dim);
 
     auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-    float result = ip_func(v1_quantized.data(), v2_quantized.data(), dim);
+    float result = ip_func(v1_precomputed.data(), v2_precomputed.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values IP should match baseline";
 }
@@ -3027,8 +3027,8 @@ TEST(SQ8_SQ8_Precomputed_EdgeCases, AccuracyStressTest) {
             v2[i] = dist(rng);
         }
 
-        auto orig_v1 = populate_float_vec_to_sq8(v1.data(), dim);
-        auto orig_v2 = populate_float_vec_to_sq8(v2.data(), dim);
+        auto orig_v1 = CreateSQ8QuantizedVector(v1.data(), dim);
+        auto orig_v2 = CreateSQ8QuantizedVector(v2.data(), dim);
         float baseline = orig_ip_func(orig_v1.data(), orig_v2.data(), dim);
 
         auto precomp_v1 = CreateSQ8QuantizedVectorWithSumNorm(v1.data(), dim);
