@@ -18,6 +18,7 @@
 #include "VecSim/spaces/L2/L2_NEON_SQ8.h"
 #include "VecSim/spaces/IP/IP_NEON_SQ8.h"
 #include "VecSim/spaces/IP/IP_NEON_SQ8_SQ8.h"
+#include "VecSim/spaces/IP/IP_NEON_SQ8_SQ8_Precomputed.h"
 
 namespace spaces {
 
@@ -110,6 +111,19 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON(size_t dim) {
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_SQ8_CosineSIMD16_NEON);
+    return ret_dist_func;
+}
+
+// SQ8-to-SQ8 precomputed distance functions (with precomputed sum/norm)
+dist_func_t<float> Choose_SQ8_SQ8_Precomputed_IP_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_SQ8_Precomputed_InnerProductSIMD16_NEON);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_SQ8_Precomputed_Cosine_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_SQ8_Precomputed_CosineSIMD16_NEON);
     return ret_dist_func;
 }
 

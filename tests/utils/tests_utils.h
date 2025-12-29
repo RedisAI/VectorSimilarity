@@ -107,7 +107,7 @@ static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
  * where sum = Σv[i] and norm = Σv[i]² (sum of squares of uint8 elements)
  */
 static void quantize_float_vec_to_uint8_with_sum_norm(float *v, size_t dim, uint8_t *qv,
-                                                       int seed = 1234) {
+                                                      int seed = 1234) {
     float min_val = v[0];
     float max_val = v[0];
     for (size_t i = 1; i < dim; i++) {

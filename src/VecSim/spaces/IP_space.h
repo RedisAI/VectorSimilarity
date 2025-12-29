@@ -36,4 +36,12 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment =
                                           const void *arch_opt = nullptr);
 dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                               const void *arch_opt = nullptr);
+
+// SQ8-to-SQ8 precomputed distance functions (with precomputed sum/norm)
+dist_func_t<float> IP_SQ8_SQ8_Precomputed_GetDistFunc(size_t dim,
+                                                      unsigned char *alignment = nullptr,
+                                                      const void *arch_opt = nullptr);
+dist_func_t<float> Cosine_SQ8_SQ8_Precomputed_GetDistFunc(size_t dim,
+                                                          unsigned char *alignment = nullptr,
+                                                          const void *arch_opt = nullptr);
 } // namespace spaces

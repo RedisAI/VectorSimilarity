@@ -2779,8 +2779,7 @@ TEST_P(SQ8_SQ8_Precomputed_SpacesOptimizationTest, SQ8_SQ8_Precomputed_InnerProd
             precomputed_func(v1_precomputed.data(), v2_precomputed.data(), dim);
 
         // Precomputed should match baseline (within tolerance for float precision)
-        ASSERT_NEAR(baseline, precomputed_result, 0.01)
-            << "AVX512 Precomputed IP with dim " << dim;
+        ASSERT_NEAR(baseline, precomputed_result, 0.01) << "AVX512 Precomputed IP with dim " << dim;
     }
 #endif
 }

@@ -25,4 +25,8 @@ dist_func_t<float> Choose_UINT8_L2_implementation_NEON_DOTPROD(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(size_t dim);
 
+// SQ8-to-SQ8 precomputed distance functions (with precomputed sum/norm)
+dist_func_t<float> Choose_SQ8_SQ8_Precomputed_IP_implementation_NEON_DOTPROD(size_t dim);
+dist_func_t<float> Choose_SQ8_SQ8_Precomputed_Cosine_implementation_NEON_DOTPROD(size_t dim);
+
 } // namespace spaces
