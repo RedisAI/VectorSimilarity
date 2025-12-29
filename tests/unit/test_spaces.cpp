@@ -319,8 +319,8 @@ void common_ip_sq8(bool should_normalize, float expected_dist) {
     }
 
     // Create SQ8 compressed version of v2
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
-    size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    // Size: dim (uint8_t) + min_val (float) + delta (float)
+    size_t compressed_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
     if (should_normalize) {
         spaces::GetNormalizeFunc<float>()(v1_orig, dim);
         spaces::GetNormalizeFunc<float>()(v2_orig, dim);
@@ -334,7 +334,7 @@ void common_ip_sq8(bool should_normalize, float expected_dist) {
         max_val = std::max(max_val, v2_orig[i]);
     }
 
-    // Calculate delta and inverse norm
+    // Calculate delta
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
@@ -372,7 +372,6 @@ TEST_F(SpacesTest, SQ8_ip_no_optimization_func_test) {
 TEST_F(SpacesTest, SQ8_ip_no_optimization_norm_func_test) { common_ip_sq8(true, 0.0f); }
 
 TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
-    // create a vector with extra space for the norm
     size_t dim = 5;
 
     // Create original vectors
@@ -382,8 +381,8 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
         v2_orig[i] = float(i + 1.5);
     }
 
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
-    size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    // Size: dim (uint8_t) + min_val (float) + delta (float)
+    size_t compressed_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
     spaces::GetNormalizeFunc<float>()(v1_orig, dim);
     // Find min and max for quantization
     float min_val = v2_orig[0];
@@ -392,7 +391,7 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
         min_val = std::min(min_val, v2_orig[i]);
         max_val = std::max(max_val, v2_orig[i]);
     }
-    // Calculate delta and inverse norm
+    // Calculate delta
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
@@ -408,17 +407,9 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
         normalized = std::max(0.0f, std::min(255.0f, normalized));
         quant_values[i] = static_cast<uint8_t>(std::round(normalized));
     }
-    // Calculate inverse norm from decompressed values
-    float inv_norm = 0.0f;
-    for (size_t i = 0; i < dim; i++) {
-        float decompressed_value = min_val + quant_values[i] * delta;
-        inv_norm += decompressed_value * decompressed_value;
-    }
-    inv_norm = 1.0f / std::sqrt(inv_norm);
     // Store parameters
     params[0] = min_val;
     params[1] = delta;
-    params[2] = inv_norm;
 
     float dist = SQ8_Cosine((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
     ASSERT_NEAR(dist, 0.0f, 0.000001f) << "SQ8_Cosine failed to match expected distance";
@@ -434,8 +425,8 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
         v2_orig[i] = float(i + 1.5);
     }
 
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + inv_norm (float)
-    size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    // Size: dim (uint8_t) + min_val (float) + delta (float)
+    size_t compressed_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
     spaces::GetNormalizeFunc<float>()(v1_orig, dim);
     spaces::GetNormalizeFunc<float>()(v2_orig, dim);
     // Find min and max for quantization
@@ -445,7 +436,7 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
         min_val = std::min(min_val, v2_orig[i]);
         max_val = std::max(max_val, v2_orig[i]);
     }
-    // Calculate delta and inverse norm
+    // Calculate delta
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
@@ -461,17 +452,10 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
         normalized = std::max(0.0f, std::min(255.0f, normalized));
         quant_values[i] = static_cast<uint8_t>(std::round(normalized));
     }
-    // Calculate inverse norm from decompressed values
-    float inv_norm = 0.0f;
-    for (size_t i = 0; i < dim; i++) {
-        float decompressed_value = min_val + quant_values[i] * delta;
-        inv_norm += decompressed_value * decompressed_value;
-    }
-    inv_norm = 1.0f / std::sqrt(inv_norm);
+
     // Store parameters
     params[0] = min_val;
     params[1] = delta;
-    params[2] = inv_norm;
 
     float dist = SQ8_L2Sqr((const void *)v1_orig, (const void *)v2_compressed.data(), dim);
     ASSERT_NEAR(dist, 0.0f, 0.00001f) << "SQ8_Cosine failed to match expected distance";
@@ -2067,8 +2051,8 @@ std::vector<uint8_t> CreateSQ8CompressedVector(const float *original, size_t dim
     // Create a copy of the original vector that we can modify
     std::vector<float> vec_copy(original, original + dim);
 
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + norm (float)
-    size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    // Size: dim (uint8_t) + min_val (float) + delta (float)
+    size_t compressed_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
     std::vector<uint8_t> compressed(compressed_size);
 
     // Find min and max for quantization
@@ -2086,21 +2070,16 @@ std::vector<uint8_t> CreateSQ8CompressedVector(const float *original, size_t dim
 
     // Quantize vector
     uint8_t *quant_values = compressed.data();
-    float norm = 0.0f;
     // Quantize each value
     for (size_t i = 0; i < dim; i++) {
         float normalized = (vec_copy[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));
         quant_values[i] = static_cast<uint8_t>(std::round(normalized));
-        norm += (quant_values[i] * delta + min_val) * (quant_values[i] * delta + min_val);
     }
-
-    float inv_norm = 1.0f / std::sqrt(norm);
     // Store parameters
     float *params = reinterpret_cast<float *>(quant_values + dim);
     params[0] = min_val;
     params[1] = delta;
-    params[2] = inv_norm;
 
     return compressed;
 }

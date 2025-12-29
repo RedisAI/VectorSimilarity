@@ -25,9 +25,9 @@ public:
 
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
-        // Allocate both vectors with extra space for min, delta and inv_norm
-        v1 = new uint8_t[dim + sizeof(float) * 3];
-        v2 = new uint8_t[dim + sizeof(float) * 3];
+        // Allocate both vectors with extra space for min and delta
+        v1 = new uint8_t[dim + sizeof(float) * 2];
+        v2 = new uint8_t[dim + sizeof(float) * 2];
         test_utils::populate_float_vec_to_sq8(v1, dim, 123);
         test_utils::populate_float_vec_to_sq8(v2, dim, 1234);
     }

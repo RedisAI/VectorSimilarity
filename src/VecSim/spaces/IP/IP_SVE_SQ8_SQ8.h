@@ -22,7 +22,7 @@
  *
  * All sums are computed using integer dot product instructions, converted to float only at the end.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [inv_norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
  */
 
 // Helper function to perform inner product step using integer dot product
