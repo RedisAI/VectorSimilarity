@@ -78,20 +78,16 @@ static void quantize_float_vec_to_uint8(float *v, size_t dim, uint8_t *qv, int s
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
-    float norm = 0.0f;
     // Quantize each value
     for (size_t i = 0; i < dim; i++) {
         float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));
         qv[i] = static_cast<uint8_t>(std::round(normalized));
-        norm += (qv[i] * delta + min_val) * (qv[i] * delta + min_val);
     }
-    float inv_norm = 1.0f / std::sqrt(norm);
     // Store parameters
     float *params = reinterpret_cast<float *>(qv + dim);
     params[0] = min_val;
     params[1] = delta;
-    params[2] = inv_norm;
 }
 
 static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
