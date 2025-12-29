@@ -2830,3 +2830,218 @@ TEST_P(SQ8_SQ8_Precomputed_SpacesOptimizationTest, SQ8_SQ8_Precomputed_CosineTes
 // Test suite covers dimensions 64-128 to exercise AVX512 SIMD paths
 INSTANTIATE_TEST_SUITE_P(SQ8_SQ8_PrecomputedOptFuncs, SQ8_SQ8_Precomputed_SpacesOptimizationTest,
                          testing::Range(64UL, 64 * 2UL + 1));
+
+// Additional test suite for smaller dimensions (1-63) to test residual handling
+INSTANTIATE_TEST_SUITE_P(SQ8_SQ8_PrecomputedOptFuncs_SmallDim,
+                         SQ8_SQ8_Precomputed_SpacesOptimizationTest,
+                         testing::Values(1UL, 7UL, 15UL, 16UL, 31UL, 32UL, 33UL, 48UL, 63UL));
+
+// Test suite for larger dimensions to stress-test the implementation
+INSTANTIATE_TEST_SUITE_P(SQ8_SQ8_PrecomputedOptFuncs_LargeDim,
+                         SQ8_SQ8_Precomputed_SpacesOptimizationTest,
+                         testing::Values(256UL, 512UL, 768UL, 1024UL, 1536UL));
+
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+// Test self-distance: distance to itself should be 0 for cosine (normalized vectors)
+TEST(SQ8_SQ8_Precomputed_EdgeCases, SelfDistanceCosine) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!(optimization.avx512f && optimization.avx512bw && optimization.avx512vnni)) {
+        GTEST_SKIP() << "AVX512 VNNI not available";
+    }
+
+    size_t dim = 128;
+    std::vector<float> v_orig(dim);
+
+    // Create a normalized vector
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    float norm = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        v_orig[i] = dist(rng);
+        norm += v_orig[i] * v_orig[i];
+    }
+    norm = std::sqrt(norm);
+    for (size_t i = 0; i < dim; i++) {
+        v_orig[i] /= norm;
+    }
+
+    auto v_quantized = CreateSQ8QuantizedVectorWithSumNorm(v_orig.data(), dim);
+
+    auto precomputed_func =
+        spaces::Choose_SQ8_SQ8_Precomputed_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+    float self_distance = precomputed_func(v_quantized.data(), v_quantized.data(), dim);
+
+    // Self-distance for cosine should be close to 0
+    ASSERT_NEAR(self_distance, 0.0f, 0.02f) << "Self-distance should be ~0 for cosine";
+}
+
+// Test symmetry: dist(v1, v2) == dist(v2, v1)
+TEST(SQ8_SQ8_Precomputed_EdgeCases, SymmetryTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!(optimization.avx512f && optimization.avx512bw && optimization.avx512vnni)) {
+        GTEST_SKIP() << "AVX512 VNNI not available";
+    }
+
+    size_t dim = 128;
+    std::vector<float> v1_orig(dim), v2_orig(dim);
+
+    std::mt19937 rng(123);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = dist(rng);
+        v2_orig[i] = dist(rng);
+    }
+
+    auto v1_quantized = CreateSQ8QuantizedVectorWithSumNorm(v1_orig.data(), dim);
+    auto v2_quantized = CreateSQ8QuantizedVectorWithSumNorm(v2_orig.data(), dim);
+
+    auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    auto cosine_func =
+        spaces::Choose_SQ8_SQ8_Precomputed_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+
+    float ip_12 = ip_func(v1_quantized.data(), v2_quantized.data(), dim);
+    float ip_21 = ip_func(v2_quantized.data(), v1_quantized.data(), dim);
+    ASSERT_NEAR(ip_12, ip_21, 1e-6f) << "IP should be symmetric";
+
+    float cos_12 = cosine_func(v1_quantized.data(), v2_quantized.data(), dim);
+    float cos_21 = cosine_func(v2_quantized.data(), v1_quantized.data(), dim);
+    ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Cosine should be symmetric";
+}
+
+// Test with zero vector
+TEST(SQ8_SQ8_Precomputed_EdgeCases, ZeroVectorTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!(optimization.avx512f && optimization.avx512bw && optimization.avx512vnni)) {
+        GTEST_SKIP() << "AVX512 VNNI not available";
+    }
+
+    size_t dim = 128;
+    std::vector<float> v_zero(dim, 0.0f);
+    std::vector<float> v_nonzero(dim);
+
+    std::mt19937 rng(456);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (size_t i = 0; i < dim; i++) {
+        v_nonzero[i] = dist(rng);
+    }
+
+    auto v_zero_quantized = CreateSQ8QuantizedVectorWithSumNorm(v_zero.data(), dim);
+    auto v_nonzero_quantized = CreateSQ8QuantizedVectorWithSumNorm(v_nonzero.data(), dim);
+
+    // Get baseline from original implementation
+    auto orig_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    auto orig_v_zero = populate_float_vec_to_sq8(v_zero.data(), dim);
+    auto orig_v_nonzero = populate_float_vec_to_sq8(v_nonzero.data(), dim);
+    float baseline = orig_func(orig_v_zero.data(), orig_v_nonzero.data(), dim);
+
+    auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    float result = ip_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+
+    ASSERT_NEAR(result, baseline, 0.01f) << "Zero vector IP should match baseline";
+}
+
+// Test with constant vector (all same values)
+TEST(SQ8_SQ8_Precomputed_EdgeCases, ConstantVectorTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!(optimization.avx512f && optimization.avx512bw && optimization.avx512vnni)) {
+        GTEST_SKIP() << "AVX512 VNNI not available";
+    }
+
+    size_t dim = 128;
+    std::vector<float> v_const(dim, 0.5f);
+    std::vector<float> v_random(dim);
+
+    std::mt19937 rng(789);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (size_t i = 0; i < dim; i++) {
+        v_random[i] = dist(rng);
+    }
+
+    auto v_const_quantized = CreateSQ8QuantizedVectorWithSumNorm(v_const.data(), dim);
+    auto v_random_quantized = CreateSQ8QuantizedVectorWithSumNorm(v_random.data(), dim);
+
+    // Get baseline from original implementation
+    auto orig_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    auto orig_v_const = populate_float_vec_to_sq8(v_const.data(), dim);
+    auto orig_v_random = populate_float_vec_to_sq8(v_random.data(), dim);
+    float baseline = orig_func(orig_v_const.data(), orig_v_random.data(), dim);
+
+    auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    float result = ip_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+
+    ASSERT_NEAR(result, baseline, 0.01f) << "Constant vector IP should match baseline";
+}
+
+// Test with extreme values (-1 and 1 only)
+TEST(SQ8_SQ8_Precomputed_EdgeCases, ExtremeValuesTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!(optimization.avx512f && optimization.avx512bw && optimization.avx512vnni)) {
+        GTEST_SKIP() << "AVX512 VNNI not available";
+    }
+
+    size_t dim = 128;
+    std::vector<float> v1(dim), v2(dim);
+
+    // Alternating extreme values
+    for (size_t i = 0; i < dim; i++) {
+        v1[i] = (i % 2 == 0) ? 1.0f : -1.0f;
+        v2[i] = (i % 3 == 0) ? 1.0f : -1.0f;
+    }
+
+    auto v1_quantized = CreateSQ8QuantizedVectorWithSumNorm(v1.data(), dim);
+    auto v2_quantized = CreateSQ8QuantizedVectorWithSumNorm(v2.data(), dim);
+
+    // Get baseline from original implementation
+    auto orig_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    auto orig_v1 = populate_float_vec_to_sq8(v1.data(), dim);
+    auto orig_v2 = populate_float_vec_to_sq8(v2.data(), dim);
+    float baseline = orig_func(orig_v1.data(), orig_v2.data(), dim);
+
+    auto ip_func = spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    float result = ip_func(v1_quantized.data(), v2_quantized.data(), dim);
+
+    ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values IP should match baseline";
+}
+
+// Test accuracy across multiple random vector pairs
+TEST(SQ8_SQ8_Precomputed_EdgeCases, AccuracyStressTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!(optimization.avx512f && optimization.avx512bw && optimization.avx512vnni)) {
+        GTEST_SKIP() << "AVX512 VNNI not available";
+    }
+
+    size_t dim = 256;
+    const int num_iterations = 100;
+    std::mt19937 rng(999);
+    std::uniform_real_distribution<float> dist(-10.0f, 10.0f);
+
+    auto orig_ip_func = spaces::Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    auto precomputed_ip_func =
+        spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+
+    float max_error = 0.0f;
+    for (int iter = 0; iter < num_iterations; iter++) {
+        std::vector<float> v1(dim), v2(dim);
+        for (size_t i = 0; i < dim; i++) {
+            v1[i] = dist(rng);
+            v2[i] = dist(rng);
+        }
+
+        auto orig_v1 = populate_float_vec_to_sq8(v1.data(), dim);
+        auto orig_v2 = populate_float_vec_to_sq8(v2.data(), dim);
+        float baseline = orig_ip_func(orig_v1.data(), orig_v2.data(), dim);
+
+        auto precomp_v1 = CreateSQ8QuantizedVectorWithSumNorm(v1.data(), dim);
+        auto precomp_v2 = CreateSQ8QuantizedVectorWithSumNorm(v2.data(), dim);
+        float result = precomputed_ip_func(precomp_v1.data(), precomp_v2.data(), dim);
+
+        float error = std::abs(result - baseline);
+        max_error = std::max(max_error, error);
+
+        ASSERT_NEAR(result, baseline, 0.01f) << "Iteration " << iter << " failed";
+    }
+
+    // Log max error for informational purposes
+    ASSERT_LT(max_error, 0.01f) << "Max error across all iterations: " << max_error;
+}
+#endif
