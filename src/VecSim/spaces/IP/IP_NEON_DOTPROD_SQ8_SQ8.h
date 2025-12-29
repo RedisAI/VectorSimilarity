@@ -161,9 +161,10 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD(const void *pVec1v, const void *pV
 }
 
 // SQ8-to-SQ8 Cosine distance function
-// Assumes both vectors are normalized.
+
 // Returns 1 - inner_product
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_CosineSIMD64_NEON_DOTPROD(const void *pVec1v, const void *pVec2v, size_t dimension) {
+    // Assumes both vectors are normalized.
     return 1.0f - SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP<residual>(pVec1v, pVec2v, dimension);
 }

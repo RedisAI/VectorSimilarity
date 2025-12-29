@@ -21,7 +21,7 @@ static inline void SQ8_L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, _
     // Convert uint8 to float
     __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
 
-    // Dequantize: (val * delta + min_val) * inv_norm
+    // Dequantize: (val * delta) + min_val
     __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
 
     // Compute difference
@@ -42,7 +42,7 @@ float SQ8_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2
     const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
     const float *pEnd1 = pVect1 + dimension;
 
-    // Get dequantization parameters from the end of pVect2
+    // Get dequantization parameters
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
 
@@ -66,7 +66,7 @@ float SQ8_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2
         __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
         __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
 
-        // Dequantize: (val * delta + min_val) * inv_norm
+        // Dequantize: (val * delta) + min_val
         __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
 
         // Compute difference

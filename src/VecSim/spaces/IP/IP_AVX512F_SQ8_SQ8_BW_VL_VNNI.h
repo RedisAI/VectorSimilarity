@@ -19,6 +19,7 @@
  *
  * IP = Σ (v1[i]*δ1 + min1) * (v2[i]*δ2 + min2)
  *    = δ1*δ2 * Σ(v1[i]*v2[i]) + δ1*min2 * Σv1[i] + δ2*min1 * Σv2[i] + dim*min1*min2
+ * TODO: Can store the vector's norm and sum of elements in the vector data, and use it here.
  *
  * This allows using VNNI's _mm512_dpwssd_epi32 for efficient integer dot product,
  * then applying scalar corrections at the end.
@@ -172,19 +173,14 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                     size_t dimension) {
-    float ip = SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
-    return 1.0f - ip;
+    return 1.0f - SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
 }
 
 // SQ8-to-SQ8 Cosine distance function
-// Assumes both vectors are normalized.
 // Returns 1 - (inner_product)
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                               size_t dimension) {
-    // Calculate inner product
-    float ip = SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
-
-    // Return cosine similarity
-    return 1.0f - ip;
+    // Assume vectors are normalized.
+    return 1.0f - SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
 }

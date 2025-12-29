@@ -25,7 +25,7 @@
  *
  * Also uses multiple accumulators for better instruction-level parallelism.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [inv_norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
  */
 
 // Process 16 elements with algebraic optimization
@@ -143,13 +143,6 @@ float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                           size_t dimension) {
-    // Get the inverse norm factor stored after min_val and delta
-    const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
-    const float inv_norm = *reinterpret_cast<const float *>(pVec2 + dimension + 2 * sizeof(float));
-
-    // Calculate inner product using common implementation with normalization
-    float ip = SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
-
-    // The cosine similarity is 1 - ip
-    return 1.0f - ip * inv_norm;
+    // Assume vectors are normalized.
+    return 1.0f - SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 }
