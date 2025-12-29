@@ -78,20 +78,16 @@ static void quantize_float_vec_to_uint8(float *v, size_t dim, uint8_t *qv, int s
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
-    float norm = 0.0f;
     // Quantize each value
     for (size_t i = 0; i < dim; i++) {
         float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));
         qv[i] = static_cast<uint8_t>(std::round(normalized));
-        norm += (qv[i] * delta + min_val) * (qv[i] * delta + min_val);
     }
-    float inv_norm = 1.0f / std::sqrt(norm);
     // Store parameters
     float *params = reinterpret_cast<float *>(qv + dim);
     params[0] = min_val;
     params[1] = delta;
-    params[2] = inv_norm;
 }
 
 static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
@@ -103,6 +99,57 @@ static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
         vec[i] = dis(gen);
     }
     quantize_float_vec_to_uint8(vec.data(), dim, v, seed);
+}
+
+/**
+ * Quantize float vector to SQ8 with precomputed sum and norm.
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+ * where sum = Σv[i] and norm = Σv[i]² (sum of squares of uint8 elements)
+ */
+static void quantize_float_vec_to_uint8_with_sum_norm(float *v, size_t dim, uint8_t *qv,
+                                                       int seed = 1234) {
+    float min_val = v[0];
+    float max_val = v[0];
+    for (size_t i = 1; i < dim; i++) {
+        min_val = std::min(min_val, v[i]);
+        max_val = std::max(max_val, v[i]);
+    }
+    // Calculate delta
+    float delta = (max_val - min_val) / 255.0f;
+    if (delta == 0)
+        delta = 1.0f; // Avoid division by zero
+
+    // Quantize each value and compute sum and norm
+    float sum = 0.0f;
+    float norm = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        float normalized = (v[i] - min_val) / delta;
+        normalized = std::max(0.0f, std::min(255.0f, normalized));
+        qv[i] = static_cast<uint8_t>(std::round(normalized));
+        sum += static_cast<float>(qv[i]);
+        norm += static_cast<float>(qv[i]) * static_cast<float>(qv[i]);
+    }
+
+    // Store parameters: [min, delta, sum, norm]
+    float *params = reinterpret_cast<float *>(qv + dim);
+    params[0] = min_val;
+    params[1] = delta;
+    params[2] = sum;
+    params[3] = norm;
+}
+
+/**
+ * Populate a float vector and quantize to SQ8 with precomputed sum and norm.
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+ */
+static void populate_float_vec_to_sq8_with_sum_norm(uint8_t *v, size_t dim, int seed = 1234) {
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    std::vector<float> vec(dim);
+    for (size_t i = 0; i < dim; i++) {
+        vec[i] = dis(gen);
+    }
+    quantize_float_vec_to_uint8_with_sum_norm(vec.data(), dim, v, seed);
 }
 
 template <typename datatype>

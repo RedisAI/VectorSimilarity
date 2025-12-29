@@ -45,8 +45,7 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
     // Compute inner product with dequantization
-    const float res =
-        FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta);
+    const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta);
     return 1.0f - res;
 }
 

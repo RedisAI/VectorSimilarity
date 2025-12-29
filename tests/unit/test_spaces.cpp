@@ -2694,3 +2694,139 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
 // that are only enabled or meaningfully stressed for dimensions >= 64.
 INSTANTIATE_TEST_SUITE_P(SQ8_SQ8OptFuncs, SQ8_SQ8_SpacesOptimizationTest,
                          testing::Range(64UL, 64 * 2UL + 1));
+
+/* ======================== Tests SQ8_SQ8 Precomputed ========================= */
+
+// Helper function to create SQ8 quantized vector with precomputed sum and norm
+// Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+std::vector<uint8_t> CreateSQ8QuantizedVectorWithSumNorm(const float *original, size_t dim) {
+    std::vector<float> vec_copy(original, original + dim);
+
+    // Size: dim (uint8_t) + min_val (float) + delta (float) + sum (float) + norm (float)
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> quantized(quantized_size);
+
+    // Find min and max for quantization
+    float min_val = vec_copy[0];
+    float max_val = vec_copy[0];
+    for (size_t i = 1; i < dim; i++) {
+        min_val = std::min(min_val, vec_copy[i]);
+        max_val = std::max(max_val, vec_copy[i]);
+    }
+
+    // Calculate delta
+    float delta = (max_val - min_val) / 255.0f;
+    if (delta == 0)
+        delta = 1.0f;
+
+    // Quantize vector and compute sum and norm
+    uint8_t *quant_values = quantized.data();
+    float sum = 0.0f;
+    float norm = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        float normalized = (vec_copy[i] - min_val) / delta;
+        normalized = std::max(0.0f, std::min(255.0f, normalized));
+        quant_values[i] = static_cast<uint8_t>(std::round(normalized));
+        sum += static_cast<float>(quant_values[i]);
+        norm += static_cast<float>(quant_values[i]) * static_cast<float>(quant_values[i]);
+    }
+
+    // Store parameters: [min, delta, sum, norm]
+    float *params = reinterpret_cast<float *>(quant_values + dim);
+    params[0] = min_val;
+    params[1] = delta;
+    params[2] = sum;
+    params[3] = norm;
+
+    return quantized;
+}
+
+class SQ8_SQ8_Precomputed_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_SQ8_Precomputed_SpacesOptimizationTest, SQ8_SQ8_Precomputed_InnerProductTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    // Create original vectors
+    std::vector<float> v1_orig(dim);
+    std::vector<float> v2_orig(dim);
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = float(i + 1.5);
+        v2_orig[i] = float(i * 0.75 + 1.0);
+    }
+
+    // Normalize both vectors
+    spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig.data(), dim);
+
+    // Create SQ8 quantized versions (standard format for baseline)
+    std::vector<uint8_t> v1_quantized = CreateSQ8QuantizedVector(v1_orig.data(), dim);
+    std::vector<uint8_t> v2_quantized = CreateSQ8QuantizedVector(v2_orig.data(), dim);
+
+    // Create SQ8 quantized versions with precomputed sum/norm
+    std::vector<uint8_t> v1_precomputed = CreateSQ8QuantizedVectorWithSumNorm(v1_orig.data(), dim);
+    std::vector<uint8_t> v2_precomputed = CreateSQ8QuantizedVectorWithSumNorm(v2_orig.data(), dim);
+
+    // Baseline: original SQ8_SQ8 implementation
+    float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
+
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        // Test precomputed version
+        auto precomputed_func =
+            spaces::Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+        float precomputed_result =
+            precomputed_func(v1_precomputed.data(), v2_precomputed.data(), dim);
+
+        // Precomputed should match baseline (within tolerance for float precision)
+        ASSERT_NEAR(baseline, precomputed_result, 0.01)
+            << "AVX512 Precomputed IP with dim " << dim;
+    }
+#endif
+}
+
+TEST_P(SQ8_SQ8_Precomputed_SpacesOptimizationTest, SQ8_SQ8_Precomputed_CosineTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    // Create original vectors
+    std::vector<float> v1_orig(dim);
+    std::vector<float> v2_orig(dim);
+    for (size_t i = 0; i < dim; i++) {
+        v1_orig[i] = float(i + 1.5);
+        v2_orig[i] = float(i * 0.75 + 1.0);
+    }
+
+    // Normalize both vectors
+    spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
+    spaces::GetNormalizeFunc<float>()(v2_orig.data(), dim);
+
+    // Create SQ8 quantized versions (standard format for baseline)
+    std::vector<uint8_t> v1_quantized = CreateSQ8QuantizedVector(v1_orig.data(), dim);
+    std::vector<uint8_t> v2_quantized = CreateSQ8QuantizedVector(v2_orig.data(), dim);
+
+    // Create SQ8 quantized versions with precomputed sum/norm
+    std::vector<uint8_t> v1_precomputed = CreateSQ8QuantizedVectorWithSumNorm(v1_orig.data(), dim);
+    std::vector<uint8_t> v2_precomputed = CreateSQ8QuantizedVectorWithSumNorm(v2_orig.data(), dim);
+
+    // Baseline: original SQ8_SQ8 implementation
+    float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
+
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        // Test precomputed version
+        auto precomputed_func =
+            spaces::Choose_SQ8_SQ8_Precomputed_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+        float precomputed_result =
+            precomputed_func(v1_precomputed.data(), v2_precomputed.data(), dim);
+
+        // Precomputed should match baseline (within tolerance for float precision)
+        ASSERT_NEAR(baseline, precomputed_result, 0.01)
+            << "AVX512 Precomputed Cosine with dim " << dim;
+    }
+#endif
+}
+
+// Test suite covers dimensions 64-128 to exercise AVX512 SIMD paths
+INSTANTIATE_TEST_SUITE_P(SQ8_SQ8_PrecomputedOptFuncs, SQ8_SQ8_Precomputed_SpacesOptimizationTest,
+                         testing::Range(64UL, 64 * 2UL + 1));

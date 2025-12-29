@@ -37,6 +37,35 @@ public:
     }
 };
 
+/**
+ * SQ8-to-SQ8 Precomputed benchmarks: Same as above but with precomputed sum and norm.
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+ */
+class BM_VecSimSpaces_SQ8_SQ8_Precomputed : public benchmark::Fixture {
+protected:
+    std::mt19937 rng;
+    size_t dim;
+    uint8_t *v1;
+    uint8_t *v2;
+
+public:
+    BM_VecSimSpaces_SQ8_SQ8_Precomputed() { rng.seed(47); }
+    ~BM_VecSimSpaces_SQ8_SQ8_Precomputed() = default;
+
+    void SetUp(const ::benchmark::State &state) {
+        dim = state.range(0);
+        // Allocate both vectors with extra space for min, delta, sum, and norm (4 floats)
+        v1 = new uint8_t[dim + sizeof(float) * 4];
+        v2 = new uint8_t[dim + sizeof(float) * 4];
+        test_utils::populate_float_vec_to_sq8_with_sum_norm(v1, dim, 123);
+        test_utils::populate_float_vec_to_sq8_with_sum_norm(v2, dim, 1234);
+    }
+    void TearDown(const ::benchmark::State &state) {
+        delete[] v1;
+        delete[] v2;
+    }
+};
+
 #ifdef CPU_FEATURES_ARCH_AARCH64
 cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 
@@ -70,6 +99,12 @@ INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNN
                              avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
                                  avx512_f_bw_vl_vnni_supported);
+
+// AVX512_F_BW_VL_VNNI SQ8-to-SQ8 Precomputed functions (using precomputed sum and norm)
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8_Precomputed, SQ8_SQ8_Precomputed,
+                             AVX512F_BW_VL_VNNI, 64, avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8_Precomputed, SQ8_SQ8_Precomputed,
+                                 AVX512F_BW_VL_VNNI, 64, avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI
 #endif // x86_64
 
