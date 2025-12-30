@@ -121,7 +121,7 @@ static void quantize_float_vec_to_uint8_with_sum_norm(const float *v, size_t dim
         sum += v[i];
         square_sum += v[i] * v[i];
     }
-    
+
     // Calculate delta
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
@@ -147,8 +147,8 @@ static void quantize_float_vec_to_uint8_with_sum_norm(const float *v, size_t dim
  * Populate a float vector and quantize to SQ8 with precomputed sum and norm.
  * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
  */
-static void populate_float_vec_to_sq8_with_sum_norm(uint8_t *v, size_t dim, int seed = 1234, float min = -1.0f,
-                               float max = 1.0f) {
+static void populate_float_vec_to_sq8_with_sum_norm(uint8_t *v, size_t dim, int seed = 1234,
+                                                    float min = -1.0f, float max = 1.0f) {
     std::vector<float> vec(dim);
     populate_float_vec(vec.data(), dim, seed, min, max);
     // Normalize vector
