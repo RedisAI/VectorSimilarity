@@ -14,10 +14,10 @@
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_UINT8.h"
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_UINT8.h"
 
-#include "VecSim/spaces/IP/IP_AVX512F_SQ8_BW_VL_VNNI.h"
+#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8.h"
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8.h"
 
-#include "VecSim/spaces/IP/IP_AVX512F_SQ8_SQ8_BW_VL_VNNI.h"
+#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
 
 namespace spaces {
 

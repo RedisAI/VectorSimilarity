@@ -21,12 +21,12 @@
  * Uses algebraic optimization to leverage integer VNNI instructions:
  *
  * With sum = Σv[i] (sum of original float values), the formula is:
- * IP = min1*sum2 + min2*sum1 - dim*min1*min2 + δ1*δ2 * Σ(q1[i]*q2[i])
+ * IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1[i]*q2[i]) - dim*min1*min2
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [norm
- * (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum of
+ * squares (float)]
  */
 
 // Process 64 uint8 elements using VNNI with multiple accumulators for ILP (dot product only)
@@ -75,14 +75,12 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
     const float min1 = params1[0];
     const float delta1 = params1[1];
     const float sum1 = params1[2]; // Precomputed sum of original float elements
-    // const float norm1 = params1[3];  // Precomputed norm (sum of squares) - not used for IP
 
     // Get dequantization parameters and precomputed values from the end of pVec2
     const float *params2 = reinterpret_cast<const float *>(pVec2 + dimension);
     const float min2 = params2[0];
     const float delta2 = params2[1];
     const float sum2 = params2[2]; // Precomputed sum of original float elements
-    // const float norm2 = params2[3];  // Precomputed norm (sum of squares) - not used for IP
 
     // Multiple accumulators for instruction-level parallelism (dot product only)
     __m512i dot_acc0 = _mm512_setzero_si512();
@@ -135,9 +133,9 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
     int64_t dot_product = _mm512_reduce_add_epi32(dot_total);
 
     // Apply the algebraic formula using precomputed sums:
-    // IP = min1*sum2 + min2*sum1 - dim*min1*min2 + δ1*δ2 * Σ(q1[i]*q2[i])
-    float result = min1 * sum2 + min2 * sum1 - static_cast<float>(dimension) * min1 * min2 +
-                   delta1 * delta2 * static_cast<float>(dot_product);
+    // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1[i]*q2[i]) - dim*min1*min2
+    float result = min1 * sum2 + min2 * sum1 + delta1 * delta2 * static_cast<float>(dot_product) -
+                   static_cast<float>(dimension) * min1 * min2;
 
     return result;
 }

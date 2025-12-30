@@ -21,12 +21,12 @@
  * Uses algebraic optimization:
  *
  * With sum = Σv[i] (sum of original float values), the formula is:
- * IP = min1*sum2 + min2*sum1 - dim*min1*min2 + δ1*δ2 * Σ(q1[i]*q2[i])
+ * IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1[i]*q2[i]) - dim*min1*min2
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [norm
- * (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum of
+ * squares (float)]
  */
 
 // Helper function with dot product only (no sum computation needed)
@@ -115,9 +115,9 @@ float SQ8_SQ8_InnerProductSIMD16_NEON_IMP(const void *pVec1v, const void *pVec2v
     }
 
     // Apply algebraic formula using precomputed sums:
-    // IP = min1*sum2 + min2*sum1 - dim*min1*min2 + δ1*δ2 * Σ(q1*q2)
-    return min1 * sum2 + min2 * sum1 - static_cast<float>(dimension) * min1 * min2 +
-           delta1 * delta2 * dot_product;
+    // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1*q2) - dim*min1*min2
+    return min1 * sum2 + min2 * sum1 + delta1 * delta2 * dot_product -
+           static_cast<float>(dimension) * min1 * min2;
 }
 
 // SQ8-to-SQ8 Inner Product distance function

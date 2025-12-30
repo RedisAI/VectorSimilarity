@@ -21,12 +21,12 @@
  * Uses algebraic optimization with SVE dot product instruction:
  *
  * With sum = Σv[i] (sum of original float values), the formula is:
- * IP = min1*sum2 + min2*sum1 - dim*min1*min2 + δ1*δ2 * Σ(q1[i]*q2[i])
+ * IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1[i]*q2[i]) - dim*min1*min2
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [norm
- * (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum of
+ * squares (float)]
  */
 
 // Helper function to perform inner product step using integer dot product (no sum computation)
@@ -53,7 +53,7 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
     size_t offset = 0;
 
     // Get dequantization parameters and precomputed values from the end of pVec1
-    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)] [sum of squares (float)]
     const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
     const float min1 = params1[0];
     const float delta1 = params1[1];
@@ -113,9 +113,9 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
     uint32_t dot_product = svaddv_u32(pg32, dot_total);
 
     // Apply algebraic formula with float conversion only at the end:
-    // IP = min1*sum2 + min2*sum1 - dim*min1*min2 + δ1*δ2 * Σ(q1*q2)
-    return min1 * sum2 + min2 * sum1 - static_cast<float>(dimension) * min1 * min2 +
-           delta1 * delta2 * static_cast<float>(dot_product);
+    // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1*q2) - dim*min1*min2
+    return min1 * sum2 + min2 * sum1 + delta1 * delta2 * static_cast<float>(dot_product) -
+           static_cast<float>(dimension) * min1 * min2;
 }
 
 // SQ8-to-SQ8 Inner Product distance function
