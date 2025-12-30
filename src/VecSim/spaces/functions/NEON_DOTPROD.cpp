@@ -10,7 +10,6 @@
 #include "VecSim/spaces/IP/IP_NEON_DOTPROD_INT8.h"
 #include "VecSim/spaces/IP/IP_NEON_DOTPROD_UINT8.h"
 #include "VecSim/spaces/IP/IP_NEON_DOTPROD_SQ8_SQ8.h"
-#include "VecSim/spaces/IP/IP_NEON_DOTPROD_SQ8_SQ8_Precomputed.h"
 #include "VecSim/spaces/L2/L2_NEON_DOTPROD_INT8.h"
 #include "VecSim/spaces/L2/L2_NEON_DOTPROD_UINT8.h"
 
@@ -54,7 +53,7 @@ dist_func_t<float> Choose_UINT8_L2_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized)
+// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum/norm)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD);
@@ -64,20 +63,6 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim) {
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_CosineSIMD64_NEON_DOTPROD);
-    return ret_dist_func;
-}
-
-// SQ8-to-SQ8 precomputed distance functions (with precomputed sum/norm)
-dist_func_t<float> Choose_SQ8_SQ8_Precomputed_IP_implementation_NEON_DOTPROD(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64,
-                          SQ8_SQ8_Precomputed_InnerProductSIMD64_NEON_DOTPROD);
-    return ret_dist_func;
-}
-
-dist_func_t<float> Choose_SQ8_SQ8_Precomputed_Cosine_implementation_NEON_DOTPROD(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_Precomputed_CosineSIMD64_NEON_DOTPROD);
     return ret_dist_func;
 }
 

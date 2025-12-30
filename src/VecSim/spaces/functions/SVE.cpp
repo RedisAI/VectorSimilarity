@@ -26,7 +26,6 @@
 #include "VecSim/spaces/L2/L2_SVE_SQ8.h"
 
 #include "VecSim/spaces/IP/IP_SVE_SQ8_SQ8.h"
-#include "VecSim/spaces/IP/IP_SVE_SQ8_SQ8_Precomputed.h"
 
 namespace spaces {
 
@@ -119,7 +118,7 @@ dist_func_t<float> Choose_SQ8_L2_implementation_SVE(size_t dim) {
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized)
+// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum/norm)
 // Note: Use svcntb for uint8 elements (not svcntw which is for 32-bit elements)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
@@ -130,19 +129,6 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_SVE(size_t dim) {
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_CosineSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
-}
-
-// SQ8-to-SQ8 precomputed distance functions (with precomputed sum/norm)
-dist_func_t<float> Choose_SQ8_SQ8_Precomputed_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_Precomputed_InnerProductSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
-}
-
-dist_func_t<float> Choose_SQ8_SQ8_Precomputed_Cosine_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_Precomputed_CosineSIMD_SVE, dim, svcntb);
     return ret_dist_func;
 }
 

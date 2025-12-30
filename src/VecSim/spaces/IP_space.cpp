@@ -150,7 +150,8 @@ dist_func_t<float> Cosine_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized)
+// SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized with precomputed
+// sum/norm)
 dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
                                           const void *arch_opt) {
     unsigned char dummy_alignment;
@@ -168,7 +169,6 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #ifdef OPT_NEON_DOTPROD
-    // DOTPROD uses integer arithmetic - much faster than float-based NEON
     if (features.asimddp) {
         return Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(dim);
     }
@@ -182,11 +182,7 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 
 #ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    // AVX512 VNNI SQ8_SQ8 uses 64-element chunks
-    if (dim < 64) {
-        return ret_dist_func;
-    }
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
         return Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
@@ -194,7 +190,7 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 Cosine distance function (both vectors are uint8 quantized)
+// SQ8-to-SQ8 Cosine distance function (both vectors are uint8 quantized with precomputed sum/norm)
 dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
                                               const void *arch_opt) {
     unsigned char dummy_alignment;
@@ -217,7 +213,6 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
     }
 #endif
 #ifdef OPT_NEON_DOTPROD
-    // DOTPROD uses integer arithmetic - much faster than float-based NEON
     if (features.asimddp) {
         return Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(dim);
     }
@@ -231,87 +226,8 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
 
 #ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    // AVX512 VNNI SQ8_SQ8 uses 64-element chunks
     if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
         return Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
-}
-
-// SQ8-to-SQ8 Precomputed Inner Product distance function (with precomputed sum/norm)
-dist_func_t<float> IP_SQ8_SQ8_Precomputed_GetDistFunc(size_t dim, unsigned char *alignment,
-                                                      const void *arch_opt) {
-    unsigned char dummy_alignment;
-    if (alignment == nullptr) {
-        alignment = &dummy_alignment;
-    }
-
-    dist_func_t<float> ret_dist_func = SQ8_SQ8_InnerProduct_Precomputed; // Fallback to original
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_SQ8_SQ8_Precomputed_IP_implementation_SVE(dim);
-    }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
-        return Choose_SQ8_SQ8_Precomputed_IP_implementation_NEON_DOTPROD(dim);
-    }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd) {
-        return Choose_SQ8_SQ8_Precomputed_IP_implementation_NEON(dim);
-    }
-#endif
-#endif // AARCH64
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
-        return Choose_SQ8_SQ8_Precomputed_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
-}
-
-// SQ8-to-SQ8 Precomputed Cosine distance function (with precomputed sum/norm)
-dist_func_t<float> Cosine_SQ8_SQ8_Precomputed_GetDistFunc(size_t dim, unsigned char *alignment,
-                                                          const void *arch_opt) {
-    unsigned char dummy_alignment;
-    if (alignment == nullptr) {
-        alignment = &dummy_alignment;
-    }
-
-    dist_func_t<float> ret_dist_func = SQ8_SQ8_Cosine_Precomputed; // Fallback to original
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_SQ8_SQ8_Precomputed_Cosine_implementation_SVE(dim);
-    }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
-        return Choose_SQ8_SQ8_Precomputed_Cosine_implementation_NEON_DOTPROD(dim);
-    }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd) {
-        return Choose_SQ8_SQ8_Precomputed_Cosine_implementation_NEON(dim);
-    }
-#endif
-#endif // AARCH64
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
-        return Choose_SQ8_SQ8_Precomputed_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
 #endif // __x86_64__
