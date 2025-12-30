@@ -28,35 +28,6 @@ public:
         // Allocate both vectors with extra space for min and delta
         v1 = new uint8_t[dim + sizeof(float) * 2];
         v2 = new uint8_t[dim + sizeof(float) * 2];
-        test_utils::populate_float_vec_to_sq8(v1, dim, 123);
-        test_utils::populate_float_vec_to_sq8(v2, dim, 1234);
-    }
-    void TearDown(const ::benchmark::State &state) {
-        delete[] v1;
-        delete[] v2;
-    }
-};
-
-/**
- * SQ8-to-SQ8 Precomputed benchmarks: Same as above but with precomputed sum and norm.
- * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
- */
-class BM_VecSimSpaces_SQ8_SQ8_Precomputed : public benchmark::Fixture {
-protected:
-    std::mt19937 rng;
-    size_t dim;
-    uint8_t *v1;
-    uint8_t *v2;
-
-public:
-    BM_VecSimSpaces_SQ8_SQ8_Precomputed() { rng.seed(47); }
-    ~BM_VecSimSpaces_SQ8_SQ8_Precomputed() = default;
-
-    void SetUp(const ::benchmark::State &state) {
-        dim = state.range(0);
-        // Allocate both vectors with extra space for min, delta, sum, and norm (4 floats)
-        v1 = new uint8_t[dim + sizeof(float) * 4];
-        v2 = new uint8_t[dim + sizeof(float) * 4];
         test_utils::populate_float_vec_to_sq8_with_sum_norm(v1, dim, 123);
         test_utils::populate_float_vec_to_sq8_with_sum_norm(v2, dim, 1234);
     }
@@ -66,53 +37,47 @@ public:
     }
 };
 
-// #ifdef CPU_FEATURES_ARCH_AARCH64
-// cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
+#ifdef CPU_FEATURES_ARCH_AARCH64
+cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 
-// // NEON SQ8-to-SQ8 functions
-// #ifdef OPT_NEON
-// bool neon_supported = opt.asimd;
-// INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
-// INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
-// #endif // NEON
-// // SVE SQ8-to-SQ8 functions
-// #ifdef OPT_SVE
-// bool sve_supported = opt.sve;
-// INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
-// INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
-// #endif // SVE
-// // SVE2 SQ8-to-SQ8 functions
-// #ifdef OPT_SVE2
-// bool sve2_supported = opt.sve2;
-// INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
-// INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
-// #endif // SVE2
-// #endif // AARCH64
+// NEON SQ8-to-SQ8 functions
+#ifdef OPT_NEON
+bool neon_supported = opt.asimd;
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
+#endif // NEON
+// SVE SQ8-to-SQ8 functions
+#ifdef OPT_SVE
+bool sve_supported = opt.sve;
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
+#endif // SVE
+// SVE2 SQ8-to-SQ8 functions
+#ifdef OPT_SVE2
+bool sve2_supported = opt.sve2;
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
+#endif // SVE2
+#endif // AARCH64
 
-// #ifdef CPU_FEATURES_ARCH_X86_64
-// cpu_features::X86Features opt = cpu_features::GetX86Info().features;
+#ifdef CPU_FEATURES_ARCH_X86_64
+cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
-// // AVX512_F_BW_VL_VNNI SQ8-to-SQ8 functions
-// #ifdef OPT_AVX512_F_BW_VL_VNNI
-// bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl &&
-// opt.avx512vnni; INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8,
-// AVX512F_BW_VL_VNNI, 64,
-//                              avx512_f_bw_vl_vnni_supported);
-// INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
-//                                  avx512_f_bw_vl_vnni_supported);
+// AVX512_F_BW_VL_VNNI SQ8-to-SQ8 functions
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl &&
+opt.avx512vnni; INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8,
+AVX512F_BW_VL_VNNI, 64,
+                             avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
+                                 avx512_f_bw_vl_vnni_supported);
 
-// // AVX512_F_BW_VL_VNNI SQ8-to-SQ8 Precomputed functions (using precomputed sum and norm)
-// INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8_Precomputed, SQ8_SQ8_Precomputed,
-//                              AVX512F_BW_VL_VNNI, 64, avx512_f_bw_vl_vnni_supported);
-// INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8_Precomputed, SQ8_SQ8_Precomputed,
-//                                  AVX512F_BW_VL_VNNI, 64, avx512_f_bw_vl_vnni_supported);
-// #endif // AVX512_F_BW_VL_VNNI
-// #endif // x86_64
+#endif // AVX512_F_BW_VL_VNNI
+#endif // x86_64
 
 // Naive SQ8-to-SQ8 algorithms
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, Cosine, 16);
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8_Precomputed, SQ8_SQ8, InnerProduct, 16);
-INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8_Precomputed, SQ8_SQ8, Cosine, 16);
+
 
 BENCHMARK_MAIN();
