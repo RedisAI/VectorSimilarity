@@ -218,64 +218,7 @@ public:
     mutable std::atomic_size_t num_visited_nodes_higher_levels;
 
 protected:
-    // In-memory graph updates staging (for delayed disk operations)
-    struct GraphUpdate {
-        idType node_id;
-        size_t level;
-        vecsim_stl::vector<idType> neighbors;
-
-        GraphUpdate(idType node_id, size_t level, const vecsim_stl::vector<idType> &neighbors,
-                    std::shared_ptr<VecSimAllocator> allocator)
-            : node_id(node_id), level(level), neighbors(allocator) {
-            this->neighbors = neighbors;
-        }
-        // eq operator
-        bool operator==(const GraphUpdate &other) const {
-            return node_id == other.node_id && level == other.level;
-        }
-    };
-
-
-    // Staging area for graph updates during batch processing
-    // Separate staging areas for insertions and deletions to avoid conflicts
-    vecsim_stl::vector<GraphUpdate> stagedInsertUpdates;
-    vecsim_stl::vector<GraphUpdate> stagedDeleteUpdates;
-
-    // Staged repair updates: opportunistic cleanup when stale edges are filtered during reads
-    // Mutable to allow staging from const search methods.
-    // IMPORTANT: This class is NOT thread-safe. All operations (including const methods like
-    // getNeighbors and search) must be called from a single thread. The mutable fields below
-    // are modified during read operations for opportunistic graph cleanup.
-    // TODO: For multi-threaded support, these fields need proper synchronization or a different
-    // approach (e.g., returning repair suggestions instead of staging them directly).
-    mutable vecsim_stl::vector<GraphUpdate> stagedRepairUpdates;
-
-    // Hash maps for O(1) lookups in staged updates
-    // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
-    // Value: index into the corresponding staged updates vector
-    std::unordered_map<uint64_t, size_t> stagedInsertMap;
-    std::unordered_map<uint64_t, size_t> stagedDeleteMap;
-
-    // Hash map for O(1) lookups and duplicate detection in stagedRepairUpdates
-    // Key: (node_id << 32) | level - combines node_id and level into a single uint64_t
-    // Value: index into stagedRepairUpdates vector
-    // Mutable - see thread-safety note above for stagedRepairUpdates
-    mutable std::unordered_map<uint64_t, size_t> stagedRepairMap;
-
-    // Track which nodes need their neighbor lists updated (for bidirectional connections)
-    struct NeighborUpdate {
-        idType node_id;
-        size_t level;
-        idType new_neighbor_id;
-
-        NeighborUpdate(idType node_id, size_t level, idType new_neighbor_id)
-            : node_id(node_id), level(level), new_neighbor_id(new_neighbor_id) {}
-    };
-
-    // TODO: Consider merging with stagedInsertUpdates
-    vecsim_stl::vector<NeighborUpdate> stagedInsertNeighborUpdates;
-
-    // Temporary storage for raw vectors in RAM (until flush batch)
+    // Temporary storage for raw vectors in RAM (until written to disk)
     // Maps idType -> raw vector data (using shared_ptr to avoid copying in job execution)
     // When a job executes, it just increments refcount instead of copying the entire vector
     std::unordered_map<idType, std::shared_ptr<std::string>> rawVectorsInRAM;
@@ -287,10 +230,6 @@ protected:
     void *jobQueue = nullptr;
     void *jobQueueCtx = nullptr;
     SubmitCB SubmitJobsToQueue = nullptr;
-
-    // Lock for protecting staged updates during merge from parallel insert jobs
-    // Uses shared_mutex for better read concurrency - multiple readers can access simultaneously
-    mutable std::shared_mutex stagedUpdatesGuard;
 
     // Lock for protecting vectors container during concurrent access
     // Needed because addElement can resize the container, invalidating pointers
@@ -304,96 +243,24 @@ protected:
     mutable std::shared_mutex rawVectorsGuard;
 
 
-    // Segmented neighbor cache for reduced lock contention in multi-threaded scenarios
-    // Cache is partitioned into NUM_CACHE_SEGMENTS independent segments
-    // Each segment has its own lock, cache map, and dirty set
-    // This allows threads accessing different segments to proceed in parallel
-    // Tradeoff: Increased memory usage for NUM_CACHE_SEGMENTS * (cache map + dirty set)
+    /********************************** RocksDB Snapshot-Based Versioning **********************************/
+    // Implements read/write separation using RocksDB snapshots:
+    // - All WRITES go to the main RocksDB instance (db pointer)
+    // - All READS use a snapshot for consistent point-in-time reads
+    // - Snapshot is refreshed after every N write operations (configurable)
+    //
+    // Benefits:
+    // - Reads don't block writes and vice versa
+    // - Consistent reads during concurrent modifications
+    // - No in-memory cache needed - RocksDB handles caching efficiently
 
-    static constexpr size_t NUM_CACHE_SEGMENTS = 64;  // Power of 2 for efficient modulo
+    // Snapshot for consistent reads - provides point-in-time view of the database
+    // RocksDB snapshots are thread-safe for concurrent reads
+    mutable const rocksdb::Snapshot* readSnapshot_ = nullptr;
 
-    // Cache segment structure - each segment is cache-line aligned to prevent false sharing
-    // Uses LRU eviction policy to limit memory usage
-    struct alignas(64) CacheSegment {
-        std::shared_mutex guard;
-        std::unordered_map<uint64_t, std::vector<idType>> cache;
-        std::unordered_set<uint64_t> dirty;
-        // Track nodes created in current batch (never written to disk yet)
-        // This helps avoid disk lookups for new nodes
-        std::unordered_set<uint64_t> newNodes;
-
-        // LRU eviction support: doubly-linked list for O(1) access order updates
-        // Front = most recently used, Back = least recently used
-        std::list<uint64_t> lruOrder;
-        // Map from key to iterator in lruOrder for O(1) lookup
-        std::unordered_map<uint64_t, std::list<uint64_t>::iterator> lruMap;
-
-        CacheSegment() = default;
-        CacheSegment(const CacheSegment&) = delete;
-        CacheSegment& operator=(const CacheSegment&) = delete;
-        CacheSegment(CacheSegment&&) = delete;
-        CacheSegment& operator=(CacheSegment&&) = delete;
-
-        // Move key to front of LRU list (most recently used)
-        void touchLRU(uint64_t key) {
-            auto it = lruMap.find(key);
-            if (it != lruMap.end()) {
-                lruOrder.erase(it->second);
-            }
-            lruOrder.push_front(key);
-            lruMap[key] = lruOrder.begin();
-        }
-
-        // Add new key to LRU list
-        void addToLRU(uint64_t key) {
-            lruOrder.push_front(key);
-            lruMap[key] = lruOrder.begin();
-        }
-
-        // Remove key from LRU list
-        void removeFromLRU(uint64_t key) {
-            auto it = lruMap.find(key);
-            if (it != lruMap.end()) {
-                lruOrder.erase(it->second);
-                lruMap.erase(it);
-            }
-        }
-
-        // Get the least recently used key (for eviction)
-        uint64_t getLRU() const {
-            return lruOrder.back();
-        }
-
-        bool hasLRU() const {
-            return !lruOrder.empty();
-        }
-    };
-
-    // Array of cache segments - using unique_ptr for lazy initialization
-    mutable std::unique_ptr<CacheSegment[]> cacheSegments_;
-
-    // Maximum entries per cache segment (0 = unlimited)
-    // Total max cache entries = maxCacheEntriesPerSegment * NUM_CACHE_SEGMENTS
-    size_t maxCacheEntriesPerSegment_ = 10000;
-
-    // Atomic counter for total dirty nodes (for fast threshold check without locking)
-    mutable std::atomic<size_t> totalDirtyCount_{0};
-
-    // Helper function to compute segment index from cache key
-    // Uses mixing function for better distribution
-    static size_t getSegmentIndex(uint64_t key) {
-        // Mix the bits for better distribution (splitmix64-style mixing)
-        key ^= key >> 33;
-        key *= 0xff51afd7ed558ccdULL;
-        key ^= key >> 33;
-        return key % NUM_CACHE_SEGMENTS;
-    }
-
-    // Threshold for flushing dirty nodes to disk (0 = flush after each insert, default = batch)
-    size_t diskWriteBatchThreshold = 1000;
-
-    // Lock for protecting dirty nodes flush operations (global flush serialization)
-    mutable std::mutex diskWriteGuard;
+    // ReadOptions configured with snapshot for write operations (reads during graph construction)
+    // Queries use per-query snapshots via QuerySnapshot for consistent reads
+    mutable rocksdb::ReadOptions snapshotReadOptions_;
 
     // Atomic counter for pending single insert jobs (batchless mode)
     std::atomic<size_t> pendingSingleInsertJobs_{0};
@@ -415,6 +282,7 @@ protected:
     // Helper methods for GraphKey value serialization/deserialization
     // GraphKey value format: [raw_vector_data][neighbor_count][neighbor_ids...]
     std::string serializeGraphValue(const void* vector_data, const vecsim_stl::vector<idType>& neighbors) const;
+    std::string serializeGraphValue(const void* vector_data, const std::vector<idType>& neighbors) const;
     void deserializeGraphValue(const std::string& value, vecsim_stl::vector<idType>& neighbors) const;
     const void* getVectorFromGraphValue(const std::string& value) const;
 
@@ -444,33 +312,68 @@ public:
     static void executeSingleInsertJobWrapper(AsyncJob *job);
     void executeSingleInsertJob(HNSWDiskSingleInsertJob *job);
 
-    // Cache management methods
-    void addNeighborToCache(idType nodeId, size_t level, idType newNeighborId);
-    void setNeighborsInCache(idType nodeId, size_t level, const vecsim_stl::vector<idType> &neighbors, bool isNewNode = false);
-    void getNeighborsFromCache(idType nodeId, size_t level, vecsim_stl::vector<idType> &result) const;
-    // Atomic check-and-add for cache - returns true if added, false if at capacity
-    bool tryAddNeighborToCacheIfCapacity(idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity);
+    /********************************** Snapshot Management **********************************/
+    // Initialize the read snapshot for write operations (called in constructor)
+    void initializeSnapshot() const;
+
+    // Release the current snapshot (called in destructor)
+    void releaseSnapshot() const;
+
+    /**
+     * RAII wrapper for per-query RocksDB snapshots.
+     *
+     * Pattern: Each search query creates a QuerySnapshot at the start, which:
+     * - Acquires a point-in-time snapshot of the database
+     * - Provides ReadOptions configured with that snapshot
+     * - Automatically releases the snapshot when the query completes
+     *
+     * Benefits:
+     * - Gives each query a consistent view (no "half-rewired" nodes mid-traversal)
+     * - Snapshot lifetime is milliseconds, so it doesn't pin memory/compactions
+     * - Avoids needing to coordinate reads with writers via locks
+     */
+    class QuerySnapshot {
+    private:
+        rocksdb::DB* db_;
+        const rocksdb::Snapshot* snapshot_;
+        rocksdb::ReadOptions readOptions_;
+
+    public:
+        explicit QuerySnapshot(rocksdb::DB* db) : db_(db), snapshot_(nullptr) {
+            if (db_) {
+                snapshot_ = db_->GetSnapshot();
+                readOptions_.snapshot = snapshot_;
+            }
+        }
+
+        ~QuerySnapshot() {
+            if (db_ && snapshot_) {
+                db_->ReleaseSnapshot(snapshot_);
+            }
+        }
+
+        // Non-copyable, non-movable (snapshot lifetime tied to this object)
+        QuerySnapshot(const QuerySnapshot&) = delete;
+        QuerySnapshot& operator=(const QuerySnapshot&) = delete;
+        QuerySnapshot(QuerySnapshot&&) = delete;
+        QuerySnapshot& operator=(QuerySnapshot&&) = delete;
+
+        const rocksdb::ReadOptions& readOptions() const { return readOptions_; }
+    };
 
 private:
-    // Helper to load neighbors from disk into cache if not already present
-    // Returns true if data is available in cache after call, false otherwise
-    // Caller must hold lock on cacheSegment.guard (will be temporarily released during disk I/O)
-    void loadNeighborsFromDiskIfNeeded(uint64_t key, CacheSegment& cacheSegment,
-                                        std::unique_lock<std::shared_mutex>& lock);
-
-    // Write dirty cache entries to disk
-    void writeDirtyNodesToDisk(const vecsim_stl::vector<uint64_t> &modifiedNodes,
-                               const void *newVectorRawData, idType newVectorId);
-
     // Unified core function for graph insertion - used by both single-threaded and multi-threaded paths
-    // Batching is controlled by diskWriteBatchThreshold (0 = no batching, >0 = batch size)
     void executeGraphInsertionCore(idType vectorId, size_t elementMaxLevel,
                                    idType entryPoint, size_t globalMaxLevel,
                                    const void *rawVectorData, const void *processedVectorData);
 
-    // Helper to write a single vector's entry to disk
+    // Helper to write a single vector's entry to disk and update neighbors
     void writeVectorToDisk(idType vectorId, const void *rawVectorData,
                            const vecsim_stl::vector<idType> &neighbors);
+
+    // Write graph updates for modified existing nodes directly to RocksDB
+    // Note: The new node itself is written in mutuallyConnectNewElement, not here
+    void writeGraphUpdates(const vecsim_stl::vector<uint64_t> &modifiedNodes, idType newVectorId);
 
     // Helper methods
     void emplaceHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist,
@@ -478,10 +381,9 @@ private:
     void emplaceHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
                        idType id) const;
     void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result) const;
+    void getNeighbors(idType nodeId, size_t level, vecsim_stl::vector<idType>& result,
+                      const rocksdb::ReadOptions& readOpts) const;
     size_t getNeighborsCount(idType nodeId, size_t level) const;
-
-    // Manual control of staged delete updates
-    void flushStagedDeleteUpdates(); // Manually flush any pending staged delete updates
 
 protected:
     // Helper method to filter deleted or invalid nodes from a neighbor list (DRY principle)
@@ -508,10 +410,6 @@ protected:
         return (static_cast<uint64_t>(node_id) << 32) | static_cast<uint64_t>(level);
     }
 
-    // New method for flushing staged graph updates to disk
-    void flushStagedGraphUpdates(vecsim_stl::vector<GraphUpdate>& graphUpdates,
-                                  vecsim_stl::vector<NeighborUpdate>& neighborUpdates);
-
     // Re-evaluate neighbor connections when a neighbor's list is full
     // Applies heuristic to select best neighbors including the new node
     void revisitNeighborConnections(idType new_node_id, idType selected_neighbor,
@@ -523,11 +421,18 @@ public:
     const void *getDataByInternalId(idType id) const;
     vecsim_stl::updatable_max_heap<DistType, idType> searchLayer(idType ep_id, const void *data_point, size_t level,
                                             size_t ef) const;
+    vecsim_stl::updatable_max_heap<DistType, idType> searchLayer(idType ep_id, const void *data_point, size_t level,
+                                            size_t ef, const rocksdb::ReadOptions& readOpts) const;
     vecsim_stl::updatable_max_heap<DistType, labelType> searchLayerLabels(idType ep_id, const void *data_point, size_t level,
                                             size_t ef) const;
+    vecsim_stl::updatable_max_heap<DistType, labelType> searchLayerLabels(idType ep_id, const void *data_point, size_t level,
+                                            size_t ef, const rocksdb::ReadOptions& readOpts) const;
     template <bool running_query>
     void greedySearchLevel(const void *data_point, size_t level, idType &curr_element,
                            DistType &cur_dist) const;
+    template <bool running_query>
+    void greedySearchLevel(const void *data_point, size_t level, idType &curr_element,
+                           DistType &cur_dist, const rocksdb::ReadOptions& readOpts) const;
     std::pair<idType, size_t> safeGetEntryPointState() const;
     VisitedNodesHandler *getVisitedList() const;
     void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
@@ -548,19 +453,32 @@ public:
                           std::unordered_set<idType> *visited_set,
                           vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
                           candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const;
+    template <typename Identifier>
+    void processCandidate(idType curNodeId, const void *data_point, size_t level, size_t ef,
+                          std::unordered_set<idType> *visited_set,
+                          vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
+                          candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound,
+                          const rocksdb::ReadOptions& readOpts) const;
 
     // Raw vector storage and retrieval methods
     bool getRawVector(idType id, void* output_buffer) const;
+    bool getRawVector(idType id, void* output_buffer, const rocksdb::ReadOptions& readOpts) const;
 
     // Re-rank candidates using raw float32 distances for improved recall
     void rerankWithRawDistances(vecsim_stl::updatable_max_heap<DistType, labelType>& candidates,
                                 const void* query_data, size_t k) const;
+    void rerankWithRawDistances(vecsim_stl::updatable_max_heap<DistType, labelType>& candidates,
+                                const void* query_data, size_t k,
+                                const rocksdb::ReadOptions& readOpts) const;
 
 protected:
     // Internal version that assumes caller already holds the lock (or is inside a locked section)
     bool getRawVectorInternal(idType id, void* output_buffer) const;
+    bool getRawVectorInternal(idType id, void* output_buffer, const rocksdb::ReadOptions& readOpts) const;
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx = nullptr,
                                VecSimQueryReply_Code *rc = nullptr) const;
+    idType searchBottomLayerEP(const void *query_data, const rocksdb::ReadOptions& readOpts,
+                               void *timeoutCtx = nullptr, VecSimQueryReply_Code *rc = nullptr) const;
 
 
 public:
@@ -658,26 +576,6 @@ public:
     size_t getDeleteBatchThreshold() const { return deleteBatchThreshold; }
     size_t getPendingDeleteCount() const { return pendingDeleteIds.size(); }
 
-    // Disk write batching control
-    void setDiskWriteBatchThreshold(size_t threshold) { diskWriteBatchThreshold = threshold; }
-    size_t getDiskWriteBatchThreshold() const { return diskWriteBatchThreshold; }
-    size_t getPendingDiskWriteCount() const { return totalDirtyCount_.load(std::memory_order_relaxed); }
-    void flushDirtyNodesToDisk(); // Flush all pending dirty nodes to disk
-
-    // Cache eviction control
-    // Set max entries per segment (0 = unlimited). Total max = maxEntries * NUM_CACHE_SEGMENTS
-    void setCacheMaxEntriesPerSegment(size_t maxEntries) { maxCacheEntriesPerSegment_ = maxEntries; }
-    size_t getCacheMaxEntriesPerSegment() const { return maxCacheEntriesPerSegment_; }
-    // Get total cache entry count across all segments
-    size_t getCacheTotalEntryCount() const {
-        size_t total = 0;
-        for (size_t s = 0; s < NUM_CACHE_SEGMENTS; ++s) {
-            std::shared_lock<std::shared_mutex> lock(cacheSegments_[s].guard);
-            total += cacheSegments_[s].cache.size();
-        }
-        return total;
-    }
-
     // Job queue configuration (for multi-threaded processing)
     void setJobQueue(void *jobQueue_, void *jobQueueCtx_, SubmitCB submitCb_) {
         jobQueue = jobQueue_;
@@ -692,24 +590,9 @@ public:
     size_t debugCountGraphEdges() const;
     void debugValidateGraphConnectivity() const;
 
-    // Debug methods for staged updates
-    void debugPrintStagedUpdates() const;
-
 private:
     // HNSW helper methods
     void replaceEntryPoint();
-
-    // Helper to stage a delete update, merging with existing entry if present
-    inline void stageDeleteUpdate(idType node_id, size_t level, vecsim_stl::vector<idType> &neighbors) {
-        uint64_t key = makeRepairKey(node_id, level);
-        auto existing_it = stagedDeleteMap.find(key);
-        if (existing_it != stagedDeleteMap.end()) {
-            stagedDeleteUpdates[existing_it->second].neighbors = neighbors;
-        } else {
-            stagedDeleteMap[key] = stagedDeleteUpdates.size();
-            stagedDeleteUpdates.emplace_back(node_id, level, neighbors, this->allocator);
-        }
-    }
 
     // Graph repair helper for deletion - repairs a neighbor's connections after a node is deleted.
     // This maintains graph quality and navigability using a heuristic-based approach.
@@ -745,11 +628,8 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       cf(cf), dbPath(dbPath), indexDataGuard(),
       visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       pendingDeleteIds(this->allocator), num_visited_nodes(0),
-      num_visited_nodes_higher_levels(0), stagedInsertUpdates(this->allocator),
-      stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
-      stagedInsertNeighborUpdates(this->allocator),
-      jobQueue(jobQueue_), jobQueueCtx(jobQueueCtx_), SubmitJobsToQueue(submitCb_),
-      cacheSegments_(new CacheSegment[NUM_CACHE_SEGMENTS]) {
+      num_visited_nodes_higher_levels(0),
+      jobQueue(jobQueue_), jobQueueCtx(jobQueueCtx_), SubmitJobsToQueue(submitCb_) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -770,18 +650,16 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
         throw std::runtime_error("HNSW index parameter M cannot be 1");
     mult = 1 / log(1.0 * M);
     levelGenerator.seed(random_seed);
+
+    // Initialize the read snapshot for write operations (reads during graph construction)
+    // Queries use per-query snapshots via QuerySnapshot for consistent reads
+    initializeSnapshot();
 }
 
 template <typename DataType, typename DistType>
 HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
-    // Clear any staged updates before destruction
-    stagedInsertUpdates.clear();
-    stagedInsertMap.clear();
-    stagedDeleteUpdates.clear();
-    stagedDeleteMap.clear();
-    stagedRepairUpdates.clear();
-    stagedRepairMap.clear();
-    stagedInsertNeighborUpdates.clear();
+    // Release the read snapshot before destruction
+    releaseSnapshot();
 
     // Clear pending vectors
     pendingDeleteIds.clear();
@@ -800,6 +678,27 @@ HNSWDiskIndex<DataType, DistType>::~HNSWDiskIndex() {
     // Base class destructor will handle indexCalculator and preprocessors
 }
 
+/********************************** Snapshot Management **********************************/
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::initializeSnapshot() const {
+    // Write operations use snapshotReadOptions_ with snapshot = nullptr,
+    // which means they always read the latest committed data from RocksDB.
+    // This ensures write operations see data written by previous operations.
+    // Query operations use per-query snapshots via QuerySnapshot for consistent reads.
+    readSnapshot_ = nullptr;
+    snapshotReadOptions_.snapshot = nullptr;
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::releaseSnapshot() const {
+    if (readSnapshot_ != nullptr) {
+        db->ReleaseSnapshot(readSnapshot_);
+        readSnapshot_ = nullptr;
+        snapshotReadOptions_.snapshot = nullptr;
+    }
+}
+
 
 template <typename DataType, typename DistType>
 VecSimQueryReply *
@@ -814,18 +713,14 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
         return rep;
     }
 
+    // Create per-query snapshot for consistent reads during the entire query
+    // This ensures we see a consistent view of the graph even if writes occur concurrently
+    QuerySnapshot querySnapshot(db);
+    const auto& readOpts = querySnapshot.readOptions();
+
     // Preprocess the query
     auto processed_query_ptr = this->preprocessQuery(query_data);
     const void *processed_query = processed_query_ptr.get();
-
-    // const float* v_data = reinterpret_cast<const float*>(query_data);
-    // std::cout << "v_data[0]: " << v_data[0] << std::endl;
-    // std::cout << "v_data[n]: " << v_data[this->dim - 1] << std::endl;
-
-    // const int8_t* p_data = reinterpret_cast<const int8_t*>(processed_query);
-    // std::cout << "p_data[0]: " << static_cast<int>(p_data[0]) << std::endl;
-    // std::cout << "p_data[n]: " << static_cast<int>(p_data[this->dim - 1]) << std::endl << std::endl;
-
 
     // Get search parameters
     size_t query_ef = this->ef;
@@ -838,17 +733,17 @@ HNSWDiskIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     }
 
     // Step 1: Find the entry point by searching from top level to bottom level
-    idType bottom_layer_ep = searchBottomLayerEP(processed_query, timeoutCtx, &rep->code);
+    idType bottom_layer_ep = searchBottomLayerEP(processed_query, readOpts, timeoutCtx, &rep->code);
     if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         return rep; // Empty index or error
     }
 
     // Step 2: Search bottom layer using quantized distances
-    auto results = searchLayerLabels(bottom_layer_ep, processed_query, 0, query_ef);
+    auto results = searchLayerLabels(bottom_layer_ep, processed_query, 0, query_ef, readOpts);
 
     // Step 3: Re-rank candidates using raw float32 distances for improved recall
     if (useRawData && !results.empty()) {
-        rerankWithRawDistances(results, query_data, k);
+        rerankWithRawDistances(results, query_data, k, readOpts);
     }
 
     while (results.size() > k) {
@@ -885,10 +780,10 @@ auto HNSWDiskIndex<DataType, DistType>::getNeighborhoods(const vecsim_stl::vecto
         }
     }
 
-    // Perform a multi-get operation to retrieve the values for the keys
+    // Perform a multi-get operation to retrieve the values for the keys using snapshot
     std::vector<std::string> values;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs(keys.size(), cf);
-    this->db->MultiGet(rocksdb::ReadOptions(), cfs, keys, &values);
+    this->db->MultiGet(snapshotReadOptions_, cfs, keys, &values);
 
     // Iterate over the values and fill the neighbors map
     for (size_t i = 0; i < graphKeys.size(); ++i) {
@@ -1059,7 +954,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
             writeOptions.disableWAL = true;
             db->Put(writeOptions, cf, graphKey.asSlice(), value);
         }
-        // Remove raw vector from RAM now that it's on disk
+        // Remove raw vector from RAM after writing to disk
         {
             std::lock_guard<std::shared_mutex> rawLock(rawVectorsGuard);
             rawVectorsInRAM.erase(newElementId);
@@ -1077,7 +972,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 
         submitSingleJob(job);
     } else {
-        // Single-threaded: execute inline (batching controlled by diskWriteBatchThreshold)
+        // Single-threaded: execute inline (writes directly to RocksDB)
         executeGraphInsertionCore(newElementId, elementMaxLevel, currentEntryPoint,
                                   currentMaxLevel, vector, processedBlobs.getStorageBlob());
     }
@@ -1086,127 +981,12 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
 }
 
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::flushStagedGraphUpdates(
-    vecsim_stl::vector<GraphUpdate>& graphUpdates,
-    vecsim_stl::vector<NeighborUpdate>& neighborUpdates) {
-    if (graphUpdates.empty() && neighborUpdates.empty()) {
-        return;
-    }
-
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
-    // Write graph updates first (so they're available when processing neighbor updates)
-    rocksdb::WriteBatch graphBatch;
-
-    // Buffer for retrieving raw vectors (in case they're on disk)
-    std::vector<char> raw_vector_buffer(this->inputBlobSize);
-
-    // First, handle new node insertions
-    for (const auto &update : graphUpdates) {
-        auto newKey = GraphKey(update.node_id, update.level);
-
-        // If neighbors list is empty, this is a deletion - remove the key from disk
-        if (update.neighbors.empty()) {
-            graphBatch.Delete(cf, newKey.asSlice());
-            continue;
-        }
-
-        // Get raw vector data (use internal version since we already hold the lock or
-        // are being called from a context where locking is managed by the caller)
-        if (!getRawVectorInternal(update.node_id, raw_vector_buffer.data())) {
-            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                        "WARNING: Skipping graph update for node %u at level %zu - no raw vector data available",
-                        update.node_id, update.level);
-            continue;
-        }
-
-        // Serialize with new format: [raw_vector_data][neighbor_count][neighbor_ids...]
-        std::string graph_value = serializeGraphValue(raw_vector_buffer.data(), update.neighbors);
-
-        graphBatch.Put(cf, newKey.asSlice(), graph_value);
-    }
-
-    // Write graph updates to disk first
-    rocksdb::Status graph_status = this->db->Write(writeOptions, &graphBatch);
-    if (!graph_status.ok()) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to write graph updates batch: %s",
-                 graph_status.ToString().c_str());
-        return;
-    }
-
-    // Then, handle neighbor list updates for existing nodes
-    // Group neighbor updates by node and level for efficient processing
-    std::unordered_map<idType, std::unordered_map<size_t, vecsim_stl::vector<idType>>> neighborUpdatesByNode;
-
-    for (const auto& update : neighborUpdates) {
-        auto& levelMap = neighborUpdatesByNode[update.node_id];
-        auto it = levelMap.find(update.level);
-        if (it == levelMap.end()) {
-            levelMap.emplace(update.level, vecsim_stl::vector<idType>(this->allocator));
-            it = levelMap.find(update.level);
-        }
-        it->second.push_back(update.new_neighbor_id);
-    }
-
-    // Use a separate batch for neighbor updates
-    rocksdb::WriteBatch neighborBatch;
-
-    // Process each node's neighbor updates (reuse the buffer from above)
-    for (const auto& [node_id, levelMap] : neighborUpdatesByNode) {
-        for (const auto& [level, newNeighbors] : levelMap) {
-            // Read existing graph value from disk
-            GraphKey neighborKey(node_id, level);
-            std::string existing_graph_value;
-            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, neighborKey.asSlice(), &existing_graph_value);
-
-            vecsim_stl::vector<idType> updated_neighbors(this->allocator);
-
-            if (status.ok()) {
-                // Parse existing neighbors using new format
-                deserializeGraphValue(existing_graph_value, updated_neighbors);
-            }
-
-            // Add new neighbors (avoiding duplicates)
-            for (idType new_neighbor : newNeighbors) {
-                bool found = false;
-                for (idType existing : updated_neighbors) {
-                    if (existing == new_neighbor) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    updated_neighbors.push_back(new_neighbor);
-                }
-            }
-
-        getRawVectorInternal(node_id, raw_vector_buffer.data());
-
-        // Serialize with new format and add to batch
-        std::string graph_value = serializeGraphValue(raw_vector_buffer.data(), updated_neighbors);
-        neighborBatch.Put(cf, neighborKey.asSlice(), graph_value);
-        }
-    }
-
-    // Write neighbor updates batch
-    rocksdb::Status neighbor_status = this->db->Write(writeOptions, &neighborBatch);
-    if (!neighbor_status.ok()) {
-        this->log(VecSimCommonStrings::LOG_WARNING_STRING, "ERROR: Failed to write neighbor updates batch: %s",
-                 neighbor_status.ToString().c_str());
-    }
-
-    // Clear staged updates after successful flush
-    graphUpdates.clear();
-    neighborUpdates.clear();
-}
-
-template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::revisitNeighborConnections(
     idType new_node_id, idType selected_neighbor, size_t level, DistType distance,
     vecsim_stl::vector<uint64_t> &modifiedNodes) {
-    // Read the neighbor's current neighbor list from cache (source of truth)
+    // Read the neighbor's current neighbor list from snapshot
     vecsim_stl::vector<idType> existing_neighbors(this->allocator);
-    getNeighborsFromCache(selected_neighbor, level, existing_neighbors);
+    getNeighbors(selected_neighbor, level, existing_neighbors);
 
     // Collect all candidates: existing neighbors + new node
     candidatesList<DistType> candidates(this->allocator);
@@ -1235,13 +1015,30 @@ void HNSWDiskIndex<DataType, DistType>::revisitNeighborConnections(
         new_neighbors.push_back(candidate.second);
     }
 
-    // Update cache with the new neighbor list
-    setNeighborsInCache(selected_neighbor, level, new_neighbors);
-    modifiedNodes.push_back(makeRepairKey(selected_neighbor, level));
+    // Write the updated neighbors directly to RocksDB
+    // Note: We do NOT add to modifiedNodes because we're writing directly here.
+    // Adding to modifiedNodes would cause writeGraphUpdates to overwrite with stale data.
+    std::vector<char> rawVectorBuffer(this->inputBlobSize);
+    if (getRawVectorInternal(selected_neighbor, rawVectorBuffer.data())) {
+        GraphKey graphKey(selected_neighbor, level);
+        std::string value = serializeGraphValue(rawVectorBuffer.data(), new_neighbors);
+        auto writeOptions = rocksdb::WriteOptions();
+        writeOptions.disableWAL = true;
+        db->Put(writeOptions, cf, graphKey.asSlice(), value);
+    }
 }
 
 template <typename DataType, typename DistType>
 idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data,
+                                                              void *timeoutCtx,
+                                                              VecSimQueryReply_Code *rc) const {
+    // Delegate to the overload with global snapshot read options
+    return searchBottomLayerEP(query_data, snapshotReadOptions_, timeoutCtx, rc);
+}
+
+template <typename DataType, typename DistType>
+idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data,
+                                                              const rocksdb::ReadOptions& readOpts,
                                                               void *timeoutCtx,
                                                               VecSimQueryReply_Code *rc) const {
     if (rc) *rc = VecSim_QueryReply_OK;
@@ -1253,7 +1050,7 @@ idType HNSWDiskIndex<DataType, DistType>::searchBottomLayerEP(const void *query_
 
     DistType cur_dist = this->calcDistance(query_data, getDataByInternalId(curr_element));
     for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; --level) {
-        greedySearchLevel<true>(query_data, level, curr_element, cur_dist);
+        greedySearchLevel<true>(query_data, level, curr_element, cur_dist, readOpts);
     }
     return curr_element;
 }
@@ -1289,7 +1086,35 @@ std::string HNSWDiskIndex<DataType, DistType>::serializeGraphValue(
     return result;
 }
 
+// Serialize GraphKey value: [raw_vector_data][neighbor_count][neighbor_ids...]
+// Overload for std::vector<idType> (used by processDeleteBatch)
+template <typename DataType, typename DistType>
+std::string HNSWDiskIndex<DataType, DistType>::serializeGraphValue(
+    const void* vector_data, const std::vector<idType>& neighbors) const {
 
+    size_t neighbor_count = neighbors.size();
+    size_t total_size = this->inputBlobSize + sizeof(size_t) + neighbor_count * sizeof(idType);
+
+    std::string result;
+    result.resize(total_size);
+
+    char* ptr = result.data();
+
+    // Copy raw vector data (original, unprocessed)
+    std::memcpy(ptr, vector_data, this->inputBlobSize);
+    ptr += this->inputBlobSize;
+
+    // Copy neighbor count
+    std::memcpy(ptr, &neighbor_count, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Copy neighbor IDs
+    if (neighbor_count > 0) {
+        std::memcpy(ptr, neighbors.data(), neighbor_count * sizeof(idType));
+    }
+
+    return result;
+}
 
 // Deserialize GraphKey value to extract neighbors
 template <typename DataType, typename DistType>
@@ -1347,6 +1172,13 @@ const void *HNSWDiskIndex<DataType, DistType>::getDataByInternalId(idType id) co
 
 template <typename DataType, typename DistType>
 bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buffer) const {
+    // Delegate to the overload with global snapshot read options
+    return getRawVector(id, output_buffer, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buffer,
+                                                      const rocksdb::ReadOptions& readOpts) const {
     size_t elementCount = curElementCount.load(std::memory_order_acquire);
     if (id >= elementCount) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -1366,11 +1198,10 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
         }
     }
 
-    // If not in RAM or cache, retrieve from disk (RocksDB is thread-safe)
+    // If not in RAM, retrieve from disk using provided ReadOptions
     GraphKey graphKey(id, 0);
     std::string level0_graph_value;
-    rocksdb::Status status =
-        db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
+    rocksdb::Status status = db->Get(readOpts, cf, graphKey.asSlice(), &level0_graph_value);
 
     if (status.ok()) {
         // Extract vector data
@@ -1390,12 +1221,18 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVector(idType id, void* output_buf
                   status.ToString().c_str());
     }
     return false;
-
 }
 
 // Internal version for use during flush operations
 template <typename DataType, typename DistType>
 bool HNSWDiskIndex<DataType, DistType>::getRawVectorInternal(idType id, void* output_buffer) const {
+    // Delegate to the overload with global snapshot read options
+    return getRawVectorInternal(id, output_buffer, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+bool HNSWDiskIndex<DataType, DistType>::getRawVectorInternal(idType id, void* output_buffer,
+                                                              const rocksdb::ReadOptions& readOpts) const {
     size_t elementCount = curElementCount.load(std::memory_order_acquire);
     if (id >= elementCount) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -1415,10 +1252,10 @@ bool HNSWDiskIndex<DataType, DistType>::getRawVectorInternal(idType id, void* ou
         }
     }
 
-    // If not in RAM, retrieve from disk (NO LOCK - caller is expected to hold lock)
+    // If not in RAM, retrieve from disk using provided ReadOptions
     GraphKey graphKey(id, 0);
     std::string level0_graph_value;
-    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &level0_graph_value);
+    rocksdb::Status status = db->Get(readOpts, cf, graphKey.asSlice(), &level0_graph_value);
 
     if (status.ok()) {
         // Extract vector data
@@ -1443,6 +1280,14 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::rerankWithRawDistances(
     vecsim_stl::updatable_max_heap<DistType, labelType>& candidates,
     const void* query_data, size_t k) const {
+    // Delegate to the overload with global snapshot read options
+    rerankWithRawDistances(candidates, query_data, k, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::rerankWithRawDistances(
+    vecsim_stl::updatable_max_heap<DistType, labelType>& candidates,
+    const void* query_data, size_t k, const rocksdb::ReadOptions& readOpts) const {
 
     if (candidates.empty()) {
         return;
@@ -1471,8 +1316,8 @@ void HNSWDiskIndex<DataType, DistType>::rerankWithRawDistances(
         }
         idType internal_id = it->second;
 
-        // Get raw vector and recalculate distance
-        if (getRawVector(internal_id, raw_vector_buffer.data())) {
+        // Get raw vector and recalculate distance using per-query snapshot
+        if (getRawVector(internal_id, raw_vector_buffer.data(), readOpts)) {
             DistType raw_dist = this->calcDistanceRaw(query_data, raw_vector_buffer.data());
             candidate.first = raw_dist;
         } else {
@@ -1492,7 +1337,14 @@ template <typename DataType, typename DistType>
 vecsim_stl::updatable_max_heap<DistType, idType>
 HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
+    // Delegate to the overload with global snapshot read options
+    return searchLayer(ep_id, data_point, layer, ef, snapshotReadOptions_);
+}
 
+template <typename DataType, typename DistType>
+vecsim_stl::updatable_max_heap<DistType, idType>
+HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
+                                           size_t ef, const rocksdb::ReadOptions& readOpts) const {
     std::unordered_set<idType> visited_set;
     visited_set.reserve(10000);
 
@@ -1521,7 +1373,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_po
 
         processCandidate(curr_el_pair.second, data_point, layer, ef,
                          &visited_set, top_candidates,
-                         candidate_set, lowerBound);
+                         candidate_set, lowerBound, readOpts);
     }
 
     return top_candidates;
@@ -1531,6 +1383,14 @@ template <typename DataType, typename DistType>
 vecsim_stl::updatable_max_heap<DistType, labelType>
 HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
+    // Delegate to the overload with global snapshot read options
+    return searchLayerLabels(ep_id, data_point, layer, ef, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+vecsim_stl::updatable_max_heap<DistType, labelType>
+HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *data_point, size_t layer,
+                                           size_t ef, const rocksdb::ReadOptions& readOpts) const {
     std::unordered_set<idType> visited_set;
     visited_set.reserve(10000);
 
@@ -1561,7 +1421,7 @@ HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *d
         // The emplaceHeap overload handles conversion to labelType for top_candidates
         processCandidate(curr_el_pair.second, data_point, layer, ef,
                          &visited_set, top_candidates,
-                         candidate_set, lowerBound);
+                         candidate_set, lowerBound, readOpts);
     }
 
     return top_candidates;
@@ -1610,6 +1470,16 @@ template <bool running_query>
 void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point, size_t level,
                                                           idType &curr_element,
                                                           DistType &cur_dist) const {
+    // Delegate to the overload with global snapshot read options
+    greedySearchLevel<running_query>(data_point, level, curr_element, cur_dist, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+template <bool running_query>
+void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point, size_t level,
+                                                          idType &curr_element,
+                                                          DistType &cur_dist,
+                                                          const rocksdb::ReadOptions& readOpts) const {
     // Hold shared lock for entire search to prevent idToMetaData resize during isMarkedDeletedUnsafe calls
     std::shared_lock<std::shared_mutex> indexLock(indexDataGuard);
 
@@ -1621,9 +1491,9 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
     do {
         changed = false;
 
-        // Read neighbors (checks staged updates first, then RocksDB)
+        // Read neighbors using per-query snapshot for consistent reads
         vecsim_stl::vector<idType> neighbors(this->allocator);
-        getNeighbors(bestCand, level, neighbors);
+        getNeighbors(bestCand, level, neighbors, readOpts);
 
         if (neighbors.empty()) {
             // No neighbors found for this node at this level, stop searching
@@ -1710,10 +1580,22 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *data_point, size_t level, size_t ef, std::unordered_set<idType> *visited_set,
     vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
+    // Delegate to the overload with global snapshot read options
+    processCandidate(curNodeId, data_point, level, ef, visited_set, top_candidates,
+                     candidate_set, lowerBound, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+template <typename Identifier>
+void HNSWDiskIndex<DataType, DistType>::processCandidate(
+    idType curNodeId, const void *data_point, size_t level, size_t ef, std::unordered_set<idType> *visited_set,
+    vecsim_stl::updatable_max_heap<DistType, Identifier> &top_candidates,
+    candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound,
+    const rocksdb::ReadOptions& readOpts) const {
     assert(visited_set != nullptr);
-    // Add neighbors to candidate set for further exploration
+    // Add neighbors to candidate set for further exploration using per-query snapshot
     vecsim_stl::vector<idType> neighbors(this->allocator);
-    getNeighbors(curNodeId, level, neighbors);
+    getNeighbors(curNodeId, level, neighbors, readOpts);
 
     if (!neighbors.empty()) {
         num_visited_nodes.fetch_add(1, std::memory_order_relaxed);
@@ -1831,67 +1713,25 @@ inline void HNSWDiskIndex<DataType, DistType>::emplaceHeap(
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level,
                                                      vecsim_stl::vector<idType> &result) const {
+    // Delegate to the overload with global snapshot read options
+    getNeighbors(nodeId, level, result, snapshotReadOptions_);
+}
+
+template <typename DataType, typename DistType>
+void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level,
+                                                     vecsim_stl::vector<idType> &result,
+                                                     const rocksdb::ReadOptions& readOpts) const {
     // Clear the result vector first
     result.clear();
 
-    uint64_t lookup_key = makeRepairKey(nodeId, level);
-    bool foundInCache = false;
+    // Read directly from RocksDB using provided ReadOptions for consistent point-in-time reads
+    // For queries, this uses a per-query snapshot for isolation
+    GraphKey graphKey(nodeId, level);
+    std::string graph_value;
+    rocksdb::Status status = db->Get(readOpts, cf, graphKey.asSlice(), &graph_value);
 
-    // Step 1: Check cache first (source of truth for pending updates)
-    {
-        size_t segment = getSegmentIndex(lookup_key);
-        auto& cacheSegment = cacheSegments_[segment];
-        std::shared_lock<std::shared_mutex> cacheLock(cacheSegment.guard);
-        auto it = cacheSegment.cache.find(lookup_key);
-        if (it != cacheSegment.cache.end()) {
-            result.reserve(it->second.size());
-            for (idType id : it->second) {
-                result.push_back(id);
-            }
-            foundInCache = true;
-        } else if (cacheSegment.newNodes.find(lookup_key) != cacheSegment.newNodes.end()) {
-            // New node not yet connected - return empty
-            foundInCache = true;  // Treat as found (empty is valid)
-        }
-    }
-
-    // Step 2: Check delete staging area (for deletion operations)
-    if (!foundInCache) {
-        std::shared_lock<std::shared_mutex> lock(stagedUpdatesGuard);
-        auto delete_it = stagedDeleteMap.find(lookup_key);
-        if (delete_it != stagedDeleteMap.end()) {
-            const auto &update = stagedDeleteUpdates[delete_it->second];
-            result.reserve(update.neighbors.size());
-            for (size_t i = 0; i < update.neighbors.size(); i++) {
-                result.push_back(update.neighbors[i]);
-            }
-            foundInCache = true;
-        }
-
-        // Also check staged repair updates (already cleaned neighbors waiting to be flushed)
-        if (!foundInCache) {
-            auto repair_it = stagedRepairMap.find(lookup_key);
-            if (repair_it != stagedRepairMap.end()) {
-                const auto &update = stagedRepairUpdates[repair_it->second];
-                result.reserve(update.neighbors.size());
-                for (size_t i = 0; i < update.neighbors.size(); i++) {
-                    result.push_back(update.neighbors[i]);
-                }
-                foundInCache = true;
-            }
-        }
-    }
-
-    // Step 3: If not found in cache or staging, read from disk
-    if (!foundInCache) {
-        GraphKey graphKey(nodeId, level);
-        std::string graph_value;
-        rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-
-        if (status.ok()) {
-            deserializeGraphValue(graph_value, result);
-        }
+    if (status.ok()) {
+        deserializeGraphValue(graph_value, result);
     }
 
     // Note: We do NOT filter deleted nodes here. During search, we need to explore
@@ -1904,27 +1744,10 @@ void HNSWDiskIndex<DataType, DistType>::getNeighbors(idType nodeId, size_t level
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::getNeighborsCount(idType nodeId, size_t level) const {
-    uint64_t lookup_key = makeRepairKey(nodeId, level);
-
-    // Step 1: Check cache first (source of truth for pending updates)
-    {
-        size_t segment = getSegmentIndex(lookup_key);
-        auto& cacheSegment = cacheSegments_[segment];
-        std::shared_lock<std::shared_mutex> cacheLock(cacheSegment.guard);
-        auto it = cacheSegment.cache.find(lookup_key);
-        if (it != cacheSegment.cache.end()) {
-            return it->second.size();
-        }
-        // Check if this is a new node (never written to disk)
-        if (cacheSegment.newNodes.find(lookup_key) != cacheSegment.newNodes.end()) {
-            return 0;  // New node not yet connected
-        }
-    }
-
-    // Step 2: If not found in cache, check disk
+    // Read directly from RocksDB using snapshot for consistent reads
     GraphKey graphKey(nodeId, level);
     std::string graph_value;
-    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+    rocksdb::Status status = db->Get(snapshotReadOptions_, cf, graphKey.asSlice(), &graph_value);
 
     if (status.ok()) {
         const char* ptr = graph_value.data();
@@ -2015,33 +1838,35 @@ void HNSWDiskIndex<DataType, DistType>::repairNeighborConnections(
     }
 
     // Apply heuristic to select best neighbors if we have more than max_M
-    vecsim_stl::vector<idType> updated_neighbors(this->allocator);
     if (candidates.size() > max_M) {
         vecsim_stl::vector<idType> removed_candidates(this->allocator);
         getNeighborsByHeuristic2(candidates, max_M, removed_candidates);
     }
-    // Extract selected neighbor IDs (works for both cases)
-    updated_neighbors.reserve(candidates.size());
+
+    // Update neighbor_neighbors with the repaired list (caller will use this for batch write)
+    neighbor_neighbors.clear();
+    neighbor_neighbors.reserve(candidates.size());
     for (const auto &[dist, id] : candidates) {
-        updated_neighbors.push_back(id);
+        neighbor_neighbors.push_back(id);
     }
-
-    // Stage the update for this neighbor
-    stageDeleteUpdate(neighbor_id, level, updated_neighbors);
-
 }
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
     if (pendingDeleteIds.empty()) return;
 
-    // Clear any previous staged updates (for deletions)
-    stagedDeleteUpdates.clear();
-    stagedDeleteMap.clear();
-
     // Create a set of IDs being deleted in this batch for quick lookup
     std::unordered_set<idType> deletingIds(pendingDeleteIds.begin(), pendingDeleteIds.end());
     size_t elementCount = curElementCount.load(std::memory_order_acquire);
+
+    // Collect all graph updates to write in a single batch
+    rocksdb::WriteBatch batch;
+    auto writeOptions = rocksdb::WriteOptions();
+    writeOptions.disableWAL = true;
+    std::vector<char> rawVectorBuffer(this->inputBlobSize);
+
+    // Track nodes that need repair updates (using std::vector for map compatibility)
+    std::unordered_map<uint64_t, std::vector<idType>> repairUpdates;
 
     // Process each deleted node
     for (idType deleted_id : pendingDeleteIds) {
@@ -2088,21 +1913,41 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
                     // Repair connections using the dedicated helper method
                     repairNeighborConnections(neighbor_id, level, deleted_id,
                                               deleted_node_neighbors, neighbor_neighbors);
+                    // Store the repaired neighbor list (copy to std::vector)
+                    uint64_t key = makeRepairKey(neighbor_id, level);
+                    repairUpdates[key] = std::vector<idType>(neighbor_neighbors.begin(), neighbor_neighbors.end());
                 }
             }
 
-            // Delete the node's graph entry at this level by staging an empty neighbor list
-            // (or we could use a Delete operation in the batch)
-            vecsim_stl::vector<idType> empty_neighbors(this->allocator);
-            uint64_t del_key = makeRepairKey(deleted_id, level);
-            // For deletion entries, always overwrite - the node is being deleted
-            stagedDeleteMap[del_key] = stagedDeleteUpdates.size();
-            stagedDeleteUpdates.emplace_back(deleted_id, level, empty_neighbors, this->allocator);
+            // Delete the node's graph entry at this level
+            GraphKey graphKey(deleted_id, level);
+            batch.Delete(cf, graphKey.asSlice());
         }
     }
 
-    // Mark metadata as invalid and clean up raw vectors AFTER processing all nodes
-    // This ensures getNeighbors() and other methods work correctly during graph repair
+    // Write repair updates to batch
+    for (const auto& [key, neighbors] : repairUpdates) {
+        idType nodeId = static_cast<idType>(key >> 32);
+        size_t level = static_cast<size_t>(key & 0xFFFFFFFF);
+
+        // Get raw vector data
+        if (!getRawVectorInternal(nodeId, rawVectorBuffer.data())) {
+            continue;
+        }
+
+        GraphKey graphKey(nodeId, level);
+        std::string value = serializeGraphValue(rawVectorBuffer.data(), neighbors);
+        batch.Put(cf, graphKey.asSlice(), value);
+    }
+
+    // Write all updates to RocksDB
+    rocksdb::Status status = db->Write(writeOptions, &batch);
+    if (!status.ok()) {
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "ERROR: Failed to write delete batch to disk: %s", status.ToString().c_str());
+    }
+
+    // Mark metadata as invalid and clean up raw vectors AFTER writing to disk
     for (idType deleted_id : pendingDeleteIds) {
         if (deleted_id >= elementCount || deleted_id >= idToMetaData.size()) {
             continue;
@@ -2111,33 +1956,8 @@ void HNSWDiskIndex<DataType, DistType>::processDeleteBatch() {
         idToMetaData[deleted_id].label = INVALID_LABEL;
 
         // Remove raw vector from RAM if it exists
-        auto ram_it = rawVectorsInRAM.find(deleted_id);
-        if (ram_it != rawVectorsInRAM.end()) {
-            rawVectorsInRAM.erase(ram_it);
-        }
-    }
-
-    // Flush all staged graph updates to disk in a single batch operation
-    vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
-    flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
-    stagedDeleteMap.clear();
-
-    // Flush staged repair updates (opportunistic cleanup from getNeighbors)
-    // But first, filter out any repairs for nodes that were just deleted
-    if (!stagedRepairUpdates.empty()) {
-        vecsim_stl::vector<GraphUpdate> filteredRepairUpdates(this->allocator);
-        for (const auto &update : stagedRepairUpdates) {
-            // Skip repairs for nodes that are in the deletion batch
-            if (deletingIds.find(update.node_id) == deletingIds.end()) {
-                filteredRepairUpdates.push_back(update);
-            }
-        }
-        if (!filteredRepairUpdates.empty()) {
-            flushStagedGraphUpdates(filteredRepairUpdates, emptyNeighborUpdates);
-        }
-        // Clear all staged repairs (including filtered ones)
-        stagedRepairUpdates.clear();
-        stagedRepairMap.clear();
+        std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
+        rawVectorsInRAM.erase(deleted_id);
     }
 
     // Clear the pending delete IDs
@@ -2192,11 +2012,11 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintNodeNeighbors(idType node_id) 
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Top level: %zu",
               idToMetaData[node_id].topLevel);
 
-    // Check each level
+    // Check each level using snapshot for consistent reads
     for (size_t level = 0; level <= idToMetaData[node_id].topLevel; ++level) {
         GraphKey graphKey(node_id, level);
         std::string graph_value;
-        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+        rocksdb::Status status = db->Get(snapshotReadOptions_, cf, graphKey.asSlice(), &graph_value);
 
         if (status.ok()) {
             // Parse using new format
@@ -2217,7 +2037,8 @@ template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::debugPrintAllGraphKeys() const {
     this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== All Graph Keys in RocksDB ===");
 
-    auto readOptions = rocksdb::ReadOptions();
+    // Use snapshot for consistent reads during iteration
+    rocksdb::ReadOptions readOptions = snapshotReadOptions_;
     readOptions.fill_cache = false;
     readOptions.prefix_same_as_start = true;
 
@@ -2271,7 +2092,8 @@ void HNSWDiskIndex<DataType, DistType>::debugPrintAllGraphKeys() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWDiskIndex<DataType, DistType>::debugCountGraphEdges() const {
-    auto readOptions = rocksdb::ReadOptions();
+    // Use snapshot for consistent reads during iteration
+    rocksdb::ReadOptions readOptions = snapshotReadOptions_;
     readOptions.fill_cache = false;
     readOptions.prefix_same_as_start = true;
 
@@ -2332,7 +2154,7 @@ void HNSWDiskIndex<DataType, DistType>::debugValidateGraphConnectivity() const {
         for (size_t level = 0; level <= idToMetaData[i].topLevel; ++level) {
             GraphKey graphKey(i, level);
             std::string graph_value;
-            rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+            rocksdb::Status status = db->Get(snapshotReadOptions_, cf, graphKey.asSlice(), &graph_value);
 
             if (status.ok()) {
                 // Parse using new format
@@ -2362,29 +2184,6 @@ void HNSWDiskIndex<DataType, DistType>::debugValidateGraphConnectivity() const {
     }
 }
 
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::flushStagedDeleteUpdates() {
-    // Flush staged delete updates to disk
-    // Note: This is a non-const method that modifies the staging areas
-    vecsim_stl::vector<NeighborUpdate> emptyNeighborUpdates(this->allocator);
-    flushStagedGraphUpdates(stagedDeleteUpdates, emptyNeighborUpdates);
-    stagedDeleteMap.clear();
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::debugPrintStagedUpdates() const {
-    // Print both insert and delete staged updates
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "=== Staged Updates ===");
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Insert Graph Updates: %zu",
-              stagedInsertUpdates.size());
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Insert Neighbor Updates: %zu",
-              stagedInsertNeighborUpdates.size());
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Delete Graph Updates: %zu",
-              stagedDeleteUpdates.size());
-    this->log(VecSimCommonStrings::LOG_DEBUG_STRING, "Staged Repair Updates: %zu",
-              stagedRepairUpdates.size());
-}
 
 // Add missing method implementations for benchmark framework
 template <typename DataType, typename DistType>
@@ -2609,11 +2408,11 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
     // Try to find a new entrypoint at the current max level (including level 0)
     // Use a do-while or check >= 0 to include level 0
     while (true) {
-        // First, try to find a neighbor of the old entrypoint at this level
+        // First, try to find a neighbor of the old entrypoint at this level using snapshot
         GraphKey graphKey(old_entry_point_id, currentMaxLevel);
         std::string graph_value;
         rocksdb::Status status =
-            db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
+            db->Get(snapshotReadOptions_, cf, graphKey.asSlice(), &graph_value);
 
         if (status.ok() && !graph_value.empty()) {
             // Correctly deserialize the graph value to get neighbors
@@ -2654,283 +2453,9 @@ void HNSWDiskIndex<DataType, DistType>::replaceEntryPoint() {
     maxLevel = 0;
 }
 
-/********************************** Batchless Mode Implementation **********************************/
+/********************************** Direct RocksDB Write Implementation **********************************/
 
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::getNeighborsFromCache(
-    idType nodeId, size_t level, vecsim_stl::vector<idType> &result) const {
 
-    result.clear();
-    uint64_t key = makeRepairKey(nodeId, level);
-    size_t segment = getSegmentIndex(key);
-    auto& cacheSegment = cacheSegments_[segment];
-
-    // Step 1: Check in-memory cache (includes pending writes from all jobs)
-    {
-        std::shared_lock<std::shared_mutex> lock(cacheSegment.guard);
-        auto it = cacheSegment.cache.find(key);
-        if (it != cacheSegment.cache.end()) {
-            // Copy from std::vector to vecsim_stl::vector
-            result.reserve(it->second.size());
-            for (idType id : it->second) {
-                result.push_back(id);
-            }
-            filterDeletedNodes(result);
-            // Note: We don't update LRU here since it's a read-only operation
-            // LRU is updated on write/load to maintain const correctness
-            return;
-        }
-
-        // Check if this is a new node (never written to disk) - return empty
-        if (cacheSegment.newNodes.find(key) != cacheSegment.newNodes.end()) {
-            // New node not yet in cache - return empty (will be populated when connected)
-            return;
-        }
-    }
-
-    // Step 2: Not in cache and not a new node - read from disk
-    GraphKey graphKey(nodeId, level);
-    std::string graph_value;
-    rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-
-    if (status.ok()) {
-        deserializeGraphValue(graph_value, result);
-    }
-
-    // Add to cache for future reads (convert to unique_lock for write)
-    {
-        std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
-        // Double-check: another thread may have populated it
-        auto it = cacheSegment.cache.find(key);
-        if (it == cacheSegment.cache.end()) {
-            // Eviction: if cache is at capacity, evict LRU entries before adding
-            if (maxCacheEntriesPerSegment_ > 0) {
-                while (cacheSegment.cache.size() >= maxCacheEntriesPerSegment_ && cacheSegment.hasLRU()) {
-                    uint64_t evictKey = cacheSegment.getLRU();
-
-                    // Don't evict dirty nodes - they need to be written to disk first
-                    if (cacheSegment.dirty.find(evictKey) != cacheSegment.dirty.end()) {
-                        break;
-                    }
-
-                    cacheSegment.cache.erase(evictKey);
-                    cacheSegment.removeFromLRU(evictKey);
-                    cacheSegment.newNodes.erase(evictKey);
-                }
-            }
-
-            // Copy from vecsim_stl::vector to std::vector
-            std::vector<idType> cacheEntry;
-            cacheEntry.reserve(result.size());
-            for (idType id : result) {
-                cacheEntry.push_back(id);
-            }
-            cacheSegment.cache[key] = std::move(cacheEntry);
-            cacheSegment.addToLRU(key);
-        } else {
-            // Already populated by another thread - update LRU
-            cacheSegment.touchLRU(key);
-        }
-    }
-
-    filterDeletedNodes(result);
-}
-
-// Helper to load neighbors from disk into cache if not already present
-// Caller must hold unique_lock on cacheSegment.guard (will be temporarily released during disk I/O)
-// Also handles LRU eviction when cache is at capacity
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::loadNeighborsFromDiskIfNeeded(
-    uint64_t key, CacheSegment& cacheSegment, std::unique_lock<std::shared_mutex>& lock) {
-
-    auto it = cacheSegment.cache.find(key);
-    if (it != cacheSegment.cache.end()) {
-        // Already in cache - update LRU and return
-        cacheSegment.touchLRU(key);
-        return;
-    }
-
-    // Check if this is a new node (never written to disk) - skip disk lookup
-    bool isNewNode = (cacheSegment.newNodes.find(key) != cacheSegment.newNodes.end());
-
-    // Eviction: if cache is at capacity, evict LRU entries before adding
-    if (maxCacheEntriesPerSegment_ > 0) {
-        while (cacheSegment.cache.size() >= maxCacheEntriesPerSegment_ && cacheSegment.hasLRU()) {
-            uint64_t evictKey = cacheSegment.getLRU();
-
-            // Don't evict dirty nodes - they need to be written to disk first
-            if (cacheSegment.dirty.find(evictKey) != cacheSegment.dirty.end()) {
-                break;
-            }
-
-            cacheSegment.cache.erase(evictKey);
-            cacheSegment.removeFromLRU(evictKey);
-            cacheSegment.newNodes.erase(evictKey);
-        }
-    }
-
-    if (!isNewNode) {
-        // First modification of existing node - need to load current state from disk
-        idType nodeId = static_cast<idType>(key >> 32);
-        size_t level = static_cast<size_t>(key & 0xFFFFFFFF);
-
-        lock.unlock();
-        vecsim_stl::vector<idType> diskNeighbors(this->allocator);
-        GraphKey graphKey(nodeId, level);
-        std::string graph_value;
-        rocksdb::Status status = db->Get(rocksdb::ReadOptions(), cf, graphKey.asSlice(), &graph_value);
-        if (status.ok()) {
-            deserializeGraphValue(graph_value, diskNeighbors);
-        }
-        lock.lock();
-
-        // Re-check: another thread might have populated it
-        if (cacheSegment.cache.find(key) == cacheSegment.cache.end()) {
-            // Convert vecsim_stl::vector to std::vector
-            std::vector<idType> cacheEntry;
-            cacheEntry.reserve(diskNeighbors.size());
-            for (idType id : diskNeighbors) {
-                cacheEntry.push_back(id);
-            }
-            cacheSegment.cache[key] = std::move(cacheEntry);
-            cacheSegment.addToLRU(key);
-        } else {
-            // Already populated by another thread - update LRU
-            cacheSegment.touchLRU(key);
-        }
-    } else {
-        // New node - initialize with empty neighbor list
-        cacheSegment.cache[key] = std::vector<idType>();
-        cacheSegment.addToLRU(key);
-    }
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::addNeighborToCache(
-    idType nodeId, size_t level, idType newNeighborId) {
-
-    uint64_t key = makeRepairKey(nodeId, level);
-    size_t segment = getSegmentIndex(key);
-    auto& cacheSegment = cacheSegments_[segment];
-
-    std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
-
-    // Load from disk if not in cache (handles newNodes check and LRU internally)
-    loadNeighborsFromDiskIfNeeded(key, cacheSegment, lock);
-
-    // Add new neighbor (avoid duplicates)
-    auto &neighbors = cacheSegment.cache[key];
-    if (std::find(neighbors.begin(), neighbors.end(), newNeighborId) == neighbors.end()) {
-        neighbors.push_back(newNeighborId);
-    }
-
-    // Update LRU since we modified this entry
-    cacheSegment.touchLRU(key);
-
-    // Mark as dirty (needs disk write) and increment atomic counter
-    auto insertResult = cacheSegment.dirty.insert(key);
-    if (insertResult.second) {  // Only increment if newly inserted
-        totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
-    }
-}
-
-template <typename DataType, typename DistType>
-bool HNSWDiskIndex<DataType, DistType>::tryAddNeighborToCacheIfCapacity(
-    idType nodeId, size_t level, idType newNeighborId, size_t maxCapacity) {
-
-    uint64_t key = makeRepairKey(nodeId, level);
-    size_t segment = getSegmentIndex(key);
-    auto& cacheSegment = cacheSegments_[segment];
-
-    std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
-
-    // Load from disk if not in cache (handles newNodes check and LRU internally)
-    loadNeighborsFromDiskIfNeeded(key, cacheSegment, lock);
-
-    // Atomic check-and-add under the lock
-    auto &neighbors = cacheSegment.cache[key];
-
-    // Check if already present (avoid duplicates)
-    if (std::find(neighbors.begin(), neighbors.end(), newNeighborId) != neighbors.end()) {
-        return true; // Already added, consider it success
-    }
-
-    // Check capacity
-    if (neighbors.size() >= maxCapacity) {
-        return false; // No capacity
-    }
-
-    // Has capacity - add the neighbor
-    neighbors.push_back(newNeighborId);
-
-    // Update LRU since we modified this entry
-    cacheSegment.touchLRU(key);
-
-    auto insertResult = cacheSegment.dirty.insert(key);
-    if (insertResult.second) {  // Only increment if newly inserted
-        totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
-    }
-    return true;
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::setNeighborsInCache(
-    idType nodeId, size_t level, const vecsim_stl::vector<idType> &neighbors, bool isNewNode) {
-
-    uint64_t key = makeRepairKey(nodeId, level);
-    size_t segment = getSegmentIndex(key);
-    auto& cacheSegment = cacheSegments_[segment];
-
-    // Convert vecsim_stl::vector to std::vector
-    std::vector<idType> cacheEntry;
-    cacheEntry.reserve(neighbors.size());
-    for (idType id : neighbors) {
-        cacheEntry.push_back(id);
-    }
-
-    std::unique_lock<std::shared_mutex> lock(cacheSegment.guard);
-
-    // Check if key already exists in cache
-    bool keyExists = cacheSegment.cache.find(key) != cacheSegment.cache.end();
-
-    // Eviction: if cache is at capacity and this is a new key, evict LRU entries
-    if (maxCacheEntriesPerSegment_ > 0 && !keyExists) {
-        while (cacheSegment.cache.size() >= maxCacheEntriesPerSegment_ && cacheSegment.hasLRU()) {
-            uint64_t evictKey = cacheSegment.getLRU();
-
-            // Don't evict dirty nodes - they need to be written to disk first
-            if (cacheSegment.dirty.find(evictKey) != cacheSegment.dirty.end()) {
-                // All remaining entries are dirty - can't evict without losing data
-                break;
-            }
-
-            // Remove from cache and LRU tracking
-            cacheSegment.cache.erase(evictKey);
-            cacheSegment.removeFromLRU(evictKey);
-            // Note: newNodes should have been cleared after flush, but clean up just in case
-            cacheSegment.newNodes.erase(evictKey);
-        }
-    }
-
-    cacheSegment.cache[key] = std::move(cacheEntry);
-
-    // Update LRU tracking
-    if (keyExists) {
-        cacheSegment.touchLRU(key);  // Move to front (most recently used)
-    } else {
-        cacheSegment.addToLRU(key);  // Add as most recently used
-    }
-
-    // If this is a new node, track it to avoid disk lookups
-    if (isNewNode) {
-        cacheSegment.newNodes.insert(key);
-    }
-
-    auto insertResult = cacheSegment.dirty.insert(key);
-    if (insertResult.second) {  // Only increment if newly inserted
-        totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
-    }
-}
 
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::writeVectorToDisk(
@@ -2953,242 +2478,72 @@ void HNSWDiskIndex<DataType, DistType>::writeVectorToDisk(
     db->Write(writeOptions, &batch);
 }
 
+// Write graph updates for existing nodes that need to add the new node as neighbor
+// Note: The new node itself is written directly in mutuallyConnectNewElement
 template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::writeDirtyNodesToDisk(
-    const vecsim_stl::vector<uint64_t> &modifiedNodes,
-    const void *newVectorRawData, idType newVectorId) {
+void HNSWDiskIndex<DataType, DistType>::writeGraphUpdates(
+    const vecsim_stl::vector<uint64_t> &modifiedNodes, idType newVectorId) {
 
     if (modifiedNodes.empty()) {
         return;
     }
 
-    // ==================== SWAP-AND-FLUSH PATTERN ====================
-    // To avoid the "Lost Update" race condition, we atomically clear the dirty flag
-    // BEFORE writing to disk (not after). If a new insert occurs while we're writing,
-    // it will simply re-add the node to the dirty set. No updates are lost.
-    // ================================================================
-
     auto writeOptions = rocksdb::WriteOptions();
     writeOptions.disableWAL = true;
 
     rocksdb::WriteBatch batch;
     std::vector<char> rawVectorBuffer(this->inputBlobSize);
-    vecsim_stl::vector<uint64_t> nodesToWrite(this->allocator);
+    size_t writeCount = 0;
 
-    // ==================== SWAP-AND-FLUSH PATTERN ====================
-    // Two-phase approach to minimize lock contention while preventing lost updates:
-    // Phase 1: Read cache data under SHARED lock (allows concurrent writers)
-    // Phase 2: Clear dirty flags under EXCLUSIVE lock (brief, after all reads done)
-    // If writing fails, we re-add nodes to dirty set.
-    // ================================================================
-
-    // Phase 1: Read cache data under shared locks (allows other writers to proceed)
+    // Process each modified node (only existing nodes that need neighbor updates)
+    // The new node itself is written directly in mutuallyConnectNewElement
     for (uint64_t key : modifiedNodes) {
         idType nodeId = static_cast<idType>(key >> 32);
         size_t level = static_cast<size_t>(key & 0xFFFFFFFF);
-        size_t segment = getSegmentIndex(key);
-        auto& cacheSegment = cacheSegments_[segment];
 
-        // Get neighbors from cache under SHARED lock (concurrent reads allowed)
+        // Skip the new node - it was already written in mutuallyConnectNewElement
+        if (nodeId == newVectorId) {
+            continue;
+        }
+
+        // Get raw vector data for existing node
+        if (!getRawVectorInternal(nodeId, rawVectorBuffer.data())) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                      "WARNING: Could not get raw vector for node %u", nodeId);
+            continue;
+        }
+
+        // Read current neighbors from snapshot and add the new node
         vecsim_stl::vector<idType> neighbors(this->allocator);
-        {
-            std::shared_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-            auto it = cacheSegment.cache.find(key);
-            if (it == cacheSegment.cache.end()) {
-                continue;
-            }
-            const std::vector<idType> &cacheNeighbors = it->second;
-            neighbors.reserve(cacheNeighbors.size());
-            for (idType id : cacheNeighbors) {
-                neighbors.push_back(id);
+        getNeighbors(nodeId, level, neighbors);
+        // Add new node if not already present
+        bool found = false;
+        for (idType n : neighbors) {
+            if (n == newVectorId) {
+                found = true;
+                break;
             }
         }
-        // Shared lock released - other threads can add to cache
-
-        // Get raw vector data (no cache lock held during disk I/O)
-        const void *rawData;
-        if (nodeId == newVectorId) {
-            rawData = newVectorRawData;
-        } else {
-            // Read from RAM or disk
-            if (!getRawVectorInternal(nodeId, rawVectorBuffer.data())) {
-                this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                          "WARNING: Could not get raw vector for node %u", nodeId);
-                continue;
-            }
-            rawData = rawVectorBuffer.data();
+        if (!found) {
+            neighbors.push_back(newVectorId);
         }
 
         GraphKey graphKey(nodeId, level);
-        std::string value = serializeGraphValue(rawData, neighbors);
+        std::string value = serializeGraphValue(rawVectorBuffer.data(), neighbors);
         batch.Put(cf, graphKey.asSlice(), value);
-        nodesToWrite.push_back(key);
+        writeCount++;
     }
 
-    // Phase 2: Clear dirty flags BEFORE writing (swap-and-flush pattern)
-    // Brief exclusive locks - one segment at a time
-    for (uint64_t key : nodesToWrite) {
-        size_t segment = getSegmentIndex(key);
-        auto& cacheSegment = cacheSegments_[segment];
-        std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-        if (cacheSegment.dirty.erase(key) > 0) {
-            totalDirtyCount_.fetch_sub(1, std::memory_order_relaxed);
-        }
-    }
-
-    if (nodesToWrite.empty()) {
+    if (writeCount == 0) {
         return;
     }
 
-    // Phase 3: Write to disk (no locks held)
-    // Dirty flags already cleared in Phase 2 - any concurrent modifications
-    // will re-add to dirty set and be picked up in next flush
+    // Write batch to RocksDB
     rocksdb::Status status = db->Write(writeOptions, &batch);
     if (!status.ok()) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                  "ERROR: Failed to write dirty nodes to disk: %s", status.ToString().c_str());
-
-        // On failure, re-add nodes to dirty set so they'll be retried
-        for (uint64_t key : nodesToWrite) {
-            size_t segment = getSegmentIndex(key);
-            auto& cacheSegment = cacheSegments_[segment];
-            std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-            if (cacheSegment.dirty.insert(key).second) {
-                totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
-    }
-    // Success case: dirty flags already cleared, nothing more to do
-}
-
-template <typename DataType, typename DistType>
-void HNSWDiskIndex<DataType, DistType>::flushDirtyNodesToDisk() {
-    std::lock_guard<std::mutex> flushLock(diskWriteGuard);
-
-    // Check if there are any dirty nodes using atomic counter (fast path)
-    if (totalDirtyCount_.load(std::memory_order_relaxed) == 0) {
+                  "ERROR: Failed to write graph updates to disk: %s", status.ToString().c_str());
         return;
-    }
-
-    // ==================== SWAP-AND-FLUSH PATTERN ====================
-    // Process one segment at a time to minimize lock contention:
-    // 1. Acquire exclusive lock on segment (blocks inserts briefly - nanoseconds for swap)
-    // 2. Swap dirty set with empty set (atomic ownership transfer)
-    // 3. Release lock immediately (segment is free for new inserts)
-    // 4. Process swapped nodes and write to disk (no locks held)
-    //
-    // If a new insert happens after the swap, it sees an empty dirty set
-    // and correctly adds itself. No updates are lost.
-    // ================================================================
-
-    auto writeOptions = rocksdb::WriteOptions();
-    writeOptions.disableWAL = true;
-
-    rocksdb::WriteBatch batch;
-    std::vector<char> rawVectorBuffer(this->inputBlobSize);
-    std::unordered_set<idType> successfulLevel0Ids;
-
-    // Track all nodes we're trying to write (for error recovery)
-    vecsim_stl::vector<uint64_t> allNodesToFlush(this->allocator);
-
-    // Process each segment independently
-    for (size_t s = 0; s < NUM_CACHE_SEGMENTS; ++s) {
-        auto& cacheSegment = cacheSegments_[s];
-
-        // Local container to take ownership of dirty nodes
-        std::unordered_set<uint64_t> nodesToFlush;
-
-        {
-            // 1. Acquire exclusive lock (brief - just for the swap)
-            std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-
-            if (cacheSegment.dirty.empty()) {
-                continue;
-            }
-
-            // 2. Atomic swap - move dirty set contents to local, leave dirty empty
-            // New inserts after this will add to the now-empty dirty set
-            nodesToFlush.swap(cacheSegment.dirty);
-
-            // 3. Update global counter - we've taken ownership of these nodes
-            totalDirtyCount_.fetch_sub(nodesToFlush.size(), std::memory_order_relaxed);
-        }
-        // 4. Lock released here - segment is free for inserts
-
-        // 5. Process nodes and add to batch (no locks held)
-        for (uint64_t key : nodesToFlush) {
-            idType nodeId = static_cast<idType>(key >> 32);
-            size_t level = static_cast<size_t>(key & 0xFFFFFFFF);
-
-            // Get neighbors from cache (need shared lock briefly)
-            vecsim_stl::vector<idType> neighbors(this->allocator);
-            {
-                std::shared_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-                auto it = cacheSegment.cache.find(key);
-                if (it == cacheSegment.cache.end()) {
-                    // Node not in cache - shouldn't happen, but skip if it does
-                    continue;
-                }
-                const std::vector<idType> &cacheNeighbors = it->second;
-                neighbors.reserve(cacheNeighbors.size());
-                for (idType id : cacheNeighbors) {
-                    neighbors.push_back(id);
-                }
-            }
-
-            // Get raw vector data (no segment lock needed)
-            if (!getRawVectorInternal(nodeId, rawVectorBuffer.data())) {
-                // Raw vector not available - this shouldn't happen for dirty nodes
-                this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                          "WARNING: Raw vector not found for dirty node %u at level %zu", nodeId, level);
-                continue;
-            }
-
-            GraphKey graphKey(nodeId, level);
-            std::string value = serializeGraphValue(rawVectorBuffer.data(), neighbors);
-            batch.Put(cf, graphKey.asSlice(), value);
-            allNodesToFlush.push_back(key);
-
-            if (level == 0) {
-                successfulLevel0Ids.insert(nodeId);
-            }
-        }
-    }
-
-    // Write entire batch to RocksDB (no locks held during I/O)
-    if (batch.Count() > 0) {
-        rocksdb::Status status = db->Write(writeOptions, &batch);
-        if (!status.ok()) {
-            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                      "ERROR: Failed to flush dirty nodes to disk: %s", status.ToString().c_str());
-
-            // On failure, re-add nodes to dirty set so they'll be retried
-            for (uint64_t key : allNodesToFlush) {
-                size_t segment = getSegmentIndex(key);
-                auto& cacheSegment = cacheSegments_[segment];
-                std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-                if (cacheSegment.dirty.insert(key).second) {
-                    totalDirtyCount_.fetch_add(1, std::memory_order_relaxed);
-                }
-            }
-            return; // Don't clear newNodes or remove raw vectors on failure
-        }
-    }
-
-    // Success: Clear newNodes flags for all flushed nodes
-    for (uint64_t key : allNodesToFlush) {
-        size_t segment = getSegmentIndex(key);
-        auto& cacheSegment = cacheSegments_[segment];
-        std::unique_lock<std::shared_mutex> segmentLock(cacheSegment.guard);
-        cacheSegment.newNodes.erase(key);
-    }
-
-    // Remove raw vectors for level 0 nodes that were written to disk
-    if (!successfulLevel0Ids.empty()) {
-        std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
-        for (idType vectorId : successfulLevel0Ids) {
-            rawVectorsInRAM.erase(vectorId);
-        }
     }
 }
 
@@ -3242,30 +2597,54 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     // Use heuristic to filter candidates
     idType next_closest_entry_point = getNeighborsByHeuristic2(top_candidates_list, M);
 
-    // Extract selected neighbor IDs
+    // Extract selected neighbor IDs for the new node
     vecsim_stl::vector<idType> neighbor_ids(this->allocator);
     neighbor_ids.reserve(top_candidates_list.size());
     for (size_t i = 0; i < top_candidates_list.size(); ++i) {
         neighbor_ids.push_back(top_candidates_list[i].second);
     }
 
-    // Update cache for the new node's neighbors
-    setNeighborsInCache(new_node_id, level, neighbor_ids);
-    modifiedNodes.push_back(makeRepairKey(new_node_id, level));
+    // Write the new node's neighbors directly to RocksDB
+    // We do this here because we have the computed neighbors available
+    // Note: We do NOT add to modifiedNodes - we write directly
+    {
+        std::vector<char> rawVectorBuffer(this->inputBlobSize);
+        if (getRawVectorInternal(new_node_id, rawVectorBuffer.data())) {
+            GraphKey graphKey(new_node_id, level);
+            std::string value = serializeGraphValue(rawVectorBuffer.data(), neighbor_ids);
+            auto writeOptions = rocksdb::WriteOptions();
+            writeOptions.disableWAL = true;
+            db->Put(writeOptions, cf, graphKey.asSlice(), value);
+        }
+    }
 
     // Update existing nodes to include the new node in their neighbor lists
     for (const auto &neighbor_data : top_candidates_list) {
         idType selected_neighbor = neighbor_data.second;
         DistType distance = neighbor_data.first;
 
-        // Use atomic check-and-add to prevent race conditions
-        if (tryAddNeighborToCacheIfCapacity(selected_neighbor, level, new_node_id, max_M_cur)) {
-            // Successfully added - mark as modified
-            modifiedNodes.push_back(makeRepairKey(selected_neighbor, level));
-        } else {
-            // Full - need to re-evaluate using heuristic
-            revisitNeighborConnections(new_node_id, selected_neighbor, level, distance,
-                                       modifiedNodes);
+        // Read current neighbors from disk (using snapshot for consistency)
+        vecsim_stl::vector<idType> existing_neighbors(this->allocator);
+        getNeighbors(selected_neighbor, level, existing_neighbors);
+
+        // Check if already present
+        bool already_present = false;
+        for (idType n : existing_neighbors) {
+            if (n == new_node_id) {
+                already_present = true;
+                break;
+            }
+        }
+
+        if (!already_present) {
+            if (existing_neighbors.size() < max_M_cur) {
+                // Has capacity - just add and mark as modified
+                modifiedNodes.push_back(makeRepairKey(selected_neighbor, level));
+            } else {
+                // Full - need to re-evaluate using heuristic
+                revisitNeighborConnections(new_node_id, selected_neighbor, level, distance,
+                                           modifiedNodes);
+            }
         }
     }
 
@@ -3312,7 +2691,7 @@ void HNSWDiskIndex<DataType, DistType>::executeSingleInsertJob(HNSWDiskSingleIns
     // Get current entry point and max level
     auto [currentEntryPoint, currentMaxLevel] = safeGetEntryPointState();
 
-    // Use unified core function (batching controlled by diskWriteBatchThreshold)
+    // Use unified core function (writes directly to RocksDB)
     executeGraphInsertionCore(job->vectorId, job->elementMaxLevel, currentEntryPoint,
                               currentMaxLevel, localRawRef->data(), processedVector);
 
@@ -3326,37 +2705,44 @@ void HNSWDiskIndex<DataType, DistType>::executeGraphInsertionCore(
     const void *rawVectorData, const void *processedVectorData) {
 
     if (entryPoint == INVALID_ID || vectorId == entryPoint) {
-        // Entry point or first vector - nothing to connect
-        // Raw vector cleanup happens in addVector for entry point case
+        // Entry point or first vector - write it directly with empty neighbors
+        vecsim_stl::vector<idType> emptyNeighbors(this->allocator);
+        GraphKey graphKey(vectorId, 0);
+        std::string value = serializeGraphValue(rawVectorData, emptyNeighbors);
+        auto writeOptions = rocksdb::WriteOptions();
+        writeOptions.disableWAL = true;
+        db->Put(writeOptions, cf, graphKey.asSlice(), value);
+
+        // Remove raw vector from RAM after writing to disk
+        {
+            std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
+            rawVectorsInRAM.erase(vectorId);
+        }
         return;
     }
 
-    // Track modified nodes for disk write
+    // Track modified nodes for disk write (only existing nodes that need neighbor updates)
+    // Note: The new node itself is written directly in mutuallyConnectNewElement
     vecsim_stl::vector<uint64_t> modifiedNodes(this->allocator);
 
     // Hold shared lock during graph insertion to prevent idToMetaData resize
     // while we're reading from it in searchLayer/processCandidate
     {
         std::shared_lock<std::shared_mutex> lock(indexDataGuard);
-        // Insert into graph
+        // Insert into graph - this writes the new node directly and tracks modified existing nodes
         insertElementToGraph(vectorId, elementMaxLevel, entryPoint, globalMaxLevel,
                              rawVectorData, processedVectorData, modifiedNodes);
     }
 
-    // Handle disk writes - both single-threaded and multi-threaded support batching
-    // diskWriteBatchThreshold controls when to flush:
-    //   0 = flush after every insert (no batching)
-    //   >0 = flush when dirty count reaches threshold
-    if (diskWriteBatchThreshold == 0) {
-        // No batching: write immediately
-        writeDirtyNodesToDisk(modifiedNodes, rawVectorData, vectorId);
+    // Write updates for existing nodes (neighbors that need to add the new node)
+    // The new node itself was already written in mutuallyConnectNewElement
+    writeGraphUpdates(modifiedNodes, vectorId);
+
+    // Remove raw vector from RAM after writing to disk
+    {
         std::lock_guard<std::shared_mutex> lock(rawVectorsGuard);
         rawVectorsInRAM.erase(vectorId);
-    } else if (totalDirtyCount_.load(std::memory_order_relaxed) >= diskWriteBatchThreshold) {
-        // Threshold reached: flush all dirty nodes
-        flushDirtyNodesToDisk();
     }
-    // else: batching enabled but threshold not reached, keep accumulating
 
     // Update entry point if this vector has higher level
     if (elementMaxLevel > globalMaxLevel) {

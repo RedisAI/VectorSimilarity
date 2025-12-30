@@ -57,11 +57,7 @@ HNSWDiskIndex<DataType, DistType>::HNSWDiskIndex(
       idToMetaData(this->allocator), labelToIdMap(this->allocator), db(db), cf(cf), dbPath(""),
       indexDataGuard(), visitedNodesHandlerPool(INITIAL_CAPACITY, this->allocator),
       pendingDeleteIds(this->allocator),
-      stagedInsertUpdates(this->allocator),
-      stagedDeleteUpdates(this->allocator), stagedRepairUpdates(this->allocator),
-      stagedInsertNeighborUpdates(this->allocator),
-      jobQueue(nullptr), jobQueueCtx(nullptr), SubmitJobsToQueue(nullptr),
-      cacheSegments_(new CacheSegment[NUM_CACHE_SEGMENTS]) {
+      jobQueue(nullptr), jobQueueCtx(nullptr), SubmitJobsToQueue(nullptr) {
 
     // Restore index fields from file
     this->restoreIndexFields(input);
@@ -252,30 +248,17 @@ void HNSWDiskIndex<DataType, DistType>::restoreVectors(std::ifstream &input, Enc
  */
 template <typename DataType, typename DistType>
 void HNSWDiskIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
-    // Flush any pending delete updates before saving to ensure consistent snapshot
-    this->flushStagedDeleteUpdates();
-    this->flushDirtyNodesToDisk();
+    // Process any pending deletions before saving to ensure consistent snapshot
+    this->processDeleteBatch();
+
     // Verify that all pending state has been flushed
     // These assertions ensure data integrity during serialization
-    if (!stagedInsertUpdates.empty()) {
-        throw std::runtime_error("Serialization error: stagedInsertUpdates not empty after flush");
-    }
-    if (!stagedDeleteUpdates.empty()) {
-        throw std::runtime_error("Serialization error: stagedDeleteUpdates not empty after flush");
-    }
-    if (!stagedInsertNeighborUpdates.empty()) {
-        throw std::runtime_error("Serialization error: stagedInsertNeighborUpdates not empty after flush");
-    }
     if (!rawVectorsInRAM.empty()) {
         throw std::runtime_error("Serialization error: rawVectorsInRAM not empty after flush");
-    }
-    if (!stagedRepairUpdates.empty()) {
-        throw std::runtime_error("Serialization error: stagedRepairUpdates not empty after flush");
     }
     if (pendingDeleteIds.size() != 0) {
         throw std::runtime_error("Serialization error: pendingDeleteIds not empty after flush");
     }
-
 
     // Save index metadata and graph (in-memory data only)
     this->saveIndexFields(output);
@@ -687,13 +670,12 @@ void HNSWDiskIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
              "RocksDB checkpoint loaded. Vectors will be loaded on-demand from disk during queries.");
 
-    // Clear any pending state (must be empty after deserialization)
-    this->stagedInsertUpdates.clear();
-    this->stagedDeleteUpdates.clear();
-    this->stagedInsertNeighborUpdates.clear();
-
     // Resize visited nodes handler pool
     this->visitedNodesHandlerPool.resize(elementCount);
+
+    // Initialize snapshot for write operations (reads during graph construction)
+    // Queries use per-query snapshots via QuerySnapshot for consistent reads
+    this->initializeSnapshot();
 }
 
 template <typename DataType, typename DistType>
