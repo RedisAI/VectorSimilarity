@@ -151,7 +151,10 @@ private:
  * and then scaling the values to fit in the range of [0, 255].
  *
  * Storage layout:
- * | quantized_values[dim] | min_val | delta | sum | (sum_squares for L2 only) |
+ * | quantized_values[dim] | min_val | delta | x_sum | (x_sum_squares for L2 only) |
+ * where:
+ * x_sum = Σx_i: sum of the original values,
+ * x_sum_squares = Σx_i²: sum of squares of the original values.
  *
  * The quantized blob size is:
  * - For L2:        dim * sizeof(OUTPUT_TYPE) + 4 * sizeof(DataType)

@@ -998,29 +998,10 @@ TEST(PreprocessorsTest, QuantizationTest) {
     constexpr size_t original_blob_size = dim * sizeof(float);
     float original_blob[dim] = {1, 2, 3, 4, 5, 6};
 
-    // Manually test quantization
     // For L2 metric: quantized values + min + delta + sum + sum_squares = dim + 4 floats
     constexpr size_t quantized_blob_bytes_count = dim * sizeof(uint8_t) + 4 * sizeof(float);
     uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
-    float min_val = original_blob[0];
-    float max_val = original_blob[dim - 1];
-    float diff = max_val - min_val;
-    float delta = diff / 255.0f;
-    // Calculate quantized values, sum and sum_squares
-    float sum = 0.0f;
-    float sum_squares = 0.0f;
-    for (size_t i = 0; i < dim; i++) {
-        float normalized = (original_blob[i] - min_val) / delta;
-        expected_processed_blob[i] = static_cast<uint8_t>(std::round(normalized));
-        sum += original_blob[i];
-        sum_squares += original_blob[i] * original_blob[i];
-    }
-
-    float *metadata = reinterpret_cast<float *>(expected_processed_blob + dim);
-    metadata[0] = min_val;
-    metadata[1] = delta;
-    metadata[2] = sum;
-    metadata[3] = sum_squares;
+    ComputeSQ8Quantization(original_blob, dim, expected_processed_blob);
 
     auto quant_preprocessor =
         new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
@@ -1197,19 +1178,17 @@ protected:
             ASSERT_EQ(storage_blob_size, expected_storage_size);
             ASSERT_EQ(query_blob_size, original_blob_size);
 
-            // Verify metadata
-            const uint8_t *quantized = static_cast<const uint8_t *>(storage_blob);
-            const float *metadata = reinterpret_cast<const float *>(quantized + dim);
+            // Compute expected quantization using utility function
+            uint8_t expected_blob[expected_storage_size];
+            ComputeSQ8Quantization(original_blob, dim, expected_blob);
 
-            float expected_sum = 1 + 2 + 3 + 4 + 5; // 15
-            ASSERT_FLOAT_EQ(metadata[0], 1.0f);     // min_val
-            ASSERT_GT(metadata[1], 0.0f);           // delta > 0
-            ASSERT_FLOAT_EQ(metadata[2], expected_sum);
-
-            if constexpr (Metric == VecSimMetric_L2) {
-                float expected_sum_sq = 1 + 4 + 9 + 16 + 25; // 55
-                ASSERT_FLOAT_EQ(metadata[3], expected_sum_sq);
-            }
+            // Compare quantized values and metadata
+            // For non-L2 metrics, compare only dim + 3 floats (excluding sum_squares)
+            size_t compare_size = (Metric == VecSimMetric_L2)
+                                      ? expected_storage_size
+                                      : dim * sizeof(uint8_t) + 3 * sizeof(float);
+            EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(
+                static_cast<const uint8_t *>(storage_blob), expected_blob, compare_size));
 
             allocator->free_allocation(storage_blob);
         }
