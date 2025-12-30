@@ -1179,7 +1179,9 @@ protected:
             ASSERT_EQ(query_blob_size, original_blob_size);
 
             // Compute expected quantization using utility function
-            uint8_t expected_blob[expected_storage_size];
+            // Allocate buffer large enough for L2 (4 floats), even for non-L2 metrics
+            constexpr size_t max_storage_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+            uint8_t expected_blob[max_storage_size];
             ComputeSQ8Quantization(original_blob, dim, expected_blob);
 
             // Compare quantized values and metadata
