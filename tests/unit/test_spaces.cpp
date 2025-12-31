@@ -2458,7 +2458,7 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
     size_t dim = GetParam();
 
     // Create quantized vectors
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + sum (float) + norm (float)
+    // Size: dim (uint8_t) + min_val (float) + delta (float) + sum (float) + sum_squares (float)
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);

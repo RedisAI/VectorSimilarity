@@ -25,8 +25,7 @@
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum of
- * squares (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
  */
 
 // Process 64 uint8 elements using VNNI with multiple accumulators for ILP (dot product only)
@@ -70,7 +69,7 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
     const uint8_t *pEnd1 = pVec1 + dimension;
 
     // Get dequantization parameters and precomputed values from the end of pVec1
-    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]]
     const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
     const float min1 = params1[0];
     const float delta1 = params1[1];

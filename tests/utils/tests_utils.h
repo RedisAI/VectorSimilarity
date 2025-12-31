@@ -104,7 +104,7 @@ static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
 
 /**
  * Quantize float vector to SQ8 with precomputed sum and norm.
- * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)]]
  * where sum = Σv[i] and norm = Σv[i]² (sum of squares of uint8 elements)
  */
 static void quantize_float_vec_to_uint8_with_sum(const float *v, size_t dim, uint8_t *qv) {
@@ -145,7 +145,7 @@ static void quantize_float_vec_to_uint8_with_sum(const float *v, size_t dim, uin
 
 /**
  * Populate a float vector and quantize to SQ8 with precomputed sum and norm.
- * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)]]
  */
 static void populate_float_vec_to_sq8_with_sum(uint8_t *v, size_t dim, int seed = 1234,
                                                float min = -1.0f, float max = 1.0f) {
