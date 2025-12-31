@@ -244,6 +244,10 @@ public:
                              .fieldType = INFOFIELD_UINT64,
                              .fieldValue = {FieldValue{.uintegerValue = info.basicInfo.isMulti}}});
         infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_DISK_STRING,
+                             .fieldType = INFOFIELD_UINT64,
+                             .fieldValue = {FieldValue{.uintegerValue = info.basicInfo.isDisk}}});
+        infoIterator->addInfoField(
             VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                              .fieldType = INFOFIELD_UINT64,
                              .fieldValue = {FieldValue{.uintegerValue = info.indexSize}}});

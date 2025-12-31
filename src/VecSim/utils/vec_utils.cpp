@@ -44,6 +44,7 @@ const char *VecSimCommonStrings::DIMENSION_STRING = "DIMENSION";
 const char *VecSimCommonStrings::INDEX_SIZE_STRING = "INDEX_SIZE";
 const char *VecSimCommonStrings::INDEX_LABEL_COUNT_STRING = "INDEX_LABEL_COUNT";
 const char *VecSimCommonStrings::IS_MULTI_STRING = "IS_MULTI_VALUE";
+const char *VecSimCommonStrings::IS_DISK_STRING = "IS_DISK";
 const char *VecSimCommonStrings::MEMORY_STRING = "MEMORY";
 
 const char *VecSimCommonStrings::HNSW_EF_RUNTIME_STRING = "EF_RUNTIME";

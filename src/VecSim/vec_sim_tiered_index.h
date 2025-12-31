@@ -360,6 +360,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         .type = backendInfo.commonInfo.basicInfo.type,
         .isMulti = this->backendIndex->isMultiValue(),
         .isTiered = true,
+        .isDisk = backendInfo.commonInfo.basicInfo.isDisk,
         .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
         .dim = backendInfo.commonInfo.basicInfo.dim,
     };
