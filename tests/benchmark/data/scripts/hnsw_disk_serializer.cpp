@@ -5,7 +5,7 @@
  * It supports both .raw files (no header) and .fbin files (with header).
  *
  * Usage:
- *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads]
+ *   ./hnsw_disk_serializer <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [blockCacheMB]
  *
  * Arguments:
  *   input_file      - Binary file containing vectors (.raw or .fbin)
@@ -18,14 +18,15 @@
  *   M               - HNSW M parameter (default: 64)
  *   efConstruction  - HNSW efConstruction parameter (default: 512)
  *   threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)
+ *   blockCacheMB    - RocksDB block cache size in MB (default: 0 = use RocksDB default)
  *
  * Examples:
  *   # Using .raw file (dimension required)
  *   ./hnsw_disk_serializer dbpedia-cosine-dim768-test_vectors.raw \
  *       dbpedia-cosine-dim768-M64-efc512 768 Cosine FLOAT32 64 512
  *
- *   # Using .fbin file (auto-detect dimension) with 8 threads
- *   ./hnsw_disk_serializer vectors.fbin output 0 Cosine FLOAT32 64 512 8
+ *   # Using .fbin file (auto-detect dimension) with 8 threads and 2GB cache
+ *   ./hnsw_disk_serializer vectors.fbin output 0 Cosine FLOAT32 64 512 8 2048
  *
  *   # Using .fbin file (verify dimension)
  *   ./hnsw_disk_serializer vectors.fbin output 768 Cosine FLOAT32 64 512
@@ -267,7 +268,7 @@ void saveIndexByType(VecSimIndex *index, const std::string &output_file) {
 
 int main(int argc, char *argv[]) {
     if (argc < 6) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads]\n";
+        std::cerr << "Usage: " << argv[0] << " <input_file> <output_name> <dim> <metric> <type> [M] [efConstruction] [threads] [blockCacheMB]\n";
         std::cerr << "\nArguments:\n";
         std::cerr << "  input_file      - Binary file (.raw or .fbin)\n";
         std::cerr << "  output_name     - Base name for output files\n";
@@ -277,6 +278,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "  M               - HNSW M parameter (default: 64)\n";
         std::cerr << "  efConstruction  - HNSW efConstruction parameter (default: 512)\n";
         std::cerr << "  threads         - Number of threads for parallel indexing (default: 4, use 0 for single-threaded)\n";
+        std::cerr << "  blockCacheMB    - RocksDB block cache size in MB (default: 0 = use RocksDB default)\n";
         return 1;
     }
 
@@ -288,6 +290,7 @@ int main(int argc, char *argv[]) {
     size_t M = (argc > 6) ? std::stoull(argv[6]) : 64;
     size_t efConstruction = (argc > 7) ? std::stoull(argv[7]) : 512;
     size_t num_threads = (argc > 8) ? std::stoull(argv[8]) : 4;
+    size_t blockCacheMB = (argc > 9) ? std::stoull(argv[9]) : 0;
 
     // Check if input file exists
     if (!std::filesystem::exists(input_file)) {
@@ -346,6 +349,7 @@ int main(int argc, char *argv[]) {
     std::cout << "M:              " << M << "\n";
     std::cout << "efConstruction: " << efConstruction << "\n";
     std::cout << "Threads:        " << (num_threads > 0 ? std::to_string(num_threads) : "single-threaded") << "\n";
+    std::cout << "Block cache:    " << (blockCacheMB > 0 ? std::to_string(blockCacheMB) + " MB" : "default") << "\n";
     std::cout << "Number of vectors: " << num_vectors << "\n";
     std::cout << "==================================\n\n";
 
@@ -367,6 +371,7 @@ int main(int argc, char *argv[]) {
     params.efRuntime = 10;  // Default, can be changed at load time
     params.epsilon = HNSW_DEFAULT_EPSILON;
     params.dbPath = rocksdb_path.c_str();
+    params.blockCacheSize = blockCacheMB * 1024 * 1024;  // Convert MB to bytes
 
     VecSimParams vecsimParams;
     vecsimParams.algo = VecSimAlgo_HNSWLIB_DISK;

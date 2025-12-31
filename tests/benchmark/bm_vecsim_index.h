@@ -349,6 +349,7 @@ void BM_VecSimIndex<index_type_t>::buildHNSWDiskFromScratch(VecSimType type) {
     disk_params.efRuntime = 10;
     disk_params.epsilon = HNSW_DEFAULT_EPSILON;
     disk_params.dbPath = rocksdb_path.c_str();
+    disk_params.blockCacheSize = 0;  // Use RocksDB default
 
     VecSimParams vecsimParams;
     vecsimParams.algo = VecSimAlgo_HNSWLIB_DISK;

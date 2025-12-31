@@ -158,6 +158,7 @@ typedef struct {
     size_t efRuntime;
     double epsilon;
     const char *dbPath;
+    size_t blockCacheSize;  // RocksDB block cache size in bytes (0 = use default)
 } HNSWDiskParams;
 
 typedef struct {

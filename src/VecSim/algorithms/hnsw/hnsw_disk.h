@@ -298,7 +298,8 @@ public:
                               vecsim_stl::vector<uint64_t> &modifiedNodes);
     idType mutuallyConnectNewElement(idType new_node_id,
                                      vecsim_stl::updatable_max_heap<DistType, idType> &top_candidates,
-                                     size_t level, vecsim_stl::vector<uint64_t> &modifiedNodes);
+                                     size_t level, vecsim_stl::vector<uint64_t> &modifiedNodes,
+                                     const void *raw_vector_data);
 
     // Delete batch processing methods
     void processDeleteBatch();
@@ -923,10 +924,7 @@ int HNSWDiskIndex<DataType, DistType>::addVector(
         idToMetaData[newElementId] = new_element;
         labelToIdMap[label] = newElementId;
     }
-
-    // Resize visited nodes handler pool to accommodate new elements
-    // Use load() to read atomic value
-    visitedNodesHandlerPool.resize(curElementCount.load(std::memory_order_acquire));
+    // Note: visitedNodesHandlerPool was already resized inside the indexDataGuard lock above
 
     // Each vector is processed immediately and written to disk
     // Get entry point info
@@ -1401,7 +1399,11 @@ HNSWDiskIndex<DataType, DistType>::searchLayerLabels(idType ep_id, const void *d
     if (!isMarkedDeleted(ep_id)) {
         DistType dist = this->calcDistance(data_point, getDataByInternalId(ep_id));
         lowerBound = dist;
-        top_candidates.emplace(dist, getExternalLabel(ep_id));
+        // Brief lock for safe metadata access (getExternalLabel accesses idToMetaData)
+        {
+            std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+            top_candidates.emplace(dist, getExternalLabel(ep_id));
+        }
         candidate_set.emplace(-dist, ep_id);
     } else {
         lowerBound = std::numeric_limits<DistType>::max();
@@ -1480,8 +1482,9 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
                                                           idType &curr_element,
                                                           DistType &cur_dist,
                                                           const rocksdb::ReadOptions& readOpts) const {
-    // Hold shared lock for entire search to prevent idToMetaData resize during isMarkedDeletedUnsafe calls
-    std::shared_lock<std::shared_mutex> indexLock(indexDataGuard);
+    // NOTE: Lock is NOT held for the entire loop to avoid blocking writers during I/O.
+    // - For queries (running_query=true): No metadata access needed, no lock required.
+    // - For indexing (running_query=false): Brief lock taken only for isMarkedDeletedUnsafe check.
 
     bool changed;
     idType bestCand = curr_element;
@@ -1492,6 +1495,7 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
         changed = false;
 
         // Read neighbors using per-query snapshot for consistent reads
+        // No lock needed - RocksDB handles its own thread safety
         vecsim_stl::vector<idType> neighbors(this->allocator);
         getNeighbors(bestCand, level, neighbors, readOpts);
 
@@ -1505,10 +1509,11 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
             idType candidate = neighbors[i];
 
             assert (candidate < curElementCount && "candidate error: out of index range");
-            if (running_query) {
+            if constexpr (running_query) {
                 visited_count++;
             }
             // Calculate distance to this candidate
+            // vectorsGuard protects this access internally
             DistType d = this->calcDistance(data_point, getDataByInternalId(candidate));
 
             // If this candidate is closer, update our best candidate
@@ -1516,9 +1521,14 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
                 cur_dist = d;
                 bestCand = candidate;
                 changed = true;
-                // Use lock-free version - candidate was already validated by getNeighbors
-                if (!running_query && !isMarkedDeletedUnsafe(candidate)) {
-                    bestNonDeletedCand = bestCand;
+
+                if constexpr (!running_query) {
+                    // Brief shared lock for safe metadata access
+                    // This is much better than holding the lock for the entire loop
+                    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+                    if (!isMarkedDeletedUnsafe(candidate)) {
+                        bestNonDeletedCand = bestCand;
+                    }
                 }
             }
         }
@@ -1526,7 +1536,7 @@ void HNSWDiskIndex<DataType, DistType>::greedySearchLevel(const void *data_point
     } while (changed);
 
     // Update the current element to the best candidate found
-    if (!running_query) {
+    if constexpr (!running_query) {
         curr_element = bestNonDeletedCand;
     } else {
         curr_element = bestCand;
@@ -1616,10 +1626,12 @@ void HNSWDiskIndex<DataType, DistType>::processCandidate(
                 candidate_set.emplace(-cur_dist, candidate_id);
 
                 // Insert the candidate to the top candidates heap only if it is not marked as
-                // deleted. Use lock-free version since candidate_id was already bounds-checked
-                // by getNeighbors (which filters invalid IDs).
-                if (!isMarkedDeletedUnsafe(candidate_id))
-                    emplaceHeap(top_candidates, cur_dist, candidate_id);
+                // deleted. Brief shared lock for safe metadata access during resize.
+                {
+                    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+                    if (!isMarkedDeletedUnsafe(candidate_id))
+                        emplaceHeap(top_candidates, cur_dist, candidate_id);
+                }
 
                 if (top_candidates.size() > ef)
                     top_candidates.pop();
@@ -2573,8 +2585,9 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
             searchLayer(curr_element, vector_data, level, efConstruction);
 
         if (!top_candidates.empty()) {
+            // Pass raw_vector_data to avoid redundant rawVectorsInRAM lookup
             curr_element = mutuallyConnectNewElement(element_id, top_candidates, level,
-                                                     modifiedNodes);
+                                                     modifiedNodes, raw_vector_data);
         } else {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                       "WARNING: No candidates found at level %d!", level);
@@ -2585,7 +2598,8 @@ void HNSWDiskIndex<DataType, DistType>::insertElementToGraph(
 template <typename DataType, typename DistType>
 idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     idType new_node_id, vecsim_stl::updatable_max_heap<DistType, idType> &top_candidates,
-    size_t level, vecsim_stl::vector<uint64_t> &modifiedNodes) {
+    size_t level, vecsim_stl::vector<uint64_t> &modifiedNodes,
+    const void *raw_vector_data) {
 
     size_t max_M_cur = level ? M : M0;
 
@@ -2607,15 +2621,13 @@ idType HNSWDiskIndex<DataType, DistType>::mutuallyConnectNewElement(
     // Write the new node's neighbors directly to RocksDB
     // We do this here because we have the computed neighbors available
     // Note: We do NOT add to modifiedNodes - we write directly
+    // Use the raw vector data passed from caller (avoids redundant rawVectorsInRAM lookup)
     {
-        std::vector<char> rawVectorBuffer(this->inputBlobSize);
-        if (getRawVectorInternal(new_node_id, rawVectorBuffer.data())) {
-            GraphKey graphKey(new_node_id, level);
-            std::string value = serializeGraphValue(rawVectorBuffer.data(), neighbor_ids);
-            auto writeOptions = rocksdb::WriteOptions();
-            writeOptions.disableWAL = true;
-            db->Put(writeOptions, cf, graphKey.asSlice(), value);
-        }
+        GraphKey graphKey(new_node_id, level);
+        std::string value = serializeGraphValue(raw_vector_data, neighbor_ids);
+        auto writeOptions = rocksdb::WriteOptions();
+        writeOptions.disableWAL = true;
+        db->Put(writeOptions, cf, graphKey.asSlice(), value);
     }
 
     // Update existing nodes to include the new node in their neighbor lists
@@ -2725,14 +2737,11 @@ void HNSWDiskIndex<DataType, DistType>::executeGraphInsertionCore(
     // Note: The new node itself is written directly in mutuallyConnectNewElement
     vecsim_stl::vector<uint64_t> modifiedNodes(this->allocator);
 
-    // Hold shared lock during graph insertion to prevent idToMetaData resize
-    // while we're reading from it in searchLayer/processCandidate
-    {
-        std::shared_lock<std::shared_mutex> lock(indexDataGuard);
-        // Insert into graph - this writes the new node directly and tracks modified existing nodes
-        insertElementToGraph(vectorId, elementMaxLevel, entryPoint, globalMaxLevel,
-                             rawVectorData, processedVectorData, modifiedNodes);
-    }
+    // NOTE: No outer lock held here - inner functions (greedySearchLevel, processCandidate)
+    // acquire brief locks only when accessing idToMetaData. This allows concurrent insertions
+    // to proceed without blocking each other during I/O operations.
+    insertElementToGraph(vectorId, elementMaxLevel, entryPoint, globalMaxLevel,
+                         rawVectorData, processedVectorData, modifiedNodes);
 
     // Write updates for existing nodes (neighbors that need to add the new node)
     // The new node itself was already written in mutuallyConnectNewElement
