@@ -7,9 +7,11 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <sstream>
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
+#include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/spaces/computer/calculator.h"
 #include "unit_test_utils.h"
 #include "tests_utils.h"
@@ -65,7 +67,16 @@ public:
         if (!value_to_add_query)
             value_to_add_query = value_to_add_storage;
     }
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        // This assert verifies that there's no use for this function for now - different sizes for
+        // storage and query blobs. If such a use case arises, we can remove the assert and
+        // implement the logic to handle different sizes.
+        assert(storage_blob_size == query_blob_size);
 
+        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
+    }
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
 
@@ -110,6 +121,17 @@ public:
     }
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        // This assert verifies that there's no use for this function for now - different sizes for
+        // storage and query blobs. If such a use case arises, we can remove the assert and
+        // implement the logic to handle different sizes.
+        assert(storage_blob_size == query_blob_size);
+
+        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
+    }
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
         this->preprocessQuery(original_blob, query_blob, input_blob_size, alignment);
     }
@@ -143,6 +165,12 @@ public:
                            DataType value_to_add_storage, DataType value_to_add_query)
         : PreprocessorInterface(allocator), value_to_add_storage(value_to_add_storage),
           value_to_add_query(value_to_add_query) {}
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
+    }
+
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
 
@@ -201,6 +229,18 @@ public:
 
     static constexpr unsigned char getExcessValue() { return excess_value; }
 
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        // if the blobs are equal,
+        if (storage_blob == query_blob) {
+            preprocessGeneral(original_blob, storage_blob, storage_blob_size, alignment);
+            query_blob = storage_blob;
+            query_blob_size = storage_blob_size;
+        }
+    }
+
+    // If the input blob size is not enough
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
         // if the blobs are equal,
@@ -945,3 +985,259 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
                                                        final_blob_bytes_count));
     }
 }
+// TODO: test edge case where all entries equal.
+
+// Tests the quantization preprocessor with a single preprocessor in the chain.
+// The QuantPreprocessor allocates the storage blob and processes it, while the query blob
+// is unprocessed and allocated by the preprocessors container.
+TEST(PreprocessorsTest, QuantizationTest) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t n_preprocessors = 1;
+    constexpr size_t alignment = 5;
+    constexpr size_t dim = 6;
+    constexpr size_t original_blob_size = dim * sizeof(float);
+    float original_blob[dim] = {1, 2, 3, 4, 5, 6};
+
+    // For L2 metric: quantized values + min + delta + sum + sum_squares = dim + 4 floats
+    constexpr size_t quantized_blob_bytes_count = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    uint8_t expected_processed_blob[quantized_blob_bytes_count] = {0};
+    ComputeSQ8Quantization(original_blob, dim, expected_processed_blob);
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+    auto multiPPContainer =
+        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, alignment);
+    multiPPContainer.addPreprocessor(quant_preprocessor);
+
+    // Test preprocess
+    {
+        ProcessedBlobs processed_blobs =
+            multiPPContainer.preprocess(original_blob, original_blob_size);
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+        // blobs should NOT point to the same memory slot
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(storage_blob, query_blob);
+
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob),
+                                                        expected_processed_blob,
+                                                        quantized_blob_bytes_count));
+    }
+
+    // Test preprocessForStorage
+    {
+        auto storage_blob =
+            multiPPContainer.preprocessForStorage(original_blob, original_blob_size);
+
+        ASSERT_NE(storage_blob.get(), nullptr);
+        EXPECT_NO_FATAL_FAILURE(
+            CompareVectors<uint8_t>(static_cast<const uint8_t *>(storage_blob.get()),
+                                    expected_processed_blob, quantized_blob_bytes_count));
+    }
+
+    // Test preprocessQuery (content should not be changed, only reallocated to the required
+    // alignment)
+    {
+        auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
+        ASSERT_NE(query_blob.get(), nullptr);
+        // Verify content is unchanged (original floats, not quantized)
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(static_cast<const float *>(query_blob.get()),
+                                                      original_blob, dim));
+        // Check address is aligned
+        unsigned char address_alignment = (uintptr_t)(query_blob.get()) % alignment;
+        ASSERT_EQ(address_alignment, 0) << "expected alignment " << alignment;
+    }
+
+    // Test preprocessStorageInPlace
+    {
+        // Allocate buffer large enough for in-place quantization
+        auto buffer_alloc = allocator->allocate_unique(original_blob_size);
+        float *buffer = static_cast<float *>(buffer_alloc.get());
+        memcpy(buffer, original_blob, original_blob_size);
+
+        multiPPContainer.preprocessStorageInPlace(buffer, original_blob_size);
+
+        EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(reinterpret_cast<const uint8_t *>(buffer),
+                                                        expected_processed_blob,
+                                                        quantized_blob_bytes_count));
+#if !defined(NDEBUG)
+        EXPECT_EXIT(
+            { multiPPContainer.preprocessStorageInPlace(buffer, sizeof(uint8_t)); },
+            testing::KilledBySignal(SIGABRT), "Input buffer too small for in-place quantization");
+#endif
+    }
+}
+
+// Test preprocessQuery with alignment 0 - no copy, same memory address
+TEST(PreprocessorsTest, QuantizationTestPreprocessQueryNoAlignment) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t n_preprocessors = 1;
+    constexpr size_t no_alignment = 0;
+    constexpr size_t dim = 5;
+    constexpr size_t original_blob_size = dim * sizeof(float);
+    float original_blob[dim] = {1, 2, 3, 4, 5};
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+    auto multiPPContainer =
+        MultiPreprocessorsContainer<float, n_preprocessors>(allocator, no_alignment);
+    multiPPContainer.addPreprocessor(quant_preprocessor);
+
+    auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
+    ASSERT_EQ(query_blob.get(), original_blob); // same memory address
+    // Verify content is unchanged
+    EXPECT_NO_FATAL_FAILURE(
+        CompareVectors<float>(static_cast<const float *>(query_blob.get()), original_blob, dim));
+}
+
+// Test edge case where all entries are equal
+TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 5;
+    constexpr unsigned char alignment = 0;
+    float original_blob[dim] = {3.5f, 3.5f, 3.5f, 3.5f, 3.5f};
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    size_t storage_blob_size = dim * sizeof(float);
+    size_t query_blob_size = dim * sizeof(float);
+
+    quant_preprocessor->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
+                                   query_blob_size, alignment);
+
+    ASSERT_NE(storage_blob, nullptr);
+
+    // When all values are equal: min == max, delta = 1, all quantized values should be 0
+    const uint8_t *quantized = static_cast<const uint8_t *>(storage_blob);
+    for (size_t i = 0; i < dim; ++i) {
+        ASSERT_EQ(quantized[i], 0) << "All equal values should quantize to 0";
+    }
+
+    // Verify metadata: min_val = 3.5f, delta = 1.0f (fallback when diff == 0)
+    const float *metadata = reinterpret_cast<const float *>(quantized + dim);
+    ASSERT_FLOAT_EQ(metadata[0], 3.5f); // min_val
+    ASSERT_FLOAT_EQ(metadata[1], 1.0f); // delta (fallback)
+
+    // Verify sum and sum_squares for L2 metric
+    float expected_sum = 3.5f * dim;
+    float expected_sum_squares = 3.5f * 3.5f * dim;
+    ASSERT_FLOAT_EQ(metadata[2], expected_sum);         // sum
+    ASSERT_FLOAT_EQ(metadata[3], expected_sum_squares); // sum_squares
+
+    // Reconstruct and verify: min + quantized * delta = 3.5 + 0 * 1 = 3.5
+    for (size_t i = 0; i < dim; ++i) {
+        float reconstructed = metadata[0] + quantized[i] * metadata[1];
+        ASSERT_FLOAT_EQ(reconstructed, original_blob[i]);
+    }
+
+    allocator->free_allocation(storage_blob);
+    delete quant_preprocessor;
+}
+
+// Parameterized test class for QuantPreprocessor with different metrics
+class QuantPreprocessorMetricTest : public testing::TestWithParam<VecSimMetric> {
+protected:
+    static constexpr size_t dim = 5;
+    static constexpr unsigned char alignment = 0;
+    static constexpr size_t original_blob_size = dim * sizeof(float);
+
+    std::shared_ptr<VecSimAllocator> allocator;
+    float original_blob[dim] = {1, 2, 3, 4, 5};
+
+    void SetUp() override { allocator = VecSimAllocator::newVecsimAllocator(); }
+
+    // Helper to get expected storage size based on metric
+    static size_t getExpectedStorageSize(VecSimMetric metric) {
+        // L2: dim + 4 floats (min, delta, sum, sum_squares)
+        // IP/Cosine: dim + 3 floats (min, delta, sum)
+        size_t extra_floats = (metric == VecSimMetric_L2) ? 4 : 3;
+        return dim * sizeof(uint8_t) + extra_floats * sizeof(float);
+    }
+
+    // Helper to run quantization test for a specific metric
+    template <VecSimMetric Metric>
+    void runQuantizationTest() {
+        size_t expected_storage_size = getExpectedStorageSize(Metric);
+
+        auto quant_preprocessor = new (allocator) QuantPreprocessor<float, Metric>(allocator, dim);
+
+        // Test preprocess
+        {
+            void *storage_blob = nullptr;
+            void *query_blob = nullptr;
+            size_t storage_blob_size = original_blob_size;
+            size_t query_blob_size = original_blob_size;
+
+            quant_preprocessor->preprocess(original_blob, storage_blob, query_blob,
+                                           storage_blob_size, query_blob_size, alignment);
+
+            ASSERT_NE(storage_blob, nullptr);
+            ASSERT_EQ(storage_blob_size, expected_storage_size);
+            ASSERT_EQ(query_blob_size, original_blob_size);
+
+            // Compute expected quantization using utility function
+            // Allocate buffer large enough for L2 (4 floats), even for non-L2 metrics
+            constexpr size_t max_storage_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+            uint8_t expected_blob[max_storage_size];
+            ComputeSQ8Quantization(original_blob, dim, expected_blob);
+
+            // Compare quantized values and metadata
+            // For non-L2 metrics, compare only dim + 3 floats (excluding sum_squares)
+            size_t compare_size = (Metric == VecSimMetric_L2)
+                                      ? expected_storage_size
+                                      : dim * sizeof(uint8_t) + 3 * sizeof(float);
+            EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(
+                static_cast<const uint8_t *>(storage_blob), expected_blob, compare_size));
+
+            allocator->free_allocation(storage_blob);
+        }
+
+        // Test preprocessForStorage
+        {
+            void *blob = nullptr;
+            size_t blob_size = original_blob_size;
+
+            quant_preprocessor->preprocessForStorage(original_blob, blob, blob_size);
+
+            ASSERT_EQ(blob_size, expected_storage_size);
+            allocator->free_allocation(blob);
+        }
+
+        // Test preprocessQuery - should be no-op
+        {
+            void *blob = nullptr;
+            size_t blob_size = original_blob_size;
+
+            quant_preprocessor->preprocessQuery(original_blob, blob, blob_size, alignment);
+
+            ASSERT_EQ(blob_size, original_blob_size);
+            ASSERT_EQ(blob, nullptr);
+        }
+
+        delete quant_preprocessor;
+    }
+};
+
+TEST_P(QuantPreprocessorMetricTest, QuantizationBlobSizeAndMetadata) {
+    VecSimMetric metric = GetParam();
+    switch (metric) {
+    case VecSimMetric_L2:
+        runQuantizationTest<VecSimMetric_L2>();
+        break;
+    case VecSimMetric_IP:
+        runQuantizationTest<VecSimMetric_IP>();
+        break;
+    case VecSimMetric_Cosine:
+        runQuantizationTest<VecSimMetric_Cosine>();
+        break;
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(QuantPreprocessorTests, QuantPreprocessorMetricTest,
+                         testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine),
+                         [](const testing::TestParamInfo<VecSimMetric> &info) {
+                             return VecSimMetric_ToString(info.param);
+                         });

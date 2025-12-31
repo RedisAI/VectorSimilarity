@@ -73,8 +73,21 @@ int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id,
 
 template <typename data_t>
 void CompareVectors(const data_t *v1, const data_t *v2, size_t dim) {
+    auto print_vector = [](const data_t *v, size_t dim) {
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < dim; i++) {
+            oss << +v[i]; // unary + promotes uint8_t to int for printing
+            if (i < dim - 1)
+                oss << ", ";
+        }
+        oss << "]";
+        return oss.str();
+    };
     for (size_t i = 0; i < dim; i++) {
-        ASSERT_EQ(v1[i], v2[i]) << "Vectors are not equal at index " << i;
+        ASSERT_EQ(v1[i], v2[i]) << "Vectors are not equal at index " << i
+                                << "\nv1: " << print_vector(v1, dim)
+                                << "\nv2: " << print_vector(v2, dim);
     }
 }
 
@@ -203,6 +216,45 @@ inline double GetInfVal(VecSimType type) {
         throw std::invalid_argument("This type is not supported");
     }
 }
+/**
+ * Computes SQ8 quantization for a float vector.
+ * Output layout: [quantized_values[dim] | min_val | delta | sum | sum_squares]
+ *
+ * @param original_blob Input float vector
+ * @param dim           Dimension of the vector
+ * @param output        Output buffer (must be at least dim + 4*sizeof(float) bytes)
+ */
+inline void ComputeSQ8Quantization(const float *original_blob, size_t dim, uint8_t *output) {
+    // Find min and max values
+    float min_val = original_blob[0];
+    float max_val = original_blob[0];
+    for (size_t i = 1; i < dim; i++) {
+        min_val = std::min(min_val, original_blob[i]);
+        max_val = std::max(max_val, original_blob[i]);
+    }
+
+    // Calculate delta
+    float diff = max_val - min_val;
+    float delta = (diff == 0.0f) ? 1.0f : diff / 255.0f;
+
+    // Calculate quantized values, sum and sum_squares
+    float sum = 0.0f;
+    float sum_squares = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        float normalized = (original_blob[i] - min_val) / delta;
+        output[i] = static_cast<uint8_t>(std::round(normalized));
+        sum += original_blob[i];
+        sum_squares += original_blob[i] * original_blob[i];
+    }
+
+    // Store metadata: min_val, delta, sum, sum_squares
+    float *metadata = reinterpret_cast<float *>(output + dim);
+    metadata[0] = min_val;
+    metadata[1] = delta;
+    metadata[2] = sum;
+    metadata[3] = sum_squares;
+}
+
 // TODO: Move all test_utils to this namespace
 namespace test_utils {
 size_t CalcVectorDataSize(VecSimIndex *index, VecSimType data_type);
