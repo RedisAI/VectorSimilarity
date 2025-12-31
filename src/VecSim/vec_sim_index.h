@@ -47,7 +47,7 @@ struct AbstractIndexInitParams {
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
-    bool isDisk;  // Whether the index stores vectors on disk
+    bool isDisk; // Whether the index stores vectors on disk
     void *logCtx;
     size_t inputBlobSize;
 };
