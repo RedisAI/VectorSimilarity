@@ -148,7 +148,7 @@ static void quantize_float_vec_to_uint8_with_sum(const float *v, size_t dim, uin
  * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [norm (float)]
  */
 static void populate_float_vec_to_sq8_with_sum(uint8_t *v, size_t dim, int seed = 1234,
-                                                    float min = -1.0f, float max = 1.0f) {
+                                               float min = -1.0f, float max = 1.0f) {
     std::vector<float> vec(dim);
     populate_float_vec(vec.data(), dim, seed, min, max);
     // Normalize vector

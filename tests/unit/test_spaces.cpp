@@ -2531,7 +2531,6 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
     ASSERT_EQ(baseline, arch_opt_func(v_quantized.data(), v_quantized.data(), dim))
         << "No optimization self-distance should match baseline";
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
-
 }
 
 // Test symmetry: dist(v1, v2) == dist(v2, v1)
@@ -2566,8 +2565,7 @@ TEST(SQ8_SQ8_EdgeCases, ZeroVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_zero_quantized(quantized_size);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum(v_zero.data(), dim,
-                                                          v_zero_quantized.data());
+    test_utils::quantize_float_vec_to_uint8_with_sum(v_zero.data(), dim, v_zero_quantized.data());
     test_utils::populate_float_vec_to_sq8_with_sum(v_nonzero_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_InnerProduct(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -2633,8 +2631,7 @@ TEST(SQ8_SQ8_EdgeCases, ConstantVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<uint8_t> v_random_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum(v_const.data(), dim,
-                                                          v_const_quantized.data());
+    test_utils::quantize_float_vec_to_uint8_with_sum(v_const.data(), dim, v_const_quantized.data());
     test_utils::populate_float_vec_to_sq8_with_sum(v_random_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_InnerProduct(v_const_quantized.data(), v_random_quantized.data(), dim);
