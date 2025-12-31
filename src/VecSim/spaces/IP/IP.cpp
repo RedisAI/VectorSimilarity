@@ -49,13 +49,19 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return 1.0f - res;
 }
 
-// SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum/norm
-// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [norm
-// (float)]
+// SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
 float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
+    // Compute inner product of quantized values: Σ(q1[i]*q2[i])
+    float product = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        product += pVect1[i] * pVect2[i];
+    }
+
+    // Extract metadata from the end of vectors (likely already prefetched)
     // Get quantization parameters from pVect1
     const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
     const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
@@ -66,25 +72,26 @@ float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dime
     const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
     const float sum2 = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
 
-    // Compute inner product with dequantization of both vectors
-    // With sum = Σv[i] (sum of original float values), the formula is:
+    // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
-    float product = 0;
-    for (size_t i = 0; i < dimension; i++) {
-        product += pVect1[i] * pVect2[i];
-    }
     float res = min_val1 * sum2 + min_val2 * sum1 -
                 static_cast<float>(dimension) * min_val1 * min_val2 + delta1 * delta2 * product;
     return 1.0f - res;
 }
 
 // SQ8-to-SQ8: Both vectors are uint8 quantized and normalized with precomputed sum/norm
-// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [norm
-// (float)]
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
 float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
+    // Compute inner product of quantized values: Σ(q1[i]*q2[i])
+    float product = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        product += pVect1[i] * pVect2[i];
+    }
+
+    // Extract metadata from the end of vectors
     // Get quantization parameters from pVect1
     const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
     const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
@@ -95,14 +102,8 @@ float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension)
     const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
     const float sum2 = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
 
-    // Compute inner product with dequantization of both vectors
-    // With sum = Σv[i] (sum of original float values), the formula is:
+    // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
-    float product = 0;
-    for (size_t i = 0; i < dimension; i++) {
-        product += pVect1[i] * pVect2[i];
-    }
-
     float res = min_val1 * sum2 + min_val2 * sum1 -
                 static_cast<float>(dimension) * min_val1 * min_val2 + delta1 * delta2 * product;
     return 1.0f - res;

@@ -28,8 +28,8 @@ public:
         // Allocate both vectors with extra space for min and delta
         v1 = new uint8_t[dim + sizeof(float) * 2];
         v2 = new uint8_t[dim + sizeof(float) * 2];
-        test_utils::populate_float_vec_to_sq8_with_sum_norm(v1, dim, 123);
-        test_utils::populate_float_vec_to_sq8_with_sum_norm(v2, dim, 1234);
+        test_utils::populate_float_vec_to_sq8_with_sum(v1, dim, 123);
+        test_utils::populate_float_vec_to_sq8_with_sum(v2, dim, 1234);
     }
     void TearDown(const ::benchmark::State &state) {
         delete[] v1;

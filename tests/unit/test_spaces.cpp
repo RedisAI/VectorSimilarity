@@ -352,9 +352,9 @@ void common_ip_sq8(bool should_normalize, float expected_dist) {
 
     // Quantize each value
     for (size_t i = 0; i < dim; i++) {
-        float normalized = (v2_orig[i] - min_val) / delta;
-        normalized = std::max(0.0f, std::min(255.0f, normalized));
-        quant_values[i] = static_cast<uint8_t>(std::round(normalized));
+        float quantized = (v2_orig[i] - min_val) / delta;
+        quantized = std::max(0.0f, std::min(255.0f, quantized));
+        quant_values[i] = static_cast<uint8_t>(std::round(quantized));
     }
 
     float baseline =
@@ -393,7 +393,7 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
     // Create SQ8 quantized version of v2
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
 
     float baseline = SQ8_Cosine(v1_orig.data(), v2_quantized.data(), dim);
 
@@ -414,14 +414,14 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     // Create SQ8 quantized version of v2
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
 
     float baseline = SQ8_L2Sqr(v1_orig.data(), v2_quantized.data(), dim);
 
     unsigned char alignment = 0;
     auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, nullptr);
     ASSERT_EQ(arch_opt_func, SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.02)
+    ASSERT_EQ(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim))
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2016,12 +2016,11 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
     size_t dim = GetParam();
     // Create original vectors
     std::vector<float> v1_orig(dim);
-    test_utils::populate_float_vec(v1_orig.data(), dim);
-    spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
+    test_utils::populate_float_vec(v1_orig.data(), dim, 1234);
     // Create SQ8 quantized version of v2
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 5678);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(uint8_t) / 8;
@@ -2128,120 +2127,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
     unsigned char alignment = 0;
     arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.02)
-        << "No optimization with dim " << dim;
-    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
-}
-
-TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
-    auto optimization = getCpuOptimizationFeatures();
-    size_t dim = GetParam();
-
-    // Create original vectors
-    std::vector<float> v1_orig(dim);
-    test_utils::populate_float_vec(v1_orig.data(), dim);
-    spaces::GetNormalizeFunc<float>()(v1_orig.data(), dim);
-
-    // Create SQ8 quantized version of v2
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
-    std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
-    // print min and delta
-    float *params = reinterpret_cast<float *>(v2_quantized.data() + dim);
-
-    auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
-        size_t elements_in_reg = reg_bit_size / sizeof(uint8_t) / 8;
-        return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(uint8_t) : 0;
-    };
-
-    dist_func_t<float> arch_opt_func;
-    float baseline = SQ8_InnerProduct(v1_orig.data(), v2_quantized.data(), dim);
-
-// Test different optimizations based on CPU features
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "AVX512 with dim " << dim;
-        optimization.avx512f = 0;
-    }
-#endif
-#ifdef OPT_AVX2_FMA
-    if (optimization.avx2 && optimization.fma3) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_AVX2_FMA(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "AVX with dim " << dim;
-        optimization.fma3 = 0;
-    }
-#endif
-#ifdef OPT_AVX2
-    if (optimization.avx2) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_AVX2(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "AVX with dim " << dim;
-        optimization.avx2 = 0;
-    }
-#endif
-#ifdef OPT_SSE
-    if (optimization.sse4_1) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_SSE4(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "SSE with dim " << dim;
-        optimization.sse4_1 = 0;
-    }
-#endif
-#ifdef OPT_SVE2
-    if (optimization.sve2) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_SVE2(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "SVE2 with dim " << dim;
-        optimization.sve2 = 0;
-    }
-#endif
-#ifdef OPT_SVE
-    if (optimization.sve) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_SVE(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "SVE with dim " << dim;
-        optimization.sve = 0;
-    }
-#endif
-#ifdef OPT_NEON
-    if (optimization.asimd) {
-        unsigned char alignment = 0;
-        arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_IP_implementation_NEON(dim))
-            << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
-            << "NEON with dim " << dim;
-        optimization.asimd = 0;
-    }
-#endif
-
-    // Test default implementation
-    unsigned char alignment = 0;
-    arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    ASSERT_EQ(arch_opt_func, SQ8_InnerProduct)
-        << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
+    ASSERT_EQ(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim))
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2265,7 +2151,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     // Create SQ8 quantized version of v2 (with normalization)
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(uint8_t) / 8;
@@ -2360,7 +2246,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     unsigned char alignment = 0;
     arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_Cosine) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
+    ASSERT_EQ(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim))
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2374,8 +2260,8 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v1_quantized.data(), dim);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
 
@@ -2395,8 +2281,8 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v1_quantized.data(), dim);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
 
@@ -2419,8 +2305,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v1_quantized.data(), dim);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim, 1234);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 5678);
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
@@ -2487,7 +2373,7 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
     arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.01)
+    ASSERT_EQ(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim))
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2501,8 +2387,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v1_quantized.data(), dim, 1234);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim, 5678);
+    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim, 1234);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 5678);
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
@@ -2569,7 +2455,7 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
     arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_Cosine)
         << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.01)
+    ASSERT_EQ(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim))
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2587,7 +2473,7 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
 
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_Cosine(v_quantized.data(), v_quantized.data(), dim);
 
@@ -2642,8 +2528,10 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
 
     unsigned char alignment = 0;
     auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
-    ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+    ASSERT_EQ(baseline, arch_opt_func(v_quantized.data(), v_quantized.data(), dim))
+        << "No optimization self-distance should match baseline";
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+
 }
 
 // Test symmetry: dist(v1, v2) == dist(v2, v1)
@@ -2653,8 +2541,8 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v1_quantized.data(), dim, 123, -1.0f, 1.0f);
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v2_quantized.data(), dim, 123, -1.0f, 1.0f);
+    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim, 123, -1.0f, 1.0f);
+    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 123, -1.0f, 1.0f);
 
     unsigned char alignment = 0;
     auto ip_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
@@ -2678,9 +2566,9 @@ TEST(SQ8_SQ8_EdgeCases, ZeroVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_zero_quantized(quantized_size);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum_norm(v_zero.data(), dim,
+    test_utils::quantize_float_vec_to_uint8_with_sum(v_zero.data(), dim,
                                                           v_zero_quantized.data());
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v_nonzero_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v_nonzero_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_InnerProduct(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
 
@@ -2745,9 +2633,9 @@ TEST(SQ8_SQ8_EdgeCases, ConstantVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<uint8_t> v_random_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum_norm(v_const.data(), dim,
+    test_utils::quantize_float_vec_to_uint8_with_sum(v_const.data(), dim,
                                                           v_const_quantized.data());
-    test_utils::populate_float_vec_to_sq8_with_sum_norm(v_random_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_sum(v_random_quantized.data(), dim);
 
     float baseline = SQ8_SQ8_InnerProduct(v_const_quantized.data(), v_random_quantized.data(), dim);
 #ifdef OPT_SVE2
@@ -2825,8 +2713,8 @@ TEST(SQ8_SQ8_EdgeCases, ExtremeValuesTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum_norm(v1.data(), dim, v1_quantized.data());
-    test_utils::quantize_float_vec_to_uint8_with_sum_norm(v2.data(), dim, v2_quantized.data());
+    test_utils::quantize_float_vec_to_uint8_with_sum(v1.data(), dim, v1_quantized.data());
+    test_utils::quantize_float_vec_to_uint8_with_sum(v2.data(), dim, v2_quantized.data());
 
     float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
     ASSERT_FALSE(std::isnan(baseline)) << "Extreme values IP should not produce NaN";

@@ -151,7 +151,7 @@ dist_func_t<float> Cosine_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 }
 
 // SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized with precomputed
-// sum/norm)
+// sum)
 dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
                                           const void *arch_opt) {
     unsigned char dummy_alignment;
@@ -190,7 +190,7 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 Cosine distance function (both vectors are uint8 quantized with precomputed sum/norm)
+// SQ8-to-SQ8 Cosine distance function (both vectors are uint8 quantized with precomputed sum)
 dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
                                               const void *arch_opt) {
     unsigned char dummy_alignment;
