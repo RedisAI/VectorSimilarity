@@ -327,6 +327,7 @@ typedef struct {
     VecSimType type;     // Datatype the index holds.
     bool isMulti;        // Determines if the index should multi-index or not.
     bool isTiered;       // Is the index is tiered or not.
+    bool isDisk;         // Is the index stored on disk.
     size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
     size_t dim;          // Vector size (dimension).
 } VecSimIndexBasicInfo;
