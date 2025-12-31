@@ -47,6 +47,7 @@ struct AbstractIndexInitParams {
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
+    bool isDisk;  // Whether the index stores vectors on disk
     void *logCtx;
     size_t inputBlobSize;
 };
@@ -80,6 +81,7 @@ protected:
                          // resizing)
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
+    bool isDisk;                    // Whether the index stores vectors on disk.
     void *logCallbackCtx;           // Context for the log callback.
     RawDataContainer *vectors;      // The raw vectors data container.
 private:
@@ -119,7 +121,7 @@ public:
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
-          isMulti(params.multi), logCallbackCtx(params.logCtx),
+          isMulti(params.multi), isDisk(params.isDisk), logCallbackCtx(params.logCtx),
           indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
           inputBlobSize(params.inputBlobSize), storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
@@ -275,6 +277,7 @@ public:
             .metric = this->metric,
             .type = this->vecType,
             .isMulti = this->isMulti,
+            .isDisk = this->isDisk,
             .blockSize = this->blockSize,
             .dim = this->dim,
         };

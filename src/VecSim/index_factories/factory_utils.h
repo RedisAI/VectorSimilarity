@@ -33,6 +33,7 @@ static AbstractIndexInitParams NewAbstractInitParams(const IndexParams *algo_par
                                                   .metric = algo_params->metric,
                                                   .blockSize = algo_params->blockSize,
                                                   .multi = algo_params->multi,
+                                                  .isDisk = false,
                                                   .logCtx = logCtx,
                                                   .inputBlobSize = inputBlobSize};
     return abstractInitParams;
