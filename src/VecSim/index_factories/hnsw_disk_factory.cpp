@@ -22,6 +22,8 @@
 #include <array>
 #include <memory>
 #include <random>
+#include "rocksdb/cache.h"
+#include "rocksdb/table.h"
 
 namespace HNSWDiskFactory {
 
@@ -323,6 +325,14 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
     options.error_if_exists = false;
     options.statistics = rocksdb::CreateDBStatistics();
 
+    // Configure block cache if specified
+    if (hnswDiskParams->blockCacheSize > 0) {
+        rocksdb::BlockBasedTableOptions table_options;
+        table_options.block_cache = rocksdb::NewLRUCache(hnswDiskParams->blockCacheSize);
+        options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
+        std::cerr << "RocksDB block cache size: " << hnswDiskParams->blockCacheSize << " bytes" << std::endl;
+    }
+
     rocksdb::DB *db_ptr = nullptr;
     rocksdb::Status status = rocksdb::DB::Open(options, dbPath, &db_ptr);
     if (!status.ok()) {
@@ -462,4 +472,3 @@ VecSimIndex *NewIndex(const std::string &folder_path, bool is_normalized) {
 #endif // BUILD_TESTS
 
 }; // namespace HNSWDiskFactory
-
