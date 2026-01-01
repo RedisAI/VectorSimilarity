@@ -393,7 +393,7 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
     // Create SQ8 quantized version of v2
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true);
 
     float baseline = SQ8_Cosine(v1_orig.data(), v2_quantized.data(), dim);
 
@@ -2227,7 +2227,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     // Create SQ8 quantized version of v2 (with normalization)
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(uint8_t) / 8;
@@ -2478,15 +2478,17 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 5678);
 
-    float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
+    float baseline = test_utils::SQ8_SQ8_NotOptimized_InnerProduct(v1_quantized.data(),
+                                                                   v2_quantized.data(), dim);
 
     unsigned char alignment = 0;
     auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
+    // Checks that the function with the optimzied math equivalence returns the same result.
     ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.01)
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
@@ -2499,16 +2501,19 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 5678);
 
-    float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
+    float baseline =
+        test_utils::SQ8_SQ8_NotOptimized_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
 
     unsigned char alignment = 0;
     auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_Cosine)
         << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.01)
+    // Checks that the function with the optimzied math equivalence returns the same result.
+    // min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
+    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001)
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2546,8 +2551,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim, 1234);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 5678);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 5678);
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
@@ -2628,8 +2633,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim, 1234);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 5678);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 5678);
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
@@ -2926,12 +2931,12 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
 
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v_quantized.data(), dim);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, true);
 
     float baseline = SQ8_SQ8_Cosine(v_quantized.data(), v_quantized.data(), dim);
 
     // Self-distance for cosine should be close to 0
-    ASSERT_NEAR(baseline, 0.0f, 0.02f) << "Self-distance should be ~0 for cosine";
+    ASSERT_NEAR(baseline, 0.0f, 0.001f) << "Self-distance should be ~0 for cosine";
 
 #ifdef OPT_SVE2
     if (optimization.sve2) {
@@ -2989,21 +2994,68 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
 // Test symmetry: dist(v1, v2) == dist(v2, v1)
 TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
     size_t dim = 128;
-
+    auto optimization = getCpuOptimizationFeatures();
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_sum(v1_quantized.data(), dim, 123, -1.0f, 1.0f);
-    test_utils::populate_float_vec_to_sq8_with_sum(v2_quantized.data(), dim, 123, -1.0f, 1.0f);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 456, -1.0f,
+                                                        1.0f);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 123, -1.0f,
+                                                        1.0f);
 
     unsigned char alignment = 0;
-    auto ip_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        optimization.avx512f = 0;
+    }
+#endif
     auto cosine_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
-
-    float ip_12 = ip_func(v1_quantized.data(), v2_quantized.data(), dim);
-    float ip_21 = ip_func(v2_quantized.data(), v1_quantized.data(), dim);
-    ASSERT_NEAR(ip_12, ip_21, 1e-6f) << "IP should be symmetric";
-
     float cos_12 = cosine_func(v1_quantized.data(), v2_quantized.data(), dim);
     float cos_21 = cosine_func(v2_quantized.data(), v1_quantized.data(), dim);
     ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Cosine should be symmetric";
@@ -3018,8 +3070,9 @@ TEST(SQ8_SQ8_EdgeCases, ZeroVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_zero_quantized(quantized_size);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum(v_zero.data(), dim, v_zero_quantized.data());
-    test_utils::populate_float_vec_to_sq8_with_sum(v_nonzero_quantized.data(), dim);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_zero.data(), dim,
+                                                        v_zero_quantized.data());
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, true);
 
     float baseline = SQ8_SQ8_InnerProduct(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
 
@@ -3084,8 +3137,10 @@ TEST(SQ8_SQ8_EdgeCases, ConstantVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<uint8_t> v_random_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum(v_const.data(), dim, v_const_quantized.data());
-    test_utils::populate_float_vec_to_sq8_with_sum(v_random_quantized.data(), dim);
+    spaces::GetNormalizeFunc<float>()(v_const.data(), dim);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
+                                                        v_const_quantized.data());
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_random_quantized.data(), dim, true);
 
     float baseline = SQ8_SQ8_InnerProduct(v_const_quantized.data(), v_random_quantized.data(), dim);
 #ifdef OPT_SVE2
@@ -3163,8 +3218,8 @@ TEST(SQ8_SQ8_EdgeCases, ExtremeValuesTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_uint8_with_sum(v1.data(), dim, v1_quantized.data());
-    test_utils::quantize_float_vec_to_uint8_with_sum(v2.data(), dim, v2_quantized.data());
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v1.data(), dim, v1_quantized.data());
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v2.data(), dim, v2_quantized.data());
 
     float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
     ASSERT_FALSE(std::isnan(baseline)) << "Extreme values IP should not produce NaN";

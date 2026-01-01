@@ -102,12 +102,41 @@ static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
     quantize_float_vec_to_uint8(vec.data(), dim, v, seed);
 }
 
+static float SQ8_SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
+                                               size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Extract metadata from the end of vectors (likely already prefetched)
+    // Get quantization parameters from pVect1
+    const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float sum1 = *reinterpret_cast<const float *>(pVect1 + dimension + 2 * sizeof(float));
+
+    // Get quantization parameters from pVect2
+    const float min_val2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    const float sum2 = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
+
+    // Compute inner product with dequantization
+    float res = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        res += (pVect1[i] * delta1 + min_val1) * (pVect2[i] * delta2 + min_val2);
+    }
+    return 1.0f - res;
+}
+
+static float SQ8_SQ8_NotOptimized_Cosine(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    return SQ8_SQ8_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
+}
+
 /**
- * Quantize float vector to SQ8 with precomputed sum and norm.
- * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)]]
- * where sum = Σv[i] and norm = Σv[i]² (sum of squares of uint8 elements)
+ * Quantize float vector to SQ8 with precomputed sum and sum_squares.
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares
+ * (float)] where sum = Σv[i] and norm = Σv[i]² (sum of squares of uint8 elements)
  */
-static void quantize_float_vec_to_uint8_with_sum(const float *v, size_t dim, uint8_t *qv) {
+static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, uint8_t *qv) {
     float min_val = v[0];
     float max_val = v[0];
     for (size_t i = 1; i < dim; i++) {
@@ -135,7 +164,7 @@ static void quantize_float_vec_to_uint8_with_sum(const float *v, size_t dim, uin
         qv[i] = static_cast<uint8_t>(std::round(normalized));
     }
 
-    // Store parameters: [min, delta, sum, norm]
+    // Store parameters: [min, delta, sum, square_sum]
     float *params = reinterpret_cast<float *>(qv + dim);
     params[0] = min_val;
     params[1] = delta;
@@ -144,16 +173,19 @@ static void quantize_float_vec_to_uint8_with_sum(const float *v, size_t dim, uin
 }
 
 /**
- * Populate a float vector and quantize to SQ8 with precomputed sum and norm.
- * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)]]
+ * Populate a float vector and quantize to SQ8 with precomputed sum and sum_squares.
+ * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares
+ * (float)]
  */
-static void populate_float_vec_to_sq8_with_sum(uint8_t *v, size_t dim, int seed = 1234,
-                                               float min = -1.0f, float max = 1.0f) {
+static void populate_float_vec_to_sq8_with_metadata(uint8_t *v, size_t dim,
+                                                    bool should_normalize = false, int seed = 1234,
+                                                    float min = -1.0f, float max = 1.0f) {
     std::vector<float> vec(dim);
     populate_float_vec(vec.data(), dim, seed, min, max);
-    // Normalize vector
-    spaces::GetNormalizeFunc<float>()(vec.data(), dim);
-    quantize_float_vec_to_uint8_with_sum(vec.data(), dim, v);
+    if (should_normalize) {
+        spaces::GetNormalizeFunc<float>()(vec.data(), dim);
+    }
+    quantize_float_vec_to_sq8_with_metadata(vec.data(), dim, v);
 }
 
 template <typename datatype>

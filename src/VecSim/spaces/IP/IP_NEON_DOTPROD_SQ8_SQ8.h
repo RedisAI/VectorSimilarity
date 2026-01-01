@@ -11,11 +11,11 @@
 #include <arm_neon.h>
 
 /**
- * SQ8-to-SQ8 distance functions using ARM NEON DOTPROD with precomputed sum and norm.
+ * SQ8-to-SQ8 distance functions using ARM NEON DOTPROD with precomputed sum.
  * These functions compute distance between two SQ8 (scalar quantized 8-bit) vectors,
  * where BOTH vectors are uint8 quantized.
  *
- * Uses precomputed sum and norm stored in the vector data,
+ * Uses precomputed sum stored in the vector data,
  * eliminating the need to compute them during distance calculation.
  *
  * Uses algebraic optimization with DOTPROD instruction:
@@ -25,7 +25,7 @@
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
  */
 
 // Helper function: computes dot product using DOTPROD instruction (no sum computation needed)
@@ -43,7 +43,7 @@ SQ8_SQ8_InnerProductStep_NEON_DOTPROD(const uint8_t *&pVec1, const uint8_t *&pVe
     pVec2 += 16;
 }
 
-// Common implementation for inner product between two SQ8 vectors with precomputed sum/norm
+// Common implementation for inner product between two SQ8 vectors with precomputed sum
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP(const void *pVec1v, const void *pVec2v,
                                                   size_t dimension) {
@@ -51,7 +51,7 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP(const void *pVec1v, const void
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
     // Get dequantization parameters and precomputed values from the end of pVec1
-    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]]
+    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]
     const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
     const float min1 = params1[0];
     const float delta1 = params1[1];
@@ -123,5 +123,5 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD(const void *pVec1v, const void *pV
 // Returns 1 - inner_product (assumes vectors are pre-normalized)
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_CosineSIMD64_NEON_DOTPROD(const void *pVec1v, const void *pVec2v, size_t dimension) {
-    return 1.0f - SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP<residual>(pVec1v, pVec2v, dimension);
+    return SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD<residual>(pVec1v, pVec2v, dimension);
 }

@@ -95,5 +95,5 @@ float SQ8_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Assume vectors are normalized.
-    return 1.0f - SQ8_InnerProductImp_AVX2<residual>(pVect1v, pVect2v, dimension);
+    return SQ8_InnerProductSIMD16_AVX2<residual>(pVect1v, pVect2v, dimension);
 }

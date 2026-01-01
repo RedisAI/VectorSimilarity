@@ -119,7 +119,7 @@ dist_func_t<float> Choose_SQ8_L2_implementation_SVE(size_t dim) {
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum/norm)
+// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 // Note: Use svcntb for uint8 elements (not svcntw which is for 32-bit elements)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
