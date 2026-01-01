@@ -16,6 +16,11 @@ float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensio
 // pVect1v vector of type fp32 and pVect2v vector of type uint8
 float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension);
 
+// SQ8-to-SQ8: Common inner product implementation that returns the raw inner product value
+// (not distance). Used by both SQ8_SQ8_InnerProduct, SQ8_SQ8_Cosine, and SQ8_SQ8_L2Sqr.
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t dimension);
+
 // SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum
 // Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
 float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);

@@ -2326,149 +2326,6 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
-TEST_P(SQ8SpacesOptimizationTest, SQ8_full_range_test) {
-    auto optimization = getCpuOptimizationFeatures();
-    constexpr size_t dim = 512;
-
-    // Create float vectors with full range values
-    std::vector<float> v1_orig(dim);
-    std::vector<float> v2_orig(dim);
-
-    // v1: ramp from -1 to 1, then 1 to -1
-    // v2: ramp from 1 to -1, then -1 to 1
-    for (size_t i = 0; i < 256; i++) {
-        float t = static_cast<float>(i) / 255.0f;
-        v1_orig[i] = -1.0f + 2.0f * t;        // -1 to 1
-        v1_orig[256 + i] = 1.0f - 2.0f * t;   // 1 to -1
-        v2_orig[i] = 1.0f - 2.0f * t;         // 1 to -1
-        v2_orig[256 + i] = -1.0f + 2.0f * t;  // -1 to 1
-    }
-
-    // Create SQ8 quantized version of v2
-    std::vector<uint8_t> v2_quantized = CreateSQ8QuantizedVector(v2_orig.data(), dim);
-
-    float baseline_l2 = SQ8_L2Sqr(v1_orig.data(), v2_quantized.data(), dim);
-    float baseline_ip = SQ8_InnerProduct(v1_orig.data(), v2_quantized.data(), dim);
-
-    // Normalize vectors for cosine test
-    std::vector<float> v1_norm = v1_orig;
-    std::vector<float> v2_norm = v2_orig;
-    spaces::GetNormalizeFunc<float>()(v1_norm.data(), dim);
-    spaces::GetNormalizeFunc<float>()(v2_norm.data(), dim);
-    std::vector<uint8_t> v2_norm_quantized = CreateSQ8QuantizedVector(v2_norm.data(), dim);
-    float baseline_cosine = SQ8_Cosine(v1_norm.data(), v2_norm_quantized.data(), dim);
-
-    dist_func_t<float> arch_opt_func;
-
-#ifdef OPT_SVE2
-    if (optimization.sve2) {
-        arch_opt_func = Choose_SQ8_L2_implementation_SVE2(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 SVE2 with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_SVE2(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP SVE2 with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_SVE2(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine SVE2 with dim " << dim;
-        optimization.sve2 = 0;
-    }
-#endif
-#ifdef OPT_SVE
-    if (optimization.sve) {
-        arch_opt_func = Choose_SQ8_L2_implementation_SVE(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 SVE with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_SVE(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP SVE with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_SVE(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine SVE with dim " << dim;
-        optimization.sve = 0;
-    }
-#endif
-#ifdef OPT_NEON
-    if (optimization.asimd) {
-        arch_opt_func = Choose_SQ8_L2_implementation_NEON(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 NEON with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_NEON(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP NEON with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_NEON(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine NEON with dim " << dim;
-        optimization.asimd = 0;
-    }
-#endif
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
-        optimization.avx512vnni) {
-        arch_opt_func = Choose_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 AVX512 with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP AVX512 with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine AVX512 with dim " << dim;
-        optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
-            optimization.avx512vnni = 0;
-    }
-#endif
-#ifdef OPT_AVX2_FMA
-    if (optimization.avx2 && optimization.fma3) {
-        arch_opt_func = Choose_SQ8_L2_implementation_AVX2_FMA(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 AVX2_FMA with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_AVX2_FMA(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP AVX2_FMA with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_AVX2_FMA(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine AVX2_FMA with dim " << dim;
-        optimization.fma3 = 0;
-    }
-#endif
-#ifdef OPT_AVX2
-    if (optimization.avx2) {
-        arch_opt_func = Choose_SQ8_L2_implementation_AVX2(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 AVX2 with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_AVX2(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP AVX2 with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_AVX2(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine AVX2 with dim " << dim;
-        optimization.avx2 = 0;
-    }
-#endif
-#ifdef OPT_SSE
-    if (optimization.sse4_1) {
-        arch_opt_func = Choose_SQ8_L2_implementation_SSE4(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "L2 SSE4 with dim " << dim;
-        arch_opt_func = Choose_SQ8_IP_implementation_SSE4(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.1)
-            << "IP SSE4 with dim " << dim;
-        arch_opt_func = Choose_SQ8_Cosine_implementation_SSE4(dim);
-        ASSERT_NEAR(baseline_cosine, arch_opt_func(v1_norm.data(), v2_norm_quantized.data(), dim),
-                    0.01)
-            << "Cosine SSE4 with dim " << dim;
-        optimization.sse4_1 = 0;
-    }
-#endif
-}
-
 /* ======================== Tests SQ8_SQ8 ========================= */
 
 TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
@@ -2521,24 +2378,21 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
 TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
     size_t dim = 5;
 
-    // Create original vectors
-    float v1_orig[dim], v2_orig[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v1_orig[i] = float(i + 1.5);
-        v2_orig[i] = float(i + 1.5);
-    }
-
     // Create SQ8 quantized versions of both vectors
-    std::vector<uint8_t> v1_quantized = CreateSQ8QuantizedVector(v1_orig, dim);
-    std::vector<uint8_t> v2_quantized = CreateSQ8QuantizedVector(v2_orig, dim);
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> v1_quantized(quantized_size);
+    std::vector<uint8_t> v2_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, false, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, false, 5678);
+
+    float baseline = test_utils::SQ8_SQ8_NotOptimized_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
 
     // Get distance function with nullptr alignment to cover that code path
     auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, nullptr, nullptr);
-    float dist =
-        dist_func((const void *)v1_quantized.data(), (const void *)v2_quantized.data(), dim);
 
-    // Since we're comparing identical vectors, L2 squared distance should be close to 0
-    ASSERT_NEAR(dist, 0.0f, 0.01f) << "SQ8_SQ8_L2Sqr failed to match expected distance";
+
+    ASSERT_EQ(dist_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim) , 0.001f) << "SQ8_SQ8_L2Sqr failed to match expected distance";
 }
 
 class SQ8_SQ8_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
@@ -2710,17 +2564,12 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
 
-    // Create original vectors
-    std::vector<float> v1_orig(dim);
-    std::vector<float> v2_orig(dim);
-    for (size_t i = 0; i < dim; i++) {
-        v1_orig[i] = float(i + 1.5);
-        v2_orig[i] = float(i * 0.75 + 1.0);
-    }
-
     // Create SQ8 quantized versions of both vectors
-    std::vector<uint8_t> v1_quantized = CreateSQ8QuantizedVector(v1_orig.data(), dim);
-    std::vector<uint8_t> v2_quantized = CreateSQ8QuantizedVector(v2_orig.data(), dim);
+    size_t quantized_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    std::vector<uint8_t> v1_quantized(quantized_size);
+    std::vector<uint8_t> v2_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 5678);
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
@@ -2790,132 +2639,6 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
     ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.02)
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
-}
-
-TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_full_range_test) {
-    auto optimization = getCpuOptimizationFeatures();
-    constexpr size_t dim = 512;
-
-    // Create float vectors with full range values
-    std::vector<float> v1_orig(dim);
-    std::vector<float> v2_orig(dim);
-
-    // v1: ramp from -1 to 1, then 1 to -1
-    // v2: ramp from 1 to -1, then -1 to 1
-    for (size_t i = 0; i < 256; i++) {
-        float t = static_cast<float>(i) / 255.0f;
-        v1_orig[i] = -1.0f + 2.0f * t;        // -1 to 1
-        v1_orig[256 + i] = 1.0f - 2.0f * t;   // 1 to -1
-        v2_orig[i] = 1.0f - 2.0f * t;         // 1 to -1
-        v2_orig[256 + i] = -1.0f + 2.0f * t;  // -1 to 1
-    }
-
-    // Create SQ8 quantized versions of both vectors
-    std::vector<uint8_t> v1_quantized = CreateSQ8QuantizedVector(v1_orig.data(), dim);
-    std::vector<uint8_t> v2_quantized = CreateSQ8QuantizedVector(v2_orig.data(), dim);
-
-    float baseline_l2 = SQ8_SQ8_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
-    float baseline_ip = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
-
-    // Normalize vectors for cosine test
-    std::vector<float> v1_norm = v1_orig;
-    std::vector<float> v2_norm = v2_orig;
-    spaces::GetNormalizeFunc<float>()(v1_norm.data(), dim);
-    spaces::GetNormalizeFunc<float>()(v2_norm.data(), dim);
-    std::vector<uint8_t> v1_norm_quantized = CreateSQ8QuantizedVector(v1_norm.data(), dim);
-    std::vector<uint8_t> v2_norm_quantized = CreateSQ8QuantizedVector(v2_norm.data(), dim);
-    float baseline_cosine =
-        SQ8_SQ8_Cosine(v1_norm_quantized.data(), v2_norm_quantized.data(), dim);
-
-    dist_func_t<float> arch_opt_func;
-
-#ifdef OPT_SVE2
-    if (optimization.sve2) {
-        arch_opt_func = Choose_SQ8_SQ8_L2_implementation_SVE2(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "L2 SVE2 with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_IP_implementation_SVE2(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "IP SVE2 with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_Cosine_implementation_SVE2(dim);
-        ASSERT_NEAR(baseline_cosine,
-                    arch_opt_func(v1_norm_quantized.data(), v2_norm_quantized.data(), dim), 0.01)
-            << "Cosine SVE2 with dim " << dim;
-        optimization.sve2 = 0;
-    }
-#endif
-#ifdef OPT_SVE
-    if (optimization.sve) {
-        arch_opt_func = Choose_SQ8_SQ8_L2_implementation_SVE(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "L2 SVE with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_IP_implementation_SVE(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "IP SVE with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_Cosine_implementation_SVE(dim);
-        ASSERT_NEAR(baseline_cosine,
-                    arch_opt_func(v1_norm_quantized.data(), v2_norm_quantized.data(), dim), 0.01)
-            << "Cosine SVE with dim " << dim;
-        optimization.sve = 0;
-    }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    if (optimization.asimddp) {
-        arch_opt_func = Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "L2 NEON_DOTPROD with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "IP NEON_DOTPROD with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(dim);
-        ASSERT_NEAR(baseline_cosine,
-                    arch_opt_func(v1_norm_quantized.data(), v2_norm_quantized.data(), dim), 0.01)
-            << "Cosine NEON_DOTPROD with dim " << dim;
-        optimization.asimddp = 0;
-    }
-#endif
-#ifdef OPT_NEON
-    if (optimization.asimd) {
-        arch_opt_func = Choose_SQ8_SQ8_L2_implementation_NEON(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "L2 NEON with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_IP_implementation_NEON(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "IP NEON with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_Cosine_implementation_NEON(dim);
-        ASSERT_NEAR(baseline_cosine,
-                    arch_opt_func(v1_norm_quantized.data(), v2_norm_quantized.data(), dim), 0.01)
-            << "Cosine NEON with dim " << dim;
-        optimization.asimd = 0;
-    }
-#endif
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
-        optimization.avx512vnni) {
-        arch_opt_func = Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_NEAR(baseline_l2, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "L2 AVX512 with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_NEAR(baseline_ip, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim),
-                    0.1)
-            << "IP AVX512 with dim " << dim;
-        arch_opt_func = Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_NEAR(baseline_cosine,
-                    arch_opt_func(v1_norm_quantized.data(), v2_norm_quantized.data(), dim), 0.01)
-            << "Cosine AVX512 with dim " << dim;
-        optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
-            optimization.avx512vnni = 0;
-    }
-#endif
 }
 
 // Note: This suite intentionally uses a larger dimension range (64–128) than SQ8OptFuncs.
