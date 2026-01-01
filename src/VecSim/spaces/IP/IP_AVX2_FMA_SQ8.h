@@ -101,5 +101,5 @@ float SQ8_InnerProductSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, 
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Assume vectors are normalized.
-    return SQ8_InnerProductImp_FMA<residual>(pVect1v, pVect2v, dimension);
+    return SQ8_InnerProductSIMD16_AVX2_FMA<residual>(pVect1v, pVect2v, dimension);
 }
