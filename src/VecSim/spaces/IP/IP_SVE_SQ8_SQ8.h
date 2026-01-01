@@ -11,11 +11,11 @@
 #include <arm_sve.h>
 
 /**
- * SQ8-to-SQ8 distance functions using ARM SVE with precomputed sum and norm.
+ * SQ8-to-SQ8 distance functions using ARM SVE with precomputed sum.
  * These functions compute distance between two SQ8 (scalar quantized 8-bit) vectors,
  * where BOTH vectors are uint8 quantized.
  *
- * Uses precomputed sum and norm stored in the vector data,
+ * Uses precomputed sum stored in the vector data,
  * eliminating the need to compute them during distance calculation.
  *
  * Uses algebraic optimization with SVE dot product instruction:
@@ -25,7 +25,7 @@
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
  */
 
 // Helper function to perform inner product step using integer dot product (no sum computation)
@@ -44,7 +44,7 @@ static inline void SQ8_SQ8_InnerProductStep_SVE(const uint8_t *pVec1, const uint
     offset += chunk;
 }
 
-// Common implementation for inner product between two SQ8 vectors with precomputed sum/norm
+// Common implementation for inner product between two SQ8 vectors with precomputed sum
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
@@ -52,7 +52,7 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
     size_t offset = 0;
 
     // Get dequantization parameters and precomputed values from the end of pVec1
-    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]]
+    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]
     const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
     const float min1 = params1[0];
     const float delta1 = params1[1];
@@ -129,6 +129,6 @@ float SQ8_SQ8_InnerProductSIMD_SVE(const void *pVec1v, const void *pVec2v, size_
 // Returns 1 - inner_product (assumes vectors are pre-normalized)
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_SQ8_CosineSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimension) {
-    return 1.0f - SQ8_SQ8_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(pVec1v, pVec2v,
-                                                                                    dimension);
+    // Assume vectors are normalized.
+    return SQ8_SQ8_InnerProductSIMD_SVE<partial_chunk, additional_steps>(pVec1v, pVec2v, dimension);
 }

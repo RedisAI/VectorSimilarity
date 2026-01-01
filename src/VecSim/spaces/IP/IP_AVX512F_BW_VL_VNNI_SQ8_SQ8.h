@@ -11,11 +11,11 @@
 #include <immintrin.h>
 
 /**
- * SQ8-to-SQ8 distance functions using AVX512 VNNI with precomputed sum and norm.
+ * SQ8-to-SQ8 distance functions using AVX512 VNNI with precomputed sum.
  * These functions compute distance between two SQ8 (scalar quantized 8-bit) vectors,
  * where BOTH vectors are uint8 quantized.
  *
- * Uses precomputed sum and norm stored in the vector data,
+ * Uses precomputed sum stored in the vector data,
  * eliminating the need to compute them during distance calculation.
  *
  * Uses algebraic optimization to leverage integer VNNI instructions:
@@ -25,7 +25,7 @@
  *
  * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
  */
 
 // Process 64 uint8 elements using VNNI with multiple accumulators for ILP (dot product only)
@@ -61,7 +61,7 @@ static inline void SQ8_SQ8_InnerProductStep32(const uint8_t *pVec1, const uint8_
         _mm512_dpwssd_epi32(dot_acc, _mm512_cvtepu8_epi16(v1_256), _mm512_cvtepu8_epi16(v2_256));
 }
 
-// Common implementation for inner product between two SQ8 vectors with precomputed sum/norm
+// Common implementation for inner product between two SQ8 vectors with precomputed sum
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
@@ -69,7 +69,7 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
     const uint8_t *pEnd1 = pVec1 + dimension;
 
     // Get dequantization parameters and precomputed values from the end of pVec1
-    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]]
+    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]
     const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
     const float min1 = params1[0];
     const float delta1 = params1[1];
@@ -153,5 +153,5 @@ template <unsigned char residual> // 0..63
 float SQ8_SQ8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                               size_t dimension) {
     // Assume vectors are normalized.
-    return 1.0f - SQ8_SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
+    return SQ8_SQ8_InnerProductSIMD64_AVX512F_BW_VL_VNNI<residual>(pVec1v, pVec2v, dimension);
 }
