@@ -22,21 +22,18 @@
  * Let c = min1 - min2, then:
  * L2² = Σ(q1[i]*δ1 - q2[i]*δ2 + c)²
  *     = δ1²*Σq1² + δ2²*Σq2² - 2*δ1*δ2*Σ(q1*q2) + 2*c*δ1*Σq1 - 2*c*δ2*Σq2 + dim*c²
- * 
- * TODO: store the vector's norm(Σq²) and sum Σq of elements in the vector data, and use it here.
  *
- * This allows using VNNI's _mm512_dpwssd_epi32 for efficient integer operations,
- * then applying scalar corrections at the end.
+ * The vector's sum (Σq) and sum of squares (Σq²) are precomputed and stored in the vector data.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
+ * This allows using VNNI's _mm512_dpwssd_epi32 for efficient integer dot product computation,
+ * then applying scalar corrections at the end using the precomputed values.
+ *
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum of squares (float)]
  */
 
 // Process 64 uint8 elements using VNNI with multiple accumulators for ILP
 static inline void SQ8_SQ8_L2SqrStep64(const uint8_t *pVec1, const uint8_t *pVec2,
-                                       __m512i &dot_acc0, __m512i &dot_acc1,
-                                       __m512i &sqr1_acc0, __m512i &sqr1_acc1,
-                                       __m512i &sqr2_acc0, __m512i &sqr2_acc1,
-                                       __m512i &sum1_acc, __m512i &sum2_acc) {
+                                       __m512i &dot_acc0, __m512i &dot_acc1) {
     // Load 64 bytes from each vector
     __m512i v1_full = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(pVec1));
     __m512i v2_full = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(pVec2));
@@ -56,23 +53,11 @@ static inline void SQ8_SQ8_L2SqrStep64(const uint8_t *pVec1, const uint8_t *pVec
     // Compute dot products using VNNI: q1*q2
     dot_acc0 = _mm512_dpwssd_epi32(dot_acc0, v1_lo_16, v2_lo_16);
     dot_acc1 = _mm512_dpwssd_epi32(dot_acc1, v1_hi_16, v2_hi_16);
-
-    // Compute sum of squares: q1*q1 and q2*q2
-    sqr1_acc0 = _mm512_dpwssd_epi32(sqr1_acc0, v1_lo_16, v1_lo_16);
-    sqr1_acc1 = _mm512_dpwssd_epi32(sqr1_acc1, v1_hi_16, v1_hi_16);
-    sqr2_acc0 = _mm512_dpwssd_epi32(sqr2_acc0, v2_lo_16, v2_lo_16);
-    sqr2_acc1 = _mm512_dpwssd_epi32(sqr2_acc1, v2_hi_16, v2_hi_16);
-
-    // Sum of elements using SAD with zero (sums bytes in groups of 8 -> 8x 64-bit results)
-    __m512i zero = _mm512_setzero_si512();
-    sum1_acc = _mm512_add_epi64(sum1_acc, _mm512_sad_epu8(v1_full, zero));
-    sum2_acc = _mm512_add_epi64(sum2_acc, _mm512_sad_epu8(v2_full, zero));
 }
 
 // Process 32 uint8 elements using VNNI
 static inline void SQ8_SQ8_L2SqrStep32(const uint8_t *pVec1, const uint8_t *pVec2,
-                                       __m512i &dot_acc, __m512i &sqr1_acc, __m512i &sqr2_acc,
-                                       __m512i &sum1_acc, __m512i &sum2_acc) {
+                                       __m512i &dot_acc) {
     // Load 32 bytes from each vector
     __m256i v1_256 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pVec1));
     __m256i v2_256 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pVec2));
@@ -83,17 +68,6 @@ static inline void SQ8_SQ8_L2SqrStep32(const uint8_t *pVec1, const uint8_t *pVec
 
     // Compute dot product: q1*q2
     dot_acc = _mm512_dpwssd_epi32(dot_acc, v1_16, v2_16);
-
-    // Compute sum of squares: q1*q1 and q2*q2
-    sqr1_acc = _mm512_dpwssd_epi32(sqr1_acc, v1_16, v1_16);
-    sqr2_acc = _mm512_dpwssd_epi32(sqr2_acc, v2_16, v2_16);
-
-    // Sum of elements - extend to 512-bit and use SAD
-    __m512i v1_full = _mm512_zextsi256_si512(v1_256);
-    __m512i v2_full = _mm512_zextsi256_si512(v2_256);
-    __m512i zero = _mm512_setzero_si512();
-    sum1_acc = _mm512_add_epi64(sum1_acc, _mm512_sad_epu8(v1_full, zero));
-    sum2_acc = _mm512_add_epi64(sum2_acc, _mm512_sad_epu8(v2_full, zero));
 }
 
 // Common implementation for L2 squared distance between two SQ8 vectors
@@ -104,23 +78,24 @@ float SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVe
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    // Get dequantization parameters from the end of pVec1
-    const float min1 = *reinterpret_cast<const float *>(pVec1 + dimension);
-    const float delta1 = *reinterpret_cast<const float *>(pVec1 + dimension + sizeof(float));
+    // Get dequantization parameters and precomputed values from the end of pVec1
+    // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
+    const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
+    const float min1 = params1[0];
+    const float delta1 = params1[1];
+    const float sum_v1 = params1[2];
+    const float sum_sqr1 = params1[3];
 
-    // Get dequantization parameters from the end of pVec2
-    const float min2 = *reinterpret_cast<const float *>(pVec2 + dimension);
-    const float delta2 = *reinterpret_cast<const float *>(pVec2 + dimension + sizeof(float));
+    // Get dequantization parameters and precomputed values from the end of pVec2
+    const float *params2 = reinterpret_cast<const float *>(pVec2 + dimension);
+    const float min2 = params2[0];
+    const float delta2 = params2[1];
+    const float sum_v2 = params2[2];
+    const float sum_sqr2 = params2[3];
 
-    // Multiple accumulators for instruction-level parallelism
+    // Multiple accumulators for instruction-level parallelism (only need dot product now)
     __m512i dot_acc0 = _mm512_setzero_si512();  // Σ(q1*q2)
     __m512i dot_acc1 = _mm512_setzero_si512();
-    __m512i sqr1_acc0 = _mm512_setzero_si512(); // Σ(q1²)
-    __m512i sqr1_acc1 = _mm512_setzero_si512();
-    __m512i sqr2_acc0 = _mm512_setzero_si512(); // Σ(q2²)
-    __m512i sqr2_acc1 = _mm512_setzero_si512();
-    __m512i sum1_acc = _mm512_setzero_si512();  // Σq1
-    __m512i sum2_acc = _mm512_setzero_si512();  // Σq2
 
     // Handle residual first (0..63 elements)
     if constexpr (residual > 0) {
@@ -134,20 +109,11 @@ float SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVe
             __m512i v1_16 = _mm512_cvtepu8_epi16(v1_256);
             __m512i v2_16 = _mm512_cvtepu8_epi16(v2_256);
 
-            // Compute dot product and sum of squares
+            // Compute dot product only
             dot_acc0 = _mm512_dpwssd_epi32(dot_acc0, v1_16, v2_16);
-            sqr1_acc0 = _mm512_dpwssd_epi32(sqr1_acc0, v1_16, v1_16);
-            sqr2_acc0 = _mm512_dpwssd_epi32(sqr2_acc0, v2_16, v2_16);
-
-            // Sum using SAD (masked load already zeroed unused bytes)
-            __m512i v1_full = _mm512_zextsi256_si512(v1_256);
-            __m512i v2_full = _mm512_zextsi256_si512(v2_256);
-            __m512i zero = _mm512_setzero_si512();
-            sum1_acc = _mm512_sad_epu8(v1_full, zero);
-            sum2_acc = _mm512_sad_epu8(v2_full, zero);
         } else if constexpr (residual == 32) {
             // Exactly 32 elements
-            SQ8_SQ8_L2SqrStep32(pVec1, pVec2, dot_acc0, sqr1_acc0, sqr2_acc0, sum1_acc, sum2_acc);
+            SQ8_SQ8_L2SqrStep32(pVec1, pVec2, dot_acc0);
         } else {
             // 33-63 elements: use masked 64-byte load
             constexpr __mmask64 mask = (1LLU << residual) - 1;
@@ -166,18 +132,9 @@ float SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVe
             __m512i v2_lo_16 = _mm512_cvtepu8_epi16(v2_lo);
             __m512i v2_hi_16 = _mm512_cvtepu8_epi16(v2_hi);
 
-            // Compute dot products and sum of squares
+            // Compute dot products only
             dot_acc0 = _mm512_dpwssd_epi32(dot_acc0, v1_lo_16, v2_lo_16);
             dot_acc1 = _mm512_dpwssd_epi32(dot_acc1, v1_hi_16, v2_hi_16);
-            sqr1_acc0 = _mm512_dpwssd_epi32(sqr1_acc0, v1_lo_16, v1_lo_16);
-            sqr1_acc1 = _mm512_dpwssd_epi32(sqr1_acc1, v1_hi_16, v1_hi_16);
-            sqr2_acc0 = _mm512_dpwssd_epi32(sqr2_acc0, v2_lo_16, v2_lo_16);
-            sqr2_acc1 = _mm512_dpwssd_epi32(sqr2_acc1, v2_hi_16, v2_hi_16);
-
-            // Sum using SAD (masked load already zeroed unused bytes)
-            __m512i zero = _mm512_setzero_si512();
-            sum1_acc = _mm512_sad_epu8(v1_full, zero);
-            sum2_acc = _mm512_sad_epu8(v2_full, zero);
         }
         pVec1 += residual;
         pVec2 += residual;
@@ -185,25 +142,14 @@ float SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVe
 
     // Process full 64-byte chunks
     while (pVec1 < pEnd1) {
-        SQ8_SQ8_L2SqrStep64(pVec1, pVec2, dot_acc0, dot_acc1, sqr1_acc0, sqr1_acc1,
-                            sqr2_acc0, sqr2_acc1, sum1_acc, sum2_acc);
+        SQ8_SQ8_L2SqrStep64(pVec1, pVec2, dot_acc0, dot_acc1);
         pVec1 += 64;
         pVec2 += 64;
     }
 
-    // Combine accumulators and reduce
+    // Combine accumulators and reduce - only dot product needed
     __m512i dot_total = _mm512_add_epi32(dot_acc0, dot_acc1);
     int64_t dot_product = _mm512_reduce_add_epi32(dot_total);
-
-    __m512i sqr1_total = _mm512_add_epi32(sqr1_acc0, sqr1_acc1);
-    int64_t sum_sqr1 = _mm512_reduce_add_epi32(sqr1_total);
-
-    __m512i sqr2_total = _mm512_add_epi32(sqr2_acc0, sqr2_acc1);
-    int64_t sum_sqr2 = _mm512_reduce_add_epi32(sqr2_total);
-
-    // Reduce sum accumulators (SAD produces 8 x 64-bit sums)
-    int64_t sum_v1 = _mm512_reduce_add_epi64(sum1_acc);
-    int64_t sum_v2 = _mm512_reduce_add_epi64(sum2_acc);
 
     // Apply the algebraic formula:
     // L2² = δ1²*Σq1² + δ2²*Σq2² - 2*δ1*δ2*Σ(q1*q2) + 2*c*δ1*Σq1 - 2*c*δ2*Σq2 + dim*c²
