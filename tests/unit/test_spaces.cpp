@@ -2565,11 +2565,12 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
     size_t dim = GetParam();
 
     // Create SQ8 quantized versions of both vectors
-    size_t quantized_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
+    // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
-    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 5678);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, false, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, false, 5678);
 
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_SQ8_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
