@@ -11,28 +11,27 @@
 #include <arm_neon.h>
 
 /**
- * SQ8-to-SQ8 distance functions for NEON with DOTPROD extension.
+ * SQ8-to-SQ8 distance functions using ARM NEON DOTPROD with precomputed sum and norm.
  * These functions compute distance between two SQ8 (scalar quantized 8-bit) vectors,
  * where BOTH vectors are uint8 quantized.
  *
- * Uses algebraic optimization with INTEGER arithmetic throughout:
+ * Uses precomputed sum and norm stored in the vector data,
+ * eliminating the need to compute them during distance calculation.
  *
- * IP = Σ (v1[i]*δ1 + min1) * (v2[i]*δ2 + min2)
- *    = δ1*δ2 * Σ(v1[i]*v2[i]) + δ1*min2 * Σv1[i] + δ2*min1 * Σv2[i] + dim*min1*min2
+ * Uses algebraic optimization with DOTPROD instruction:
  *
- * All sums are computed using integer arithmetic, converted to float only at the end.
+ * With sum = Σv[i] (sum of original float values), the formula is:
+ * IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1[i]*q2[i]) - dim*min1*min2
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
+ * Since sum is precomputed, we only need to compute the dot product Σ(q1[i]*q2[i]).
+ *
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
  */
 
-// Helper function: computes dot product and element sums using integer arithmetic
+// Helper function: computes dot product using DOTPROD instruction (no sum computation needed)
 __attribute__((always_inline)) static inline void
 SQ8_SQ8_InnerProductStep_NEON_DOTPROD(const uint8_t *&pVec1, const uint8_t *&pVec2,
-                                      uint32x4_t &dot_sum, uint32x4_t &sum1, uint32x4_t &sum2) {
-    // Ones vector for computing element sums via dot product (function-local to avoid
-    // multiple definitions when header is included in multiple translation units)
-    static const uint8x16_t ones = vdupq_n_u8(1);
-
+                                      uint32x4_t &dot_sum) {
     // Load 16 uint8 elements
     uint8x16_t v1 = vld1q_u8(pVec1);
     uint8x16_t v2 = vld1q_u8(pVec2);
@@ -40,115 +39,75 @@ SQ8_SQ8_InnerProductStep_NEON_DOTPROD(const uint8_t *&pVec1, const uint8_t *&pVe
     // Compute dot product using DOTPROD instruction: dot_sum += v1 . v2
     dot_sum = vdotq_u32(dot_sum, v1, v2);
 
-    // Compute element sums using dot product with ones vector
-    // sum1 += Σv1[i], sum2 += Σv2[i]
-    sum1 = vdotq_u32(sum1, v1, ones);
-    sum2 = vdotq_u32(sum2, v2, ones);
-
     pVec1 += 16;
     pVec2 += 16;
 }
 
-// Common implementation for inner product between two SQ8 vectors
+// Common implementation for inner product between two SQ8 vectors with precomputed sum/norm
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP(const void *pVec1v, const void *pVec2v,
                                                   size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
-    // Get dequantization parameters from the end of pVec1
-    const float min1 = *reinterpret_cast<const float *>(pVec1 + dimension);
-    const float delta1 = *reinterpret_cast<const float *>(pVec1 + dimension + sizeof(float));
+    // Get dequantization parameters and precomputed values from the end of pVec1
+    // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]]
+    const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
+    const float min1 = params1[0];
+    const float delta1 = params1[1];
+    const float sum1 = params1[2]; // Precomputed sum of original float elements
 
-    // Get dequantization parameters from the end of pVec2
-    const float min2 = *reinterpret_cast<const float *>(pVec2 + dimension);
-    const float delta2 = *reinterpret_cast<const float *>(pVec2 + dimension + sizeof(float));
+    // Get dequantization parameters and precomputed values from the end of pVec2
+    const float *params2 = reinterpret_cast<const float *>(pVec2 + dimension);
+    const float min2 = params2[0];
+    const float delta2 = params2[1];
+    const float sum2 = params2[2]; // Precomputed sum of original float elements
 
-    // Integer accumulators for dot product and element sums
+    // Calculate number of 64-element chunks
+    size_t num_of_chunks = (dimension - residual) / 64;
+
+    // Multiple accumulators for ILP (dot product only)
     uint32x4_t dot_sum0 = vdupq_n_u32(0);
     uint32x4_t dot_sum1 = vdupq_n_u32(0);
-    uint32x4_t sum1_0 = vdupq_n_u32(0);
-    uint32x4_t sum1_1 = vdupq_n_u32(0);
-    uint32x4_t sum2_0 = vdupq_n_u32(0);
-    uint32x4_t sum2_1 = vdupq_n_u32(0);
+    uint32x4_t dot_sum2 = vdupq_n_u32(0);
+    uint32x4_t dot_sum3 = vdupq_n_u32(0);
 
-    // Handle residual elements first (0-15 elements)
-    constexpr size_t final_residual = residual % 16;
-    if constexpr (final_residual > 0) {
-        // Ones vector for computing element sums via dot product
-        static const uint8x16_t ones = vdupq_n_u8(1);
-        constexpr uint8x16_t mask = {
-            0xFF,
-            (final_residual >= 2) ? 0xFF : 0,
-            (final_residual >= 3) ? 0xFF : 0,
-            (final_residual >= 4) ? 0xFF : 0,
-            (final_residual >= 5) ? 0xFF : 0,
-            (final_residual >= 6) ? 0xFF : 0,
-            (final_residual >= 7) ? 0xFF : 0,
-            (final_residual >= 8) ? 0xFF : 0,
-            (final_residual >= 9) ? 0xFF : 0,
-            (final_residual >= 10) ? 0xFF : 0,
-            (final_residual >= 11) ? 0xFF : 0,
-            (final_residual >= 12) ? 0xFF : 0,
-            (final_residual >= 13) ? 0xFF : 0,
-            (final_residual >= 14) ? 0xFF : 0,
-            (final_residual >= 15) ? 0xFF : 0,
-            0,
-        };
-
-        uint8x16_t v1 = vld1q_u8(pVec1);
-        uint8x16_t v2 = vld1q_u8(pVec2);
-        uint8x16_t zeros = vdupq_n_u8(0);
-
-        // Zero out irrelevant elements
-        v1 = vbslq_u8(mask, v1, zeros);
-        v2 = vbslq_u8(mask, v2, zeros);
-
-        // Accumulate using integer arithmetic
-        dot_sum1 = vdotq_u32(dot_sum1, v1, v2);
-        sum1_1 = vdotq_u32(sum1_1, v1, ones);
-        sum2_1 = vdotq_u32(sum2_1, v2, ones);
-
-        pVec1 += final_residual;
-        pVec2 += final_residual;
-    }
-
-    // Process 64 elements at a time in the main loop
-    const size_t num_of_chunks = dimension / 64;
-
+    // Process 64 elements at a time (4 x 16) in the main loop
     for (size_t i = 0; i < num_of_chunks; i++) {
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum0, sum1_0, sum2_0);
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum1, sum1_1, sum2_1);
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum0, sum1_0, sum2_0);
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum1, sum1_1, sum2_1);
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum0);
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum1);
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum2);
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum3);
     }
 
-    // Handle remaining 16-element chunks (0-3 chunks within residual)
-    constexpr size_t residual_chunks = residual / 16;
-    if constexpr (residual_chunks >= 1) {
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum0, sum1_0, sum2_0);
+    // Handle remaining complete 16-element blocks within residual
+    if constexpr (residual >= 16) {
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum0);
     }
-    if constexpr (residual_chunks >= 2) {
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum1, sum1_1, sum2_1);
+    if constexpr (residual >= 32) {
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum1);
     }
-    if constexpr (residual_chunks >= 3) {
-        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum0, sum1_0, sum2_0);
+    if constexpr (residual >= 48) {
+        SQ8_SQ8_InnerProductStep_NEON_DOTPROD(pVec1, pVec2, dot_sum2);
     }
 
     // Combine accumulators
-    uint32x4_t dot_total = vaddq_u32(dot_sum0, dot_sum1);
-    uint32x4_t sum1_total = vaddq_u32(sum1_0, sum1_1);
-    uint32x4_t sum2_total = vaddq_u32(sum2_0, sum2_1);
+    uint32x4_t dot_total = vaddq_u32(vaddq_u32(dot_sum0, dot_sum1), vaddq_u32(dot_sum2, dot_sum3));
 
-    // Horizontal sum to scalar (integer)
+    // Horizontal sum for dot product
     uint32_t dot_product = vaddvq_u32(dot_total);
-    uint32_t v1_sum = vaddvq_u32(sum1_total);
-    uint32_t v2_sum = vaddvq_u32(sum2_total);
 
-    // Apply algebraic formula with float conversion only at the end:
-    // IP = δ1*δ2 * Σ(v1*v2) + δ1*min2 * Σv1 + δ2*min1 * Σv2 + dim*min1*min2
-    return delta1 * delta2 * static_cast<float>(dot_product) +
-           delta1 * min2 * static_cast<float>(v1_sum) + delta2 * min1 * static_cast<float>(v2_sum) +
+    // Handle remaining scalar elements (0-15)
+    constexpr unsigned char remaining = residual % 16;
+    if constexpr (remaining > 0) {
+        for (unsigned char i = 0; i < remaining; i++) {
+            dot_product += static_cast<uint32_t>(pVec1[i]) * static_cast<uint32_t>(pVec2[i]);
+        }
+    }
+
+    // Apply algebraic formula using precomputed sums:
+    // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1*q2) - dim*min1*min2
+    return min1 * sum2 + min2 * sum1 + delta1 * delta2 * static_cast<float>(dot_product) -
            static_cast<float>(dimension) * min1 * min2;
 }
 
@@ -161,10 +120,8 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD(const void *pVec1v, const void *pV
 }
 
 // SQ8-to-SQ8 Cosine distance function
-
-// Returns 1 - inner_product
+// Returns 1 - inner_product (assumes vectors are pre-normalized)
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_CosineSIMD64_NEON_DOTPROD(const void *pVec1v, const void *pVec2v, size_t dimension) {
-    // Assumes both vectors are normalized.
     return 1.0f - SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP<residual>(pVec1v, pVec2v, dimension);
 }

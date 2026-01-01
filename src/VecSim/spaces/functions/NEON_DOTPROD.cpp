@@ -54,7 +54,7 @@ dist_func_t<float> Choose_UINT8_L2_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
-// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized)
+// SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum/norm)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD);

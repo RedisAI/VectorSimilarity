@@ -25,7 +25,7 @@
  *
  * Also uses multiple accumulators for better instruction-level parallelism.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)]]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]]
  */
 
 // Process 16 elements with algebraic optimization
