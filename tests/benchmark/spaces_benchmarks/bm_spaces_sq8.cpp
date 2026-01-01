@@ -96,6 +96,4 @@ INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, Cosine, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8, SQ8, L2Sqr, 16);
 
-// Naive
-
 BENCHMARK_MAIN();
