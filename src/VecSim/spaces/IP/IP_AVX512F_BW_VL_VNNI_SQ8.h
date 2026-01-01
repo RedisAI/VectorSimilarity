@@ -133,16 +133,13 @@ float SQ8_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t 
 template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                 size_t dimension) {
-    // Calculate inner product using common implementation
-    float ip = SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
-
     // The inner product similarity is 1 - ip
-    return 1.0f - ip;
+    return 1.0f -SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);;
 }
 
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                           size_t dimension) {
     // Assume vectors are normalized.
-    return 1.0f - SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
+    return SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI<residual>(pVec1v, pVec2v, dimension);
 }
