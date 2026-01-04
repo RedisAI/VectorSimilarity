@@ -26,7 +26,7 @@ public:
         test_utils::populate_float_vec(v1, dim, 123);
         // Allocate vector with extra space for min, delta and cosine calculations
         v2 = new uint8_t[dim + sizeof(float) * 3];
-        test_utils::populate_float_vec_to_sq8(v2, dim, 1234);
+        test_utils::populate_float_vec_to_sq8_with_metadata(v2, dim, 1234);
     }
     void TearDown(const ::benchmark::State &state) {
         delete v1;

@@ -67,41 +67,6 @@ static void populate_float16_vec(vecsim_types::float16 *v, const size_t dim, int
     }
 }
 
-static void quantize_float_vec_to_uint8(float *v, size_t dim, uint8_t *qv, int seed = 1234) {
-
-    float min_val = v[0];
-    float max_val = v[0];
-    for (size_t i = 1; i < dim; i++) {
-        min_val = std::min(min_val, v[i]);
-        max_val = std::max(max_val, v[i]);
-    }
-    // Calculate delta
-    float delta = (max_val - min_val) / 255.0f;
-    if (delta == 0)
-        delta = 1.0f; // Avoid division by zero
-    // Quantize each value
-    for (size_t i = 0; i < dim; i++) {
-        float normalized = (v[i] - min_val) / delta;
-        normalized = std::max(0.0f, std::min(255.0f, normalized));
-        qv[i] = static_cast<uint8_t>(std::round(normalized));
-    }
-    // Store parameters
-    float *params = reinterpret_cast<float *>(qv + dim);
-    params[0] = min_val;
-    params[1] = delta;
-}
-
-static void populate_float_vec_to_sq8(uint8_t *v, size_t dim, int seed = 1234) {
-
-    std::mt19937 gen(seed); // Mersenne Twister engine initialized with the fixed seed
-    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
-    std::vector<float> vec(dim);
-    for (size_t i = 0; i < dim; i++) {
-        vec[i] = dis(gen);
-    }
-    quantize_float_vec_to_uint8(vec.data(), dim, v, seed);
-}
-
 static float SQ8_SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
                                                size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
