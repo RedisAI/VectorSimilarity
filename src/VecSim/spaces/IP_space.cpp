@@ -163,6 +163,11 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ8_SQ8_IP_implementation_SVE2(dim);
+    }
+#endif
 #ifdef OPT_SVE
     if (features.sve) {
         return Choose_SQ8_SQ8_IP_implementation_SVE(dim);
