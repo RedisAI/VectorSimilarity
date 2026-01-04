@@ -164,22 +164,33 @@ private:
  * Given quantized value q_i, the original value is reconstructed as:
  *   x_i ≈ min + delta * q_i
  *
+ * Query processing:
+ * The query vector is not quantized. It remains as DataType, but we precompute
+ * and store metric-specific values to accelerate asymmetric distance computation:
+ * - For IP/Cosine: y_sum = Σy_i (sum of query values)
+ * - For L2: y_sum_squares = Σy_i² (sum of squared query values)
+ *
+ * Query blob layout:
+ * | query_values[dim] | y_sum (IP/Cosine) OR y_sum_squares (L2) |
+ *
+ * Query blob size: (dim + 1) * sizeof(DataType)
+ *
  * === Asymmetric distance (storage x quantized, query y remains float) ===
  *
  * For IP/Cosine:
  *   IP(x, y) = Σ(x_i * y_i)
  *            ≈ Σ((min + delta * q_i) * y_i)
  *            = min * Σy_i + delta * Σ(q_i * y_i)
- *            = min * sum_query + delta * quantized_dot_product
- *   where sum_query = Σy_i is computed at query time.
+ *            = min * y_sum + delta * quantized_dot_product
+ *   where y_sum = Σy_i is precomputed and stored in the query blob.
  *
  * For L2:
  *   ||x - y||² = Σx_i² - 2*Σ(x_i * y_i) + Σy_i²
- *              = sum_squares - 2 * IP(x, y) + sum_sq_query
+ *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
  *   where:
- *     - sum_squares = Σx_i² is precomputed and stored
+ *     - x_sum_squares = Σx_i² is precomputed and stored in the storage blob
  *     - IP(x, y) is computed using the formula above
- *     - sum_sq_query = Σy_i² is computed at query time
+ *     - y_sum_squares = Σy_i² is precomputed and stored in the query blob
  *
  * === Symmetric distance (both x and y are quantized) ===
  *
@@ -208,7 +219,7 @@ class QuantPreprocessor : public PreprocessorInterface {
 
     // For L2:   store sum + sum_of_squares (2 extra values)
     // For IP/Cosine: store only sum (1 extra value)
-    static constexpr size_t extra_values_count = (Metric == VecSimMetric_L2) ? 2 : 1;
+    static constexpr size_t extra_storage_values_count = (Metric == VecSimMetric_L2) ? 2 : 1;
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
                   "QuantPreprocessor only supports L2, IP and Cosine metrics");
@@ -258,11 +269,56 @@ class QuantPreprocessor : public PreprocessorInterface {
         }
     }
 
+    DataType sum_fast(const DataType *p) const {
+        DataType s0{}, s1{}, s2{}, s3{};
+
+        size_t i = 0;
+        // round dim down to the nearest multiple of 4
+        size_t dim_round_down = this->dim & ~size_t(3);
+
+        for (; i < dim_round_down; i += 4) {
+            s0 += p[i + 0];
+            s1 += p[i + 1];
+            s2 += p[i + 2];
+            s3 += p[i + 3];
+        }
+
+        DataType sum = (s0 + s1) + (s2 + s3);
+
+        for (; i < dim; ++i) {
+            sum += p[i];
+        }
+        return sum;
+    }
+
+    DataType sum_squares_fast(const DataType *p) const {
+        DataType s0{}, s1{}, s2{}, s3{};
+
+        size_t i = 0;
+        // round dim down to the nearest multiple of 4
+        size_t dim_round_down = this->dim & ~size_t(3);
+
+        for (; i < dim_round_down; i += 4) {
+            s0 += p[i + 0] * p[i + 0];
+            s1 += p[i + 1] * p[i + 1];
+            s2 += p[i + 2] * p[i + 2];
+            s3 += p[i + 3] * p[i + 3];
+        }
+
+        DataType sum = (s0 + s1) + (s2 + s3);
+
+        for (; i < dim; ++i) {
+            sum += p[i] * p[i];
+        }
+        return sum;
+    }
+
 public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              (2 + extra_values_count) * sizeof(DataType)) {
+                              (2 + extra_storage_values_count) * sizeof(DataType)),
+          query_bytes_count((dim + 1) * sizeof(DataType)) {
         static_assert(std::is_floating_point_v<DataType>,
                       "QuantPreprocessor only supports floating-point types");
     }
@@ -274,20 +330,21 @@ public:
     }
 
     /**
-     * Quantizes the storage blob (DataType → OUTPUT_TYPE) while leaving the query blob unchanged.
+     * Preprocesses the original blob into separate storage and query blobs.
      *
      * Storage vectors are quantized to uint8_t values, with metadata (min, delta, sum, and
-     * sum_squares for L2) appended for distance reconstruction. Query vectors remain as DataType
-     * for asymmetric distance computation.
+     * sum_squares for L2) appended for distance reconstruction.
      *
-     * Note: query_blob and query_blob_size are not modified, nor allocated by this function.
+     * Query vectors remain as DataType for asymmetric distance computation, with a precomputed
+     * sum (for IP/Cosine) or sum of squares (for L2) appended for efficient distance calculation.
      *
      * Possible scenarios (currently only CASE 1 is implemented):
-     * - CASE 1: STORAGE BLOB NEEDS ALLOCATION (storage_blob == nullptr)
+     * - CASE 1: STORAGE BLOB AND QUERY BLOB NEED ALLOCATION (storage_blob == query_blob == nullptr)
      * - CASE 2: STORAGE BLOB EXISTS (storage_blob != nullptr)
      *   - CASE 2A: STORAGE BLOB EXISTS and its size is insufficient
      * (storage_blob_size < required_size) - reallocate storage
-     *   - CASE 2B: STORAGE AND QUERY SHARE MEMORY (storage_blob == query_blob) - reallocate storage
+     *   - CASE 2B: STORAGE AND QUERY SHARE MEMORY (storage_blob == query_blob != nullptr) -
+     * reallocate storage
      *   - CASE 2C: SEPARATE STORAGE AND QUERY BLOBS (storage_blob != query_blob) - quantize storage
      * in-place
      */
@@ -296,6 +353,10 @@ public:
                     unsigned char alignment) const override {
         // CASE 1: STORAGE BLOB NEEDS ALLOCATION - the only implemented case
         assert(!storage_blob && "CASE 1: storage_blob must be nullptr");
+        assert(!query_blob && "CASE 1: query_blob must be nullptr");
+
+        // storage_blob_size and query_blob_size must point to different memory slots.
+        assert(&storage_blob_size != &query_blob_size);
 
         // CASE 2A: STORAGE BLOB EXISTS and its size is insufficient - not implemented
         // storage_blob && storage_blob_size < required_size
@@ -307,15 +368,8 @@ public:
         // We can quantize the storage blob in-place (if we already checked storage_blob_size is
         // sufficient)
 
-        // Allocate aligned memory for the quantized storage blob
-        storage_blob = static_cast<OUTPUT_TYPE *>(
-            this->allocator->allocate_aligned(this->storage_bytes_count, alignment));
-
-        // Quantize directly from original data
-        const DataType *input = static_cast<const DataType *>(original_blob);
-        quantize(input, static_cast<OUTPUT_TYPE *>(storage_blob));
-
-        storage_blob_size = this->storage_bytes_count;
+        preprocessForStorage(original_blob, storage_blob, storage_blob_size);
+        preprocessQuery(original_blob, query_blob, query_blob_size, alignment);
     }
 
     void preprocessForStorage(const void *original_blob, void *&blob,
@@ -331,9 +385,33 @@ public:
         input_blob_size = storage_bytes_count;
     }
 
+    /**
+     * Preprocesses the query vector for asymmetric distance computation.
+     *
+     * The query blob contains the original float values followed by a precomputed value:
+     * - For IP/Cosine: y_sum = Σy_i (sum of query values)
+     * - For L2: y_sum_squares = Σy_i² (sum of squared query values)
+     *
+     * Query blob layout: | query_values[dim] | y_sum OR y_sum_squares |
+     * Query blob size: (dim + 1) * sizeof(DataType)
+     */
     void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
                          unsigned char alignment) const override {
-        // No-op: queries remain as original DataType
+        assert(!blob && "query_blob must be nullptr");
+
+        // Allocate aligned memory for the query blob
+        blob = this->allocator->allocate_aligned(this->query_bytes_count, alignment);
+        memcpy(blob, original_blob, this->dim * sizeof(DataType));
+        const DataType *input = static_cast<const DataType *>(original_blob);
+        // For IP/Cosine, we need to store the sum of the query vector.
+        if constexpr (Metric == VecSimMetric_IP || Metric == VecSimMetric_Cosine) {
+            static_cast<DataType *>(blob)[this->dim] = sum_fast(input);
+        } // For L2, compute the sum of squares.
+        else if constexpr (Metric == VecSimMetric_L2) {
+            static_cast<DataType *>(blob)[this->dim] = sum_squares_fast(input);
+        }
+
+        query_blob_size = this->query_bytes_count;
     }
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
@@ -353,4 +431,5 @@ private:
 
     const size_t dim;
     const size_t storage_bytes_count;
+    const size_t query_bytes_count;
 };
