@@ -169,12 +169,12 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
+    if (features.asimddp && dim >= 16) {
         return Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd) {
+    if (features.asimd && dim >= 16) {
         return Choose_SQ8_SQ8_IP_implementation_NEON(dim);
     }
 #endif
@@ -213,12 +213,12 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
     }
 #endif
 #ifdef OPT_NEON_DOTPROD
-    if (features.asimddp) {
+    if (features.asimddp && dim >= 16) {
         return Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd) {
+    if (features.asimd && dim >= 16) {
         return Choose_SQ8_SQ8_Cosine_implementation_NEON(dim);
     }
 #endif

@@ -2358,15 +2358,15 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
 #ifdef CPU_FEATURES_ARCH_AARCH64
     // Make sure we don't use any optimization (because there is no size optimization for arm)
     auto optimization = getCpuOptimizationFeatures();
-    optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
+    optimization.sve = optimization.sve2 = 0;
     auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
 #else
     auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
 #endif
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
-    // Checks that the function with the optimzied math equivalence returns the same result.
-    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.01)
+    // Checks that the function with the optimized math equivalence returns the same result.
+    ASSERT_EQ(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim))
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
@@ -2395,7 +2395,7 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
 #endif
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_Cosine)
         << "Unexpected distance function chosen for dim " << dim;
-    // Checks that the function with the optimzied math equivalence returns the same result.
+    // Checks that the function with the optimized math equivalence returns the same result.
     // min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
     ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001)
         << "No optimization with dim " << dim;
@@ -2660,7 +2660,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
-        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
         optimization.sve2 = 0;
     }
 #endif
@@ -2670,7 +2670,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
-        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
         optimization.sve = 0;
     }
 #endif
@@ -2680,7 +2680,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
-        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
         optimization.asimddp = 0;
     }
 #endif
@@ -2690,7 +2690,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
-        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
         optimization.asimd = 0;
     }
 #endif
@@ -2700,7 +2700,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
-        ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Optimized cosine should be symmetric";
+        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
         optimization.avx512f = 0;
     }
 #endif
@@ -2711,7 +2711,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
 }
 
 // Test with zero vector
-TEST(SQ8_SQ8_EdgeCases, ZeroVectorTest) {
+TEST(SQ8_SQ8_EdgeCases, IPZeroVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v_zero(dim, 0.0f);
@@ -2777,8 +2777,74 @@ TEST(SQ8_SQ8_EdgeCases, ZeroVectorTest) {
     ASSERT_NEAR(result, baseline, 0.01f) << "Zero vector IP should match baseline";
 }
 
+TEST(SQ8_SQ8_EdgeCases, CosineZeroVectorTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = 128;
+    std::vector<float> v_zero(dim, 0.0f);
+
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> v_zero_quantized(quantized_size);
+    std::vector<uint8_t> v_nonzero_quantized(quantized_size);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_zero.data(), dim,
+                                                        v_zero_quantized.data());
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, true);
+
+    float baseline = SQ8_SQ8_Cosine(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized zero vector IP should match baseline";
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized zero vector IP should match baseline";
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized zero vector IP should match baseline";
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized zero vector IP should match baseline";
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized zero vector IP should match baseline";
+        optimization.avx512f = 0;
+    }
+#endif
+    unsigned char alignment = 0;
+    auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+    float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
+
+    ASSERT_NEAR(result, baseline, 0.01f) << "Zero vector Cosine should match baseline";
+}
+
 // Test with constant vector (all same values)
-TEST(SQ8_SQ8_EdgeCases, ConstantVectorTest) {
+TEST(SQ8_SQ8_EdgeCases, IPConstantVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v_const(dim, 0.5f);
@@ -2850,8 +2916,80 @@ TEST(SQ8_SQ8_EdgeCases, ConstantVectorTest) {
     ASSERT_NEAR(result, baseline, 0.01f) << "Constant vector IP should match baseline";
 }
 
+TEST(SQ8_SQ8_EdgeCases, CosineConstantVectorTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = 128;
+    std::vector<float> v_const(dim, 0.5f);
+
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> v_const_quantized(quantized_size);
+    std::vector<uint8_t> v_random_quantized(quantized_size);
+    spaces::GetNormalizeFunc<float>()(v_const.data(), dim);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
+                                                        v_const_quantized.data());
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_random_quantized.data(), dim, true);
+
+    float baseline = SQ8_SQ8_Cosine(v_const_quantized.data(), v_random_quantized.data(), dim);
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized constant vector Cosine should match baseline";
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized constant vector Cosine should match baseline";
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized constant vector Cosine should match baseline";
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized constant vector Cosine should match baseline";
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized constant vector Cosine should match baseline";
+        optimization.avx512f = 0;
+    }
+#endif
+    unsigned char alignment = 0;
+    auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+    float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
+
+    ASSERT_NEAR(result, baseline, 0.01f) << "Constant vector Cosine should match baseline";
+}
+
 // Test with extreme values (-1 and 1 only)
-TEST(SQ8_SQ8_EdgeCases, ExtremeValuesTest) {
+TEST(SQ8_SQ8_EdgeCases, IPExtremeValuesTest) {
+    auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v1(dim), v2(dim);
 
@@ -2871,9 +3009,7 @@ TEST(SQ8_SQ8_EdgeCases, ExtremeValuesTest) {
     test_utils::quantize_float_vec_to_sq8_with_metadata(v2.data(), dim, v2_quantized.data());
 
     float baseline = SQ8_SQ8_InnerProduct(v1_quantized.data(), v2_quantized.data(), dim);
-    ASSERT_FALSE(std::isnan(baseline)) << "Extreme values IP should not produce NaN";
 
-    auto optimization = getCpuOptimizationFeatures();
 #ifdef OPT_SVE2
     if (optimization.sve2) {
         unsigned char alignment = 0;
@@ -2925,4 +3061,83 @@ TEST(SQ8_SQ8_EdgeCases, ExtremeValuesTest) {
     float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values IP should match baseline";
+}
+
+TEST(SQ8_SQ8_EdgeCases, CosineExtremeValuesTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = 128;
+    std::vector<float> v1(dim), v2(dim);
+
+    // Alternating extreme values
+    for (size_t i = 0; i < dim; i++) {
+        v1[i] = (i % 2 == 0) ? 1.0f : -1.0f;
+        v2[i] = (i % 3 == 0) ? 1.0f : -1.0f;
+    }
+
+    spaces::GetNormalizeFunc<float>()(v1.data(), dim);
+    spaces::GetNormalizeFunc<float>()(v2.data(), dim);
+
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> v1_quantized(quantized_size);
+    std::vector<uint8_t> v2_quantized(quantized_size);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v1.data(), dim, v1_quantized.data());
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v2.data(), dim, v2_quantized.data());
+
+    float baseline = SQ8_SQ8_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized extreme values Cosine should match baseline";
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized extreme values Cosine should match baseline";
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized extreme values Cosine should match baseline";
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized extreme values Cosine should match baseline";
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f)
+            << "Optimized extreme values Cosine should match baseline";
+        optimization.avx512f = 0;
+    }
+#endif
+    unsigned char alignment = 0;
+    auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+    float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+
+    ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values Cosine should match baseline";
 }
