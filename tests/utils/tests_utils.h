@@ -127,7 +127,6 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
         delta = 1.0f; // Avoid division by zero
 
     // Quantize each value
-
     for (size_t i = 0; i < dim; i++) {
         float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));
