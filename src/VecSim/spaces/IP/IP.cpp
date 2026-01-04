@@ -87,7 +87,7 @@ float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dime
 // SQ8-to-SQ8: Both vectors are uint8 quantized and normalized with precomputed sum
 // Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
 float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return SQ8_SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);
+    return SQ8_SQ8_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension) {
