@@ -367,7 +367,14 @@ void common_ip_sq8(bool should_normalize, float expected_dist) {
         << "SQ8_InnerProduct failed to match expected distance";
 
     unsigned char alignment = 0;
+    #ifdef CPU_FEATURES_ARCH_AARCH64
+    // Make sure we don't use any optimization (because there is no size optimization for arm)
+    auto optimization = getCpuOptimizationFeatures();
+    optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
+    auto arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
+    #else
     auto arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, nullptr);
+    #endif
     ASSERT_EQ(arch_opt_func, SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v1_orig, v2_quantized.data(), dim), 0.01)
