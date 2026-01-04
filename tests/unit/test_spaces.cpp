@@ -2516,7 +2516,7 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
 #ifdef CPU_FEATURES_ARCH_AARCH64
     // Make sure we don't use any optimization (because there is no size optimization for arm)
     auto optimization = getCpuOptimizationFeatures();
-    optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
+    optimization.sve = optimization.sve2 = 0;
     auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
 #else
     auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
