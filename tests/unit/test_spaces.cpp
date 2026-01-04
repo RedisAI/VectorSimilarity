@@ -2769,7 +2769,75 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
 }
 
 // Test symmetry: dist(v1, v2) == dist(v2, v1)
-TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
+TEST(SQ8_SQ8_EdgeCases, IPSymmetryTest) {
+    size_t dim = 128;
+    auto optimization = getCpuOptimizationFeatures();
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> v1_quantized(quantized_size);
+    std::vector<uint8_t> v2_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 456, -1.0f,
+                                                        1.0f);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 123, -1.0f,
+                                                        1.0f);
+
+    unsigned char alignment = 0;
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_EQ(cos_12, cos_21) << "ip should be symmetric";
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_EQ(cos_12, cos_21) << "ip should be symmetric";
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_EQ(cos_12, cos_21) << "ip should be symmetric";
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_EQ(cos_12, cos_21) << "ip should be symmetric";
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
+        float cos_21 = arch_opt_func(v2_quantized.data(), v1_quantized.data(), dim);
+        ASSERT_EQ(cos_12, cos_21) << "ip should be symmetric";
+        optimization.avx512f = 0;
+    }
+#endif
+    auto ip_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+    float ip_12 = ip_func(v1_quantized.data(), v2_quantized.data(), dim);
+    float ip_21 = ip_func(v2_quantized.data(), v1_quantized.data(), dim);
+    ASSERT_EQ(ip_12, ip_21) << "IP should be symmetric";
+}
+TEST(SQ8_SQ8_EdgeCases, CosineSymmetryTest) {
     size_t dim = 128;
     auto optimization = getCpuOptimizationFeatures();
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
@@ -2835,7 +2903,7 @@ TEST(SQ8_SQ8_EdgeCases, SymmetryTest) {
     auto cosine_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
     float cos_12 = cosine_func(v1_quantized.data(), v2_quantized.data(), dim);
     float cos_21 = cosine_func(v2_quantized.data(), v1_quantized.data(), dim);
-    ASSERT_NEAR(cos_12, cos_21, 1e-6f) << "Cosine should be symmetric";
+    ASSERT_EQ(cos_12, cos_21) << "Cosine should be symmetric";
 }
 
 // Test with zero vector
