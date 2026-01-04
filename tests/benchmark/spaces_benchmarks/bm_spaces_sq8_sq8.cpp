@@ -25,9 +25,11 @@ public:
 
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
-        // Allocate both vectors with extra space for min and delta
-        v1 = new uint8_t[dim + sizeof(float) * 2];
-        v2 = new uint8_t[dim + sizeof(float) * 2];
+        // Allocate both vectors with extra space for min, delta, sum, and sum_squares
+        // Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)]
+        // [sum_squares (float)]
+        v1 = new uint8_t[dim + sizeof(float) * 4];
+        v2 = new uint8_t[dim + sizeof(float) * 4];
         test_utils::populate_float_vec_to_sq8_with_metadata(v1, dim, true, 123);
         test_utils::populate_float_vec_to_sq8_with_metadata(v2, dim, true, 1234);
     }
