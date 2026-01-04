@@ -1166,21 +1166,17 @@ protected:
     // Compute expected precomputed value for query blob based on metric
     template <VecSimMetric Metric>
     float getExpectedQueryPrecomputedValue() {
-        if constexpr (Metric == VecSimMetric_L2) {
-            // sum of squares: 1² + 2² + 3² + 4² + 5² = 55
-            float sum_sq = 0;
-            for (size_t i = 0; i < dim; ++i) {
-                sum_sq += original_blob[i] * original_blob[i];
-            }
-            return sum_sq;
-        } else {
-            // sum: 1 + 2 + 3 + 4 + 5 = 15
-            float sum = 0;
-            for (size_t i = 0; i < dim; ++i) {
+        float sum = 0;
+        for (size_t i = 0; i < dim; ++i) {
+            if constexpr (Metric == VecSimMetric_L2) {
+                // sum of squares: 1² + 2² + 3² + 4² + 5² = 55
+                sum += original_blob[i] * original_blob[i];
+            } else {
+                // sum: 1 + 2 + 3 + 4 + 5 = 15
                 sum += original_blob[i];
             }
-            return sum;
         }
+        return sum;
     }
 
     // Helper to run quantization test for a specific metric
