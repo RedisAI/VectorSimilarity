@@ -18,7 +18,8 @@
  * Uses the identity: ||x - y||² = ||x||² + ||y||² - 2*IP(x, y)
  * where ||x||² and ||y||² are precomputed sum of squares stored in the vector data.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum_of_squares (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+ * [sum_of_squares (float)]
  */
 
 // L2 squared distance using the common inner product implementation
@@ -38,4 +39,3 @@ float SQ8_SQ8_L2SqrSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t di
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return sum_sq_1 + sum_sq_2 - 2.0f * ip;
 }
-

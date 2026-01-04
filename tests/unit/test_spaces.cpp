@@ -308,7 +308,6 @@ TEST_F(SpacesTest, uint8_Cosine_no_optimization_func_test) {
     ASSERT_NEAR(dist, 0.0, 0.000001);
 }
 
-
 void common_ip_sq8(bool should_normalize, float expected_dist) {
 
     size_t dim = 5;
@@ -367,14 +366,14 @@ void common_ip_sq8(bool should_normalize, float expected_dist) {
         << "SQ8_InnerProduct failed to match expected distance";
 
     unsigned char alignment = 0;
-    #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef CPU_FEATURES_ARCH_AARCH64
     // Make sure we don't use any optimization (because there is no size optimization for arm)
     auto optimization = getCpuOptimizationFeatures();
     optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
     auto arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    #else
+#else
     auto arch_opt_func = IP_SQ8_GetDistFunc(dim, &alignment, nullptr);
-    #endif
+#endif
     ASSERT_EQ(arch_opt_func, SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v1_orig, v2_quantized.data(), dim), 0.01)
@@ -405,14 +404,14 @@ TEST_F(SpacesTest, SQ8_Cosine_no_optimization_func_test) {
     float baseline = SQ8_Cosine(v1_orig.data(), v2_quantized.data(), dim);
 
     unsigned char alignment = 0;
-    #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef CPU_FEATURES_ARCH_AARCH64
     // Make sure we don't use any optimization (because there is no size optimization for arm)
     auto optimization = getCpuOptimizationFeatures();
     optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
     auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    #else
+#else
     auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, nullptr);
-    #endif
+#endif
     ASSERT_EQ(arch_opt_func, SQ8_Cosine) << "Unexpected distance function chosen for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
         << "No optimization with dim " << dim;
@@ -2106,14 +2105,10 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
 
     // Create original vectors
     std::vector<float> v1_orig(dim);
-    std::vector<float> v2_orig(dim);
-    for (size_t i = 0; i < dim; i++) {
-        v1_orig[i] = float(i + 1.5);
-        v2_orig[i] = float(i * 0.75 + 1.0);
-    }
-
-    // Create SQ8 compressed version of v2
-    std::vector<uint8_t> v2_compressed = CreateSQ8CompressedVector(v2_orig.data(), dim);
+    auto quanized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quanized_size);
+    test_utils::populate_float_vec(v1_orig.data(), dim, 1234);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(uint8_t) / 8;
@@ -2356,14 +2351,14 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
                                                                    v2_quantized.data(), dim);
 
     unsigned char alignment = 0;
-    #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef CPU_FEATURES_ARCH_AARCH64
     // Make sure we don't use any optimization (because there is no size optimization for arm)
     auto optimization = getCpuOptimizationFeatures();
     optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
     auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    #else
+#else
     auto arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
-    #endif
+#endif
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
     // Checks that the function with the optimzied math equivalence returns the same result.
@@ -2386,14 +2381,14 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
         test_utils::SQ8_SQ8_NotOptimized_Cosine(v1_quantized.data(), v2_quantized.data(), dim);
 
     unsigned char alignment = 0;
-    #ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef CPU_FEATURES_ARCH_AARCH64
     // Make sure we don't use any optimization (because there is no size optimization for arm)
     auto optimization = getCpuOptimizationFeatures();
     optimization.sve = optimization.sve2 = optimization.asimddp = optimization.asimd = 0;
     auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    #else
+#else
     auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
-    #endif
+#endif
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_Cosine)
         << "Unexpected distance function chosen for dim " << dim;
     // Checks that the function with the optimzied math equivalence returns the same result.
@@ -2413,14 +2408,15 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, false, 1234);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, false, 5678);
 
-    float baseline = test_utils::SQ8_SQ8_NotOptimized_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
+    float baseline =
+        test_utils::SQ8_SQ8_NotOptimized_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
 
     // Get distance function with nullptr alignment to cover that code path
     auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, nullptr, nullptr);
 
-
     ASSERT_EQ(dist_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim) , 0.001f) << "SQ8_SQ8_L2Sqr failed to match expected distance";
+    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
+        << "SQ8_SQ8_L2Sqr failed to match expected distance";
 }
 
 class SQ8_SQ8_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};

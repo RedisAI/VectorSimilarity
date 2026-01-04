@@ -96,7 +96,8 @@ static float SQ8_SQ8_NotOptimized_Cosine(const void *pVect1v, const void *pVect2
     return SQ8_SQ8_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
-static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
+                                        size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
@@ -117,7 +118,6 @@ static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v
     }
     return res;
 }
-
 
 /**
  * Quantize float vector to SQ8 with precomputed sum and sum_squares.

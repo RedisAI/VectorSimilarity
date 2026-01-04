@@ -77,7 +77,7 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 #ifdef OPT_AVX512_F_BW_VL_VNNI
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
-                             avx512_f_bw_vl_vnni_supported);
+                                avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
                                  avx512_f_bw_vl_vnni_supported);
 

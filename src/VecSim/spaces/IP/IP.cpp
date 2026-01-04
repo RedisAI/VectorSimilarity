@@ -75,8 +75,8 @@ float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t
 
     // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
-    return min_val1 * sum2 + min_val2 * sum1 -
-           static_cast<float>(dimension) * min_val1 * min_val2 + delta1 * delta2 * product;
+    return min_val1 * sum2 + min_val2 * sum1 - static_cast<float>(dimension) * min_val1 * min_val2 +
+           delta1 * delta2 * product;
 }
 
 // SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum

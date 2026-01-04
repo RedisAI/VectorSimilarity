@@ -135,7 +135,8 @@ float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
 }
 
 // SQ8-to-SQ8 L2 squared distance (both vectors are uint8 quantized)
-// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum_of_squares (float)]
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+// [sum_of_squares (float)]
 //  ||x - y||² = ||x||² + ||y||² - 2*IP(x, y)
 //   where:
 //     - ||x||² = sum_squares_x is precomputed and stored

@@ -18,13 +18,14 @@
  * Uses the identity: ||x - y||² = ||x||² + ||y||² - 2*IP(x, y)
  * where ||x||² and ||y||² are precomputed sum of squares stored in the vector data.
  *
- * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)] [sum_of_squares (float)]
+ * Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+ * [sum_of_squares (float)]
  */
 
 // L2 squared distance using the common inner product implementation
 template <unsigned char residual> // 0..63
 float SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
-                                              size_t dimension) {
+                                             size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
