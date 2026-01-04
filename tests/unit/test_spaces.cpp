@@ -2365,8 +2365,9 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
 #endif
     ASSERT_EQ(arch_opt_func, SQ8_SQ8_InnerProduct)
         << "Unexpected distance function chosen for dim " << dim;
-    // Checks that the function with the optimized math equivalence returns the same result.
-    ASSERT_EQ(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim))
+    // Checks that the function with the optimized math equivalence returns similar result.
+    // Use ASSERT_NEAR due to floating-point differences between naive and algebraic formulas.
+    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001)
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
