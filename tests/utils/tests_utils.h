@@ -67,21 +67,26 @@ static void populate_float16_vec(vecsim_types::float16 *v, const size_t dim, int
     }
 }
 
+/*
+ * SQ8_SQ8 distance function without the algebraic optimizations
+ * uses the regular dequantization formula:
+ * IP = Σ((min1 + delta1 * q1_i) * (min2 + delta2 * q2_i))
+ * Used for testing the correctness of the optimized functions.
+ *
+ */
 static float SQ8_SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
                                                size_t dimension) {
+
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
-    // Extract metadata from the end of vectors (likely already prefetched)
     // Get quantization parameters from pVect1
     const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
     const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
-    const float sum1 = *reinterpret_cast<const float *>(pVect1 + dimension + 2 * sizeof(float));
 
     // Get quantization parameters from pVect2
     const float min_val2 = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
-    const float sum2 = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
 
     // Compute inner product with dequantization
     float res = 0.0f;
@@ -145,7 +150,6 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
         delta = 1.0f; // Avoid division by zero
 
     // Quantize each value
-
     for (size_t i = 0; i < dim; i++) {
         float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));

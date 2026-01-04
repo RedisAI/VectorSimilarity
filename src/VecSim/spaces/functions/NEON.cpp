@@ -102,15 +102,16 @@ dist_func_t<float> Choose_SQ8_Cosine_implementation_NEON(size_t dim) {
 }
 
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
+// Uses 64-element chunking to leverage efficient UINT8_InnerProductImp
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_SQ8_InnerProductSIMD16_NEON);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_InnerProductSIMD64_NEON);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_SQ8_CosineSIMD16_NEON);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_CosineSIMD64_NEON);
     return ret_dist_func;
 }
 

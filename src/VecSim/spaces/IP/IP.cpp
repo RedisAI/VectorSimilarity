@@ -62,7 +62,6 @@ float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t
         product += pVect1[i] * pVect2[i];
     }
 
-    // Extract metadata from the end of vectors (likely already prefetched)
     // Get quantization parameters from pVect1
     const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
     const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
