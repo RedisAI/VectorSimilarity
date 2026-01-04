@@ -15,13 +15,13 @@ using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
 float FLOAT_INTEGER_InnerProduct(const float *pVect1v, const uint8_t *pVect2v, size_t dimension,
-                                 float min_val, float delta, float inv_norm) {
+                                 float min_val, float delta) {
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
         float dequantized_V2 = (pVect2v[i] * delta + min_val);
         res += pVect1v[i] * dequantized_V2;
     }
-    return res * inv_norm;
+    return res;
 }
 
 float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -29,11 +29,11 @@ float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensio
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
     // pVect2 is a vector of uint8_t, so we need to de-quantize it, normalize it and then multiply
     // it. it is structured as [quantized values (int8_t * dim)][min_val (float)][delta
-    // (float)][inv_norm (float)] The last two values are used to dequantize the vector.
+    // (float)]] The last two values are used to dequantize the vector.
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
     // Compute inner product with dequantization
-    const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta, 1.0f);
+    const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta);
     return 1.0f - res;
 }
 
@@ -44,11 +44,44 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Get quantization parameters
     const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
     const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
-    const float inv_norm = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
     // Compute inner product with dequantization
-    const float res =
-        FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta, inv_norm);
+    const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta);
     return 1.0f - res;
+}
+
+// SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Compute inner product of quantized values: Σ(q1[i]*q2[i])
+    float product = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        product += pVect1[i] * pVect2[i];
+    }
+
+    // Get quantization parameters from pVect1
+    const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float sum1 = *reinterpret_cast<const float *>(pVect1 + dimension + 2 * sizeof(float));
+
+    // Get quantization parameters from pVect2
+    const float min_val2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    const float sum2 = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
+
+    // Apply the algebraic formula using precomputed sums:
+    // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
+    float res = min_val1 * sum2 + min_val2 * sum1 -
+                static_cast<float>(dimension) * min_val1 * min_val2 + delta1 * delta2 * product;
+    return 1.0f - res;
+}
+
+// SQ8-to-SQ8: Both vectors are uint8 quantized and normalized with precomputed sum
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return SQ8_SQ8_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension) {

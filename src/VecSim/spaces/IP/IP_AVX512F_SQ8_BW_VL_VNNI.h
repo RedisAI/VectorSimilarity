@@ -36,8 +36,7 @@ static inline void SQ8_InnerProductStep(const float *&pVec1, const uint8_t *&pVe
 
 // Common implementation for both inner product and cosine similarity
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimension,
-                          float inv_norm = 1.0f) {
+float SQ8_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const float *pVec1 = static_cast<const float *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
     const float *pEnd1 = pVec1 + dimension;
@@ -92,7 +91,7 @@ template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                 size_t dimension) {
     // Calculate inner product using common implementation
-    float ip = SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
+    float ip = SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 
     // The inner product similarity is 1 - ip
     return 1.0f - ip;
@@ -101,12 +100,8 @@ float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                           size_t dimension) {
-    // Get the inverse norm factor stored after min_val and delta
-    const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
-    const float inv_norm = *reinterpret_cast<const float *>(pVec2 + dimension + 2 * sizeof(float));
-
     // Calculate inner product using common implementation with normalization
-    float ip = SQ8_InnerProductImp<residual>(pVec1v, pVec2v, dimension, inv_norm);
+    float ip = SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 
     // The cosine similarity is 1 - ip
     return 1.0f - ip;
