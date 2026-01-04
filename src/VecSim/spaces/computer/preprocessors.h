@@ -238,21 +238,56 @@ class QuantPreprocessor : public PreprocessorInterface {
         const DataType inv_delta = DataType{1} / delta;
 
         // Compute sum (and sum of squares for L2) while quantizing
-        DataType sum = DataType{0};
-        DataType sum_squares = DataType{0};
+        // 4 independent accumulators (sum)
+        DataType s0{}, s1{}, s2{}, s3{};
+
+        // 4 independent accumulators (sum of squares), only used for L2
+        DataType q0{}, q1{}, q2{}, q3{};
+
+        size_t i = 0;
+        // round dim down to the nearest multiple of 4
+        size_t dim_round_down = this->dim & ~size_t(3);
 
         // Quantize the values
-        for (size_t i = 0; i < this->dim; i++) {
+        for (; i < dim_round_down; i += 4) {
+            // Load once
+            const DataType x0 = input[i + 0];
+            const DataType x1 = input[i + 1];
+            const DataType x2 = input[i + 2];
+            const DataType x3 = input[i + 3];
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
-            quantized[i] = static_cast<OUTPUT_TYPE>(std::round((input[i] - min_val) * inv_delta));
+            quantized[i + 0] = static_cast<OUTPUT_TYPE>(std::round((x0 - min_val) * inv_delta));
+            quantized[i + 1] = static_cast<OUTPUT_TYPE>(std::round((x1 - min_val) * inv_delta));
+            quantized[i + 2] = static_cast<OUTPUT_TYPE>(std::round((x2 - min_val) * inv_delta));
+            quantized[i + 3] = static_cast<OUTPUT_TYPE>(std::round((x3 - min_val) * inv_delta));
 
             // Accumulate sum for all metrics
-            sum += input[i];
+            s0 += x0;
+            s1 += x1;
+            s2 += x2;
+            s3 += x3;
+
             // Accumulate sum of squares only for L2 metric
             if constexpr (Metric == VecSimMetric_L2) {
-                sum_squares += input[i] * input[i];
+                q0 += x0 * x0;
+                q1 += x1 * x1;
+                q2 += x2 * x2;
+                q3 += x3 * x3;
+            }
+        }
+
+        // Tail: 0..3 remaining elements (still the same pass, just finishing work)
+        DataType sum = (s0 + s1) + (s2 + s3);
+        DataType sum_squares = (q0 + q1) + (q2 + q3);
+
+        for (; i < this->dim; ++i) {
+            const DataType x = input[i];
+            quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x - min_val) * inv_delta));
+            sum += x;
+            if constexpr (Metric == VecSimMetric_L2) {
+                sum_squares += x * x;
             }
         }
 
