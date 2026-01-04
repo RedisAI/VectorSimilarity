@@ -1131,6 +1131,7 @@ TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     }
 
     allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
     delete quant_preprocessor;
 }
 
