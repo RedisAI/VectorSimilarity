@@ -25,6 +25,9 @@
 // L2 squared distance using the common inner product implementation
 template <unsigned char residual> // 0..15
 float SQ8_SQ8_L2SqrSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t dimension) {
+    // Use the common inner product implementation (returns raw IP, not distance)
+    const float ip = SQ8_SQ8_InnerProductSIMD16_NEON_IMP<residual>(pVec1v, pVec2v, dimension);
+
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
@@ -33,8 +36,6 @@ float SQ8_SQ8_L2SqrSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t di
     const float sum_sq_1 = *reinterpret_cast<const float *>(pVec1 + dimension + 3 * sizeof(float));
     const float sum_sq_2 = *reinterpret_cast<const float *>(pVec2 + dimension + 3 * sizeof(float));
 
-    // Use the common inner product implementation (returns raw IP, not distance)
-    const float ip = SQ8_SQ8_InnerProductSIMD16_NEON_IMP<residual>(pVec1v, pVec2v, dimension);
 
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return sum_sq_1 + sum_sq_2 - 2.0f * ip;
