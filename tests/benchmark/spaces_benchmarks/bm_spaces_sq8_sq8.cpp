@@ -45,8 +45,8 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 // NEON SQ8-to-SQ8 functions
 #ifdef OPT_NEON
 bool neon_supported = opt.asimd;
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
 #endif // NEON
 // SVE SQ8-to-SQ8 functions
 #ifdef OPT_SVE
