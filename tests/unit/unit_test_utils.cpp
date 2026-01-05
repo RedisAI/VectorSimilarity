@@ -21,11 +21,11 @@ using float16 = vecsim_types::float16;
 
 // Map index types to their expected number of debug iterator fields
 namespace DebugInfoIteratorFieldCount {
-constexpr size_t FLAT = 10;
-constexpr size_t HNSW = 17;
-constexpr size_t SVS = 24;
-constexpr size_t TIERED_HNSW = 15;
-constexpr size_t TIERED_SVS = 17;
+constexpr size_t FLAT = 11;
+constexpr size_t HNSW = 18;
+constexpr size_t SVS = 25;
+constexpr size_t TIERED_HNSW = 16;
+constexpr size_t TIERED_SVS = 18;
 } // namespace DebugInfoIteratorFieldCount
 
 static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
@@ -314,6 +314,10 @@ void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             // Is the index multi value.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_DISK_STRING)) {
+            // Is the index disk-based.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isDisk);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
             // Block size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -368,6 +372,10 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             // Is the index multi value.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_DISK_STRING)) {
+            // Is the index disk-based.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isDisk);
         } else if (!strcmp(infoField->fieldName,
                            VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING)) {
             // EF construction.
@@ -464,6 +472,10 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
             // Is the index multi value.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_DISK_STRING)) {
+            // Is the index disk-based.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isDisk);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
             // Memory.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -574,6 +586,10 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // Is the index multi value.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_DISK_STRING)) {
+            // Is the index disk-based.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isDisk);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
             // Memory.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -726,10 +742,11 @@ std::vector<std::string> getCommonFields() {
         VecSimCommonStrings::DIMENSION_STRING,         // 2. DIMENSION
         VecSimCommonStrings::METRIC_STRING,            // 3. METRIC
         VecSimCommonStrings::IS_MULTI_STRING,          // 4. IS_MULTI
-        VecSimCommonStrings::INDEX_SIZE_STRING,        // 5. INDEX_SIZE
-        VecSimCommonStrings::INDEX_LABEL_COUNT_STRING, // 6. INDEX_LABEL_COUNT
-        VecSimCommonStrings::MEMORY_STRING,            // 7. MEMORY
-        VecSimCommonStrings::SEARCH_MODE_STRING        // 8. SEARCH_MODE
+        VecSimCommonStrings::IS_DISK_STRING,           // 5. IS_DISK
+        VecSimCommonStrings::INDEX_SIZE_STRING,        // 6. INDEX_SIZE
+        VecSimCommonStrings::INDEX_LABEL_COUNT_STRING, // 7. INDEX_LABEL_COUNT
+        VecSimCommonStrings::MEMORY_STRING,            // 8. MEMORY
+        VecSimCommonStrings::SEARCH_MODE_STRING        // 9. SEARCH_MODE
     };
 }
 

@@ -44,6 +44,7 @@ public:
     static const char *INDEX_SIZE_STRING;
     static const char *INDEX_LABEL_COUNT_STRING;
     static const char *IS_MULTI_STRING;
+    static const char *IS_DISK_STRING;
     static const char *MEMORY_STRING;
 
     static const char *HNSW_EF_RUNTIME_STRING;
