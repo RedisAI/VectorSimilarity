@@ -441,12 +441,12 @@ dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 #ifdef OPT_NEON_DOTPROD
     // DOTPROD uses integer arithmetic - much faster than float-based NEON
-    if (features.asimddp && dim >= 16) {
+    if (dim >= 16 && features.asimddp) {
         return Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(dim);
     }
 #endif
 #ifdef OPT_NEON
-    if (features.asimd && dim >= 16) {
+    if (dim >= 16 && features.asimd) {
         return Choose_SQ8_SQ8_L2_implementation_NEON(dim);
     }
 #endif
