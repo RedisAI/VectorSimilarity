@@ -101,6 +101,12 @@ static float SQ8_SQ8_NotOptimized_Cosine(const void *pVect1v, const void *pVect2
     return SQ8_SQ8_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
+/*
+    L2 distance function without the algebraic optimizations
+    uses the regular dequantization formula:
+    L2 = Σ((min1 + delta1 * q1_i) - (min2 + delta2 * q2_i))²
+    Used for testing the correctness of the optimized functions.
+*/
 static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
                                         size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
