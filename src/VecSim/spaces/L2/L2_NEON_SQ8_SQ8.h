@@ -36,7 +36,6 @@ float SQ8_SQ8_L2SqrSIMD16_NEON(const void *pVec1v, const void *pVec2v, size_t di
     const float sum_sq_1 = *reinterpret_cast<const float *>(pVec1 + dimension + 3 * sizeof(float));
     const float sum_sq_2 = *reinterpret_cast<const float *>(pVec2 + dimension + 3 * sizeof(float));
 
-
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return sum_sq_1 + sum_sq_2 - 2.0f * ip;
 }

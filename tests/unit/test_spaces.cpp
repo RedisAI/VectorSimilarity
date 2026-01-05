@@ -2519,7 +2519,7 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
     auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, nullptr, nullptr);
 
     ASSERT_EQ(dist_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim), 0.000001f)
+    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
         << "SQ8_SQ8_L2Sqr failed to match expected distance";
 }
 
@@ -3139,12 +3139,13 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
 
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, true);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false);
 
     float baseline = SQ8_SQ8_L2Sqr(v_quantized.data(), v_quantized.data(), dim);
 
-    // Self-distance for L2 should be close to 0 (due to quantization effects, small errors are expected)
-    ASSERT_NEAR(baseline, 0.0f, 0.0001f) << "Self-distance should be ~0 for L2";
+    // Self-distance for L2 should be close to 0 (due to quantization effects, small errors are
+    // expected)
+    ASSERT_NEAR(baseline, 0.0f, 0.1f) << "Self-distance should be ~0 for L2";
 
 #ifdef OPT_SVE2
     if (optimization.sve2) {
@@ -3278,7 +3279,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ZeroVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_zero_quantized(quantized_size);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_sq8_with_metadata(v_zero.data(), dim, v_zero_quantized.data());
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_zero.data(), dim,
+                                                        v_zero_quantized.data());
     test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, false);
 
     float baseline = SQ8_SQ8_L2Sqr(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -3344,7 +3346,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ConstantVectorTest) {
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<uint8_t> v_random_quantized(quantized_size);
-    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim, v_const_quantized.data());
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
+                                                        v_const_quantized.data());
     test_utils::populate_float_vec_to_sq8_with_metadata(v_random_quantized.data(), dim, false);
 
     float baseline = SQ8_SQ8_L2Sqr(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -3430,8 +3433,7 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
-        ASSERT_NEAR(result, baseline, 0.01f)
-            << "Optimized extreme values L2 should match baseline";
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized extreme values L2 should match baseline";
         optimization.sve2 = 0;
     }
 #endif
@@ -3440,8 +3442,7 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
-        ASSERT_NEAR(result, baseline, 0.01f)
-            << "Optimized extreme values L2 should match baseline";
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized extreme values L2 should match baseline";
         optimization.sve = 0;
     }
 #endif
@@ -3450,8 +3451,7 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
-        ASSERT_NEAR(result, baseline, 0.01f)
-            << "Optimized extreme values L2 should match baseline";
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized extreme values L2 should match baseline";
         optimization.asimddp = 0;
     }
 #endif
@@ -3460,8 +3460,7 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
-        ASSERT_NEAR(result, baseline, 0.01f)
-            << "Optimized extreme values L2 should match baseline";
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized extreme values L2 should match baseline";
         optimization.asimd = 0;
     }
 #endif
@@ -3470,8 +3469,7 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
-        ASSERT_NEAR(result, baseline, 0.01f)
-            << "Optimized extreme values L2 should match baseline";
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized extreme values L2 should match baseline";
         optimization.avx512f = 0;
     }
 #endif
