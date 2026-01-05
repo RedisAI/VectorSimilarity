@@ -51,9 +51,9 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neo
 // NEON DOTPROD SQ8-to-SQ8 functions
 #ifdef OPT_NEON_DOTPROD
 bool neon_dotprod_supported = opt.asimddp;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 64,
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 16,
                                 neon_dotprod_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 64,
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 16,
                                  neon_dotprod_supported);
 #endif // NEON_DOTPROD
 // SVE SQ8-to-SQ8 functions
