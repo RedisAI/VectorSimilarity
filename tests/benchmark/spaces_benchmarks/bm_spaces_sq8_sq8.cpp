@@ -45,15 +45,15 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 // NEON SQ8-to-SQ8 functions
 #ifdef OPT_NEON
 bool neon_supported = opt.asimd;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 16, neon_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
 #endif // NEON
 // NEON DOTPROD SQ8-to-SQ8 functions
 #ifdef OPT_NEON_DOTPROD
 bool neon_dotprod_supported = opt.asimddp;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 16,
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 64,
                                 neon_dotprod_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 16,
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 64,
                                  neon_dotprod_supported);
 #endif // NEON_DOTPROD
 // SVE SQ8-to-SQ8 functions
