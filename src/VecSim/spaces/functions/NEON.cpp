@@ -117,7 +117,7 @@ dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON(size_t dim) {
 
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_NEON(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_SQ8_L2SqrSIMD16_NEON);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_L2SqrSIMD64_NEON);
     return ret_dist_func;
 }
 
