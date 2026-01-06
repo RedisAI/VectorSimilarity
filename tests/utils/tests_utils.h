@@ -101,6 +101,35 @@ static float SQ8_SQ8_NotOptimized_Cosine(const void *pVect1v, const void *pVect2
     return SQ8_SQ8_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
+/*
+    L2 distance function without the algebraic optimizations
+    uses the regular dequantization formula:
+    L2 = Σ((min1 + delta1 * q1_i) - (min2 + delta2 * q2_i))²
+    Used for testing the correctness of the optimized functions.
+*/
+static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
+                                        size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Extract metadata from the end of vectors
+    // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
+    const float min1 = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float min2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+
+    // Compute L2 distance with dequantization
+    float res = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        float v1_dequantized = pVect1[i] * delta1 + min1;
+        float v2_dequantized = pVect2[i] * delta2 + min2;
+        float t = v1_dequantized - v2_dequantized;
+        res += t * t;
+    }
+    return res;
+}
+
 /**
  * Quantize float vector to SQ8 with precomputed sum and sum_squares.
  * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares

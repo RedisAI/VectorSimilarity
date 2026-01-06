@@ -417,4 +417,50 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
+// SQ8-to-SQ8 L2 squared distance function (both vectors are uint8 quantized)
+dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
+                                          const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+
+    dist_func_t<float> ret_dist_func = SQ8_SQ8_L2Sqr;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ8_SQ8_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ8_SQ8_L2_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    // DOTPROD uses integer arithmetic - much faster than float-based NEON
+    if (dim >= 16 && features.asimddp) {
+        return Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (dim >= 16 && features.asimd) {
+        return Choose_SQ8_SQ8_L2_implementation_NEON(dim);
+    }
+#endif
+#endif // AARCH64
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    // AVX512 VNNI SQ8_SQ8 uses 64-element chunks
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
+        return Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // __x86_64__
+    return ret_dist_func;
+}
+
 } // namespace spaces

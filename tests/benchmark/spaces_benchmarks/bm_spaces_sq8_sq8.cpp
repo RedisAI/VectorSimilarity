@@ -45,19 +45,27 @@ cpu_features::Aarch64Features opt = cpu_features::GetAarch64Info().features;
 // NEON SQ8-to-SQ8 functions
 #ifdef OPT_NEON
 bool neon_supported = opt.asimd;
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON, 64, neon_supported);
 #endif // NEON
+// NEON DOTPROD SQ8-to-SQ8 functions
+#ifdef OPT_NEON_DOTPROD
+bool neon_dotprod_supported = opt.asimddp;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 64,
+                                neon_dotprod_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, NEON_DOTPROD, 64,
+                                 neon_dotprod_supported);
+#endif // NEON_DOTPROD
 // SVE SQ8-to-SQ8 functions
 #ifdef OPT_SVE
 bool sve_supported = opt.sve;
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE, 16, sve_supported);
 #endif // SVE
 // SVE2 SQ8-to-SQ8 functions
 #ifdef OPT_SVE2
 bool sve2_supported = opt.sve2;
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, SVE2, 16, sve2_supported);
 #endif // SVE2
 #endif // AARCH64
@@ -68,8 +76,8 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 // AVX512_F_BW_VL_VNNI SQ8-to-SQ8 functions
 #ifdef OPT_AVX512_F_BW_VL_VNNI
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
-INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
-                             avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
+                                avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL_VNNI, 64,
                                  avx512_f_bw_vl_vnni_supported);
 
@@ -79,5 +87,6 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, AVX512F_BW_VL
 // Naive SQ8-to-SQ8 algorithms
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, Cosine, 16);
+INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_SQ8, SQ8_SQ8, L2Sqr, 16);
 
 BENCHMARK_MAIN();

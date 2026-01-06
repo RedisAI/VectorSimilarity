@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "L2.h"
+#include "VecSim/spaces/IP/IP.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include <cstring>
@@ -131,4 +132,29 @@ float UINT8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
     return float(INTEGER_L2Sqr(pVect1, pVect2, dimension));
+}
+
+// SQ8-to-SQ8 L2 squared distance (both vectors are uint8 quantized)
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+// [sum_of_squares (float)]
+//  ||x - y||² = ||x||² + ||y||² - 2*IP(x, y)
+//   where:
+//     - ||x||² = sum_squares_x is precomputed and stored
+//     - ||y||² = sum_squares_y is precomputed and stored
+//     - IP(x, y) is computed using SQ8_SQ8_InnerProduct_Impl
+
+float SQ8_SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Get precomputed sum of squares from both vectors
+    // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
+    const float sum_sq_1 = *reinterpret_cast<const float *>(pVect1 + dimension + 3 * sizeof(float));
+    const float sum_sq_2 = *reinterpret_cast<const float *>(pVect2 + dimension + 3 * sizeof(float));
+
+    // Use the common inner product implementation
+    const float ip = SQ8_SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);
+
+    // L2² = ||x||² + ||y||² - 2*IP(x, y)
+    return sum_sq_1 + sum_sq_2 - 2.0f * ip;
 }

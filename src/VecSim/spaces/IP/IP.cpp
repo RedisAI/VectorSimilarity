@@ -49,9 +49,10 @@ float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return 1.0f - res;
 }
 
-// SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum
+// SQ8-to-SQ8: Common inner product implementation that returns the raw inner product value
+// (not distance). Used by both SQ8_SQ8_InnerProduct, SQ8_SQ8_Cosine, and SQ8_SQ8_L2Sqr.
 // Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
-float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
@@ -73,9 +74,14 @@ float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dime
 
     // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
-    float res = min_val1 * sum2 + min_val2 * sum1 -
-                static_cast<float>(dimension) * min_val1 * min_val2 + delta1 * delta2 * product;
-    return 1.0f - res;
+    return min_val1 * sum2 + min_val2 * sum1 - static_cast<float>(dimension) * min_val1 * min_val2 +
+           delta1 * delta2 * product;
+}
+
+// SQ8-to-SQ8: Both vectors are uint8 quantized with precomputed sum
+// Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
+float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ8_SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);
 }
 
 // SQ8-to-SQ8: Both vectors are uint8 quantized and normalized with precomputed sum
