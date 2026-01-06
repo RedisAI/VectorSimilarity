@@ -9,27 +9,32 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include <immintrin.h>
-#include <iostream>
 
-static inline void SQ8_InnerProductStep(const float *&pVec1, const uint8_t *&pVec2, __m512 &sum,
-                                        const __m512 &min_val_vec, const __m512 &delta_vec) {
-    // Load 16 float elements from pVec1
+/*
+ * Optimized asymmetric SQ8 inner product using algebraic identity:
+ *
+ *   IP(x, y) = Σ(x_i * y_i)
+ *            ≈ Σ((min + delta * q_i) * y_i)
+ *            = min * Σy_i + delta * Σ(q_i * y_i)
+ *            = min * y_sum + delta * quantized_dot_product
+ *
+ * where y_sum = Σy_i is precomputed and stored in the query blob.
+ * This avoids dequantization in the hot loop - we only compute Σ(q_i * y_i).
+ */
+
+// Helper: compute Σ(q_i * y_i) for 16 elements
+static inline void SQ8_InnerProductStep(const float *&pVec1, const uint8_t *&pVec2, __m512 &sum) {
+    // Load 16 float elements from query (pVec1)
     __m512 v1 = _mm512_loadu_ps(pVec1);
 
-    // Load 16 uint8 elements from pVec2 and convert to __m512i
-    __m128i v2_128 = _mm_loadu_si128((__m128i *)pVec2);
+    // Load 16 uint8 elements from quantized vector and convert to float
+    __m128i v2_128 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pVec2));
     __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
-
-    // Convert uint8 to float
     __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
 
-    // Dequantize: (val * delta) + min_val
-    __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
+    // Accumulate q_i * y_i (no dequantization!)
+    sum = _mm512_fmadd_ps(v2_f, v1, sum);
 
-    // Compute dot product and add to sum
-    sum = _mm512_fmadd_ps(v1, dequantized, sum);
-
-    // Advance pointers
     pVec1 += 16;
     pVec2 += 16;
 }
@@ -41,68 +46,58 @@ float SQ8_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t 
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
     const float *pEnd1 = pVec1 + dimension;
 
-    // Get dequantization parameters from the end of pVec2
-    const float min_val = *reinterpret_cast<const float *>(pVec2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVec2 + dimension + sizeof(float));
-
-    // Create broadcast vectors for SIMD operations
-    __m512 min_val_vec = _mm512_set1_ps(min_val);
-    __m512 delta_vec = _mm512_set1_ps(delta);
-
-    // Initialize sum accumulator
+    // Initialize sum accumulator for Σ(q_i * y_i)
     __m512 sum = _mm512_setzero_ps();
 
-    // Deal with remainder first
+    // Handle residual elements first (0 to 15)
     if constexpr (residual > 0) {
-        // Handle less than 16 elements
         __mmask16 mask = (1U << residual) - 1;
 
-        // Load masked float elements
+        // Load masked float elements from query
         __m512 v1 = _mm512_maskz_loadu_ps(mask, pVec1);
 
-        // Load full uint8 elements - we know that the first 16 elements are safe to load
+        // Load uint8 elements (safe to load 16 bytes due to padding)
         __m128i v2_128 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pVec2));
         __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
         __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
 
-        // Dequantize
-        __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
-
-        // Compute dot product
-        __m512 product = _mm512_mul_ps(v1, dequantized);
-
-        // Apply mask to product and add to sum
-        sum = _mm512_fmadd_ps(sum, sum, product);
+        // Compute q_i * y_i with mask (no dequantization)
+        sum = _mm512_maskz_mul_ps(mask, v2_f, v1);
 
         pVec1 += residual;
         pVec2 += residual;
     }
 
-    // Process remaining full chunks of 16 elements
+    // Process full chunks of 16 elements
+    // Using do-while since dim > 16 guarantees at least one iteration
     do {
-        SQ8_InnerProductStep(pVec1, pVec2, sum, min_val_vec, delta_vec);
+        SQ8_InnerProductStep(pVec1, pVec2, sum);
     } while (pVec1 < pEnd1);
 
-    // Return the raw inner product result
-    return _mm512_reduce_add_ps(sum);
+    // Reduce to get Σ(q_i * y_i)
+    float quantized_dot = _mm512_reduce_add_ps(sum);
+
+    // Get quantization parameters from stored vector (after quantized data)
+    const float min_val = *reinterpret_cast<const float *>(pVec2 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVec2 + dimension + sizeof(float));
+
+    // Get precomputed y_sum from query blob (stored after the dim floats)
+    const float y_sum = *reinterpret_cast<const float *>(pVec1 + dimension);
+
+    // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
+    return min_val * y_sum + delta * quantized_dot;
 }
 
 template <unsigned char residual> // 0..15
 float SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                 size_t dimension) {
-    // Calculate inner product using common implementation
-    float ip = SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
-
     // The inner product similarity is 1 - ip
-    return 1.0f - ip;
+    return 1.0f - SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
 float SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                           size_t dimension) {
-    // Calculate inner product using common implementation with normalization
-    float ip = SQ8_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
-
-    // The cosine similarity is 1 - ip
-    return 1.0f - ip;
+    // Cosine distance = 1 - IP (vectors are pre-normalized)
+    return SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI<residual>(pVec1v, pVec2v, dimension);
 }

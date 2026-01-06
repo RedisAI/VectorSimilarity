@@ -68,6 +68,28 @@ static void populate_float16_vec(vecsim_types::float16 *v, const size_t dim, int
 }
 
 /*
+ * SQ8 distance function without the algebraic optimizations
+ * uses the regular dequantization formula:
+ * IP = Σ((min + delta * q_i) * v_i)
+ */
+static float SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
+                                           size_t dimension) {
+
+    const auto *pVect1 = static_cast<const float *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Get quantization parameters from pVect2
+    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    // Compute inner product with dequantization
+    float res = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        res += (pVect2[i] * delta + min_val) * pVect1[i];
+    }
+    return 1.0f - res;
+}
+
+/*
  * SQ8_SQ8 distance function without the algebraic optimizations
  * uses the regular dequantization formula:
  * IP = Σ((min1 + delta1 * q1_i) * (min2 + delta2 * q2_i))
@@ -170,6 +192,24 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
     params[3] = square_sum;
 }
 
+// Preprocess fp32 query for SQ8 space.
+// Query layout: [float values (dim)] [sum (float)]
+// Assuming v is a memory allocation of size (dim + 1) * sizeof(float)
+static void preprocess_fp32_sq8_ip_query(float *v, size_t dim) {
+    spaces::GetNormalizeFunc<float>()(v, dim);
+    float sum = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        sum += v[i];
+    }
+    v[dim] = sum;
+}
+
+// Assuming v is a memory allocation of size (dim + 1) * sizeof(float)
+static void populate_fp32_sq8_ip_query(float *v, size_t dim, int seed = 1234, float min = -1.0f,
+                                       float max = 1.0f) {
+    populate_float_vec(v, dim, seed, min, max);
+    preprocess_fp32_sq8_ip_query(v, dim);
+}
 /**
  * Populate a float vector and quantize to SQ8 with precomputed sum and sum_squares.
  * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares
