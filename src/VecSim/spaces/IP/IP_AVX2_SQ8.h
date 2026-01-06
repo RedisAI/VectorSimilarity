@@ -36,7 +36,8 @@ static inline void InnerProductStepSQ8(const float *&pVect1, const uint8_t *&pVe
     __m256 v2_f = _mm256_cvtepi32_ps(v2_256);
 
     // Accumulate q_i * y_i (no dequantization!)
-    sum256 = _mm256_fmadd_ps(v2_f, v1, sum256);
+    // Using mul + add since this is the non-FMA version
+    sum256 = _mm256_add_ps(sum256, _mm256_mul_ps(v2_f, v1));
 }
 
 template <unsigned char residual> // 0..15
