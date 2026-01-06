@@ -2552,7 +2552,8 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
     // Get distance function with nullptr alignment to cover that code path
     auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
 #endif
-    ASSERT_EQ(arch_opt_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(arch_opt_func, SQ8_SQ8_L2Sqr)
+        << "Unexpected distance function chosen for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
         << "SQ8_SQ8_L2Sqr failed to match expected distance";
 }
