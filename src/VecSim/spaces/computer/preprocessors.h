@@ -18,6 +18,7 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/memory/memory_utils.h"
+#include "VecSim/types/sq8.h"
 
 class PreprocessorInterface : public VecsimBaseObject {
 public:
@@ -216,10 +217,8 @@ private:
 template <typename DataType, VecSimMetric Metric>
 class QuantPreprocessor : public PreprocessorInterface {
     using OUTPUT_TYPE = uint8_t;
+    using sq8 = vecsim_types::sq8;
 
-    // For L2:   store sum + sum_of_squares (2 extra values)
-    // For IP/Cosine: store only sum (1 extra value)
-    static constexpr size_t extra_storage_values_count = (Metric == VecSimMetric_L2) ? 2 : 1;
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
                   "QuantPreprocessor only supports L2, IP and Cosine metrics");
@@ -294,13 +293,13 @@ class QuantPreprocessor : public PreprocessorInterface {
         DataType *metadata = reinterpret_cast<DataType *>(quantized + this->dim);
 
         // Store min_val, delta, in the metadata
-        metadata[0] = min_val;
-        metadata[1] = delta;
+        metadata[sq8::MIN_VAL] = min_val;
+        metadata[sq8::DELTA] = delta;
 
         // Store sum (for all metrics) and sum_squares (for L2 only)
-        metadata[2] = sum;
+        metadata[sq8::SUM] = sum;
         if constexpr (Metric == VecSimMetric_L2) {
-            metadata[3] = sum_squares;
+            metadata[sq8::SUM_SQUARES] = sum_squares;
         }
     }
 
@@ -352,7 +351,7 @@ public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              (2 + extra_storage_values_count) * sizeof(DataType)),
+                              (vecsim_types::sq8::metadata_count<Metric>()) * sizeof(DataType)),
           query_bytes_count((dim + 1) * sizeof(DataType)) {
         static_assert(std::is_floating_point_v<DataType>,
                       "QuantPreprocessor only supports floating-point types");

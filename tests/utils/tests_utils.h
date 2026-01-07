@@ -13,6 +13,9 @@
 #include "VecSim/spaces/normalize/compute_norm.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/sq8.h"
+
+using sq8 = vecsim_types::sq8;
 
 namespace test_utils {
 
@@ -164,10 +167,10 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
 
     // Store parameters: [min, delta, sum, square_sum]
     float *params = reinterpret_cast<float *>(qv + dim);
-    params[0] = min_val;
-    params[1] = delta;
-    params[2] = sum;
-    params[3] = square_sum;
+    params[sq8::MIN_VAL] = min_val;
+    params[sq8::DELTA] = delta;
+    params[sq8::SUM] = sum;
+    params[sq8::SUM_SQUARES] = square_sum;
 }
 
 /**
