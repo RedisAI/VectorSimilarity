@@ -12,7 +12,6 @@
 #include <arm_neon.h>
 using sq8 = vecsim_types::sq8;
 
-
 /*
  * Optimized asymmetric SQ8 inner product using algebraic identity:
  *

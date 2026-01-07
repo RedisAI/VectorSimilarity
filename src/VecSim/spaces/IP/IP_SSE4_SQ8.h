@@ -22,8 +22,7 @@
  */
 
 // Helper: compute Σ(q_i * y_i) for 4 elements (no dequantization)
-static inline void InnerProductStepSQ8(const float *&pVect1, const uint8_t *&pVect2,
-                                       __m128 &sum) {
+static inline void InnerProductStepSQ8(const float *&pVect1, const uint8_t *&pVect2, __m128 &sum) {
     // Load 4 float elements from query
     __m128 v1 = _mm_loadu_ps(pVect1);
     pVect1 += 4;
@@ -55,8 +54,8 @@ float SQ8_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVect2v, 
 
         if constexpr (residual % 4 == 3) {
             v1 = _mm_set_ps(0.0f, pVect1[2], pVect1[1], pVect1[0]);
-            v2_f = _mm_set_ps(0.0f, static_cast<float>(pVect2[2]),
-                              static_cast<float>(pVect2[1]), static_cast<float>(pVect2[0]));
+            v2_f = _mm_set_ps(0.0f, static_cast<float>(pVect2[2]), static_cast<float>(pVect2[1]),
+                              static_cast<float>(pVect2[0]));
         } else if constexpr (residual % 4 == 2) {
             v1 = _mm_set_ps(0.0f, 0.0f, pVect1[1], pVect1[0]);
             v2_f = _mm_set_ps(0.0f, 0.0f, static_cast<float>(pVect2[1]),

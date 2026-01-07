@@ -53,12 +53,12 @@ float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensio
     float quantized_dot = (sum0 + sum1) + (sum2 + sum3);
 
     // Get quantization parameters from stored vector
-    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    const float *params = reinterpret_cast<const float *>(pVect2 + dimension);
+    const float min_val = params[sq8::MIN_VAL];
+    const float delta = params[sq8::DELTA];
 
     // Get precomputed y_sum from query blob
     const float y_sum = *reinterpret_cast<const float *>(pVect1 + dimension);
-
 
     // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     const float ip = min_val * y_sum + delta * quantized_dot;

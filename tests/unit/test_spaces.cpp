@@ -325,11 +325,11 @@ TEST_F(SpacesTest, SQ8_ip_no_optimization_norm_func_test) {
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, seed);
 
-    float baseline = test_utils::SQ8_NotOptimized_InnerProduct(v1_orig.data(),
-                                                               v2_compressed.data(), dim);
+    float baseline =
+        test_utils::SQ8_NotOptimized_InnerProduct(v1_orig.data(), v2_compressed.data(), dim);
 
-    float dist = SQ8_InnerProduct((const void *)v1_orig.data(),
-                                  (const void *)v2_compressed.data(), dim);
+    float dist =
+        SQ8_InnerProduct((const void *)v1_orig.data(), (const void *)v2_compressed.data(), dim);
 
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_InnerProduct failed to match expected distance";
     // Since we're comparing identical vectors, the inner product distance should be close to 0
@@ -2184,7 +2184,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
     size_t dim = GetParam();
 
     // Create original vectors
-    std::vector<float> v1_orig(dim+1);
+    std::vector<float> v1_orig(dim + 1);
     test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
@@ -2395,19 +2395,17 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     // Test default implementation
     unsigned char alignment = 0;
     arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-    ASSERT_EQ(arch_opt_func, SQ8_Cosine)
-        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_EQ(arch_opt_func, SQ8_Cosine) << "Unexpected distance function chosen for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v1_orig.data(), v2_quantized.data(), dim), 0.01)
         << "No optimization with dim " << dim;
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
-
 // Test self-distance: distance to itself should be 0 for cosine (normalized vectors)
 TEST(SQ8_EdgeCases, SelfDistanceCosine) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v_orig(dim+1);
+    std::vector<float> v_orig(dim + 1);
     test_utils::populate_fp32_sq8_ip_query(v_orig.data(), dim, 1234);
 
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
@@ -2547,13 +2545,13 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
     float cos_12 = cosine_func(v1_fp32.data(), v2_quantized.data(), dim);
     float cos_21 = cosine_func(v2_fp32.data(), v1_quantized.data(), dim);
     ASSERT_NEAR(cos_12, cos_21, 0.001f) << "Cosine should be symmetric";
-} 
+}
 
 // Test with zero vector
 TEST(SQ8_EdgeCases, CosineZeroVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v_zero(dim+1, 0.0f);
+    std::vector<float> v_zero(dim + 1, 0.0f);
 
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
@@ -2686,7 +2684,7 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
 TEST(SQ8_EdgeCases, CosineExtremeValuesTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v1(dim+1), v2(dim);
+    std::vector<float> v1(dim + 1), v2(dim);
 
     // Alternating extreme values
     for (size_t i = 0; i < dim; i++) {
