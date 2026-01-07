@@ -20,6 +20,7 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/sq8.h"
 #include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
@@ -43,6 +44,7 @@
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
+using sq8 = vecsim_types::sq8;
 using namespace spaces;
 
 class SpacesTest : public ::testing::Test {
@@ -509,6 +511,42 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricUINT8) {
         (spaces::GetDistFunc<uint8_t, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
         std::invalid_argument);
 }
+TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8) {
+    // SQ8 to SQ8 (symmetric)
+    EXPECT_THROW(
+        (spaces::GetDistFunc<sq8, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        std::invalid_argument);
+}
+TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFloat) {
+    // SQ8 to float (asymmetric)
+    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float>((VecSimMetric)(VecSimMetric_Cosine + 1),
+                                                         10, nullptr)),
+                 std::invalid_argument);
+}
+
+// Positive tests for GetDistFunc - verify correct function is returned
+TEST_F(SpacesTest, GetDistFuncSQ8Symmetric) {
+    // SQ8 to SQ8 (symmetric) - should return SQ8_SQ8 functions
+    size_t dim = 128;
+    auto l2_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_L2, dim, nullptr);
+    auto ip_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_IP, dim, nullptr);
+    auto cosine_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_Cosine, dim, nullptr);
+    ASSERT_EQ(l2_func, L2_SQ8_SQ8_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(ip_func, IP_SQ8_SQ8_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_func, Cosine_SQ8_SQ8_GetDistFunc(dim, nullptr));
+}
+
+TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
+    // SQ8 to float (asymmetric) - should return SQ8 functions
+    size_t dim = 128;
+    auto l2_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_L2, dim, nullptr);
+    auto ip_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_IP, dim, nullptr);
+    auto cosine_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_Cosine, dim, nullptr);
+    ASSERT_EQ(l2_func, L2_SQ8_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(ip_func, IP_SQ8_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_func, Cosine_SQ8_GetDistFunc(dim, nullptr));
+}
+
 #ifdef CPU_FEATURES_ARCH_X86_64
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that small dimensions gets the no optimization function.
