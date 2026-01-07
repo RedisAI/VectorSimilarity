@@ -65,20 +65,16 @@ float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t
     }
 
     // Get quantization parameters from pVect1
-    const float min_val1 =
-        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
-    const float delta1 =
-        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::DELTA * sizeof(float));
-    const float sum1 =
-        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::SUM * sizeof(float));
+    const float *params1 = reinterpret_cast<const float *>(pVect1 + dimension);
+    const float min_val1 = params1[sq8::MIN_VAL];
+    const float delta1 = params1[sq8::DELTA];
+    const float sum1 = params1[sq8::SUM];
 
     // Get quantization parameters from pVect2
-    const float min_val2 =
-        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::MIN_VAL * sizeof(float));
-    const float delta2 =
-        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::DELTA * sizeof(float));
-    const float sum2 =
-        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::SUM * sizeof(float));
+    const float *params2 = reinterpret_cast<const float *>(pVect2 + dimension);
+    const float min_val2 = params2[sq8::MIN_VAL];
+    const float delta2 = params2[sq8::DELTA];
+    const float sum2 = params2[sq8::SUM];
 
     // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
