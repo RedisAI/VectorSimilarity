@@ -16,8 +16,11 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "VecSim/types/sq8.h"
 #include "mock_thread_pool.h"
 #include "gtest/gtest.h"
+
+using sq8 = vecsim_types::sq8;
 
 // IndexType is used to define indices unit tests
 template <VecSimType type, typename DataType, typename DistType = DataType>
@@ -249,10 +252,10 @@ inline void ComputeSQ8Quantization(const float *original_blob, size_t dim, uint8
 
     // Store metadata: min_val, delta, sum, sum_squares
     float *metadata = reinterpret_cast<float *>(output + dim);
-    metadata[0] = min_val;
-    metadata[1] = delta;
-    metadata[2] = sum;
-    metadata[3] = sum_squares;
+    metadata[sq8::MIN_VAL] = min_val;
+    metadata[sq8::DELTA] = delta;
+    metadata[sq8::SUM] = sum;
+    metadata[sq8::SUM_SQUARES] = sum_squares;
 }
 
 // TODO: Move all test_utils to this namespace

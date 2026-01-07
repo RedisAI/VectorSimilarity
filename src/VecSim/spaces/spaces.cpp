@@ -8,6 +8,7 @@
  */
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/sq8.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
@@ -96,6 +97,34 @@ dist_func_t<float> GetDistFunc<uint8_t, float>(VecSimMetric metric, size_t dim,
         return IP_UINT8_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
         return L2_UINT8_GetDistFunc(dim, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
+dist_func_t<float> GetDistFunc<vecsim_types::sq8, float>(VecSimMetric metric, size_t dim,
+                                                         unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+        return Cosine_SQ8_SQ8_GetDistFunc(dim, alignment);
+    case VecSimMetric_IP:
+        return IP_SQ8_SQ8_GetDistFunc(dim, alignment);
+    case VecSimMetric_L2:
+        return L2_SQ8_SQ8_GetDistFunc(dim, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
+dist_func_t<float> GetDistFunc<vecsim_types::sq8, float, float>(VecSimMetric metric, size_t dim,
+                                                                unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+        return Cosine_SQ8_GetDistFunc(dim, alignment);
+    case VecSimMetric_IP:
+        return IP_SQ8_GetDistFunc(dim, alignment);
+    case VecSimMetric_L2:
+        return L2_SQ8_GetDistFunc(dim, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }
