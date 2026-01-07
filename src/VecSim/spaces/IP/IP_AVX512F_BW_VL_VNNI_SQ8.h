@@ -8,6 +8,8 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/types/sq8.h"
+using sq8 = vecsim_types::sq8;
 #include <immintrin.h>
 
 /*
@@ -80,13 +82,13 @@ float SQ8_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t 
     // Get quantization parameters from stored vector (after quantized data)
     // Use the original base pointer since pVec2 has been advanced
     const uint8_t *pVec2Base = static_cast<const uint8_t *>(pVec2v);
-    const float min_val = *reinterpret_cast<const float *>(pVec2Base + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVec2Base + dimension + sizeof(float));
+    const float *params2 = reinterpret_cast<const float *>(pVec2Base + dimension);
+    const float min_val = params2[sq8::MIN_VAL];
+    const float delta = params2[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
     // Use the original base pointer since pVec1 has been advanced
-    const float *pVec1Base = static_cast<const float *>(pVec1v);
-    const float y_sum = pVec1Base[dimension];
+    const float y_sum = static_cast<const float *>(pVec1v)[dimension];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

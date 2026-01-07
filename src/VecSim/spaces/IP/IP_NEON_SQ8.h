@@ -8,7 +8,10 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/types/sq8.h"
 #include <arm_neon.h>
+using sq8 = vecsim_types::sq8;
+
 
 /*
  * Optimized asymmetric SQ8 inner product using algebraic identity:
@@ -108,12 +111,12 @@ float SQ8_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v, 
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVect2Base = static_cast<const uint8_t *>(pVect2v);
-    const float min_val = *reinterpret_cast<const float *>(pVect2Base + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2Base + dimension + sizeof(float));
+    const float *params2 = reinterpret_cast<const float *>(pVect2Base + dimension);
+    const float min_val = params2[sq8::MIN_VAL];
+    const float delta = params2[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
-    const float *pVect1Base = static_cast<const float *>(pVect1v);
-    const float y_sum = pVect1Base[dimension];
+    const float y_sum = static_cast<const float *>(pVect1v)[dimension];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;
