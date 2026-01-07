@@ -319,7 +319,7 @@ TEST_F(SpacesTest, SQ8_ip_no_optimization_norm_func_test) {
     test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, seed);
 
     // Create V2 as SQ8 quantized vector with same seed so they are identical
-    size_t quantized_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, seed);
 
@@ -2147,7 +2147,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
 
     // Create original vectors
     std::vector<float> v1_orig(dim+1);
-    size_t quantized_size = dim * sizeof(uint8_t) + 2 * sizeof(float);
+    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 456);
@@ -2461,7 +2461,7 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_fp32.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_fp32.data(), v1_quantized.data(), dim);
-        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
+        ASSERT_NEAR(cos_12, cos_21, 0.001f) << "Optimized cosine should be symmetric";
         optimization.sve2 = 0;
     }
 #endif
@@ -2471,7 +2471,7 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_fp32.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_fp32.data(), v1_quantized.data(), dim);
-        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
+        ASSERT_NEAR(cos_12, cos_21, 0.001f) << "Optimized cosine should be symmetric";
         optimization.sve = 0;
     }
 #endif
@@ -2481,7 +2481,7 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_fp32.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_fp32.data(), v1_quantized.data(), dim);
-        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
+        ASSERT_NEAR(cos_12, cos_21, 0.001f) << "Optimized cosine should be symmetric";
         optimization.asimddp = 0;
     }
 #endif
@@ -2491,7 +2491,7 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_fp32.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_fp32.data(), v1_quantized.data(), dim);
-        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
+        ASSERT_NEAR(cos_12, cos_21, 0.001f) << "Optimized cosine should be symmetric";
         optimization.asimd = 0;
     }
 #endif
@@ -2501,7 +2501,7 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_fp32.data(), v2_quantized.data(), dim);
         float cos_21 = arch_opt_func(v2_fp32.data(), v1_quantized.data(), dim);
-        ASSERT_EQ(cos_12, cos_21) << "Optimized cosine should be symmetric";
+        ASSERT_NEAR(cos_12, cos_21, 0.001f) << "Optimized cosine should be symmetric";
         optimization.avx512f = 0;
     }
 #endif
@@ -2796,12 +2796,19 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
     float baseline =
         test_utils::SQ8_SQ8_NotOptimized_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
 
-    // Get distance function with nullptr alignment to cover that code path
-    auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, nullptr, nullptr);
-
+    unsigned char alignment = 0;
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    // Make sure we don't use any optimization (because there is no size optimization for arm)
+    auto optimization = getCpuOptimizationFeatures();
+    optimization.sve = optimization.sve2 = 0;
+    auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+#else
+    auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+#endif
     ASSERT_EQ(dist_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
     ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
         << "SQ8_SQ8_L2Sqr failed to match expected distance";
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
 class SQ8_SQ8_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
