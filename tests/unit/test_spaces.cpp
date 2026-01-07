@@ -2542,12 +2542,19 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
 
     float baseline =
         test_utils::SQ8_SQ8_NotOptimized_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
-
+    unsigned char alignment = 0;
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    // Make sure we don't use any optimization (because there is no size optimization for arm)
+    auto optimization = getCpuOptimizationFeatures();
+    optimization.sve = optimization.sve2 = 0;
+    auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+#else
     // Get distance function with nullptr alignment to cover that code path
-    auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, nullptr, nullptr);
-
-    ASSERT_EQ(dist_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
+    auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+#endif
+    ASSERT_EQ(arch_opt_func, SQ8_SQ8_L2Sqr)
+        << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
         << "SQ8_SQ8_L2Sqr failed to match expected distance";
 }
 
