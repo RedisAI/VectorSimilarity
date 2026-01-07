@@ -2147,9 +2147,9 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
 
     // Create original vectors
     std::vector<float> v1_orig(dim+1);
+    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
-    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 456);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
