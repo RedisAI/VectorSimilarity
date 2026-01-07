@@ -16,10 +16,11 @@ namespace spaces {
 template <typename RET_TYPE>
 using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
-// Set the distance function for a given data type, metric and dimension. The alignment hint is
-// determined according to the chosen implementation and available optimizations.
-
-template <typename DataType, typename DistType>
+// Get the distance function for comparing vectors of type VecType1 and VecType2, for a given metric
+// and dimension. The returned function has the signature: dist(VecType1*, VecType2*, size_t) ->
+// DistType. VecType2 defaults to VecType1 when both vectors are of the same type. The alignment
+// hint is set based on the chosen implementation and available optimizations.
+template <typename VecType1, typename DistType, typename VecType2 = VecType1>
 dist_func_t<DistType> GetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
 
 template <typename DataType>
