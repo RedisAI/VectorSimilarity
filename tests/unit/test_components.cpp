@@ -1115,18 +1115,18 @@ TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
 
     // Verify metadata: min_val = 3.5f, delta = 1.0f (fallback when diff == 0)
     const float *metadata = reinterpret_cast<const float *>(quantized + dim);
-    ASSERT_FLOAT_EQ(metadata[0], 3.5f); // min_val
-    ASSERT_FLOAT_EQ(metadata[1], 1.0f); // delta (fallback)
+    ASSERT_FLOAT_EQ(metadata[sq8::MIN_VAL], 3.5f); // min_val
+    ASSERT_FLOAT_EQ(metadata[sq8::DELTA], 1.0f);   // delta (fallback)
 
     // Verify sum and sum_squares for L2 metric
     float expected_sum = 3.5f * dim;
     float expected_sum_squares = 3.5f * 3.5f * dim;
-    ASSERT_FLOAT_EQ(metadata[2], expected_sum);         // sum
-    ASSERT_FLOAT_EQ(metadata[3], expected_sum_squares); // sum_squares
+    ASSERT_FLOAT_EQ(metadata[sq8::SUM], expected_sum);                 // sum
+    ASSERT_FLOAT_EQ(metadata[sq8::SUM_SQUARES], expected_sum_squares); // sum_squares
 
     // Reconstruct and verify: min + quantized * delta = 3.5 + 0 * 1 = 3.5
     for (size_t i = 0; i < dim; ++i) {
-        float reconstructed = metadata[0] + quantized[i] * metadata[1];
+        float reconstructed = metadata[sq8::MIN_VAL] + quantized[i] * metadata[sq8::DELTA];
         ASSERT_FLOAT_EQ(reconstructed, original_blob[i]);
     }
 
