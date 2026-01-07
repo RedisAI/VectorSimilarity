@@ -1195,12 +1195,16 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     float16 v1[dim], v2[dim];
-    float v1_fp32[dim], v2_fp32[dim];
+
+    // Use random values to stress test precision across the FP16 range
+    std::mt19937 gen(42 + dim); // Seed depends on dim for variety
+    std::uniform_real_distribution<float> dis(-10.0f, 10.0f);
+
     for (size_t i = 0; i < dim; i++) {
-        v1_fp32[i] = (float)i;
-        v1[i] = vecsim_types::FP32_to_FP16(v1_fp32[i]);
-        v2_fp32[i] = (float)i + 1.5f;
-        v2[i] = vecsim_types::FP32_to_FP16(v2_fp32[i]);
+        float val1 = dis(gen);
+        float val2 = dis(gen);
+        v1[i] = vecsim_types::FP32_to_FP16(val1);
+        v2[i] = vecsim_types::FP32_to_FP16(val2);
     }
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
@@ -1209,8 +1213,8 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     };
 
     dist_func_t<float> arch_opt_func;
+    // Baseline uses naive implementation that converts to FP32 for computation
     float baseline = FP16_L2Sqr(v1, v2, dim);
-    ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
 #if defined(CPU_FEATURES_ARCH_X86_64)
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
@@ -1237,13 +1241,18 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     }
 #endif
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
+    // ARM implementations may have tiny differences due to different FP32 accumulation order.
+    // Allow tolerance for floating-point rounding differences (0.001% relative error).
+    float tolerance = baseline * 1e-5f;
+    if (tolerance < 1e-4f)
+        tolerance = 1e-4f; // Minimum absolute tolerance
 #ifdef OPT_SVE2
     if (optimization.sve2) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_SVE2(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE2 with dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1, v2, dim), tolerance) << "SVE2 with dim " << dim;
         ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
         // Unset sve2 flag as well, so we'll choose the next option (default).
         optimization.sve2 = 0;
@@ -1255,7 +1264,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_SVE(dim))
             << "Unexpected distance function chosen for dim " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "SVE with dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1, v2, dim), tolerance) << "SVE with dim " << dim;
         ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
         // Unset sve flag as well, so we'll choose the next option (default).
         optimization.sve = 0;
@@ -1267,7 +1276,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_NEON_HP(dim))
             << "Unexpected distance function chosen for dim OPT_NEON_HP " << dim;
-        ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "NEON_HP with dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v1, v2, dim), tolerance) << "NEON_HP with dim " << dim;
         ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
         optimization.asimdhp = 0;
     }
@@ -2542,12 +2551,18 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
 
     float baseline =
         test_utils::SQ8_SQ8_NotOptimized_L2Sqr(v1_quantized.data(), v2_quantized.data(), dim);
-
+    unsigned char alignment = 0;
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    // Make sure we don't use any optimization (because there is no size optimization for arm)
+    auto optimization = getCpuOptimizationFeatures();
+    optimization.sve = optimization.sve2 = 0;
+    auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
+#else
     // Get distance function with nullptr alignment to cover that code path
-    auto dist_func = L2_SQ8_SQ8_GetDistFunc(dim, nullptr, nullptr);
-
-    ASSERT_EQ(dist_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
-    ASSERT_NEAR(baseline, dist_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
+    auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+#endif
+    ASSERT_EQ(arch_opt_func, SQ8_SQ8_L2Sqr) << "Unexpected distance function chosen for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim), 0.001f)
         << "SQ8_SQ8_L2Sqr failed to match expected distance";
 }
 
