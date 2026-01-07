@@ -10,11 +10,13 @@
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/sq8.h"
 #include <cstring>
 #include <iostream>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
+using sq8 = vecsim_types::sq8;
 
 float SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const float *>(pVect1v);
@@ -149,8 +151,10 @@ float SQ8_SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) 
 
     // Get precomputed sum of squares from both vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
-    const float sum_sq_1 = *reinterpret_cast<const float *>(pVect1 + dimension + 3 * sizeof(float));
-    const float sum_sq_2 = *reinterpret_cast<const float *>(pVect2 + dimension + 3 * sizeof(float));
+    const float sum_sq_1 =
+        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+    const float sum_sq_2 =
+        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Use the common inner product implementation
     const float ip = SQ8_SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);

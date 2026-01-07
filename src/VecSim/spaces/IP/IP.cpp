@@ -9,10 +9,12 @@
 #include "IP.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/sq8.h"
 #include <cstring>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
+using sq8 = vecsim_types::sq8;
 
 float FLOAT_INTEGER_InnerProduct(const float *pVect1v, const uint8_t *pVect2v, size_t dimension,
                                  float min_val, float delta) {
@@ -63,14 +65,20 @@ float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t
     }
 
     // Get quantization parameters from pVect1
-    const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
-    const float sum1 = *reinterpret_cast<const float *>(pVect1 + dimension + 2 * sizeof(float));
+    const float min_val1 =
+        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta1 =
+        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::DELTA * sizeof(float));
+    const float sum1 =
+        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::SUM * sizeof(float));
 
     // Get quantization parameters from pVect2
-    const float min_val2 = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
-    const float sum2 = *reinterpret_cast<const float *>(pVect2 + dimension + 2 * sizeof(float));
+    const float min_val2 =
+        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta2 =
+        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::DELTA * sizeof(float));
+    const float sum2 =
+        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::SUM * sizeof(float));
 
     // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
