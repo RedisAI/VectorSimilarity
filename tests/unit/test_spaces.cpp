@@ -1233,16 +1233,12 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
     float16 v1[dim], v2[dim];
-
-    // Use random values to stress test precision across the FP16 range
-    std::mt19937 gen(42 + dim); // Seed depends on dim for variety
-    std::uniform_real_distribution<float> dis(-10.0f, 10.0f);
-
+    float v1_fp32[dim], v2_fp32[dim];
     for (size_t i = 0; i < dim; i++) {
-        float val1 = dis(gen);
-        float val2 = dis(gen);
-        v1[i] = vecsim_types::FP32_to_FP16(val1);
-        v2[i] = vecsim_types::FP32_to_FP16(val2);
+        v1_fp32[i] = (float)i;
+        v1[i] = vecsim_types::FP32_to_FP16(v1_fp32[i]);
+        v2_fp32[i] = (float)i + 1.5f;
+        v2[i] = vecsim_types::FP32_to_FP16(v2_fp32[i]);
     }
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
@@ -1251,8 +1247,8 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    // Baseline uses naive implementation that converts to FP32 for computation
     float baseline = FP16_L2Sqr(v1, v2, dim);
+    ASSERT_EQ(baseline, FP32_L2Sqr(v1_fp32, v2_fp32, dim)) << "Baseline check " << dim;
 #if defined(CPU_FEATURES_ARCH_X86_64)
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
