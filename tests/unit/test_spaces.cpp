@@ -2615,7 +2615,7 @@ TEST(SQ8_EdgeCases, CosineZeroVectorTest) {
 TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v_const(dim, 0.5f);
+    std::vector<float> v_const(dim+1, 0.5f);
     test_utils::preprocess_fp32_sq8_ip_query(v_const.data(), dim);
 
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
