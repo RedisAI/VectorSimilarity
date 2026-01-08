@@ -26,10 +26,21 @@ struct sq8 {
         SUM_SQUARES = 3 // Only for L2
     };
 
+    // TODO: re-order metadata and merge with the above enum
+    enum QueryMetadataIndex : size_t {
+        SUM_QUERY = 0,
+        SUM_SQUARES_QUERY = 1 // Only for L2
+    };
+
     // Template on metric — compile-time constant when metric is known
     template <VecSimMetric Metric>
-    static constexpr size_t metadata_count() {
+    static constexpr size_t storage_metadata_count() {
         return (Metric == VecSimMetric_L2) ? 4 : 3;
+    }
+
+    template <VecSimMetric Metric>
+    static constexpr size_t query_metadata_count() {
+        return (Metric == VecSimMetric_L2) ? 2 : 1;
     }
 };
 
