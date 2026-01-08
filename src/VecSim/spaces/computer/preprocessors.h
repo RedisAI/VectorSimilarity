@@ -169,12 +169,15 @@ private:
  * The query vector is not quantized. It remains as DataType, but we precompute
  * and store metric-specific values to accelerate asymmetric distance computation:
  * - For IP/Cosine: y_sum = Σy_i (sum of query values)
- * - For L2: y_sum_squares = Σy_i² (sum of squared query values)
+ * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query values)
  *
  * Query blob layout:
- * | query_values[dim] | y_sum (IP/Cosine) OR y_sum_squares (L2) |
+ * - For IP/Cosine: | query_values[dim] | y_sum |
+ * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
  *
- * Query blob size: (dim + 1) * sizeof(DataType)
+ * Query blob size:
+ * - For IP/Cosine: (dim + 1) * sizeof(DataType)
+ * - For L2:        (dim + 2) * sizeof(DataType)
  *
  * === Asymmetric distance (storage x quantized, query y remains float) ===
  *
@@ -303,56 +306,65 @@ class QuantPreprocessor : public PreprocessorInterface {
         }
     }
 
-    DataType sum_fast(const DataType *p) const {
+    // Computes and assigns query metadata in a single pass over the input vector.
+    // For IP/Cosine: assigns y_sum = Σy_i
+    // For L2: assigns y_sum = Σy_i and y_sum_squares = Σy_i²
+    void assign_query_metadata(const DataType *input, DataType *output_metadata) const {
+        // 4 independent accumulators for sum
         DataType s0{}, s1{}, s2{}, s3{};
+        // 4 independent accumulators for sum of squares (only used for L2)
+        DataType q0{}, q1{}, q2{}, q3{};
 
         size_t i = 0;
         // round dim down to the nearest multiple of 4
         size_t dim_round_down = this->dim & ~size_t(3);
 
         for (; i < dim_round_down; i += 4) {
-            s0 += p[i + 0];
-            s1 += p[i + 1];
-            s2 += p[i + 2];
-            s3 += p[i + 3];
+            const DataType y0 = input[i + 0];
+            const DataType y1 = input[i + 1];
+            const DataType y2 = input[i + 2];
+            const DataType y3 = input[i + 3];
+
+            s0 += y0;
+            s1 += y1;
+            s2 += y2;
+            s3 += y3;
+
+            if constexpr (Metric == VecSimMetric_L2) {
+                q0 += y0 * y0;
+                q1 += y1 * y1;
+                q2 += y2 * y2;
+                q3 += y3 * y3;
+            }
         }
 
         DataType sum = (s0 + s1) + (s2 + s3);
+        DataType sum_squares = (q0 + q1) + (q2 + q3);
 
-        for (; i < dim; ++i) {
-            sum += p[i];
-        }
-        return sum;
-    }
-
-    DataType sum_squares_fast(const DataType *p) const {
-        DataType s0{}, s1{}, s2{}, s3{};
-
-        size_t i = 0;
-        // round dim down to the nearest multiple of 4
-        size_t dim_round_down = this->dim & ~size_t(3);
-
-        for (; i < dim_round_down; i += 4) {
-            s0 += p[i + 0] * p[i + 0];
-            s1 += p[i + 1] * p[i + 1];
-            s2 += p[i + 2] * p[i + 2];
-            s3 += p[i + 3] * p[i + 3];
+        // Tail: handle remaining elements
+        for (; i < this->dim; ++i) {
+            const DataType y = input[i];
+            sum += y;
+            if constexpr (Metric == VecSimMetric_L2) {
+                sum_squares += y * y;
+            }
         }
 
-        DataType sum = (s0 + s1) + (s2 + s3);
-
-        for (; i < dim; ++i) {
-            sum += p[i] * p[i];
+        // Assign the computed metadata
+        output_metadata[sq8::SUM_QUERY] = sum; // y_sum for all metrics
+        if constexpr (Metric == VecSimMetric_L2) {
+            output_metadata[sq8::SUM_SQUARES_QUERY] = sum_squares; // y_sum_squares for L2 only
         }
-        return sum;
     }
 
 public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              (vecsim_types::sq8::metadata_count<Metric>()) * sizeof(DataType)),
-          query_bytes_count((dim + 1) * sizeof(DataType)) {
+                              (vecsim_types::sq8::storage_metadata_count<Metric>()) *
+                                  sizeof(DataType)),
+          query_bytes_count((dim + vecsim_types::sq8::query_metadata_count<Metric>()) *
+                            sizeof(DataType)) {
         static_assert(std::is_floating_point_v<DataType>,
                       "QuantPreprocessor only supports floating-point types");
     }
@@ -422,12 +434,18 @@ public:
     /**
      * Preprocesses the query vector for asymmetric distance computation.
      *
-     * The query blob contains the original float values followed by a precomputed value:
+     * The query blob contains the original float values followed by precomputed values:
      * - For IP/Cosine: y_sum = Σy_i (sum of query values)
-     * - For L2: y_sum_squares = Σy_i² (sum of squared query values)
+     * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query
+     *                                                                      values)
      *
-     * Query blob layout: | query_values[dim] | y_sum OR y_sum_squares |
-     * Query blob size: (dim + 1) * sizeof(DataType)
+     * Query blob layout:
+     * - For IP/Cosine: | query_values[dim] | y_sum |
+     * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
+     *
+     * Query blob size:
+     * - For IP/Cosine: (dim + 1) * sizeof(DataType)
+     * - For L2:        (dim + 2) * sizeof(DataType)
      */
     void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
                          unsigned char alignment) const override {
@@ -437,13 +455,10 @@ public:
         blob = this->allocator->allocate_aligned(this->query_bytes_count, alignment);
         memcpy(blob, original_blob, this->dim * sizeof(DataType));
         const DataType *input = static_cast<const DataType *>(original_blob);
-        // For IP/Cosine, we need to store the sum of the query vector.
-        if constexpr (Metric == VecSimMetric_IP || Metric == VecSimMetric_Cosine) {
-            static_cast<DataType *>(blob)[this->dim] = sum_fast(input);
-        } // For L2, compute the sum of squares.
-        else if constexpr (Metric == VecSimMetric_L2) {
-            static_cast<DataType *>(blob)[this->dim] = sum_squares_fast(input);
-        }
+        DataType *output = static_cast<DataType *>(blob);
+
+        // Compute and assign query metadata (sum for IP/Cosine, sum and sum_squares for L2)
+        assign_query_metadata(input, output + this->dim);
 
         query_blob_size = this->query_bytes_count;
     }
