@@ -2556,6 +2556,9 @@ protected:
         }
         constexpr size_t d = 4;
         constexpr size_t n = 1000;
+        // Scale factor to avoid FP16 overflow. FP16 max is ~65504, and L2 distance is
+        // d * (query - vec)^2. With scale=0.1, max distance is 4 * (100)^2 = 40000 < 65504.
+        constexpr float scale = 0.1f;
 
         size_t per_label = is_multi ? 10 : 1;
         size_t n_labels = n / per_label;
@@ -2581,16 +2584,17 @@ protected:
             auto *svs = tiered_index->GetBackendIndex();
             auto *flat = tiered_index->GetFlatIndex();
 
-            // For every i, add the vector (i,i,i,i) under the label i.
+            // For every i, add the vector (i*scale, i*scale, ...) under the label i.
+            // We scale down to avoid FP16 overflow in distance calculations.
             for (size_t i = 0; i < n; i++) {
                 auto cur = decider(i, n) ? svs : flat;
                 this->GenerateAndAddVector(cur, d, i % n_labels, i);
             }
             ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
-            // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+            // Query for (n*scale, n*scale, ...) vector.
             float16 query[d];
-            this->GenerateVector(query, d, n);
+            this->GenerateVector(query, d, n * scale);
 
             VecSimBatchIterator *batchIterator =
                 VecSimBatchIterator_New(tiered_index, query, nullptr);
