@@ -10,6 +10,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/sq8.h"
 #include <arm_sve.h>
+
 using sq8 = vecsim_types::sq8;
 /*
  * Optimized asymmetric SQ8 inner product using algebraic identity:
@@ -116,13 +117,12 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
     float quantized_dot = svaddv_f32(pg, sum);
 
     // Get quantization parameters from stored vector (after quantized data)
-    const float *params2 = reinterpret_cast<const float *>(pVec1 + dimension);
+    const float *params2 = reinterpret_cast<const float *>(pVect2 + dimension);
     const float min_val = params2[sq8::MIN_VAL];
     const float delta = params2[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
-
-    const float y_sum = pVect1[dimension];
+    const float y_sum = pVect1[dimension + sq8::SUM_QUERY];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

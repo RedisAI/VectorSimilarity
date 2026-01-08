@@ -6,9 +6,11 @@
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
  */
+#pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/AVX_utils.h"
 #include "VecSim/types/sq8.h"
+
 using sq8 = vecsim_types::sq8;
 
 /*
@@ -90,7 +92,7 @@ float SQ8_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, size_t 
     const float delta = params2[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
-    const float y_sum = static_cast<const float *>(pVect1v)[dimension];
+    const float y_sum = static_cast<const float *>(pVect1v)[dimension + sq8::SUM_QUERY];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

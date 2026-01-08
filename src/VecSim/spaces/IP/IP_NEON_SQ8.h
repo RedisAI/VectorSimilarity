@@ -115,7 +115,7 @@ float SQ8_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v, 
     const float delta = params2[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
-    const float y_sum = static_cast<const float *>(pVect1v)[dimension];
+    const float y_sum = static_cast<const float *>(pVect1v)[dimension + sq8::SUM_QUERY];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

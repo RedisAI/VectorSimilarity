@@ -93,6 +93,14 @@ static float SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVec
 }
 
 /*
+ * SQ8 Cosine distance function without the algebraic optimizations
+ * For normalized vectors, cosine distance equals inner product distance.
+ */
+static float SQ8_NotOptimized_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return SQ8_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
+}
+
+/*
  * SQ8_SQ8 distance function without the algebraic optimizations
  * uses the regular dequantization formula:
  * IP = Σ((min1 + delta1 * q1_i) * (min2 + delta2 * q2_i))

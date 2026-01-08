@@ -9,9 +9,9 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/sq8.h"
-using sq8 = vecsim_types::sq8;
 #include <immintrin.h>
 
+using sq8 = vecsim_types::sq8;
 /*
  * Optimized asymmetric SQ8 inner product using algebraic identity:
  *
@@ -88,7 +88,7 @@ float SQ8_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t 
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
     // Use the original base pointer since pVec1 has been advanced
-    const float y_sum = static_cast<const float *>(pVec1v)[dimension];
+    const float y_sum = static_cast<const float *>(pVec1v)[dimension + sq8::SUM_QUERY];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

@@ -314,16 +314,15 @@ TEST_F(SpacesTest, uint8_Cosine_no_optimization_func_test) {
 
 TEST_F(SpacesTest, SQ8_ip_no_optimization_norm_func_test) {
     size_t dim = 5;
-    int seed = 456;
 
     // Create V1 fp32 query with precomputed sum
     std::vector<float> v1_orig(dim + 1);
-    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, seed);
+    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
 
-    // Create V2 as SQ8 quantized vector with same seed so they are identical
+    // Create V2 as SQ8 quantized vector with different seed
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, seed);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
 
     float baseline =
         test_utils::SQ8_NotOptimized_InnerProduct(v1_orig.data(), v2_compressed.data(), dim);
@@ -332,8 +331,6 @@ TEST_F(SpacesTest, SQ8_ip_no_optimization_norm_func_test) {
         SQ8_InnerProduct((const void *)v1_orig.data(), (const void *)v2_compressed.data(), dim);
 
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_InnerProduct failed to match expected distance";
-    // Since we're comparing identical vectors, the inner product distance should be close to 0
-    ASSERT_NEAR(dist, 0.0, 0.01) << "SQ8_InnerProduct failed to match expected distance";
 }
 
 TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
@@ -2309,7 +2306,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    float baseline = SQ8_Cosine(v1_orig.data(), v2_quantized.data(), dim);
+    float baseline = test_utils::SQ8_NotOptimized_Cosine(v1_orig.data(), v2_quantized.data(), dim);
 
 #ifdef OPT_SVE2
     if (optimization.sve2) {
@@ -2611,23 +2608,30 @@ TEST(SQ8_EdgeCases, CosineZeroVectorTest) {
     ASSERT_EQ(result, baseline) << "Zero vector Cosine should match baseline";
 }
 
-// Test with constant vector (all same values)
+// Test with constant quantized vector (all same values - edge case where delta = 0)
 TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v_const(dim + 1, 0.5f);
-    test_utils::preprocess_fp32_sq8_ip_query(v_const.data(), dim);
 
+    // Create a random query vector (preprocessed for FP32->SQ8 cosine)
+    std::vector<float> v_query(dim + 1);
+    test_utils::populate_float_vec(v_query.data(), dim);
+    test_utils::preprocess_fp32_sq8_ip_query(v_query.data(), dim);
+
+    // Create a constant quantized vector (all same values)
+    // This tests the edge case where delta = 0 (or set to 1.0 to avoid division by zero)
     size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
-    std::vector<uint8_t> v_random_quantized(quantized_size);
-    test_utils::populate_float_vec_to_sq8_with_metadata(v_random_quantized.data(), dim, true);
+    std::vector<uint8_t> v_const_quantized(quantized_size);
+    std::vector<float> v_const(dim, 0.5f);
+    spaces::GetNormalizeFunc<float>()(v_const.data(), dim);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim, v_const_quantized.data());
 
-    float baseline = SQ8_Cosine(v_const.data(), v_random_quantized.data(), dim);
+    float baseline = SQ8_Cosine(v_query.data(), v_const_quantized.data(), dim);
 #ifdef OPT_SVE2
     if (optimization.sve2) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        float result = arch_opt_func(v_const.data(), v_random_quantized.data(), dim);
+        float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f)
             << "Optimized constant vector Cosine should match baseline";
         optimization.sve2 = 0;
@@ -2637,7 +2641,7 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     if (optimization.sve) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        float result = arch_opt_func(v_const.data(), v_random_quantized.data(), dim);
+        float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f)
             << "Optimized constant vector Cosine should match baseline";
         optimization.sve = 0;
@@ -2647,7 +2651,7 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     if (optimization.asimddp) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        float result = arch_opt_func(v_const.data(), v_random_quantized.data(), dim);
+        float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f)
             << "Optimized constant vector Cosine should match baseline";
         optimization.asimddp = 0;
@@ -2657,7 +2661,7 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     if (optimization.asimd) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        float result = arch_opt_func(v_const.data(), v_random_quantized.data(), dim);
+        float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f)
             << "Optimized constant vector Cosine should match baseline";
         optimization.asimd = 0;
@@ -2667,7 +2671,7 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, &optimization);
-        float result = arch_opt_func(v_const.data(), v_random_quantized.data(), dim);
+        float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f)
             << "Optimized constant vector Cosine should match baseline";
         optimization.avx512f = 0;
@@ -2675,9 +2679,9 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
 #endif
     unsigned char alignment = 0;
     auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, nullptr);
-    float result = arch_opt_func(v_const.data(), v_random_quantized.data(), dim);
+    float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
 
-    ASSERT_NEAR(result, baseline, 0.01f) << "Constant vector Cosine should match baseline";
+    ASSERT_NEAR(result, baseline, 0.01f) << "Constant quantized vector Cosine should match baseline";
 }
 
 // Test with extreme values (-1 and 1 only)

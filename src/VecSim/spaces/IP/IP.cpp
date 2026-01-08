@@ -36,7 +36,7 @@ float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensio
 
     // Main loop: process 4 elements per iteration
     size_t i = 0;
-    size_t dim4 = dimension - (dimension % 4);
+    size_t dim4 = dimension & ~size_t(3); // dim4 is a multiple of 4
     for (; i < dim4; i += 4) {
         sum0 += pVect1[i + 0] * static_cast<float>(pVect2[i + 0]);
         sum1 += pVect1[i + 1] * static_cast<float>(pVect2[i + 1]);
@@ -57,8 +57,8 @@ float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensio
     const float min_val = params[sq8::MIN_VAL];
     const float delta = params[sq8::DELTA];
 
-    // Get precomputed y_sum from query blob
-    const float y_sum = *reinterpret_cast<const float *>(pVect1 + dimension);
+    // Get precomputed y_sum from query blob (stored after the dim floats)
+    const float y_sum = pVect1[dimension + sq8::SUM_QUERY];
 
     // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     const float ip = min_val * y_sum + delta * quantized_dot;
