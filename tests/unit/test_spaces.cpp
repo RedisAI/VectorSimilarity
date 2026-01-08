@@ -2624,7 +2624,8 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<float> v_const(dim, 0.5f);
     spaces::GetNormalizeFunc<float>()(v_const.data(), dim);
-    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim, v_const_quantized.data());
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
+                                                        v_const_quantized.data());
 
     float baseline = SQ8_Cosine(v_query.data(), v_const_quantized.data(), dim);
 #ifdef OPT_SVE2
@@ -2681,7 +2682,8 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     auto arch_opt_func = Cosine_SQ8_GetDistFunc(dim, &alignment, nullptr);
     float result = arch_opt_func(v_query.data(), v_const_quantized.data(), dim);
 
-    ASSERT_NEAR(result, baseline, 0.01f) << "Constant quantized vector Cosine should match baseline";
+    ASSERT_NEAR(result, baseline, 0.01f)
+        << "Constant quantized vector Cosine should match baseline";
 }
 
 // Test with extreme values (-1 and 1 only)
