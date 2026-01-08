@@ -9,7 +9,10 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP_NEON_DOTPROD_UINT8.h"
+#include "VecSim/types/sq8.h"
 #include <arm_neon.h>
+
+using sq8 = vecsim_types::sq8;
 
 /**
  * SQ8-to-SQ8 distance functions using ARM NEON DOTPROD with precomputed sum.
@@ -46,14 +49,14 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP(const void *pVec1v, const void
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
     const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
-    const float min1 = params1[0];
-    const float delta1 = params1[1];
-    const float sum1 = params1[2]; // Precomputed sum of original float elements
+    const float min1 = params1[sq8::MIN_VAL];
+    const float delta1 = params1[sq8::DELTA];
+    const float sum1 = params1[sq8::SUM]; // Precomputed sum of original float elements
 
     const float *params2 = reinterpret_cast<const float *>(pVec2 + dimension);
-    const float min2 = params2[0];
-    const float delta2 = params2[1];
-    const float sum2 = params2[2]; // Precomputed sum of original float elements
+    const float min2 = params2[sq8::MIN_VAL];
+    const float delta2 = params2[sq8::DELTA];
+    const float sum2 = params2[sq8::SUM]; // Precomputed sum of original float elements
 
     // Apply algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1*q2) - dim*min1*min2
