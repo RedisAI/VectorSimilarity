@@ -2306,7 +2306,7 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     };
 
     dist_func_t<float> arch_opt_func;
-    float baseline = test_utils::SQ8_NotOptimized_Cosine(v1_orig.data(), v2_quantized.data(), dim);
+    float baseline = SQ8_Cosine(v1_orig.data(), v2_quantized.data(), dim);
 
 #ifdef OPT_SVE2
     if (optimization.sve2) {
