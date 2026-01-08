@@ -203,7 +203,7 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
     params[sq8::SUM_SQUARES] = square_sum;
 }
 
-// Preprocess fp32 query for SQ8 space.
+// Preprocess fp32 query for SQ8 IP/Cosine space.
 // Query layout: [float values (dim)] [sum (float)]
 // Assuming v is a memory allocation of size (dim + 1) * sizeof(float)
 static void preprocess_fp32_sq8_ip_query(float *v, size_t dim) {
@@ -220,6 +220,50 @@ static void populate_fp32_sq8_ip_query(float *v, size_t dim, int seed = 1234, fl
                                        float max = 1.0f) {
     populate_float_vec(v, dim, seed, min, max);
     preprocess_fp32_sq8_ip_query(v, dim);
+}
+
+// Preprocess fp32 query for SQ8 L2 space.
+// Query layout: [float values (dim)] [sum (float)] [sum_squares (float)]
+// Assuming v is a memory allocation of size (dim + 2) * sizeof(float)
+static void preprocess_fp32_sq8_l2_query(float *v, size_t dim) {
+    float sum = 0.0f;
+    float sum_squares = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        sum += v[i];
+        sum_squares += v[i] * v[i];
+    }
+    v[dim + sq8::SUM_QUERY] = sum;
+    v[dim + sq8::SUM_SQUARES_QUERY] = sum_squares;
+}
+
+// Assuming v is a memory allocation of size (dim + 2) * sizeof(float)
+static void populate_fp32_sq8_l2_query(float *v, size_t dim, int seed = 1234, float min = -1.0f,
+                                       float max = 1.0f) {
+    populate_float_vec(v, dim, seed, min, max);
+    preprocess_fp32_sq8_l2_query(v, dim);
+}
+
+/*
+ * SQ8 L2 squared distance function without the algebraic optimizations.
+ * Uses the regular dequantization formula element-by-element:
+ * L2² = Σ((y_i - (min + delta * q_i))²)
+ */
+static float SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const float *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Get quantization parameters from pVect2
+    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+
+    // Compute L2 squared with dequantization
+    float res = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        float dequantized = pVect2[i] * delta + min_val;
+        float diff = pVect1[i] - dequantized;
+        res += diff * diff;
+    }
+    return res;
 }
 /**
  * Populate a float vector and quantize to SQ8 with precomputed sum and sum_squares.
