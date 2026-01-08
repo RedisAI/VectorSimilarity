@@ -2588,7 +2588,7 @@ protected:
             // We scale down to avoid FP16 overflow in distance calculations.
             for (size_t i = 0; i < n; i++) {
                 auto cur = decider(i, n) ? svs : flat;
-                this->GenerateAndAddVector(cur, d, i % n_labels, i);
+                this->GenerateAndAddVector(cur, d, i % n_labels, i * scale);
             }
             ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
