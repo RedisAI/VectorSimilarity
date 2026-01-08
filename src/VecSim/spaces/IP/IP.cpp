@@ -16,39 +16,57 @@ using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
 
-float FLOAT_INTEGER_InnerProduct(const float *pVect1v, const uint8_t *pVect2v, size_t dimension,
-                                 float min_val, float delta) {
-    float res = 0;
-    for (size_t i = 0; i < dimension; i++) {
-        float dequantized_V2 = (pVect2v[i] * delta + min_val);
-        res += pVect1v[i] * dequantized_V2;
-    }
-    return res;
-}
-
+/*
+ * Optimized asymmetric SQ8 inner product using algebraic identity:
+ *   IP(x, y) = Σ(x_i * y_i)
+ *            ≈ Σ((min + delta * q_i) * y_i)
+ *            = min * Σy_i + delta * Σ(q_i * y_i)
+ *            = min * y_sum + delta * quantized_dot_product
+ *
+ * Uses 4x loop unrolling with multiple accumulators for ILP.
+ * pVect1 is a vector of float32, pVect2 is a quantized uint8_t vector
+ */
 float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+
     const auto *pVect1 = static_cast<const float *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-    // pVect2 is a vector of uint8_t, so we need to de-quantize it, normalize it and then multiply
-    // it. it is structured as [quantized values (int8_t * dim)][min_val (float)][delta
-    // (float)]] The last two values are used to dequantize the vector.
-    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
-    // Compute inner product with dequantization
-    const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta);
-    return 1.0f - res;
+
+    // Use 4 accumulators for instruction-level parallelism
+    float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+
+    // Main loop: process 4 elements per iteration
+    size_t i = 0;
+    size_t dim4 = dimension & ~size_t(3); // dim4 is a multiple of 4
+    for (; i < dim4; i += 4) {
+        sum0 += pVect1[i + 0] * static_cast<float>(pVect2[i + 0]);
+        sum1 += pVect1[i + 1] * static_cast<float>(pVect2[i + 1]);
+        sum2 += pVect1[i + 2] * static_cast<float>(pVect2[i + 2]);
+        sum3 += pVect1[i + 3] * static_cast<float>(pVect2[i + 3]);
+    }
+
+    // Handle remainder (0-3 elements)
+    for (; i < dimension; i++) {
+        sum0 += pVect1[i] * static_cast<float>(pVect2[i]);
+    }
+
+    // Combine accumulators
+    float quantized_dot = (sum0 + sum1) + (sum2 + sum3);
+
+    // Get quantization parameters from stored vector
+    const float *params = reinterpret_cast<const float *>(pVect2 + dimension);
+    const float min_val = params[sq8::MIN_VAL];
+    const float delta = params[sq8::DELTA];
+
+    // Get precomputed y_sum from query blob (stored after the dim floats)
+    const float y_sum = pVect1[dimension + sq8::SUM_QUERY];
+
+    // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
+    const float ip = min_val * y_sum + delta * quantized_dot;
+    return 1.0f - ip;
 }
 
 float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const auto *pVect1 = static_cast<const float *>(pVect1v);
-    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-
-    // Get quantization parameters
-    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
-    // Compute inner product with dequantization
-    const float res = FLOAT_INTEGER_InnerProduct(pVect1, pVect2, dimension, min_val, delta);
-    return 1.0f - res;
+    return SQ8_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
 // SQ8-to-SQ8: Common inner product implementation that returns the raw inner product value

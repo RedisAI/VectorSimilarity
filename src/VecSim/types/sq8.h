@@ -26,7 +26,6 @@ struct sq8 {
         SUM_SQUARES = 3 // Only for L2
     };
 
-    // TODO: re-order metadata and merge with the above enum
     enum QueryMetadataIndex : size_t {
         SUM_QUERY = 0,
         SUM_SQUARES_QUERY = 1 // Only for L2
