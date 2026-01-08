@@ -498,6 +498,7 @@ TEST_F(FP16TieredTest, SearchEmptyIndex) {
     search_empty_index_test(params);
 }
 
+template <typename params_t>
 void FP16Test::test_override(params_t params) {
     size_t n = 100;
     size_t new_n = 250;
