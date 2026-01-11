@@ -1973,49 +1973,6 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                          testing::Range(32UL, 64 * 2UL + 1));
 
-// Helper function to create SQ8 compressed vector
-std::vector<uint8_t> CreateSQ8CompressedVector(const float *original, size_t dim) {
-    // Create a copy of the original vector that we can modify
-    std::vector<float> vec_copy(original, original + dim);
-
-    // Size: dim (uint8_t) + min_val (float) + delta (float) + norm (float)
-    size_t compressed_size = dim * sizeof(uint8_t) + 3 * sizeof(float);
-    std::vector<uint8_t> compressed(compressed_size);
-
-    // Find min and max for quantization
-    float min_val = vec_copy[0];
-    float max_val = vec_copy[0];
-    for (size_t i = 1; i < dim; i++) {
-        min_val = std::min(min_val, vec_copy[i]);
-        max_val = std::max(max_val, vec_copy[i]);
-    }
-
-    // Calculate delta
-    float delta = (max_val - min_val) / 255.0f;
-    if (delta == 0)
-        delta = 1.0f; // Avoid division by zero
-
-    // Quantize vector
-    uint8_t *quant_values = compressed.data();
-    float norm = 0.0f;
-    // Quantize each value
-    for (size_t i = 0; i < dim; i++) {
-        float normalized = (vec_copy[i] - min_val) / delta;
-        normalized = std::max(0.0f, std::min(255.0f, normalized));
-        quant_values[i] = static_cast<uint8_t>(std::round(normalized));
-        norm += (quant_values[i] * delta + min_val) * (quant_values[i] * delta + min_val);
-    }
-
-    float inv_norm = 1.0f / std::sqrt(norm);
-    // Store parameters
-    float *params = reinterpret_cast<float *>(quant_values + dim);
-    params[0] = min_val;
-    params[1] = delta;
-    params[2] = inv_norm;
-
-    return compressed;
-}
-
 class SQ8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
