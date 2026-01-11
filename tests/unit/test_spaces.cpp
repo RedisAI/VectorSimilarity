@@ -347,11 +347,9 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
 
-    float baseline =
-        test_utils::SQ8_NotOptimized_L2Sqr(v1_orig.data(), v2_compressed.data(), dim);
+    float baseline = test_utils::SQ8_NotOptimized_L2Sqr(v1_orig.data(), v2_compressed.data(), dim);
 
-    float dist =
-        SQ8_L2Sqr((const void *)v1_orig.data(), (const void *)v2_compressed.data(), dim);
+    float dist = SQ8_L2Sqr((const void *)v1_orig.data(), (const void *)v2_compressed.data(), dim);
 
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_L2Sqr failed to match expected distance";
 }

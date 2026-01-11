@@ -25,7 +25,8 @@ using sq8 = vecsim_types::sq8;
  *
  * Uses 4x loop unrolling with multiple accumulators for ILP.
  * pVect1 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares (L2 only)]
- * pVect2 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares (L2 only)]
+ * pVect2 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares (L2
+ * only)]
  *
  * Returns raw inner product value (not distance). Used by SQ8_InnerProduct, SQ8_Cosine, SQ8_L2Sqr.
  */
