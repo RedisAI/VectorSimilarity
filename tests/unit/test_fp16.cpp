@@ -502,36 +502,42 @@ template <typename params_t>
 void FP16Test::test_override(params_t params) {
     size_t n = 100;
     size_t new_n = 250;
+    // Scale factor to avoid FP16 overflow. FP16 max value is 65504, and L2² = dim × diff².
+    // With scale=0.1 and max diff=250: L2² = 4 × (250×0.1)² = 10000 < 65504.
+    constexpr float scale = 0.1f;
     SetUp(params);
 
     // Insert n vectors.
     for (size_t i = 0; i < n; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, i), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, i * scale), 1);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Override n vectors, the first 100 will be overwritten (deleted first).
     for (size_t i = 0; i < n; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, i), 0);
+        ASSERT_EQ(GenerateAndAddVector(i, i * scale), 0);
     }
 
     // Add up to new_n vectors.
     for (size_t i = n; i < new_n; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, i), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, i * scale), 1);
     }
 
     float16 query[dim];
-    GenerateVector(query, new_n);
+    GenerateVector(query, new_n * scale);
 
-    // Vectors values equals their id, so we expect the larger the id the closest it will be to the
-    // query.
+    // Vectors values equals their id (scaled), so we expect the larger the id the closest it will
+    // be to the query.
     auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, new_n - 1 - index) << "id: " << id << " score: " << score;
-        float16 a = vecsim_types::FP32_to_FP16(new_n);
-        float16 b = vecsim_types::FP32_to_FP16(id);
+        float16 a = vecsim_types::FP32_to_FP16(new_n * scale);
+        float16 b = vecsim_types::FP32_to_FP16(id * scale);
         float diff = vecsim_types::FP16_to_FP32(a) - vecsim_types::FP16_to_FP32(b);
         float exp_score = 4 * diff * diff;
-        ASSERT_EQ(score, exp_score) << "id: " << id << " score: " << score;
+        // Use tolerance-based comparison due to FP16 precision loss in SVE accumulation.
+        // FP16 has ~3 decimal digits of precision, so we allow ~0.2% relative tolerance.
+        float tolerance = std::max(1.0f, std::abs(exp_score) * 0.002f);
+        ASSERT_NEAR(score, exp_score, tolerance) << "id: " << id << " score: " << score;
     };
     runTopKSearchTest(index, query, 300, verify_res);
 }
@@ -666,18 +672,21 @@ TEST_F(FP16TieredTest, GetDistanceIPTest) {
 template <typename params_t>
 void FP16Test::test_batch_iterator_basic(params_t params) {
     size_t n = params.initialCapacity;
+    // Scale factor to avoid FP16 overflow. FP16 max value is 65504, and L2² = dim × diff².
+    // With scale=0.1 and max diff=250: L2² = 4 × (250×0.1)² = 10000 < 65504.
+    constexpr float scale = 0.1f;
     SetUp(params);
 
-    // For every i, add the vector (i,i,i,i) under the label i.
+    // For every i, add the vector (i*scale, i*scale, i*scale, i*scale) under the label i.
     for (size_t i = 0; i < n; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, i), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, i * scale), 1);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+    // Query for (n*scale, n*scale, n*scale, n*scale) vector (recall that n-1 is the largest id).
     float16 query[dim];
-    GenerateVector(query, n);
+    GenerateVector(query, n * scale);
 
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
