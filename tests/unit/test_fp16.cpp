@@ -503,8 +503,8 @@ void FP16Test::test_override(params_t params) {
     size_t n = 100;
     size_t new_n = 250;
     // Scale factor to avoid FP16 overflow. FP16 max value is 65504, and L2² = dim × diff².
-    // With scale=0.4 and max diff=250: L2² = 4 × (250×0.4)² = 40000 < 65504.
-    constexpr float scale = 0.01f;
+    // With scale=0.1 and max diff=250: L2² = 4 × (250×0.1)² = 10000 < 65504.
+    constexpr float scale = 0.1f;
     SetUp(params);
 
     // Insert n vectors.
@@ -535,7 +535,7 @@ void FP16Test::test_override(params_t params) {
         float diff = vecsim_types::FP16_to_FP32(a) - vecsim_types::FP16_to_FP32(b);
         float exp_score = 4 * diff * diff;
         // Use tolerance-based comparison due to FP16 precision loss in SVE accumulation.
-        // FP16 has ~3 decimal digits of precision, so we allow ~0.1% relative tolerance.
+        // FP16 has ~3 decimal digits of precision, so we allow ~0.2% relative tolerance.
         float tolerance = std::max(1.0f, std::abs(exp_score) * 0.002f);
         ASSERT_NEAR(score, exp_score, tolerance) << "id: " << id << " score: " << score;
     };
@@ -673,8 +673,8 @@ template <typename params_t>
 void FP16Test::test_batch_iterator_basic(params_t params) {
     size_t n = params.initialCapacity;
     // Scale factor to avoid FP16 overflow. FP16 max value is 65504, and L2² = dim × diff².
-    // With scale=0.4 and max diff=250: L2² = 4 × (250×0.4)² = 40000 < 65504.
-    constexpr float scale = 0.01f;
+    // With scale=0.1 and max diff=250: L2² = 4 × (250×0.1)² = 10000 < 65504.
+    constexpr float scale = 0.1f;
     SetUp(params);
 
     // For every i, add the vector (i*scale, i*scale, i*scale, i*scale) under the label i.
