@@ -203,29 +203,11 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
     params[sq8::SUM_SQUARES] = square_sum;
 }
 
-// Preprocess fp32 query for SQ8 IP/Cosine space.
-// Query layout: [float values (dim)] [sum (float)]
-// Assuming v is a memory allocation of size (dim + 1) * sizeof(float)
-static void preprocess_fp32_sq8_ip_query(float *v, size_t dim) {
-    spaces::GetNormalizeFunc<float>()(v, dim);
-    float sum = 0.0f;
-    for (size_t i = 0; i < dim; i++) {
-        sum += v[i];
-    }
-    v[dim] = sum;
-}
-
-// Assuming v is a memory allocation of size (dim + 1) * sizeof(float)
-static void populate_fp32_sq8_ip_query(float *v, size_t dim, int seed = 1234, float min = -1.0f,
-                                       float max = 1.0f) {
-    populate_float_vec(v, dim, seed, min, max);
-    preprocess_fp32_sq8_ip_query(v, dim);
-}
-
-// Preprocess fp32 query for SQ8 L2 space.
+// Preprocess fp32 query for SQ8 IP/Cosine/L2 space.
 // Query layout: [float values (dim)] [sum (float)] [sum_squares (float)]
-// Assuming v is a memory allocation of size (dim + 2) * sizeof(float)
-static void preprocess_fp32_sq8_l2_query(float *v, size_t dim) {
+// Assuming v is a memory allocation of size (dim + sq8::query_metadata_count<VecSimMetric_L2>())
+// defaults to L2 just for testing purposes.
+static void preprocess_fp32_sq8_query(float *v, size_t dim) {
     float sum = 0.0f;
     float sum_squares = 0.0f;
     for (size_t i = 0; i < dim; i++) {
@@ -236,11 +218,14 @@ static void preprocess_fp32_sq8_l2_query(float *v, size_t dim) {
     v[dim + sq8::SUM_SQUARES_QUERY] = sum_squares;
 }
 
-// Assuming v is a memory allocation of size (dim + 2) * sizeof(float)
-static void populate_fp32_sq8_l2_query(float *v, size_t dim, int seed = 1234, float min = -1.0f,
-                                       float max = 1.0f) {
+// Assuming v is a memory allocation of size (dim + sq8::query_metadata_count<VecSimMetric_L2>())
+static void populate_fp32_sq8_query(float *v, size_t dim, bool should_normalize = false,
+                                    int seed = 1234, float min = -1.0f, float max = 1.0f) {
     populate_float_vec(v, dim, seed, min, max);
-    preprocess_fp32_sq8_l2_query(v, dim);
+    if (should_normalize) {
+        spaces::GetNormalizeFunc<float>()(v, dim);
+    }
+    preprocess_fp32_sq8_query(v, dim);
 }
 
 /*

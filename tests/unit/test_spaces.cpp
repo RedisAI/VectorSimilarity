@@ -315,12 +315,15 @@ TEST_F(SpacesTest, uint8_Cosine_no_optimization_func_test) {
 TEST_F(SpacesTest, SQ8_ip_no_optimization_norm_func_test) {
     size_t dim = 5;
 
-    // Create V1 fp32 query with precomputed sum
-    std::vector<float> v1_orig(dim + 1);
-    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
+    // Create V1 fp32 query with precomputed sum and sum_squares
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1_orig(query_size);
+    test_utils::populate_fp32_sq8_query(v1_orig.data(), dim, true, 1234);
 
     // Create V2 as SQ8 quantized vector with different seed
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
 
@@ -338,12 +341,14 @@ TEST_F(SpacesTest, SQ8_l2sqr_no_optimization_func_test) {
 
     // Create V1 fp32 query with precomputed sum and sum_squares
     // Query layout: [float values (dim)] [sum] [sum_squares]
-    std::vector<float> v1_orig(dim + 2);
-    test_utils::populate_fp32_sq8_l2_query(v1_orig.data(), dim, 1234);
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1_orig(query_size);
+    test_utils::populate_fp32_sq8_query(v1_orig.data(), dim, false, 1234);
 
     // Create V2 as SQ8 quantized vector with different seed
     // Storage layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_squares]
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
 
@@ -1981,12 +1986,14 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8L2SqrTest) {
 
     // Create V1 fp32 query with precomputed sum and sum_squares
     // Query layout: [float values (dim)] [sum] [sum_squares]
-    std::vector<float> v1_orig(dim + 2);
-    test_utils::populate_fp32_sq8_l2_query(v1_orig.data(), dim, 1234);
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1_orig(query_size);
+    test_utils::populate_fp32_sq8_query(v1_orig.data(), dim, false, 1234);
 
     // Create V2 as SQ8 quantized vector with different seed
     // Storage layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_squares]
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 456);
 
@@ -2104,10 +2111,13 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8InnerProductTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
 
-    // Create original vectors
-    std::vector<float> v1_orig(dim + 1);
-    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    // Create original vectors with precomputed sum and sum_squares
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1_orig(query_size);
+    test_utils::populate_fp32_sq8_query(v1_orig.data(), dim, true, 1234);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v2_compressed(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 456);
 
@@ -2216,12 +2226,15 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = GetParam();
 
-    // Create original vectors - v1 needs extra space for precomputed sum
-    std::vector<float> v1_orig(dim + 1);
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    // Create original vectors - v1 needs extra space for precomputed sum and sum_squares
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1_orig(query_size);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
 
-    test_utils::populate_fp32_sq8_ip_query(v1_orig.data(), dim, 1234);
+    test_utils::populate_fp32_sq8_query(v1_orig.data(), dim, true, 1234);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, false, 456);
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
@@ -2326,10 +2339,13 @@ TEST_P(SQ8SpacesOptimizationTest, SQ8CosineTest) {
 TEST(SQ8_EdgeCases, SelfDistanceCosine) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v_orig(dim + 1);
-    test_utils::populate_fp32_sq8_ip_query(v_orig.data(), dim, 1234);
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = (dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    std::vector<float> v_orig(query_size);
+    test_utils::populate_fp32_sq8_query(v_orig.data(), dim, true, 1234);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, true, 1234);
 
@@ -2397,8 +2413,9 @@ TEST(SQ8_EdgeCases, SelfDistanceL2) {
     size_t dim = 128;
     // Create fp32 query with precomputed sum and sum_squares
     // Query layout: [float values (dim)] [sum] [sum_squares]
-    std::vector<float> v_orig(dim + sq8::query_metadata_count<VecSimMetric_L2>());
-    test_utils::populate_fp32_sq8_l2_query(v_orig.data(), dim, 1234);
+    size_t query_size = (dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    std::vector<float> v_orig(query_size);
+    test_utils::populate_fp32_sq8_query(v_orig.data(), dim, false, 1234);
 
     size_t quantized_size =
         dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
@@ -2468,17 +2485,20 @@ TEST(SQ8_EdgeCases, SelfDistanceL2) {
 TEST(SQ8_EdgeCases, CosineSymmetryTest) {
     size_t dim = 128;
     auto optimization = getCpuOptimizationFeatures();
-    std::vector<float> v1_fp32(dim + 1);
-    test_utils::populate_fp32_sq8_ip_query(v1_fp32.data(), dim, 1234);
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1_fp32(query_size);
+    test_utils::populate_fp32_sq8_query(v1_fp32.data(), dim, true, 1234);
+    std::vector<float> v2_fp32(query_size);
+    test_utils::populate_fp32_sq8_query(v2_fp32.data(), dim, true, 456);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
-
-    std::vector<float> v2_fp32(dim + 1);
-    test_utils::populate_fp32_sq8_ip_query(v2_fp32.data(), dim, 456);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v2_quantized.data(), dim, true, 456);
+
     float baseline_1 = SQ8_Cosine(v1_fp32.data(), v2_quantized.data(), dim);
     float baseline_2 = SQ8_Cosine(v2_fp32.data(), v1_quantized.data(), dim);
     ASSERT_NEAR(baseline_1, baseline_2, 0.001f) << "Cosine should be symmetric";
@@ -2545,9 +2565,11 @@ TEST(SQ8_EdgeCases, CosineSymmetryTest) {
 TEST(SQ8_EdgeCases, CosineZeroVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v_zero(dim + 1, 0.0f);
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v_zero(query_size, 0.0f);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, true);
 
@@ -2611,13 +2633,16 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
     size_t dim = 128;
 
     // Create a random query vector (preprocessed for FP32->SQ8 cosine)
-    std::vector<float> v_query(dim + 1);
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v_query(query_size);
     test_utils::populate_float_vec(v_query.data(), dim);
-    test_utils::preprocess_fp32_sq8_ip_query(v_query.data(), dim);
+    test_utils::preprocess_fp32_sq8_query(v_query.data(), dim);
 
     // Create a constant quantized vector (all same values)
     // This tests the edge case where delta = 0 (or set to 1.0 to avoid division by zero)
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<float> v_const(dim, 0.5f);
     spaces::GetNormalizeFunc<float>()(v_const.data(), dim);
@@ -2687,15 +2712,18 @@ TEST(SQ8_EdgeCases, CosineConstantVectorTest) {
 TEST(SQ8_EdgeCases, CosineExtremeValuesTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
-    std::vector<float> v1(dim + 1), v2(dim);
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+    std::vector<float> v1(query_size), v2(dim);
 
     // Alternating extreme values
     for (size_t i = 0; i < dim; i++) {
         v1[i] = (i % 2 == 0) ? 1.0f : -1.0f;
         v2[i] = (i % 3 == 0) ? 1.0f : -1.0f;
     }
-    test_utils::preprocess_fp32_sq8_ip_query(v1.data(), dim);
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    test_utils::preprocess_fp32_sq8_query(v1.data(), dim);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::quantize_float_vec_to_sq8_with_metadata(v2.data(), dim, v2_quantized.data());
 
@@ -2764,7 +2792,8 @@ TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
     size_t dim = 5;
 
     // Create SQ8 quantized versions of both vectors
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
@@ -2795,7 +2824,8 @@ TEST_F(SpacesTest, SQ8_SQ8_Cosine_no_optimization_func_test) {
     size_t dim = 5;
 
     // Create SQ8 quantized versions of both vectors
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
@@ -2826,7 +2856,8 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_no_optimization_func_test) {
     size_t dim = 5;
 
     // Create SQ8 quantized versions of both vectors
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, false, 1234);
@@ -2858,7 +2889,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
     size_t dim = GetParam();
 
     // Create SQ8 quantized versions of both vectors
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
@@ -2940,7 +2972,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
 
     // Create quantized vectors
     // Size: dim (uint8_t) + min_val (float) + delta (float) + sum (float) + sum_squares (float)
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 1234);
@@ -3022,7 +3055,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
 
     // Create SQ8 quantized versions of both vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, false, 1234);
@@ -3109,7 +3143,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, true);
 
@@ -3175,7 +3210,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
 TEST(SQ8_SQ8_EdgeCases, CosineSymmetryTest) {
     size_t dim = 128;
     auto optimization = getCpuOptimizationFeatures();
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, true, 456, -1.0f,
@@ -3247,7 +3283,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineZeroVectorTest) {
     size_t dim = 128;
     std::vector<float> v_zero(dim, 0.0f);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_zero_quantized(quantized_size);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
     test_utils::quantize_float_vec_to_sq8_with_metadata(v_zero.data(), dim,
@@ -3314,7 +3351,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineConstantVectorTest) {
     size_t dim = 128;
     std::vector<float> v_const(dim, 0.5f);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<uint8_t> v_random_quantized(quantized_size);
     spaces::GetNormalizeFunc<float>()(v_const.data(), dim);
@@ -3395,7 +3433,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineExtremeValuesTest) {
     spaces::GetNormalizeFunc<float>()(v1.data(), dim);
     spaces::GetNormalizeFunc<float>()(v2.data(), dim);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::quantize_float_vec_to_sq8_with_metadata(v1.data(), dim, v1_quantized.data());
@@ -3465,7 +3504,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false);
 
@@ -3532,7 +3572,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
 TEST(SQ8_SQ8_EdgeCases, L2SymmetryTest) {
     size_t dim = 128;
     auto optimization = getCpuOptimizationFeatures();
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v1_quantized.data(), dim, false, 456, -1.0f,
@@ -3604,7 +3645,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ZeroVectorTest) {
     size_t dim = 128;
     std::vector<float> v_zero(dim, 0.0f);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_zero_quantized(quantized_size);
     std::vector<uint8_t> v_nonzero_quantized(quantized_size);
     test_utils::quantize_float_vec_to_sq8_with_metadata(v_zero.data(), dim,
@@ -3671,7 +3713,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ConstantVectorTest) {
     size_t dim = 128;
     std::vector<float> v_const(dim, 0.5f);
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v_const_quantized(quantized_size);
     std::vector<uint8_t> v_random_quantized(quantized_size);
     test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
@@ -3748,7 +3791,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
         v2[i] = (i % 3 == 0) ? 1.0f : -1.0f;
     }
 
-    size_t quantized_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
     std::vector<uint8_t> v1_quantized(quantized_size);
     std::vector<uint8_t> v2_quantized(quantized_size);
     test_utils::quantize_float_vec_to_sq8_with_metadata(v1.data(), dim, v1_quantized.data());

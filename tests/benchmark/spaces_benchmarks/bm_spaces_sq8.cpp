@@ -9,6 +9,8 @@
 #include "bm_spaces.h"
 #include "utils/tests_utils.h"
 
+using sq8 = vecsim_types::sq8;
+
 class BM_VecSimSpaces_SQ8 : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
@@ -22,11 +24,13 @@ public:
 
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
-        v1 = new float[dim];
-        test_utils::populate_float_vec(v1, dim, 123);
-        // Allocate vector with extra space for min, delta and cosine calculations
-        v2 = new uint8_t[dim + sizeof(float) * 4];
-        test_utils::populate_float_vec_to_sq8_with_metadata(v2, dim, 1234, true);
+        size_t query_size = (dim + sq8::query_metadata_count<VecSimMetric_L2>());
+        v1 = new float[query_size];
+        test_utils::populate_fp32_sq8_query(v1, dim, true, 1234);
+        size_t quantized_size =
+            dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+        v2 = new uint8_t[quantized_size];
+        test_utils::populate_float_vec_to_sq8_with_metadata(v2, dim, true, 1234);
     }
     void TearDown(const ::benchmark::State &state) {
         delete v1;
