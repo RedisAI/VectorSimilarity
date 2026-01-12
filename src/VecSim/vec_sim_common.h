@@ -209,6 +209,7 @@ typedef struct {
 
 // A struct that contains HNSW Disk tiered index specific params.
 typedef struct {
+    char _placeholder; // Reserved for future fields and avoid compiler errors
 } TieredHNSWDiskParams;
 
 // A struct that contains SVS tiered index specific params.
