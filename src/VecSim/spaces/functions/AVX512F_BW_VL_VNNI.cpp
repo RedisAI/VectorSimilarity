@@ -14,8 +14,8 @@
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_UINT8.h"
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_UINT8.h"
 
-#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8.h"
-#include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8.h"
+#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_FP32.h"
+#include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8_FP32.h"
 
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
@@ -60,19 +60,19 @@ dist_func_t<float> Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t 
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_InnerProductSIMD16_AVX512F_BW_VL_VNNI);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_InnerProductSIMD16_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
-dist_func_t<float> Choose_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_CosineSIMD16_AVX512F_BW_VL_VNNI);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_CosineSIMD16_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
-dist_func_t<float> Choose_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_L2SqrSIMD16_AVX512F_BW_VL_VNNI);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_L2SqrSIMD16_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)

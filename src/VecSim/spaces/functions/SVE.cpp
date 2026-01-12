@@ -22,8 +22,8 @@
 
 #include "VecSim/spaces/L2/L2_SVE_UINT8.h"
 #include "VecSim/spaces/IP/IP_SVE_UINT8.h"
-#include "VecSim/spaces/IP/IP_SVE_SQ8.h"
-#include "VecSim/spaces/L2/L2_SVE_SQ8.h"
+#include "VecSim/spaces/IP/IP_SVE_SQ8_FP32.h"
+#include "VecSim/spaces/L2/L2_SVE_SQ8_FP32.h"
 
 #include "VecSim/spaces/IP/IP_SVE_SQ8_SQ8.h"
 #include "VecSim/spaces/L2/L2_SVE_SQ8_SQ8.h"
@@ -101,21 +101,21 @@ dist_func_t<float> Choose_UINT8_Cosine_implementation_SVE(size_t dim) {
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_IP_implementation_SVE(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_InnerProductSIMD_SVE, dim, svcntw);
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP32_InnerProductSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_Cosine_implementation_SVE(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_CosineSIMD_SVE, dim, svcntw);
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP32_CosineSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_L2_implementation_SVE(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_L2SqrSIMD_SVE, dim, svcntw);
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP32_L2SqrSIMD_SVE, dim, svcntw);
     return ret_dist_func;
 }
 

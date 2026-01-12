@@ -19,26 +19,26 @@ using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
 
 /*
- * Optimized asymmetric SQ8 L2 squared distance using algebraic identity:
+ * Optimized asymmetric SQ8-FP32 L2 squared distance using algebraic identity:
  *   ||x - y||² = Σx_i² - 2*IP(x, y) + Σy_i²
  *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
  *   where IP(x, y) = min * y_sum + delta * Σ(q_i * y_i)
  *
- * pVect1 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
- * pVect2 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
+ * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
+ * pVect2 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
  */
-float SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Get the raw inner product using the common implementation
-    const float ip = SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);
+    const float ip = SQ8_FP32_InnerProduct_Impl(pVect1v, pVect2v, dimension);
 
-    // Get precomputed sum of squares from storage blob
-    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-    const float *params = reinterpret_cast<const float *>(pVect2 + dimension);
+    // Get precomputed sum of squares from storage blob (pVect1 is SQ8)
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
     const float x_sum_sq = params[sq8::SUM_SQUARES];
 
-    // Get precomputed sum of squares from query blob
-    const auto *pVect1 = static_cast<const float *>(pVect1v);
-    const float y_sum_sq = pVect1[dimension + sq8::SUM_SQUARES_QUERY];
+    // Get precomputed sum of squares from query blob (pVect2 is FP32)
+    const auto *pVect2 = static_cast<const float *>(pVect2v);
+    const float y_sum_sq = pVect2[dimension + sq8::SUM_SQUARES_QUERY];
 
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return x_sum_sq + y_sum_sq - 2.0f * ip;
