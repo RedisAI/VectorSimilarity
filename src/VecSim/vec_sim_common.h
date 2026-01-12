@@ -208,6 +208,7 @@ typedef struct {
 } TieredHNSWParams;
 
 // A struct that contains HNSW Disk tiered index specific params.
+// Consider removing and use TieredHNSWParams instead if they both share swapJobThreshold
 typedef struct {
     char _placeholder; // Reserved for future fields and avoid compiler errors
 } TieredHNSWDiskParams;
