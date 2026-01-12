@@ -171,7 +171,6 @@ protected:
     idType mutuallyConnectNewElement(idType new_node_id,
                                      candidatesMaxHeap<DistType> &top_candidates, size_t level);
     void mutuallyUpdateForRepairedNode(idType node_id, size_t level,
-                                       vecsim_stl::vector<idType> &neighbors_to_remove,
                                        vecsim_stl::vector<idType> &nodes_to_update,
                                        vecsim_stl::vector<idType> &chosen_neighbors,
                                        size_t max_M_cur);
@@ -1351,11 +1350,8 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
-    idType node_id, size_t level, vecsim_stl::vector<idType> &neighbors_to_remove,
-    vecsim_stl::vector<idType> &nodes_to_update, vecsim_stl::vector<idType> &chosen_neighbors,
-    size_t max_M_cur) {
-    // Sort the nodes to remove set for fast lookup.
-    std::sort(neighbors_to_remove.begin(), neighbors_to_remove.end());
+    idType node_id, size_t level, vecsim_stl::vector<idType> &nodes_to_update,
+    vecsim_stl::vector<idType> &chosen_neighbors, size_t max_M_cur) {
 
     // Acquire the required locks for the updates, after sorting the nodes to update
     // (to avoid deadlocks)
@@ -1474,12 +1470,10 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // neighbors that are going to be removed.
     vecsim_stl::vector<idType> nodes_to_update(this->allocator);
     vecsim_stl::vector<idType> chosen_neighbors(this->allocator);
-    vecsim_stl::vector<idType> neighbors_to_remove(this->allocator);
 
     // Go over the deleted nodes and collect their neighbors to the candidates set.
     for (idType deleted_neighbor_id : deleted_neighbors) {
         nodes_to_update.push_back(deleted_neighbor_id);
-        neighbors_to_remove.push_back(deleted_neighbor_id);
 
         auto *neighbor = getGraphDataByInternalId(deleted_neighbor_id);
         lockNodeLinks(neighbor);
@@ -1516,7 +1510,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
         for (idType not_chosen_neighbor : not_chosen_neighbors) {
             if (node_orig_neighbours_set[not_chosen_neighbor]) {
-                neighbors_to_remove.push_back(not_chosen_neighbor);
                 nodes_to_update.push_back(not_chosen_neighbor);
             }
         }
@@ -1535,8 +1528,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
     // Perform the actual updates for the node and the impacted neighbors while holding the nodes'
     // locks.
-    mutuallyUpdateForRepairedNode(node_id, level, neighbors_to_remove, nodes_to_update,
-                                  chosen_neighbors, max_M_cur);
+    mutuallyUpdateForRepairedNode(node_id, level, nodes_to_update, chosen_neighbors, max_M_cur);
 }
 
 template <typename DataType, typename DistType>
