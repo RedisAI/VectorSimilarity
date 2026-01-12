@@ -69,13 +69,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum {
-    VecSimAlgo_BF,
-    VecSimAlgo_HNSWLIB,
-    VecSimAlgo_TIERED,
-    VecSimAlgo_SVS,
-    VecSimAlgo_HNSWDISK
-} VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
 
 typedef enum {
     VecSimOption_AUTO = 0,
