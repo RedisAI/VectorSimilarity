@@ -24,10 +24,13 @@ using sq8 = vecsim_types::sq8;
  *            = min * y_sum + delta * quantized_dot_product
  *
  * Uses 4x loop unrolling with multiple accumulators for ILP.
- * pVect1 is a vector of float32, pVect2 is a quantized uint8_t vector
+ * pVect1 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares (L2 only)]
+ * pVect2 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares (L2
+ * only)]
+ *
+ * Returns raw inner product value (not distance). Used by SQ8_InnerProduct, SQ8_Cosine, SQ8_L2Sqr.
  */
-float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
-
+float SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const float *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
@@ -61,8 +64,11 @@ float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimensio
     const float y_sum = pVect1[dimension + sq8::SUM_QUERY];
 
     // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
-    const float ip = min_val * y_sum + delta * quantized_dot;
-    return 1.0f - ip;
+    return min_val * y_sum + delta * quantized_dot;
+}
+
+float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);
 }
 
 float SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {

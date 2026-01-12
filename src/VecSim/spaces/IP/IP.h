@@ -10,6 +10,13 @@
 
 #include <cstdlib>
 
+// FP32-to-SQ8: Common inner product implementation that returns the raw inner product value
+// (not distance). Used by SQ8_InnerProduct, SQ8_Cosine, and SQ8_L2Sqr.
+// pVect1 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares (L2 only)]
+// pVect2 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares (L2
+// only)]
+float SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t dimension);
+
 // pVect1v vector of type fp32 and pVect2v vector of type uint8
 float SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
 

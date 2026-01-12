@@ -6,88 +6,40 @@
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
  * GNU Affero General Public License v3 (AGPLv3).
  */
+#pragma once
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8.h"
+#include "VecSim/types/sq8.h"
 
-// Helper function to perform L2 squared distance calculation for a chunk of 16 elements
-static inline void SQ8_L2SqrStep(const float *&pVect1, const uint8_t *&pVect2, __m512 &sum,
-                                 const __m512 &min_val_vec, const __m512 &delta_vec) {
-    // Load 16 float elements from pVect1
-    __m512 v1 = _mm512_loadu_ps(pVect1);
+using sq8 = vecsim_types::sq8;
 
-    // Load 16 uint8 elements from pVect2 and convert to __m512i
-    __m128i v2_128 = _mm_loadu_si128((__m128i *)pVect2);
-    __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
-
-    // Convert uint8 to float
-    __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
-
-    // Dequantize: (val * delta + min_val) * inv_norm
-    __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
-
-    // Compute difference
-    __m512 diff = _mm512_sub_ps(v1, dequantized);
-
-    // Square difference and add to sum
-    sum = _mm512_fmadd_ps(diff, diff, sum);
-
-    // Advance pointers
-    pVect1 += 16;
-    pVect2 += 16;
-}
+/*
+ * Optimized asymmetric SQ8 L2 squared distance using algebraic identity:
+ *
+ *   ||x - y||² = Σx_i² - 2*IP(x, y) + Σy_i²
+ *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
+ *
+ * where:
+ *   - IP(x, y) = min * y_sum + delta * Σ(q_i * y_i)  (computed via SQ8_InnerProductImp_AVX512)
+ *   - x_sum_squares and y_sum_squares are precomputed
+ *
+ * This avoids dequantization in the hot loop.
+ */
 
 template <unsigned char residual> // 0..15
 float SQ8_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                          size_t dimension) {
-    const float *pVect1 = static_cast<const float *>(pVect1v);
+    // Get the raw inner product using the common SIMD implementation
+    const float ip = SQ8_InnerProductImp_AVX512<residual>(pVect1v, pVect2v, dimension);
+
+    // Get precomputed sum of squares from storage blob
     const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
-    const float *pEnd1 = pVect1 + dimension;
+    const float *params = reinterpret_cast<const float *>(pVect2 + dimension);
+    const float x_sum_sq = params[sq8::SUM_SQUARES];
 
-    // Get dequantization parameters from the end of pVect2
-    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    // Get precomputed sum of squares from query blob
+    const float y_sum_sq = static_cast<const float *>(pVect1v)[dimension + sq8::SUM_SQUARES_QUERY];
 
-    // Create broadcast vectors for SIMD operations
-    __m512 min_val_vec = _mm512_set1_ps(min_val);
-    __m512 delta_vec = _mm512_set1_ps(delta);
-
-    // Initialize sum accumulator
-    __m512 sum = _mm512_setzero_ps();
-
-    // Handle residual elements (0 to 15)
-    if constexpr (residual > 0) {
-        // Create mask for residual elements
-        __mmask16 mask = (1U << residual) - 1;
-
-        // Load masked float elements from pVect1
-        __m512 v1 = _mm512_maskz_loadu_ps(mask, pVect1);
-
-        // Load masked uint8 elements from pVect2
-        __m128i v2_128 = _mm_maskz_loadu_epi8(mask, reinterpret_cast<const __m128i *>(pVect2));
-        __m512i v2_512 = _mm512_cvtepu8_epi32(v2_128);
-        __m512 v2_f = _mm512_cvtepi32_ps(v2_512);
-
-        // Dequantize: (val * delta + min_val) * inv_norm
-        __m512 dequantized = _mm512_fmadd_ps(v2_f, delta_vec, min_val_vec);
-
-        // Compute difference
-        __m512 diff = _mm512_sub_ps(v1, dequantized);
-
-        // Square difference and add to sum (with mask)
-        __m512 squared = _mm512_mul_ps(diff, diff);
-        sum = _mm512_mask_add_ps(sum, mask, sum, squared);
-
-        // Advance pointers
-        pVect1 += residual;
-        pVect2 += residual;
-    }
-
-    // Process remaining full chunks of 16 elements
-    do {
-        SQ8_L2SqrStep(pVect1, pVect2, sum, min_val_vec, delta_vec);
-    } while (pVect1 < pEnd1);
-
-    // Horizontal sum
-    float result = _mm512_reduce_add_ps(sum);
-
-    return result;
+    // L2² = ||x||² + ||y||² - 2*IP(x, y)
+    return x_sum_sq + y_sum_sq - 2.0f * ip;
 }
