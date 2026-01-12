@@ -171,9 +171,6 @@ typedef struct {
 // Parameters for creating a disk-based vector index. Currently only HNSW Disk is supported.
 typedef struct VecSimHNSWDiskParams {
     HNSWParams hnswParams;
-    void *storage; // Opaque pointer to disk storage
-    const char *indexName;
-    size_t indexNameLen;
 } VecSimHNSWDiskParams;
 
 typedef enum {
@@ -258,6 +255,13 @@ struct VecSimParams {
     AlgoParams algoParams;
     void *logCtx; // External context that stores the index log.
 };
+
+typedef struct {
+    VecSimParams params; // Algorithm parameters (TIERED, BF, HNSW, etc.)
+    void *storage;       // Opaque pointer to disk storage
+    const char *indexName;
+    size_t indexNameLen;
+} VecSimParamsDisk;
 
 /**
  * The specific job types in use (to be extended in the future by demand)
