@@ -25,29 +25,32 @@ using sq8 = vecsim_types::sq8;
  */
 
 // Helper: compute Σ(q_i * y_i) for one SVE vector width (no dequantization)
-static inline void InnerProductStepSQ8(const float *pVect1, const uint8_t *pVect2, size_t &offset,
+// pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query
+static inline void InnerProductStepSQ8(const uint8_t *pVect1, const float *pVect2, size_t &offset,
                                        svfloat32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b32();
 
-    // Load float elements from query
-    svfloat32_t v1 = svld1_f32(pg, pVect1 + offset);
-
     // Load uint8 elements and zero-extend to uint32
-    svuint32_t v2_u32 = svld1ub_u32(pg, pVect2 + offset);
+    svuint32_t v1_u32 = svld1ub_u32(pg, pVect1 + offset);
 
     // Convert uint32 to float32
-    svfloat32_t v2_f = svcvt_f32_u32_x(pg, v2_u32);
+    svfloat32_t v1_f = svcvt_f32_u32_x(pg, v1_u32);
+
+    // Load float elements from query
+    svfloat32_t v2 = svld1_f32(pg, pVect2 + offset);
 
     // Accumulate q_i * y_i (no dequantization!)
-    sum = svmla_f32_x(pg, sum, v2_f, v1);
+    sum = svmla_f32_x(pg, sum, v1_f, v2);
 
     offset += chunk;
 }
 
+// pVect1v = SQ8 storage, pVect2v = FP32 query
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const float *pVect1 = static_cast<const float *>(pVect1v);
-    const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
+float SQ8_FP32_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v,
+                                        size_t dimension) {
+    const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
     size_t offset = 0;
 
     svbool_t pg = svptrue_b32();
@@ -69,17 +72,17 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
             svbool_t pg_partial =
                 svwhilelt_b32(static_cast<uint32_t>(0), static_cast<uint32_t>(remaining));
 
-            // Load float elements from query with predicate
-            svfloat32_t v1 = svld1_f32(pg_partial, pVect1);
-
             // Load uint8 elements and zero-extend to uint32
-            svuint32_t v2_u32 = svld1ub_u32(pg_partial, pVect2 + offset);
+            svuint32_t v1_u32 = svld1ub_u32(pg_partial, pVect1 + offset);
 
             // Convert uint32 to float32
-            svfloat32_t v2_f = svcvt_f32_u32_z(pg_partial, v2_u32);
+            svfloat32_t v1_f = svcvt_f32_u32_z(pg_partial, v1_u32);
+
+            // Load float elements from query with predicate
+            svfloat32_t v2 = svld1_f32(pg_partial, pVect2);
 
             // Compute q_i * y_i (no dequantization)
-            sum0 = svmla_f32_z(pg_partial, sum0, v2_f, v1);
+            sum0 = svmla_f32_z(pg_partial, sum0, v1_f, v2);
 
             offset += remaining;
         }
@@ -117,25 +120,26 @@ float SQ8_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, siz
     float quantized_dot = svaddv_f32(pg, sum);
 
     // Get quantization parameters from stored vector (after quantized data)
-    const float *params2 = reinterpret_cast<const float *>(pVect2 + dimension);
-    const float min_val = params2[sq8::MIN_VAL];
-    const float delta = params2[sq8::DELTA];
+    const float *params1 = reinterpret_cast<const float *>(pVect1 + dimension);
+    const float min_val = params1[sq8::MIN_VAL];
+    const float delta = params1[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
-    const float y_sum = pVect1[dimension + sq8::SUM_QUERY];
+    const float y_sum = pVect2[dimension + sq8::SUM_QUERY];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1.0f - SQ8_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(pVect1v, pVect2v,
-                                                                                dimension);
+float SQ8_FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ8_FP32_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(
+                      pVect1v, pVect2v, dimension);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_FP32_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Cosine distance = 1 - IP (vectors are pre-normalized)
-    return SQ8_InnerProductSIMD_SVE<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
+    return SQ8_FP32_InnerProductSIMD_SVE<partial_chunk, additional_steps>(pVect1v, pVect2v,
+                                                                          dimension);
 }
