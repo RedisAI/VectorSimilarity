@@ -26,7 +26,7 @@ public:
         dim = state.range(0);
         size_t query_size = (dim + sq8::query_metadata_count<VecSimMetric_L2>());
         v1 = new float[query_size];
-        test_utils::populate_fp32_sq8_query(v1, dim, true, 1234);
+        test_utils::populate_fp32_sq8_query(v1, dim, true, 123);
         size_t quantized_size =
             dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
         v2 = new uint8_t[quantized_size];
