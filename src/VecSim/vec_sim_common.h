@@ -69,7 +69,13 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
+typedef enum {
+    VecSimAlgo_BF,
+    VecSimAlgo_HNSWLIB,
+    VecSimAlgo_TIERED,
+    VecSimAlgo_SVS,
+    VecSimAlgo_HNSWDISK
+} VecSimAlgo;
 
 typedef enum {
     VecSimOption_AUTO = 0,
@@ -162,6 +168,14 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+// Parameters for creating a disk-based vector index. Currently only HNSW Disk is supported.
+typedef struct VecSimHNSWDiskParams {
+    HNSWParams hnswParams;
+    void *storage; // Opaque pointer to disk storage
+    const char *indexName;
+    size_t indexNameLen;
+} VecSimHNSWDiskParams;
+
 typedef enum {
     VecSimSvsQuant_NONE = 0,           // No quantization.
     VecSimSvsQuant_Scalar = 1,         // 8-bit scalar quantization
@@ -202,6 +216,10 @@ typedef struct {
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 
+// A struct that contains HNSW Disk tiered index specific params.
+typedef struct {
+} TieredHNSWDiskParams;
+
 // A struct that contains SVS tiered index specific params.
 typedef struct {
     size_t trainingTriggerThreshold; // The flat index size threshold to trigger the initialization
@@ -223,6 +241,7 @@ typedef struct {
     union {
         TieredHNSWParams tieredHnswParams;
         TieredSVSParams tieredSVSParams;
+        TieredHNSWDiskParams tieredHnswDiskParams;
     } specificParams;
 } TieredIndexParams;
 
@@ -239,14 +258,6 @@ struct VecSimParams {
     AlgoParams algoParams;
     void *logCtx; // External context that stores the index log.
 };
-
-// Parameters for creating a disk-based vector index. Currently only HNSW Disk is supported.
-typedef struct VecSimHNSWDiskParams {
-    HNSWParams hnswParams;
-    void *storage; // Opaque pointer to disk storage
-    const char *indexName;
-    size_t indexNameLen;
-} VecSimHNSWDiskParams;
 
 /**
  * The specific job types in use (to be extended in the future by demand)
