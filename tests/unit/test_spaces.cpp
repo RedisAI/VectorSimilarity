@@ -2391,6 +2391,79 @@ TEST(SQ8_EdgeCases, SelfDistanceCosine) {
     ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
+// Test self-distance: distance to itself should be 0 for L2
+TEST(SQ8_EdgeCases, SelfDistanceL2) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = 128;
+    // Create fp32 query with precomputed sum and sum_squares
+    // Query layout: [float values (dim)] [sum] [sum_squares]
+    std::vector<float> v_orig(dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    test_utils::populate_fp32_sq8_l2_query(v_orig.data(), dim, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false, 1234);
+
+    float baseline = SQ8_L2Sqr(v_orig.data(), v_quantized.data(), dim);
+
+    // Self-distance for L2 should be close to 0 (due to quantization effects, small errors are
+    // expected)
+    ASSERT_NEAR(baseline, 0.0f, 0.1f) << "Self-distance should be ~0 for L2";
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_orig.data(), v_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_orig.data(), v_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_orig.data(), v_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_orig.data(), v_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_orig.data(), v_quantized.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.avx512f = 0;
+    }
+#endif
+
+    unsigned char alignment = 0;
+    auto arch_opt_func = L2_SQ8_GetDistFunc(dim, &alignment, &optimization);
+    auto result = arch_opt_func(v_orig.data(), v_quantized.data(), dim);
+    ASSERT_NEAR(baseline, result, 0.00001) << "No optimization self-distance should match baseline";
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
 // Test symmetry: dist(v1, v2) == dist(v2, v1)
 TEST(SQ8_EdgeCases, CosineSymmetryTest) {
     size_t dim = 128;
