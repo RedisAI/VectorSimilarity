@@ -162,11 +162,6 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
-// Parameters for creating a disk-based vector index. Currently only HNSW Disk is supported.
-typedef struct VecSimHNSWDiskParams {
-    HNSWParams hnswParams;
-} VecSimHNSWDiskParams;
-
 typedef enum {
     VecSimSvsQuant_NONE = 0,           // No quantization.
     VecSimSvsQuant_Scalar = 1,         // 8-bit scalar quantization
@@ -243,7 +238,6 @@ typedef union {
     BFParams bfParams;
     TieredIndexParams tieredParams;
     SVSParams svsParams;
-    VecSimHNSWDiskParams hnswDiskParams;
 } AlgoParams;
 
 struct VecSimParams {
