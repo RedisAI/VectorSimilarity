@@ -261,7 +261,7 @@ typedef struct {
 typedef struct {
     VecSimParams *indexParams;
     VecSimDiskContext *diskContext;
-} VecSimDiskParams;
+} VecSimParamsDisk;
 
 /**
  * The specific job types in use (to be extended in the future by demand)
