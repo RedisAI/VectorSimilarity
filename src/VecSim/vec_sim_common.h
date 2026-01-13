@@ -253,11 +253,15 @@ struct VecSimParams {
 };
 
 typedef struct {
-    VecSimParams params; // Algorithm parameters (TIERED, BF, HNSW, etc.)
-    void *storage;       // Opaque pointer to disk storage
+    void *storage; // Opaque pointer to disk storage
     const char *indexName;
     size_t indexNameLen;
-} VecSimParamsDisk;
+} VecSimDiskContext;
+
+typedef struct {
+    VecSimParams *indexParams;
+    VecSimDiskContext *diskContext;
+} VecSimDiskParams;
 
 /**
  * The specific job types in use (to be extended in the future by demand)
