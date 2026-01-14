@@ -2798,7 +2798,7 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
 
 /* ======================== Tests SQ8_SQ8 ========================= */
 
-TEST_F(SpacesTest, SQ8_SQ8_FP32_ip_no_optimization_func_test) {
+TEST_F(SpacesTest, SQ8_SQ8_ip_no_optimization_func_test) {
     size_t dim = 5;
 
     // Create SQ8 quantized versions of both vectors
@@ -3149,7 +3149,7 @@ INSTANTIATE_TEST_SUITE_P(SQ8_SQ8OptFuncs, SQ8_SQ8_SpacesOptimizationTest,
                          testing::Range(64UL, 64 * 2UL + 1));
 
 // Test self-distance: distance to itself should be 0 for cosine (normalized vectors)
-TEST(SQ8_SQ8_FP32_EdgeCases, SelfDistanceCosine) {
+TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
 
@@ -3217,7 +3217,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, SelfDistanceCosine) {
 }
 
 // Test symmetry: dist(v1, v2) == dist(v2, v1)
-TEST(SQ8_SQ8_FP32_EdgeCases, CosineSymmetryTest) {
+TEST(SQ8_SQ8_EdgeCases, CosineSymmetryTest) {
     size_t dim = 128;
     auto optimization = getCpuOptimizationFeatures();
     size_t quantized_size =
@@ -3288,7 +3288,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, CosineSymmetryTest) {
 }
 
 // Test with zero vector
-TEST(SQ8_SQ8_FP32_EdgeCases, CosineZeroVectorTest) {
+TEST(SQ8_SQ8_EdgeCases, CosineZeroVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v_zero(dim, 0.0f);
@@ -3356,7 +3356,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, CosineZeroVectorTest) {
 }
 
 // Test with constant vector (all same values)
-TEST(SQ8_SQ8_FP32_EdgeCases, CosineConstantVectorTest) {
+TEST(SQ8_SQ8_EdgeCases, CosineConstantVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v_const(dim, 0.5f);
@@ -3429,7 +3429,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, CosineConstantVectorTest) {
 }
 
 // Test with extreme values (-1 and 1 only)
-TEST(SQ8_SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
+TEST(SQ8_SQ8_EdgeCases, CosineExtremeValuesTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v1(dim), v2(dim);
@@ -3510,7 +3510,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
 }
 
 // Test self-distance: distance to itself should be 0 for L2
-TEST(SQ8_SQ8_FP32_EdgeCases, SelfDistanceL2) {
+TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
 
@@ -3579,7 +3579,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, SelfDistanceL2) {
 }
 
 // Test symmetry: dist(v1, v2) == dist(v2, v1) for L2
-TEST(SQ8_SQ8_FP32_EdgeCases, L2SymmetryTest) {
+TEST(SQ8_SQ8_EdgeCases, L2SymmetryTest) {
     size_t dim = 128;
     auto optimization = getCpuOptimizationFeatures();
     size_t quantized_size =
@@ -3650,7 +3650,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, L2SymmetryTest) {
 }
 
 // Test with zero vector for L2
-TEST(SQ8_SQ8_FP32_EdgeCases, L2ZeroVectorTest) {
+TEST(SQ8_SQ8_EdgeCases, L2ZeroVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v_zero(dim, 0.0f);
@@ -3718,7 +3718,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, L2ZeroVectorTest) {
 }
 
 // Test with constant vector (all same values) for L2
-TEST(SQ8_SQ8_FP32_EdgeCases, L2ConstantVectorTest) {
+TEST(SQ8_SQ8_EdgeCases, L2ConstantVectorTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v_const(dim, 0.5f);
@@ -3790,7 +3790,7 @@ TEST(SQ8_SQ8_FP32_EdgeCases, L2ConstantVectorTest) {
 }
 
 // Test with extreme values (-1 and 1 only) for L2
-TEST(SQ8_SQ8_FP32_EdgeCases, L2ExtremeValuesTest) {
+TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     auto optimization = getCpuOptimizationFeatures();
     size_t dim = 128;
     std::vector<float> v1(dim), v2(dim);

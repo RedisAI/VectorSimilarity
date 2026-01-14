@@ -27,8 +27,8 @@ using sq8 = vecsim_types::sq8;
 
 // Helper: compute Σ(q_i * y_i) for 8 elements (no dequantization)
 // pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query
-static inline void InnerProductStepSQ8(const uint8_t *&pVect1, const float *&pVect2,
-                                       __m256 &sum256) {
+static inline void InnerProductStepSQ8_FP32(const uint8_t *&pVect1, const float *&pVect2,
+                                            __m256 &sum256) {
     // Load 8 uint8 elements and convert to float
     __m128i v1_128 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(pVect1));
     pVect1 += 8;
@@ -76,14 +76,14 @@ float SQ8_FP32_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, si
 
     // If the residual is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8(pVect1, pVect2, sum256);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum256);
     }
 
     // Process remaining full chunks of 16 elements (2x8)
     // Using do-while since dim > 16 guarantees at least one iteration
     do {
-        InnerProductStepSQ8(pVect1, pVect2, sum256);
-        InnerProductStepSQ8(pVect1, pVect2, sum256);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum256);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum256);
     } while (pVect1 < pEnd1);
 
     // Reduce to get Σ(q_i * y_i)

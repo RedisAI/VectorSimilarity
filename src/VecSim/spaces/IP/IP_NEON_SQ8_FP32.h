@@ -26,8 +26,8 @@ using sq8 = vecsim_types::sq8;
 
 // Helper: compute Σ(q_i * y_i) for 4 elements (no dequantization)
 // pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query
-static inline void InnerProductStepSQ8(const uint8_t *&pVect1, const float *&pVect2,
-                                       float32x4_t &sum) {
+static inline void InnerProductStepSQ8_FP32(const uint8_t *&pVect1, const float *&pVect2,
+                                            float32x4_t &sum) {
     // Load 4 uint8 elements and convert to float
     uint8x8_t v1_u8 = vld1_u8(pVect1);
     pVect1 += 4;
@@ -60,21 +60,21 @@ float SQ8_FP32_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVec
 
     // Process 16 elements at a time in the main loop
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStepSQ8(pVect1, pVect2, sum0);
-        InnerProductStepSQ8(pVect1, pVect2, sum1);
-        InnerProductStepSQ8(pVect1, pVect2, sum2);
-        InnerProductStepSQ8(pVect1, pVect2, sum3);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
     }
 
     // Handle remaining complete 4-element blocks within residual
     if constexpr (residual >= 4) {
-        InnerProductStepSQ8(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
     }
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
     }
     if constexpr (residual >= 12) {
-        InnerProductStepSQ8(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
     }
 
     // Handle final residual elements (0-3 elements)

@@ -20,7 +20,4 @@ dist_func_t<float> Choose_FP16_L2_implementation_AVX512F(size_t dim);
 dist_func_t<float> Choose_FP32_L2_implementation_AVX512F(size_t dim);
 dist_func_t<double> Choose_FP64_L2_implementation_AVX512F(size_t dim);
 
-dist_func_t<float> Choose_SQ8_FP32_IP_implementation_AVX512F(size_t dim);
-dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_AVX512F(size_t dim);
-
 } // namespace spaces

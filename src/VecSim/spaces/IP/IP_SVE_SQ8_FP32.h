@@ -26,8 +26,8 @@ using sq8 = vecsim_types::sq8;
 
 // Helper: compute Σ(q_i * y_i) for one SVE vector width (no dequantization)
 // pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query
-static inline void InnerProductStepSQ8(const uint8_t *pVect1, const float *pVect2, size_t &offset,
-                                       svfloat32_t &sum, const size_t chunk) {
+static inline void InnerProductStepSQ8_FP32(const uint8_t *pVect1, const float *pVect2,
+                                            size_t &offset, svfloat32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b32();
 
     // Load uint8 elements and zero-extend to uint32
@@ -94,21 +94,21 @@ float SQ8_FP32_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v
         (dimension - (partial_chunk ? dimension % chunk : 0)) / chunk_size;
 
     for (size_t i = 0; i < number_of_chunks; i++) {
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum0, chunk);
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum1, chunk);
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum2, chunk);
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum3, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum0, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum1, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum2, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum3, chunk);
     }
 
     // Handle remaining steps (0-3)
     if constexpr (additional_steps > 0) {
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum0, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum0, chunk);
     }
     if constexpr (additional_steps > 1) {
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum1, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum1, chunk);
     }
     if constexpr (additional_steps > 2) {
-        InnerProductStepSQ8(pVect1, pVect2, offset, sum2, chunk);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, offset, sum2, chunk);
     }
 
     // Combine the accumulators
