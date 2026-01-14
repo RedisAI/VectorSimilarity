@@ -24,6 +24,7 @@ CreateIndexComponents(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric m
     // Currently we have only one distance calculator implementation
     auto indexCalculator = new (allocator) DistanceCalculatorCommon<DistType>(allocator, distFunc);
 
+    // TODO: take into account quantization
     auto preprocessors =
         CreatePreprocessorsContainer<DataType>(allocator, metric, dim, is_normalized, alignment);
 

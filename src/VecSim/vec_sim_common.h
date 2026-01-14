@@ -202,6 +202,12 @@ typedef struct {
                              // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 
+// A struct that contains HNSW Disk tiered index specific params.
+// Consider removing and use TieredHNSWParams instead if they both share swapJobThreshold
+typedef struct {
+    char _placeholder; // Reserved for future fields and avoid compiler errors
+} TieredHNSWDiskParams;
+
 // A struct that contains SVS tiered index specific params.
 typedef struct {
     size_t trainingTriggerThreshold; // The flat index size threshold to trigger the initialization
@@ -223,6 +229,7 @@ typedef struct {
     union {
         TieredHNSWParams tieredHnswParams;
         TieredSVSParams tieredSVSParams;
+        TieredHNSWDiskParams tieredHnswDiskParams;
     } specificParams;
 } TieredIndexParams;
 
@@ -239,21 +246,16 @@ struct VecSimParams {
     void *logCtx; // External context that stores the index log.
 };
 
-// Parameters for creating a disk-based vector index. Currently only HNSW Disk is supported.
-typedef struct VecSimHNSWDiskParams {
-    size_t dim;
-    VecSimType type;
-    VecSimMetric metric;
-    size_t M;
-    size_t efConstruction;
-    size_t efRuntime;
-    size_t blockSize;
-    bool multi;
+typedef struct {
     void *storage; // Opaque pointer to disk storage
     const char *indexName;
     size_t indexNameLen;
-    void *logCtx;
-} VecSimHNSWDiskParams;
+} VecSimDiskContext;
+
+typedef struct {
+    VecSimParams *indexParams;
+    VecSimDiskContext *diskContext;
+} VecSimParamsDisk;
 
 /**
  * The specific job types in use (to be extended in the future by demand)
