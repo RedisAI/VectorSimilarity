@@ -10,8 +10,8 @@
 
 #include <cstdlib>
 
-// pVect1v vector of type fp32 and pVect2v vector of type uint8
-float SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
+// SQ8-FP32: pVect1v vector of type uint8 (SQ8) and pVect2v vector of type fp32
+float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 

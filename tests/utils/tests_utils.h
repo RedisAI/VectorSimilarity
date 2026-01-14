@@ -71,23 +71,25 @@ static void populate_float16_vec(vecsim_types::float16 *v, const size_t dim, int
 }
 
 /*
- * SQ8 distance function without the algebraic optimizations
+ * SQ8-FP32 distance function without the algebraic optimizations
  * uses the regular dequantization formula:
  * IP = Σ((min + delta * q_i) * v_i)
+ * pVect1 = SQ8 storage (quantized values + metadata)
+ * pVect2 = FP32 query
  */
-static float SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
-                                           size_t dimension) {
+static float SQ8_FP32_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
+                                                size_t dimension) {
 
-    const auto *pVect1 = static_cast<const float *>(pVect1v);
-    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    const auto *pVect2 = static_cast<const float *>(pVect2v);   // FP32 query
 
-    // Get quantization parameters from pVect2
-    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    // Get quantization parameters from pVect1 (SQ8 storage)
+    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
     // Compute inner product with dequantization
     float res = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
-        res += (pVect2[i] * delta + min_val) * pVect1[i];
+        res += (pVect1[i] * delta + min_val) * pVect2[i];
     }
     return 1.0f - res;
 }
@@ -96,8 +98,9 @@ static float SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *pVec
  * SQ8 Cosine distance function without the algebraic optimizations
  * For normalized vectors, cosine distance equals inner product distance.
  */
-static float SQ8_NotOptimized_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return SQ8_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
+static float SQ8_FP32_NotOptimized_Cosine(const void *pVect1v, const void *pVect2v,
+                                          size_t dimension) {
+    return SQ8_FP32_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
 /*
@@ -207,7 +210,7 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
 // Query layout: [float values (dim)] [sum (float)] [sum_squares (float)]
 // Assuming v is a memory allocation of size (dim + sq8::query_metadata_count<VecSimMetric_L2>())
 // defaults to L2 just for testing purposes.
-static void preprocess_fp32_sq8_query(float *v, size_t dim) {
+static void preprocess_sq8_fp32_query(float *v, size_t dim) {
     float sum = 0.0f;
     float sum_squares = 0.0f;
     for (size_t i = 0; i < dim; i++) {
@@ -219,33 +222,36 @@ static void preprocess_fp32_sq8_query(float *v, size_t dim) {
 }
 
 // Assuming v is a memory allocation of size (dim + sq8::query_metadata_count<VecSimMetric_L2>())
-static void populate_fp32_sq8_query(float *v, size_t dim, bool should_normalize = false,
+static void populate_sq8_fp32_query(float *v, size_t dim, bool should_normalize = false,
                                     int seed = 1234, float min = -1.0f, float max = 1.0f) {
     populate_float_vec(v, dim, seed, min, max);
     if (should_normalize) {
         spaces::GetNormalizeFunc<float>()(v, dim);
     }
-    preprocess_fp32_sq8_query(v, dim);
+    preprocess_sq8_fp32_query(v, dim);
 }
 
 /*
- * SQ8 L2 squared distance function without the algebraic optimizations.
+ * SQ8-FP32 L2 squared distance function without the algebraic optimizations.
  * Uses the regular dequantization formula element-by-element:
  * L2² = Σ((y_i - (min + delta * q_i))²)
+ * pVect1 = SQ8 storage (quantized values + metadata)
+ * pVect2 = FP32 query
  */
-static float SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const auto *pVect1 = static_cast<const float *>(pVect1v);
-    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+static float SQ8_FP32_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    const auto *pVect2 = static_cast<const float *>(pVect2v);   // FP32 query
 
-    // Get quantization parameters from pVect2
-    const float min_val = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    // Get quantization parameters from pVect1 (SQ8 storage)
+    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
 
     // Compute L2 squared with dequantization
     float res = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
-        float dequantized = pVect2[i] * delta + min_val;
-        float diff = pVect1[i] - dequantized;
+        float dequantized = pVect1[i] * delta + min_val;
+        float diff = pVect2[i] - dequantized;
         res += diff * diff;
     }
     return res;

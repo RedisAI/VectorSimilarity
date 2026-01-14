@@ -120,11 +120,11 @@ dist_func_t<float> GetDistFunc<vecsim_types::sq8, float, float>(VecSimMetric met
                                                                 unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
-        return Cosine_SQ8_GetDistFunc(dim, alignment);
+        return Cosine_SQ8_FP32_GetDistFunc(dim, alignment);
     case VecSimMetric_IP:
-        return IP_SQ8_GetDistFunc(dim, alignment);
+        return IP_SQ8_FP32_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
-        return L2_SQ8_GetDistFunc(dim, alignment);
+        return L2_SQ8_FP32_GetDistFunc(dim, alignment);
     }
     throw std::invalid_argument("Invalid metric");
 }

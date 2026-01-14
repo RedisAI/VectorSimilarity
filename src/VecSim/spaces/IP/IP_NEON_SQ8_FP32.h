@@ -25,27 +25,30 @@ using sq8 = vecsim_types::sq8;
  */
 
 // Helper: compute Σ(q_i * y_i) for 4 elements (no dequantization)
-static inline void InnerProductStepSQ8(const float *&pVect1, const uint8_t *&pVect2,
-                                       float32x4_t &sum) {
-    // Load 4 float elements from query
-    float32x4_t v1 = vld1q_f32(pVect1);
+// pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query
+static inline void InnerProductStepSQ8_FP32(const uint8_t *&pVect1, const float *&pVect2,
+                                            float32x4_t &sum) {
+    // Load 4 uint8 elements and convert to float
+    uint8x8_t v1_u8 = vld1_u8(pVect1);
     pVect1 += 4;
 
-    // Load 4 uint8 elements and convert to float
-    uint8x8_t v2_u8 = vld1_u8(pVect2);
+    uint32x4_t v1_u32 = vmovl_u16(vget_low_u16(vmovl_u8(v1_u8)));
+    float32x4_t v1_f = vcvtq_f32_u32(v1_u32);
+
+    // Load 4 float elements from query
+    float32x4_t v2 = vld1q_f32(pVect2);
     pVect2 += 4;
 
-    uint32x4_t v2_u32 = vmovl_u16(vget_low_u16(vmovl_u8(v2_u8)));
-    float32x4_t v2_f = vcvtq_f32_u32(v2_u32);
-
     // Accumulate q_i * y_i (no dequantization!)
-    sum = vmlaq_f32(sum, v2_f, v1);
+    sum = vmlaq_f32(sum, v1_f, v2);
 }
 
+// pVect1v = SQ8 storage, pVect2v = FP32 query
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const float *pVect1 = static_cast<const float *>(pVect1v);
-    const uint8_t *pVect2 = static_cast<const uint8_t *>(pVect2v);
+float SQ8_FP32_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v,
+                                           size_t dimension) {
+    const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
 
     // Multiple accumulators for ILP
     float32x4_t sum0 = vdupq_n_f32(0.0f);
@@ -57,47 +60,47 @@ float SQ8_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v, 
 
     // Process 16 elements at a time in the main loop
     for (size_t i = 0; i < num_of_chunks; i++) {
-        InnerProductStepSQ8(pVect1, pVect2, sum0);
-        InnerProductStepSQ8(pVect1, pVect2, sum1);
-        InnerProductStepSQ8(pVect1, pVect2, sum2);
-        InnerProductStepSQ8(pVect1, pVect2, sum3);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
     }
 
     // Handle remaining complete 4-element blocks within residual
     if constexpr (residual >= 4) {
-        InnerProductStepSQ8(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
     }
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
     }
     if constexpr (residual >= 12) {
-        InnerProductStepSQ8(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
     }
 
     // Handle final residual elements (0-3 elements)
     constexpr size_t final_residual = residual % 4;
     if constexpr (final_residual > 0) {
-        float32x4_t v1 = vdupq_n_f32(0.0f);
-        float32x4_t v2_f = vdupq_n_f32(0.0f);
+        float32x4_t v1_f = vdupq_n_f32(0.0f);
+        float32x4_t v2 = vdupq_n_f32(0.0f);
 
         if constexpr (final_residual >= 1) {
-            v1 = vld1q_lane_f32(pVect1, v1, 0);
-            float q0 = static_cast<float>(pVect2[0]);
-            v2_f = vld1q_lane_f32(&q0, v2_f, 0);
+            float q0 = static_cast<float>(pVect1[0]);
+            v1_f = vld1q_lane_f32(&q0, v1_f, 0);
+            v2 = vld1q_lane_f32(pVect2, v2, 0);
         }
         if constexpr (final_residual >= 2) {
-            v1 = vld1q_lane_f32(pVect1 + 1, v1, 1);
-            float q1 = static_cast<float>(pVect2[1]);
-            v2_f = vld1q_lane_f32(&q1, v2_f, 1);
+            float q1 = static_cast<float>(pVect1[1]);
+            v1_f = vld1q_lane_f32(&q1, v1_f, 1);
+            v2 = vld1q_lane_f32(pVect2 + 1, v2, 1);
         }
         if constexpr (final_residual >= 3) {
-            v1 = vld1q_lane_f32(pVect1 + 2, v1, 2);
-            float q2 = static_cast<float>(pVect2[2]);
-            v2_f = vld1q_lane_f32(&q2, v2_f, 2);
+            float q2 = static_cast<float>(pVect1[2]);
+            v1_f = vld1q_lane_f32(&q2, v1_f, 2);
+            v2 = vld1q_lane_f32(pVect2 + 2, v2, 2);
         }
 
         // Compute q_i * y_i (no dequantization)
-        sum3 = vmlaq_f32(sum3, v2_f, v1);
+        sum3 = vmlaq_f32(sum3, v1_f, v2);
     }
 
     // Combine all four sum accumulators
@@ -109,25 +112,25 @@ float SQ8_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v, 
     float quantized_dot = vget_lane_f32(summed, 0);
 
     // Get quantization parameters from stored vector (after quantized data)
-    const uint8_t *pVect2Base = static_cast<const uint8_t *>(pVect2v);
-    const float *params2 = reinterpret_cast<const float *>(pVect2Base + dimension);
-    const float min_val = params2[sq8::MIN_VAL];
-    const float delta = params2[sq8::DELTA];
+    const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);
+    const float *params1 = reinterpret_cast<const float *>(pVect1Base + dimension);
+    const float min_val = params1[sq8::MIN_VAL];
+    const float delta = params1[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
-    const float y_sum = static_cast<const float *>(pVect1v)[dimension + sq8::SUM_QUERY];
+    const float y_sum = static_cast<const float *>(pVect2v)[dimension + sq8::SUM_QUERY];
 
     // Apply the algebraic formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1.0f - SQ8_InnerProductSIMD16_NEON_IMP<residual>(pVect1v, pVect2v, dimension);
+float SQ8_FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ8_FP32_InnerProductSIMD16_NEON_IMP<residual>(pVect1v, pVect2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_CosineSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ8_FP32_CosineSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Cosine distance = 1 - IP (vectors are pre-normalized)
-    return SQ8_InnerProductSIMD16_NEON<residual>(pVect1v, pVect2v, dimension);
+    return SQ8_FP32_InnerProductSIMD16_NEON<residual>(pVect1v, pVect2v, dimension);
 }

@@ -7,28 +7,28 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "SSE4.h"
-#include "VecSim/spaces/IP/IP_SSE4_SQ8.h"
-#include "VecSim/spaces/L2/L2_SSE4_SQ8.h"
+#include "VecSim/spaces/IP/IP_SSE4_SQ8_FP32.h"
+#include "VecSim/spaces/L2/L2_SSE4_SQ8_FP32.h"
 
 namespace spaces {
 
 #include "implementation_chooser.h"
 
-dist_func_t<float> Choose_SQ8_IP_implementation_SSE4(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_IP_implementation_SSE4(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_InnerProductSIMD16_SSE4);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_InnerProductSIMD16_SSE4);
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_Cosine_implementation_SSE4(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_SSE4(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_CosineSIMD16_SSE4);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_CosineSIMD16_SSE4);
     return ret_dist_func;
 }
 
-dist_func_t<float> Choose_SQ8_L2_implementation_SSE4(size_t dim) {
+dist_func_t<float> Choose_SQ8_FP32_L2_implementation_SSE4(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_L2SqrSIMD16_SSE4);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_L2SqrSIMD16_SSE4);
     return ret_dist_func;
 }
 
