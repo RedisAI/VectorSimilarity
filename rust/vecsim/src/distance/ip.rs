@@ -66,6 +66,10 @@ impl<T: VectorElement> DistanceFunction<T> for InnerProductDistance<T> {
             SimdCapability::Avx2 => {
                 simd::avx2::inner_product_f32(a, b, dim)
             }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Sse => {
+                simd::sse::inner_product_f32(a, b, dim)
+            }
             #[cfg(target_arch = "aarch64")]
             SimdCapability::Neon => {
                 simd::neon::inner_product_f32(a, b, dim)

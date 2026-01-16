@@ -1,9 +1,10 @@
 //! SIMD-optimized distance function implementations.
 //!
 //! This module provides hardware-accelerated distance computations:
-//! - AVX2 (x86_64)
-//! - AVX-512 (x86_64)
-//! - NEON (aarch64)
+//! - AVX-512 (x86_64) - 512-bit vectors, 16 f32 at a time
+//! - AVX2 (x86_64) - 256-bit vectors, 8 f32 at a time
+//! - SSE (x86_64) - 128-bit vectors, 4 f32 at a time
+//! - NEON (aarch64) - 128-bit vectors, 4 f32 at a time
 //!
 //! Runtime feature detection is used to select the best implementation.
 
@@ -11,6 +12,8 @@
 pub mod avx2;
 #[cfg(target_arch = "x86_64")]
 pub mod avx512;
+#[cfg(target_arch = "x86_64")]
+pub mod sse;
 #[cfg(target_arch = "aarch64")]
 pub mod neon;
 
@@ -19,6 +22,9 @@ pub mod neon;
 pub enum SimdCapability {
     /// No SIMD support.
     None,
+    /// SSE (128-bit vectors).
+    #[cfg(target_arch = "x86_64")]
+    Sse,
     /// AVX2 (256-bit vectors).
     #[cfg(target_arch = "x86_64")]
     Avx2,
@@ -47,6 +53,10 @@ pub fn detect_simd_capability() -> SimdCapability {
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             return SimdCapability::Avx2;
         }
+        // Fall back to SSE (available on virtually all x86_64)
+        if is_x86_feature_detected!("sse") {
+            return SimdCapability::Sse;
+        }
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -66,6 +76,8 @@ pub fn optimal_alignment() -> usize {
         SimdCapability::Avx512 => 64,
         #[cfg(target_arch = "x86_64")]
         SimdCapability::Avx2 => 32,
+        #[cfg(target_arch = "x86_64")]
+        SimdCapability::Sse => 16,
         #[cfg(target_arch = "aarch64")]
         SimdCapability::Neon => 16,
         SimdCapability::None => 8,

@@ -66,6 +66,10 @@ impl<T: VectorElement> DistanceFunction<T> for CosineDistance<T> {
             SimdCapability::Avx2 => {
                 simd::avx2::cosine_distance_f32(a, b, dim)
             }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Sse => {
+                simd::sse::cosine_distance_f32(a, b, dim)
+            }
             #[cfg(target_arch = "aarch64")]
             SimdCapability::Neon => {
                 simd::neon::cosine_distance_f32(a, b, dim)

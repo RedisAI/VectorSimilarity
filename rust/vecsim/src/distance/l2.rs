@@ -60,6 +60,10 @@ impl<T: VectorElement> DistanceFunction<T> for L2Distance<T> {
             SimdCapability::Avx2 => {
                 simd::avx2::l2_squared_f32(a, b, dim)
             }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Sse => {
+                simd::sse::l2_squared_f32(a, b, dim)
+            }
             #[cfg(target_arch = "aarch64")]
             SimdCapability::Neon => {
                 simd::neon::l2_squared_f32(a, b, dim)
