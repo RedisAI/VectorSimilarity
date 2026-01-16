@@ -1486,4 +1486,646 @@ mod tests {
 
         fs::remove_file(&path).ok();
     }
+
+    // ========== DiskIndexParams Tests ==========
+
+    #[test]
+    fn test_disk_index_params_new() {
+        let path = temp_path();
+        let params = DiskIndexParams::new(128, Metric::L2, &path);
+
+        assert_eq!(params.dim, 128);
+        assert_eq!(params.metric, Metric::L2);
+        assert_eq!(params.backend, DiskBackend::BruteForce);
+        assert_eq!(params.initial_capacity, 10_000);
+        assert_eq!(params.graph_max_degree, 32);
+        assert!((params.alpha - 1.2).abs() < 0.01);
+        assert_eq!(params.construction_l, 200);
+        assert_eq!(params.search_l, 100);
+    }
+
+    #[test]
+    fn test_disk_index_params_builder() {
+        let path = temp_path();
+        let params = DiskIndexParams::new(64, Metric::InnerProduct, &path)
+            .with_backend(DiskBackend::Vamana)
+            .with_capacity(5000)
+            .with_graph_degree(64)
+            .with_alpha(1.5)
+            .with_construction_l(150)
+            .with_search_l(75);
+
+        assert_eq!(params.dim, 64);
+        assert_eq!(params.metric, Metric::InnerProduct);
+        assert_eq!(params.backend, DiskBackend::Vamana);
+        assert_eq!(params.initial_capacity, 5000);
+        assert_eq!(params.graph_max_degree, 64);
+        assert!((params.alpha - 1.5).abs() < 0.01);
+        assert_eq!(params.construction_l, 150);
+        assert_eq!(params.search_l, 75);
+    }
+
+    #[test]
+    fn test_disk_backend_default() {
+        let backend = DiskBackend::default();
+        assert_eq!(backend, DiskBackend::BruteForce);
+    }
+
+    #[test]
+    fn test_disk_backend_debug() {
+        assert_eq!(format!("{:?}", DiskBackend::BruteForce), "BruteForce");
+        assert_eq!(format!("{:?}", DiskBackend::Vamana), "Vamana");
+    }
+
+    // ========== DiskIndexSingle Utility Method Tests ==========
+
+    #[test]
+    fn test_disk_index_get_vector() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            let v1 = vec![1.0, 2.0, 3.0, 4.0];
+            index.add_vector(&v1, 1).unwrap();
+
+            // Get existing vector
+            let retrieved = index.get_vector(1).unwrap();
+            assert_eq!(retrieved.len(), 4);
+            for (a, b) in v1.iter().zip(retrieved.iter()) {
+                assert!((a - b).abs() < 0.001);
+            }
+
+            // Get non-existing vector
+            assert!(index.get_vector(999).is_none());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_stats() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+            let stats = index.stats();
+            assert_eq!(stats.vector_count, 2);
+            assert_eq!(stats.dimension, 4);
+            assert_eq!(stats.backend, DiskBackend::BruteForce);
+            assert!(stats.data_path.contains("disk_index_test_"));
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_fragmentation() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Initially no fragmentation
+            let frag = index.fragmentation();
+            assert!(frag >= 0.0);
+
+            // Add and delete to create fragmentation
+            for i in 0..10 {
+                index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+            }
+            for i in 0..5 {
+                index.delete_vector(i).unwrap();
+            }
+
+            // Now there should be some fragmentation
+            let frag_after = index.fragmentation();
+            assert!(frag_after >= 0.0);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_clear() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+            assert_eq!(index.index_size(), 2);
+
+            index.clear();
+
+            assert_eq!(index.index_size(), 0);
+            assert!(!index.contains(1));
+            assert!(!index.contains(2));
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_vamana_clear() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path)
+                .with_backend(DiskBackend::Vamana);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+            index.clear();
+
+            assert_eq!(index.index_size(), 0);
+
+            // Should be able to add new vectors after clear
+            index.add_vector(&[0.0, 0.0, 1.0, 0.0], 3).unwrap();
+            assert_eq!(index.index_size(), 1);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_data_path() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            assert_eq!(index.data_path(), &path);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_backend() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+            assert_eq!(index.backend(), DiskBackend::BruteForce);
+        }
+        fs::remove_file(&path).ok();
+
+        let path2 = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path2)
+                .with_backend(DiskBackend::Vamana);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+            assert_eq!(index.backend(), DiskBackend::Vamana);
+        }
+        fs::remove_file(&path2).ok();
+    }
+
+    #[test]
+    fn test_disk_index_memory_usage() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            let initial_mem = index.memory_usage();
+            assert!(initial_mem > 0);
+
+            // Add vectors - memory usage should increase
+            for i in 0..100 {
+                index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+            }
+
+            let final_mem = index.memory_usage();
+            assert!(final_mem >= initial_mem);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_info() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+            let info = index.info();
+            assert_eq!(info.size, 1);
+            assert_eq!(info.dimension, 4);
+            assert_eq!(info.index_type, "DiskIndexSingle");
+            assert!(info.memory_bytes > 0);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_contains_and_label_count() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+            assert!(index.contains(1));
+            assert!(index.contains(2));
+            assert!(!index.contains(3));
+
+            assert_eq!(index.label_count(1), 1);
+            assert_eq!(index.label_count(2), 1);
+            assert_eq!(index.label_count(3), 0);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    // ========== Batch Iterator Tests ==========
+
+    #[test]
+    fn test_disk_index_batch_iterator() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            for i in 0..10 {
+                index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+            }
+
+            let query = vec![0.0, 0.0, 0.0, 0.0];
+            let mut iterator = index.batch_iterator(&query, None).unwrap();
+
+            assert!(iterator.has_next());
+
+            let batch1 = iterator.next_batch(5).unwrap();
+            assert_eq!(batch1.len(), 5);
+
+            let batch2 = iterator.next_batch(5).unwrap();
+            assert_eq!(batch2.len(), 5);
+
+            // No more results
+            assert!(!iterator.has_next());
+            assert!(iterator.next_batch(5).is_none());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_batch_iterator_reset() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            for i in 0..5 {
+                index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+            }
+
+            let query = vec![0.0, 0.0, 0.0, 0.0];
+            let mut iterator = index.batch_iterator(&query, None).unwrap();
+
+            // Consume all
+            let _ = iterator.next_batch(10);
+            assert!(!iterator.has_next());
+
+            // Reset
+            iterator.reset();
+            assert!(iterator.has_next());
+
+            // Can iterate again
+            let batch = iterator.next_batch(5).unwrap();
+            assert_eq!(batch.len(), 5);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_batch_iterator_ordering() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Add vectors at increasing distances from origin
+            index.add_vector(&[0.0, 0.0, 0.0, 0.0], 0).unwrap();
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[2.0, 0.0, 0.0, 0.0], 2).unwrap();
+            index.add_vector(&[3.0, 0.0, 0.0, 0.0], 3).unwrap();
+
+            let query = vec![0.0, 0.0, 0.0, 0.0];
+            let mut iterator = index.batch_iterator(&query, None).unwrap();
+
+            let batch = iterator.next_batch(4).unwrap();
+
+            // Should be ordered by distance (label 0 first)
+            assert_eq!(batch[0].1, 0);
+            assert_eq!(batch[1].1, 1);
+            assert_eq!(batch[2].1, 2);
+            assert_eq!(batch[3].1, 3);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    // ========== Error Handling Tests ==========
+
+    #[test]
+    fn test_disk_index_dimension_mismatch_add() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Wrong dimension
+            let result = index.add_vector(&[1.0, 2.0, 3.0], 1);
+            assert!(result.is_err());
+
+            match result {
+                Err(IndexError::DimensionMismatch { expected, got }) => {
+                    assert_eq!(expected, 4);
+                    assert_eq!(got, 3);
+                }
+                _ => panic!("Expected DimensionMismatch error"),
+            }
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_dimension_mismatch_query() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+            // Wrong dimension query
+            let result = index.top_k_query(&[1.0, 0.0, 0.0], 1, None);
+            assert!(result.is_err());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_delete_not_found() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+            // Delete non-existing label
+            let result = index.delete_vector(999);
+            assert!(result.is_err());
+
+            match result {
+                Err(IndexError::LabelNotFound(label)) => {
+                    assert_eq!(label, 999);
+                }
+                _ => panic!("Expected LabelNotFound error"),
+            }
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_capacity_exceeded() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::with_capacity(params, 2).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+            // Third should fail
+            let result = index.add_vector(&[0.0, 0.0, 1.0, 0.0], 3);
+            assert!(result.is_err());
+
+            match result {
+                Err(IndexError::CapacityExceeded { capacity }) => {
+                    assert_eq!(capacity, 2);
+                }
+                _ => panic!("Expected CapacityExceeded error"),
+            }
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_empty_query() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Query on empty index
+            let query = vec![1.0, 0.0, 0.0, 0.0];
+            let results = index.top_k_query(&query, 10, None).unwrap();
+
+            assert!(results.is_empty());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_zero_k_query() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+            // Query with k=0
+            let query = vec![1.0, 0.0, 0.0, 0.0];
+            let results = index.top_k_query(&query, 0, None).unwrap();
+
+            assert!(results.is_empty());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    // ========== Different Metrics Tests ==========
+
+    #[test]
+    fn test_disk_index_inner_product() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::InnerProduct, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // For IP, higher dot product = more similar (lower distance when negated)
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.5, 0.0, 0.0, 0.0], 2).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 3).unwrap();
+
+            let query = vec![1.0, 0.0, 0.0, 0.0];
+            let results = index.top_k_query(&query, 3, None).unwrap();
+
+            assert_eq!(results.len(), 3);
+            // Label 1 should be first (highest IP with query)
+            assert_eq!(results.results[0].label, 1);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_cosine() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::Cosine, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Same direction should have distance ~0
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[2.0, 0.0, 0.0, 0.0], 2).unwrap(); // Same direction, different magnitude
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 3).unwrap(); // Orthogonal
+
+            let query = vec![1.0, 0.0, 0.0, 0.0];
+            let results = index.top_k_query(&query, 3, None).unwrap();
+
+            assert_eq!(results.len(), 3);
+            // Labels 1 and 2 should have similar (small) distances
+            assert!(results.results[0].distance < 0.1);
+            assert!(results.results[1].distance < 0.1);
+            // Label 3 (orthogonal) should have distance ~1
+            assert!(results.results[2].distance > 0.9);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    // ========== Vamana-specific Additional Tests ==========
+
+    #[test]
+    fn test_disk_index_vamana_find_medoid() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path)
+                .with_backend(DiskBackend::Vamana);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Add vectors
+            index.add_vector(&[0.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 2).unwrap();
+            index.add_vector(&[0.5, 0.0, 0.0, 0.0], 3).unwrap();
+
+            let medoid = index.find_medoid();
+            assert!(medoid.is_some());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_vamana_empty_find_medoid() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path)
+                .with_backend(DiskBackend::Vamana);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            // Empty index should return None
+            let medoid = index.find_medoid();
+            assert!(medoid.is_none());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_vamana_single_vector() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path)
+                .with_backend(DiskBackend::Vamana);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+            let query = vec![1.0, 0.0, 0.0, 0.0];
+            let results = index.top_k_query(&query, 1, None).unwrap();
+
+            assert_eq!(results.len(), 1);
+            assert_eq!(results.results[0].label, 1);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_vamana_delete_all() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path)
+                .with_backend(DiskBackend::Vamana);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+            index.delete_vector(1).unwrap();
+            index.delete_vector(2).unwrap();
+
+            assert_eq!(index.index_size(), 0);
+
+            // Query on empty index
+            let query = vec![1.0, 0.0, 0.0, 0.0];
+            let results = index.top_k_query(&query, 10, None).unwrap();
+            assert!(results.is_empty());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_flush() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let mut index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+            // Flush should succeed
+            let result = index.flush();
+            assert!(result.is_ok());
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_with_capacity() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let index = DiskIndexSingle::<f32>::with_capacity(params, 100).unwrap();
+
+            assert_eq!(index.index_capacity(), Some(100));
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_no_capacity() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(4, Metric::L2, &path);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            assert_eq!(index.index_capacity(), None);
+        }
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_disk_index_dimension() {
+        let path = temp_path();
+        {
+            let params = DiskIndexParams::new(128, Metric::L2, &path);
+            let index = DiskIndexSingle::<f32>::new(params).unwrap();
+
+            assert_eq!(index.dimension(), 128);
+        }
+        fs::remove_file(&path).ok();
+    }
 }
