@@ -125,6 +125,63 @@ impl<T: VectorElement> BruteForceMulti<T> {
         self.count.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Compact the index by removing gaps from deleted vectors.
+    ///
+    /// This reorganizes the internal storage to reclaim space from deleted vectors.
+    /// After compaction, all vectors are stored contiguously.
+    ///
+    /// # Arguments
+    /// * `shrink` - If true, also release unused memory blocks
+    ///
+    /// # Returns
+    /// The number of bytes reclaimed (approximate).
+    pub fn compact(&mut self, shrink: bool) -> usize {
+        let mut core = self.core.write();
+        let mut label_to_ids = self.label_to_ids.write();
+        let mut id_to_label = self.id_to_label.write();
+
+        let old_capacity = core.data.capacity();
+        let id_mapping = core.data.compact(shrink);
+
+        // Update label_to_ids mapping
+        for (_label, ids) in label_to_ids.iter_mut() {
+            let new_ids: HashSet<IdType> = ids
+                .iter()
+                .filter_map(|id| id_mapping.get(id).copied())
+                .collect();
+            *ids = new_ids;
+        }
+
+        // Remove labels with no remaining vectors
+        label_to_ids.retain(|_, ids| !ids.is_empty());
+
+        // Rebuild id_to_label mapping
+        let mut new_id_to_label = Vec::with_capacity(id_mapping.len());
+        for (&old_id, &new_id) in &id_mapping {
+            let new_id_usize = new_id as usize;
+            if new_id_usize >= new_id_to_label.len() {
+                new_id_to_label.resize(new_id_usize + 1, IdLabelEntry::default());
+            }
+            if let Some(entry) = id_to_label.get(old_id as usize) {
+                new_id_to_label[new_id_usize] = *entry;
+            }
+        }
+        *id_to_label = new_id_to_label;
+
+        let new_capacity = core.data.capacity();
+        let dim = core.dim;
+        let bytes_per_vector = dim * std::mem::size_of::<T>();
+
+        (old_capacity.saturating_sub(new_capacity)) * bytes_per_vector
+    }
+
+    /// Get the fragmentation ratio of the index.
+    ///
+    /// Returns a value between 0.0 (no fragmentation) and 1.0 (all slots are deleted).
+    pub fn fragmentation(&self) -> f64 {
+        self.core.read().data.fragmentation()
+    }
+
     /// Add multiple vectors at once.
     ///
     /// Returns the number of vectors successfully added.

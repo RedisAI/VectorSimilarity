@@ -3,7 +3,7 @@
 //! This index stores one vector per label. When adding a vector with
 //! an existing label, the old vector is replaced.
 
-use super::{HnswCore, HnswParams};
+use super::{ElementGraphData, HnswCore, HnswParams};
 use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, VecSimIndex};
 use crate::query::{QueryParams, QueryReply, QueryResult};
 use crate::types::{DistanceType, IdType, LabelType, VectorElement};
@@ -233,6 +233,114 @@ impl<T: VectorElement> HnswSingle<T> {
         label_to_id.clear();
         id_to_label.clear();
         self.count.store(0, Ordering::Relaxed);
+    }
+
+    /// Compact the index by removing gaps from deleted vectors.
+    ///
+    /// This reorganizes the internal storage and graph structure to reclaim space
+    /// from deleted vectors. After compaction, all vectors are stored contiguously.
+    ///
+    /// **Note**: For HNSW indices, compaction also rebuilds the graph neighbor links
+    /// with updated IDs, which can be computationally expensive for large indices.
+    ///
+    /// # Arguments
+    /// * `shrink` - If true, also release unused memory blocks
+    ///
+    /// # Returns
+    /// The number of bytes reclaimed (approximate).
+    pub fn compact(&mut self, shrink: bool) -> usize {
+        use std::sync::atomic::Ordering;
+        use std::collections::HashMap;
+
+        let mut core = self.core.write();
+        let mut label_to_id = self.label_to_id.write();
+        let mut id_to_label = self.id_to_label.write();
+
+        let old_capacity = core.data.capacity();
+        let id_mapping = core.data.compact(shrink);
+
+        // Rebuild graph with new IDs
+        let mut new_graph: Vec<Option<ElementGraphData>> = (0..id_mapping.len()).map(|_| None).collect();
+
+        for (&old_id, &new_id) in &id_mapping {
+            if let Some(Some(old_graph_data)) = core.graph.get(old_id as usize) {
+                // Clone the graph data and update neighbor IDs
+                let mut new_graph_data = ElementGraphData::new(
+                    old_graph_data.meta.label,
+                    old_graph_data.meta.level,
+                    core.params.m_max_0,
+                    core.params.m,
+                );
+                new_graph_data.meta.deleted = old_graph_data.meta.deleted;
+
+                // Update neighbor IDs in each level
+                for (level_idx, level_link) in old_graph_data.levels.iter().enumerate() {
+                    let old_neighbors = level_link.get_neighbors();
+                    let new_neighbors: Vec<IdType> = old_neighbors
+                        .iter()
+                        .filter_map(|&neighbor_id| id_mapping.get(&neighbor_id).copied())
+                        .collect();
+
+                    if level_idx < new_graph_data.levels.len() {
+                        new_graph_data.levels[level_idx].set_neighbors(&new_neighbors);
+                    }
+                }
+
+                new_graph[new_id as usize] = Some(new_graph_data);
+            }
+        }
+
+        core.graph = new_graph;
+
+        // Update entry point
+        let old_entry = core.entry_point.load(Ordering::Relaxed);
+        if old_entry != crate::types::INVALID_ID {
+            if let Some(&new_entry) = id_mapping.get(&old_entry) {
+                core.entry_point.store(new_entry, Ordering::Relaxed);
+            } else {
+                // Entry point was deleted, find a new one
+                let new_entry = core.graph.iter().enumerate()
+                    .filter_map(|(id, g)| g.as_ref().filter(|g| !g.meta.deleted).map(|_| id as IdType))
+                    .next()
+                    .unwrap_or(crate::types::INVALID_ID);
+                core.entry_point.store(new_entry, Ordering::Relaxed);
+            }
+        }
+
+        // Update label_to_id mapping
+        for (_label, id) in label_to_id.iter_mut() {
+            if let Some(&new_id) = id_mapping.get(id) {
+                *id = new_id;
+            }
+        }
+
+        // Rebuild id_to_label mapping
+        let mut new_id_to_label = HashMap::with_capacity(id_mapping.len());
+        for (&old_id, &new_id) in &id_mapping {
+            if let Some(&label) = id_to_label.get(&old_id) {
+                new_id_to_label.insert(new_id, label);
+            }
+        }
+        *id_to_label = new_id_to_label;
+
+        // Resize visited pool
+        if !id_mapping.is_empty() {
+            let max_id = id_mapping.values().max().copied().unwrap_or(0) as usize;
+            core.visited_pool.resize(max_id + 1);
+        }
+
+        let new_capacity = core.data.capacity();
+        let dim = core.params.dim;
+        let bytes_per_vector = dim * std::mem::size_of::<T>();
+
+        (old_capacity.saturating_sub(new_capacity)) * bytes_per_vector
+    }
+
+    /// Get the fragmentation ratio of the index.
+    ///
+    /// Returns a value between 0.0 (no fragmentation) and 1.0 (all slots are deleted).
+    pub fn fragmentation(&self) -> f64 {
+        self.core.read().data.fragmentation()
     }
 
     /// Add multiple vectors at once.

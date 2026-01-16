@@ -376,6 +376,85 @@ impl<T: VectorElement> DataBlocks<T> {
     pub fn iter_ids(&self) -> impl Iterator<Item = IdType> + '_ {
         (0..self.high_water_mark as IdType).filter(move |&id| !self.free_slots.contains(&id))
     }
+
+    /// Compact the storage by removing gaps from deleted vectors.
+    ///
+    /// Returns a mapping from old IDs to new IDs. Vectors that were deleted
+    /// will not appear in the mapping.
+    ///
+    /// After compaction:
+    /// - All vectors are contiguous starting from ID 0
+    /// - `free_slots` is empty
+    /// - `high_water_mark` equals `count`
+    /// - Unused blocks may be deallocated if `shrink` is true
+    ///
+    /// # Arguments
+    /// * `shrink` - If true, deallocate unused blocks after compaction
+    pub fn compact(&mut self, shrink: bool) -> std::collections::HashMap<IdType, IdType> {
+        use std::collections::HashMap;
+
+        if self.free_slots.is_empty() {
+            // No gaps to fill, just return identity mapping
+            return (0..self.high_water_mark as IdType)
+                .map(|id| (id, id))
+                .collect();
+        }
+
+        let mut id_mapping = HashMap::with_capacity(self.count);
+        let mut new_id: IdType = 0;
+
+        // Collect valid vectors and their data
+        let valid_ids: Vec<IdType> = (0..self.high_water_mark as IdType)
+            .filter(|id| !self.free_slots.contains(id))
+            .collect();
+
+        // Copy vectors to temporary storage
+        let vectors: Vec<Vec<T>> = valid_ids
+            .iter()
+            .filter_map(|&id| self.get(id).map(|v| v.to_vec()))
+            .collect();
+
+        // Clear and rebuild
+        self.free_slots.clear();
+        self.high_water_mark = 0;
+        self.count = 0;
+
+        // Re-add vectors in order
+        for (old_id, vector) in valid_ids.into_iter().zip(vectors.into_iter()) {
+            if let Some(added_id) = self.add(&vector) {
+                id_mapping.insert(old_id, added_id);
+                new_id = added_id + 1;
+            }
+        }
+
+        // Shrink blocks if requested
+        if shrink {
+            let needed_blocks = new_id as usize / self.vectors_per_block + 1;
+            if self.blocks.len() > needed_blocks {
+                self.blocks.truncate(needed_blocks);
+            }
+        }
+
+        id_mapping
+    }
+
+    /// Get the number of deleted (free) slots.
+    #[inline]
+    pub fn deleted_count(&self) -> usize {
+        self.free_slots.len()
+    }
+
+    /// Get the fragmentation ratio (deleted / total allocated).
+    ///
+    /// Returns 0.0 if no vectors have been allocated.
+    #[inline]
+    pub fn fragmentation(&self) -> f64 {
+        if self.high_water_mark == 0 {
+            0.0
+        } else {
+            self.free_slots.len() as f64 / self.high_water_mark as f64
+        }
+    }
 }
 
 #[cfg(test)]
@@ -500,5 +579,66 @@ mod tests {
         // Update deleted vector should fail
         blocks.mark_deleted(id1);
         assert!(!blocks.update(id1, &v1));
+    }
+
+    #[test]
+    fn test_data_blocks_compact() {
+        let mut blocks = DataBlocks::<f32>::new(4, 10);
+
+        let v1 = vec![1.0, 2.0, 3.0, 4.0];
+        let v2 = vec![5.0, 6.0, 7.0, 8.0];
+        let v3 = vec![9.0, 10.0, 11.0, 12.0];
+        let v4 = vec![13.0, 14.0, 15.0, 16.0];
+
+        let id1 = blocks.add(&v1).unwrap();
+        let id2 = blocks.add(&v2).unwrap();
+        let id3 = blocks.add(&v3).unwrap();
+        let id4 = blocks.add(&v4).unwrap();
+
+        // Delete vectors 1 and 3 (creating gaps)
+        blocks.mark_deleted(id2);
+        blocks.mark_deleted(id3);
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.deleted_count(), 2);
+        assert!((blocks.fragmentation() - 0.5).abs() < 0.01);
+
+        // Compact
+        let mapping = blocks.compact(false);
+
+        // Should have 2 vectors now, contiguous
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.deleted_count(), 0);
+        assert!((blocks.fragmentation() - 0.0).abs() < 0.01);
+
+        // Check mapping
+        assert!(mapping.contains_key(&id1));
+        assert!(mapping.contains_key(&id4));
+        assert!(!mapping.contains_key(&id2)); // Deleted
+        assert!(!mapping.contains_key(&id3)); // Deleted
+
+        // Verify data integrity
+        let new_id1 = mapping[&id1];
+        let new_id4 = mapping[&id4];
+        assert_eq!(blocks.get(new_id1), Some(v1.as_slice()));
+        assert_eq!(blocks.get(new_id4), Some(v4.as_slice()));
+    }
+
+    #[test]
+    fn test_data_blocks_compact_no_deletions() {
+        let mut blocks = DataBlocks::<f32>::new(4, 10);
+
+        let v1 = vec![1.0, 2.0, 3.0, 4.0];
+        let v2 = vec![5.0, 6.0, 7.0, 8.0];
+
+        let id1 = blocks.add(&v1).unwrap();
+        let id2 = blocks.add(&v2).unwrap();
+
+        // Compact with no deletions should return identity mapping
+        let mapping = blocks.compact(false);
+
+        assert_eq!(mapping[&id1], id1);
+        assert_eq!(mapping[&id2], id2);
+        assert_eq!(blocks.len(), 2);
     }
 }
