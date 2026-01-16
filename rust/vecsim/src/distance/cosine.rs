@@ -59,6 +59,14 @@ impl<T: VectorElement> DistanceFunction<T> for CosineDistance<T> {
         // For raw vectors, we need to compute the full cosine distance
         match self.simd_capability {
             #[cfg(target_arch = "x86_64")]
+            SimdCapability::Avx512Vnni => {
+                simd::avx512bw::cosine_distance_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Avx512Bw => {
+                simd::avx512bw::cosine_distance_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
             SimdCapability::Avx512 => {
                 simd::avx512::cosine_distance_f32(a, b, dim)
             }
@@ -69,6 +77,10 @@ impl<T: VectorElement> DistanceFunction<T> for CosineDistance<T> {
             #[cfg(target_arch = "x86_64")]
             SimdCapability::Avx => {
                 simd::avx::cosine_distance_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Sse4_1 => {
+                simd::sse4::cosine_distance_f32(a, b, dim)
             }
             #[cfg(target_arch = "x86_64")]
             SimdCapability::Sse => {

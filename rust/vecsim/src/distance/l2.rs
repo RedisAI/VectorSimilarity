@@ -53,6 +53,14 @@ impl<T: VectorElement> DistanceFunction<T> for L2Distance<T> {
         // Dispatch to appropriate implementation
         match self.simd_capability {
             #[cfg(target_arch = "x86_64")]
+            SimdCapability::Avx512Vnni => {
+                simd::avx512bw::l2_squared_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Avx512Bw => {
+                simd::avx512bw::l2_squared_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
             SimdCapability::Avx512 => {
                 simd::avx512::l2_squared_f32(a, b, dim)
             }
@@ -63,6 +71,10 @@ impl<T: VectorElement> DistanceFunction<T> for L2Distance<T> {
             #[cfg(target_arch = "x86_64")]
             SimdCapability::Avx => {
                 simd::avx::l2_squared_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Sse4_1 => {
+                simd::sse4::l2_squared_f32(a, b, dim)
             }
             #[cfg(target_arch = "x86_64")]
             SimdCapability::Sse => {

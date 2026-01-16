@@ -59,6 +59,14 @@ impl<T: VectorElement> DistanceFunction<T> for InnerProductDistance<T> {
         // Compute inner product and negate for distance
         let ip = match self.simd_capability {
             #[cfg(target_arch = "x86_64")]
+            SimdCapability::Avx512Vnni => {
+                simd::avx512bw::inner_product_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Avx512Bw => {
+                simd::avx512bw::inner_product_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
             SimdCapability::Avx512 => {
                 simd::avx512::inner_product_f32(a, b, dim)
             }
@@ -69,6 +77,10 @@ impl<T: VectorElement> DistanceFunction<T> for InnerProductDistance<T> {
             #[cfg(target_arch = "x86_64")]
             SimdCapability::Avx => {
                 simd::avx::inner_product_f32(a, b, dim)
+            }
+            #[cfg(target_arch = "x86_64")]
+            SimdCapability::Sse4_1 => {
+                simd::sse4::inner_product_f32(a, b, dim)
             }
             #[cfg(target_arch = "x86_64")]
             SimdCapability::Sse => {
