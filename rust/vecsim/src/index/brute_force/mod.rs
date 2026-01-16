@@ -89,8 +89,10 @@ impl<T: VectorElement> BruteForceCore<T> {
     }
 
     /// Add a vector and return its internal ID.
+    ///
+    /// Returns `None` if the vector dimension doesn't match.
     #[inline]
-    pub fn add_vector(&mut self, vector: &[T]) -> IdType {
+    pub fn add_vector(&mut self, vector: &[T]) -> Option<IdType> {
         // Preprocess if needed (e.g., normalize for cosine)
         let processed = self.dist_fn.preprocess(vector, self.dim);
         self.data.add(&processed)

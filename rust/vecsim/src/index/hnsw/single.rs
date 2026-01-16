@@ -276,7 +276,9 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             id_to_label.remove(&existing_id);
 
             // Add new vector
-            let new_id = core.add_vector(vector);
+            let new_id = core
+                .add_vector(vector)
+                .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
             core.insert(new_id, label);
 
             // Update mappings
@@ -294,7 +296,9 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         }
 
         // Add new vector
-        let id = core.add_vector(vector);
+        let id = core
+            .add_vector(vector)
+            .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
         core.insert(id, label);
 
         // Update mappings
@@ -700,7 +704,9 @@ impl HnswSingle<f32> {
                 }
 
                 // Add vector to data storage
-                core.data.add(&vector);
+                core.data.add(&vector).ok_or_else(|| {
+                    SerializationError::DataCorruption("Failed to add vector during deserialization".to_string())
+                })?;
 
                 // Store graph data
                 core.graph[id] = Some(graph_data);

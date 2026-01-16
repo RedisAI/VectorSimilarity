@@ -178,7 +178,9 @@ impl<T: VectorElement> HnswCore<T> {
     }
 
     /// Add a vector and return its internal ID.
-    pub fn add_vector(&mut self, vector: &[T]) -> IdType {
+    ///
+    /// Returns `None` if the vector dimension doesn't match.
+    pub fn add_vector(&mut self, vector: &[T]) -> Option<IdType> {
         let processed = self.dist_fn.preprocess(vector, self.params.dim);
         self.data.add(&processed)
     }

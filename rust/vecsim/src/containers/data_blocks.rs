@@ -6,6 +6,7 @@
 use crate::distance::simd::optimal_alignment;
 use crate::types::{IdType, VectorElement, INVALID_ID};
 use std::alloc::{self, Layout};
+use std::collections::HashSet;
 use std::ptr::NonNull;
 
 /// Default block size (number of vectors per block).
@@ -48,33 +49,64 @@ impl<T: VectorElement> DataBlock<T> {
         }
     }
 
-    /// Get a pointer to the vector at the given index.
+    /// Check if an index is within bounds.
     #[inline]
-    fn get_vector_ptr(&self, index: usize, dim: usize) -> *const T {
-        debug_assert!(index * dim < self.capacity);
-        unsafe { self.data.as_ptr().add(index * dim) }
+    fn is_valid_index(&self, index: usize, dim: usize) -> bool {
+        index * dim + dim <= self.capacity
+    }
+
+    /// Get a pointer to the vector at the given index.
+    ///
+    /// # Safety
+    /// Caller must ensure the index is valid (use `is_valid_index` first).
+    #[inline]
+    unsafe fn get_vector_ptr_unchecked(&self, index: usize, dim: usize) -> *const T {
+        self.data.as_ptr().add(index * dim)
     }
 
     /// Get a mutable pointer to the vector at the given index.
+    ///
+    /// # Safety
+    /// Caller must ensure the index is valid (use `is_valid_index` first).
     #[inline]
-    fn get_vector_ptr_mut(&mut self, index: usize, dim: usize) -> *mut T {
-        debug_assert!(index * dim < self.capacity);
-        unsafe { self.data.as_ptr().add(index * dim) }
+    unsafe fn get_vector_ptr_mut_unchecked(&mut self, index: usize, dim: usize) -> *mut T {
+        self.data.as_ptr().add(index * dim)
     }
 
     /// Get a slice to the vector at the given index.
+    ///
+    /// Returns `None` if the index is out of bounds.
     #[inline]
-    fn get_vector(&self, index: usize, dim: usize) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.get_vector_ptr(index, dim), dim) }
+    fn get_vector(&self, index: usize, dim: usize) -> Option<&[T]> {
+        if !self.is_valid_index(index, dim) {
+            return None;
+        }
+        // SAFETY: We just verified the index is valid.
+        unsafe {
+            Some(std::slice::from_raw_parts(
+                self.get_vector_ptr_unchecked(index, dim),
+                dim,
+            ))
+        }
     }
 
     /// Write a vector at the given index.
+    ///
+    /// Returns `false` if the index is out of bounds or data length doesn't match dim.
     #[inline]
-    fn write_vector(&mut self, index: usize, dim: usize, data: &[T]) {
-        debug_assert_eq!(data.len(), dim);
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), self.get_vector_ptr_mut(index, dim), dim);
+    fn write_vector(&mut self, index: usize, dim: usize, data: &[T]) -> bool {
+        if data.len() != dim || !self.is_valid_index(index, dim) {
+            return false;
         }
+        // SAFETY: We just verified the index is valid and data length matches.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                self.get_vector_ptr_mut_unchecked(index, dim),
+                dim,
+            );
+        }
+        true
     }
 }
 
@@ -103,10 +135,13 @@ pub struct DataBlocks<T: VectorElement> {
     vectors_per_block: usize,
     /// Vector dimension.
     dim: usize,
-    /// Total number of vectors stored.
+    /// Total number of vectors stored (excluding deleted).
     count: usize,
-    /// Free slots from deleted vectors (for reuse).
-    free_slots: Vec<IdType>,
+    /// Free slots from deleted vectors (for reuse). Uses HashSet for O(1) lookup.
+    free_slots: HashSet<IdType>,
+    /// High water mark: the highest ID ever allocated + 1.
+    /// Used to determine which slots are valid vs never-allocated.
+    high_water_mark: usize,
 }
 
 impl<T: VectorElement> DataBlocks<T> {
@@ -128,7 +163,8 @@ impl<T: VectorElement> DataBlocks<T> {
             vectors_per_block,
             dim,
             count: 0,
-            free_slots: Vec::new(),
+            free_slots: HashSet::new(),
+            high_water_mark: 0,
         }
     }
 
@@ -146,7 +182,8 @@ impl<T: VectorElement> DataBlocks<T> {
             vectors_per_block,
             dim,
             count: 0,
-            free_slots: Vec::new(),
+            free_slots: HashSet::new(),
+            high_water_mark: 0,
         }
     }
 
@@ -189,20 +226,29 @@ impl<T: VectorElement> DataBlocks<T> {
     }
 
     /// Add a vector and return its internal ID.
-    pub fn add(&mut self, vector: &[T]) -> IdType {
-        debug_assert_eq!(vector.len(), self.dim);
-
-        // Try to reuse a free slot first
-        if let Some(id) = self.free_slots.pop() {
-            let (block_idx, offset) = self.id_to_indices(id);
-            self.blocks[block_idx].write_vector(offset, self.dim, vector);
-            self.count += 1;
-            return id;
+    ///
+    /// Returns `None` if the vector dimension doesn't match the container's dimension.
+    pub fn add(&mut self, vector: &[T]) -> Option<IdType> {
+        if vector.len() != self.dim {
+            return None;
         }
 
-        // Find the next available slot
+        // Try to reuse a free slot first
+        if let Some(&id) = self.free_slots.iter().next() {
+            self.free_slots.remove(&id);
+            let (block_idx, offset) = self.id_to_indices(id);
+            if self.blocks[block_idx].write_vector(offset, self.dim, vector) {
+                self.count += 1;
+                return Some(id);
+            }
+            // Write failed (shouldn't happen), put the slot back
+            self.free_slots.insert(id);
+            return None;
+        }
+
+        // Find the next available slot using high water mark
+        let next_slot = self.high_water_mark;
         let total_slots = self.blocks.len() * self.vectors_per_block;
-        let next_slot = self.count;
 
         if next_slot >= total_slots {
             // Need to allocate a new block
@@ -211,47 +257,94 @@ impl<T: VectorElement> DataBlocks<T> {
         }
 
         let (block_idx, offset) = self.id_to_indices(next_slot as IdType);
-        self.blocks[block_idx].write_vector(offset, self.dim, vector);
-        self.count += 1;
+        if self.blocks[block_idx].write_vector(offset, self.dim, vector) {
+            self.count += 1;
+            self.high_water_mark += 1;
+            Some(next_slot as IdType)
+        } else {
+            None
+        }
+    }
 
-        next_slot as IdType
+    /// Check if an ID is valid and not deleted.
+    #[inline]
+    pub fn is_valid(&self, id: IdType) -> bool {
+        if id == INVALID_ID {
+            return false;
+        }
+        let id_usize = id as usize;
+        // Must be within allocated range and not deleted
+        id_usize < self.high_water_mark && !self.free_slots.contains(&id)
     }
 
     /// Get a vector by its internal ID.
+    ///
+    /// Returns `None` if the ID is invalid, out of bounds, or the vector was deleted.
     #[inline]
     pub fn get(&self, id: IdType) -> Option<&[T]> {
-        if id == INVALID_ID {
+        if !self.is_valid(id) {
             return None;
         }
         let (block_idx, offset) = self.id_to_indices(id);
         if block_idx >= self.blocks.len() {
             return None;
         }
-        Some(self.blocks[block_idx].get_vector(offset, self.dim))
+        self.blocks[block_idx].get_vector(offset, self.dim)
     }
 
     /// Get a raw pointer to a vector (for SIMD operations).
+    ///
+    /// Returns `None` if the ID is invalid, out of bounds, or the vector was deleted.
     #[inline]
-    pub fn get_ptr(&self, id: IdType) -> *const T {
+    pub fn get_ptr(&self, id: IdType) -> Option<*const T> {
+        if !self.is_valid(id) {
+            return None;
+        }
         let (block_idx, offset) = self.id_to_indices(id);
-        self.blocks[block_idx].get_vector_ptr(offset, self.dim)
+        if block_idx >= self.blocks.len() {
+            return None;
+        }
+        let block = &self.blocks[block_idx];
+        if !block.is_valid_index(offset, self.dim) {
+            return None;
+        }
+        // SAFETY: We verified the index is valid above.
+        unsafe { Some(block.get_vector_ptr_unchecked(offset, self.dim)) }
     }
 
     /// Mark a slot as free for reuse.
     ///
+    /// Returns `true` if the slot was successfully marked as deleted,
+    /// `false` if the ID is invalid, already deleted, or out of bounds.
+    ///
     /// Note: This doesn't actually clear the data, just marks the slot as available.
-    pub fn mark_deleted(&mut self, id: IdType) {
-        if id != INVALID_ID && (id as usize) < self.capacity() {
-            self.free_slots.push(id);
-            self.count = self.count.saturating_sub(1);
+    pub fn mark_deleted(&mut self, id: IdType) -> bool {
+        if id == INVALID_ID {
+            return false;
         }
+        let id_usize = id as usize;
+        // Check bounds and ensure not already deleted
+        if id_usize >= self.high_water_mark || self.free_slots.contains(&id) {
+            return false;
+        }
+        self.free_slots.insert(id);
+        self.count = self.count.saturating_sub(1);
+        true
     }
 
     /// Update a vector at the given ID.
-    pub fn update(&mut self, id: IdType, vector: &[T]) {
-        debug_assert_eq!(vector.len(), self.dim);
+    ///
+    /// Returns `true` if the update was successful, `false` if the ID is invalid,
+    /// deleted, out of bounds, or the vector dimension doesn't match.
+    pub fn update(&mut self, id: IdType, vector: &[T]) -> bool {
+        if vector.len() != self.dim || !self.is_valid(id) {
+            return false;
+        }
         let (block_idx, offset) = self.id_to_indices(id);
-        self.blocks[block_idx].write_vector(offset, self.dim, vector);
+        if block_idx >= self.blocks.len() {
+            return false;
+        }
+        self.blocks[block_idx].write_vector(offset, self.dim, vector)
     }
 
     /// Clear all vectors, resetting to empty state.
@@ -260,6 +353,7 @@ impl<T: VectorElement> DataBlocks<T> {
     pub fn clear(&mut self) {
         self.count = 0;
         self.free_slots.clear();
+        self.high_water_mark = 0;
     }
 
     /// Reserve space for additional vectors.
@@ -278,13 +372,9 @@ impl<T: VectorElement> DataBlocks<T> {
         }
     }
 
-    /// Iterate over all valid vector IDs.
-    ///
-    /// Note: This iterates over all slots, not just active vectors.
-    /// Use with the label mapping to get only active vectors.
+    /// Iterate over all valid (non-deleted) vector IDs.
     pub fn iter_ids(&self) -> impl Iterator<Item = IdType> + '_ {
-        (0..self.capacity() as IdType)
-            .filter(move |&id| !self.free_slots.contains(&id) || id as usize >= self.count)
+        (0..self.high_water_mark as IdType).filter(move |&id| !self.free_slots.contains(&id))
     }
 }
 
@@ -299,8 +389,8 @@ mod tests {
         let v1 = vec![1.0, 2.0, 3.0, 4.0];
         let v2 = vec![5.0, 6.0, 7.0, 8.0];
 
-        let id1 = blocks.add(&v1);
-        let id2 = blocks.add(&v2);
+        let id1 = blocks.add(&v1).unwrap();
+        let id2 = blocks.add(&v2).unwrap();
 
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks.get(id1), Some(v1.as_slice()));
@@ -315,16 +405,19 @@ mod tests {
         let v2 = vec![5.0, 6.0, 7.0, 8.0];
         let v3 = vec![9.0, 10.0, 11.0, 12.0];
 
-        let id1 = blocks.add(&v1);
-        let _id2 = blocks.add(&v2);
+        let id1 = blocks.add(&v1).unwrap();
+        let _id2 = blocks.add(&v2).unwrap();
         assert_eq!(blocks.len(), 2);
 
         // Delete first vector
-        blocks.mark_deleted(id1);
+        assert!(blocks.mark_deleted(id1));
         assert_eq!(blocks.len(), 1);
 
+        // Verify deleted vector is not accessible
+        assert!(blocks.get(id1).is_none());
+
         // Add new vector - should reuse slot
-        let id3 = blocks.add(&v3);
+        let id3 = blocks.add(&v3).unwrap();
         assert_eq!(id3, id1); // Reused the same slot
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks.get(id3), Some(v3.as_slice()));
@@ -336,13 +429,76 @@ mod tests {
 
         // Fill initial capacity
         for i in 0..2 {
-            blocks.add(&vec![i as f32; 4]);
+            blocks.add(&vec![i as f32; 4]).unwrap();
         }
         assert_eq!(blocks.len(), 2);
 
         // Should trigger new block allocation
-        blocks.add(&vec![99.0; 4]);
+        blocks.add(&vec![99.0; 4]).unwrap();
         assert_eq!(blocks.len(), 3);
         assert!(blocks.capacity() >= 3);
+    }
+
+    #[test]
+    fn test_data_blocks_double_delete() {
+        let mut blocks = DataBlocks::<f32>::new(4, 10);
+
+        let v1 = vec![1.0, 2.0, 3.0, 4.0];
+        let id1 = blocks.add(&v1).unwrap();
+
+        // First delete should succeed
+        assert!(blocks.mark_deleted(id1));
+        assert_eq!(blocks.len(), 0);
+
+        // Second delete should fail (already deleted)
+        assert!(!blocks.mark_deleted(id1));
+        assert_eq!(blocks.len(), 0);
+    }
+
+    #[test]
+    fn test_data_blocks_invalid_dimension() {
+        let mut blocks = DataBlocks::<f32>::new(4, 10);
+
+        // Wrong dimension should fail
+        let wrong_dim = vec![1.0, 2.0, 3.0]; // 3 instead of 4
+        assert!(blocks.add(&wrong_dim).is_none());
+
+        // Correct dimension should succeed
+        let correct_dim = vec![1.0, 2.0, 3.0, 4.0];
+        assert!(blocks.add(&correct_dim).is_some());
+    }
+
+    #[test]
+    fn test_data_blocks_bounds_checking() {
+        let blocks = DataBlocks::<f32>::new(4, 10);
+
+        // Invalid ID should return None
+        assert!(blocks.get(INVALID_ID).is_none());
+        assert!(blocks.get_ptr(INVALID_ID).is_none());
+
+        // Out of bounds ID should return None
+        assert!(blocks.get(999).is_none());
+        assert!(blocks.get_ptr(999).is_none());
+    }
+
+    #[test]
+    fn test_data_blocks_update() {
+        let mut blocks = DataBlocks::<f32>::new(4, 10);
+
+        let v1 = vec![1.0, 2.0, 3.0, 4.0];
+        let v2 = vec![5.0, 6.0, 7.0, 8.0];
+        let id1 = blocks.add(&v1).unwrap();
+
+        // Update should succeed
+        assert!(blocks.update(id1, &v2));
+        assert_eq!(blocks.get(id1), Some(v2.as_slice()));
+
+        // Update with wrong dimension should fail
+        let wrong_dim = vec![1.0, 2.0, 3.0];
+        assert!(!blocks.update(id1, &wrong_dim));
+
+        // Update deleted vector should fail
+        blocks.mark_deleted(id1);
+        assert!(!blocks.update(id1, &v1));
     }
 }

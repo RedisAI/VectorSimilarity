@@ -177,7 +177,9 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
         }
 
         // Add the vector
-        let id = core.add_vector(vector);
+        let id = core
+            .add_vector(vector)
+            .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
         core.insert(id, label);
 
         let mut label_to_ids = self.label_to_ids.write();
@@ -601,7 +603,9 @@ impl HnswMulti<f32> {
                 }
 
                 // Add vector to data storage
-                core.data.add(&vector);
+                core.data.add(&vector).ok_or_else(|| {
+                    SerializationError::DataCorruption("Failed to add vector during deserialization".to_string())
+                })?;
 
                 // Store graph data
                 core.graph[id] = Some(graph_data);

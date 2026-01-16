@@ -310,7 +310,9 @@ impl<T: VectorElement> VecSimIndex for BruteForceMulti<T> {
         }
 
         // Add the vector
-        let id = core.add_vector(vector);
+        let id = core
+            .add_vector(vector)
+            .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
 
         let mut label_to_ids = self.label_to_ids.write();
         let mut id_to_label = self.id_to_label.write();
@@ -580,7 +582,9 @@ impl BruteForceMulti<f32> {
                 }
 
                 // Add vector to data storage
-                core.data.add(&vector);
+                core.data.add(&vector).ok_or_else(|| {
+                    SerializationError::DataCorruption("Failed to add vector during deserialization".to_string())
+                })?;
             }
         }
 

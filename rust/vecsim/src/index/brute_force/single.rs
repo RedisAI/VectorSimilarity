@@ -346,7 +346,9 @@ impl<T: VectorElement> VecSimIndex for BruteForceSingle<T> {
         }
 
         // Add new vector
-        let id = core.add_vector(vector);
+        let id = core
+            .add_vector(vector)
+            .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
 
         // Update mappings
         label_to_id.insert(label, id);
@@ -600,7 +602,9 @@ impl BruteForceSingle<f32> {
                 }
 
                 // Add vector at specific ID
-                let added_id = core.data.add(&vector);
+                let added_id = core.data.add(&vector).ok_or_else(|| {
+                    SerializationError::DataCorruption("Failed to add vector during deserialization".to_string())
+                })?;
 
                 // Ensure ID matches (vectors should be added in order)
                 if added_id != id {
