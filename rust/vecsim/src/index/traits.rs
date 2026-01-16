@@ -198,6 +198,9 @@ pub enum IndexType {
     BruteForce,
     HNSW,
     Tiered,
+    Svs,
+    TieredSvs,
+    DiskIndex,
 }
 
 impl std::fmt::Display for IndexType {
@@ -206,6 +209,9 @@ impl std::fmt::Display for IndexType {
             IndexType::BruteForce => write!(f, "BruteForce"),
             IndexType::HNSW => write!(f, "HNSW"),
             IndexType::Tiered => write!(f, "Tiered"),
+            IndexType::Svs => write!(f, "Svs"),
+            IndexType::TieredSvs => write!(f, "TieredSvs"),
+            IndexType::DiskIndex => write!(f, "DiskIndex"),
         }
     }
 }

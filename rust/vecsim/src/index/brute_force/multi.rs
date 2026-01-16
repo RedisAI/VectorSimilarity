@@ -459,14 +459,36 @@ impl<T: VectorElement> VecSimIndex for BruteForceMulti<T> {
                 got: query.len(),
             });
         }
-        drop(core);
+
+        // Compute results immediately to preserve filter from params
+        let id_to_label = self.id_to_label.read();
+        let filter = params.and_then(|p| p.filter.as_ref());
+
+        let mut results = Vec::new();
+        for (id, entry) in id_to_label.iter().enumerate() {
+            if !entry.is_valid {
+                continue;
+            }
+
+            if let Some(f) = filter {
+                if !f(entry.label) {
+                    continue;
+                }
+            }
+
+            let dist = core.compute_distance(id as IdType, query);
+            results.push((id as IdType, entry.label, dist));
+        }
+
+        // Sort by distance
+        results.sort_by(|a, b| {
+            a.2.to_f64()
+                .partial_cmp(&b.2.to_f64())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(Box::new(
-            super::batch_iterator::BruteForceMultiBatchIterator::new(
-                self,
-                query.to_vec(),
-                params.cloned(),
-            ),
+            super::batch_iterator::BruteForceMultiBatchIterator::<T>::new(results),
         ))
     }
 

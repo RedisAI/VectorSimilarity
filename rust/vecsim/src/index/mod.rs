@@ -4,10 +4,16 @@
 //! - `brute_force`: Linear scan over all vectors (exact results)
 //! - `hnsw`: Hierarchical Navigable Small World graphs (approximate, fast)
 //! - `tiered`: Two-tier index combining BruteForce frontend with HNSW backend
+//! - `svs`: Single-layer Vamana graph (alternative to HNSW)
+//! - `tiered_svs`: Two-tier index combining BruteForce frontend with SVS backend
+//! - `disk`: Disk-based index with memory-mapped storage
 
 pub mod brute_force;
+pub mod disk;
 pub mod hnsw;
+pub mod svs;
 pub mod tiered;
+pub mod tiered_svs;
 pub mod traits;
 
 // Re-export traits
@@ -28,6 +34,21 @@ pub use hnsw::{
 // Re-export Tiered types
 pub use tiered::{
     TieredParams, TieredSingle, TieredMulti, TieredBatchIterator, WriteMode,
+};
+
+// Re-export SVS types
+pub use svs::{
+    SvsParams, SvsSingle, SvsMulti, SvsStats,
+};
+
+// Re-export Tiered SVS types
+pub use tiered_svs::{
+    TieredSvsParams, TieredSvsSingle, TieredSvsMulti, TieredSvsBatchIterator, SvsWriteMode,
+};
+
+// Re-export Disk index types
+pub use disk::{
+    DiskIndexParams, DiskIndexSingle, DiskBackend,
 };
 
 /// Estimate the initial memory size for a BruteForce index.
