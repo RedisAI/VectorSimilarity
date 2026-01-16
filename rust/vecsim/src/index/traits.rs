@@ -197,6 +197,7 @@ pub trait BatchIterator: Send {
 pub enum IndexType {
     BruteForce,
     HNSW,
+    Tiered,
 }
 
 impl std::fmt::Display for IndexType {
@@ -204,6 +205,7 @@ impl std::fmt::Display for IndexType {
         match self {
             IndexType::BruteForce => write!(f, "BruteForce"),
             IndexType::HNSW => write!(f, "HNSW"),
+            IndexType::Tiered => write!(f, "Tiered"),
         }
     }
 }

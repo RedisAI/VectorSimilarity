@@ -3,9 +3,11 @@
 //! This module provides different index types for vector similarity search:
 //! - `brute_force`: Linear scan over all vectors (exact results)
 //! - `hnsw`: Hierarchical Navigable Small World graphs (approximate, fast)
+//! - `tiered`: Two-tier index combining BruteForce frontend with HNSW backend
 
 pub mod brute_force;
 pub mod hnsw;
+pub mod tiered;
 pub mod traits;
 
 // Re-export traits
@@ -21,6 +23,11 @@ pub use brute_force::{
 // Re-export HNSW types
 pub use hnsw::{
     HnswParams, HnswSingle, HnswMulti, HnswBatchIterator, HnswStats,
+};
+
+// Re-export Tiered types
+pub use tiered::{
+    TieredParams, TieredSingle, TieredMulti, TieredBatchIterator, WriteMode,
 };
 
 /// Estimate the initial memory size for a BruteForce index.
