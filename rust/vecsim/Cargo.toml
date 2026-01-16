@@ -22,5 +22,13 @@ nightly = []  # Enable nightly-only SIMD intrinsics
 criterion = "0.5"
 
 [[bench]]
+name = "brute_force_bench"
+harness = false
+
+[[bench]]
+name = "hnsw_bench"
+harness = false
+
+[[bench]]
 name = "tiered_bench"
 harness = false
