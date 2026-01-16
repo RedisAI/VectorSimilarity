@@ -4,6 +4,8 @@
 //! - AVX-512 VNNI (x86_64) - 512-bit vectors with VNNI for int8 operations
 //! - AVX-512 BW (x86_64) - 512-bit vectors with byte/word operations
 //! - AVX-512 (x86_64) - 512-bit vectors, 16 f32 at a time
+//! - AVX-512 FP16 (x86_64) - 512-bit vectors for half-precision (Float16)
+//! - AVX-512 BF16 (x86_64) - 512-bit vectors for bfloat16 (BFloat16)
 //! - AVX2 (x86_64) - 256-bit vectors, 8 f32 at a time, with FMA
 //! - AVX (x86_64) - 256-bit vectors, 8 f32 at a time, no FMA
 //! - SSE (x86_64) - 128-bit vectors, 4 f32 at a time
@@ -18,13 +20,19 @@ pub mod avx2;
 #[cfg(target_arch = "x86_64")]
 pub mod avx512;
 #[cfg(target_arch = "x86_64")]
+pub mod avx512bf16;
+#[cfg(target_arch = "x86_64")]
 pub mod avx512bw;
+#[cfg(target_arch = "x86_64")]
+pub mod avx512fp16;
 #[cfg(target_arch = "x86_64")]
 pub mod sse;
 #[cfg(target_arch = "x86_64")]
 pub mod sse4;
 #[cfg(target_arch = "aarch64")]
 pub mod neon;
+#[cfg(target_arch = "aarch64")]
+pub mod sve;
 
 /// SIMD capability levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
