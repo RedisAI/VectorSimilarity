@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["vecsim"]
+members = ["vecsim", "vecsim-python"]
 
 [workspace.package]
 version = "0.1.0"
