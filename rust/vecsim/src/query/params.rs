@@ -274,3 +274,302 @@ impl Default for CancellationToken {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_query_params_default() {
+        let params = QueryParams::new();
+        assert_eq!(params.ef_runtime, None);
+        assert_eq!(params.batch_size, None);
+        assert!(params.filter.is_none());
+        assert!(!params.parallel);
+        assert!(params.timeout_callback.is_none());
+        assert!(params.timeout.is_none());
+    }
+
+    #[test]
+    fn test_query_params_builder() {
+        let params = QueryParams::new()
+            .with_ef_runtime(100)
+            .with_batch_size(50)
+            .with_parallel(true)
+            .with_timeout_ms(1000);
+
+        assert_eq!(params.ef_runtime, Some(100));
+        assert_eq!(params.batch_size, Some(50));
+        assert!(params.parallel);
+        assert_eq!(params.timeout, Some(Duration::from_millis(1000)));
+    }
+
+    #[test]
+    fn test_query_params_with_filter() {
+        let params = QueryParams::new().with_filter(|label| label % 2 == 0);
+
+        assert!(params.filter.is_some());
+        assert!(params.passes_filter(2));
+        assert!(params.passes_filter(4));
+        assert!(!params.passes_filter(1));
+        assert!(!params.passes_filter(3));
+    }
+
+    #[test]
+    fn test_query_params_passes_filter_no_filter() {
+        let params = QueryParams::new();
+        // Without a filter, all labels should pass
+        assert!(params.passes_filter(0));
+        assert!(params.passes_filter(100));
+        assert!(params.passes_filter(u64::MAX));
+    }
+
+    #[test]
+    fn test_query_params_with_timeout_callback() {
+        let should_cancel = Arc::new(AtomicBool::new(false));
+        let should_cancel_clone = Arc::clone(&should_cancel);
+
+        let params = QueryParams::new()
+            .with_timeout_callback(move || should_cancel_clone.load(Ordering::Acquire));
+
+        let start = Instant::now();
+
+        // Initially not timed out
+        assert!(!params.is_timed_out(start));
+
+        // Set the cancel flag
+        should_cancel.store(true, Ordering::Release);
+
+        // Now should be timed out
+        assert!(params.is_timed_out(start));
+    }
+
+    #[test]
+    fn test_query_params_with_timeout_duration() {
+        let params = QueryParams::new().with_timeout(Duration::from_millis(10));
+
+        let start = Instant::now();
+
+        // Initially not timed out
+        assert!(!params.is_timed_out(start));
+
+        // Wait for timeout to expire
+        std::thread::sleep(Duration::from_millis(15));
+
+        // Now should be timed out
+        assert!(params.is_timed_out(start));
+    }
+
+    #[test]
+    fn test_query_params_clone() {
+        let params = QueryParams::new()
+            .with_ef_runtime(50)
+            .with_batch_size(25)
+            .with_parallel(true)
+            .with_timeout_ms(500)
+            .with_filter(|_| true);
+
+        let cloned = params.clone();
+
+        assert_eq!(cloned.ef_runtime, Some(50));
+        assert_eq!(cloned.batch_size, Some(25));
+        assert!(cloned.parallel);
+        assert_eq!(cloned.timeout, Some(Duration::from_millis(500)));
+        // Filter cannot be cloned
+        assert!(cloned.filter.is_none());
+    }
+
+    #[test]
+    fn test_query_params_debug() {
+        let params = QueryParams::new()
+            .with_ef_runtime(100)
+            .with_filter(|_| true)
+            .with_timeout_callback(|| false);
+
+        let debug_str = format!("{:?}", params);
+        assert!(debug_str.contains("QueryParams"));
+        assert!(debug_str.contains("ef_runtime"));
+        assert!(debug_str.contains("<filter fn>"));
+        assert!(debug_str.contains("<timeout fn>"));
+    }
+
+    #[test]
+    fn test_query_params_create_timeout_checker() {
+        let params_no_timeout = QueryParams::new();
+        assert!(params_no_timeout.create_timeout_checker().is_none());
+
+        let params_with_timeout = QueryParams::new().with_timeout_ms(100);
+        assert!(params_with_timeout.create_timeout_checker().is_some());
+    }
+
+    #[test]
+    fn test_timeout_checker_with_duration() {
+        let mut checker = TimeoutChecker::with_duration(Duration::from_millis(50));
+
+        // Initially not timed out
+        assert!(!checker.is_timed_out());
+        assert!(!checker.check_now());
+
+        // Should not timeout immediately
+        for _ in 0..100 {
+            if checker.check() {
+                break;
+            }
+        }
+
+        // Wait for timeout
+        std::thread::sleep(Duration::from_millis(60));
+
+        // Now should timeout on check_now
+        assert!(checker.check_now());
+
+        // Force check() to do actual time check by calling enough times
+        // to reach the check_interval (64)
+        for _ in 0..64 {
+            if checker.check() {
+                break;
+            }
+        }
+        // After enough iterations, check() will have detected timeout
+        assert!(checker.is_timed_out());
+    }
+
+    #[test]
+    fn test_timeout_checker_check_interval() {
+        let mut checker = TimeoutChecker::with_duration(Duration::from_secs(100)); // Long timeout
+
+        // The first N-1 checks should return false (doesn't actually check time)
+        for _ in 0..63 {
+            assert!(!checker.check());
+        }
+
+        // The Nth check (64th) triggers actual time check
+        // Since timeout is 100s, should still be false
+        assert!(!checker.check());
+    }
+
+    #[test]
+    fn test_timeout_checker_elapsed() {
+        let checker = TimeoutChecker::with_duration(Duration::from_secs(10));
+
+        std::thread::sleep(Duration::from_millis(10));
+
+        let elapsed = checker.elapsed();
+        assert!(elapsed >= Duration::from_millis(10));
+
+        let elapsed_ms = checker.elapsed_ms();
+        assert!(elapsed_ms >= 10);
+    }
+
+    #[test]
+    fn test_timeout_checker_from_params() {
+        let params = QueryParams::new().with_timeout_ms(100);
+        let checker = TimeoutChecker::from_params(&params);
+        assert!(checker.is_some());
+
+        let params_no_timeout = QueryParams::new();
+        let checker_none = TimeoutChecker::from_params(&params_no_timeout);
+        assert!(checker_none.is_none());
+    }
+
+    #[test]
+    fn test_cancellation_token_basic() {
+        let token = CancellationToken::new();
+
+        assert!(!token.is_cancelled());
+
+        token.cancel();
+
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancellation_token_clone() {
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+
+        assert!(!token.is_cancelled());
+        assert!(!token_clone.is_cancelled());
+
+        // Cancel through original
+        token.cancel();
+
+        // Both should see cancellation
+        assert!(token.is_cancelled());
+        assert!(token_clone.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancellation_token_as_callback() {
+        let token = CancellationToken::new();
+        let callback = token.as_callback();
+
+        assert!(!callback());
+
+        token.cancel();
+
+        assert!(callback());
+    }
+
+    #[test]
+    fn test_cancellation_token_with_query_params() {
+        let token = CancellationToken::new();
+        let params = QueryParams::new().with_timeout_callback(token.as_callback());
+
+        let start = Instant::now();
+
+        assert!(!params.is_timed_out(start));
+
+        token.cancel();
+
+        assert!(params.is_timed_out(start));
+    }
+
+    #[test]
+    fn test_cancellation_token_thread_safety() {
+        use std::thread;
+
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+
+        let handle = thread::spawn(move || {
+            // Wait a bit then cancel
+            std::thread::sleep(Duration::from_millis(10));
+            token_clone.cancel();
+        });
+
+        // Poll until cancelled
+        while !token.is_cancelled() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        handle.join().unwrap();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancellation_token_default() {
+        let token = CancellationToken::default();
+        assert!(!token.is_cancelled());
+    }
+
+    #[test]
+    fn test_query_params_combined_timeout_check() {
+        // Test with both duration and callback
+        let should_cancel = Arc::new(AtomicBool::new(false));
+        let should_cancel_clone = Arc::clone(&should_cancel);
+
+        let params = QueryParams::new()
+            .with_timeout(Duration::from_millis(100))
+            .with_timeout_callback(move || should_cancel_clone.load(Ordering::Acquire));
+
+        let start = Instant::now();
+
+        // Neither triggered
+        assert!(!params.is_timed_out(start));
+
+        // Trigger callback
+        should_cancel.store(true, Ordering::Release);
+        assert!(params.is_timed_out(start));
+    }
+}

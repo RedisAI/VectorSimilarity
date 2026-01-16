@@ -250,4 +250,404 @@ mod tests {
         assert_eq!(reply.results[1].label, 3);
         assert_eq!(reply.results[2].label, 1);
     }
+
+    #[test]
+    fn test_query_result_new() {
+        let result = QueryResult::<f32>::new(42, 1.5);
+        assert_eq!(result.label, 42);
+        assert!((result.distance - 1.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_query_result_equality() {
+        let r1 = QueryResult::<f32>::new(1, 0.5);
+        let r2 = QueryResult::<f32>::new(1, 0.5);
+        let r3 = QueryResult::<f32>::new(1, 0.6);
+        let r4 = QueryResult::<f32>::new(2, 0.5);
+
+        assert_eq!(r1, r2);
+        assert_ne!(r1, r3); // Different distance
+        assert_ne!(r1, r4); // Different label
+    }
+
+    #[test]
+    fn test_query_result_clone() {
+        let r1 = QueryResult::<f32>::new(42, 1.5);
+        let r2 = r1;
+        assert_eq!(r1.label, r2.label);
+        assert!((r1.distance - r2.distance).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_query_result_ordering_tie_breaking() {
+        let r1 = QueryResult::<f32>::new(1, 0.5);
+        let r2 = QueryResult::<f32>::new(2, 0.5);
+        let r3 = QueryResult::<f32>::new(3, 0.5);
+
+        // Same distance, so compare by label
+        assert!(r1 < r2);
+        assert!(r2 < r3);
+        assert!(r1 < r3);
+    }
+
+    #[test]
+    fn test_query_reply_new() {
+        let reply = QueryReply::<f32>::new();
+        assert!(reply.is_empty());
+        assert_eq!(reply.len(), 0);
+    }
+
+    #[test]
+    fn test_query_reply_with_capacity() {
+        let reply = QueryReply::<f32>::with_capacity(10);
+        assert!(reply.is_empty());
+        assert!(reply.results.capacity() >= 10);
+    }
+
+    #[test]
+    fn test_query_reply_from_results() {
+        let results = vec![
+            QueryResult::new(1, 0.5),
+            QueryResult::new(2, 1.0),
+        ];
+        let reply = QueryReply::from_results(results);
+        assert_eq!(reply.len(), 2);
+    }
+
+    #[test]
+    fn test_query_reply_push() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+        assert_eq!(reply.len(), 2);
+    }
+
+    #[test]
+    fn test_query_reply_sort_by_distance_desc() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+        reply.push(QueryResult::new(3, 0.75));
+
+        reply.sort_by_distance_desc();
+
+        assert_eq!(reply.results[0].label, 2); // 1.0
+        assert_eq!(reply.results[1].label, 3); // 0.75
+        assert_eq!(reply.results[2].label, 1); // 0.5
+    }
+
+    #[test]
+    fn test_query_reply_truncate() {
+        let mut reply = QueryReply::<f32>::new();
+        for i in 0..10 {
+            reply.push(QueryResult::new(i, i as f32 * 0.1));
+        }
+
+        reply.truncate(5);
+        assert_eq!(reply.len(), 5);
+
+        // Truncate to larger than current size does nothing
+        reply.truncate(100);
+        assert_eq!(reply.len(), 5);
+    }
+
+    #[test]
+    fn test_query_reply_best() {
+        let mut reply = QueryReply::<f32>::new();
+        assert!(reply.best().is_none());
+
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 0.3));
+
+        reply.sort_by_distance();
+
+        let best = reply.best().unwrap();
+        assert_eq!(best.label, 2);
+    }
+
+    #[test]
+    fn test_query_reply_sort_by_label() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(3, 0.5));
+        reply.push(QueryResult::new(1, 1.0));
+        reply.push(QueryResult::new(2, 0.75));
+
+        reply.sort_by_label();
+
+        assert_eq!(reply.results[0].label, 1);
+        assert_eq!(reply.results[1].label, 2);
+        assert_eq!(reply.results[2].label, 3);
+    }
+
+    #[test]
+    fn test_query_reply_deduplicate_by_label() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(1, 0.3)); // Same label, closer
+        reply.push(QueryResult::new(2, 1.0));
+        reply.push(QueryResult::new(2, 1.5)); // Same label, farther
+
+        reply.deduplicate_by_label();
+
+        assert_eq!(reply.len(), 2);
+        // Should keep the closer one for each label
+        let labels: Vec<_> = reply.results.iter().map(|r| r.label).collect();
+        assert!(labels.contains(&1));
+        assert!(labels.contains(&2));
+    }
+
+    #[test]
+    fn test_query_reply_filter_by_distance() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+        reply.push(QueryResult::new(3, 1.5));
+        reply.push(QueryResult::new(4, 2.0));
+
+        reply.filter_by_distance(1.0);
+
+        assert_eq!(reply.len(), 2);
+        assert!(reply.results.iter().all(|r| r.distance <= 1.0));
+    }
+
+    #[test]
+    fn test_query_reply_top_k() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(3, 1.5));
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(4, 2.0));
+        reply.push(QueryResult::new(2, 1.0));
+
+        reply.top_k(2);
+
+        assert_eq!(reply.len(), 2);
+        assert_eq!(reply.results[0].label, 1); // 0.5
+        assert_eq!(reply.results[1].label, 2); // 1.0
+    }
+
+    #[test]
+    fn test_query_reply_skip() {
+        let mut reply = QueryReply::<f32>::new();
+        for i in 0..5 {
+            reply.push(QueryResult::new(i, i as f32));
+        }
+
+        reply.skip(2);
+
+        assert_eq!(reply.len(), 3);
+        assert_eq!(reply.results[0].label, 2);
+    }
+
+    #[test]
+    fn test_query_reply_skip_all() {
+        let mut reply = QueryReply::<f32>::new();
+        for i in 0..5 {
+            reply.push(QueryResult::new(i, i as f32));
+        }
+
+        reply.skip(10);
+
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn test_query_reply_skip_exact() {
+        let mut reply = QueryReply::<f32>::new();
+        for i in 0..5 {
+            reply.push(QueryResult::new(i, i as f32));
+        }
+
+        reply.skip(5);
+
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn test_query_reply_to_similarities() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.0)); // similarity = 1.0
+        reply.push(QueryResult::new(2, 1.0)); // similarity = 0.5
+
+        let sims = reply.to_similarities();
+
+        assert_eq!(sims.len(), 2);
+        assert!((sims[0].1 - 1.0).abs() < 0.001);
+        assert!((sims[1].1 - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_query_reply_distance_to_similarity() {
+        assert!((QueryReply::distance_to_similarity(0.0f32) - 1.0).abs() < 0.001);
+        assert!((QueryReply::distance_to_similarity(1.0f32) - 0.5).abs() < 0.001);
+        assert!((QueryReply::distance_to_similarity(3.0f32) - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_query_reply_filter_by_relative_distance() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 1.0));
+        reply.push(QueryResult::new(2, 1.1)); // Within 20%
+        reply.push(QueryResult::new(3, 1.15)); // Within 20% (threshold is 1.2)
+        reply.push(QueryResult::new(4, 2.0)); // Beyond 20%
+
+        reply.filter_by_relative_distance(0.2);
+
+        assert_eq!(reply.len(), 3);
+        assert!(reply.results.iter().all(|r| r.distance <= 1.2 + 0.001));
+    }
+
+    #[test]
+    fn test_query_reply_filter_by_relative_distance_empty() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.filter_by_relative_distance(0.2);
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn test_query_reply_default() {
+        let reply: QueryReply<f32> = QueryReply::default();
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn test_query_reply_into_iterator() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+
+        let collected: Vec<_> = reply.into_iter().collect();
+        assert_eq!(collected.len(), 2);
+    }
+
+    #[test]
+    fn test_query_reply_ref_iterator() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+
+        let mut count = 0;
+        for _ in &reply {
+            count += 1;
+        }
+        assert_eq!(count, 2);
+        // reply is still valid
+        assert_eq!(reply.len(), 2);
+    }
+
+    #[test]
+    fn test_query_reply_iter() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+
+        let labels: Vec<_> = reply.iter().map(|r| r.label).collect();
+        assert_eq!(labels, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_query_reply_clone() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+
+        let cloned = reply.clone();
+        assert_eq!(cloned.len(), 2);
+        assert_eq!(cloned.results[0].label, 1);
+        assert_eq!(cloned.results[1].label, 2);
+    }
+
+    #[test]
+    fn test_query_reply_debug() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+
+        let debug_str = format!("{:?}", reply);
+        assert!(debug_str.contains("QueryReply"));
+        assert!(debug_str.contains("results"));
+    }
+
+    #[test]
+    fn test_query_result_debug() {
+        let result = QueryResult::<f32>::new(42, 1.5);
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("QueryResult"));
+        assert!(debug_str.contains("label"));
+        assert!(debug_str.contains("distance"));
+    }
+
+    #[test]
+    fn test_query_reply_sort_by_distance_then_label() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(3, 0.5));
+        reply.push(QueryResult::new(1, 0.5)); // Same distance
+        reply.push(QueryResult::new(2, 1.0));
+
+        reply.sort_by_distance_then_label();
+
+        assert_eq!(reply.results[0].label, 1); // 0.5, label 1
+        assert_eq!(reply.results[1].label, 3); // 0.5, label 3
+        assert_eq!(reply.results[2].label, 2); // 1.0
+    }
+
+    #[test]
+    fn test_query_reply_deduplicate_empty() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.deduplicate_by_label();
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn test_query_reply_deduplicate_single() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.deduplicate_by_label();
+        assert_eq!(reply.len(), 1);
+    }
+
+    #[test]
+    fn test_query_result_with_f64() {
+        let r1 = QueryResult::<f64>::new(1, 0.5);
+        let r2 = QueryResult::<f64>::new(2, 1.0);
+
+        assert!(r1 < r2);
+        assert_eq!(r1.label, 1);
+        assert!((r1.distance - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_query_reply_with_f64() {
+        let mut reply = QueryReply::<f64>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+
+        reply.sort_by_distance();
+
+        assert_eq!(reply.results[0].label, 1);
+        assert_eq!(reply.len(), 2);
+    }
+
+    #[test]
+    fn test_query_reply_top_k_more_than_available() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.5));
+        reply.push(QueryResult::new(2, 1.0));
+
+        reply.top_k(10);
+
+        // Should have all results, sorted
+        assert_eq!(reply.len(), 2);
+        assert_eq!(reply.results[0].label, 1);
+    }
+
+    #[test]
+    fn test_query_reply_filter_by_distance_zero() {
+        let mut reply = QueryReply::<f32>::new();
+        reply.push(QueryResult::new(1, 0.0));
+        reply.push(QueryResult::new(2, 0.5));
+
+        reply.filter_by_distance(0.0);
+
+        assert_eq!(reply.len(), 1);
+        assert_eq!(reply.results[0].label, 1);
+    }
 }
