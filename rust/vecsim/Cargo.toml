@@ -20,3 +20,7 @@ nightly = []  # Enable nightly-only SIMD intrinsics
 
 [dev-dependencies]
 criterion = "0.5"
+
+[[bench]]
+name = "tiered_bench"
+harness = false
