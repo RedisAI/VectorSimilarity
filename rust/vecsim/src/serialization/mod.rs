@@ -53,6 +53,8 @@ pub enum IndexTypeId {
     BruteForceMulti = 2,
     HnswSingle = 3,
     HnswMulti = 4,
+    TieredSingle = 5,
+    TieredMulti = 6,
 }
 
 impl IndexTypeId {
@@ -62,6 +64,8 @@ impl IndexTypeId {
             2 => Some(IndexTypeId::BruteForceMulti),
             3 => Some(IndexTypeId::HnswSingle),
             4 => Some(IndexTypeId::HnswMulti),
+            5 => Some(IndexTypeId::TieredSingle),
+            6 => Some(IndexTypeId::TieredMulti),
             _ => None,
         }
     }
@@ -72,6 +76,8 @@ impl IndexTypeId {
             IndexTypeId::BruteForceMulti => "BruteForceMulti",
             IndexTypeId::HnswSingle => "HnswSingle",
             IndexTypeId::HnswMulti => "HnswMulti",
+            IndexTypeId::TieredSingle => "TieredSingle",
+            IndexTypeId::TieredMulti => "TieredMulti",
         }
     }
 }

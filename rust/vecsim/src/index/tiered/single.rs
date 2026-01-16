@@ -458,6 +458,206 @@ impl<T: VectorElement> VecSimIndex for TieredSingle<T> {
     }
 }
 
+// Serialization implementation for f32
+impl TieredSingle<f32> {
+    /// Save the index to a writer.
+    ///
+    /// The serialization format saves both tiers (flat buffer and HNSW) independently,
+    /// preserving the exact state of the index.
+    pub fn save<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> crate::serialization::SerializationResult<()> {
+        use crate::serialization::*;
+
+        let count = self.count.load(Ordering::Relaxed);
+
+        // Write header
+        let header = IndexHeader::new(
+            IndexTypeId::TieredSingle,
+            DataTypeId::F32,
+            self.params.metric,
+            self.params.dim,
+            count,
+        );
+        header.write(writer)?;
+
+        // Write tiered params
+        write_usize(writer, self.params.flat_buffer_limit)?;
+        write_u8(writer, if self.params.write_mode == WriteMode::InPlace { 1 } else { 0 })?;
+        write_usize(writer, self.params.initial_capacity)?;
+
+        // Write HNSW params
+        write_usize(writer, self.params.hnsw_params.m)?;
+        write_usize(writer, self.params.hnsw_params.m_max_0)?;
+        write_usize(writer, self.params.hnsw_params.ef_construction)?;
+        write_usize(writer, self.params.hnsw_params.ef_runtime)?;
+        write_u8(writer, if self.params.hnsw_params.enable_heuristic { 1 } else { 0 })?;
+
+        // Write capacity
+        write_u8(writer, if self.capacity.is_some() { 1 } else { 0 })?;
+        if let Some(cap) = self.capacity {
+            write_usize(writer, cap)?;
+        }
+
+        // Write flat buffer state
+        let flat = self.flat.read();
+        let flat_labels = self.flat_labels.read();
+        let flat_count = flat.index_size();
+
+        write_usize(writer, flat_count)?;
+        for &label in flat_labels.iter() {
+            if let Some(vec) = flat.get_vector(label) {
+                write_u64(writer, label)?;
+                for &v in &vec {
+                    write_f32(writer, v)?;
+                }
+            }
+        }
+        drop(flat);
+        drop(flat_labels);
+
+        // Write HNSW state
+        let hnsw = self.hnsw.read();
+        let hnsw_labels = self.hnsw_labels.read();
+        let hnsw_count = hnsw.index_size();
+
+        write_usize(writer, hnsw_count)?;
+        for &label in hnsw_labels.iter() {
+            if let Some(vec) = hnsw.get_vector(label) {
+                write_u64(writer, label)?;
+                for &v in &vec {
+                    write_f32(writer, v)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load the index from a reader.
+    pub fn load<R: std::io::Read>(reader: &mut R) -> crate::serialization::SerializationResult<Self> {
+        use crate::serialization::*;
+
+        // Read header
+        let header = IndexHeader::read(reader)?;
+
+        if header.index_type != IndexTypeId::TieredSingle {
+            return Err(SerializationError::IndexTypeMismatch {
+                expected: "TieredSingle".to_string(),
+                got: header.index_type.as_str().to_string(),
+            });
+        }
+
+        if header.data_type != DataTypeId::F32 {
+            return Err(SerializationError::InvalidData(
+                "Expected f32 data type".to_string(),
+            ));
+        }
+
+        // Read tiered params
+        let flat_buffer_limit = read_usize(reader)?;
+        let write_mode = if read_u8(reader)? != 0 {
+            WriteMode::InPlace
+        } else {
+            WriteMode::Async
+        };
+        let initial_capacity = read_usize(reader)?;
+
+        // Read HNSW params
+        let m = read_usize(reader)?;
+        let m_max_0 = read_usize(reader)?;
+        let ef_construction = read_usize(reader)?;
+        let ef_runtime = read_usize(reader)?;
+        let enable_heuristic = read_u8(reader)? != 0;
+
+        // Build params
+        let mut hnsw_params = crate::index::hnsw::HnswParams::new(header.dimension, header.metric)
+            .with_m(m)
+            .with_ef_construction(ef_construction)
+            .with_ef_runtime(ef_runtime);
+        hnsw_params.m_max_0 = m_max_0;
+        hnsw_params.enable_heuristic = enable_heuristic;
+
+        let params = TieredParams {
+            dim: header.dimension,
+            metric: header.metric,
+            hnsw_params,
+            flat_buffer_limit,
+            write_mode,
+            initial_capacity,
+        };
+
+        let mut index = Self::new(params);
+
+        // Read capacity
+        let has_capacity = read_u8(reader)? != 0;
+        if has_capacity {
+            index.capacity = Some(read_usize(reader)?);
+        }
+
+        // Read flat buffer vectors
+        let flat_count = read_usize(reader)?;
+        {
+            let mut flat = index.flat.write();
+            let mut flat_labels = index.flat_labels.write();
+            for _ in 0..flat_count {
+                let label = read_u64(reader)?;
+                let mut vec = vec![0.0f32; header.dimension];
+                for v in &mut vec {
+                    *v = read_f32(reader)?;
+                }
+                flat.add_vector(&vec, label).map_err(|e| {
+                    SerializationError::DataCorruption(format!("Failed to add vector: {e:?}"))
+                })?;
+                flat_labels.insert(label);
+            }
+        }
+
+        // Read HNSW vectors
+        let hnsw_count = read_usize(reader)?;
+        {
+            let mut hnsw = index.hnsw.write();
+            let mut hnsw_labels = index.hnsw_labels.write();
+            for _ in 0..hnsw_count {
+                let label = read_u64(reader)?;
+                let mut vec = vec![0.0f32; header.dimension];
+                for v in &mut vec {
+                    *v = read_f32(reader)?;
+                }
+                hnsw.add_vector(&vec, label).map_err(|e| {
+                    SerializationError::DataCorruption(format!("Failed to add vector: {e:?}"))
+                })?;
+                hnsw_labels.insert(label);
+            }
+        }
+
+        // Set total count
+        index.count.store(flat_count + hnsw_count, Ordering::Relaxed);
+
+        Ok(index)
+    }
+
+    /// Save the index to a file.
+    pub fn save_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> crate::serialization::SerializationResult<()> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        self.save(&mut writer)
+    }
+
+    /// Load the index from a file.
+    pub fn load_from_file<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> crate::serialization::SerializationResult<Self> {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        Self::load(&mut reader)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,5 +820,83 @@ mod tests {
         let query = vec![0.0, 1.0, 0.0, 0.0];
         let results = index.top_k_query(&query, 1, None).unwrap();
         assert!((results.results[0].distance as f64) < 0.001);
+    }
+
+    #[test]
+    fn test_tiered_single_serialization() {
+        use std::io::Cursor;
+
+        let params = TieredParams::new(4, Metric::L2)
+            .with_flat_buffer_limit(5)
+            .with_m(8)
+            .with_ef_construction(50);
+        let mut index = TieredSingle::<f32>::new(params);
+
+        // Add vectors to flat buffer
+        index.add_vector(&vec![1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+        // Flush some to HNSW
+        index.flush().unwrap();
+
+        // Add more to flat
+        index.add_vector(&vec![0.0, 0.0, 1.0, 0.0], 3).unwrap();
+
+        assert_eq!(index.flat_size(), 1);
+        assert_eq!(index.hnsw_size(), 2);
+        assert_eq!(index.index_size(), 3);
+
+        // Serialize
+        let mut buffer = Vec::new();
+        index.save(&mut buffer).unwrap();
+
+        // Deserialize
+        let mut cursor = Cursor::new(buffer);
+        let loaded = TieredSingle::<f32>::load(&mut cursor).unwrap();
+
+        // Verify state
+        assert_eq!(loaded.index_size(), 3);
+        assert_eq!(loaded.flat_size(), 1);
+        assert_eq!(loaded.hnsw_size(), 2);
+        assert_eq!(loaded.dimension(), 4);
+
+        // Verify vectors can be queried
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = loaded.top_k_query(&query, 3, None).unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results.results[0].label, 1); // Closest to query
+    }
+
+    #[test]
+    fn test_tiered_single_serialization_file() {
+        use std::fs;
+
+        let params = TieredParams::new(4, Metric::L2);
+        let mut index = TieredSingle::<f32>::new(params);
+
+        for i in 0..10 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.add_vector(&v, i as u64).unwrap();
+        }
+
+        // Flush half
+        index.flush().unwrap();
+
+        for i in 10..15 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.add_vector(&v, i as u64).unwrap();
+        }
+
+        let path = "/tmp/tiered_single_test.idx";
+        index.save_to_file(path).unwrap();
+
+        let loaded = TieredSingle::<f32>::load_from_file(path).unwrap();
+
+        assert_eq!(loaded.index_size(), 15);
+        assert!(loaded.contains(0));
+        assert!(loaded.contains(14));
+
+        // Cleanup
+        fs::remove_file(path).ok();
     }
 }
