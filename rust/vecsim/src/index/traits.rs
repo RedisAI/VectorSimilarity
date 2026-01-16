@@ -28,6 +28,15 @@ pub enum IndexError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Index data corruption detected: {0}")]
+    Corruption(String),
+
+    #[error("Memory allocation failed")]
+    MemoryExhausted,
+
+    #[error("Duplicate label: {0} already exists")]
+    DuplicateLabel(LabelType),
 }
 
 /// Errors that can occur during query operations.
@@ -41,6 +50,15 @@ pub enum QueryError {
 
     #[error("Query cancelled")]
     Cancelled,
+
+    #[error("Query timed out after {0}ms")]
+    Timeout(u64),
+
+    #[error("Empty query vector")]
+    EmptyVector,
+
+    #[error("Vector is not normalized (required for this metric)")]
+    NotNormalized,
 }
 
 /// Information about the index.

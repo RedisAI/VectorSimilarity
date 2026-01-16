@@ -49,6 +49,8 @@ pub struct HnswParams {
     pub initial_capacity: usize,
     /// Enable diverse neighbor selection heuristic.
     pub enable_heuristic: bool,
+    /// Random seed for reproducible level generation (None = random).
+    pub seed: Option<u64>,
 }
 
 impl HnswParams {
@@ -63,6 +65,7 @@ impl HnswParams {
             ef_runtime: 10,
             initial_capacity: 1024,
             enable_heuristic: true,
+            seed: None,
         }
     }
 
@@ -70,6 +73,12 @@ impl HnswParams {
     pub fn with_m(mut self, m: usize) -> Self {
         self.m = m;
         self.m_max_0 = m * 2;
+        self
+    }
+
+    /// Set M_max_0 parameter independently (overrides 2*M default).
+    pub fn with_m_max_0(mut self, m_max_0: usize) -> Self {
+        self.m_max_0 = m_max_0;
         self
     }
 
@@ -94,6 +103,15 @@ impl HnswParams {
     /// Enable/disable heuristic neighbor selection.
     pub fn with_heuristic(mut self, enable: bool) -> Self {
         self.enable_heuristic = enable;
+        self
+    }
+
+    /// Set random seed for reproducible level generation.
+    ///
+    /// When set, the same sequence of insertions will produce
+    /// the same graph structure, useful for testing and debugging.
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = Some(seed);
         self
     }
 }
@@ -123,12 +141,20 @@ pub(crate) struct HnswCore<T: VectorElement> {
 impl<T: VectorElement> HnswCore<T> {
     /// Create a new HNSW core.
     pub fn new(params: HnswParams) -> Self {
+        use rand::SeedableRng;
+
         let data = DataBlocks::new(params.dim, params.initial_capacity);
         let dist_fn = create_distance_function(params.metric, params.dim);
         let visited_pool = VisitedNodesHandlerPool::new(params.initial_capacity);
 
         // Level multiplier: 1/ln(M)
         let level_mult = 1.0 / (params.m as f64).ln();
+
+        // Initialize RNG with seed if provided, otherwise use entropy
+        let rng = match params.seed {
+            Some(seed) => rand::rngs::StdRng::seed_from_u64(seed),
+            None => rand::rngs::StdRng::from_entropy(),
+        };
 
         Self {
             data,
@@ -138,7 +164,7 @@ impl<T: VectorElement> HnswCore<T> {
             max_level: AtomicU32::new(0),
             visited_pool,
             level_mult,
-            rng: parking_lot::Mutex::new(rand::SeedableRng::from_entropy()),
+            rng: parking_lot::Mutex::new(rng),
             params,
         }
     }

@@ -627,6 +627,7 @@ impl HnswSingle<f32> {
             ef_runtime,
             initial_capacity: header.count.max(1024),
             enable_heuristic,
+            seed: None, // Seed not preserved in serialization
         };
         let mut index = Self::new(params);
 

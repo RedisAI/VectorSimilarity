@@ -139,6 +139,74 @@ pub fn l2_norm<T: VectorElement>(vector: &[T]) -> f64 {
     norm_sq.sqrt()
 }
 
+/// Compute the dot product (inner product) of two vectors.
+///
+/// Returns the sum of element-wise products.
+pub fn dot_product<T: VectorElement>(a: &[T], b: &[T]) -> f64 {
+    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x.to_f32() as f64) * (y.to_f32() as f64))
+        .sum()
+}
+
+/// Compute the cosine similarity between two vectors.
+///
+/// Returns a value in [-1, 1] where 1 means identical direction,
+/// 0 means orthogonal, and -1 means opposite direction.
+///
+/// Returns `None` if either vector has zero norm.
+pub fn cosine_similarity<T: VectorElement>(a: &[T], b: &[T]) -> Option<f64> {
+    let dot = dot_product(a, b);
+    let norm_a = l2_norm(a);
+    let norm_b = l2_norm(b);
+
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return None;
+    }
+
+    Some(dot / (norm_a * norm_b))
+}
+
+/// Compute the Euclidean distance between two vectors.
+///
+/// This is the square root of the L2 squared distance.
+pub fn euclidean_distance<T: VectorElement>(a: &[T], b: &[T]) -> f64 {
+    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
+    let sum_sq: f64 = a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let diff = (x.to_f32() as f64) - (y.to_f32() as f64);
+            diff * diff
+        })
+        .sum();
+    sum_sq.sqrt()
+}
+
+/// Compute the L2 squared distance between two vectors.
+///
+/// This is more efficient than Euclidean distance when you don't need
+/// the actual distance value (e.g., for comparisons).
+pub fn l2_squared<T: VectorElement>(a: &[T], b: &[T]) -> f64 {
+    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let diff = (x.to_f32() as f64) - (y.to_f32() as f64);
+            diff * diff
+        })
+        .sum()
+}
+
+/// Normalize multiple vectors in batch.
+///
+/// Returns a vector of normalized vectors, skipping any that have zero norm.
+pub fn batch_normalize<T: VectorElement>(vectors: &[Vec<T>]) -> Vec<Vec<T>> {
+    vectors.iter()
+        .filter_map(|v| normalize(v))
+        .collect()
+}
+
 /// Create a distance function for the given metric and element type.
 pub fn create_distance_function<T: VectorElement>(
     metric: Metric,

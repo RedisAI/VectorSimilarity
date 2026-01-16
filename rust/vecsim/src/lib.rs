@@ -107,7 +107,10 @@ pub mod prelude {
     };
 
     // Distance
-    pub use crate::distance::{l2_norm, normalize, normalize_in_place, Metric};
+    pub use crate::distance::{
+        batch_normalize, cosine_similarity, dot_product, euclidean_distance, l2_norm, l2_squared,
+        normalize, normalize_in_place, Metric,
+    };
 
     // Query
     pub use crate::query::{QueryParams, QueryReply, QueryResult};
