@@ -296,4 +296,195 @@ mod tests {
         assert_eq!(graph.max_degree(), 3);
         assert_eq!(graph.min_degree(), 1);
     }
+
+    #[test]
+    fn test_vamana_graph_data_new() {
+        let node = VamanaGraphData::new(8);
+        assert_eq!(node.get_label(), 0);
+        assert!(!node.is_deleted());
+        assert_eq!(node.neighbor_count(), 0);
+        assert!(node.get_neighbors().is_empty());
+    }
+
+    #[test]
+    fn test_vamana_graph_data_label() {
+        let node = VamanaGraphData::new(4);
+
+        node.set_label(12345);
+        assert_eq!(node.get_label(), 12345);
+
+        node.set_label(u64::MAX);
+        assert_eq!(node.get_label(), u64::MAX);
+    }
+
+    #[test]
+    fn test_vamana_graph_data_neighbors() {
+        let node = VamanaGraphData::new(4);
+
+        node.set_neighbors(&[1, 2, 3]);
+        assert_eq!(node.neighbor_count(), 3);
+        assert_eq!(node.get_neighbors(), vec![1, 2, 3]);
+
+        // Clear and set new neighbors
+        node.clear_neighbors();
+        assert_eq!(node.neighbor_count(), 0);
+
+        node.set_neighbors(&[10, 20]);
+        assert_eq!(node.get_neighbors(), vec![10, 20]);
+    }
+
+    #[test]
+    fn test_vamana_graph_data_debug() {
+        let node = VamanaGraphData::new(4);
+        node.set_label(42);
+        node.set_neighbors(&[1, 2]);
+
+        let debug_str = format!("{:?}", node);
+        assert!(debug_str.contains("VamanaGraphData"));
+        assert!(debug_str.contains("label"));
+        assert!(debug_str.contains("deleted"));
+        assert!(debug_str.contains("neighbor_count"));
+    }
+
+    #[test]
+    fn test_vamana_graph_empty() {
+        let graph = VamanaGraph::new(10, 4);
+        assert!(graph.is_empty());
+        assert_eq!(graph.len(), 0);
+        assert_eq!(graph.average_degree(), 0.0);
+        assert_eq!(graph.max_degree(), 0);
+        assert_eq!(graph.min_degree(), 0);
+    }
+
+    #[test]
+    fn test_vamana_graph_get_nonexistent() {
+        let graph = VamanaGraph::new(10, 4);
+
+        assert!(graph.get(0).is_none());
+        assert!(graph.get(100).is_none());
+        assert_eq!(graph.get_label(0), 0);
+        assert!(graph.is_deleted(100)); // Non-existent treated as deleted
+        assert!(graph.get_neighbors(50).is_empty());
+    }
+
+    #[test]
+    fn test_vamana_graph_clear_neighbors_nonexistent() {
+        let mut graph = VamanaGraph::new(10, 4);
+        // Should not panic on non-existent node
+        graph.clear_neighbors(0);
+        graph.clear_neighbors(100);
+    }
+
+    #[test]
+    fn test_vamana_graph_mark_deleted_nonexistent() {
+        let mut graph = VamanaGraph::new(10, 4);
+        // Should not panic on non-existent node
+        graph.mark_deleted(0);
+        graph.mark_deleted(100);
+    }
+
+    #[test]
+    fn test_vamana_graph_ensure_capacity() {
+        let mut graph = VamanaGraph::new(5, 4);
+
+        // Initially capacity is 5
+        graph.set_label(10, 100);
+
+        // Should have auto-expanded
+        assert_eq!(graph.get_label(10), 100);
+    }
+
+    #[test]
+    fn test_vamana_graph_deleted_not_counted_in_stats() {
+        let mut graph = VamanaGraph::new(10, 4);
+
+        graph.set_neighbors(0, &[1, 2, 3, 4]);
+        graph.set_neighbors(1, &[0]);
+        graph.set_neighbors(2, &[0, 1]);
+
+        // Before deletion
+        let avg_before = graph.average_degree();
+
+        // Delete node 0 with 4 neighbors
+        graph.mark_deleted(0);
+
+        // After deletion, stats should only count non-deleted nodes
+        let avg_after = graph.average_degree();
+
+        // With node 0 deleted, we have nodes 1 and 2 with degrees 1 and 2
+        assert!((avg_after - 1.5).abs() < 0.01);
+        assert!(avg_before > avg_after); // Should be lower after removing high-degree node
+    }
+
+    #[test]
+    fn test_vamana_graph_debug() {
+        let mut graph = VamanaGraph::new(10, 4);
+        graph.set_neighbors(0, &[1, 2]);
+        graph.set_neighbors(1, &[0]);
+
+        let debug_str = format!("{:?}", graph);
+        assert!(debug_str.contains("VamanaGraph"));
+        assert!(debug_str.contains("node_count"));
+        assert!(debug_str.contains("max_neighbors"));
+        assert!(debug_str.contains("avg_degree"));
+    }
+
+    #[test]
+    fn test_vamana_graph_concurrent_read() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let mut graph = VamanaGraph::new(100, 10);
+
+        // Populate graph
+        for i in 0..100 {
+            graph.set_label(i, i as u64 * 10);
+            let neighbors: Vec<u32> = (0..10).filter(|&j| j != i).take(5).collect();
+            graph.set_neighbors(i, &neighbors);
+        }
+
+        let graph = Arc::new(graph);
+
+        // Concurrent reads
+        let mut handles = vec![];
+        for _ in 0..4 {
+            let graph_clone = Arc::clone(&graph);
+            handles.push(thread::spawn(move || {
+                for i in 0..100 {
+                    let _ = graph_clone.get_label(i);
+                    let _ = graph_clone.get_neighbors(i);
+                    let _ = graph_clone.is_deleted(i);
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_vamana_graph_len_with_gaps() {
+        let mut graph = VamanaGraph::new(10, 4);
+
+        // Create nodes with gaps
+        graph.set_label(0, 100);
+        graph.set_label(5, 500);
+        graph.set_label(9, 900);
+
+        assert_eq!(graph.len(), 3);
+    }
+
+    #[test]
+    fn test_vamana_graph_data_neighbors_replace() {
+        let node = VamanaGraphData::new(4);
+
+        node.set_neighbors(&[1, 2, 3, 4]);
+        assert_eq!(node.get_neighbors(), vec![1, 2, 3, 4]);
+
+        // Replace with different neighbors
+        node.set_neighbors(&[10, 20]);
+        assert_eq!(node.get_neighbors(), vec![10, 20]);
+        assert_eq!(node.neighbor_count(), 2);
+    }
 }

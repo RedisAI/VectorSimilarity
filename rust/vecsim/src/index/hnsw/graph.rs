@@ -267,4 +267,196 @@ mod tests {
         assert_eq!(data.levels[1].capacity(), 16);
         assert_eq!(data.levels[2].capacity(), 16);
     }
+
+    #[test]
+    fn test_level_links_empty() {
+        let links = LevelLinks::new(4);
+        assert!(links.is_empty());
+        assert_eq!(links.len(), 0);
+        assert_eq!(links.get_neighbors(), Vec::<IdType>::new());
+        assert!(!links.contains(1));
+        assert!(!links.remove(1));
+    }
+
+    #[test]
+    fn test_level_links_set_neighbors() {
+        let links = LevelLinks::new(4);
+
+        links.set_neighbors(&[1, 2, 3]);
+        assert_eq!(links.len(), 3);
+        assert_eq!(links.get_neighbors(), vec![1, 2, 3]);
+
+        // Overwrite with different neighbors
+        links.set_neighbors(&[10, 20]);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links.get_neighbors(), vec![10, 20]);
+
+        // Clear all
+        links.set_neighbors(&[]);
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn test_level_links_set_neighbors_truncates() {
+        let links = LevelLinks::new(3);
+
+        // Try to set more than capacity
+        links.set_neighbors(&[1, 2, 3, 4, 5, 6]);
+        assert_eq!(links.len(), 3);
+        assert_eq!(links.get_neighbors(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_level_links_remove_first() {
+        let links = LevelLinks::new(4);
+        links.set_neighbors(&[1, 2, 3, 4]);
+
+        assert!(links.remove(1));
+        assert_eq!(links.len(), 3);
+        assert!(!links.contains(1));
+        // First element is now swapped with last
+        let neighbors = links.get_neighbors();
+        assert!(neighbors.contains(&4));
+        assert!(neighbors.contains(&2));
+        assert!(neighbors.contains(&3));
+    }
+
+    #[test]
+    fn test_level_links_remove_last() {
+        let links = LevelLinks::new(4);
+        links.set_neighbors(&[1, 2, 3, 4]);
+
+        assert!(links.remove(4));
+        assert_eq!(links.len(), 3);
+        assert_eq!(links.get_neighbors(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_level_links_remove_middle() {
+        let links = LevelLinks::new(4);
+        links.set_neighbors(&[1, 2, 3, 4]);
+
+        assert!(links.remove(2));
+        assert_eq!(links.len(), 3);
+        // 2 is replaced by 4 (swap with last)
+        let neighbors = links.get_neighbors();
+        assert!(neighbors.contains(&1));
+        assert!(neighbors.contains(&4));
+        assert!(neighbors.contains(&3));
+    }
+
+    #[test]
+    fn test_level_links_remove_nonexistent() {
+        let links = LevelLinks::new(4);
+        links.set_neighbors(&[1, 2, 3]);
+
+        assert!(!links.remove(99));
+        assert_eq!(links.len(), 3);
+    }
+
+    #[test]
+    fn test_level_links_concurrent_add() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let links = Arc::new(LevelLinks::new(100));
+
+        let mut handles = vec![];
+        for t in 0..4 {
+            let links_clone = Arc::clone(&links);
+            handles.push(thread::spawn(move || {
+                for i in 0..25 {
+                    links_clone.try_add((t * 25 + i) as u32);
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(links.len(), 100);
+    }
+
+    #[test]
+    fn test_element_metadata() {
+        let meta = ElementMetaData::new(123, 5);
+        assert_eq!(meta.label, 123);
+        assert_eq!(meta.level, 5);
+        assert!(!meta.deleted);
+    }
+
+    #[test]
+    fn test_element_graph_data_level_zero_only() {
+        let data = ElementGraphData::new(1, 0, 32, 16);
+
+        assert_eq!(data.meta.label, 1);
+        assert_eq!(data.max_level(), 0);
+        assert_eq!(data.levels.len(), 1);
+        assert_eq!(data.levels[0].capacity(), 32);
+    }
+
+    #[test]
+    fn test_element_graph_data_get_set_neighbors() {
+        let data = ElementGraphData::new(1, 2, 32, 16);
+
+        // Level 0
+        data.set_neighbors(0, &[10, 20, 30]);
+        assert_eq!(data.get_neighbors(0), vec![10, 20, 30]);
+
+        // Level 1
+        data.set_neighbors(1, &[100, 200]);
+        assert_eq!(data.get_neighbors(1), vec![100, 200]);
+
+        // Level 2
+        data.set_neighbors(2, &[1000]);
+        assert_eq!(data.get_neighbors(2), vec![1000]);
+
+        // Out of bounds level returns empty
+        assert_eq!(data.get_neighbors(5), Vec::<IdType>::new());
+
+        // Setting out of bounds level does nothing
+        data.set_neighbors(5, &[1, 2, 3]);
+        assert_eq!(data.get_neighbors(5), Vec::<IdType>::new());
+    }
+
+    #[test]
+    fn test_element_graph_data_debug() {
+        let data = ElementGraphData::new(42, 1, 4, 2);
+        data.set_neighbors(0, &[1, 2]);
+        data.set_neighbors(1, &[3]);
+
+        let debug_str = format!("{:?}", data);
+        assert!(debug_str.contains("ElementGraphData"));
+        assert!(debug_str.contains("meta"));
+        assert!(debug_str.contains("levels"));
+    }
+
+    #[test]
+    fn test_level_links_debug() {
+        let links = LevelLinks::new(4);
+        links.set_neighbors(&[1, 2, 3]);
+
+        let debug_str = format!("{:?}", links);
+        assert!(debug_str.contains("LevelLinks"));
+        assert!(debug_str.contains("count"));
+        assert!(debug_str.contains("capacity"));
+        assert!(debug_str.contains("neighbors"));
+    }
+
+    #[test]
+    fn test_element_graph_data_lock() {
+        let data = ElementGraphData::new(1, 0, 32, 16);
+
+        // Test lock can be acquired and released
+        {
+            let _guard = data.lock.lock();
+            // Lock held
+        }
+        // Lock released
+        {
+            let _guard2 = data.lock.lock();
+            // Lock can be acquired again
+        }
+    }
 }

@@ -252,6 +252,8 @@ fn select_closest<D: DistanceType>(candidates: &[(IdType, D)], max_degree: usize
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::distance::{l2::L2Distance, DistanceFunction};
+    use crate::index::hnsw::VisitedNodesHandlerPool;
 
     #[test]
     fn test_select_closest() {
@@ -267,5 +269,564 @@ mod tests {
         let candidates = vec![(1u32, 1.0f32), (2, 0.5)];
         let selected = select_closest(&candidates, 10);
         assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    fn test_select_closest_empty() {
+        let candidates: Vec<(IdType, f32)> = vec![];
+        let selected = select_closest(&candidates, 5);
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn test_select_closest_equal_distances() {
+        let candidates = vec![(1u32, 1.0f32), (2, 1.0), (3, 1.0)];
+        let selected = select_closest(&candidates, 2);
+        assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    fn test_greedy_beam_search_single_node() {
+        let dist_fn = L2Distance::<f32>::new(4);
+        let vectors: Vec<Vec<f32>> = vec![vec![1.0, 0.0, 0.0, 0.0]];
+
+        let mut graph = VamanaGraph::new(10, 4);
+        graph.set_label(0, 100);
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [1.0, 0.0, 0.0, 0.0];
+
+        let results = greedy_beam_search(
+            0,
+            &query,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+            &visited,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 0);
+        assert!(results[0].1 < 0.001);
+    }
+
+    #[test]
+    fn test_greedy_beam_search_finds_closest() {
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1
+            vec![2.0, 0.0], // id 2
+            vec![3.0, 0.0], // id 3 - closest to query
+        ];
+
+        let mut graph = VamanaGraph::new(10, 4);
+        for i in 0..4 {
+            graph.set_label(i, i as u64 * 10);
+        }
+        // Linear chain: 0 -> 1 -> 2 -> 3
+        graph.set_neighbors(0, &[1]);
+        graph.set_neighbors(1, &[0, 2]);
+        graph.set_neighbors(2, &[1, 3]);
+        graph.set_neighbors(3, &[2]);
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [3.0, 0.0];
+
+        let results = greedy_beam_search(
+            0, // start from 0
+            &query,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+        );
+
+        // First result should be closest (id 3)
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, 3);
+    }
+
+    #[test]
+    fn test_greedy_beam_search_respects_beam_width() {
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = (0..10).map(|i| vec![i as f32, 0.0]).collect();
+
+        let mut graph = VamanaGraph::new(10, 10);
+        for i in 0..10 {
+            graph.set_label(i, i as u64);
+        }
+        // Fully connected
+        for i in 0..10 {
+            let neighbors: Vec<u32> = (0..10).filter(|&j| j != i).collect();
+            graph.set_neighbors(i, &neighbors);
+        }
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [0.0, 0.0];
+
+        // Beam width = 3
+        let results = greedy_beam_search(
+            5, // start from middle
+            &query,
+            3,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+        );
+
+        assert!(results.len() <= 3);
+    }
+
+    #[test]
+    fn test_greedy_beam_search_skips_deleted() {
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1 - closest to query but deleted
+            vec![2.0, 0.0], // id 2
+        ];
+
+        let mut graph = VamanaGraph::new(10, 4);
+        for i in 0..3 {
+            graph.set_label(i, i as u64 * 10);
+        }
+        graph.set_neighbors(0, &[1, 2]);
+        graph.set_neighbors(1, &[0, 2]);
+        graph.set_neighbors(2, &[0, 1]);
+
+        // Mark id 1 as deleted
+        graph.mark_deleted(1);
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [1.0, 0.0]; // Closest to deleted node
+
+        let results = greedy_beam_search(
+            0,
+            &query,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+        );
+
+        // Should not contain deleted id
+        for (id, _) in &results {
+            assert_ne!(*id, 1, "Deleted node should not appear in results");
+        }
+    }
+
+    #[test]
+    fn test_greedy_beam_search_filtered() {
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1
+            vec![2.0, 0.0], // id 2
+            vec![3.0, 0.0], // id 3
+        ];
+
+        let mut graph = VamanaGraph::new(10, 4);
+        for i in 0..4 {
+            graph.set_label(i, i as u64);
+        }
+        // Fully connected
+        graph.set_neighbors(0, &[1, 2, 3]);
+        graph.set_neighbors(1, &[0, 2, 3]);
+        graph.set_neighbors(2, &[0, 1, 3]);
+        graph.set_neighbors(3, &[0, 1, 2]);
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [1.5, 0.0]; // Between 1 and 2
+
+        // Filter: only accept even IDs
+        let filter = |id: IdType| -> bool { id % 2 == 0 };
+
+        let results = greedy_beam_search_filtered(
+            0,
+            &query,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+            Some(&filter),
+        );
+
+        // All results should have even IDs
+        for (id, _) in &results {
+            assert_eq!(id % 2, 0, "Filter should only allow even IDs");
+        }
+    }
+
+    #[test]
+    fn test_robust_prune_empty() {
+        let dist_fn = L2Distance::<f32>::new(4);
+        let candidates: Vec<(IdType, f32)> = vec![];
+        let data_getter = |_id: IdType| -> Option<&[f32]> { None };
+
+        let selected = robust_prune(
+            0,
+            &candidates,
+            5,
+            1.2,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+        );
+
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn test_robust_prune_basic() {
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // target (id 0)
+            vec![1.0, 0.0], // id 1
+            vec![0.0, 1.0], // id 2 (orthogonal to 1, diverse)
+            vec![1.0, 0.0], // id 3 (same as 1, not diverse)
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(2);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let candidates = vec![(1, 1.0f32), (2, 1.0f32), (3, 1.0f32)];
+
+        let selected = robust_prune(
+            0,
+            &candidates,
+            2,
+            1.2,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+        );
+
+        // Should prefer diverse neighbors
+        assert_eq!(selected.len(), 2);
+        // Should include orthogonal vector 2 for diversity
+        assert!(selected.contains(&1) || selected.contains(&2));
+    }
+
+    #[test]
+    fn test_robust_prune_excludes_target() {
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // target (id 0)
+            vec![1.0, 0.0], // id 1
+            vec![2.0, 0.0], // id 2
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(2);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        // Include target in candidates
+        let candidates = vec![(0, 0.0f32), (1, 1.0f32), (2, 4.0f32)];
+
+        let selected = robust_prune(
+            0,
+            &candidates,
+            2,
+            1.2,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+        );
+
+        // Should not include target itself
+        assert!(!selected.contains(&0));
+    }
+
+    #[test]
+    fn test_robust_prune_fallback_when_all_pruned() {
+        // Set up vectors where alpha pruning would reject everything
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // target (id 0)
+            vec![1.0, 0.0], // id 1
+            vec![1.1, 0.0], // id 2 (very close to 1)
+            vec![1.2, 0.0], // id 3 (very close to 1 and 2)
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(2);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        // All very close together
+        let candidates = vec![(1, 1.0f32), (2, 1.21f32), (3, 1.44f32)];
+
+        // Use high alpha that would prune most candidates
+        let selected = robust_prune(
+            0,
+            &candidates,
+            3,
+            2.0, // High alpha
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+        );
+
+        // Should fill to max_degree using fallback
+        assert_eq!(selected.len(), 3);
+    }
+
+    #[test]
+    fn test_robust_prune_fewer_candidates_than_degree() {
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // target (id 0)
+            vec![1.0, 0.0], // id 1
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(2);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let candidates = vec![(1, 1.0f32)];
+
+        let selected = robust_prune(
+            0,
+            &candidates,
+            10, // Want 10, only have 1
+            1.2,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0], 1);
+    }
+
+    #[test]
+    fn test_robust_prune_alpha_effect() {
+        // Test that higher alpha allows more similar neighbors
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0],  // target (id 0)
+            vec![1.0, 0.0],  // id 1
+            vec![1.5, 0.0],  // id 2 (in same direction as 1)
+            vec![0.0, 2.0],  // id 3 (different direction)
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(2);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let candidates = vec![(1, 1.0f32), (2, 2.25f32), (3, 4.0f32)];
+
+        // Low alpha (more strict diversity)
+        let selected_low = robust_prune(
+            0,
+            &candidates,
+            3,
+            1.0,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+        );
+
+        // High alpha (less strict diversity)
+        let selected_high = robust_prune(
+            0,
+            &candidates,
+            3,
+            2.0,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+        );
+
+        // Both should return results
+        assert!(!selected_low.is_empty());
+        assert!(!selected_high.is_empty());
+    }
+
+    #[test]
+    fn test_greedy_beam_search_disconnected_entry() {
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0 - isolated
+            vec![1.0, 0.0], // id 1
+            vec![2.0, 0.0], // id 2
+        ];
+
+        let mut graph = VamanaGraph::new(10, 4);
+        for i in 0..3 {
+            graph.set_label(i, i as u64);
+        }
+        // Node 0 is isolated (no neighbors)
+        graph.set_neighbors(1, &[2]);
+        graph.set_neighbors(2, &[1]);
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [1.5, 0.0];
+
+        // Start from isolated node
+        let results = greedy_beam_search(
+            0,
+            &query,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+        );
+
+        // Should return at least the entry point
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, 0);
+    }
+
+    #[test]
+    fn test_greedy_beam_search_results_sorted() {
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1
+            vec![2.0, 0.0], // id 2
+            vec![3.0, 0.0], // id 3
+            vec![4.0, 0.0], // id 4
+        ];
+
+        let mut graph = VamanaGraph::new(10, 5);
+        for i in 0..5 {
+            graph.set_label(i, i as u64);
+        }
+        // Fully connected
+        for i in 0..5 {
+            let neighbors: Vec<u32> = (0..5).filter(|&j| j != i).collect();
+            graph.set_neighbors(i, &neighbors);
+        }
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [2.5, 0.0];
+
+        let results = greedy_beam_search(
+            0,
+            &query,
+            5,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+        );
+
+        // Results should be sorted by distance (ascending)
+        for i in 1..results.len() {
+            assert!(
+                results[i - 1].1 <= results[i].1,
+                "Results should be sorted by distance"
+            );
+        }
     }
 }

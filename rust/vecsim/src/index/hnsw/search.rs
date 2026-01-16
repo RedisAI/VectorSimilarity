@@ -262,6 +262,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::distance::{l2::L2Distance, DistanceFunction};
 
     #[test]
     fn test_select_neighbors_simple() {
@@ -271,5 +272,486 @@ mod tests {
         assert_eq!(selected.len(), 2);
         assert_eq!(selected[0], 4); // Closest
         assert_eq!(selected[1], 2);
+    }
+
+    #[test]
+    fn test_select_neighbors_simple_empty() {
+        let candidates: Vec<(IdType, f32)> = vec![];
+        let selected = select_neighbors_simple(&candidates, 5);
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn test_select_neighbors_simple_fewer_than_m() {
+        let candidates = vec![(1, 1.0f32), (2, 0.5)];
+        let selected = select_neighbors_simple(&candidates, 10);
+        assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    fn test_select_neighbors_simple_equal_distances() {
+        let candidates = vec![(1, 1.0f32), (2, 1.0), (3, 1.0)];
+        let selected = select_neighbors_simple(&candidates, 2);
+        assert_eq!(selected.len(), 2);
+        // All have same distance, so first two in sorted order
+    }
+
+    #[test]
+    fn test_select_neighbors_heuristic_empty() {
+        let candidates: Vec<(IdType, f32)> = vec![];
+        let dist_fn = L2Distance::<f32>::new(4);
+        let data_getter = |_id: IdType| -> Option<&[f32]> { None };
+
+        let selected = select_neighbors_heuristic(
+            0,
+            &candidates,
+            5,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+            false,
+            false,
+        );
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn test_select_neighbors_heuristic_basic() {
+        // Create simple test vectors
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0, 0.0, 0.0], // target (id 0)
+            vec![1.0, 0.0, 0.0, 0.0], // id 1
+            vec![0.0, 1.0, 0.0, 0.0], // id 2
+            vec![0.0, 0.0, 1.0, 0.0], // id 3
+            vec![0.5, 0.5, 0.0, 0.0], // id 4 (between 1 and 2)
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(4);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        // Distances from target (0,0,0,0):
+        // id 1: 1.0 (1^2)
+        // id 2: 1.0
+        // id 3: 1.0
+        // id 4: 0.5 (0.5^2 + 0.5^2 = 0.5)
+        let candidates = vec![(1, 1.0f32), (2, 1.0f32), (3, 1.0f32), (4, 0.5f32)];
+
+        let selected = select_neighbors_heuristic(
+            0,
+            &candidates,
+            3,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+            false,
+            false,
+        );
+
+        // Should select 4 (closest) and some diverse set
+        assert!(!selected.is_empty());
+        assert!(selected.len() <= 3);
+        assert_eq!(selected[0], 4); // Closest first
+    }
+
+    #[test]
+    fn test_select_neighbors_heuristic_with_keep_pruned() {
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // target
+            vec![1.0, 0.0], // id 1
+            vec![1.1, 0.0], // id 2 (very close to 1)
+            vec![0.0, 1.0], // id 3 (diverse direction)
+        ];
+
+        let dist_fn = L2Distance::<f32>::new(2);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        // id 2 is closer to id 1 than to target, so might be pruned
+        let candidates = vec![(1, 1.0f32), (2, 1.21f32), (3, 1.0f32)];
+
+        let selected = select_neighbors_heuristic(
+            0,
+            &candidates,
+            3,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            false,
+            true, // keep_pruned = true
+        );
+
+        assert_eq!(selected.len(), 3);
+    }
+
+    #[test]
+    fn test_greedy_search_single_node() {
+        let dist_fn = L2Distance::<f32>::new(4);
+        let vectors: Vec<Vec<f32>> = vec![vec![1.0, 0.0, 0.0, 0.0]];
+
+        // Create single-node graph
+        let mut graph: Vec<Option<ElementGraphData>> = Vec::new();
+        graph.push(Some(ElementGraphData::new(1, 0, 4, 2)));
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [1.0, 0.0, 0.0, 0.0];
+
+        let (result_id, result_dist) = greedy_search(
+            0, // entry point
+            &query,
+            0, // level
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+        );
+
+        assert_eq!(result_id, 0);
+        assert!(result_dist < 0.001); // Should be very close to 0
+    }
+
+    #[test]
+    fn test_greedy_search_finds_closest() {
+        let dist_fn = L2Distance::<f32>::new(4);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0, 0.0, 0.0], // id 0
+            vec![1.0, 0.0, 0.0, 0.0], // id 1
+            vec![2.0, 0.0, 0.0, 0.0], // id 2
+            vec![3.0, 0.0, 0.0, 0.0], // id 3
+        ];
+
+        // Create linear graph: 0 -> 1 -> 2 -> 3
+        let mut graph: Vec<Option<ElementGraphData>> = Vec::new();
+        for i in 0..4 {
+            graph.push(Some(ElementGraphData::new(i as u64, 0, 4, 2)));
+        }
+        graph[0].as_ref().unwrap().set_neighbors(0, &[1]);
+        graph[1].as_ref().unwrap().set_neighbors(0, &[0, 2]);
+        graph[2].as_ref().unwrap().set_neighbors(0, &[1, 3]);
+        graph[3].as_ref().unwrap().set_neighbors(0, &[2]);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        // Query close to id 3
+        let query = [3.0, 0.0, 0.0, 0.0];
+
+        let (result_id, result_dist) = greedy_search(
+            0, // start from entry point 0
+            &query,
+            0,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+        );
+
+        assert_eq!(result_id, 3);
+        assert!(result_dist < 0.001);
+    }
+
+    #[test]
+    fn test_greedy_search_invalid_entry_point() {
+        let dist_fn = L2Distance::<f32>::new(4);
+        let vectors: Vec<Vec<f32>> = vec![vec![1.0, 0.0, 0.0, 0.0]];
+
+        let graph: Vec<Option<ElementGraphData>> = vec![Some(ElementGraphData::new(1, 0, 4, 2))];
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let query = [1.0, 0.0, 0.0, 0.0];
+
+        // Entry point 99 doesn't exist
+        let (result_id, result_dist) = greedy_search(
+            99,
+            &query,
+            0,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            4,
+        );
+
+        // Should stay at entry point with infinity distance
+        assert_eq!(result_id, 99);
+        assert!(result_dist.is_infinite());
+    }
+
+    #[test]
+    fn test_search_layer_basic() {
+        use crate::index::hnsw::VisitedNodesHandlerPool;
+
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1 - closest to query
+            vec![2.0, 0.0], // id 2
+            vec![3.0, 0.0], // id 3
+        ];
+
+        // Create connected graph
+        let mut graph: Vec<Option<ElementGraphData>> = Vec::new();
+        for i in 0..4 {
+            graph.push(Some(ElementGraphData::new(i as u64, 0, 4, 2)));
+        }
+        // Full connectivity at level 0
+        graph[0].as_ref().unwrap().set_neighbors(0, &[1, 2, 3]);
+        graph[1].as_ref().unwrap().set_neighbors(0, &[0, 2, 3]);
+        graph[2].as_ref().unwrap().set_neighbors(0, &[0, 1, 3]);
+        graph[3].as_ref().unwrap().set_neighbors(0, &[0, 1, 2]);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let query = [1.0, 0.0]; // Closest to id 1
+        let entry_points = vec![(0u32, 1.0f32)]; // Start from id 0
+
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+            &entry_points,
+            &query,
+            0,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+            None,
+        );
+
+        assert!(!results.is_empty());
+        // First result should be id 1 (exact match)
+        assert_eq!(results[0].0, 1);
+        assert!(results[0].1 < 0.001);
+    }
+
+    #[test]
+    fn test_search_layer_with_filter() {
+        use crate::index::hnsw::VisitedNodesHandlerPool;
+
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1
+            vec![2.0, 0.0], // id 2
+            vec![3.0, 0.0], // id 3
+        ];
+
+        let mut graph: Vec<Option<ElementGraphData>> = Vec::new();
+        for i in 0..4 {
+            graph.push(Some(ElementGraphData::new(i as u64, 0, 4, 2)));
+        }
+        graph[0].as_ref().unwrap().set_neighbors(0, &[1, 2, 3]);
+        graph[1].as_ref().unwrap().set_neighbors(0, &[0, 2, 3]);
+        graph[2].as_ref().unwrap().set_neighbors(0, &[0, 1, 3]);
+        graph[3].as_ref().unwrap().set_neighbors(0, &[0, 1, 2]);
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let query = [1.0, 0.0];
+        let entry_points = vec![(0u32, 1.0f32)];
+
+        // Filter: only accept even IDs
+        let filter = |id: IdType| -> bool { id % 2 == 0 };
+
+        let results = search_layer(
+            &entry_points,
+            &query,
+            0,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+            Some(&filter),
+        );
+
+        // All results should have even IDs
+        for (id, _) in &results {
+            assert_eq!(id % 2, 0, "Filter should only allow even IDs");
+        }
+    }
+
+    #[test]
+    fn test_search_layer_skips_deleted() {
+        use crate::index::hnsw::VisitedNodesHandlerPool;
+
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = vec![
+            vec![0.0, 0.0], // id 0
+            vec![1.0, 0.0], // id 1 - closest but deleted
+            vec![2.0, 0.0], // id 2
+        ];
+
+        let mut graph: Vec<Option<ElementGraphData>> = Vec::new();
+        for i in 0..3 {
+            graph.push(Some(ElementGraphData::new(i as u64, 0, 4, 2)));
+        }
+        graph[0].as_ref().unwrap().set_neighbors(0, &[1, 2]);
+        graph[1].as_ref().unwrap().set_neighbors(0, &[0, 2]);
+        graph[2].as_ref().unwrap().set_neighbors(0, &[0, 1]);
+
+        // Mark id 1 as deleted
+        graph[1].as_mut().unwrap().meta.deleted = true;
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let query = [1.0, 0.0]; // Closest to id 1 (which is deleted)
+        let entry_points = vec![(0u32, 1.0f32)];
+
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+            &entry_points,
+            &query,
+            0,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+            None,
+        );
+
+        // Should not include deleted id 1
+        for (id, _) in &results {
+            assert_ne!(*id, 1, "Deleted node should not appear in results");
+        }
+    }
+
+    #[test]
+    fn test_search_layer_empty_graph() {
+        use crate::index::hnsw::VisitedNodesHandlerPool;
+
+        let dist_fn = L2Distance::<f32>::new(2);
+        let graph: Vec<Option<ElementGraphData>> = Vec::new();
+
+        let data_getter = |_id: IdType| -> Option<&[f32]> { None };
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let query = [1.0, 0.0];
+        let entry_points: Vec<(IdType, f32)> = vec![];
+
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+            &entry_points,
+            &query,
+            0,
+            10,
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+            None,
+        );
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_layer_respects_ef() {
+        use crate::index::hnsw::VisitedNodesHandlerPool;
+
+        let dist_fn = L2Distance::<f32>::new(2);
+        let vectors: Vec<Vec<f32>> = (0..10).map(|i| vec![i as f32, 0.0]).collect();
+
+        let mut graph: Vec<Option<ElementGraphData>> = Vec::new();
+        for i in 0..10 {
+            graph.push(Some(ElementGraphData::new(i as u64, 0, 10, 5)));
+        }
+
+        // Fully connected
+        for i in 0..10 {
+            let neighbors: Vec<u32> = (0..10).filter(|&j| j != i).map(|j| j as u32).collect();
+            graph[i].as_ref().unwrap().set_neighbors(0, &neighbors);
+        }
+
+        let data_getter = |id: IdType| -> Option<&[f32]> {
+            if (id as usize) < vectors.len() {
+                Some(&vectors[id as usize])
+            } else {
+                None
+            }
+        };
+
+        let pool = VisitedNodesHandlerPool::new(100);
+        let visited = pool.get();
+
+        let query = [0.0, 0.0];
+        let entry_points = vec![(5u32, 25.0f32)];
+
+        // Set ef = 3, should return at most 3 results
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+            &entry_points,
+            &query,
+            0,
+            3, // ef = 3
+            &graph,
+            data_getter,
+            &dist_fn as &dyn DistanceFunction<f32, Output = f32>,
+            2,
+            &visited,
+            None,
+        );
+
+        assert!(results.len() <= 3);
     }
 }
