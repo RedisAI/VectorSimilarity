@@ -34,6 +34,9 @@ pub mod neon;
 #[cfg(target_arch = "aarch64")]
 pub mod sve;
 
+#[cfg(test)]
+mod cross_consistency_tests;
+
 /// SIMD capability levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimdCapability {
