@@ -172,6 +172,9 @@ mod parallel_stress_tests;
 mod data_type_tests;
 
 #[cfg(test)]
+mod e2e_tests;
+
+#[cfg(test)]
 mod tests {
     use super::prelude::*;
 
