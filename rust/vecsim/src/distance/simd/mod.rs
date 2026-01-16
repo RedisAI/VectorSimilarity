@@ -2,12 +2,15 @@
 //!
 //! This module provides hardware-accelerated distance computations:
 //! - AVX-512 (x86_64) - 512-bit vectors, 16 f32 at a time
-//! - AVX2 (x86_64) - 256-bit vectors, 8 f32 at a time
+//! - AVX2 (x86_64) - 256-bit vectors, 8 f32 at a time, with FMA
+//! - AVX (x86_64) - 256-bit vectors, 8 f32 at a time, no FMA
 //! - SSE (x86_64) - 128-bit vectors, 4 f32 at a time
 //! - NEON (aarch64) - 128-bit vectors, 4 f32 at a time
 //!
 //! Runtime feature detection is used to select the best implementation.
 
+#[cfg(target_arch = "x86_64")]
+pub mod avx;
 #[cfg(target_arch = "x86_64")]
 pub mod avx2;
 #[cfg(target_arch = "x86_64")]
@@ -25,7 +28,10 @@ pub enum SimdCapability {
     /// SSE (128-bit vectors).
     #[cfg(target_arch = "x86_64")]
     Sse,
-    /// AVX2 (256-bit vectors).
+    /// AVX (256-bit vectors, no FMA).
+    #[cfg(target_arch = "x86_64")]
+    Avx,
+    /// AVX2 (256-bit vectors, with FMA).
     #[cfg(target_arch = "x86_64")]
     Avx2,
     /// AVX-512 (512-bit vectors).
@@ -49,9 +55,13 @@ pub fn detect_simd_capability() -> SimdCapability {
         if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
             return SimdCapability::Avx512;
         }
-        // Fall back to AVX2
+        // Fall back to AVX2 (with FMA)
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             return SimdCapability::Avx2;
+        }
+        // Fall back to AVX (without FMA)
+        if is_x86_feature_detected!("avx") {
+            return SimdCapability::Avx;
         }
         // Fall back to SSE (available on virtually all x86_64)
         if is_x86_feature_detected!("sse") {
@@ -76,6 +86,8 @@ pub fn optimal_alignment() -> usize {
         SimdCapability::Avx512 => 64,
         #[cfg(target_arch = "x86_64")]
         SimdCapability::Avx2 => 32,
+        #[cfg(target_arch = "x86_64")]
+        SimdCapability::Avx => 32,
         #[cfg(target_arch = "x86_64")]
         SimdCapability::Sse => 16,
         #[cfg(target_arch = "aarch64")]
