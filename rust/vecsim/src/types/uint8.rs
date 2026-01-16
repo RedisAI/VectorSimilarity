@@ -98,6 +98,12 @@ impl VectorElement for UInt8 {
     fn alignment() -> usize {
         32 // AVX alignment for f32 intermediate calculations
     }
+
+    #[inline(always)]
+    fn can_normalize() -> bool {
+        // UInt8 cannot be meaningfully normalized - normalized values round to 0
+        false
+    }
 }
 
 #[cfg(test)]

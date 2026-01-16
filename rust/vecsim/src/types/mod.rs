@@ -53,6 +53,14 @@ pub trait VectorElement: Copy + Clone + Debug + Send + Sync + 'static {
     fn alignment() -> usize {
         std::mem::align_of::<Self>()
     }
+
+    /// Whether this type can be meaningfully normalized for cosine distance.
+    ///
+    /// Returns `true` for floating-point types that can represent values in [0, 1].
+    /// Returns `false` for integer types where normalization would lose precision.
+    fn can_normalize() -> bool {
+        true
+    }
 }
 
 /// Trait for distance computation result types.

@@ -102,11 +102,20 @@ impl<T: VectorElement> DistanceFunction<T> for CosineDistance<T> {
     }
 
     fn preprocess(&self, vector: &[T], dim: usize) -> Vec<T> {
+        // For integer types, normalization doesn't work (values round to 0)
+        // so we store vectors unchanged and use full cosine computation
+        if !T::can_normalize() {
+            return vector.to_vec();
+        }
         // Normalize the vector during preprocessing
         normalize_vector(vector, dim)
     }
 
     fn compute_from_preprocessed(&self, stored: &[T], query: &[T], dim: usize) -> Self::Output {
+        // For integer types that weren't normalized, use full cosine computation
+        if !T::can_normalize() {
+            return self.compute(stored, query, dim);
+        }
         // When stored vectors are pre-normalized, we need to normalize query too
         // and then it's just 1 - inner_product
         let query_normalized = normalize_vector(query, dim);

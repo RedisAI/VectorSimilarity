@@ -106,6 +106,12 @@ impl VectorElement for Int64 {
     fn alignment() -> usize {
         64 // AVX-512 alignment
     }
+
+    #[inline(always)]
+    fn can_normalize() -> bool {
+        // Int64 cannot be meaningfully normalized - normalized values round to 0
+        false
+    }
 }
 
 #[cfg(test)]
