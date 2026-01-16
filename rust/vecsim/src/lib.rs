@@ -166,6 +166,9 @@ pub fn create_hnsw<T: types::VectorElement>(
 }
 
 #[cfg(test)]
+mod parallel_stress_tests;
+
+#[cfg(test)]
 mod tests {
     use super::prelude::*;
 

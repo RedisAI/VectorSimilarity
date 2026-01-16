@@ -603,4 +603,417 @@ mod tests {
         // Should have all 6 vectors
         assert_eq!(all_results.len(), 6);
     }
+
+    #[test]
+    fn test_svs_multi_multiple_labels() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Add multiple vectors per label for multiple labels
+        for label in 1..=5u64 {
+            for i in 0..3 {
+                let v = vec![label as f32, i as f32, 0.0, 0.0];
+                index.add_vector(&v, label).unwrap();
+            }
+        }
+
+        assert_eq!(index.index_size(), 15);
+        for label in 1..=5u64 {
+            assert_eq!(index.label_count(label), 3);
+        }
+        assert_eq!(index.unique_labels(), 5);
+    }
+
+    #[test]
+    fn test_svs_multi_contains() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        assert!(index.contains(1));
+        assert!(!index.contains(2));
+    }
+
+    #[test]
+    fn test_svs_multi_dimension_mismatch() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Wrong dimension on add
+        let result = index.add_vector(&[1.0, 2.0], 1);
+        assert!(matches!(result, Err(IndexError::DimensionMismatch { expected: 4, got: 2 })));
+
+        // Add a valid vector first
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        // Wrong dimension on query
+        let result = index.top_k_query(&[1.0, 2.0], 1, None);
+        assert!(matches!(result, Err(QueryError::DimensionMismatch { expected: 4, got: 2 })));
+    }
+
+    #[test]
+    fn test_svs_multi_capacity_exceeded() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::with_capacity(params, 2);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 2).unwrap();
+
+        // Third should fail
+        let result = index.add_vector(&[3.0, 0.0, 0.0, 0.0], 3);
+        assert!(matches!(result, Err(IndexError::CapacityExceeded { capacity: 2 })));
+    }
+
+    #[test]
+    fn test_svs_multi_delete_not_found() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        let result = index.delete_vector(999);
+        assert!(matches!(result, Err(IndexError::LabelNotFound(999))));
+    }
+
+    #[test]
+    fn test_svs_multi_memory_usage() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        let initial_memory = index.memory_usage();
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 2).unwrap();
+
+        let after_memory = index.memory_usage();
+        assert!(after_memory > initial_memory);
+    }
+
+    #[test]
+    fn test_svs_multi_info() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        let info = index.info();
+        assert_eq!(info.size, 2);
+        assert_eq!(info.dimension, 4);
+        assert_eq!(info.index_type, "SvsMulti");
+        assert!(info.memory_bytes > 0);
+    }
+
+    #[test]
+    fn test_svs_multi_clear() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 2).unwrap();
+
+        assert_eq!(index.index_size(), 2);
+
+        index.clear();
+
+        assert_eq!(index.index_size(), 0);
+        assert_eq!(index.unique_labels(), 0);
+        assert!(!index.contains(1));
+        assert!(!index.contains(2));
+    }
+
+    #[test]
+    fn test_svs_multi_with_capacity() {
+        let params = SvsParams::new(4, Metric::L2);
+        let index = SvsMulti::<f32>::with_capacity(params, 100);
+
+        assert_eq!(index.index_capacity(), Some(100));
+    }
+
+    #[test]
+    fn test_svs_multi_inner_product() {
+        let params = SvsParams::new(4, Metric::InnerProduct);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // For InnerProduct, higher dot product = lower "distance"
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+
+        let query = [1.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 2, None).unwrap();
+
+        // Label 1 has perfect alignment with query
+        assert_eq!(results.results[0].label, 1);
+    }
+
+    #[test]
+    fn test_svs_multi_cosine() {
+        let params = SvsParams::new(4, Metric::Cosine);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Cosine similarity is direction-based
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 3).unwrap(); // Same direction as label 1
+
+        let query = [1.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 3, None).unwrap();
+
+        // Labels 1 and 3 have the same direction (cosine=1), should be top results
+        assert!(results.results[0].label == 1 || results.results[0].label == 3);
+        assert!(results.results[1].label == 1 || results.results[1].label == 3);
+    }
+
+    #[test]
+    fn test_svs_multi_metric_getter() {
+        let params = SvsParams::new(4, Metric::Cosine);
+        let index = SvsMulti::<f32>::new(params);
+
+        assert_eq!(index.metric(), Metric::Cosine);
+    }
+
+    #[test]
+    fn test_svs_multi_range_query() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Add vectors at different distances
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 2).unwrap();
+        index.add_vector(&[3.0, 0.0, 0.0, 0.0], 3).unwrap();
+        index.add_vector(&[10.0, 0.0, 0.0, 0.0], 4).unwrap();
+
+        let query = [0.0, 0.0, 0.0, 0.0];
+        // L2 squared: dist to [1,0,0,0]=1, [2,0,0,0]=4, [3,0,0,0]=9, [10,0,0,0]=100
+        let results = index.range_query(&query, 10.0, None).unwrap();
+
+        assert_eq!(results.len(), 3); // labels 1, 2, 3 are within radius 10
+        for r in &results.results {
+            assert!(r.label != 4); // label 4 should not be included
+        }
+    }
+
+    #[test]
+    fn test_svs_multi_filtered_query() {
+        use crate::query::QueryParams;
+
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        for label in 1..=10u64 {
+            index.add_vector(&[label as f32, 0.0, 0.0, 0.0], label).unwrap();
+        }
+
+        // Filter to only allow even labels
+        let query_params = QueryParams::new().with_filter(|label| label % 2 == 0);
+        let query = [0.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 10, Some(&query_params)).unwrap();
+
+        assert_eq!(results.len(), 5); // Only labels 2, 4, 6, 8, 10
+        for r in &results.results {
+            assert!(r.label % 2 == 0);
+        }
+    }
+
+    #[test]
+    fn test_svs_multi_empty_query() {
+        let params = SvsParams::new(4, Metric::L2);
+        let index = SvsMulti::<f32>::new(params);
+
+        // Query on empty index
+        let query = [1.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 10, None).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_svs_multi_fragmentation() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        for i in 1..=10u64 {
+            index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+        }
+
+        // Initially no fragmentation
+        assert!((index.fragmentation() - 0.0).abs() < 0.01);
+
+        // Delete half the vectors
+        for i in 1..=5u64 {
+            index.delete_vector(i).unwrap();
+        }
+
+        // Now there should be fragmentation
+        assert!(index.fragmentation() > 0.3);
+    }
+
+    #[test]
+    fn test_svs_multi_medoid() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Empty index has no medoid
+        assert!(index.medoid().is_none());
+
+        // Add a vector
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        // Now should have a medoid
+        assert!(index.medoid().is_some());
+    }
+
+    #[test]
+    fn test_svs_multi_build() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Add vectors
+        for i in 0..20u64 {
+            index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+        }
+
+        // Build the index (this should complete without error)
+        index.build();
+
+        // Query should work
+        let query = [10.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 5, None).unwrap();
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_svs_multi_get_ids() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[2.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        let ids = index.get_ids(1).unwrap();
+        assert_eq!(ids.len(), 2);
+
+        // Non-existent label
+        assert!(index.get_ids(999).is_none());
+    }
+
+    #[test]
+    fn test_svs_multi_filtered_range_query() {
+        use crate::query::QueryParams;
+
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        for label in 1..=10u64 {
+            index.add_vector(&[label as f32, 0.0, 0.0, 0.0], label).unwrap();
+        }
+
+        // Filter to only allow labels 1-5, with range 50 (covers labels 1-7 by distance)
+        let query_params = QueryParams::new().with_filter(|label| label <= 5);
+        let query = [0.0, 0.0, 0.0, 0.0];
+        let results = index.range_query(&query, 50.0, Some(&query_params)).unwrap();
+
+        // Should have labels 1-5 (filtered) that are within range 50
+        assert_eq!(results.len(), 5);
+        for r in &results.results {
+            assert!(r.label <= 5);
+        }
+    }
+
+    #[test]
+    fn test_svs_multi_compact() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        for i in 1..=10u64 {
+            index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+        }
+
+        // Delete some vectors
+        for i in 1..=5u64 {
+            index.delete_vector(i).unwrap();
+        }
+
+        // Compact returns 0 for SVS (placeholder)
+        let reclaimed = index.compact(true);
+        assert_eq!(reclaimed, 0);
+
+        // Queries should still work
+        let query = [8.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 3, None).unwrap();
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_svs_multi_query_with_ef_runtime() {
+        use crate::query::QueryParams;
+
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        for i in 0..50u64 {
+            index.add_vector(&[i as f32, 0.0, 0.0, 0.0], i).unwrap();
+        }
+
+        let query = [25.0, 0.0, 0.0, 0.0];
+
+        // Query with default search window
+        let results1 = index.top_k_query(&query, 5, None).unwrap();
+        assert!(!results1.is_empty());
+
+        // Query with larger search window (via ef_runtime)
+        let query_params = QueryParams::new().with_ef_runtime(100);
+        let results2 = index.top_k_query(&query, 5, Some(&query_params)).unwrap();
+        assert!(!results2.is_empty());
+    }
+
+    #[test]
+    fn test_svs_multi_larger_scale() {
+        let params = SvsParams::new(8, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        // Add 500 vectors, 5 per label
+        for label in 0..100u64 {
+            for i in 0..5 {
+                let v = vec![
+                    label as f32 + i as f32 * 0.01,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ];
+                index.add_vector(&v, label).unwrap();
+            }
+        }
+
+        assert_eq!(index.index_size(), 500);
+        assert_eq!(index.label_count(50), 5);
+
+        // Build the index
+        index.build();
+
+        // Query should work
+        let query = vec![50.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 10, None).unwrap();
+
+        assert!(!results.is_empty());
+        // First result should be label 50 (closest)
+        assert_eq!(results.results[0].label, 50);
+    }
+
+    #[test]
+    fn test_svs_multi_zero_k_query() {
+        let params = SvsParams::new(4, Metric::L2);
+        let mut index = SvsMulti::<f32>::new(params);
+
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+
+        // Query with k=0 should return empty
+        let query = [1.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 0, None).unwrap();
+        assert!(results.is_empty());
+    }
 }
