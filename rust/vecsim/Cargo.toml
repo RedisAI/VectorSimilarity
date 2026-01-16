@@ -32,3 +32,7 @@ harness = false
 [[bench]]
 name = "tiered_bench"
 harness = false
+
+[[bench]]
+name = "comparison_bench"
+harness = false
