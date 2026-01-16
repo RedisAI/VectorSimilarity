@@ -113,6 +113,34 @@ impl<T: VectorElement> BruteForceMulti<T> {
         vector_storage + label_maps
     }
 
+    /// Clear all vectors from the index, resetting it to empty state.
+    pub fn clear(&mut self) {
+        let mut core = self.core.write();
+        let mut label_to_ids = self.label_to_ids.write();
+        let mut id_to_label = self.id_to_label.write();
+
+        core.data.clear();
+        label_to_ids.clear();
+        id_to_label.clear();
+        self.count.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Add multiple vectors at once.
+    ///
+    /// Returns the number of vectors successfully added.
+    /// Stops on first error and returns what was added so far.
+    pub fn add_vectors(
+        &mut self,
+        vectors: &[(&[T], LabelType)],
+    ) -> Result<usize, IndexError> {
+        let mut added = 0;
+        for &(vector, label) in vectors {
+            self.add_vector(vector, label)?;
+            added += 1;
+        }
+        Ok(added)
+    }
+
     /// Internal implementation of top-k query.
     fn top_k_impl(
         &self,

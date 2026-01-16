@@ -217,6 +217,39 @@ impl<T: VectorElement> HnswSingle<T> {
             None
         }
     }
+
+    /// Clear all vectors from the index, resetting it to empty state.
+    pub fn clear(&mut self) {
+        use std::sync::atomic::Ordering;
+
+        let mut core = self.core.write();
+        let mut label_to_id = self.label_to_id.write();
+        let mut id_to_label = self.id_to_label.write();
+
+        core.data.clear();
+        core.graph.clear();
+        core.entry_point.store(crate::types::INVALID_ID, Ordering::Relaxed);
+        core.max_level.store(0, Ordering::Relaxed);
+        label_to_id.clear();
+        id_to_label.clear();
+        self.count.store(0, Ordering::Relaxed);
+    }
+
+    /// Add multiple vectors at once.
+    ///
+    /// Returns the number of vectors successfully added.
+    /// Stops on first error and returns what was added so far.
+    pub fn add_vectors(
+        &mut self,
+        vectors: &[(&[T], LabelType)],
+    ) -> Result<usize, IndexError> {
+        let mut added = 0;
+        for &(vector, label) in vectors {
+            self.add_vector(vector, label)?;
+            added += 1;
+        }
+        Ok(added)
+    }
 }
 
 impl<T: VectorElement> VecSimIndex for HnswSingle<T> {

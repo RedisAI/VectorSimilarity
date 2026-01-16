@@ -254,6 +254,14 @@ impl<T: VectorElement> DataBlocks<T> {
         self.blocks[block_idx].write_vector(offset, self.dim, vector);
     }
 
+    /// Clear all vectors, resetting to empty state.
+    ///
+    /// This keeps the allocated blocks but marks them as empty.
+    pub fn clear(&mut self) {
+        self.count = 0;
+        self.free_slots.clear();
+    }
+
     /// Reserve space for additional vectors.
     pub fn reserve(&mut self, additional: usize) {
         let needed = self.count + additional;

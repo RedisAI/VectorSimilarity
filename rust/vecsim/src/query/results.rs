@@ -113,6 +113,90 @@ impl<D: DistanceType> QueryReply<D> {
     pub fn best(&self) -> Option<&QueryResult<D>> {
         self.results.first()
     }
+
+    /// Sort results by label (ascending).
+    pub fn sort_by_label(&mut self) {
+        self.results.sort_by_key(|r| r.label);
+    }
+
+    /// Sort results by distance, then by label for ties.
+    ///
+    /// This is the default sort behavior but provided explicitly.
+    pub fn sort_by_distance_then_label(&mut self) {
+        self.sort_by_distance();
+    }
+
+    /// Remove duplicate labels, keeping only the best (closest) result for each label.
+    ///
+    /// Results should be sorted by distance first for deterministic behavior.
+    pub fn deduplicate_by_label(&mut self) {
+        if self.results.is_empty() {
+            return;
+        }
+
+        // Sort by distance first to ensure we keep the best per label
+        self.sort_by_distance();
+
+        let mut seen = std::collections::HashSet::new();
+        self.results.retain(|r| seen.insert(r.label));
+    }
+
+    /// Filter results to only include those within the given distance threshold.
+    pub fn filter_by_distance(&mut self, max_distance: D) {
+        let threshold = max_distance.to_f64();
+        self.results.retain(|r| r.distance.to_f64() <= threshold);
+    }
+
+    /// Get top-k results (sorts by distance and truncates).
+    pub fn top_k(&mut self, k: usize) {
+        self.sort_by_distance();
+        self.truncate(k);
+    }
+
+    /// Skip the first n results (for pagination).
+    pub fn skip(&mut self, n: usize) {
+        if n >= self.results.len() {
+            self.results.clear();
+        } else {
+            self.results = self.results.split_off(n);
+        }
+    }
+
+    /// Convert distances to similarity scores.
+    ///
+    /// For metrics where lower distance = more similar (L2, Cosine),
+    /// this returns `1 / (1 + distance)` giving values in (0, 1].
+    ///
+    /// Returns a vector of (label, similarity) pairs.
+    pub fn to_similarities(&self) -> Vec<(LabelType, f64)> {
+        self.results
+            .iter()
+            .map(|r| {
+                let dist = r.distance.to_f64();
+                let similarity = 1.0 / (1.0 + dist);
+                (r.label, similarity)
+            })
+            .collect()
+    }
+
+    /// Convert a single distance to a similarity score.
+    pub fn distance_to_similarity(distance: D) -> f64 {
+        1.0 / (1.0 + distance.to_f64())
+    }
+
+    /// Get results within a percentage of the best distance.
+    ///
+    /// For example, `threshold_percent = 0.2` keeps results within 20% of the best.
+    pub fn filter_by_relative_distance(&mut self, threshold_percent: f64) {
+        if self.results.is_empty() {
+            return;
+        }
+
+        self.sort_by_distance();
+        let best_dist = self.results[0].distance.to_f64();
+        let threshold = best_dist * (1.0 + threshold_percent);
+        self.results.retain(|r| r.distance.to_f64() <= threshold);
+    }
 }
 
 impl<D: DistanceType> Default for QueryReply<D> {
