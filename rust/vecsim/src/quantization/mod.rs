@@ -5,11 +5,17 @@
 //! - `SQ8`: Scalar quantization to 8-bit unsigned integers with per-vector scaling
 //! - `sq8_simd`: SIMD-optimized asymmetric distance functions for SQ8
 //! - `LVQ`: Learned Vector Quantization with 4-bit/8-bit and two-level support
+//! - `LeanVec`: Dimension reduction with two-level quantization (4x8, 8x8)
 
+pub mod leanvec;
 pub mod lvq;
 pub mod sq8;
 pub mod sq8_simd;
 
+pub use leanvec::{
+    leanvec_primary_l2_squared_4bit, leanvec_primary_l2_squared_8bit, leanvec_residual_inner_product,
+    leanvec_residual_l2_squared, LeanVecBits, LeanVecCodec, LeanVecMeta,
+};
 pub use lvq::{
     lvq4_asymmetric_l2_squared, lvq4x4_asymmetric_inner_product, lvq4x4_asymmetric_l2_squared,
     LvqBits, LvqCodec, LvqVectorMeta,

@@ -104,6 +104,8 @@ pub enum DataTypeId {
     BFloat16 = 4,
     Int8 = 5,
     UInt8 = 6,
+    Int32 = 7,
+    Int64 = 8,
 }
 
 impl DataTypeId {
@@ -115,6 +117,8 @@ impl DataTypeId {
             4 => Some(DataTypeId::BFloat16),
             5 => Some(DataTypeId::Int8),
             6 => Some(DataTypeId::UInt8),
+            7 => Some(DataTypeId::Int32),
+            8 => Some(DataTypeId::Int64),
             _ => None,
         }
     }

@@ -3,17 +3,21 @@
 //! This module defines the fundamental types used throughout the library:
 //! - `LabelType`: External label for vectors (user-provided identifier)
 //! - `IdType`: Internal vector identifier
-//! - `VectorElement`: Trait for vector element types (f32, f64, Float16, BFloat16, Int8, UInt8)
+//! - `VectorElement`: Trait for vector element types (f32, f64, Float16, BFloat16, Int8, UInt8, Int32, Int64)
 //! - `DistanceType`: Trait for distance computation result types
 
 pub mod bf16;
 pub mod fp16;
 pub mod int8;
+pub mod int32;
+pub mod int64;
 pub mod uint8;
 
 pub use bf16::BFloat16;
 pub use fp16::Float16;
 pub use int8::Int8;
+pub use int32::Int32;
+pub use int64::Int64;
 pub use uint8::UInt8;
 
 use num_traits::Float;

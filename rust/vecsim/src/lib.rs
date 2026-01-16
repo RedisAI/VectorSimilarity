@@ -92,6 +92,7 @@
 pub mod containers;
 pub mod distance;
 pub mod index;
+pub mod memory;
 pub mod quantization;
 pub mod query;
 pub mod serialization;
@@ -104,7 +105,8 @@ pub mod utils;
 pub mod prelude {
     // Types
     pub use crate::types::{
-        BFloat16, DistanceType, Float16, IdType, Int8, LabelType, UInt8, VectorElement, INVALID_ID,
+        BFloat16, DistanceType, Float16, IdType, Int32, Int64, Int8, LabelType, UInt8,
+        VectorElement, INVALID_ID,
     };
 
     // Quantization
