@@ -10,6 +10,25 @@ use crate::types::{DistanceType, IdType, LabelType, VectorElement};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 
+/// Statistics about an HNSW index.
+#[derive(Debug, Clone)]
+pub struct HnswStats {
+    /// Number of vectors in the index.
+    pub size: usize,
+    /// Number of deleted (but not yet removed) elements.
+    pub deleted_count: usize,
+    /// Maximum level in the graph.
+    pub max_level: usize,
+    /// Number of elements at each level.
+    pub level_counts: Vec<usize>,
+    /// Total number of connections in the graph.
+    pub total_connections: usize,
+    /// Average connections per element.
+    pub avg_connections_per_element: f64,
+    /// Approximate memory usage in bytes.
+    pub memory_bytes: usize,
+}
+
 /// Single-value HNSW index.
 ///
 /// Each label has exactly one associated vector.
@@ -61,6 +80,113 @@ impl<T: VectorElement> HnswSingle<T> {
     /// Set the ef_runtime parameter.
     pub fn set_ef_runtime(&self, ef: usize) {
         self.core.write().params.ef_runtime = ef;
+    }
+
+    /// Get the M parameter (max connections per element per layer).
+    pub fn m(&self) -> usize {
+        self.core.read().params.m
+    }
+
+    /// Get the M_max_0 parameter (max connections at layer 0).
+    pub fn m_max_0(&self) -> usize {
+        self.core.read().params.m_max_0
+    }
+
+    /// Get the ef_construction parameter.
+    pub fn ef_construction(&self) -> usize {
+        self.core.read().params.ef_construction
+    }
+
+    /// Check if heuristic neighbor selection is enabled.
+    pub fn is_heuristic_enabled(&self) -> bool {
+        self.core.read().params.enable_heuristic
+    }
+
+    /// Get the current entry point ID (top-level node).
+    pub fn entry_point(&self) -> Option<IdType> {
+        let ep = self.core.read().entry_point.load(std::sync::atomic::Ordering::Relaxed);
+        if ep == crate::types::INVALID_ID {
+            None
+        } else {
+            Some(ep)
+        }
+    }
+
+    /// Get the current maximum level in the graph.
+    pub fn max_level(&self) -> usize {
+        self.core.read().max_level.load(std::sync::atomic::Ordering::Relaxed) as usize
+    }
+
+    /// Get the number of deleted (but not yet removed) elements.
+    pub fn deleted_count(&self) -> usize {
+        let core = self.core.read();
+        core.graph
+            .iter()
+            .filter(|e| e.as_ref().map_or(false, |g| g.meta.deleted))
+            .count()
+    }
+
+    /// Get detailed statistics about the index.
+    pub fn stats(&self) -> HnswStats {
+        let core = self.core.read();
+        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+
+        let mut level_counts = vec![0usize; core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize + 1];
+        let mut total_connections = 0usize;
+        let mut deleted_count = 0usize;
+
+        for element in core.graph.iter().flatten() {
+            if element.meta.deleted {
+                deleted_count += 1;
+                continue;
+            }
+            let level = element.meta.level as usize;
+            for l in 0..=level {
+                if l < level_counts.len() {
+                    level_counts[l] += 1;
+                }
+            }
+            for level_link in &element.levels {
+                total_connections += level_link.get_neighbors().len();
+            }
+        }
+
+        let active_count = count.saturating_sub(deleted_count);
+        let avg_connections = if active_count > 0 {
+            total_connections as f64 / active_count as f64
+        } else {
+            0.0
+        };
+
+        HnswStats {
+            size: count,
+            deleted_count,
+            max_level: core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize,
+            level_counts,
+            total_connections,
+            avg_connections_per_element: avg_connections,
+            memory_bytes: self.memory_usage(),
+        }
+    }
+
+    /// Get the memory usage in bytes.
+    pub fn memory_usage(&self) -> usize {
+        let core = self.core.read();
+        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+
+        // Vector data storage
+        let vector_storage = count * core.params.dim * std::mem::size_of::<T>();
+
+        // Graph structure (rough estimate)
+        let graph_overhead = core.graph.len()
+            * std::mem::size_of::<Option<super::graph::ElementGraphData>>();
+
+        // Label mappings
+        let label_maps = self.label_to_id.read().capacity()
+            * std::mem::size_of::<(LabelType, IdType)>()
+            * 2;
+
+        vector_storage + graph_overhead + label_maps
     }
 }
 
@@ -310,6 +436,247 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
 unsafe impl<T: VectorElement> Send for HnswSingle<T> {}
 unsafe impl<T: VectorElement> Sync for HnswSingle<T> {}
 
+// Serialization support
+impl HnswSingle<f32> {
+    /// Save the index to a writer.
+    pub fn save<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> crate::serialization::SerializationResult<()> {
+        use crate::serialization::*;
+        use std::sync::atomic::Ordering;
+
+        let core = self.core.read();
+        let label_to_id = self.label_to_id.read();
+        let count = self.count.load(Ordering::Relaxed);
+
+        // Write header
+        let header = IndexHeader::new(
+            IndexTypeId::HnswSingle,
+            DataTypeId::F32,
+            core.params.metric,
+            core.params.dim,
+            count,
+        );
+        header.write(writer)?;
+
+        // Write HNSW-specific params
+        write_usize(writer, core.params.m)?;
+        write_usize(writer, core.params.m_max_0)?;
+        write_usize(writer, core.params.ef_construction)?;
+        write_usize(writer, core.params.ef_runtime)?;
+        write_u8(writer, if core.params.enable_heuristic { 1 } else { 0 })?;
+
+        // Write graph metadata
+        let entry_point = core.entry_point.load(Ordering::Relaxed);
+        let max_level = core.max_level.load(Ordering::Relaxed);
+        write_u32(writer, entry_point)?;
+        write_u32(writer, max_level)?;
+
+        // Write capacity
+        write_u8(writer, if self.capacity.is_some() { 1 } else { 0 })?;
+        if let Some(cap) = self.capacity {
+            write_usize(writer, cap)?;
+        }
+
+        // Write label_to_id mapping
+        write_usize(writer, label_to_id.len())?;
+        for (&label, &id) in label_to_id.iter() {
+            write_u64(writer, label)?;
+            write_u32(writer, id)?;
+        }
+
+        // Write graph structure
+        write_usize(writer, core.graph.len())?;
+        for (id, element) in core.graph.iter().enumerate() {
+            let id = id as u32;
+            if let Some(ref graph_data) = element {
+                write_u8(writer, 1)?; // Present flag
+
+                // Write metadata
+                write_u64(writer, graph_data.meta.label)?;
+                write_u8(writer, graph_data.meta.level)?;
+                write_u8(writer, if graph_data.meta.deleted { 1 } else { 0 })?;
+
+                // Write levels
+                write_usize(writer, graph_data.levels.len())?;
+                for level_links in &graph_data.levels {
+                    let neighbors = level_links.get_neighbors();
+                    write_usize(writer, neighbors.len())?;
+                    for neighbor in neighbors {
+                        write_u32(writer, neighbor)?;
+                    }
+                }
+
+                // Write vector data
+                if let Some(vector) = core.data.get(id) {
+                    for &v in vector {
+                        write_f32(writer, v)?;
+                    }
+                }
+            } else {
+                write_u8(writer, 0)?; // Not present
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load the index from a reader.
+    pub fn load<R: std::io::Read>(reader: &mut R) -> crate::serialization::SerializationResult<Self> {
+        use crate::serialization::*;
+        use super::graph::ElementGraphData;
+        use std::sync::atomic::Ordering;
+
+        // Read and validate header
+        let header = IndexHeader::read(reader)?;
+
+        if header.index_type != IndexTypeId::HnswSingle {
+            return Err(SerializationError::IndexTypeMismatch {
+                expected: "HnswSingle".to_string(),
+                got: header.index_type.as_str().to_string(),
+            });
+        }
+
+        if header.data_type != DataTypeId::F32 {
+            return Err(SerializationError::InvalidData(
+                "Expected f32 data type".to_string(),
+            ));
+        }
+
+        // Read HNSW-specific params
+        let m = read_usize(reader)?;
+        let m_max_0 = read_usize(reader)?;
+        let ef_construction = read_usize(reader)?;
+        let ef_runtime = read_usize(reader)?;
+        let enable_heuristic = read_u8(reader)? != 0;
+
+        // Read graph metadata
+        let entry_point = read_u32(reader)?;
+        let max_level = read_u32(reader)?;
+
+        // Create params and index
+        let params = HnswParams {
+            dim: header.dimension,
+            metric: header.metric,
+            m,
+            m_max_0,
+            ef_construction,
+            ef_runtime,
+            initial_capacity: header.count.max(1024),
+            enable_heuristic,
+        };
+        let mut index = Self::new(params);
+
+        // Read capacity
+        let has_capacity = read_u8(reader)? != 0;
+        if has_capacity {
+            index.capacity = Some(read_usize(reader)?);
+        }
+
+        // Read label_to_id mapping
+        let label_to_id_len = read_usize(reader)?;
+        let mut label_to_id = HashMap::with_capacity(label_to_id_len);
+        for _ in 0..label_to_id_len {
+            let label = read_u64(reader)?;
+            let id = read_u32(reader)?;
+            label_to_id.insert(label, id);
+        }
+
+        // Build id_to_label from label_to_id
+        let mut id_to_label: HashMap<IdType, LabelType> = HashMap::with_capacity(label_to_id_len);
+        for (&label, &id) in &label_to_id {
+            id_to_label.insert(id, label);
+        }
+
+        // Read graph structure
+        let graph_len = read_usize(reader)?;
+        let dim = header.dimension;
+
+        {
+            let mut core = index.core.write();
+
+            // Set entry point and max level
+            core.entry_point.store(entry_point, Ordering::Relaxed);
+            core.max_level.store(max_level, Ordering::Relaxed);
+
+            // Pre-allocate graph
+            core.graph.resize_with(graph_len, || None);
+
+            for id in 0..graph_len {
+                let present = read_u8(reader)? != 0;
+                if !present {
+                    continue;
+                }
+
+                // Read metadata
+                let label = read_u64(reader)?;
+                let level = read_u8(reader)?;
+                let deleted = read_u8(reader)? != 0;
+
+                // Read levels
+                let num_levels = read_usize(reader)?;
+                let mut graph_data = ElementGraphData::new(label, level, m_max_0, m);
+                graph_data.meta.deleted = deleted;
+
+                for level_idx in 0..num_levels {
+                    let num_neighbors = read_usize(reader)?;
+                    let mut neighbors = Vec::with_capacity(num_neighbors);
+                    for _ in 0..num_neighbors {
+                        neighbors.push(read_u32(reader)?);
+                    }
+                    if level_idx < graph_data.levels.len() {
+                        graph_data.levels[level_idx].set_neighbors(&neighbors);
+                    }
+                }
+
+                // Read vector data
+                let mut vector = vec![0.0f32; dim];
+                for v in &mut vector {
+                    *v = read_f32(reader)?;
+                }
+
+                // Add vector to data storage
+                core.data.add(&vector);
+
+                // Store graph data
+                core.graph[id] = Some(graph_data);
+            }
+
+            // Resize visited pool
+            if graph_len > 0 {
+                core.visited_pool.resize(graph_len);
+            }
+        }
+
+        // Set the internal state
+        *index.label_to_id.write() = label_to_id;
+        *index.id_to_label.write() = id_to_label;
+        index.count.store(header.count, Ordering::Relaxed);
+
+        Ok(index)
+    }
+
+    /// Save the index to a file.
+    pub fn save_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> crate::serialization::SerializationResult<()> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        self.save(&mut writer)
+    }
+
+    /// Load the index from a file.
+    pub fn load_from_file<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> crate::serialization::SerializationResult<Self> {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        Self::load(&mut reader)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +753,42 @@ mod tests {
         for result in &results.results {
             assert_ne!(result.label, 1);
         }
+    }
+
+    #[test]
+    fn test_hnsw_single_serialization() {
+        use std::io::Cursor;
+
+        let params = HnswParams::new(4, Metric::L2)
+            .with_m(4)
+            .with_ef_construction(20);
+        let mut index = HnswSingle::<f32>::new(params);
+
+        // Add some vectors
+        for i in 0..20 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.add_vector(&v, i as u64).unwrap();
+        }
+
+        assert_eq!(index.index_size(), 20);
+
+        // Serialize
+        let mut buffer = Vec::new();
+        index.save(&mut buffer).unwrap();
+
+        // Deserialize
+        let mut cursor = Cursor::new(buffer);
+        let loaded = HnswSingle::<f32>::load(&mut cursor).unwrap();
+
+        // Verify
+        assert_eq!(loaded.index_size(), 20);
+        assert_eq!(loaded.dimension(), 4);
+
+        // Query should work the same
+        let query = vec![5.0, 0.0, 0.0, 0.0];
+        let results = loaded.top_k_query(&query, 3, None).unwrap();
+        assert!(!results.is_empty());
+        // Label 5 should be closest
+        assert_eq!(results.results[0].label, 5);
     }
 }

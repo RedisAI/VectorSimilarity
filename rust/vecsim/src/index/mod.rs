@@ -15,10 +15,10 @@ pub use traits::{
 
 // Re-export BruteForce types
 pub use brute_force::{
-    BruteForceParams, BruteForceSingle, BruteForceMulti, BruteForceBatchIterator,
+    BruteForceParams, BruteForceSingle, BruteForceMulti, BruteForceBatchIterator, BruteForceStats,
 };
 
 // Re-export HNSW types
 pub use hnsw::{
-    HnswParams, HnswSingle, HnswMulti, HnswBatchIterator,
+    HnswParams, HnswSingle, HnswMulti, HnswBatchIterator, HnswStats,
 };

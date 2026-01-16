@@ -357,6 +357,178 @@ impl<T: VectorElement> VecSimIndex for BruteForceMulti<T> {
 unsafe impl<T: VectorElement> Send for BruteForceMulti<T> {}
 unsafe impl<T: VectorElement> Sync for BruteForceMulti<T> {}
 
+// Serialization support
+impl BruteForceMulti<f32> {
+    /// Save the index to a writer.
+    pub fn save<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> crate::serialization::SerializationResult<()> {
+        use crate::serialization::*;
+
+        let core = self.core.read();
+        let label_to_ids = self.label_to_ids.read();
+        let id_to_label = self.id_to_label.read();
+        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+
+        // Write header
+        let header = IndexHeader::new(
+            IndexTypeId::BruteForceMulti,
+            DataTypeId::F32,
+            core.metric,
+            core.dim,
+            count,
+        );
+        header.write(writer)?;
+
+        // Write capacity
+        write_u8(writer, if self.capacity.is_some() { 1 } else { 0 })?;
+        if let Some(cap) = self.capacity {
+            write_usize(writer, cap)?;
+        }
+
+        // Write label_to_ids mapping (label -> set of IDs)
+        write_usize(writer, label_to_ids.len())?;
+        for (&label, ids) in label_to_ids.iter() {
+            write_u64(writer, label)?;
+            write_usize(writer, ids.len())?;
+            for &id in ids {
+                write_u32(writer, id)?;
+            }
+        }
+
+        // Write id_to_label entries
+        write_usize(writer, id_to_label.len())?;
+        for entry in id_to_label.iter() {
+            write_u64(writer, entry.label)?;
+            write_u8(writer, if entry.is_valid { 1 } else { 0 })?;
+        }
+
+        // Write vectors - only write valid entries
+        let mut valid_ids: Vec<IdType> = Vec::with_capacity(count);
+        for (id, entry) in id_to_label.iter().enumerate() {
+            if entry.is_valid {
+                valid_ids.push(id as IdType);
+            }
+        }
+
+        write_usize(writer, valid_ids.len())?;
+        for id in valid_ids {
+            write_u32(writer, id)?;
+            if let Some(vector) = core.data.get(id) {
+                for &v in vector {
+                    write_f32(writer, v)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load the index from a reader.
+    pub fn load<R: std::io::Read>(reader: &mut R) -> crate::serialization::SerializationResult<Self> {
+        use crate::serialization::*;
+
+        // Read and validate header
+        let header = IndexHeader::read(reader)?;
+
+        if header.index_type != IndexTypeId::BruteForceMulti {
+            return Err(SerializationError::IndexTypeMismatch {
+                expected: "BruteForceMulti".to_string(),
+                got: header.index_type.as_str().to_string(),
+            });
+        }
+
+        if header.data_type != DataTypeId::F32 {
+            return Err(SerializationError::InvalidData(
+                "Expected f32 data type".to_string(),
+            ));
+        }
+
+        // Create the index with proper parameters
+        let params = BruteForceParams::new(header.dimension, header.metric);
+        let mut index = Self::new(params);
+
+        // Read capacity
+        let has_capacity = read_u8(reader)? != 0;
+        if has_capacity {
+            index.capacity = Some(read_usize(reader)?);
+        }
+
+        // Read label_to_ids mapping
+        let label_to_ids_len = read_usize(reader)?;
+        let mut label_to_ids: HashMap<LabelType, HashSet<IdType>> =
+            HashMap::with_capacity(label_to_ids_len);
+        for _ in 0..label_to_ids_len {
+            let label = read_u64(reader)?;
+            let num_ids = read_usize(reader)?;
+            let mut ids = HashSet::with_capacity(num_ids);
+            for _ in 0..num_ids {
+                ids.insert(read_u32(reader)?);
+            }
+            label_to_ids.insert(label, ids);
+        }
+
+        // Read id_to_label entries
+        let id_to_label_len = read_usize(reader)?;
+        let mut id_to_label = Vec::with_capacity(id_to_label_len);
+        for _ in 0..id_to_label_len {
+            let label = read_u64(reader)?;
+            let is_valid = read_u8(reader)? != 0;
+            id_to_label.push(IdLabelEntry { label, is_valid });
+        }
+
+        // Read vectors
+        let num_vectors = read_usize(reader)?;
+        let dim = header.dimension;
+        {
+            let mut core = index.core.write();
+
+            // Pre-allocate space
+            core.data.reserve(num_vectors);
+
+            for _ in 0..num_vectors {
+                let _id = read_u32(reader)?;
+                let mut vector = vec![0.0f32; dim];
+                for v in &mut vector {
+                    *v = read_f32(reader)?;
+                }
+
+                // Add vector to data storage
+                core.data.add(&vector);
+            }
+        }
+
+        // Set the internal state
+        *index.label_to_ids.write() = label_to_ids;
+        *index.id_to_label.write() = id_to_label;
+        index
+            .count
+            .store(header.count, std::sync::atomic::Ordering::Relaxed);
+
+        Ok(index)
+    }
+
+    /// Save the index to a file.
+    pub fn save_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> crate::serialization::SerializationResult<()> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        self.save(&mut writer)
+    }
+
+    /// Load the index from a file.
+    pub fn load_from_file<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> crate::serialization::SerializationResult<Self> {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        Self::load(&mut reader)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +580,42 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results.results[0].label, 2);
+    }
+
+    #[test]
+    fn test_brute_force_multi_serialization() {
+        use std::io::Cursor;
+
+        let params = BruteForceParams::new(4, Metric::L2);
+        let mut index = BruteForceMulti::<f32>::new(params);
+
+        // Add multiple vectors with same label
+        index.add_vector(&vec![1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![0.9, 0.1, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![0.0, 1.0, 0.0, 0.0], 2).unwrap();
+        index.add_vector(&vec![0.0, 0.0, 1.0, 0.0], 3).unwrap();
+
+        assert_eq!(index.index_size(), 4);
+        assert_eq!(index.label_count(1), 2);
+
+        // Serialize
+        let mut buffer = Vec::new();
+        index.save(&mut buffer).unwrap();
+
+        // Deserialize
+        let mut cursor = Cursor::new(buffer);
+        let loaded = BruteForceMulti::<f32>::load(&mut cursor).unwrap();
+
+        // Verify
+        assert_eq!(loaded.index_size(), 4);
+        assert_eq!(loaded.dimension(), 4);
+        assert_eq!(loaded.label_count(1), 2);
+        assert_eq!(loaded.label_count(2), 1);
+        assert_eq!(loaded.label_count(3), 1);
+
+        // Query should work the same
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = loaded.top_k_query(&query, 3, None).unwrap();
+        assert_eq!(results.results[0].label, 1); // Exact match
     }
 }

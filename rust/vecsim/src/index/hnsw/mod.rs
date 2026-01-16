@@ -21,7 +21,7 @@ pub use batch_iterator::{HnswSingleBatchIterator, HnswMultiBatchIterator};
 pub type HnswBatchIterator<'a, T> = HnswSingleBatchIterator<'a, T>;
 pub use graph::{ElementGraphData, DEFAULT_M, DEFAULT_M_MAX, DEFAULT_M_MAX_0};
 pub use multi::HnswMulti;
-pub use single::HnswSingle;
+pub use single::{HnswSingle, HnswStats};
 pub use visited::{VisitedNodesHandler, VisitedNodesHandlerPool};
 
 use crate::containers::DataBlocks;

@@ -14,7 +14,7 @@ pub mod single;
 
 pub use batch_iterator::BruteForceBatchIterator;
 pub use multi::BruteForceMulti;
-pub use single::BruteForceSingle;
+pub use single::{BruteForceSingle, BruteForceStats};
 
 use crate::containers::DataBlocks;
 use crate::distance::{create_distance_function, DistanceFunction, Metric};

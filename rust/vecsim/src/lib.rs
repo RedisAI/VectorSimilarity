@@ -93,6 +93,7 @@ pub mod containers;
 pub mod distance;
 pub mod index;
 pub mod query;
+pub mod serialization;
 pub mod types;
 pub mod utils;
 
@@ -121,6 +122,9 @@ pub mod prelude {
 
     // HNSW
     pub use crate::index::{HnswMulti, HnswParams, HnswSingle};
+
+    // Serialization
+    pub use crate::serialization::{Deserializable, Serializable, SerializationError};
 }
 
 /// Create a BruteForce index with the given parameters.
