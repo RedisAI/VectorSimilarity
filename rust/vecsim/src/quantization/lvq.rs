@@ -552,4 +552,361 @@ mod tests {
         assert_eq!(LvqBits::Lvq8.primary_bits(), 8);
         assert_eq!(LvqBits::Lvq8.residual_bits(), 0);
     }
+
+    #[test]
+    fn test_lvq_bits_total_bits() {
+        assert_eq!(LvqBits::Lvq4.total_bits(), 4);
+        assert_eq!(LvqBits::Lvq8.total_bits(), 8);
+        assert_eq!(LvqBits::Lvq4x4.total_bits(), 8);
+        assert_eq!(LvqBits::Lvq8x8.total_bits(), 16);
+    }
+
+    #[test]
+    fn test_lvq_bits_data_bytes() {
+        // LVQ4: 4 bits per dim, so for 8 dims = 32 bits = 4 bytes
+        assert_eq!(LvqBits::Lvq4.data_bytes(8), 4);
+        // Odd dimension: 9 dims = 36 bits = 5 bytes (rounded up)
+        assert_eq!(LvqBits::Lvq4.data_bytes(9), 5);
+
+        // LVQ8: 8 bits per dim = 1 byte per dim
+        assert_eq!(LvqBits::Lvq8.data_bytes(8), 8);
+
+        // LVQ4x4: 8 bits total per dim
+        assert_eq!(LvqBits::Lvq4x4.data_bytes(8), 8);
+    }
+
+    #[test]
+    fn test_lvq4_negative_values() {
+        let codec = LvqCodec::new(8, LvqBits::Lvq4);
+        let vector: Vec<f32> = vec![-0.5, -0.25, 0.0, 0.25, 0.5, 0.75, -0.1, -0.9];
+
+        let (meta, encoded) = codec.encode_lvq4(&vector);
+        let decoded = codec.decode_lvq4(&meta, &encoded);
+
+        // 4-bit has limited precision but should be reasonably close
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.15,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_lvq4_odd_dimension() {
+        // Test odd dimension where 4-bit packing doesn't align perfectly
+        let codec = LvqCodec::new(7, LvqBits::Lvq4);
+        let vector: Vec<f32> = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+
+        let (meta, encoded) = codec.encode_lvq4(&vector);
+        // Encoded should be (7 + 1) / 2 = 4 bytes
+        assert_eq!(encoded.len(), 4);
+
+        let decoded = codec.decode_lvq4(&meta, &encoded);
+        assert_eq!(decoded.len(), 7);
+
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.1,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_lvq4_uniform_vector() {
+        let codec = LvqCodec::new(8, LvqBits::Lvq4);
+        let vector: Vec<f32> = vec![0.5; 8];
+
+        let (meta, encoded) = codec.encode_lvq4(&vector);
+        let decoded = codec.decode_lvq4(&meta, &encoded);
+
+        // All values should decode to approximately the same
+        for dec in decoded.iter() {
+            assert!(
+                (dec - 0.5).abs() < 0.01,
+                "expected ~0.5, got {}",
+                dec
+            );
+        }
+
+        // All encoded values should be 0 (since all at min)
+        for byte in encoded.iter() {
+            assert_eq!(*byte, 0, "uniform vector should encode to 0");
+        }
+    }
+
+    #[test]
+    fn test_lvq8_high_precision() {
+        let codec = LvqCodec::new(128, LvqBits::Lvq8);
+        let vector: Vec<f32> = (0..128).map(|i| (i as f32) / 128.0).collect();
+
+        let (meta, encoded) = codec.encode_lvq8(&vector);
+        let decoded = codec.decode_lvq8(&meta, &encoded);
+
+        // 8-bit should have very good precision
+        let max_error = vector
+            .iter()
+            .zip(decoded.iter())
+            .map(|(orig, dec)| (orig - dec).abs())
+            .fold(0.0f32, f32::max);
+
+        assert!(
+            max_error < 0.005,
+            "8-bit should have high precision, max_error={}",
+            max_error
+        );
+    }
+
+    #[test]
+    fn test_lvq4x4_negative_values() {
+        let codec = LvqCodec::new(8, LvqBits::Lvq4x4);
+        let vector: Vec<f32> = vec![-0.5, -0.25, 0.0, 0.25, 0.5, 0.75, -0.1, -0.9];
+
+        let (meta, encoded) = codec.encode_lvq4x4(&vector);
+        let decoded = codec.decode_lvq4x4(&meta, &encoded);
+
+        // Two-level should be better than single-level
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.1,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_lvq4x4_residual_improves_accuracy() {
+        let codec4 = LvqCodec::new(8, LvqBits::Lvq4);
+        let codec4x4 = LvqCodec::new(8, LvqBits::Lvq4x4);
+        let vector: Vec<f32> = vec![0.1, 0.5, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4];
+
+        let (meta4, encoded4) = codec4.encode_lvq4(&vector);
+        let decoded4 = codec4.decode_lvq4(&meta4, &encoded4);
+
+        let (meta4x4, encoded4x4) = codec4x4.encode_lvq4x4(&vector);
+        let decoded4x4 = codec4x4.decode_lvq4x4(&meta4x4, &encoded4x4);
+
+        // Calculate MSE for both
+        let mse4: f32 = vector
+            .iter()
+            .zip(decoded4.iter())
+            .map(|(orig, dec)| (orig - dec).powi(2))
+            .sum::<f32>()
+            / vector.len() as f32;
+
+        let mse4x4: f32 = vector
+            .iter()
+            .zip(decoded4x4.iter())
+            .map(|(orig, dec)| (orig - dec).powi(2))
+            .sum::<f32>()
+            / vector.len() as f32;
+
+        // Two-level quantization should have lower error
+        assert!(
+            mse4x4 <= mse4,
+            "LVQ4x4 should have lower or equal MSE: mse4={}, mse4x4={}",
+            mse4,
+            mse4x4
+        );
+    }
+
+    #[test]
+    fn test_lvq_codec_generic_encode_decode() {
+        // Test the generic encode/decode methods that dispatch based on bits
+        for bits in [LvqBits::Lvq4, LvqBits::Lvq4x4, LvqBits::Lvq8] {
+            let codec = LvqCodec::new(8, bits);
+            let vector: Vec<f32> = vec![0.1, 0.5, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4];
+
+            let (meta, encoded) = codec.encode(&vector);
+            let decoded = codec.decode(&meta, &encoded);
+
+            // All should reasonably decode
+            for (orig, dec) in vector.iter().zip(decoded.iter()) {
+                assert!(
+                    (orig - dec).abs() < 0.15,
+                    "bits={:?}: orig={}, dec={}",
+                    bits,
+                    orig,
+                    dec
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_lvq4_distance_ordering() {
+        let codec = LvqCodec::new(4, LvqBits::Lvq4);
+
+        // Three stored vectors
+        let v1 = vec![1.0, 0.0, 0.0, 0.0];
+        let v2 = vec![0.5, 0.5, 0.0, 0.0];
+        let v3 = vec![0.0, 0.0, 0.0, 1.0];
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+
+        let (meta1, enc1) = codec.encode_lvq4(&v1);
+        let (meta2, enc2) = codec.encode_lvq4(&v2);
+        let (meta3, enc3) = codec.encode_lvq4(&v3);
+
+        let d1 = lvq4_asymmetric_l2_squared(&query, &enc1, &meta1, 4);
+        let d2 = lvq4_asymmetric_l2_squared(&query, &enc2, &meta2, 4);
+        let d3 = lvq4_asymmetric_l2_squared(&query, &enc3, &meta3, 4);
+
+        // d1 should be smallest (self), d3 should be largest
+        assert!(d1 < d2, "d1={} should be < d2={}", d1, d2);
+        assert!(d2 < d3, "d2={} should be < d3={}", d2, d3);
+    }
+
+    #[test]
+    fn test_lvq4x4_distance_ordering() {
+        let codec = LvqCodec::new(4, LvqBits::Lvq4x4);
+
+        let v1 = vec![1.0, 0.0, 0.0, 0.0];
+        let v2 = vec![0.5, 0.5, 0.0, 0.0];
+        let v3 = vec![0.0, 0.0, 0.0, 1.0];
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+
+        let (meta1, enc1) = codec.encode_lvq4x4(&v1);
+        let (meta2, enc2) = codec.encode_lvq4x4(&v2);
+        let (meta3, enc3) = codec.encode_lvq4x4(&v3);
+
+        let d1 = lvq4x4_asymmetric_l2_squared(&query, &enc1, &meta1, 4);
+        let d2 = lvq4x4_asymmetric_l2_squared(&query, &enc2, &meta2, 4);
+        let d3 = lvq4x4_asymmetric_l2_squared(&query, &enc3, &meta3, 4);
+
+        assert!(d1 < d2, "d1={} should be < d2={}", d1, d2);
+        assert!(d2 < d3, "d2={} should be < d3={}", d2, d3);
+    }
+
+    #[test]
+    fn test_lvq4x4_inner_product() {
+        let codec = LvqCodec::new(4, LvqBits::Lvq4x4);
+
+        let stored = vec![1.0, 2.0, 3.0, 4.0];
+        let query = vec![1.0, 1.0, 1.0, 1.0];
+
+        let (meta, encoded) = codec.encode_lvq4x4(&stored);
+
+        // IP = 1*1 + 1*2 + 1*3 + 1*4 = 10
+        let ip = lvq4x4_asymmetric_inner_product(&query, &encoded, &meta, 4);
+
+        assert!(
+            (ip - 10.0).abs() < 1.0,
+            "IP should be ~10, got {}",
+            ip
+        );
+    }
+
+    #[test]
+    fn test_lvq_vector_meta_default() {
+        let meta = LvqVectorMeta::default();
+        assert_eq!(meta.min_primary, 0.0);
+        assert_eq!(meta.delta_primary, 1.0);
+        assert_eq!(meta.min_residual, 0.0);
+        assert_eq!(meta.delta_residual, 0.0);
+    }
+
+    #[test]
+    fn test_lvq_vector_meta_size() {
+        assert_eq!(LvqVectorMeta::SIZE, 16); // 4 f32 values
+    }
+
+    #[test]
+    fn test_lvq_codec_accessors() {
+        let codec = LvqCodec::new(64, LvqBits::Lvq4x4);
+        assert_eq!(codec.dim(), 64);
+        assert_eq!(codec.bits(), LvqBits::Lvq4x4);
+        assert_eq!(codec.encoded_size(), 64); // 8 bits per dim for 4x4
+        assert_eq!(codec.total_size(), LvqVectorMeta::SIZE + 64);
+    }
+
+    #[test]
+    fn test_lvq4_zero_vector() {
+        let codec = LvqCodec::new(8, LvqBits::Lvq4);
+        let vector: Vec<f32> = vec![0.0; 8];
+
+        let (meta, encoded) = codec.encode_lvq4(&vector);
+        let decoded = codec.decode_lvq4(&meta, &encoded);
+
+        for dec in decoded.iter() {
+            assert!(dec.abs() < 0.001, "expected ~0, got {}", dec);
+        }
+    }
+
+    #[test]
+    fn test_lvq8_negative_values() {
+        let codec = LvqCodec::new(8, LvqBits::Lvq8);
+        let vector: Vec<f32> = vec![-1.0, -0.5, 0.0, 0.5, 1.0, -0.25, 0.25, 0.75];
+
+        let (meta, encoded) = codec.encode_lvq8(&vector);
+        let decoded = codec.decode_lvq8(&meta, &encoded);
+
+        // 8-bit should have very good precision
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.02,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_lvq4x4_large_vectors() {
+        let codec = LvqCodec::new(512, LvqBits::Lvq4x4);
+        let vector: Vec<f32> = (0..512).map(|i| ((i as f32) / 512.0) - 0.5).collect();
+
+        let (meta, encoded) = codec.encode_lvq4x4(&vector);
+        let decoded = codec.decode_lvq4x4(&meta, &encoded);
+
+        let max_error = vector
+            .iter()
+            .zip(decoded.iter())
+            .map(|(orig, dec)| (orig - dec).abs())
+            .fold(0.0f32, f32::max);
+
+        assert!(
+            max_error < 0.05,
+            "Large vector should decode well, max_error={}",
+            max_error
+        );
+    }
+
+    #[test]
+    fn test_lvq4_packed_nibble_roundtrip() {
+        let codec = LvqCodec::new(4, LvqBits::Lvq4);
+        // Create values that should map to specific nibbles
+        let vector: Vec<f32> = vec![0.0, 0.33, 0.67, 1.0];
+
+        let (meta, encoded) = codec.encode_lvq4(&vector);
+
+        // Check encoded size
+        assert_eq!(encoded.len(), 2); // 4 values * 4 bits / 8 = 2 bytes
+
+        // Decode and verify
+        let decoded = codec.decode_lvq4(&meta, &encoded);
+        assert_eq!(decoded.len(), 4);
+
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.15,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_lvq_levels_constants() {
+        assert_eq!(LEVELS_4BIT, 16);
+        assert_eq!(LEVELS_8BIT, 256);
+    }
 }

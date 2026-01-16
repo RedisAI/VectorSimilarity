@@ -623,4 +623,361 @@ mod tests {
         assert_eq!(LeanVecBits::LeanVec8x8.residual_bits(), 8);
         assert_eq!(LeanVecBits::LeanVec8x8.primary_levels(), 256);
     }
+
+    #[test]
+    fn test_leanvec_bits_data_sizes() {
+        // 4x8: 4 bits primary, 8 bits residual
+        assert_eq!(LeanVecBits::LeanVec4x8.primary_data_size(64), 32); // 64 * 4 / 8
+        assert_eq!(LeanVecBits::LeanVec4x8.residual_data_size(128), 128); // 1 byte per dim
+
+        // 8x8: 8 bits both
+        assert_eq!(LeanVecBits::LeanVec8x8.primary_data_size(64), 64); // 64 * 8 / 8
+        assert_eq!(LeanVecBits::LeanVec8x8.residual_data_size(128), 128);
+
+        // Total encoded size
+        assert_eq!(LeanVecBits::LeanVec4x8.encoded_size(128, 64), 32 + 128);
+        assert_eq!(LeanVecBits::LeanVec8x8.encoded_size(128, 64), 64 + 128);
+    }
+
+    #[test]
+    fn test_leanvec_meta_default() {
+        let meta = LeanVecMeta::default();
+        assert_eq!(meta.min_primary, 0.0);
+        assert_eq!(meta.delta_primary, 1.0);
+        assert_eq!(meta.min_residual, 0.0);
+        assert_eq!(meta.delta_residual, 1.0);
+        assert_eq!(meta.leanvec_dim, 0);
+    }
+
+    #[test]
+    fn test_leanvec_meta_size() {
+        assert_eq!(LeanVecMeta::SIZE, 24); // 4 f32 + 1 u32 + 1 padding
+    }
+
+    #[test]
+    fn test_leanvec_codec_accessors() {
+        let codec = LeanVecCodec::new(128, LeanVecBits::LeanVec4x8);
+        assert_eq!(codec.dim(), 128);
+        assert_eq!(codec.leanvec_dim(), 64); // Default D/2
+        assert_eq!(codec.bits(), LeanVecBits::LeanVec4x8);
+    }
+
+    #[test]
+    fn test_leanvec_codec_sizes() {
+        let codec = LeanVecCodec::new(128, LeanVecBits::LeanVec4x8);
+        // 4x8 with D=128, leanvec_dim=64:
+        // primary = 64*4/8 = 32 bytes, residual = 128 bytes
+        assert_eq!(codec.encoded_size(), 32 + 128);
+        assert_eq!(codec.total_size(), LeanVecMeta::SIZE + 32 + 128);
+    }
+
+    #[test]
+    fn test_leanvec_custom_leanvec_dim() {
+        // Test various custom reduced dimensions
+        let codec = LeanVecCodec::with_leanvec_dim(128, LeanVecBits::LeanVec4x8, 32);
+        assert_eq!(codec.leanvec_dim(), 32);
+
+        // 0 should default to dim/2
+        let codec_default = LeanVecCodec::with_leanvec_dim(128, LeanVecBits::LeanVec4x8, 0);
+        assert_eq!(codec_default.leanvec_dim(), 64);
+
+        // Value > dim should be clamped to dim
+        let codec_clamped = LeanVecCodec::with_leanvec_dim(128, LeanVecBits::LeanVec4x8, 256);
+        assert_eq!(codec_clamped.leanvec_dim(), 128);
+    }
+
+    #[test]
+    fn test_leanvec_4x8_negative_values() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+        let vector: Vec<f32> = vec![-0.5, -0.25, 0.0, 0.25, 0.5, 0.75, -0.1, -0.9];
+
+        let (meta, encoded) = codec.encode(&vector);
+        let decoded = codec.decode(&meta, &encoded);
+
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.02,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_leanvec_8x8_negative_values() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec8x8);
+        let vector: Vec<f32> = vec![-0.5, -0.25, 0.0, 0.25, 0.5, 0.75, -0.1, -0.9];
+
+        let (meta, encoded) = codec.encode(&vector);
+        let decoded = codec.decode(&meta, &encoded);
+
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.02,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_leanvec_residual_inner_product() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+        let stored: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let query: Vec<f32> = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+
+        let (meta, encoded) = codec.encode(&stored);
+
+        let primary_bytes = LeanVecBits::LeanVec4x8.primary_data_size(4);
+        let ip = leanvec_residual_inner_product(&query, &encoded, &meta, primary_bytes);
+
+        // IP = 1+2+3+4+5+6+7+8 = 36
+        assert!(
+            (ip - 36.0).abs() < 2.0,
+            "IP should be ~36, got {}",
+            ip
+        );
+    }
+
+    #[test]
+    fn test_leanvec_8x8_primary_distance() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec8x8);
+        let vector: Vec<f32> = vec![1.0, 0.5, 0.25, 0.125, 0.0, 0.0, 0.0, 0.0];
+        let query = vector.clone();
+
+        let (meta, encoded) = codec.encode(&vector);
+
+        let selected_dims: Vec<usize> = (0..4).collect();
+        let primary_dist =
+            leanvec_primary_l2_squared_8bit(&query, &encoded, &meta, &selected_dims);
+
+        assert!(
+            primary_dist < 0.1,
+            "Primary self-distance should be small, got {}",
+            primary_dist
+        );
+    }
+
+    #[test]
+    fn test_leanvec_distance_ordering() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+
+        let v1 = vec![1.0, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let v2 = vec![0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let v3 = vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.25, 0.0];
+        let query = vec![1.0, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+        let (meta1, enc1) = codec.encode(&v1);
+        let (meta2, enc2) = codec.encode(&v2);
+        let (meta3, enc3) = codec.encode(&v3);
+
+        let primary_bytes = LeanVecBits::LeanVec4x8.primary_data_size(4);
+
+        let d1 = leanvec_residual_l2_squared(&query, &enc1, &meta1, primary_bytes);
+        let d2 = leanvec_residual_l2_squared(&query, &enc2, &meta2, primary_bytes);
+        let d3 = leanvec_residual_l2_squared(&query, &enc3, &meta3, primary_bytes);
+
+        // d1 should be smallest (self), d3 should be largest
+        assert!(d1 < d2, "d1={} should be < d2={}", d1, d2);
+        assert!(d2 < d3, "d2={} should be < d3={}", d2, d3);
+    }
+
+    #[test]
+    fn test_leanvec_large_vectors() {
+        let codec = LeanVecCodec::new(512, LeanVecBits::LeanVec4x8);
+        let vector: Vec<f32> = (0..512).map(|i| ((i as f32) / 512.0) - 0.5).collect();
+
+        let (meta, encoded) = codec.encode(&vector);
+        let decoded = codec.decode(&meta, &encoded);
+
+        let max_error = vector
+            .iter()
+            .zip(decoded.iter())
+            .map(|(orig, dec)| (orig - dec).abs())
+            .fold(0.0f32, f32::max);
+
+        assert!(
+            max_error < 0.02,
+            "Large vector should decode well, max_error={}",
+            max_error
+        );
+    }
+
+    #[test]
+    fn test_leanvec_zero_vector() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+        let vector: Vec<f32> = vec![0.0; 8];
+
+        let (meta, encoded) = codec.encode(&vector);
+        let decoded = codec.decode(&meta, &encoded);
+
+        for dec in decoded.iter() {
+            assert!(dec.abs() < 0.001, "expected ~0, got {}", dec);
+        }
+    }
+
+    #[test]
+    fn test_leanvec_uniform_vector() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+        let vector: Vec<f32> = vec![0.5; 8];
+
+        let (meta, encoded) = codec.encode(&vector);
+        let decoded = codec.decode(&meta, &encoded);
+
+        for dec in decoded.iter() {
+            assert!(
+                (dec - 0.5).abs() < 0.01,
+                "expected ~0.5, got {}",
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_leanvec_4x8_vs_8x8_precision() {
+        let codec_4x8 = LeanVecCodec::new(64, LeanVecBits::LeanVec4x8);
+        let codec_8x8 = LeanVecCodec::new(64, LeanVecBits::LeanVec8x8);
+        let vector: Vec<f32> = (0..64).map(|i| (i as f32) / 64.0).collect();
+
+        let (_, encoded_4x8) = codec_4x8.encode(&vector);
+        let (_, encoded_8x8) = codec_8x8.encode(&vector);
+
+        // 8x8 should use more bytes for primary (8-bit vs 4-bit)
+        // 4x8: primary = 32 * 4 / 8 = 16 bytes
+        // 8x8: primary = 32 * 8 / 8 = 32 bytes
+        assert!(
+            encoded_8x8.len() > encoded_4x8.len(),
+            "8x8 should use more bytes: 4x8={}, 8x8={}",
+            encoded_4x8.len(),
+            encoded_8x8.len()
+        );
+    }
+
+    #[test]
+    fn test_leanvec_custom_dim_selection() {
+        let mut codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+
+        // Set custom dimension selection (use last 4 dims instead of first 4)
+        let custom_dims: Vec<usize> = vec![4, 5, 6, 7, 0, 1, 2, 3];
+        codec.set_selected_dims(custom_dims);
+
+        let vector: Vec<f32> = vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.25, 0.125];
+
+        let (meta, encoded) = codec.encode(&vector);
+
+        // The primary quantization should now work on dims 4-7
+        // Primary distance should still work with the selected dims
+        let selected_dims: Vec<usize> = vec![4, 5, 6, 7];
+        let dist = leanvec_primary_l2_squared_4bit(&vector, &encoded, &meta, &selected_dims);
+
+        // Self-distance should be small
+        assert!(
+            dist < 0.5,
+            "Self distance should be small, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_leanvec_odd_dimension() {
+        // LeanVec with odd dimension
+        let codec = LeanVecCodec::new(7, LeanVecBits::LeanVec4x8);
+        assert_eq!(codec.leanvec_dim(), 3); // 7/2 = 3
+
+        let vector: Vec<f32> = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+
+        let (meta, encoded) = codec.encode(&vector);
+        let decoded = codec.decode(&meta, &encoded);
+
+        assert_eq!(decoded.len(), 7);
+
+        for (orig, dec) in vector.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.02,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_leanvec_primary_4bit_packing() {
+        let codec = LeanVecCodec::new(8, LeanVecBits::LeanVec4x8);
+        let vector: Vec<f32> = vec![0.0, 0.25, 0.5, 0.75, 1.0, 0.9, 0.8, 0.7];
+
+        let (_meta, encoded) = codec.encode(&vector);
+
+        // Primary data should be (leanvec_dim + 1) / 2 = 2 bytes (4 dims * 4 bits / 8)
+        let primary_bytes = LeanVecBits::LeanVec4x8.primary_data_size(4);
+        assert_eq!(primary_bytes, 2);
+
+        // Residual data should be 8 bytes
+        let residual_bytes = LeanVecBits::LeanVec4x8.residual_data_size(8);
+        assert_eq!(residual_bytes, 8);
+
+        // Total encoded
+        assert_eq!(encoded.len(), primary_bytes + residual_bytes);
+    }
+
+    #[test]
+    fn test_leanvec_meta_debug() {
+        let meta = LeanVecMeta {
+            min_primary: 1.0,
+            delta_primary: 0.5,
+            min_residual: -1.0,
+            delta_residual: 0.25,
+            leanvec_dim: 32,
+            _pad: 0,
+        };
+
+        let debug_str = format!("{:?}", meta);
+        assert!(debug_str.contains("LeanVecMeta"));
+        assert!(debug_str.contains("min_primary"));
+        assert!(debug_str.contains("leanvec_dim"));
+    }
+
+    #[test]
+    fn test_leanvec_generic_encode_decode_dispatch() {
+        // Test that generic encode/decode correctly dispatches
+        for bits in [LeanVecBits::LeanVec4x8, LeanVecBits::LeanVec8x8] {
+            let codec = LeanVecCodec::new(16, bits);
+            let vector: Vec<f32> = (0..16).map(|i| (i as f32) / 16.0).collect();
+
+            let (meta, encoded) = codec.encode(&vector);
+            let decoded = codec.decode(&meta, &encoded);
+
+            assert_eq!(decoded.len(), 16);
+
+            for (orig, dec) in vector.iter().zip(decoded.iter()) {
+                assert!(
+                    (orig - dec).abs() < 0.02,
+                    "bits={:?}: orig={}, dec={}",
+                    bits,
+                    orig,
+                    dec
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_leanvec_primary_reduces_dimension() {
+        let codec = LeanVecCodec::new(128, LeanVecBits::LeanVec4x8);
+
+        // The primary quantization operates on leanvec_dim=64
+        let selected_dims: Vec<usize> = (0..64).collect();
+
+        let vector: Vec<f32> = (0..128).map(|i| (i as f32) / 128.0).collect();
+        let (meta, encoded) = codec.encode(&vector);
+
+        // Primary distance only uses the first leanvec_dim dimensions
+        let dist = leanvec_primary_l2_squared_4bit(&vector, &encoded, &meta, &selected_dims);
+
+        // Should be able to compute distance without error
+        assert!(dist.is_finite(), "Distance should be finite");
+        assert!(dist >= 0.0, "Distance should be non-negative");
+    }
 }

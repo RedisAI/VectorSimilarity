@@ -417,4 +417,282 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_sq8_zero_vector() {
+        let codec = Sq8Codec::new(4);
+        let original = vec![0.0, 0.0, 0.0, 0.0];
+
+        let (quantized, meta) = codec.encode(&original);
+        let decoded = codec.decode(&quantized, &meta);
+
+        // All values should decode to 0
+        for dec in decoded.iter() {
+            assert!(dec.abs() < 0.001, "expected ~0, got {}", dec);
+        }
+
+        // Metadata should reflect zero vector
+        assert!((meta.sum - 0.0).abs() < 0.001);
+        assert!((meta.sum_sq - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_sq8_very_small_values() {
+        let codec = Sq8Codec::new(4);
+        let original = vec![1e-6, 2e-6, 3e-6, 4e-6];
+
+        let (quantized, meta) = codec.encode(&original);
+        let decoded = codec.decode(&quantized, &meta);
+
+        // Very small values should still be preserved approximately
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 1e-5,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_sq8_very_large_values() {
+        let codec = Sq8Codec::new(4);
+        let original = vec![1e6, 2e6, 3e6, 4e6];
+
+        let (quantized, meta) = codec.encode(&original);
+        let decoded = codec.decode(&quantized, &meta);
+
+        // With large range, relative error should be reasonable
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            let relative_error = (orig - dec).abs() / orig;
+            assert!(
+                relative_error < 0.01,
+                "orig={}, dec={}, relative_error={}",
+                orig,
+                dec,
+                relative_error
+            );
+        }
+    }
+
+    #[test]
+    fn test_sq8_encode_from_f32_slice() {
+        let codec = Sq8Codec::new(4);
+        let original = vec![0.1, 0.5, 0.3, 0.9];
+
+        let (bytes, meta) = codec.encode_from_f32_slice(&original);
+
+        // Bytes should have the same length as dimension
+        assert_eq!(bytes.len(), 4);
+
+        // Should be able to decode back
+        let decoded = codec.decode_from_u8_slice(&bytes, &meta);
+
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.01,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_sq8_batch_encode() {
+        let codec = Sq8Codec::new(4);
+        let vectors = vec![
+            vec![0.1, 0.2, 0.3, 0.4],
+            vec![0.5, 0.6, 0.7, 0.8],
+            vec![0.9, 0.8, 0.7, 0.6],
+        ];
+
+        let batch_result = codec.encode_batch(&vectors);
+
+        assert_eq!(batch_result.len(), 3);
+
+        // Verify each result
+        for (i, (quantized, meta)) in batch_result.iter().enumerate() {
+            let decoded = codec.decode(quantized, meta);
+            for (orig, dec) in vectors[i].iter().zip(decoded.iter()) {
+                assert!(
+                    (orig - dec).abs() < 0.01,
+                    "vector {}: orig={}, dec={}",
+                    i,
+                    orig,
+                    dec
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sq8_asymmetric_l2_distance_ordering() {
+        let codec = Sq8Codec::new(4);
+
+        // Three stored vectors: v1 is closest to query, v3 is farthest
+        let v1 = vec![1.0, 0.0, 0.0, 0.0];
+        let v2 = vec![0.5, 0.5, 0.0, 0.0];
+        let v3 = vec![0.0, 0.0, 0.0, 1.0];
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+
+        let (q1, m1) = codec.encode(&v1);
+        let (q2, m2) = codec.encode(&v2);
+        let (q3, m3) = codec.encode(&v3);
+
+        let b1: Vec<u8> = q1.iter().map(|q| q.get()).collect();
+        let b2: Vec<u8> = q2.iter().map(|q| q.get()).collect();
+        let b3: Vec<u8> = q3.iter().map(|q| q.get()).collect();
+
+        let d1 = sq8_asymmetric_l2_squared(&query, &b1, &m1, 4);
+        let d2 = sq8_asymmetric_l2_squared(&query, &b2, &m2, 4);
+        let d3 = sq8_asymmetric_l2_squared(&query, &b3, &m3, 4);
+
+        // d1 should be smallest (near 0), d3 should be largest
+        assert!(d1 < d2, "d1={} should be < d2={}", d1, d2);
+        assert!(d2 < d3, "d2={} should be < d3={}", d2, d3);
+    }
+
+    #[test]
+    fn test_sq8_asymmetric_ip_distance_ordering() {
+        let codec = Sq8Codec::new(4);
+
+        // For inner product, higher IP means more similar
+        let v1 = vec![1.0, 0.0, 0.0, 0.0]; // IP with query = 1
+        let v2 = vec![0.5, 0.0, 0.0, 0.0]; // IP with query = 0.5
+        let v3 = vec![0.0, 1.0, 0.0, 0.0]; // IP with query = 0
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+
+        let (q1, m1) = codec.encode(&v1);
+        let (q2, m2) = codec.encode(&v2);
+        let (q3, m3) = codec.encode(&v3);
+
+        let b1: Vec<u8> = q1.iter().map(|q| q.get()).collect();
+        let b2: Vec<u8> = q2.iter().map(|q| q.get()).collect();
+        let b3: Vec<u8> = q3.iter().map(|q| q.get()).collect();
+
+        // Note: asymmetric_inner_product returns negative IP
+        let d1 = sq8_asymmetric_inner_product(&query, &b1, &m1, 4);
+        let d2 = sq8_asymmetric_inner_product(&query, &b2, &m2, 4);
+        let d3 = sq8_asymmetric_inner_product(&query, &b3, &m3, 4);
+
+        // d1 should be most negative (closest), d3 should be near 0 (farthest)
+        assert!(d1 < d2, "d1={} should be < d2={}", d1, d2);
+        assert!(d2 < d3, "d2={} should be < d3={}", d2, d3);
+    }
+
+    #[test]
+    fn test_sq8_asymmetric_cosine_orthogonal() {
+        let codec = Sq8Codec::new(4);
+
+        // Two orthogonal vectors
+        let v1 = vec![1.0, 0.0, 0.0, 0.0];
+        let v2 = vec![0.0, 1.0, 0.0, 0.0];
+
+        let (q1, m1) = codec.encode(&v1);
+        let (q2, m2) = codec.encode(&v2);
+
+        let b1: Vec<u8> = q1.iter().map(|q| q.get()).collect();
+        let b2: Vec<u8> = q2.iter().map(|q| q.get()).collect();
+
+        // v1 vs v2 (orthogonal) - cosine distance should be ~1
+        let dist = sq8_asymmetric_cosine(&v1, &b2, &m2, 4);
+        assert!(
+            (dist - 1.0).abs() < 0.1,
+            "Orthogonal vectors should have cosine distance ~1, got {}",
+            dist
+        );
+
+        // v1 vs v1 (same direction) - cosine distance should be ~0
+        let self_dist = sq8_asymmetric_cosine(&v1, &b1, &m1, 4);
+        assert!(
+            self_dist < 0.1,
+            "Same direction should have cosine distance ~0, got {}",
+            self_dist
+        );
+    }
+
+    #[test]
+    fn test_sq8_meta_dequantize() {
+        let meta = Sq8VectorMeta::new(0.0, 0.1, 0.0, 0.0);
+
+        // Dequantize value 0 should give min
+        assert!((meta.dequantize(0) - 0.0).abs() < 0.001);
+
+        // Dequantize value 10 should give 0 + 10 * 0.1 = 1.0
+        assert!((meta.dequantize(10) - 1.0).abs() < 0.001);
+
+        // Dequantize value 255 should give max
+        assert!((meta.dequantize(255) - 25.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_sq8_meta_serialized_size() {
+        // Should be 4 f32 values = 16 bytes
+        assert_eq!(Sq8VectorMeta::SERIALIZED_SIZE, 16);
+    }
+
+    #[test]
+    fn test_sq8_codec_dimension() {
+        let codec = Sq8Codec::new(128);
+        assert_eq!(codec.dimension(), 128);
+    }
+
+    #[test]
+    fn test_sq8_high_dimension() {
+        // Test with a high-dimension vector (common for embeddings)
+        let codec = Sq8Codec::new(768);
+        let original: Vec<f32> = (0..768).map(|i| (i as f32) / 768.0).collect();
+
+        let (quantized, meta) = codec.encode(&original);
+        assert_eq!(quantized.len(), 768);
+
+        let decoded = codec.decode(&quantized, &meta);
+        assert_eq!(decoded.len(), 768);
+
+        // Check quantization error
+        let mse = codec.quantization_error(&original, &quantized, &meta);
+        assert!(mse < 0.001, "MSE should be small for normalized data, got {}", mse);
+    }
+
+    #[test]
+    fn test_sq8_mixed_positive_negative() {
+        let codec = Sq8Codec::new(4);
+        let original = vec![-0.5, -0.1, 0.2, 0.7];
+
+        let (quantized, meta) = codec.encode(&original);
+        let decoded = codec.decode(&quantized, &meta);
+
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() < 0.01,
+                "orig={}, dec={}",
+                orig,
+                dec
+            );
+        }
+    }
+
+    #[test]
+    fn test_sq8_extreme_range() {
+        let codec = Sq8Codec::new(4);
+        // Mix of very small and very large values
+        let original = vec![-1e5, 1e-5, 0.0, 1e5];
+
+        let (quantized, meta) = codec.encode(&original);
+        let decoded = codec.decode(&quantized, &meta);
+
+        // With such extreme range, precision is limited
+        let delta = meta.delta;
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert!(
+                (orig - dec).abs() <= delta * 1.5,
+                "orig={}, dec={}, delta={}",
+                orig,
+                dec,
+                delta
+            );
+        }
+    }
 }

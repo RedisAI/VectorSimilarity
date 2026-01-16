@@ -601,4 +601,298 @@ mod tests {
         let dist = sq8_l2_squared_simd(&stored, &quantized_bytes, &meta, dim);
         assert!(dist < 0.01, "Self distance should be small, got {}", dist);
     }
+
+    #[test]
+    fn test_sq8_simd_negative_values() {
+        let dim = 64;
+        let codec = Sq8Codec::new(dim);
+        let stored: Vec<f32> = (0..dim).map(|i| ((i as f32) / (dim as f32)) - 0.5).collect();
+        let (quantized, meta) = codec.encode(&stored);
+        let quantized_bytes: Vec<u8> = quantized.iter().map(|q| q.get()).collect();
+
+        let query: Vec<f32> = (0..dim).map(|i| ((i as f32 + 0.25) / (dim as f32)) - 0.5).collect();
+
+        let scalar_l2 =
+            crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized_bytes, &meta, dim);
+        let simd_l2 = sq8_l2_squared_simd(&query, &quantized_bytes, &meta, dim);
+
+        assert!(
+            (scalar_l2 - simd_l2).abs() < 0.001,
+            "L2: scalar={}, simd={}",
+            scalar_l2,
+            simd_l2
+        );
+
+        let scalar_ip =
+            crate::quantization::sq8::sq8_asymmetric_inner_product(&query, &quantized_bytes, &meta, dim);
+        let simd_ip = sq8_inner_product_simd(&query, &quantized_bytes, &meta, dim);
+
+        assert!(
+            (scalar_ip - simd_ip).abs() < 0.001,
+            "IP: scalar={}, simd={}",
+            scalar_ip,
+            simd_ip
+        );
+
+        let scalar_cos =
+            crate::quantization::sq8::sq8_asymmetric_cosine(&query, &quantized_bytes, &meta, dim);
+        let simd_cos = sq8_cosine_simd(&query, &quantized_bytes, &meta, dim);
+
+        assert!(
+            (scalar_cos - simd_cos).abs() < 0.001,
+            "Cosine: scalar={}, simd={}",
+            scalar_cos,
+            simd_cos
+        );
+    }
+
+    #[test]
+    fn test_sq8_simd_large_vectors() {
+        let dim = 768; // Common embedding dimension
+        let (_, quantized, meta) = create_test_data(dim);
+        let query: Vec<f32> = (0..dim).map(|i| (i as f32) / (dim as f32)).collect();
+
+        let scalar_result =
+            crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized, &meta, dim);
+        let simd_result = sq8_l2_squared_simd(&query, &quantized, &meta, dim);
+
+        assert!(
+            (scalar_result - simd_result).abs() < 0.01,
+            "dim={}: scalar={}, simd={}",
+            dim,
+            scalar_result,
+            simd_result
+        );
+    }
+
+    #[test]
+    fn test_sq8_simd_zero_vector() {
+        let dim = 32;
+        let codec = Sq8Codec::new(dim);
+        let stored: Vec<f32> = vec![0.0; dim];
+        let (quantized, meta) = codec.encode(&stored);
+        let quantized_bytes: Vec<u8> = quantized.iter().map(|q| q.get()).collect();
+
+        let query: Vec<f32> = vec![1.0; dim];
+
+        let scalar_result =
+            crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized_bytes, &meta, dim);
+        let simd_result = sq8_l2_squared_simd(&query, &quantized_bytes, &meta, dim);
+
+        assert!(
+            (scalar_result - simd_result).abs() < 0.001,
+            "scalar={}, simd={}",
+            scalar_result,
+            simd_result
+        );
+
+        // Distance should be approximately dim (sum of 1^2)
+        assert!((simd_result - dim as f32).abs() < 0.1, "Expected ~{}, got {}", dim, simd_result);
+    }
+
+    #[test]
+    fn test_sq8_simd_cosine_orthogonal() {
+        let dim = 64;
+        let codec = Sq8Codec::new(dim);
+
+        // Vector pointing along first half of dimensions
+        let mut v1 = vec![0.0; dim];
+        for i in 0..dim/2 {
+            v1[i] = 1.0;
+        }
+
+        // Vector pointing along second half of dimensions
+        let mut v2 = vec![0.0; dim];
+        for i in dim/2..dim {
+            v2[i] = 1.0;
+        }
+
+        let (quantized1, meta1) = codec.encode(&v1);
+        let quantized_bytes1: Vec<u8> = quantized1.iter().map(|q| q.get()).collect();
+
+        let (quantized2, meta2) = codec.encode(&v2);
+        let quantized_bytes2: Vec<u8> = quantized2.iter().map(|q| q.get()).collect();
+
+        // v1 vs quantized v2 should have cosine distance ~1 (orthogonal)
+        let scalar_cos = crate::quantization::sq8::sq8_asymmetric_cosine(&v1, &quantized_bytes2, &meta2, dim);
+        let simd_cos = sq8_cosine_simd(&v1, &quantized_bytes2, &meta2, dim);
+
+        assert!(
+            (scalar_cos - simd_cos).abs() < 0.01,
+            "Orthogonal cosine: scalar={}, simd={}",
+            scalar_cos,
+            simd_cos
+        );
+        assert!(simd_cos > 0.9, "Orthogonal vectors should have cosine distance near 1, got {}", simd_cos);
+
+        // v1 vs quantized v1 should have cosine distance ~0 (same direction)
+        let scalar_self = crate::quantization::sq8::sq8_asymmetric_cosine(&v1, &quantized_bytes1, &meta1, dim);
+        let simd_self = sq8_cosine_simd(&v1, &quantized_bytes1, &meta1, dim);
+
+        assert!(
+            (scalar_self - simd_self).abs() < 0.01,
+            "Self cosine: scalar={}, simd={}",
+            scalar_self,
+            simd_self
+        );
+        assert!(simd_self < 0.1, "Same direction should have cosine distance near 0, got {}", simd_self);
+    }
+
+    #[test]
+    fn test_sq8_simd_distance_ordering_consistency() {
+        let dim = 128;
+        let codec = Sq8Codec::new(dim);
+
+        let v1: Vec<f32> = (0..dim).map(|i| (i as f32) / (dim as f32)).collect();
+        let v2: Vec<f32> = (0..dim).map(|i| ((i + dim/4) as f32 % dim as f32) / (dim as f32)).collect();
+        let v3: Vec<f32> = (0..dim).map(|i| (1.0 - (i as f32) / (dim as f32))).collect();
+
+        let query = v1.clone();
+
+        let (q1, m1) = codec.encode(&v1);
+        let (q2, m2) = codec.encode(&v2);
+        let (q3, m3) = codec.encode(&v3);
+
+        let b1: Vec<u8> = q1.iter().map(|q| q.get()).collect();
+        let b2: Vec<u8> = q2.iter().map(|q| q.get()).collect();
+        let b3: Vec<u8> = q3.iter().map(|q| q.get()).collect();
+
+        // Test L2
+        let d1_scalar = crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &b1, &m1, dim);
+        let d2_scalar = crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &b2, &m2, dim);
+        let d3_scalar = crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &b3, &m3, dim);
+
+        let d1_simd = sq8_l2_squared_simd(&query, &b1, &m1, dim);
+        let d2_simd = sq8_l2_squared_simd(&query, &b2, &m2, dim);
+        let d3_simd = sq8_l2_squared_simd(&query, &b3, &m3, dim);
+
+        // Ordering should be preserved
+        if d1_scalar < d2_scalar {
+            assert!(d1_simd < d2_simd, "Ordering mismatch: d1_simd={}, d2_simd={}", d1_simd, d2_simd);
+        }
+        if d2_scalar < d3_scalar {
+            assert!(d2_simd < d3_simd, "Ordering mismatch: d2_simd={}, d3_simd={}", d2_simd, d3_simd);
+        }
+    }
+
+    #[test]
+    fn test_sq8_simd_small_dimensions() {
+        // Test dimensions smaller than SIMD width
+        for dim in [4, 7, 8, 15, 16] {
+            let (_, quantized, meta) = create_test_data(dim);
+            let query: Vec<f32> = (0..dim).map(|i| (i as f32 + 0.5) / (dim as f32)).collect();
+
+            let scalar_l2 =
+                crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized, &meta, dim);
+            let simd_l2 = sq8_l2_squared_simd(&query, &quantized, &meta, dim);
+
+            assert!(
+                (scalar_l2 - simd_l2).abs() < 0.001,
+                "dim={}: L2 scalar={}, simd={}",
+                dim,
+                scalar_l2,
+                simd_l2
+            );
+
+            let scalar_ip =
+                crate::quantization::sq8::sq8_asymmetric_inner_product(&query, &quantized, &meta, dim);
+            let simd_ip = sq8_inner_product_simd(&query, &quantized, &meta, dim);
+
+            assert!(
+                (scalar_ip - simd_ip).abs() < 0.001,
+                "dim={}: IP scalar={}, simd={}",
+                dim,
+                scalar_ip,
+                simd_ip
+            );
+        }
+    }
+
+    #[test]
+    fn test_sq8_simd_uniform_values() {
+        let dim = 64;
+        let codec = Sq8Codec::new(dim);
+        let stored: Vec<f32> = vec![0.5; dim];
+        let (quantized, meta) = codec.encode(&stored);
+        let quantized_bytes: Vec<u8> = quantized.iter().map(|q| q.get()).collect();
+
+        let query: Vec<f32> = vec![0.6; dim];
+
+        let scalar_l2 =
+            crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized_bytes, &meta, dim);
+        let simd_l2 = sq8_l2_squared_simd(&query, &quantized_bytes, &meta, dim);
+
+        assert!(
+            (scalar_l2 - simd_l2).abs() < 0.001,
+            "Uniform L2: scalar={}, simd={}",
+            scalar_l2,
+            simd_l2
+        );
+    }
+
+    #[test]
+    fn test_sq8_simd_large_values() {
+        let dim = 64;
+        let codec = Sq8Codec::new(dim);
+        let stored: Vec<f32> = (0..dim).map(|i| (i as f32) * 100.0).collect();
+        let (quantized, meta) = codec.encode(&stored);
+        let quantized_bytes: Vec<u8> = quantized.iter().map(|q| q.get()).collect();
+
+        let query: Vec<f32> = (0..dim).map(|i| (i as f32 + 0.5) * 100.0).collect();
+
+        let scalar_l2 =
+            crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized_bytes, &meta, dim);
+        let simd_l2 = sq8_l2_squared_simd(&query, &quantized_bytes, &meta, dim);
+
+        // For large values, allow slightly larger tolerance
+        let relative_error = (scalar_l2 - simd_l2).abs() / scalar_l2.max(1.0);
+        assert!(
+            relative_error < 0.001,
+            "Large values L2: scalar={}, simd={}, relative_error={}",
+            scalar_l2,
+            simd_l2,
+            relative_error
+        );
+    }
+
+    #[test]
+    fn test_sq8_simd_all_distances_consistency() {
+        // Test that all three distance functions are consistent between SIMD and scalar
+        let dim = 256;
+        let (_, quantized, meta) = create_test_data(dim);
+        let query: Vec<f32> = (0..dim).map(|i| (i as f32 + 0.3) / (dim as f32)).collect();
+
+        // L2 squared
+        let scalar_l2 =
+            crate::quantization::sq8::sq8_asymmetric_l2_squared(&query, &quantized, &meta, dim);
+        let simd_l2 = sq8_l2_squared_simd(&query, &quantized, &meta, dim);
+        assert!(
+            (scalar_l2 - simd_l2).abs() < 0.01,
+            "L2: scalar={}, simd={}",
+            scalar_l2,
+            simd_l2
+        );
+
+        // Inner product
+        let scalar_ip =
+            crate::quantization::sq8::sq8_asymmetric_inner_product(&query, &quantized, &meta, dim);
+        let simd_ip = sq8_inner_product_simd(&query, &quantized, &meta, dim);
+        assert!(
+            (scalar_ip - simd_ip).abs() < 0.01,
+            "IP: scalar={}, simd={}",
+            scalar_ip,
+            simd_ip
+        );
+
+        // Cosine
+        let scalar_cos =
+            crate::quantization::sq8::sq8_asymmetric_cosine(&query, &quantized, &meta, dim);
+        let simd_cos = sq8_cosine_simd(&query, &quantized, &meta, dim);
+        assert!(
+            (scalar_cos - simd_cos).abs() < 0.001,
+            "Cosine: scalar={}, simd={}",
+            scalar_cos,
+            simd_cos
+        );
+    }
 }
