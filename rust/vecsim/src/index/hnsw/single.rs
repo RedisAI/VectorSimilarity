@@ -968,4 +968,55 @@ mod tests {
         // Label 5 should be closest
         assert_eq!(results.results[0].label, 5);
     }
+
+    #[test]
+    fn test_hnsw_single_compact() {
+        let params = HnswParams::new(4, Metric::L2)
+            .with_m(4)
+            .with_ef_construction(20);
+        let mut index = HnswSingle::<f32>::new(params);
+
+        // Add vectors
+        for i in 0..10 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.add_vector(&v, i as u64).unwrap();
+        }
+
+        assert_eq!(index.index_size(), 10);
+
+        // Delete some vectors (labels 2, 4, 6, 8)
+        index.delete_vector(2).unwrap();
+        index.delete_vector(4).unwrap();
+        index.delete_vector(6).unwrap();
+        index.delete_vector(8).unwrap();
+
+        assert_eq!(index.index_size(), 6);
+        assert!(index.fragmentation() > 0.0);
+
+        // Compact the index
+        index.compact(true);
+
+        // Verify fragmentation is gone
+        assert!((index.fragmentation() - 0.0).abs() < 0.01);
+        assert_eq!(index.index_size(), 6);
+
+        // Verify queries still work correctly
+        let query = vec![5.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 3, None).unwrap();
+
+        assert!(!results.is_empty());
+        // Label 5 should be closest
+        assert_eq!(results.results[0].label, 5);
+
+        // Verify we can find other remaining vectors
+        let query2 = vec![0.0, 0.0, 0.0, 0.0];
+        let results2 = index.top_k_query(&query2, 1, None).unwrap();
+        assert_eq!(results2.results[0].label, 0);
+
+        // Deleted labels should not appear in any query
+        let all_results = index.top_k_query(&query, 10, None).unwrap();
+        for result in &all_results.results {
+            assert!(result.label != 2 && result.label != 4 && result.label != 6 && result.label != 8);
+        }
+    }
 }

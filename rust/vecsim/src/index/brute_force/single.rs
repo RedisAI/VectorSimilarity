@@ -814,4 +814,54 @@ mod tests {
         let results = loaded.top_k_query(&query, 3, None).unwrap();
         assert_eq!(results.results[0].label, 1);
     }
+
+    #[test]
+    fn test_brute_force_single_compact() {
+        let params = BruteForceParams::new(4, Metric::L2);
+        let mut index = BruteForceSingle::<f32>::new(params);
+
+        let v1 = vec![1.0, 0.0, 0.0, 0.0];
+        let v2 = vec![0.0, 1.0, 0.0, 0.0];
+        let v3 = vec![0.0, 0.0, 1.0, 0.0];
+        let v4 = vec![0.0, 0.0, 0.0, 1.0];
+
+        index.add_vector(&v1, 1).unwrap();
+        index.add_vector(&v2, 2).unwrap();
+        index.add_vector(&v3, 3).unwrap();
+        index.add_vector(&v4, 4).unwrap();
+
+        assert_eq!(index.index_size(), 4);
+
+        // Delete vectors 2 and 3
+        index.delete_vector(2).unwrap();
+        index.delete_vector(3).unwrap();
+
+        assert_eq!(index.index_size(), 2);
+        assert!(index.fragmentation() > 0.0);
+
+        // Compact the index
+        index.compact(true);
+
+        // Verify fragmentation is gone
+        assert!((index.fragmentation() - 0.0).abs() < 0.01);
+        assert_eq!(index.index_size(), 2);
+
+        // Verify queries still work correctly
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 2, None).unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.results[0].label, 1); // Closest to v1
+
+        // Verify we can still find v4
+        let query2 = vec![0.0, 0.0, 0.0, 1.0];
+        let results2 = index.top_k_query(&query2, 1, None).unwrap();
+        assert_eq!(results2.results[0].label, 4);
+
+        // Deleted labels should not appear
+        let all_results = index.top_k_query(&v1, 10, None).unwrap();
+        for result in &all_results.results {
+            assert!(result.label == 1 || result.label == 4);
+        }
+    }
 }

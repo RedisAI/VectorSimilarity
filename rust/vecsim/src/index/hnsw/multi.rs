@@ -835,4 +835,56 @@ mod tests {
         // First result should be one of the label 1 vectors
         assert_eq!(results.results[0].label, 1);
     }
+
+    #[test]
+    fn test_hnsw_multi_compact() {
+        let params = HnswParams::new(4, Metric::L2)
+            .with_m(4)
+            .with_ef_construction(20);
+        let mut index = HnswMulti::<f32>::new(params);
+
+        // Add multiple vectors, some with same label
+        index.add_vector(&vec![1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![0.9, 0.1, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![0.0, 1.0, 0.0, 0.0], 2).unwrap();
+        index.add_vector(&vec![0.0, 0.0, 1.0, 0.0], 3).unwrap();
+        index.add_vector(&vec![0.0, 0.0, 0.0, 1.0], 4).unwrap();
+
+        assert_eq!(index.index_size(), 5);
+        assert_eq!(index.label_count(1), 2);
+
+        // Delete labels 2 and 3
+        index.delete_vector(2).unwrap();
+        index.delete_vector(3).unwrap();
+
+        assert_eq!(index.index_size(), 3);
+        assert!(index.fragmentation() > 0.0);
+
+        // Compact the index
+        index.compact(true);
+
+        // Verify fragmentation is gone
+        assert!((index.fragmentation() - 0.0).abs() < 0.01);
+        assert_eq!(index.index_size(), 3);
+        assert_eq!(index.label_count(1), 2); // Both vectors for label 1 remain
+
+        // Verify queries still work correctly
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = index.top_k_query(&query, 3, None).unwrap();
+
+        assert_eq!(results.len(), 3);
+        // Top results should include label 1 vectors
+        assert_eq!(results.results[0].label, 1);
+
+        // Verify we can still find v4
+        let query2 = vec![0.0, 0.0, 0.0, 1.0];
+        let results2 = index.top_k_query(&query2, 1, None).unwrap();
+        assert_eq!(results2.results[0].label, 4);
+
+        // Deleted labels should not appear
+        let all_results = index.top_k_query(&query, 10, None).unwrap();
+        for result in &all_results.results {
+            assert!(result.label == 1 || result.label == 4);
+        }
+    }
 }
