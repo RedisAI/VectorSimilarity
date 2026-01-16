@@ -1,0 +1,22 @@
+[package]
+name = "vecsim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "High-performance vector similarity search library with BruteForce and HNSW indices"
+
+[dependencies]
+rayon = { workspace = true }
+parking_lot = { workspace = true }
+half = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+
+[features]
+default = []
+nightly = []  # Enable nightly-only SIMD intrinsics
+
+[dev-dependencies]
+criterion = "0.5"
