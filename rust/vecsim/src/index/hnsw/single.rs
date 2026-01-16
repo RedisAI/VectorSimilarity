@@ -188,6 +188,35 @@ impl<T: VectorElement> HnswSingle<T> {
 
         vector_storage + graph_overhead + label_maps
     }
+
+    /// Get a copy of the vector stored for a given label.
+    ///
+    /// Returns `None` if the label doesn't exist in the index.
+    pub fn get_vector(&self, label: LabelType) -> Option<Vec<T>> {
+        let label_to_id = self.label_to_id.read();
+        let id = *label_to_id.get(&label)?;
+        let core = self.core.read();
+        core.data.get(id).map(|v| v.to_vec())
+    }
+
+    /// Get all labels currently in the index.
+    pub fn get_labels(&self) -> Vec<LabelType> {
+        self.label_to_id.read().keys().copied().collect()
+    }
+
+    /// Compute the distance between a stored vector and a query vector.
+    ///
+    /// Returns `None` if the label doesn't exist.
+    pub fn compute_distance(&self, label: LabelType, query: &[T]) -> Option<T::DistanceType> {
+        let label_to_id = self.label_to_id.read();
+        let id = *label_to_id.get(&label)?;
+        let core = self.core.read();
+        if let Some(stored) = core.data.get(id) {
+            Some(core.dist_fn.compute(stored, query, core.params.dim))
+        } else {
+            None
+        }
+    }
 }
 
 impl<T: VectorElement> VecSimIndex for HnswSingle<T> {

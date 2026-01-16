@@ -107,7 +107,7 @@ pub mod prelude {
     };
 
     // Distance
-    pub use crate::distance::Metric;
+    pub use crate::distance::{l2_norm, normalize, normalize_in_place, Metric};
 
     // Query
     pub use crate::query::{QueryParams, QueryReply, QueryResult};
@@ -118,10 +118,16 @@ pub mod prelude {
     };
 
     // BruteForce
-    pub use crate::index::{BruteForceMulti, BruteForceParams, BruteForceSingle};
+    pub use crate::index::{BruteForceMulti, BruteForceParams, BruteForceSingle, BruteForceStats};
+
+    // Index estimation
+    pub use crate::index::{
+        estimate_brute_force_element_size, estimate_brute_force_initial_size,
+        estimate_hnsw_element_size, estimate_hnsw_initial_size,
+    };
 
     // HNSW
-    pub use crate::index::{HnswMulti, HnswParams, HnswSingle};
+    pub use crate::index::{HnswMulti, HnswParams, HnswSingle, HnswStats};
 
     // Serialization
     pub use crate::serialization::{Deserializable, Serializable, SerializationError};

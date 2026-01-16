@@ -82,6 +82,63 @@ pub trait DistanceFunction<T: VectorElement>: Send + Sync {
     }
 }
 
+/// Normalize a vector to unit length (L2 norm = 1).
+///
+/// This is useful for preparing vectors for cosine similarity search,
+/// or when you need to ensure vectors have unit norm.
+///
+/// Returns `None` if the vector has zero norm (cannot be normalized).
+///
+/// # Example
+/// ```
+/// use vecsim::distance::normalize;
+///
+/// let v = vec![3.0f32, 4.0];
+/// let normalized = normalize(&v).unwrap();
+/// assert!((normalized[0] - 0.6).abs() < 0.001);
+/// assert!((normalized[1] - 0.8).abs() < 0.001);
+/// ```
+pub fn normalize<T: VectorElement>(vector: &[T]) -> Option<Vec<T>> {
+    let norm_sq: f64 = vector.iter().map(|&x| {
+        let f = x.to_f32() as f64;
+        f * f
+    }).sum();
+    if norm_sq == 0.0 {
+        return None;
+    }
+    let norm = norm_sq.sqrt();
+    Some(vector.iter().map(|&x| {
+        T::from_f32((x.to_f32() as f64 / norm) as f32)
+    }).collect())
+}
+
+/// Normalize a vector in place to unit length.
+///
+/// Returns `false` if the vector has zero norm (not modified).
+pub fn normalize_in_place<T: VectorElement>(vector: &mut [T]) -> bool {
+    let norm_sq: f64 = vector.iter().map(|&x| {
+        let f = x.to_f32() as f64;
+        f * f
+    }).sum();
+    if norm_sq == 0.0 {
+        return false;
+    }
+    let norm = norm_sq.sqrt();
+    for x in vector.iter_mut() {
+        *x = T::from_f32((x.to_f32() as f64 / norm) as f32);
+    }
+    true
+}
+
+/// Compute the L2 norm (magnitude) of a vector.
+pub fn l2_norm<T: VectorElement>(vector: &[T]) -> f64 {
+    let norm_sq: f64 = vector.iter().map(|&x| {
+        let f = x.to_f32() as f64;
+        f * f
+    }).sum();
+    norm_sq.sqrt()
+}
+
 /// Create a distance function for the given metric and element type.
 pub fn create_distance_function<T: VectorElement>(
     metric: Metric,

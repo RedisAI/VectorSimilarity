@@ -61,6 +61,65 @@ impl<T: VectorElement> HnswMulti<T> {
     pub fn set_ef_runtime(&self, ef: usize) {
         self.core.write().params.ef_runtime = ef;
     }
+
+    /// Get copies of all vectors stored for a given label.
+    ///
+    /// Returns `None` if the label doesn't exist in the index.
+    pub fn get_vectors(&self, label: LabelType) -> Option<Vec<Vec<T>>> {
+        let label_to_ids = self.label_to_ids.read();
+        let ids = label_to_ids.get(&label)?;
+        let core = self.core.read();
+        let vectors: Vec<Vec<T>> = ids
+            .iter()
+            .filter_map(|&id| core.data.get(id).map(|v| v.to_vec()))
+            .collect();
+        if vectors.is_empty() {
+            None
+        } else {
+            Some(vectors)
+        }
+    }
+
+    /// Get all labels currently in the index.
+    pub fn get_labels(&self) -> Vec<LabelType> {
+        self.label_to_ids.read().keys().copied().collect()
+    }
+
+    /// Compute the minimum distance between any stored vector for a label and a query vector.
+    ///
+    /// Returns `None` if the label doesn't exist.
+    pub fn compute_distance(&self, label: LabelType, query: &[T]) -> Option<T::DistanceType> {
+        let label_to_ids = self.label_to_ids.read();
+        let ids = label_to_ids.get(&label)?;
+        let core = self.core.read();
+        ids.iter()
+            .filter_map(|&id| {
+                core.data.get(id).map(|stored| {
+                    core.dist_fn.compute(stored, query, core.params.dim)
+                })
+            })
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    /// Get the memory usage in bytes.
+    pub fn memory_usage(&self) -> usize {
+        let core = self.core.read();
+        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+
+        // Vector data storage
+        let vector_storage = count * core.params.dim * std::mem::size_of::<T>();
+
+        // Graph structure (rough estimate)
+        let graph_overhead = core.graph.len()
+            * std::mem::size_of::<Option<super::graph::ElementGraphData>>();
+
+        // Label mappings
+        let label_maps = self.label_to_ids.read().capacity()
+            * std::mem::size_of::<(LabelType, HashSet<IdType>)>()
+            + self.id_to_label.read().capacity() * std::mem::size_of::<(IdType, LabelType)>();
+
+        vector_storage + graph_overhead + label_maps
+    }
 }
 
 impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
