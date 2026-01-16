@@ -93,6 +93,7 @@ pub mod containers;
 pub mod distance;
 pub mod index;
 pub mod memory;
+pub mod preprocessing;
 pub mod quantization;
 pub mod query;
 pub mod serialization;

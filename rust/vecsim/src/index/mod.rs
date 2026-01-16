@@ -7,8 +7,10 @@
 //! - `svs`: Single-layer Vamana graph (alternative to HNSW)
 //! - `tiered_svs`: Two-tier index combining BruteForce frontend with SVS backend
 //! - `disk`: Disk-based index with memory-mapped storage
+//! - `debug`: Debug and introspection API
 
 pub mod brute_force;
+pub mod debug;
 pub mod disk;
 pub mod hnsw;
 pub mod svs;
@@ -18,7 +20,8 @@ pub mod traits;
 
 // Re-export traits
 pub use traits::{
-    BatchIterator, IndexError, IndexInfo, IndexType, MultiValue, QueryError, VecSimIndex,
+    AsyncIndex, BatchIterator, BlockSizeConfigurable, GarbageCollectable, IndexError, IndexInfo,
+    IndexType, MemoryFittable, MultiValue, QueryError, VecSimIndex, DEFAULT_BLOCK_SIZE,
 };
 
 // Re-export BruteForce types

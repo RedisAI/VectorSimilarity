@@ -224,3 +224,73 @@ pub enum MultiValue {
     /// Multiple vectors allowed per label.
     Multi,
 }
+
+/// Trait for indices that support garbage collection.
+///
+/// Tiered indices accumulate deleted vectors over time. The GC process
+/// removes these deleted vectors from the backend index to reclaim memory.
+pub trait GarbageCollectable {
+    /// Run garbage collection to remove deleted vectors.
+    ///
+    /// Returns the number of vectors removed.
+    fn run_gc(&mut self) -> usize;
+
+    /// Check if garbage collection is needed.
+    ///
+    /// This is a heuristic based on the ratio of deleted to total vectors.
+    fn needs_gc(&self) -> bool;
+
+    /// Get the number of deleted vectors pending cleanup.
+    fn deleted_count(&self) -> usize;
+
+    /// Get the GC threshold ratio (deleted/total that triggers GC).
+    fn gc_threshold(&self) -> f64 {
+        0.1 // Default: trigger GC when 10% of vectors are deleted
+    }
+}
+
+/// Trait for indices with configurable block sizes.
+///
+/// Block size affects memory allocation patterns and can impact performance:
+/// - Larger blocks: fewer allocations, better cache locality, more wasted space
+/// - Smaller blocks: more allocations, less wasted space, potentially more fragmentation
+pub trait BlockSizeConfigurable {
+    /// Get the current block size.
+    fn block_size(&self) -> usize;
+
+    /// Set the block size for future allocations.
+    ///
+    /// This does not affect already-allocated blocks.
+    fn set_block_size(&mut self, size: usize);
+
+    /// Get the default block size for this index type.
+    fn default_block_size() -> usize;
+}
+
+/// Default block size used by indices.
+pub const DEFAULT_BLOCK_SIZE: usize = 1024;
+
+/// Trait for indices that support memory fitting/compaction.
+///
+/// Memory fitting releases unused capacity to reduce memory usage.
+pub trait MemoryFittable {
+    /// Fit memory to actual usage, releasing unused capacity.
+    ///
+    /// Returns the number of bytes freed.
+    fn fit_memory(&mut self) -> usize;
+
+    /// Get the current memory overhead (unused allocated bytes).
+    fn memory_overhead(&self) -> usize;
+}
+
+/// Trait for indices that support async operations.
+pub trait AsyncIndex {
+    /// Check if there are pending async operations.
+    fn has_pending_operations(&self) -> bool;
+
+    /// Wait for all pending operations to complete.
+    fn wait_for_completion(&self);
+
+    /// Get the number of pending operations.
+    fn pending_count(&self) -> usize;
+}
