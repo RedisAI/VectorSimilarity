@@ -65,7 +65,7 @@ impl<T: VectorElement> DistanceFunction<T> for L2Distance<T> {
                 simd::neon::l2_squared_f32(a, b, dim)
             }
             #[allow(unreachable_patterns)]
-            SimdCapability::None | _ => {
+            _ => {
                 l2_squared_scalar(a, b, dim)
             }
         }

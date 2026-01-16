@@ -71,7 +71,7 @@ impl<T: VectorElement> DistanceFunction<T> for InnerProductDistance<T> {
                 simd::neon::inner_product_f32(a, b, dim)
             }
             #[allow(unreachable_patterns)]
-            SimdCapability::None | _ => {
+            _ => {
                 inner_product_scalar(a, b, dim)
             }
         };

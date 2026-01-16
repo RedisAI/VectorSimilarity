@@ -53,7 +53,7 @@ impl<'a, T: VectorElement> HnswSingleBatchIterator<'a, T> {
                 if let Some(ref f) = p.filter {
                     let id_to_label_for_filter = self.index.id_to_label.read().clone();
                     Some(Box::new(move |id: IdType| {
-                        id_to_label_for_filter.get(&id).map_or(false, |&label| f(label))
+                        id_to_label_for_filter.get(&id).is_some_and(|&label| f(label))
                     }))
                 } else {
                     None
@@ -161,7 +161,7 @@ impl<'a, T: VectorElement> HnswMultiBatchIterator<'a, T> {
                 if let Some(ref f) = p.filter {
                     let id_to_label_for_filter = self.index.id_to_label.read().clone();
                     Some(Box::new(move |id: IdType| {
-                        id_to_label_for_filter.get(&id).map_or(false, |&label| f(label))
+                        id_to_label_for_filter.get(&id).is_some_and(|&label| f(label))
                     }))
                 } else {
                     None

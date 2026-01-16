@@ -300,8 +300,7 @@ fn metric_from_u8(value: u8) -> SerializationResult<Metric> {
         2 => Ok(Metric::InnerProduct),
         3 => Ok(Metric::Cosine),
         _ => Err(SerializationError::InvalidData(format!(
-            "Invalid metric value: {}",
-            value
+            "Invalid metric value: {value}"
         ))),
     }
 }

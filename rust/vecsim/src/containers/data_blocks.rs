@@ -152,7 +152,7 @@ impl<T: VectorElement> DataBlocks<T> {
     /// * `initial_capacity` - Initial number of vectors to allocate
     pub fn new(dim: usize, initial_capacity: usize) -> Self {
         let vectors_per_block = DEFAULT_BLOCK_SIZE;
-        let num_blocks = (initial_capacity + vectors_per_block - 1) / vectors_per_block;
+        let num_blocks = initial_capacity.div_ceil(vectors_per_block);
 
         let blocks: Vec<_> = (0..num_blocks.max(1))
             .map(|_| DataBlock::new(vectors_per_block, dim))
@@ -171,7 +171,7 @@ impl<T: VectorElement> DataBlocks<T> {
     /// Create with a custom block size.
     pub fn with_block_size(dim: usize, initial_capacity: usize, block_size: usize) -> Self {
         let vectors_per_block = block_size;
-        let num_blocks = (initial_capacity + vectors_per_block - 1) / vectors_per_block;
+        let num_blocks = initial_capacity.div_ceil(vectors_per_block);
 
         let blocks: Vec<_> = (0..num_blocks.max(1))
             .map(|_| DataBlock::new(vectors_per_block, dim))
@@ -363,7 +363,7 @@ impl<T: VectorElement> DataBlocks<T> {
 
         if needed > current_capacity {
             let additional_blocks =
-                (needed - current_capacity + self.vectors_per_block - 1) / self.vectors_per_block;
+                (needed - current_capacity).div_ceil(self.vectors_per_block);
 
             for _ in 0..additional_blocks {
                 self.blocks

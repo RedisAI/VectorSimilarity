@@ -66,6 +66,7 @@ where
 ///
 /// This is the main search algorithm for finding nearest neighbors
 /// at a given layer.
+#[allow(clippy::too_many_arguments)]
 pub fn search_layer<'a, T, D, F, P>(
     entry_points: &[(IdType, D)],
     query: &[T],
@@ -96,7 +97,7 @@ where
             candidates.push(id, dist);
 
             // Check filter for results
-            let passes = filter.map_or(true, |f| f(id));
+            let passes = filter.is_none_or(|f| f(id));
             if passes {
                 results.insert(id, dist);
             }
@@ -137,15 +138,14 @@ where
                     let dist = dist_fn.compute(data, query, dim);
 
                     // Add to results if it passes filter and is close enough
-                    let passes = filter.map_or(true, |f| f(neighbor));
+                    let passes = filter.is_none_or(|f| f(neighbor));
 
-                    if passes {
-                        if !results.is_full()
-                            || dist.to_f64() < results.top_distance().unwrap().to_f64()
+                    if passes
+                        && (!results.is_full()
+                            || dist.to_f64() < results.top_distance().unwrap().to_f64())
                         {
                             results.try_insert(neighbor, dist);
                         }
-                    }
 
                     // Add to candidates for exploration
                     if !results.is_full()
@@ -180,6 +180,7 @@ pub fn select_neighbors_simple<D: DistanceType>(candidates: &[(IdType, D)], m: u
 /// Select neighbors using the heuristic from the HNSW paper.
 ///
 /// This heuristic ensures diversity in the selected neighbors.
+#[allow(clippy::too_many_arguments)]
 pub fn select_neighbors_heuristic<'a, T, D, F>(
     target: IdType,
     candidates: &[(IdType, D)],

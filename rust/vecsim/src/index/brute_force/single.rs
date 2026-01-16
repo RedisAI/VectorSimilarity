@@ -179,8 +179,8 @@ impl<T: VectorElement> BruteForceSingle<T> {
             });
         }
 
-        let use_parallel = params.map_or(false, |p| p.parallel);
-        let filter = params.and_then(|p| p.filter.as_ref());
+        let use_parallel = params.is_some_and(|p| p.parallel);
+        let filter = params.and_then(|p| p.filter.as_ref()).map(|f| f.as_ref());
 
         let mut results = if use_parallel && id_to_label.len() > 1000 {
             // Parallel scan for large datasets
@@ -201,7 +201,7 @@ impl<T: VectorElement> BruteForceSingle<T> {
         id_to_label: &[IdLabelEntry],
         query: &[T],
         k: usize,
-        filter: Option<&Box<dyn Fn(LabelType) -> bool + Send + Sync>>,
+        filter: Option<&(dyn Fn(LabelType) -> bool + Send + Sync)>,
     ) -> QueryReply<T::DistanceType> {
         let mut heap = MaxHeap::new(k);
 
@@ -236,7 +236,7 @@ impl<T: VectorElement> BruteForceSingle<T> {
         id_to_label: &[IdLabelEntry],
         query: &[T],
         k: usize,
-        filter: Option<&Box<dyn Fn(LabelType) -> bool + Send + Sync>>,
+        filter: Option<&(dyn Fn(LabelType) -> bool + Send + Sync)>,
     ) -> QueryReply<T::DistanceType> {
         // Parallel map to compute distances
         let candidates: Vec<_> = id_to_label

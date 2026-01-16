@@ -119,16 +119,9 @@ impl<T: VectorElement> BruteForceCore<T> {
 
 /// Entry in the id-to-label mapping.
 #[derive(Clone, Copy)]
+#[derive(Default)]
 pub(crate) struct IdLabelEntry {
     pub label: LabelType,
     pub is_valid: bool,
 }
 
-impl Default for IdLabelEntry {
-    fn default() -> Self {
-        Self {
-            label: 0,
-            is_valid: false,
-        }
-    }
-}

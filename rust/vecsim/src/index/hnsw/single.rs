@@ -122,7 +122,7 @@ impl<T: VectorElement> HnswSingle<T> {
         let core = self.core.read();
         core.graph
             .iter()
-            .filter(|e| e.as_ref().map_or(false, |g| g.meta.deleted))
+            .filter(|e| e.as_ref().is_some_and(|g| g.meta.deleted))
             .count()
     }
 
@@ -346,7 +346,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             .unwrap_or(core.params.ef_runtime);
 
         // Build filter if needed
-        let has_filter = params.map_or(false, |p| p.filter.is_some());
+        let has_filter = params.is_some_and(|p| p.filter.is_some());
         let id_label_map: HashMap<IdType, LabelType> = if has_filter {
             self.id_to_label.read().clone()
         } else {
@@ -357,7 +357,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             if let Some(ref f) = p.filter {
                 let f = f.as_ref();
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).map_or(false, |&label| f(label))
+                    id_label_map.get(&id).is_some_and(|&label| f(label))
                 }))
             } else {
                 None
@@ -403,7 +403,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
 
         // Build filter if needed
-        let has_filter = params.map_or(false, |p| p.filter.is_some());
+        let has_filter = params.is_some_and(|p| p.filter.is_some());
         let id_label_map: HashMap<IdType, LabelType> = if has_filter {
             self.id_to_label.read().clone()
         } else {
@@ -414,7 +414,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             if let Some(ref f) = p.filter {
                 let f = f.as_ref();
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).map_or(false, |&label| f(label))
+                    id_label_map.get(&id).is_some_and(|&label| f(label))
                 }))
             } else {
                 None

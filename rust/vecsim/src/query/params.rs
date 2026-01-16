@@ -3,6 +3,7 @@
 use crate::types::LabelType;
 
 /// Parameters for controlling query execution.
+#[derive(Default)]
 pub struct QueryParams {
     /// For HNSW: the size of the dynamic candidate list during search (ef).
     /// Higher values improve recall at the cost of speed.
@@ -43,16 +44,6 @@ impl Clone for QueryParams {
     }
 }
 
-impl Default for QueryParams {
-    fn default() -> Self {
-        Self {
-            ef_runtime: None,
-            batch_size: None,
-            filter: None,
-            parallel: false,
-        }
-    }
-}
 
 impl QueryParams {
     /// Create new query parameters with default values.
@@ -90,6 +81,6 @@ impl QueryParams {
     /// Check if a label passes the filter (if any).
     #[inline]
     pub fn passes_filter(&self, label: LabelType) -> bool {
-        self.filter.as_ref().map_or(true, |f| f(label))
+        self.filter.as_ref().is_none_or(|f| f(label))
     }
 }

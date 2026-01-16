@@ -3,13 +3,15 @@
 //! These functions use 128-bit NEON instructions for ARM processors.
 //! Available on all aarch64 (ARM64) platforms.
 
-#![cfg(target_arch = "aarch64")]
-
 use crate::types::{DistanceType, VectorElement};
 
 use std::arch::aarch64::*;
 
 /// NEON L2 squared distance for f32 vectors.
+///
+/// # Safety
+/// - Pointers `a` and `b` must be valid for reads of `dim` f32 elements.
+/// - Must only be called on aarch64 platforms with NEON support.
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn l2_squared_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f32 {
@@ -48,6 +50,10 @@ pub unsafe fn l2_squared_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f
 }
 
 /// NEON inner product for f32 vectors.
+///
+/// # Safety
+/// - Pointers `a` and `b` must be valid for reads of `dim` f32 elements.
+/// - Must only be called on aarch64 platforms with NEON support.
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn inner_product_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f32 {
@@ -83,6 +89,10 @@ pub unsafe fn inner_product_f32_neon(a: *const f32, b: *const f32, dim: usize) -
 }
 
 /// NEON cosine distance for f32 vectors.
+///
+/// # Safety
+/// - Pointers `a` and `b` must be valid for reads of `dim` f32 elements.
+/// - Must only be called on aarch64 platforms with NEON support.
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn cosine_distance_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f32 {
@@ -124,7 +134,7 @@ pub unsafe fn cosine_distance_f32_neon(a: *const f32, b: *const f32, dim: usize)
         return 1.0;
     }
 
-    let cosine_sim = (dot / denom).max(-1.0).min(1.0);
+    let cosine_sim = (dot / denom).clamp(-1.0, 1.0);
     1.0 - cosine_sim
 }
 

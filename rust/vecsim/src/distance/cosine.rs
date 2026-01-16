@@ -71,7 +71,7 @@ impl<T: VectorElement> DistanceFunction<T> for CosineDistance<T> {
                 simd::neon::cosine_distance_f32(a, b, dim)
             }
             #[allow(unreachable_patterns)]
-            SimdCapability::None | _ => {
+            _ => {
                 cosine_distance_scalar(a, b, dim)
             }
         }
@@ -113,8 +113,8 @@ pub fn normalize_vector<T: VectorElement>(vector: &[T], dim: usize) -> Vec<T> {
 #[inline]
 pub fn compute_norm<T: VectorElement>(vector: &[T], dim: usize) -> f64 {
     let mut sum = 0.0f64;
-    for i in 0..dim {
-        let v = vector[i].to_f32() as f64;
+    for v in vector.iter().take(dim) {
+        let v = v.to_f32() as f64;
         sum += v * v;
     }
     sum.sqrt()
@@ -153,7 +153,7 @@ pub fn cosine_distance_scalar<T: VectorElement>(a: &[T], b: &[T], dim: usize) ->
 
     let cosine_sim = dot / denom;
     // Clamp to [-1, 1] to handle floating point errors
-    let cosine_sim = cosine_sim.max(-1.0).min(1.0);
+    let cosine_sim = cosine_sim.clamp(-1.0, 1.0);
     T::DistanceType::from_f64(1.0 - cosine_sim)
 }
 
@@ -205,7 +205,7 @@ pub fn cosine_distance_scalar_f32(a: &[f32], b: &[f32], dim: usize) -> f32 {
         return 1.0;
     }
 
-    let cosine_sim = (dot / denom).max(-1.0).min(1.0);
+    let cosine_sim = (dot / denom).clamp(-1.0, 1.0);
     1.0 - cosine_sim
 }
 
