@@ -55,6 +55,10 @@ pub enum IndexTypeId {
     HnswMulti = 4,
     TieredSingle = 5,
     TieredMulti = 6,
+    SvsSingle = 7,
+    SvsMulti = 8,
+    TieredSvsSingle = 9,
+    TieredSvsMulti = 10,
 }
 
 impl IndexTypeId {
@@ -66,6 +70,10 @@ impl IndexTypeId {
             4 => Some(IndexTypeId::HnswMulti),
             5 => Some(IndexTypeId::TieredSingle),
             6 => Some(IndexTypeId::TieredMulti),
+            7 => Some(IndexTypeId::SvsSingle),
+            8 => Some(IndexTypeId::SvsMulti),
+            9 => Some(IndexTypeId::TieredSvsSingle),
+            10 => Some(IndexTypeId::TieredSvsMulti),
             _ => None,
         }
     }
@@ -78,6 +86,10 @@ impl IndexTypeId {
             IndexTypeId::HnswMulti => "HnswMulti",
             IndexTypeId::TieredSingle => "TieredSingle",
             IndexTypeId::TieredMulti => "TieredMulti",
+            IndexTypeId::SvsSingle => "SvsSingle",
+            IndexTypeId::SvsMulti => "SvsMulti",
+            IndexTypeId::TieredSvsSingle => "TieredSvsSingle",
+            IndexTypeId::TieredSvsMulti => "TieredSvsMulti",
         }
     }
 }

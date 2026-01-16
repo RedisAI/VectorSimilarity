@@ -536,10 +536,291 @@ impl<T: VectorElement> BatchIterator for SvsSingleBatchIterator<T> {
     }
 }
 
+// Serialization support for SvsSingle<f32>
+impl SvsSingle<f32> {
+    /// Save the index to a writer.
+    pub fn save<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> crate::serialization::SerializationResult<()> {
+        use crate::serialization::*;
+        use std::sync::atomic::Ordering;
+
+        let core = self.core.read();
+        let label_to_id = self.label_to_id.read();
+        let id_to_label = self.id_to_label.read();
+        let count = self.count.load(Ordering::Relaxed);
+
+        // Write header
+        let header = IndexHeader::new(
+            IndexTypeId::SvsSingle,
+            DataTypeId::F32,
+            core.params.metric,
+            core.params.dim,
+            count,
+        );
+        header.write(writer)?;
+
+        // Write SVS-specific parameters
+        write_usize(writer, core.params.graph_max_degree)?;
+        write_f32(writer, core.params.alpha)?;
+        write_usize(writer, core.params.construction_window_size)?;
+        write_usize(writer, core.params.search_window_size)?;
+        write_u8(writer, if core.params.two_pass_construction { 1 } else { 0 })?;
+
+        // Write capacity
+        write_u8(writer, if self.capacity.is_some() { 1 } else { 0 })?;
+        if let Some(cap) = self.capacity {
+            write_usize(writer, cap)?;
+        }
+
+        // Write construction_done flag
+        write_u8(writer, if *self.construction_done.read() { 1 } else { 0 })?;
+
+        // Write medoid
+        write_u32(writer, core.medoid.load(Ordering::Relaxed))?;
+
+        // Write label_to_id mapping
+        write_usize(writer, label_to_id.len())?;
+        for (&label, &id) in label_to_id.iter() {
+            write_u64(writer, label)?;
+            write_u32(writer, id)?;
+        }
+
+        // Write id_to_label mapping
+        write_usize(writer, id_to_label.len())?;
+        for (&id, &label) in id_to_label.iter() {
+            write_u32(writer, id)?;
+            write_u64(writer, label)?;
+        }
+
+        // Write vectors - collect valid IDs first
+        let valid_ids: Vec<IdType> = core.data.iter_ids().collect();
+        write_usize(writer, valid_ids.len())?;
+        for id in &valid_ids {
+            write_u32(writer, *id)?;
+            if let Some(vector) = core.data.get(*id) {
+                for &v in vector {
+                    write_f32(writer, v)?;
+                }
+            }
+        }
+
+        // Write graph structure
+        // For each valid ID, write its neighbors
+        for id in &valid_ids {
+            let neighbors = core.graph.get_neighbors(*id);
+            let label = core.graph.get_label(*id);
+            let deleted = core.graph.is_deleted(*id);
+
+            write_u64(writer, label)?;
+            write_u8(writer, if deleted { 1 } else { 0 })?;
+            write_usize(writer, neighbors.len())?;
+            for &n in &neighbors {
+                write_u32(writer, n)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load the index from a reader.
+    pub fn load<R: std::io::Read>(reader: &mut R) -> crate::serialization::SerializationResult<Self> {
+        use crate::serialization::*;
+        use std::sync::atomic::Ordering;
+
+        // Read and validate header
+        let header = IndexHeader::read(reader)?;
+
+        if header.index_type != IndexTypeId::SvsSingle {
+            return Err(SerializationError::IndexTypeMismatch {
+                expected: "SvsSingle".to_string(),
+                got: header.index_type.as_str().to_string(),
+            });
+        }
+
+        if header.data_type != DataTypeId::F32 {
+            return Err(SerializationError::InvalidData(
+                "Expected f32 data type".to_string(),
+            ));
+        }
+
+        // Read SVS-specific parameters
+        let graph_max_degree = read_usize(reader)?;
+        let alpha = read_f32(reader)?;
+        let construction_window_size = read_usize(reader)?;
+        let search_window_size = read_usize(reader)?;
+        let two_pass_construction = read_u8(reader)? != 0;
+
+        // Create params
+        let params = SvsParams {
+            dim: header.dimension,
+            metric: header.metric,
+            graph_max_degree,
+            alpha,
+            construction_window_size,
+            search_window_size,
+            initial_capacity: header.count.max(1024),
+            two_pass_construction,
+        };
+
+        // Create the index
+        let mut index = Self::new(params);
+
+        // Read capacity
+        let has_capacity = read_u8(reader)? != 0;
+        if has_capacity {
+            index.capacity = Some(read_usize(reader)?);
+        }
+
+        // Read construction_done flag
+        let construction_done = read_u8(reader)? != 0;
+        *index.construction_done.write() = construction_done;
+
+        // Read medoid
+        let medoid = read_u32(reader)?;
+
+        // Read label_to_id mapping
+        let label_to_id_len = read_usize(reader)?;
+        let mut label_to_id = HashMap::with_capacity(label_to_id_len);
+        for _ in 0..label_to_id_len {
+            let label = read_u64(reader)?;
+            let id = read_u32(reader)?;
+            label_to_id.insert(label, id);
+        }
+
+        // Read id_to_label mapping
+        let id_to_label_len = read_usize(reader)?;
+        let mut id_to_label = HashMap::with_capacity(id_to_label_len);
+        for _ in 0..id_to_label_len {
+            let id = read_u32(reader)?;
+            let label = read_u64(reader)?;
+            id_to_label.insert(id, label);
+        }
+
+        // Read vectors
+        let num_vectors = read_usize(reader)?;
+        let dim = header.dimension;
+        let mut vector_ids = Vec::with_capacity(num_vectors);
+
+        {
+            let mut core = index.core.write();
+            core.data.reserve(num_vectors);
+
+            for _ in 0..num_vectors {
+                let id = read_u32(reader)?;
+                let mut vector = vec![0.0f32; dim];
+                for v in &mut vector {
+                    *v = read_f32(reader)?;
+                }
+
+                // Add vector at specific position
+                let added_id = core.data.add(&vector).ok_or_else(|| {
+                    SerializationError::DataCorruption(
+                        "Failed to add vector during deserialization".to_string(),
+                    )
+                })?;
+
+                // Track the ID for graph restoration
+                vector_ids.push((id, added_id));
+            }
+
+            // Read and restore graph structure
+            core.graph.ensure_capacity(num_vectors);
+            for (original_id, _) in &vector_ids {
+                let label = read_u64(reader)?;
+                let deleted = read_u8(reader)? != 0;
+                let num_neighbors = read_usize(reader)?;
+
+                let mut neighbors = Vec::with_capacity(num_neighbors);
+                for _ in 0..num_neighbors {
+                    neighbors.push(read_u32(reader)?);
+                }
+
+                core.graph.set_label(*original_id, label);
+                if deleted {
+                    core.graph.mark_deleted(*original_id);
+                }
+                core.graph.set_neighbors(*original_id, &neighbors);
+            }
+
+            // Restore medoid
+            core.medoid.store(medoid, Ordering::Release);
+
+            // Resize visited pool
+            if num_vectors > 0 {
+                core.visited_pool.resize(num_vectors + 1024);
+            }
+        }
+
+        // Restore label mappings
+        *index.label_to_id.write() = label_to_id;
+        *index.id_to_label.write() = id_to_label;
+        index.count.store(header.count, Ordering::Relaxed);
+
+        Ok(index)
+    }
+
+    /// Save the index to a file.
+    pub fn save_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> crate::serialization::SerializationResult<()> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        self.save(&mut writer)
+    }
+
+    /// Load the index from a file.
+    pub fn load_from_file<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> crate::serialization::SerializationResult<Self> {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        Self::load(&mut reader)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::distance::Metric;
+
+    #[test]
+    fn test_svs_single_serialization() {
+        use std::io::Cursor;
+
+        let params = SvsParams::new(4, Metric::L2)
+            .with_graph_degree(8)
+            .with_alpha(1.2);
+        let mut index = SvsSingle::<f32>::new(params);
+
+        // Add vectors
+        index.add_vector(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&[0.0, 1.0, 0.0, 0.0], 2).unwrap();
+        index.add_vector(&[0.0, 0.0, 1.0, 0.0], 3).unwrap();
+        index.add_vector(&[0.0, 0.0, 0.0, 1.0], 4).unwrap();
+
+        // Build to ensure graph is populated
+        index.build();
+
+        // Serialize
+        let mut buffer = Vec::new();
+        index.save(&mut buffer).unwrap();
+
+        // Deserialize
+        let mut cursor = Cursor::new(buffer);
+        let loaded = SvsSingle::<f32>::load(&mut cursor).unwrap();
+
+        // Verify
+        assert_eq!(loaded.index_size(), 4);
+        assert_eq!(loaded.dimension(), 4);
+
+        // Query should work the same
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = loaded.top_k_query(&query, 4, None).unwrap();
+        assert_eq!(results.results[0].label, 1);
+    }
 
     #[test]
     fn test_svs_single_basic() {
