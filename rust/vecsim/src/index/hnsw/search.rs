@@ -163,6 +163,151 @@ where
         .collect()
 }
 
+use crate::types::LabelType;
+use std::collections::HashMap;
+
+/// Search result for multi-value indices: (label, distance) pairs.
+pub type MultiSearchResult<D> = Vec<(LabelType, D)>;
+
+/// Search a layer to find the k closest unique labels.
+///
+/// This is a label-aware search for multi-value indices. It explores the graph
+/// like standard HNSW but tracks labels separately. Vectors from already-seen
+/// labels are still explored (their neighbors might lead to new labels) but
+/// only count once in the label results. This prevents early termination from
+/// cutting off exploration when vectors cluster by label.
+#[allow(clippy::too_many_arguments)]
+pub fn search_layer_multi<'a, T, D, F, P>(
+    entry_points: &[(IdType, D)],
+    query: &[T],
+    level: usize,
+    k: usize,
+    ef: usize,
+    graph: &[Option<ElementGraphData>],
+    data_getter: F,
+    dist_fn: &dyn DistanceFunction<T, Output = D>,
+    dim: usize,
+    visited: &VisitedNodesHandler,
+    id_to_label: &HashMap<IdType, LabelType>,
+    filter: Option<&P>,
+) -> MultiSearchResult<D>
+where
+    T: VectorElement,
+    D: DistanceType,
+    F: Fn(IdType) -> Option<&'a [T]>,
+    P: Fn(LabelType) -> bool + ?Sized,
+{
+    // Track labels we've found and their best distances
+    let mut label_best: HashMap<LabelType, D> = HashMap::with_capacity(k * 2);
+
+    // Candidates to explore (min-heap: closest first)
+    let mut candidates = MinHeap::<D>::with_capacity(ef * 2);
+
+    // Helper to get the worst (largest) distance among the top-ef labels
+    let get_ef_worst_dist = |label_best: &HashMap<LabelType, D>, ef: usize| -> Option<D> {
+        if label_best.len() < ef {
+            return None;
+        }
+        let mut dists: Vec<D> = label_best.values().copied().collect();
+        dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        dists.get(ef - 1).copied()
+    };
+
+    // Initialize with entry points
+    for &(id, dist) in entry_points {
+        if !visited.visit(id) {
+            candidates.push(id, dist);
+
+            // Check filter and update label tracking
+            if let Some(&label) = id_to_label.get(&id) {
+                let passes = filter.is_none_or(|f| f(label));
+                if passes {
+                    label_best
+                        .entry(label)
+                        .and_modify(|best| {
+                            if dist < *best {
+                                *best = dist;
+                            }
+                        })
+                        .or_insert(dist);
+                }
+            }
+        }
+    }
+
+    // Explore candidates with label-aware early termination
+    while let Some(candidate) = candidates.pop() {
+        // Early termination: stop when we have ef labels AND
+        // candidate is further than the ef-th best label distance
+        if label_best.len() >= ef {
+            if let Some(ef_worst) = get_ef_worst_dist(&label_best, ef) {
+                if candidate.distance > ef_worst {
+                    break;
+                }
+            }
+        }
+
+        // Get neighbors of this candidate
+        if let Some(Some(element)) = graph.get(candidate.id as usize) {
+            if element.meta.deleted {
+                continue;
+            }
+
+            for neighbor in element.iter_neighbors(level) {
+                if visited.visit(neighbor) {
+                    continue; // Already visited
+                }
+
+                // Check if neighbor is valid
+                if let Some(Some(neighbor_element)) = graph.get(neighbor as usize) {
+                    if neighbor_element.meta.deleted {
+                        continue;
+                    }
+                }
+
+                // Compute distance to neighbor
+                if let Some(data) = data_getter(neighbor) {
+                    let dist = dist_fn.compute(data, query, dim);
+
+                    // Less aggressive pruning: only prune if significantly worse
+                    // Always explore if we haven't found enough labels yet
+                    let should_explore = if label_best.len() >= ef {
+                        get_ef_worst_dist(&label_best, ef)
+                            .map_or(true, |worst| dist < worst)
+                    } else {
+                        true
+                    };
+
+                    if should_explore {
+                        candidates.push(neighbor, dist);
+                    }
+
+                    // Always update label tracking regardless of pruning
+                    if let Some(&label) = id_to_label.get(&neighbor) {
+                        let passes = filter.is_none_or(|f| f(label));
+                        if passes {
+                            label_best
+                                .entry(label)
+                                .and_modify(|best| {
+                                    if dist < *best {
+                                        *best = dist;
+                                    }
+                                })
+                                .or_insert(dist);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Convert to sorted vector of (label, distance)
+    let mut results_vec: Vec<_> = label_best.into_iter().collect();
+    results_vec.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    results_vec.truncate(k);
+    results_vec
+}
+
 /// Select neighbors using the simple heuristic (just keep closest).
 pub fn select_neighbors_simple<D: DistanceType>(candidates: &[(IdType, D)], m: usize) -> Vec<IdType> {
     let mut sorted: Vec<_> = candidates.to_vec();

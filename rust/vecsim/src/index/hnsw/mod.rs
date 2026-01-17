@@ -28,6 +28,7 @@ use crate::containers::DataBlocks;
 use crate::distance::{create_distance_function, DistanceFunction, Metric};
 use crate::types::{DistanceType, IdType, LabelType, VectorElement, INVALID_ID};
 use rand::Rng;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 // Profiling support
@@ -612,5 +613,80 @@ impl<T: VectorElement> HnswCore<T> {
 
         // Return top k
         results.into_iter().take(k).collect()
+    }
+
+    /// Search for k nearest unique labels (for multi-value indices).
+    ///
+    /// This method does label-aware search during graph traversal,
+    /// ensuring we find the k closest unique labels rather than the
+    /// k closest vectors (which might share labels).
+    pub fn search_multi(
+        &self,
+        query: &[T],
+        k: usize,
+        ef: usize,
+        id_to_label: &HashMap<IdType, LabelType>,
+        filter: Option<&dyn Fn(LabelType) -> bool>,
+    ) -> Vec<(LabelType, T::DistanceType)> {
+        let entry_point = self.entry_point.load(Ordering::Acquire);
+        if entry_point == INVALID_ID {
+            return Vec::new();
+        }
+
+        let current_max = self.max_level.load(Ordering::Acquire) as usize;
+        let mut current_entry = entry_point;
+
+        // Greedy search through upper layers
+        for l in (1..=current_max).rev() {
+            let (new_entry, _) = search::greedy_search(
+                current_entry,
+                query,
+                l,
+                &self.graph,
+                |id| self.data.get(id),
+                self.dist_fn.as_ref(),
+                self.params.dim,
+            );
+            current_entry = new_entry;
+        }
+
+        // Search layer 0 with label-aware search
+        let mut visited = self.visited_pool.get();
+        visited.reset();
+
+        let entry_dist = self.compute_distance(current_entry, query);
+        let entry_points = vec![(current_entry, entry_dist)];
+
+        if let Some(f) = filter {
+            search::search_layer_multi(
+                &entry_points,
+                query,
+                0,
+                k,
+                ef.max(k),
+                &self.graph,
+                |id| self.data.get(id),
+                self.dist_fn.as_ref(),
+                self.params.dim,
+                &visited,
+                id_to_label,
+                Some(f),
+            )
+        } else {
+            search::search_layer_multi::<T, T::DistanceType, _, fn(LabelType) -> bool>(
+                &entry_points,
+                query,
+                0,
+                k,
+                ef.max(k),
+                &self.graph,
+                |id| self.data.get(id),
+                self.dist_fn.as_ref(),
+                self.params.dim,
+                &visited,
+                id_to_label,
+                None,
+            )
+        }
     }
 }

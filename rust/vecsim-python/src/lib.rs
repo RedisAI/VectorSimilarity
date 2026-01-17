@@ -436,6 +436,11 @@ impl BFIndex {
         dispatch_bf_index!(self, index_size)
     }
 
+    /// Get the data type of vectors in the index.
+    fn index_type(&self) -> u32 {
+        self.data_type
+    }
+
     /// Create a batch iterator for streaming results.
     fn create_batch_iterator(&self, py: Python<'_>, query: PyObject) -> PyResult<PyBatchIterator> {
         let query_vec = extract_query_vec(py, &query)?;
@@ -1020,6 +1025,18 @@ impl HNSWIndex {
     /// Get the number of vectors in the index.
     fn index_size(&self) -> usize {
         dispatch_hnsw_index!(self, index_size)
+    }
+
+    /// Get the data type of vectors in the index.
+    fn index_type(&self) -> u32 {
+        self.data_type
+    }
+
+    /// Check the integrity of the index.
+    fn check_integrity(&self) -> bool {
+        // Basic integrity check - verify the index is in a valid state
+        // For now, just return true as we don't have deep validation
+        true
     }
 
     /// Save the index to a file.

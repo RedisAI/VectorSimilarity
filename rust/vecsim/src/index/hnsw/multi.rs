@@ -342,80 +342,48 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             });
         }
 
-        let ef = params
+        let base_ef = params
             .and_then(|p| p.ef_runtime)
             .unwrap_or(core.params.ef_runtime);
 
-        // Build filter if needed
-        let has_filter = params.is_some_and(|p| p.filter.is_some());
-        let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.read().clone()
-        } else {
-            HashMap::new()
-        };
+        // Get the id_to_label mapping for label-aware search
+        let id_to_label = self.id_to_label.read();
 
-        let filter_fn: Option<Box<dyn Fn(IdType) -> bool>> = if let Some(p) = params {
-            if let Some(ref f) = p.filter {
-                let f = f.as_ref();
-                Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).is_some_and(|&label| f(label))
-                }))
-            } else {
-                None
-            }
+        // For multi-value indices, we need a higher ef to explore enough unique labels.
+        // The label heap will track unique labels, so ef controls how many labels we track.
+        // Use ef * avg_per_label to compensate for label clustering.
+        let total_vectors = self.count.load(std::sync::atomic::Ordering::Relaxed);
+        let num_labels = self.label_to_ids.read().len();
+        let avg_per_label = if num_labels > 0 {
+            (total_vectors / num_labels).max(1)
+        } else {
+            1
+        };
+        // Scale ef by avg_per_label * 2 to ensure we find enough unique labels
+        // The extra 2x factor helps compensate for graph clustering effects
+        let ef = (base_ef * avg_per_label * 2).min(num_labels).max(base_ef);
+
+        // Build filter function by wrapping the reference
+        let filter_ref: Option<&dyn Fn(LabelType) -> bool> = if let Some(p) = params {
+            p.filter.as_ref().map(|f| f.as_ref() as &dyn Fn(LabelType) -> bool)
         } else {
             None
         };
 
-        // For multi-value index, we need to search for more results to ensure
-        // we get k unique labels. Search for more results initially.
-        // Since HNSW is approximate, we need to search for significantly more
-        // results to ensure we find k unique labels with good recall.
-        let total_vectors = self.count.load(std::sync::atomic::Ordering::Relaxed);
-        let num_labels = self.label_to_ids.read().len();
-        let search_k = if num_labels > 0 && total_vectors > 0 {
-            // Calculate average vectors per label
-            let avg_per_label = total_vectors / num_labels.max(1);
-            // Search for more results: at least k * avg_per_label * 5 to ensure good recall
-            // The multiplier of 5 accounts for HNSW's approximate nature and edge cases
-            let needed = k * avg_per_label.max(1) * 5;
-            // But don't search for more than total vectors
-            needed.min(total_vectors).max(k)
-        } else {
-            k
-        };
+        // Use label-aware search that tracks unique labels during graph traversal
+        let results = core.search_multi(
+            query,
+            k,
+            ef,
+            &id_to_label,
+            filter_ref,
+        );
 
-        // Use ef that's large enough to find search_k results with good quality
-        let search_ef = ef.max(search_k);
-        let results = core.search(query, search_k, search_ef, filter_fn.as_ref().map(|f| f.as_ref()));
-
-        // Look up labels for results and deduplicate by label
-        // For multi-value index, keep only the best (minimum) distance per label
-        let id_to_label = self.id_to_label.read();
-        let mut label_best: HashMap<LabelType, T::DistanceType> = HashMap::new();
-
-        for (id, dist) in results {
-            if let Some(&label) = id_to_label.get(&id) {
-                label_best
-                    .entry(label)
-                    .and_modify(|best| {
-                        if dist.to_f64() < best.to_f64() {
-                            *best = dist;
-                        }
-                    })
-                    .or_insert(dist);
-            }
-        }
-
-        // Convert to QueryReply and sort by distance
-        let mut reply = QueryReply::with_capacity(label_best.len().min(k));
-        for (label, dist) in label_best {
+        // Convert to QueryReply
+        let mut reply = QueryReply::with_capacity(results.len());
+        for (label, dist) in results {
             reply.push(QueryResult::new(label, dist));
         }
-        reply.sort_by_distance();
-
-        // Truncate to k results
-        reply.results.truncate(k);
 
         Ok(reply)
     }
