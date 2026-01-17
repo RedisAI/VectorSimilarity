@@ -42,10 +42,10 @@ where
         let mut changed = false;
 
         if let Some(Some(element)) = graph.get(current as usize) {
-            for neighbor in element.get_neighbors(level) {
+            for neighbor in element.iter_neighbors(level) {
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
-                    if dist.to_f64() < current_dist.to_f64() {
+                    if dist < current_dist {
                         current = neighbor;
                         current_dist = dist;
                         changed = true;
@@ -109,7 +109,7 @@ where
         // Check if we can stop (candidate is further than worst result)
         if results.is_full() {
             if let Some(worst_dist) = results.top_distance() {
-                if candidate.distance.to_f64() > worst_dist.to_f64() {
+                if candidate.distance > worst_dist {
                     break;
                 }
             }
@@ -121,7 +121,7 @@ where
                 continue;
             }
 
-            for neighbor in element.get_neighbors(level) {
+            for neighbor in element.iter_neighbors(level) {
                 if visited.visit(neighbor) {
                     continue; // Already visited
                 }
@@ -137,20 +137,17 @@ where
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
 
-                    // Add to results if it passes filter and is close enough
-                    let passes = filter.is_none_or(|f| f(neighbor));
+                    // Check if close enough to consider
+                    let dominated = results.is_full()
+                        && dist >= results.top_distance().unwrap();
 
-                    if passes
-                        && (!results.is_full()
-                            || dist.to_f64() < results.top_distance().unwrap().to_f64())
-                        {
+                    if !dominated {
+                        // Add to results if it passes filter
+                        let passes = filter.is_none_or(|f| f(neighbor));
+                        if passes {
                             results.try_insert(neighbor, dist);
                         }
-
-                    // Add to candidates for exploration
-                    if !results.is_full()
-                        || dist.to_f64() < results.top_distance().unwrap().to_f64()
-                    {
+                        // Add to candidates for exploration
                         candidates.push(neighbor, dist);
                     }
                 }
@@ -170,8 +167,7 @@ where
 pub fn select_neighbors_simple<D: DistanceType>(candidates: &[(IdType, D)], m: usize) -> Vec<IdType> {
     let mut sorted: Vec<_> = candidates.to_vec();
     sorted.sort_by(|a, b| {
-        a.1.to_f64()
-            .partial_cmp(&b.1.to_f64())
+        a.1.partial_cmp(&b.1)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     sorted.into_iter().take(m).map(|(id, _)| id).collect()
@@ -208,8 +204,7 @@ where
     // Sort candidates by distance
     let mut working: Vec<_> = candidates.to_vec();
     working.sort_by(|a, b| {
-        a.1.to_f64()
-            .partial_cmp(&b.1.to_f64())
+        a.1.partial_cmp(&b.1)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -231,7 +226,7 @@ where
             for &selected_id in &selected {
                 if let Some(selected_data) = data_getter(selected_id) {
                     let dist_to_selected = dist_fn.compute(candidate_data, selected_data, dim);
-                    if dist_to_selected.to_f64() < candidate_dist.to_f64() {
+                    if dist_to_selected < candidate_dist {
                         is_good = false;
                         break;
                     }

@@ -93,6 +93,26 @@ impl LevelLinks {
         result
     }
 
+    /// Iterate over neighbor IDs without allocation.
+    #[inline]
+    pub fn iter_neighbors(&self) -> impl Iterator<Item = IdType> + '_ {
+        let count = self.len(); // Cache the count once
+        let neighbors = &self.neighbors;
+        std::iter::from_fn({
+            let mut idx = 0usize;
+            move || {
+                while idx < count {
+                    let id = neighbors[idx].load(Ordering::Acquire);
+                    idx += 1;
+                    if id != INVALID_ID {
+                        return Some(id);
+                    }
+                }
+                None
+            }
+        })
+    }
+
     /// Add a neighbor if there's space.
     /// Returns true if added, false if full.
     pub fn try_add(&self, neighbor: IdType) -> bool {
@@ -208,6 +228,31 @@ impl ElementGraphData {
         } else {
             Vec::new()
         }
+    }
+
+    /// Iterate over neighbors at a specific level without allocation.
+    #[inline]
+    pub fn iter_neighbors(&self, level: usize) -> impl Iterator<Item = IdType> + '_ {
+        let (level_links, count) = if level < self.levels.len() {
+            let links = &self.levels[level];
+            (Some(links), links.len())
+        } else {
+            (None, 0)
+        };
+        std::iter::from_fn({
+            let mut idx = 0usize;
+            move || {
+                let links = level_links?;
+                while idx < count {
+                    let id = links.neighbors[idx].load(Ordering::Acquire);
+                    idx += 1;
+                    if id != INVALID_ID {
+                        return Some(id);
+                    }
+                }
+                None
+            }
+        })
     }
 
     /// Set neighbors at a specific level.

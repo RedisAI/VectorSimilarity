@@ -29,7 +29,7 @@ struct MaxHeapEntry<D: DistanceType>(HeapEntry<D>);
 
 impl<D: DistanceType> PartialEq for MaxHeapEntry<D> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.distance.to_f64() == other.0.distance.to_f64()
+        self.0.distance.partial_cmp(&other.0.distance) == Some(Ordering::Equal)
     }
 }
 
@@ -46,8 +46,7 @@ impl<D: DistanceType> Ord for MaxHeapEntry<D> {
         // Natural ordering for max-heap: larger distances come first
         self.0
             .distance
-            .to_f64()
-            .partial_cmp(&other.0.distance.to_f64())
+            .partial_cmp(&other.0.distance)
             .unwrap_or(Ordering::Equal)
     }
 }
@@ -58,7 +57,7 @@ struct MinHeapEntry<D: DistanceType>(HeapEntry<D>);
 
 impl<D: DistanceType> PartialEq for MinHeapEntry<D> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.distance.to_f64() == other.0.distance.to_f64()
+        self.0.distance.partial_cmp(&other.0.distance) == Some(Ordering::Equal)
     }
 }
 
@@ -76,8 +75,7 @@ impl<D: DistanceType> Ord for MinHeapEntry<D> {
         other
             .0
             .distance
-            .to_f64()
-            .partial_cmp(&self.0.distance.to_f64())
+            .partial_cmp(&self.0.distance)
             .unwrap_or(Ordering::Equal)
     }
 }
@@ -142,7 +140,7 @@ impl<D: DistanceType> MaxHeap<D> {
             self.heap.push(MaxHeapEntry(HeapEntry::new(id, distance)));
             true
         } else if let Some(top) = self.heap.peek() {
-            if distance.to_f64() < top.0.distance.to_f64() {
+            if distance < top.0.distance {
                 self.heap.pop();
                 self.heap.push(MaxHeapEntry(HeapEntry::new(id, distance)));
                 true
@@ -174,8 +172,7 @@ impl<D: DistanceType> MaxHeap<D> {
         let mut entries: Vec<_> = self.heap.into_iter().map(|e| e.0).collect();
         entries.sort_by(|a, b| {
             a.distance
-                .to_f64()
-                .partial_cmp(&b.distance.to_f64())
+                .partial_cmp(&b.distance)
                 .unwrap_or(Ordering::Equal)
         });
         entries
