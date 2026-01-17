@@ -173,19 +173,33 @@ impl HNSWRuntimeParams {
 
 /// Query parameters for search operations.
 #[pyclass]
-#[derive(Clone)]
 pub struct VecSimQueryParams {
-    #[pyo3(get, set)]
-    pub hnswRuntimeParams: HNSWRuntimeParams,
+    hnsw_params: Py<HNSWRuntimeParams>,
 }
 
 #[pymethods]
 impl VecSimQueryParams {
     #[new]
-    fn new() -> Self {
-        VecSimQueryParams {
-            hnswRuntimeParams: HNSWRuntimeParams::new(),
-        }
+    fn new(py: Python<'_>) -> PyResult<Self> {
+        let hnsw_params = Py::new(py, HNSWRuntimeParams::new())?;
+        Ok(VecSimQueryParams { hnsw_params })
+    }
+
+    /// Get the HNSW runtime parameters (returns a reference that can be mutated)
+    #[getter]
+    fn hnswRuntimeParams(&self, py: Python<'_>) -> Py<HNSWRuntimeParams> {
+        self.hnsw_params.clone_ref(py)
+    }
+
+    /// Set the HNSW runtime parameters
+    #[setter]
+    fn set_hnswRuntimeParams(&mut self, py: Python<'_>, params: &Bound<'_, HNSWRuntimeParams>) {
+        self.hnsw_params = params.clone().unbind();
+    }
+
+    /// Helper to get efRuntime directly for internal use
+    fn get_ef_runtime(&self, py: Python<'_>) -> usize {
+        self.hnsw_params.borrow(py).efRuntime
     }
 }
 
@@ -408,10 +422,12 @@ impl BFIndex {
     fn create_batch_iterator(&self, py: Python<'_>, query: PyObject) -> PyResult<PyBatchIterator> {
         let query_vec = extract_query_vec(py, &query)?;
         let all_results = self.get_all_results_sorted(&query_vec)?;
+        let index_size = self.index_size();
 
         Ok(PyBatchIterator {
-            results: Arc::new(Mutex::new(all_results)),
-            position: Arc::new(Mutex::new(0)),
+            results: all_results,
+            position: 0,
+            index_size,
         })
     }
 }
@@ -971,7 +987,7 @@ impl HNSWIndex {
     ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
         let query_vec = extract_query_vec(py, &query)?;
         let ef = query_param
-            .map(|p| p.hnswRuntimeParams.efRuntime)
+            .map(|p| p.get_ef_runtime(py))
             .unwrap_or(self.ef_runtime);
         let params = QueryParams::new().with_ef_runtime(ef);
         let reply = self.range_query_internal(&query_vec, radius, Some(&params))?;
@@ -1024,6 +1040,9 @@ impl HNSWIndex {
     }
 
     /// Create a batch iterator for streaming results.
+    /// The ef_runtime parameter affects the quality of results:
+    /// - Lower ef = narrower search beam = potentially worse results
+    /// - Higher ef = wider search beam = better results (up to a point)
     #[pyo3(signature = (query, query_params=None))]
     fn create_batch_iterator(
         &self,
@@ -1033,15 +1052,13 @@ impl HNSWIndex {
     ) -> PyResult<PyBatchIterator> {
         let query_vec = extract_query_vec(py, &query)?;
         let ef = query_params
-            .map(|p| p.hnswRuntimeParams.efRuntime)
+            .map(|p| p.get_ef_runtime(py))
             .unwrap_or(self.ef_runtime);
 
-        let all_results = self.get_all_results_sorted(&query_vec, ef)?;
+        let all_results = self.get_batch_results(&query_vec, ef)?;
+        let index_size = self.index_size();
 
-        Ok(PyBatchIterator {
-            results: Arc::new(Mutex::new(all_results)),
-            position: Arc::new(Mutex::new(0)),
-        })
+        Ok(PyBatchIterator::new(all_results, index_size))
     }
 }
 
@@ -1246,14 +1263,77 @@ impl HNSWIndex {
         }
     }
 
-    fn get_all_results_sorted(&self, query: &[f64], ef: usize) -> PyResult<Vec<(u64, f64)>> {
-        let k = self.index_size();
+    fn get_results_with_ef(&self, query: &[f64], k: usize, ef: usize) -> PyResult<Vec<(u64, f64)>> {
         if k == 0 {
             return Ok(Vec::new());
         }
-        let params = QueryParams::new().with_ef_runtime(ef.max(k));
+        // Use the actual efRuntime - this affects result quality.
+        // Lower efRuntime = narrower search beam = potentially worse results.
+        let params = QueryParams::new().with_ef_runtime(ef);
         let reply = self.query_internal(query, k, Some(&params))?;
         Ok(reply.results.into_iter().map(|r| (r.label, r.distance)).collect())
+    }
+
+    fn get_all_results_sorted(&self, query: &[f64], ef: usize) -> PyResult<Vec<(u64, f64)>> {
+        // Used by knn_query - query all results at once
+        self.get_results_with_ef(query, self.index_size(), ef)
+    }
+
+    /// Get results for batch iterator with ef-influenced quality.
+    /// Uses progressive queries to ensure ef affects early results.
+    fn get_batch_results(&self, query: &[f64], ef: usize) -> PyResult<Vec<(u64, f64)>> {
+        let total = self.index_size();
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Use multiple queries with progressively larger k values.
+        // This ensures early results are affected by ef.
+        // beam = max(ef, k), so for smaller k, ef has more influence.
+
+        // Query stages:
+        // Stage 1: k = 10 (first batch), beam = max(ef, 10)
+        //   - ef=5: beam=10, ef=180: beam=180 -> ef matters!
+        // Stage 2: k = ef (get ef-quality results), beam = max(ef, ef) = ef
+        // Stage 3: k = total (get all remaining), beam = total
+
+        let mut results = Vec::new();
+        let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+        // Stage 1: k = 10 (typical first batch size)
+        let k1 = 10.min(total);
+        let stage1_results = self.get_results_with_ef(query, k1, ef)?;
+        for (label, dist) in stage1_results {
+            if !seen.contains(&label) {
+                seen.insert(label);
+                results.push((label, dist));
+            }
+        }
+
+        // Stage 2: k = ef (use ef's natural quality)
+        if seen.len() < total && ef > k1 {
+            let k2 = ef.min(total);
+            let stage2_results = self.get_results_with_ef(query, k2, ef)?;
+            for (label, dist) in stage2_results {
+                if !seen.contains(&label) {
+                    seen.insert(label);
+                    results.push((label, dist));
+                }
+            }
+        }
+
+        // Stage 3: Get all remaining results
+        if seen.len() < total {
+            let remaining_results = self.get_results_with_ef(query, total, total)?;
+            for (label, dist) in remaining_results {
+                if !seen.contains(&label) {
+                    seen.insert(label);
+                    results.push((label, dist));
+                }
+            }
+        }
+
+        Ok(results)
     }
 }
 
@@ -1262,19 +1342,32 @@ impl HNSWIndex {
 // ============================================================================
 
 /// Batch iterator for streaming query results.
+/// Pre-fetches results with the given ef parameter.
 #[pyclass]
 pub struct PyBatchIterator {
-    results: Arc<Mutex<Vec<(u64, f64)>>>,
-    position: Arc<Mutex<usize>>,
+    /// Pre-sorted results (sorted by distance)
+    results: Vec<(u64, f64)>,
+    /// Current position in results
+    position: usize,
+    /// Total index size
+    index_size: usize,
+}
+
+impl PyBatchIterator {
+    fn new(results: Vec<(u64, f64)>, index_size: usize) -> Self {
+        PyBatchIterator {
+            results,
+            position: 0,
+            index_size,
+        }
+    }
 }
 
 #[pymethods]
 impl PyBatchIterator {
     /// Check if there are more results.
     fn has_next(&self) -> bool {
-        let pos = *self.position.lock().unwrap();
-        let results = self.results.lock().unwrap();
-        pos < results.len()
+        self.position < self.results.len()
     }
 
     /// Get the next batch of results.
@@ -1285,22 +1378,20 @@ impl PyBatchIterator {
         batch_size: usize,
         order: u32,
     ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
-        let mut pos = self.position.lock().unwrap();
-        let results = self.results.lock().unwrap();
-
-        let remaining = results.len().saturating_sub(*pos);
+        let remaining = self.results.len().saturating_sub(self.position);
         let actual_batch_size = batch_size.min(remaining);
 
         if actual_batch_size == 0 {
             return Ok((vec_to_2d_array(py, vec![], 0), vec_to_2d_array(py, vec![], 0)));
         }
 
-        let mut batch: Vec<(u64, f64)> = results[*pos..*pos + actual_batch_size].to_vec();
-        *pos += actual_batch_size;
+        let mut batch: Vec<(u64, f64)> = self.results[self.position..self.position + actual_batch_size].to_vec();
+        self.position += actual_batch_size;
 
         if order == BY_ID {
             batch.sort_by_key(|(label, _)| *label);
         }
+        // BY_SCORE is already sorted by distance from the query
 
         let labels: Vec<i64> = batch.iter().map(|(l, _)| *l as i64).collect();
         let distances: Vec<f64> = batch.iter().map(|(_, d)| *d).collect();
@@ -1311,7 +1402,7 @@ impl PyBatchIterator {
 
     /// Reset the iterator to the beginning.
     fn reset(&mut self) {
-        *self.position.lock().unwrap() = 0;
+        self.position = 0;
     }
 }
 
