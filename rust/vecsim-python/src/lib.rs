@@ -3,7 +3,7 @@
 //! This module provides Python-compatible wrappers around the Rust VecSim library,
 //! enabling high-performance vector similarity search from Python.
 
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use std::fs::File;
@@ -480,26 +480,42 @@ fn extract_f16_vector(py: Python<'_>, vector: &PyObject) -> PyResult<Vec<Float16
     Ok(f16_vec)
 }
 
-/// Extract query vector from various numpy array types
+/// Extract query vector from various numpy array types.
+/// For 2D arrays, extracts only the first row (single query vector).
 fn extract_query_vec(py: Python<'_>, query: &PyObject) -> PyResult<Vec<f64>> {
     if let Ok(arr) = query.extract::<PyReadonlyArray2<f64>>(py) {
-        Ok(arr.as_slice()?.to_vec())
+        // For 2D array, take only the first row
+        let shape = arr.shape();
+        let ncols = shape[1];
+        Ok(arr.as_slice()?[..ncols].to_vec())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray1<f64>>(py) {
         Ok(arr.as_slice()?.to_vec())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray2<f32>>(py) {
-        Ok(arr.as_slice()?.iter().map(|&v| v as f64).collect())
+        // For 2D array, take only the first row
+        let shape = arr.shape();
+        let ncols = shape[1];
+        Ok(arr.as_slice()?[..ncols].iter().map(|&v| v as f64).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray1<f32>>(py) {
         Ok(arr.as_slice()?.iter().map(|&v| v as f64).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray2<u16>>(py) {
-        Ok(arr.as_slice()?.iter().map(|&v| half::f16::from_bits(v).to_f64()).collect())
+        // For 2D array, take only the first row
+        let shape = arr.shape();
+        let ncols = shape[1];
+        Ok(arr.as_slice()?[..ncols].iter().map(|&v| half::f16::from_bits(v).to_f64()).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray1<u16>>(py) {
         Ok(arr.as_slice()?.iter().map(|&v| half::f16::from_bits(v).to_f64()).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray2<i8>>(py) {
-        Ok(arr.as_slice()?.iter().map(|&v| v as f64).collect())
+        // For 2D array, take only the first row
+        let shape = arr.shape();
+        let ncols = shape[1];
+        Ok(arr.as_slice()?[..ncols].iter().map(|&v| v as f64).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray1<i8>>(py) {
         Ok(arr.as_slice()?.iter().map(|&v| v as f64).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray2<u8>>(py) {
-        Ok(arr.as_slice()?.iter().map(|&v| v as f64).collect())
+        // For 2D array, take only the first row
+        let shape = arr.shape();
+        let ncols = shape[1];
+        Ok(arr.as_slice()?[..ncols].iter().map(|&v| v as f64).collect())
     } else if let Ok(arr) = query.extract::<PyReadonlyArray1<u8>>(py) {
         Ok(arr.as_slice()?.iter().map(|&v| v as f64).collect())
     } else {
@@ -512,12 +528,25 @@ fn extract_query_vec(py: Python<'_>, query: &PyObject) -> PyResult<Vec<f64>> {
             let dtype = arr.getattr("dtype")?;
             let dtype_name: String = dtype.getattr("name")?.extract()?;
 
+            // Get array shape to handle 2D arrays (take only first row)
+            let shape: Vec<usize> = arr.getattr("shape")?.extract()?;
+            let num_elements = if shape.len() == 2 {
+                shape[1]  // For 2D array, take only first row
+            } else if shape.len() == 1 {
+                shape[0]
+            } else {
+                return Err(PyValueError::new_err("Query array must be 1D or 2D"));
+            };
+
             let tobytes_fn = arr.getattr("tobytes")?;
             let bytes: Vec<u8> = tobytes_fn.call0()?.extract()?;
 
+            // Only take bytes for the first row
+            let bytes_to_use = &bytes[..num_elements * 2];
+
             let result: Vec<f64> = if dtype_name.contains("bfloat16") {
                 // BFloat16: 1 sign + 8 exponent + 7 mantissa
-                bytes
+                bytes_to_use
                     .chunks_exact(2)
                     .map(|chunk| {
                         let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
@@ -526,7 +555,7 @@ fn extract_query_vec(py: Python<'_>, query: &PyObject) -> PyResult<Vec<f64>> {
                     .collect()
             } else {
                 // Float16 (IEEE 754): 1 sign + 5 exponent + 10 mantissa
-                bytes
+                bytes_to_use
                     .chunks_exact(2)
                     .map(|chunk| {
                         let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
