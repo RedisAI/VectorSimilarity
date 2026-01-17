@@ -18,6 +18,7 @@ memmap2 = { workspace = true }
 [features]
 default = []
 nightly = []  # Enable nightly-only SIMD intrinsics
+profile = []  # Enable profiling instrumentation
 
 [dev-dependencies]
 criterion = "0.5"

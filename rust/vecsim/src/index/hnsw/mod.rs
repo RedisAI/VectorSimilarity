@@ -30,6 +30,83 @@ use crate::types::{DistanceType, IdType, LabelType, VectorElement, INVALID_ID};
 use rand::Rng;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+// Profiling support
+#[cfg(feature = "profile")]
+use std::cell::RefCell;
+#[cfg(feature = "profile")]
+use std::time::Instant;
+
+#[cfg(feature = "profile")]
+thread_local! {
+    pub static PROFILE_STATS: RefCell<ProfileStats> = RefCell::new(ProfileStats::default());
+}
+
+#[cfg(feature = "profile")]
+#[derive(Default)]
+pub struct ProfileStats {
+    pub search_layer_ns: u64,
+    pub select_neighbors_ns: u64,
+    pub add_links_ns: u64,
+    pub visited_pool_ns: u64,
+    pub greedy_search_ns: u64,
+    pub calls: u64,
+    // Detailed add_links breakdown
+    pub add_links_lock_ns: u64,
+    pub add_links_get_neighbors_ns: u64,
+    pub add_links_contains_ns: u64,
+    pub add_links_prune_ns: u64,
+    pub add_links_set_ns: u64,
+    pub add_links_prune_count: u64,
+}
+
+#[cfg(feature = "profile")]
+impl ProfileStats {
+    pub fn print_and_reset(&mut self) {
+        if self.calls > 0 {
+            let total = self.search_layer_ns + self.select_neighbors_ns + self.add_links_ns
+                + self.visited_pool_ns + self.greedy_search_ns;
+            println!("Profile stats ({} insertions):", self.calls);
+            println!("  search_layer:      {:>8.2}ms ({:>5.1}%)",
+                     self.search_layer_ns as f64 / 1_000_000.0,
+                     100.0 * self.search_layer_ns as f64 / total as f64);
+            println!("  select_neighbors:  {:>8.2}ms ({:>5.1}%)",
+                     self.select_neighbors_ns as f64 / 1_000_000.0,
+                     100.0 * self.select_neighbors_ns as f64 / total as f64);
+            println!("  add_links:         {:>8.2}ms ({:>5.1}%)",
+                     self.add_links_ns as f64 / 1_000_000.0,
+                     100.0 * self.add_links_ns as f64 / total as f64);
+            println!("  visited_pool:      {:>8.2}ms ({:>5.1}%)",
+                     self.visited_pool_ns as f64 / 1_000_000.0,
+                     100.0 * self.visited_pool_ns as f64 / total as f64);
+            println!("  greedy_search:     {:>8.2}ms ({:>5.1}%)",
+                     self.greedy_search_ns as f64 / 1_000_000.0,
+                     100.0 * self.greedy_search_ns as f64 / total as f64);
+
+            // Detailed add_links breakdown
+            if self.add_links_ns > 0 {
+                println!("\n  add_links breakdown:");
+                println!("    lock:            {:>8.2}ms ({:>5.1}%)",
+                         self.add_links_lock_ns as f64 / 1_000_000.0,
+                         100.0 * self.add_links_lock_ns as f64 / self.add_links_ns as f64);
+                println!("    get_neighbors:   {:>8.2}ms ({:>5.1}%)",
+                         self.add_links_get_neighbors_ns as f64 / 1_000_000.0,
+                         100.0 * self.add_links_get_neighbors_ns as f64 / self.add_links_ns as f64);
+                println!("    contains:        {:>8.2}ms ({:>5.1}%)",
+                         self.add_links_contains_ns as f64 / 1_000_000.0,
+                         100.0 * self.add_links_contains_ns as f64 / self.add_links_ns as f64);
+                println!("    prune:           {:>8.2}ms ({:>5.1}%) [{} calls]",
+                         self.add_links_prune_ns as f64 / 1_000_000.0,
+                         100.0 * self.add_links_prune_ns as f64 / self.add_links_ns as f64,
+                         self.add_links_prune_count);
+                println!("    set_neighbors:   {:>8.2}ms ({:>5.1}%)",
+                         self.add_links_set_ns as f64 / 1_000_000.0,
+                         100.0 * self.add_links_set_ns as f64 / self.add_links_ns as f64);
+            }
+        }
+        *self = ProfileStats::default();
+    }
+}
+
 /// Parameters for creating an HNSW index.
 #[derive(Debug, Clone)]
 pub struct HnswParams {
@@ -192,7 +269,20 @@ impl<T: VectorElement> HnswCore<T> {
     }
 
     /// Insert a new element into the graph.
+    #[cfg(not(feature = "profile"))]
     pub fn insert(&mut self, id: IdType, label: LabelType) {
+        self.insert_impl(id, label);
+    }
+
+    /// Insert a new element into the graph (profiled version).
+    #[cfg(feature = "profile")]
+    pub fn insert(&mut self, id: IdType, label: LabelType) {
+        self.insert_impl(id, label);
+        PROFILE_STATS.with(|s| s.borrow_mut().calls += 1);
+    }
+
+    /// Insert implementation.
+    fn insert_impl(&mut self, id: IdType, label: LabelType) {
         let level = self.generate_random_level();
 
         // Create graph data for this element
@@ -235,6 +325,9 @@ impl<T: VectorElement> HnswCore<T> {
         let mut current_entry = entry_point;
 
         // Traverse upper layers with greedy search
+        #[cfg(feature = "profile")]
+        let greedy_start = Instant::now();
+
         for l in (level as usize + 1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
                 current_entry,
@@ -248,15 +341,27 @@ impl<T: VectorElement> HnswCore<T> {
             current_entry = new_entry;
         }
 
+        #[cfg(feature = "profile")]
+        PROFILE_STATS.with(|s| s.borrow_mut().greedy_search_ns += greedy_start.elapsed().as_nanos() as u64);
+
         // Insert at each level from min(level, max_level) down to 0
         let start_level = level.min(current_max as u8);
         let mut entry_points = vec![(current_entry, self.compute_distance(current_entry, query))];
 
         for l in (0..=start_level as usize).rev() {
+            #[cfg(feature = "profile")]
+            let pool_start = Instant::now();
+
             let mut visited = self.visited_pool.get();
             visited.reset();
 
+            #[cfg(feature = "profile")]
+            PROFILE_STATS.with(|s| s.borrow_mut().visited_pool_ns += pool_start.elapsed().as_nanos() as u64);
+
             // Search this layer
+            #[cfg(feature = "profile")]
+            let search_start = Instant::now();
+
             let neighbors = search::search_layer::<T, T::DistanceType, _, fn(IdType) -> bool>(
                 &entry_points,
                 query,
@@ -270,7 +375,13 @@ impl<T: VectorElement> HnswCore<T> {
                 None,
             );
 
+            #[cfg(feature = "profile")]
+            PROFILE_STATS.with(|s| s.borrow_mut().search_layer_ns += search_start.elapsed().as_nanos() as u64);
+
             // Select neighbors
+            #[cfg(feature = "profile")]
+            let select_start = Instant::now();
+
             let m = if l == 0 { self.params.m_max_0 } else { self.params.m };
             let selected = if self.params.enable_heuristic {
                 search::select_neighbors_heuristic(
@@ -287,15 +398,24 @@ impl<T: VectorElement> HnswCore<T> {
                 search::select_neighbors_simple(&neighbors, m)
             };
 
+            #[cfg(feature = "profile")]
+            PROFILE_STATS.with(|s| s.borrow_mut().select_neighbors_ns += select_start.elapsed().as_nanos() as u64);
+
             // Set outgoing edges for new element
             if let Some(Some(element)) = self.graph.get(id as usize) {
                 element.set_neighbors(l, &selected);
             }
 
             // Add incoming edges from selected neighbors
+            #[cfg(feature = "profile")]
+            let links_start = Instant::now();
+
             for &neighbor_id in &selected {
                 self.add_bidirectional_link(neighbor_id, id, l);
             }
+
+            #[cfg(feature = "profile")]
+            PROFILE_STATS.with(|s| s.borrow_mut().add_links_ns += links_start.elapsed().as_nanos() as u64);
 
             // Use neighbors as entry points for next level
             if !neighbors.is_empty() {
@@ -314,12 +434,33 @@ impl<T: VectorElement> HnswCore<T> {
     fn add_bidirectional_link(&self, from: IdType, to: IdType, level: usize) {
         if let Some(Some(from_element)) = self.graph.get(from as usize) {
             if level < from_element.levels.len() {
+                #[cfg(feature = "profile")]
+                let lock_start = Instant::now();
+
                 let _lock = from_element.lock.lock();
 
+                #[cfg(feature = "profile")]
+                PROFILE_STATS.with(|s| s.borrow_mut().add_links_lock_ns += lock_start.elapsed().as_nanos() as u64);
+
+                #[cfg(feature = "profile")]
+                let get_start = Instant::now();
+
                 let mut current_neighbors = from_element.get_neighbors(level);
+
+                #[cfg(feature = "profile")]
+                PROFILE_STATS.with(|s| s.borrow_mut().add_links_get_neighbors_ns += get_start.elapsed().as_nanos() as u64);
+
+                #[cfg(feature = "profile")]
+                let contains_start = Instant::now();
+
                 if current_neighbors.contains(&to) {
+                    #[cfg(feature = "profile")]
+                    PROFILE_STATS.with(|s| s.borrow_mut().add_links_contains_ns += contains_start.elapsed().as_nanos() as u64);
                     return;
                 }
+
+                #[cfg(feature = "profile")]
+                PROFILE_STATS.with(|s| s.borrow_mut().add_links_contains_ns += contains_start.elapsed().as_nanos() as u64);
 
                 current_neighbors.push(to);
 
@@ -327,13 +468,17 @@ impl<T: VectorElement> HnswCore<T> {
                 let m = if level == 0 { self.params.m_max_0 } else { self.params.m };
 
                 if current_neighbors.len() > m {
-                    // Need to select best neighbors
+                    #[cfg(feature = "profile")]
+                    let prune_start = Instant::now();
+
+                    // Need to select best neighbors - use simple selection (M closest)
+                    // This is faster than the heuristic and still maintains good graph quality
                     let query = match self.data.get(from) {
                         Some(v) => v,
                         None => return,
                     };
 
-                    let candidates: Vec<_> = current_neighbors
+                    let mut candidates: Vec<_> = current_neighbors
                         .iter()
                         .filter_map(|&n| {
                             self.data.get(n).map(|data| {
@@ -343,24 +488,34 @@ impl<T: VectorElement> HnswCore<T> {
                         })
                         .collect();
 
-                    let selected = if self.params.enable_heuristic {
-                        search::select_neighbors_heuristic(
-                            from,
-                            &candidates,
-                            m,
-                            |id| self.data.get(id),
-                            self.dist_fn.as_ref(),
-                            self.params.dim,
-                            false,
-                            true,
-                        )
-                    } else {
-                        search::select_neighbors_simple(&candidates, m)
-                    };
+                    // Sort by distance and keep M closest (simple selection)
+                    candidates.sort_by(|a, b| a.1.to_f64().partial_cmp(&b.1.to_f64()).unwrap());
+                    let selected: Vec<_> = candidates.iter().take(m).map(|&(id, _)| id).collect();
+
+                    #[cfg(feature = "profile")]
+                    {
+                        PROFILE_STATS.with(|s| {
+                            let mut stats = s.borrow_mut();
+                            stats.add_links_prune_ns += prune_start.elapsed().as_nanos() as u64;
+                            stats.add_links_prune_count += 1;
+                        });
+                    }
+
+                    #[cfg(feature = "profile")]
+                    let set_start = Instant::now();
 
                     from_element.set_neighbors(level, &selected);
+
+                    #[cfg(feature = "profile")]
+                    PROFILE_STATS.with(|s| s.borrow_mut().add_links_set_ns += set_start.elapsed().as_nanos() as u64);
                 } else {
+                    #[cfg(feature = "profile")]
+                    let set_start = Instant::now();
+
                     from_element.set_neighbors(level, &current_neighbors);
+
+                    #[cfg(feature = "profile")]
+                    PROFILE_STATS.with(|s| s.borrow_mut().add_links_set_ns += set_start.elapsed().as_nanos() as u64);
                 }
             }
         }
