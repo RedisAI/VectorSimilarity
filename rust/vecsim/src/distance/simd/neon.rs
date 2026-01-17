@@ -536,8 +536,19 @@ pub unsafe fn cosine_distance_f32_neon(a: *const f32, b: *const f32, dim: usize)
 }
 
 /// Safe wrapper for L2 squared distance.
+/// Specialized for f32 to avoid allocation when input is already f32.
 #[inline]
 pub fn l2_squared_f32<T: VectorElement>(a: &[T], b: &[T], dim: usize) -> T::DistanceType {
+    // Fast path: if T is f32, avoid allocation by reinterpreting the slices
+    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
+        // SAFETY: We verified T is f32, so this reinterpret is safe
+        let a_f32 = unsafe { std::slice::from_raw_parts(a.as_ptr() as *const f32, dim) };
+        let b_f32 = unsafe { std::slice::from_raw_parts(b.as_ptr() as *const f32, dim) };
+        let result = unsafe { l2_squared_f32_neon(a_f32.as_ptr(), b_f32.as_ptr(), dim) };
+        return T::DistanceType::from_f64(result as f64);
+    }
+
+    // Slow path: convert to f32
     let a_f32: Vec<f32> = a.iter().map(|x| x.to_f32()).collect();
     let b_f32: Vec<f32> = b.iter().map(|x| x.to_f32()).collect();
 
@@ -546,8 +557,17 @@ pub fn l2_squared_f32<T: VectorElement>(a: &[T], b: &[T], dim: usize) -> T::Dist
 }
 
 /// Safe wrapper for inner product.
+/// Specialized for f32 to avoid allocation when input is already f32.
 #[inline]
 pub fn inner_product_f32<T: VectorElement>(a: &[T], b: &[T], dim: usize) -> T::DistanceType {
+    // Fast path: if T is f32, avoid allocation
+    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
+        let a_f32 = unsafe { std::slice::from_raw_parts(a.as_ptr() as *const f32, dim) };
+        let b_f32 = unsafe { std::slice::from_raw_parts(b.as_ptr() as *const f32, dim) };
+        let result = unsafe { inner_product_f32_neon(a_f32.as_ptr(), b_f32.as_ptr(), dim) };
+        return T::DistanceType::from_f64(result as f64);
+    }
+
     let a_f32: Vec<f32> = a.iter().map(|x| x.to_f32()).collect();
     let b_f32: Vec<f32> = b.iter().map(|x| x.to_f32()).collect();
 
@@ -556,8 +576,17 @@ pub fn inner_product_f32<T: VectorElement>(a: &[T], b: &[T], dim: usize) -> T::D
 }
 
 /// Safe wrapper for cosine distance.
+/// Specialized for f32 to avoid allocation when input is already f32.
 #[inline]
 pub fn cosine_distance_f32<T: VectorElement>(a: &[T], b: &[T], dim: usize) -> T::DistanceType {
+    // Fast path: if T is f32, avoid allocation
+    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
+        let a_f32 = unsafe { std::slice::from_raw_parts(a.as_ptr() as *const f32, dim) };
+        let b_f32 = unsafe { std::slice::from_raw_parts(b.as_ptr() as *const f32, dim) };
+        let result = unsafe { cosine_distance_f32_neon(a_f32.as_ptr(), b_f32.as_ptr(), dim) };
+        return T::DistanceType::from_f64(result as f64);
+    }
+
     let a_f32: Vec<f32> = a.iter().map(|x| x.to_f32()).collect();
     let b_f32: Vec<f32> = b.iter().map(|x| x.to_f32()).collect();
 
