@@ -488,9 +488,15 @@ impl<T: VectorElement> HnswCore<T> {
                         })
                         .collect();
 
-                    // Sort by distance and keep M closest (simple selection)
-                    candidates.sort_by(|a, b| a.1.to_f64().partial_cmp(&b.1.to_f64()).unwrap());
-                    let selected: Vec<_> = candidates.iter().take(m).map(|&(id, _)| id).collect();
+                    // Use partial sort to find M closest - O(n) instead of O(n log n)
+                    // select_nth_unstable partitions so elements [0..m] are the m smallest
+                    if candidates.len() > m {
+                        candidates.select_nth_unstable_by(m - 1, |a, b| {
+                            a.1.to_f64().partial_cmp(&b.1.to_f64()).unwrap()
+                        });
+                        candidates.truncate(m);
+                    }
+                    let selected: Vec<_> = candidates.iter().map(|&(id, _)| id).collect();
 
                     #[cfg(feature = "profile")]
                     {
