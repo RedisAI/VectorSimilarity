@@ -611,7 +611,7 @@ unsafe impl<T: VectorElement> Send for HnswSingle<T> {}
 unsafe impl<T: VectorElement> Sync for HnswSingle<T> {}
 
 // Serialization support
-impl HnswSingle<f32> {
+impl<T: VectorElement> HnswSingle<T> {
     /// Save the index to a writer.
     pub fn save<W: std::io::Write>(
         &self,
@@ -627,7 +627,7 @@ impl HnswSingle<f32> {
         // Write header
         let header = IndexHeader::new(
             IndexTypeId::HnswSingle,
-            DataTypeId::F32,
+            T::data_type_id(),
             core.params.metric,
             core.params.dim,
             count,
@@ -684,8 +684,8 @@ impl HnswSingle<f32> {
 
                 // Write vector data
                 if let Some(vector) = core.data.get(id) {
-                    for &v in vector {
-                        write_f32(writer, v)?;
+                    for v in vector {
+                        v.write_to(writer)?;
                     }
                 }
             } else {
@@ -712,9 +712,9 @@ impl HnswSingle<f32> {
             });
         }
 
-        if header.data_type != DataTypeId::F32 {
+        if header.data_type != T::data_type_id() {
             return Err(SerializationError::InvalidData(
-                "Expected f32 data type".to_string(),
+                format!("Expected {:?} data type, got {:?}", T::data_type_id(), header.data_type),
             ));
         }
 
@@ -806,9 +806,9 @@ impl HnswSingle<f32> {
                 }
 
                 // Read vector data
-                let mut vector = vec![0.0f32; dim];
+                let mut vector = vec![T::zero(); dim];
                 for v in &mut vector {
-                    *v = read_f32(reader)?;
+                    *v = T::read_from(reader)?;
                 }
 
                 // Add vector to data storage

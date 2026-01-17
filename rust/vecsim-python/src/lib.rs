@@ -171,6 +171,24 @@ impl HNSWRuntimeParams {
     }
 }
 
+/// Parameters for Tiered HNSW index.
+#[pyclass]
+#[derive(Clone)]
+pub struct TieredHNSWParams {
+    #[pyo3(get, set)]
+    pub swapJobThreshold: usize,
+}
+
+#[pymethods]
+impl TieredHNSWParams {
+    #[new]
+    fn new() -> Self {
+        TieredHNSWParams {
+            swapJobThreshold: 0,
+        }
+    }
+}
+
 /// Query parameters for search operations.
 #[pyclass]
 pub struct VecSimQueryParams {
@@ -1005,14 +1023,7 @@ impl HNSWIndex {
     }
 
     /// Save the index to a file.
-    /// Note: Only f32 data type indices support save/load.
     fn save_index(&self, path: &str) -> PyResult<()> {
-        if self.data_type != VECSIM_TYPE_FLOAT32 {
-            return Err(PyRuntimeError::new_err(
-                "Save/load is only supported for FLOAT32 data type indices",
-            ));
-        }
-
         let file = File::create(path)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create file: {}", e)))?;
         let mut writer = BufWriter::new(file);
@@ -1031,8 +1042,17 @@ impl HNSWIndex {
 
         match &self.inner {
             HnswIndexInner::SingleF32(idx) => idx.save(&mut writer),
+            HnswIndexInner::SingleF64(idx) => idx.save(&mut writer),
+            HnswIndexInner::SingleBF16(idx) => idx.save(&mut writer),
+            HnswIndexInner::SingleF16(idx) => idx.save(&mut writer),
+            HnswIndexInner::SingleI8(idx) => idx.save(&mut writer),
+            HnswIndexInner::SingleU8(idx) => idx.save(&mut writer),
             HnswIndexInner::MultiF32(idx) => idx.save(&mut writer),
-            _ => return Err(PyRuntimeError::new_err("Unreachable: non-f32 type")),
+            HnswIndexInner::MultiF64(idx) => idx.save(&mut writer),
+            HnswIndexInner::MultiBF16(idx) => idx.save(&mut writer),
+            HnswIndexInner::MultiF16(idx) => idx.save(&mut writer),
+            HnswIndexInner::MultiI8(idx) => idx.save(&mut writer),
+            HnswIndexInner::MultiU8(idx) => idx.save(&mut writer),
         }
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to save index: {:?}", e)))?;
 
@@ -1126,20 +1146,44 @@ impl HNSWIndex {
         let ef_runtime = u32::from_le_bytes(ef_runtime_bytes) as usize;
         let metric = metric_from_u32(metric_val)?;
 
-        // Only f32 types support save/load
-        if data_type != VECSIM_TYPE_FLOAT32 {
-            return Err(PyRuntimeError::new_err(
-                "Save/load is only supported for FLOAT32 data type indices",
-            ));
-        }
-
-        let inner = match multi {
-            false => HnswIndexInner::SingleF32(
+        let inner = match (multi, data_type) {
+            (false, VECSIM_TYPE_FLOAT32) => HnswIndexInner::SingleF32(
                 HnswSingle::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
             ),
-            true => HnswIndexInner::MultiF32(
+            (false, VECSIM_TYPE_FLOAT64) => HnswIndexInner::SingleF64(
+                HnswSingle::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (false, VECSIM_TYPE_BFLOAT16) => HnswIndexInner::SingleBF16(
+                HnswSingle::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (false, VECSIM_TYPE_FLOAT16) => HnswIndexInner::SingleF16(
+                HnswSingle::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (false, VECSIM_TYPE_INT8) => HnswIndexInner::SingleI8(
+                HnswSingle::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (false, VECSIM_TYPE_UINT8) => HnswIndexInner::SingleU8(
+                HnswSingle::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (true, VECSIM_TYPE_FLOAT32) => HnswIndexInner::MultiF32(
                 HnswMulti::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
             ),
+            (true, VECSIM_TYPE_FLOAT64) => HnswIndexInner::MultiF64(
+                HnswMulti::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (true, VECSIM_TYPE_BFLOAT16) => HnswIndexInner::MultiBF16(
+                HnswMulti::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (true, VECSIM_TYPE_FLOAT16) => HnswIndexInner::MultiF16(
+                HnswMulti::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (true, VECSIM_TYPE_INT8) => HnswIndexInner::MultiI8(
+                HnswMulti::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            (true, VECSIM_TYPE_UINT8) => HnswIndexInner::MultiU8(
+                HnswMulti::load(&mut reader).map_err(|e| PyRuntimeError::new_err(format!("Failed to load: {:?}", e)))?
+            ),
+            _ => return Err(PyValueError::new_err(format!("Unsupported data type: {}", data_type))),
         };
 
         Ok(HNSWIndex { inner, data_type, metric, dim, multi, ef_runtime })
@@ -1407,6 +1451,492 @@ impl PyBatchIterator {
 }
 
 // ============================================================================
+// Tiered HNSW Index
+// ============================================================================
+
+use vecsim::index::tiered::{TieredParams, TieredSingle, TieredMulti, WriteMode};
+
+/// Inner enum for type-erased tiered index.
+enum TieredIndexInner {
+    SingleF32(TieredSingle<f32>),
+    SingleF64(TieredSingle<f64>),
+    SingleBF16(TieredSingle<BFloat16>),
+    SingleF16(TieredSingle<Float16>),
+    SingleI8(TieredSingle<Int8>),
+    SingleU8(TieredSingle<UInt8>),
+    MultiF32(TieredMulti<f32>),
+    MultiF64(TieredMulti<f64>),
+    MultiBF16(TieredMulti<BFloat16>),
+    MultiF16(TieredMulti<Float16>),
+    MultiI8(TieredMulti<Int8>),
+    MultiU8(TieredMulti<UInt8>),
+}
+
+macro_rules! dispatch_tiered_index {
+    ($self:expr, $method:ident $(, $args:expr)*) => {
+        match &$self.inner {
+            TieredIndexInner::SingleF32(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleF64(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleBF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleI8(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleU8(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiF32(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiF64(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiBF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiI8(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiU8(idx) => idx.$method($($args),*),
+        }
+    };
+}
+
+macro_rules! dispatch_tiered_index_mut {
+    ($self:expr, $method:ident $(, $args:expr)*) => {
+        match &mut $self.inner {
+            TieredIndexInner::SingleF32(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleF64(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleBF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleI8(idx) => idx.$method($($args),*),
+            TieredIndexInner::SingleU8(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiF32(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiF64(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiBF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiF16(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiI8(idx) => idx.$method($($args),*),
+            TieredIndexInner::MultiU8(idx) => idx.$method($($args),*),
+        }
+    };
+}
+
+/// Tiered HNSW index combining BruteForce frontend with HNSW backend.
+#[pyclass]
+#[pyo3(name = "Tiered_HNSWIndex")]
+pub struct TieredHNSWIndex {
+    inner: TieredIndexInner,
+    data_type: u32,
+    metric: Metric,
+    dim: usize,
+    multi: bool,
+    ef_runtime: usize,
+}
+
+#[pymethods]
+impl TieredHNSWIndex {
+    /// Create a new tiered HNSW index.
+    #[new]
+    #[pyo3(signature = (hnsw_params, tiered_params, flat_buffer_size=1024))]
+    fn new(hnsw_params: &HNSWParams, tiered_params: &TieredHNSWParams, flat_buffer_size: usize) -> PyResult<Self> {
+        let metric = metric_from_u32(hnsw_params.metric)?;
+        let dim = hnsw_params.dim;
+        let multi = hnsw_params.multi;
+        let data_type = hnsw_params.r#type;
+        let ef_runtime = hnsw_params.efRuntime;
+
+        let hnsw_params_rust = vecsim::index::hnsw::HnswParams::new(dim, metric)
+            .with_m(hnsw_params.M)
+            .with_ef_construction(hnsw_params.efConstruction)
+            .with_ef_runtime(hnsw_params.efRuntime);
+
+        let tiered_params_rust = TieredParams {
+            dim,
+            metric,
+            hnsw_params: hnsw_params_rust,
+            flat_buffer_limit: flat_buffer_size,
+            write_mode: WriteMode::Async,
+            initial_capacity: 1000,
+        };
+
+        let inner = match (multi, data_type) {
+            (false, VECSIM_TYPE_FLOAT32) => TieredIndexInner::SingleF32(TieredSingle::new(tiered_params_rust)),
+            (false, VECSIM_TYPE_FLOAT64) => TieredIndexInner::SingleF64(TieredSingle::new(tiered_params_rust)),
+            (false, VECSIM_TYPE_BFLOAT16) => TieredIndexInner::SingleBF16(TieredSingle::new(tiered_params_rust)),
+            (false, VECSIM_TYPE_FLOAT16) => TieredIndexInner::SingleF16(TieredSingle::new(tiered_params_rust)),
+            (false, VECSIM_TYPE_INT8) => TieredIndexInner::SingleI8(TieredSingle::new(tiered_params_rust)),
+            (false, VECSIM_TYPE_UINT8) => TieredIndexInner::SingleU8(TieredSingle::new(tiered_params_rust)),
+            (true, VECSIM_TYPE_FLOAT32) => TieredIndexInner::MultiF32(TieredMulti::new(tiered_params_rust)),
+            (true, VECSIM_TYPE_FLOAT64) => TieredIndexInner::MultiF64(TieredMulti::new(tiered_params_rust)),
+            (true, VECSIM_TYPE_BFLOAT16) => TieredIndexInner::MultiBF16(TieredMulti::new(tiered_params_rust)),
+            (true, VECSIM_TYPE_FLOAT16) => TieredIndexInner::MultiF16(TieredMulti::new(tiered_params_rust)),
+            (true, VECSIM_TYPE_INT8) => TieredIndexInner::MultiI8(TieredMulti::new(tiered_params_rust)),
+            (true, VECSIM_TYPE_UINT8) => TieredIndexInner::MultiU8(TieredMulti::new(tiered_params_rust)),
+            _ => return Err(PyValueError::new_err(format!("Unsupported data type: {}", data_type))),
+        };
+
+        Ok(TieredHNSWIndex {
+            inner,
+            data_type,
+            metric,
+            dim,
+            multi,
+            ef_runtime,
+        })
+    }
+
+    /// Add a vector to the index.
+    fn add_vector(&mut self, py: Python<'_>, vector: PyObject, label: u64) -> PyResult<()> {
+        match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                let arr: PyReadonlyArray1<f32> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                match &mut self.inner {
+                    TieredIndexInner::SingleF32(idx) => idx.add_vector(slice, label),
+                    TieredIndexInner::MultiF32(idx) => idx.add_vector(slice, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT64 => {
+                let arr: PyReadonlyArray1<f64> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                match &mut self.inner {
+                    TieredIndexInner::SingleF64(idx) => idx.add_vector(slice, label),
+                    TieredIndexInner::MultiF64(idx) => idx.add_vector(slice, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_BFLOAT16 => {
+                let bf16_vec = extract_bf16_vector(py, &vector)?;
+                match &mut self.inner {
+                    TieredIndexInner::SingleBF16(idx) => idx.add_vector(&bf16_vec, label),
+                    TieredIndexInner::MultiBF16(idx) => idx.add_vector(&bf16_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT16 => {
+                let f16_vec = extract_f16_vector(py, &vector)?;
+                match &mut self.inner {
+                    TieredIndexInner::SingleF16(idx) => idx.add_vector(&f16_vec, label),
+                    TieredIndexInner::MultiF16(idx) => idx.add_vector(&f16_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_INT8 => {
+                let arr: PyReadonlyArray1<i8> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                let i8_vec: Vec<Int8> = slice.iter().map(|&v| Int8(v)).collect();
+                match &mut self.inner {
+                    TieredIndexInner::SingleI8(idx) => idx.add_vector(&i8_vec, label),
+                    TieredIndexInner::MultiI8(idx) => idx.add_vector(&i8_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_UINT8 => {
+                let arr: PyReadonlyArray1<u8> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                let u8_vec: Vec<UInt8> = slice.iter().map(|&v| UInt8(v)).collect();
+                match &mut self.inner {
+                    TieredIndexInner::SingleU8(idx) => idx.add_vector(&u8_vec, label),
+                    TieredIndexInner::MultiU8(idx) => idx.add_vector(&u8_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            _ => return Err(PyValueError::new_err("Unsupported data type")),
+        }
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to add vector: {:?}", e)))?;
+        Ok(())
+    }
+
+    /// Delete a vector from the index.
+    fn delete_vector(&mut self, label: u64) -> PyResult<usize> {
+        dispatch_tiered_index_mut!(self, delete_vector, label)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to delete vector: {:?}", e)))
+    }
+
+    /// Set the ef_runtime parameter for queries.
+    fn set_ef(&mut self, ef: usize) {
+        self.ef_runtime = ef;
+    }
+
+    /// Get the index size.
+    fn index_size(&self) -> usize {
+        dispatch_tiered_index!(self, index_size)
+    }
+
+    /// Get the data type.
+    fn index_type(&self) -> u32 {
+        self.data_type
+    }
+
+    /// Perform a k-nearest neighbors query.
+    #[pyo3(signature = (query, k=10))]
+    fn knn_query<'py>(
+        &self,
+        py: Python<'py>,
+        query: PyObject,
+        k: usize,
+    ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
+        let query_vec = extract_query_vec(py, &query)?;
+        let params = QueryParams::new().with_ef_runtime(self.ef_runtime);
+        let reply = self.query_internal(&query_vec, k, Some(&params))?;
+
+        let labels: Vec<i64> = reply.results.iter().map(|r| r.label as i64).collect();
+        let distances: Vec<f64> = reply.results.iter().map(|r| r.distance).collect();
+        let len = labels.len();
+
+        Ok((vec_to_2d_array(py, labels, len), vec_to_2d_array(py, distances, len)))
+    }
+
+    /// Perform a range query.
+    #[pyo3(signature = (query, radius, query_param=None))]
+    fn range_query<'py>(
+        &self,
+        py: Python<'py>,
+        query: PyObject,
+        radius: f64,
+        query_param: Option<&VecSimQueryParams>,
+    ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
+        let query_vec = extract_query_vec(py, &query)?;
+        let ef = query_param
+            .map(|p| p.get_ef_runtime(py))
+            .unwrap_or(self.ef_runtime);
+        let params = QueryParams::new().with_ef_runtime(ef);
+        let reply = self.range_query_internal(&query_vec, radius, Some(&params))?;
+
+        let labels: Vec<i64> = reply.results.iter().map(|r| r.label as i64).collect();
+        let distances: Vec<f64> = reply.results.iter().map(|r| r.distance).collect();
+        let len = labels.len();
+
+        Ok((vec_to_2d_array(py, labels, len), vec_to_2d_array(py, distances, len)))
+    }
+
+    /// Create a batch iterator for the given query.
+    #[pyo3(signature = (query, query_param=None))]
+    fn create_batch_iterator(
+        &self,
+        py: Python<'_>,
+        query: PyObject,
+        query_param: Option<&VecSimQueryParams>,
+    ) -> PyResult<PyBatchIterator> {
+        let query_vec = extract_query_vec(py, &query)?;
+        let ef = query_param
+            .map(|p| p.get_ef_runtime(py))
+            .unwrap_or(self.ef_runtime);
+
+        let results = self.get_batch_results(&query_vec, ef)?;
+        Ok(PyBatchIterator::new(results, self.index_size()))
+    }
+
+    /// Get the number of background threads (always 1 for Rust implementation).
+    fn get_threads_num(&self) -> usize {
+        1
+    }
+
+    /// Wait for background indexing to complete.
+    /// In the Rust implementation, this immediately flushes all vectors to HNSW.
+    #[pyo3(signature = (timeout=None))]
+    fn wait_for_index(&mut self, timeout: Option<u64>) -> PyResult<()> {
+        let _ = timeout; // Rust impl is synchronous
+        self.flush()?;
+        Ok(())
+    }
+
+    /// Flush vectors from flat buffer to HNSW.
+    fn flush(&mut self) -> PyResult<usize> {
+        let migrated = match &mut self.inner {
+            TieredIndexInner::SingleF32(idx) => idx.flush(),
+            TieredIndexInner::SingleF64(idx) => idx.flush(),
+            TieredIndexInner::SingleBF16(idx) => idx.flush(),
+            TieredIndexInner::SingleF16(idx) => idx.flush(),
+            TieredIndexInner::SingleI8(idx) => idx.flush(),
+            TieredIndexInner::SingleU8(idx) => idx.flush(),
+            TieredIndexInner::MultiF32(idx) => idx.flush(),
+            TieredIndexInner::MultiF64(idx) => idx.flush(),
+            TieredIndexInner::MultiBF16(idx) => idx.flush(),
+            TieredIndexInner::MultiF16(idx) => idx.flush(),
+            TieredIndexInner::MultiI8(idx) => idx.flush(),
+            TieredIndexInner::MultiU8(idx) => idx.flush(),
+        };
+        migrated.map_err(|e| PyRuntimeError::new_err(format!("Flush failed: {:?}", e)))
+    }
+
+    /// Get the number of labels in HNSW backend.
+    fn hnsw_label_count(&self) -> usize {
+        match &self.inner {
+            TieredIndexInner::SingleF32(idx) => idx.hnsw_size(),
+            TieredIndexInner::SingleF64(idx) => idx.hnsw_size(),
+            TieredIndexInner::SingleBF16(idx) => idx.hnsw_size(),
+            TieredIndexInner::SingleF16(idx) => idx.hnsw_size(),
+            TieredIndexInner::SingleI8(idx) => idx.hnsw_size(),
+            TieredIndexInner::SingleU8(idx) => idx.hnsw_size(),
+            TieredIndexInner::MultiF32(idx) => idx.hnsw_size(),
+            TieredIndexInner::MultiF64(idx) => idx.hnsw_size(),
+            TieredIndexInner::MultiBF16(idx) => idx.hnsw_size(),
+            TieredIndexInner::MultiF16(idx) => idx.hnsw_size(),
+            TieredIndexInner::MultiI8(idx) => idx.hnsw_size(),
+            TieredIndexInner::MultiU8(idx) => idx.hnsw_size(),
+        }
+    }
+
+    /// Get the current flat buffer size.
+    fn get_curr_bf_size(&self) -> usize {
+        match &self.inner {
+            TieredIndexInner::SingleF32(idx) => idx.flat_size(),
+            TieredIndexInner::SingleF64(idx) => idx.flat_size(),
+            TieredIndexInner::SingleBF16(idx) => idx.flat_size(),
+            TieredIndexInner::SingleF16(idx) => idx.flat_size(),
+            TieredIndexInner::SingleI8(idx) => idx.flat_size(),
+            TieredIndexInner::SingleU8(idx) => idx.flat_size(),
+            TieredIndexInner::MultiF32(idx) => idx.flat_size(),
+            TieredIndexInner::MultiF64(idx) => idx.flat_size(),
+            TieredIndexInner::MultiBF16(idx) => idx.flat_size(),
+            TieredIndexInner::MultiF16(idx) => idx.flat_size(),
+            TieredIndexInner::MultiI8(idx) => idx.flat_size(),
+            TieredIndexInner::MultiU8(idx) => idx.flat_size(),
+        }
+    }
+
+    /// Get total memory usage in bytes.
+    fn index_memory(&self) -> usize {
+        match &self.inner {
+            TieredIndexInner::SingleF32(idx) => idx.memory_usage(),
+            TieredIndexInner::SingleF64(idx) => idx.memory_usage(),
+            TieredIndexInner::SingleBF16(idx) => idx.memory_usage(),
+            TieredIndexInner::SingleF16(idx) => idx.memory_usage(),
+            TieredIndexInner::SingleI8(idx) => idx.memory_usage(),
+            TieredIndexInner::SingleU8(idx) => idx.memory_usage(),
+            TieredIndexInner::MultiF32(idx) => idx.memory_usage(),
+            TieredIndexInner::MultiF64(idx) => idx.memory_usage(),
+            TieredIndexInner::MultiBF16(idx) => idx.memory_usage(),
+            TieredIndexInner::MultiF16(idx) => idx.memory_usage(),
+            TieredIndexInner::MultiI8(idx) => idx.memory_usage(),
+            TieredIndexInner::MultiU8(idx) => idx.memory_usage(),
+        }
+    }
+}
+
+impl TieredHNSWIndex {
+    fn query_internal(&self, query: &[f64], k: usize, params: Option<&QueryParams>) -> PyResult<QueryReply<f64>> {
+        let reply = match &self.inner {
+            TieredIndexInner::SingleF32(idx) => {
+                let q: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleF64(idx) => idx.top_k_query(query, k, params),
+            TieredIndexInner::SingleBF16(idx) => {
+                let q: Vec<BFloat16> = query.iter().map(|&x| BFloat16::from_f32(x as f32)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleF16(idx) => {
+                let q: Vec<Float16> = query.iter().map(|&x| Float16::from_f32(x as f32)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleI8(idx) => {
+                let q: Vec<Int8> = query.iter().map(|&x| Int8(x as i8)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleU8(idx) => {
+                let q: Vec<UInt8> = query.iter().map(|&x| UInt8(x as u8)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiF32(idx) => {
+                let q: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiF64(idx) => idx.top_k_query(query, k, params),
+            TieredIndexInner::MultiBF16(idx) => {
+                let q: Vec<BFloat16> = query.iter().map(|&x| BFloat16::from_f32(x as f32)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiF16(idx) => {
+                let q: Vec<Float16> = query.iter().map(|&x| Float16::from_f32(x as f32)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiI8(idx) => {
+                let q: Vec<Int8> = query.iter().map(|&x| Int8(x as i8)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiU8(idx) => {
+                let q: Vec<UInt8> = query.iter().map(|&x| UInt8(x as u8)).collect();
+                idx.top_k_query(&q, k, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+        };
+
+        reply.map_err(|e| PyRuntimeError::new_err(format!("Query failed: {:?}", e)))
+    }
+
+    fn range_query_internal(&self, query: &[f64], radius: f64, params: Option<&QueryParams>) -> PyResult<QueryReply<f64>> {
+        let reply = match &self.inner {
+            TieredIndexInner::SingleF32(idx) => {
+                let q: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleF64(idx) => idx.range_query(query, radius, params),
+            TieredIndexInner::SingleBF16(idx) => {
+                let q: Vec<BFloat16> = query.iter().map(|&x| BFloat16::from_f32(x as f32)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleF16(idx) => {
+                let q: Vec<Float16> = query.iter().map(|&x| Float16::from_f32(x as f32)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleI8(idx) => {
+                let q: Vec<Int8> = query.iter().map(|&x| Int8(x as i8)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::SingleU8(idx) => {
+                let q: Vec<UInt8> = query.iter().map(|&x| UInt8(x as u8)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiF32(idx) => {
+                let q: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiF64(idx) => idx.range_query(query, radius, params),
+            TieredIndexInner::MultiBF16(idx) => {
+                let q: Vec<BFloat16> = query.iter().map(|&x| BFloat16::from_f32(x as f32)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiF16(idx) => {
+                let q: Vec<Float16> = query.iter().map(|&x| Float16::from_f32(x as f32)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiI8(idx) => {
+                let q: Vec<Int8> = query.iter().map(|&x| Int8(x as i8)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+            TieredIndexInner::MultiU8(idx) => {
+                let q: Vec<UInt8> = query.iter().map(|&x| UInt8(x as u8)).collect();
+                idx.range_query(&q, radius as f32, params)
+                    .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() })
+            }
+        };
+
+        reply.map_err(|e| PyRuntimeError::new_err(format!("Range query failed: {:?}", e)))
+    }
+
+    fn get_batch_results(&self, query: &[f64], ef: usize) -> PyResult<Vec<(u64, f64)>> {
+        let total = self.index_size();
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+
+        let params = QueryParams::new().with_ef_runtime(ef);
+        let reply = self.query_internal(query, total, Some(&params))?;
+        Ok(reply.results.into_iter().map(|r| (r.label, r.distance)).collect())
+    }
+}
+
+// ============================================================================
 // SVS Params (placeholder for test compatibility)
 // ============================================================================
 
@@ -1499,10 +2029,12 @@ fn VecSim(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BFParams>()?;
     m.add_class::<HNSWParams>()?;
     m.add_class::<HNSWRuntimeParams>()?;
+    m.add_class::<TieredHNSWParams>()?;
     m.add_class::<VecSimQueryParams>()?;
     m.add_class::<SVSParams>()?;
     m.add_class::<BFIndex>()?;
     m.add_class::<HNSWIndex>()?;
+    m.add_class::<TieredHNSWIndex>()?;
     m.add_class::<PyBatchIterator>()?;
 
     Ok(())

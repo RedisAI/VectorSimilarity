@@ -119,6 +119,7 @@ impl TieredParams {
 /// Merge two sorted query replies, keeping the top k results.
 ///
 /// Both replies are assumed to be sorted by distance (ascending).
+/// For single-value indices, no deduplication is needed.
 pub fn merge_top_k<D: crate::types::DistanceType>(
     flat_results: crate::query::QueryReply<D>,
     hnsw_results: crate::query::QueryReply<D>,
@@ -148,6 +149,59 @@ pub fn merge_top_k<D: crate::types::DistanceType>(
     }
     for result in hnsw_results.results {
         merged.push(result);
+    }
+
+    // Sort by distance and truncate
+    merged.sort_by_distance();
+    merged.results.truncate(k);
+
+    merged
+}
+
+/// Merge two sorted query replies for multi-value indices, keeping the top k unique labels.
+///
+/// Both replies are assumed to be sorted by distance (ascending).
+/// Deduplicates by label, keeping only the best (minimum) distance per label.
+pub fn merge_top_k_multi<D: crate::types::DistanceType>(
+    flat_results: crate::query::QueryReply<D>,
+    hnsw_results: crate::query::QueryReply<D>,
+    k: usize,
+) -> crate::query::QueryReply<D> {
+    use crate::query::{QueryReply, QueryResult};
+    use crate::types::LabelType;
+    use std::collections::HashMap;
+
+    // Fast paths
+    if flat_results.is_empty() {
+        let mut results = hnsw_results;
+        results.results.truncate(k);
+        return results;
+    }
+
+    if hnsw_results.is_empty() {
+        let mut results = flat_results;
+        results.results.truncate(k);
+        return results;
+    }
+
+    // Deduplicate by label, keeping best distance per label
+    let mut label_best: HashMap<LabelType, D> = HashMap::new();
+
+    for result in flat_results.results.into_iter().chain(hnsw_results.results.into_iter()) {
+        label_best
+            .entry(result.label)
+            .and_modify(|best| {
+                if result.distance.to_f64() < best.to_f64() {
+                    *best = result.distance;
+                }
+            })
+            .or_insert(result.distance);
+    }
+
+    // Convert to reply
+    let mut merged = QueryReply::with_capacity(label_best.len().min(k));
+    for (label, dist) in label_best {
+        merged.push(QueryResult::new(label, dist));
     }
 
     // Sort by distance and truncate

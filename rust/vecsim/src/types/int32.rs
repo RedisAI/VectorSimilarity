@@ -4,6 +4,7 @@
 //! for use in vector similarity operations with 32-bit signed integer vectors.
 
 use super::VectorElement;
+use crate::serialization::DataTypeId;
 use std::fmt;
 
 /// Signed 32-bit integer for vector storage.
@@ -109,6 +110,22 @@ impl VectorElement for Int32 {
     fn can_normalize() -> bool {
         // Int32 cannot be meaningfully normalized - normalized values round to 0
         false
+    }
+
+    #[inline]
+    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.0.to_le_bytes())
+    }
+
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 4];
+        reader.read_exact(&mut buf)?;
+        Ok(Self(i32::from_le_bytes(buf)))
+    }
+
+    fn data_type_id() -> DataTypeId {
+        DataTypeId::Int32
     }
 }
 

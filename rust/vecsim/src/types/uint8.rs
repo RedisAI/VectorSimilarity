@@ -4,6 +4,7 @@
 //! for use in vector similarity operations with 8-bit unsigned integer vectors.
 
 use super::VectorElement;
+use crate::serialization::DataTypeId;
 use std::fmt;
 
 /// Unsigned 8-bit integer for vector storage.
@@ -103,6 +104,22 @@ impl VectorElement for UInt8 {
     fn can_normalize() -> bool {
         // UInt8 cannot be meaningfully normalized - normalized values round to 0
         false
+    }
+
+    #[inline]
+    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&[self.0])
+    }
+
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 1];
+        reader.read_exact(&mut buf)?;
+        Ok(Self(buf[0]))
+    }
+
+    fn data_type_id() -> DataTypeId {
+        DataTypeId::UInt8
     }
 }
 

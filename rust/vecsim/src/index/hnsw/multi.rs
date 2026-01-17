@@ -367,16 +367,55 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             None
         };
 
-        let results = core.search(query, k, ef, filter_fn.as_ref().map(|f| f.as_ref()));
+        // For multi-value index, we need to search for more results to ensure
+        // we get k unique labels. Search for more results initially.
+        // Since HNSW is approximate, we need to search for significantly more
+        // results to ensure we find k unique labels with good recall.
+        let total_vectors = self.count.load(std::sync::atomic::Ordering::Relaxed);
+        let num_labels = self.label_to_ids.read().len();
+        let search_k = if num_labels > 0 && total_vectors > 0 {
+            // Calculate average vectors per label
+            let avg_per_label = total_vectors / num_labels.max(1);
+            // Search for more results: at least k * avg_per_label * 5 to ensure good recall
+            // The multiplier of 5 accounts for HNSW's approximate nature and edge cases
+            let needed = k * avg_per_label.max(1) * 5;
+            // But don't search for more than total vectors
+            needed.min(total_vectors).max(k)
+        } else {
+            k
+        };
 
-        // Look up labels for results
+        // Use ef that's large enough to find search_k results with good quality
+        let search_ef = ef.max(search_k);
+        let results = core.search(query, search_k, search_ef, filter_fn.as_ref().map(|f| f.as_ref()));
+
+        // Look up labels for results and deduplicate by label
+        // For multi-value index, keep only the best (minimum) distance per label
         let id_to_label = self.id_to_label.read();
-        let mut reply = QueryReply::with_capacity(results.len());
+        let mut label_best: HashMap<LabelType, T::DistanceType> = HashMap::new();
+
         for (id, dist) in results {
             if let Some(&label) = id_to_label.get(&id) {
-                reply.push(QueryResult::new(label, dist));
+                label_best
+                    .entry(label)
+                    .and_modify(|best| {
+                        if dist.to_f64() < best.to_f64() {
+                            *best = dist;
+                        }
+                    })
+                    .or_insert(dist);
             }
         }
+
+        // Convert to QueryReply and sort by distance
+        let mut reply = QueryReply::with_capacity(label_best.len().min(k));
+        for (label, dist) in label_best {
+            reply.push(QueryResult::new(label, dist));
+        }
+        reply.sort_by_distance();
+
+        // Truncate to k results
+        reply.results.truncate(k);
 
         Ok(reply)
     }
@@ -427,14 +466,29 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
         let results = core.search(query, count, ef, filter_fn.as_ref().map(|f| f.as_ref()));
 
         // Look up labels and filter by radius
+        // For multi-value index, deduplicate by label and keep best distance per label
         let id_to_label = self.id_to_label.read();
-        let mut reply = QueryReply::new();
+        let mut label_best: HashMap<LabelType, T::DistanceType> = HashMap::new();
+
         for (id, dist) in results {
             if dist.to_f64() <= radius.to_f64() {
                 if let Some(&label) = id_to_label.get(&id) {
-                    reply.push(QueryResult::new(label, dist));
+                    label_best
+                        .entry(label)
+                        .and_modify(|best| {
+                            if dist.to_f64() < best.to_f64() {
+                                *best = dist;
+                            }
+                        })
+                        .or_insert(dist);
                 }
             }
+        }
+
+        // Convert to QueryReply
+        let mut reply = QueryReply::with_capacity(label_best.len());
+        for (label, dist) in label_best {
+            reply.push(QueryResult::new(label, dist));
         }
 
         reply.sort_by_distance();
@@ -504,7 +558,7 @@ unsafe impl<T: VectorElement> Send for HnswMulti<T> {}
 unsafe impl<T: VectorElement> Sync for HnswMulti<T> {}
 
 // Serialization support
-impl HnswMulti<f32> {
+impl<T: VectorElement> HnswMulti<T> {
     /// Save the index to a writer.
     pub fn save<W: std::io::Write>(
         &self,
@@ -520,7 +574,7 @@ impl HnswMulti<f32> {
         // Write header
         let header = IndexHeader::new(
             IndexTypeId::HnswMulti,
-            DataTypeId::F32,
+            T::data_type_id(),
             core.params.metric,
             core.params.dim,
             count,
@@ -580,8 +634,8 @@ impl HnswMulti<f32> {
 
                 // Write vector data
                 if let Some(vector) = core.data.get(id) {
-                    for &v in vector {
-                        write_f32(writer, v)?;
+                    for v in vector {
+                        v.write_to(writer)?;
                     }
                 }
             } else {
@@ -608,9 +662,9 @@ impl HnswMulti<f32> {
             });
         }
 
-        if header.data_type != DataTypeId::F32 {
+        if header.data_type != T::data_type_id() {
             return Err(SerializationError::InvalidData(
-                "Expected f32 data type".to_string(),
+                format!("Expected {:?} data type, got {:?}", T::data_type_id(), header.data_type),
             ));
         }
 
@@ -709,9 +763,9 @@ impl HnswMulti<f32> {
                 }
 
                 // Read vector data
-                let mut vector = vec![0.0f32; dim];
+                let mut vector = vec![T::zero(); dim];
                 for v in &mut vector {
-                    *v = read_f32(reader)?;
+                    *v = T::read_from(reader)?;
                 }
 
                 // Add vector to data storage
@@ -872,7 +926,8 @@ mod tests {
         let query = vec![1.0, 0.0, 0.0, 0.0];
         let results = index.top_k_query(&query, 3, None).unwrap();
 
-        assert_eq!(results.len(), 3);
+        // After deduplication by label, we can only have 2 unique labels (1 and 4)
+        assert_eq!(results.len(), 2);
         // Top results should include label 1 vectors
         assert_eq!(results.results[0].label, 1);
 

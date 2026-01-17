@@ -3,7 +3,7 @@
 //! This index allows multiple vectors per label, combining a BruteForce frontend
 //! (for fast writes) with an HNSW backend (for efficient queries).
 
-use super::{merge_range, merge_top_k, TieredParams, WriteMode};
+use super::{merge_range, merge_top_k_multi, TieredParams, WriteMode};
 use crate::index::brute_force::{BruteForceMulti, BruteForceParams};
 use crate::index::hnsw::HnswMulti;
 use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, VecSimIndex};
@@ -277,7 +277,7 @@ impl<T: VectorElement> VecSimIndex for TieredMulti<T> {
         let flat_results = flat.top_k_query(query, k, params)?;
         let hnsw_results = hnsw.top_k_query(query, k, params)?;
 
-        Ok(merge_top_k(flat_results, hnsw_results, k))
+        Ok(merge_top_k_multi(flat_results, hnsw_results, k))
     }
 
     fn range_query(
@@ -678,9 +678,10 @@ mod tests {
         assert_eq!(loaded.label_count(3), 1);
 
         // Verify vectors can be queried
+        // Multi-value indices deduplicate by label, so we get 3 unique labels (1, 2, 3)
         let query = vec![1.0, 0.0, 0.0, 0.0];
         let results = loaded.top_k_query(&query, 5, None).unwrap();
-        assert_eq!(results.len(), 5);
+        assert_eq!(results.len(), 3);
     }
 
     #[test]

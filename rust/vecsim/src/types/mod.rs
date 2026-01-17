@@ -20,6 +20,7 @@ pub use int32::Int32;
 pub use int64::Int64;
 pub use uint8::UInt8;
 
+use crate::serialization::DataTypeId;
 use num_traits::Float;
 use std::fmt::Debug;
 
@@ -61,6 +62,20 @@ pub trait VectorElement: Copy + Clone + Debug + Send + Sync + 'static {
     fn can_normalize() -> bool {
         true
     }
+
+    /// Write this value to a writer.
+    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()>;
+
+    /// Read a value from a reader.
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self>;
+
+    /// Size of this type in bytes when serialized.
+    fn serialized_size() -> usize {
+        std::mem::size_of::<Self>()
+    }
+
+    /// Get the data type identifier for serialization.
+    fn data_type_id() -> DataTypeId;
 }
 
 /// Trait for distance computation result types.
@@ -108,6 +123,22 @@ impl VectorElement for f32 {
     #[inline(always)]
     fn alignment() -> usize {
         32 // AVX alignment
+    }
+
+    #[inline]
+    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_le_bytes())
+    }
+
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 4];
+        reader.read_exact(&mut buf)?;
+        Ok(f32::from_le_bytes(buf))
+    }
+
+    fn data_type_id() -> DataTypeId {
+        DataTypeId::F32
     }
 }
 
@@ -165,6 +196,22 @@ impl VectorElement for f64 {
     #[inline(always)]
     fn alignment() -> usize {
         64 // AVX-512 alignment
+    }
+
+    #[inline]
+    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_le_bytes())
+    }
+
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 8];
+        reader.read_exact(&mut buf)?;
+        Ok(f64::from_le_bytes(buf))
+    }
+
+    fn data_type_id() -> DataTypeId {
+        DataTypeId::F64
     }
 }
 

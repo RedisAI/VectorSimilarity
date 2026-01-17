@@ -4,6 +4,7 @@
 //! implementing the `VectorElement` trait for use in vector similarity operations.
 
 use super::VectorElement;
+use crate::serialization::DataTypeId;
 use std::fmt;
 
 /// Half-precision floating point number (IEEE 754-2008 binary16).
@@ -107,6 +108,22 @@ impl VectorElement for Float16 {
     #[inline(always)]
     fn alignment() -> usize {
         32 // AVX alignment for f32 intermediate calculations
+    }
+
+    #[inline]
+    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_bits().to_le_bytes())
+    }
+
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 2];
+        reader.read_exact(&mut buf)?;
+        Ok(Self::from_bits(u16::from_le_bytes(buf)))
+    }
+
+    fn data_type_id() -> DataTypeId {
+        DataTypeId::Float16
     }
 }
 

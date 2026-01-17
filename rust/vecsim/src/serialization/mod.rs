@@ -312,6 +312,62 @@ pub fn read_f64_vec<R: Read>(reader: &mut R) -> io::Result<Vec<f64>> {
     Ok(data)
 }
 
+/// Write a u16 value (for Float16, BFloat16).
+#[inline]
+pub fn write_u16<W: Write>(writer: &mut W, value: u16) -> io::Result<()> {
+    writer.write_all(&value.to_le_bytes())
+}
+
+/// Read a u16 value.
+#[inline]
+pub fn read_u16<R: Read>(reader: &mut R) -> io::Result<u16> {
+    let mut buf = [0u8; 2];
+    reader.read_exact(&mut buf)?;
+    Ok(u16::from_le_bytes(buf))
+}
+
+/// Write an i8 value.
+#[inline]
+pub fn write_i8<W: Write>(writer: &mut W, value: i8) -> io::Result<()> {
+    writer.write_all(&value.to_le_bytes())
+}
+
+/// Read an i8 value.
+#[inline]
+pub fn read_i8<R: Read>(reader: &mut R) -> io::Result<i8> {
+    let mut buf = [0u8; 1];
+    reader.read_exact(&mut buf)?;
+    Ok(i8::from_le_bytes(buf))
+}
+
+/// Write an i32 value.
+#[inline]
+pub fn write_i32<W: Write>(writer: &mut W, value: i32) -> io::Result<()> {
+    writer.write_all(&value.to_le_bytes())
+}
+
+/// Read an i32 value.
+#[inline]
+pub fn read_i32<R: Read>(reader: &mut R) -> io::Result<i32> {
+    let mut buf = [0u8; 4];
+    reader.read_exact(&mut buf)?;
+    Ok(i32::from_le_bytes(buf))
+}
+
+/// Write an i64 value.
+#[inline]
+pub fn write_i64<W: Write>(writer: &mut W, value: i64) -> io::Result<()> {
+    writer.write_all(&value.to_le_bytes())
+}
+
+/// Read an i64 value.
+#[inline]
+pub fn read_i64<R: Read>(reader: &mut R) -> io::Result<i64> {
+    let mut buf = [0u8; 8];
+    reader.read_exact(&mut buf)?;
+    Ok(i64::from_le_bytes(buf))
+}
+
 fn metric_to_u8(metric: Metric) -> u8 {
     match metric {
         Metric::L2 => 1,
