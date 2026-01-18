@@ -153,7 +153,7 @@ macro_rules! impl_index_wrapper {
                 }
             }
 
-            fn get_distance_from(&self, label: labelType, query: *const c_void) -> f64 {
+            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
                 // This requires accessing internal storage which isn't directly exposed
                 // For now, return infinity as a placeholder
                 f64::INFINITY
@@ -194,8 +194,8 @@ macro_rules! impl_index_wrapper {
 
             fn create_batch_iterator(
                 &self,
-                query: *const c_void,
-                params: Option<&VecSimQueryParams>,
+                _query: *const c_void,
+                _params: Option<&VecSimQueryParams>,
             ) -> Option<Box<dyn BatchIteratorWrapper>> {
                 // Batch iterator requires ownership of query, which is complex with type erasure
                 // Return None for now; full implementation would require more complex handling
