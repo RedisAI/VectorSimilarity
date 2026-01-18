@@ -6,6 +6,7 @@
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
@@ -1096,6 +1097,418 @@ impl HNSWIndex {
         let index_size = self.index_size();
 
         Ok(PyBatchIterator::new(all_results, index_size))
+    }
+
+    /// Perform parallel k-nearest neighbors queries.
+    #[pyo3(signature = (queries, k=10, num_threads=None))]
+    fn knn_parallel<'py>(
+        &self,
+        py: Python<'py>,
+        queries: PyObject,
+        k: usize,
+        num_threads: Option<usize>,
+    ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
+        // Extract 2D query array - try f32 first, then f64
+        let (num_queries, queries_data): (usize, Vec<Vec<f64>>) =
+            if let Ok(queries_arr) = queries.extract::<PyReadonlyArray2<f32>>(py) {
+                let shape = queries_arr.shape();
+                let num_queries = shape[0];
+                let query_dim = shape[1];
+                if query_dim != self.dim {
+                    return Err(PyValueError::new_err(format!(
+                        "Query dimension {} does not match index dimension {}",
+                        query_dim, self.dim
+                    )));
+                }
+                let queries_slice = queries_arr.as_slice()?;
+                let data = (0..num_queries)
+                    .map(|i| {
+                        let start = i * query_dim;
+                        let end = start + query_dim;
+                        queries_slice[start..end].iter().map(|&x| x as f64).collect()
+                    })
+                    .collect();
+                (num_queries, data)
+            } else if let Ok(queries_arr) = queries.extract::<PyReadonlyArray2<f64>>(py) {
+                let shape = queries_arr.shape();
+                let num_queries = shape[0];
+                let query_dim = shape[1];
+                if query_dim != self.dim {
+                    return Err(PyValueError::new_err(format!(
+                        "Query dimension {} does not match index dimension {}",
+                        query_dim, self.dim
+                    )));
+                }
+                let queries_slice = queries_arr.as_slice()?;
+                let data = (0..num_queries)
+                    .map(|i| {
+                        let start = i * query_dim;
+                        let end = start + query_dim;
+                        queries_slice[start..end].to_vec()
+                    })
+                    .collect();
+                (num_queries, data)
+            } else {
+                return Err(PyValueError::new_err("Query array must be 2D float32 or float64"));
+            };
+
+        // Set up thread pool with specified number of threads
+        let pool = if let Some(n) = num_threads {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create thread pool: {}", e)))?
+        } else {
+            rayon::ThreadPoolBuilder::new()
+                .build()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create thread pool: {}", e)))?
+        };
+
+        let params = QueryParams::new().with_ef_runtime(self.ef_runtime);
+
+        // Run queries in parallel
+        let results: Vec<Result<QueryReply<f64>, String>> = pool.install(|| {
+            queries_data
+                .par_iter()
+                .map(|query| {
+                    self.query_internal(query, k, Some(&params))
+                        .map_err(|e| e.to_string())
+                })
+                .collect()
+        });
+
+        // Convert results to numpy arrays
+        let mut all_labels: Vec<i64> = Vec::with_capacity(num_queries * k);
+        let mut all_distances: Vec<f64> = Vec::with_capacity(num_queries * k);
+
+        for result in results {
+            let reply = result.map_err(|e| PyRuntimeError::new_err(e))?;
+            let mut labels: Vec<i64> = reply.results.iter().map(|r| r.label as i64).collect();
+            let mut distances: Vec<f64> = reply.results.iter().map(|r| r.distance).collect();
+
+            // Pad to k results if needed
+            while labels.len() < k {
+                labels.push(-1);
+                distances.push(f64::MAX);
+            }
+
+            all_labels.extend(labels);
+            all_distances.extend(distances);
+        }
+
+        // Reshape to (num_queries, k)
+        let labels_array = ndarray::Array2::from_shape_vec((num_queries, k), all_labels)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to reshape labels: {}", e)))?;
+        let distances_array = ndarray::Array2::from_shape_vec((num_queries, k), all_distances)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to reshape distances: {}", e)))?;
+
+        Ok((labels_array.into_pyarray(py), distances_array.into_pyarray(py)))
+    }
+
+    /// Add multiple vectors to the index in parallel.
+    /// Note: Currently uses sequential insertion as the underlying HNSW index
+    /// requires synchronization. Future versions may support true parallel insertion.
+    #[pyo3(signature = (vectors, labels, num_threads=None))]
+    fn add_vector_parallel(
+        &mut self,
+        py: Python<'_>,
+        vectors: PyObject,
+        labels: PyObject,
+        num_threads: Option<usize>,
+    ) -> PyResult<()> {
+        let _ = num_threads; // Currently unused - sequential insertion
+
+        // Extract labels array - try i64 first, then i32
+        let labels_vec: Vec<u64> = if let Ok(labels_arr) = labels.extract::<PyReadonlyArray1<i64>>(py) {
+            labels_arr.as_slice()?.iter().map(|&l| l as u64).collect()
+        } else if let Ok(labels_arr) = labels.extract::<PyReadonlyArray1<i32>>(py) {
+            labels_arr.as_slice()?.iter().map(|&l| l as u64).collect()
+        } else {
+            // Try to extract as a Python iterable of integers
+            let labels_list: Vec<i64> = labels.extract(py)?;
+            labels_list.into_iter().map(|l| l as u64).collect()
+        };
+        let num_vectors = labels_vec.len();
+
+        match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                let vectors_arr: PyReadonlyArray2<f32> = vectors.extract(py)?;
+                let shape = vectors_arr.shape();
+                if shape[0] != num_vectors {
+                    return Err(PyValueError::new_err(format!(
+                        "Number of vectors {} does not match number of labels {}",
+                        shape[0], num_vectors
+                    )));
+                }
+                let dim = shape[1];
+                let slice = vectors_arr.as_slice()?;
+
+                // Sequential insertion
+                for i in 0..num_vectors {
+                    let start = i * dim;
+                    let end = start + dim;
+                    let vec = &slice[start..end];
+                    let label = labels_vec[i];
+                    match &mut self.inner {
+                        HnswIndexInner::SingleF32(idx) => { let _ = idx.add_vector(vec, label); }
+                        HnswIndexInner::MultiF32(idx) => { let _ = idx.add_vector(vec, label); }
+                        _ => {}
+                    }
+                }
+            }
+            VECSIM_TYPE_FLOAT64 => {
+                let vectors_arr: PyReadonlyArray2<f64> = vectors.extract(py)?;
+                let shape = vectors_arr.shape();
+                if shape[0] != num_vectors {
+                    return Err(PyValueError::new_err(format!(
+                        "Number of vectors {} does not match number of labels {}",
+                        shape[0], num_vectors
+                    )));
+                }
+                let dim = shape[1];
+                let slice = vectors_arr.as_slice()?;
+
+                // Sequential insertion
+                for i in 0..num_vectors {
+                    let start = i * dim;
+                    let end = start + dim;
+                    let vec = &slice[start..end];
+                    let label = labels_vec[i];
+                    match &mut self.inner {
+                        HnswIndexInner::SingleF64(idx) => { let _ = idx.add_vector(vec, label); }
+                        HnswIndexInner::MultiF64(idx) => { let _ = idx.add_vector(vec, label); }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Parallel insert only supported for FLOAT32 and FLOAT64 types",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Perform parallel range queries.
+    #[pyo3(signature = (queries, radius, num_threads=None))]
+    fn range_parallel<'py>(
+        &self,
+        py: Python<'py>,
+        queries: PyObject,
+        radius: f64,
+        num_threads: Option<usize>,
+    ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
+        // Extract 2D query array - try f32 first, then f64
+        let (num_queries, queries_data): (usize, Vec<Vec<f64>>) =
+            if let Ok(queries_arr) = queries.extract::<PyReadonlyArray2<f32>>(py) {
+                let shape = queries_arr.shape();
+                let num_queries = shape[0];
+                let query_dim = shape[1];
+                if query_dim != self.dim {
+                    return Err(PyValueError::new_err(format!(
+                        "Query dimension {} does not match index dimension {}",
+                        query_dim, self.dim
+                    )));
+                }
+                let queries_slice = queries_arr.as_slice()?;
+                let data = (0..num_queries)
+                    .map(|i| {
+                        let start = i * query_dim;
+                        let end = start + query_dim;
+                        queries_slice[start..end].iter().map(|&x| x as f64).collect()
+                    })
+                    .collect();
+                (num_queries, data)
+            } else if let Ok(queries_arr) = queries.extract::<PyReadonlyArray2<f64>>(py) {
+                let shape = queries_arr.shape();
+                let num_queries = shape[0];
+                let query_dim = shape[1];
+                if query_dim != self.dim {
+                    return Err(PyValueError::new_err(format!(
+                        "Query dimension {} does not match index dimension {}",
+                        query_dim, self.dim
+                    )));
+                }
+                let queries_slice = queries_arr.as_slice()?;
+                let data = (0..num_queries)
+                    .map(|i| {
+                        let start = i * query_dim;
+                        let end = start + query_dim;
+                        queries_slice[start..end].to_vec()
+                    })
+                    .collect();
+                (num_queries, data)
+            } else {
+                return Err(PyValueError::new_err("Query array must be 2D float32 or float64"));
+            };
+
+        // Set up thread pool
+        let pool = if let Some(n) = num_threads {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create thread pool: {}", e)))?
+        } else {
+            rayon::ThreadPoolBuilder::new()
+                .build()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create thread pool: {}", e)))?
+        };
+
+        let params = QueryParams::new().with_ef_runtime(self.ef_runtime);
+
+        // Run queries in parallel
+        let results: Vec<Result<QueryReply<f64>, String>> = pool.install(|| {
+            queries_data
+                .par_iter()
+                .map(|query| {
+                    self.range_query_internal(query, radius, Some(&params))
+                        .map_err(|e| e.to_string())
+                })
+                .collect()
+        });
+
+        // Find max results length for padding
+        let max_results = results
+            .iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.results.len())
+            .max()
+            .unwrap_or(0);
+
+        // Convert results to numpy arrays with padding
+        let result_len = max_results.max(1); // At least 1 column
+        let mut all_labels: Vec<i64> = Vec::with_capacity(num_queries * result_len);
+        let mut all_distances: Vec<f64> = Vec::with_capacity(num_queries * result_len);
+
+        for result in results {
+            let reply = result.map_err(|e| PyRuntimeError::new_err(e))?;
+            let mut labels: Vec<i64> = reply.results.iter().map(|r| r.label as i64).collect();
+            let mut distances: Vec<f64> = reply.results.iter().map(|r| r.distance).collect();
+
+            // Pad to max_results with -1 for labels
+            while labels.len() < result_len {
+                labels.push(-1);
+                distances.push(f64::MAX);
+            }
+
+            all_labels.extend(labels);
+            all_distances.extend(distances);
+        }
+
+        // Reshape to (num_queries, result_len)
+        let labels_array = ndarray::Array2::from_shape_vec((num_queries, result_len), all_labels)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to reshape labels: {}", e)))?;
+        let distances_array = ndarray::Array2::from_shape_vec((num_queries, result_len), all_distances)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to reshape distances: {}", e)))?;
+
+        Ok((labels_array.into_pyarray(py), distances_array.into_pyarray(py)))
+    }
+
+    /// Get a vector by its label.
+    fn get_vector<'py>(&self, py: Python<'py>, label: u64) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let vectors: Vec<Vec<f64>> = match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                match &self.inner {
+                    HnswIndexInner::SingleF32(idx) => {
+                        idx.get_vector(label)
+                            .map(|v| vec![v.into_iter().map(|x| x as f64).collect()])
+                            .unwrap_or_default()
+                    }
+                    HnswIndexInner::MultiF32(idx) => {
+                        idx.get_vectors(label)
+                            .map(|vecs| vecs.into_iter().map(|v| v.into_iter().map(|x| x as f64).collect()).collect())
+                            .unwrap_or_default()
+                    }
+                    _ => return Err(PyValueError::new_err("Type mismatch")),
+                }
+            }
+            VECSIM_TYPE_FLOAT64 => {
+                match &self.inner {
+                    HnswIndexInner::SingleF64(idx) => {
+                        idx.get_vector(label)
+                            .map(|v| vec![v])
+                            .unwrap_or_default()
+                    }
+                    HnswIndexInner::MultiF64(idx) => {
+                        idx.get_vectors(label)
+                            .unwrap_or_default()
+                    }
+                    _ => return Err(PyValueError::new_err("Type mismatch")),
+                }
+            }
+            VECSIM_TYPE_BFLOAT16 => {
+                match &self.inner {
+                    HnswIndexInner::SingleBF16(idx) => {
+                        idx.get_vector(label)
+                            .map(|v| vec![v.into_iter().map(|x| x.to_f32() as f64).collect()])
+                            .unwrap_or_default()
+                    }
+                    HnswIndexInner::MultiBF16(idx) => {
+                        idx.get_vectors(label)
+                            .map(|vecs| vecs.into_iter().map(|v| v.into_iter().map(|x| x.to_f32() as f64).collect()).collect())
+                            .unwrap_or_default()
+                    }
+                    _ => return Err(PyValueError::new_err("Type mismatch")),
+                }
+            }
+            VECSIM_TYPE_FLOAT16 => {
+                match &self.inner {
+                    HnswIndexInner::SingleF16(idx) => {
+                        idx.get_vector(label)
+                            .map(|v| vec![v.into_iter().map(|x| x.to_f32() as f64).collect()])
+                            .unwrap_or_default()
+                    }
+                    HnswIndexInner::MultiF16(idx) => {
+                        idx.get_vectors(label)
+                            .map(|vecs| vecs.into_iter().map(|v| v.into_iter().map(|x| x.to_f32() as f64).collect()).collect())
+                            .unwrap_or_default()
+                    }
+                    _ => return Err(PyValueError::new_err("Type mismatch")),
+                }
+            }
+            VECSIM_TYPE_INT8 => {
+                match &self.inner {
+                    HnswIndexInner::SingleI8(idx) => {
+                        idx.get_vector(label)
+                            .map(|v| vec![v.into_iter().map(|x| x.0 as f64).collect()])
+                            .unwrap_or_default()
+                    }
+                    HnswIndexInner::MultiI8(idx) => {
+                        idx.get_vectors(label)
+                            .map(|vecs| vecs.into_iter().map(|v| v.into_iter().map(|x| x.0 as f64).collect()).collect())
+                            .unwrap_or_default()
+                    }
+                    _ => return Err(PyValueError::new_err("Type mismatch")),
+                }
+            }
+            VECSIM_TYPE_UINT8 => {
+                match &self.inner {
+                    HnswIndexInner::SingleU8(idx) => {
+                        idx.get_vector(label)
+                            .map(|v| vec![v.into_iter().map(|x| x.0 as f64).collect()])
+                            .unwrap_or_default()
+                    }
+                    HnswIndexInner::MultiU8(idx) => {
+                        idx.get_vectors(label)
+                            .map(|vecs| vecs.into_iter().map(|v| v.into_iter().map(|x| x.0 as f64).collect()).collect())
+                            .unwrap_or_default()
+                    }
+                    _ => return Err(PyValueError::new_err("Type mismatch")),
+                }
+            }
+            _ => return Err(PyValueError::new_err("Unsupported data type")),
+        };
+
+        if vectors.is_empty() {
+            return Err(PyRuntimeError::new_err(format!("Label {} not found", label)));
+        }
+        let num_vectors = vectors.len();
+        let flat: Vec<f64> = vectors.into_iter().flatten().collect();
+        let array = ndarray::Array2::from_shape_vec((num_vectors, self.dim), flat)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to reshape: {}", e)))?;
+        Ok(array.into_pyarray(py))
     }
 }
 
