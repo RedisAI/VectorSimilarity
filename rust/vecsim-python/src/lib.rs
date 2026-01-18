@@ -3,13 +3,18 @@
 //! This module provides Python-compatible wrappers around the Rust VecSim library,
 //! enabling high-performance vector similarity search from Python.
 
+// Allow non-snake-case names for Python API compatibility with the C++ version
+#![allow(non_snake_case)]
+// Allow unused fields that are kept for potential future use or debugging
+#![allow(dead_code)]
+
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::sync::{Arc, Mutex};
+// Note: Arc and Mutex may be used for future thread-safe batch operations
 use vecsim::prelude::*;
 use vecsim::index::svs::{SvsMulti, SvsParams, SvsSingle};
 
@@ -242,7 +247,7 @@ impl VecSimQueryParams {
 
     /// Set the HNSW runtime parameters
     #[setter]
-    fn set_hnswRuntimeParams(&mut self, py: Python<'_>, params: &Bound<'_, HNSWRuntimeParams>) {
+    fn set_hnswRuntimeParams(&mut self, _py: Python<'_>, params: &Bound<'_, HNSWRuntimeParams>) {
         self.hnsw_params = params.clone().unbind();
     }
 
@@ -254,7 +259,7 @@ impl VecSimQueryParams {
 
     /// Set the SVS runtime parameters
     #[setter]
-    fn set_svsRuntimeParams(&mut self, py: Python<'_>, params: &Bound<'_, SVSRuntimeParams>) {
+    fn set_svsRuntimeParams(&mut self, _py: Python<'_>, params: &Bound<'_, SVSRuntimeParams>) {
         self.svs_params = params.clone().unbind();
     }
 
@@ -2009,6 +2014,7 @@ impl TieredHNSWIndex {
     /// Create a new tiered HNSW index.
     #[new]
     #[pyo3(signature = (hnsw_params, tiered_params, flat_buffer_size=1024))]
+    #[allow(unused_variables)]
     fn new(hnsw_params: &HNSWParams, tiered_params: &TieredHNSWParams, flat_buffer_size: usize) -> PyResult<Self> {
         let metric = metric_from_u32(hnsw_params.metric)?;
         let dim = hnsw_params.dim;
