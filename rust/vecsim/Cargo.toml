@@ -22,6 +22,7 @@ profile = []  # Enable profiling instrumentation
 
 [dev-dependencies]
 criterion = "0.5"
+rand = { workspace = true }
 
 [[bench]]
 name = "brute_force_bench"
@@ -37,4 +38,12 @@ harness = false
 
 [[bench]]
 name = "comparison_bench"
+harness = false
+
+[[bench]]
+name = "svs_bench"
+harness = false
+
+[[bench]]
+name = "dbpedia_bench"
 harness = false
