@@ -40,11 +40,10 @@ C-compatible API matching the C++ VecSim interface for drop-in replacement.
 cd rust
 
 # Build vecsim and vecsim-c (release mode)
-cargo build --release -p vecsim -p vecsim-c
-
-# Build all crates except Python (which requires maturin)
-cargo build --release --workspace --exclude vecsim-python
+cargo build --release
 ```
+
+The workspace is configured to exclude `vecsim-python` from default builds since it requires `maturin`.
 
 ### Build Python Bindings
 
@@ -227,17 +226,16 @@ cargo build -p vecsim-python
 cd vecsim-python && maturin build --release
 ```
 
-### Building all crates fails
+### Building the Python crate explicitly
 
-The workspace includes `vecsim-python` which requires Python. Either exclude it or use maturin:
+If you need to build `vecsim-python` with cargo (not recommended), you must use maturin:
 
 ```bash
-# Exclude Python crate
-cargo build --release --workspace --exclude vecsim-python
-
-# Or build specific crates
-cargo build --release -p vecsim -p vecsim-c
+cd vecsim-python
+maturin build --release
 ```
+
+Direct `cargo build -p vecsim-python` will fail with linker errors.
 
 ## License
 
