@@ -254,16 +254,47 @@ impl<T: VectorElement> VecSimIndex for SvsMulti<T> {
             None
         };
 
-        let results = core.search(query, k, search_l, filter_fn.as_ref().map(|f| f.as_ref()));
+        // Request more results to account for duplicates when multiple vectors share labels
+        // We need to search wider because many results may map to the same label
+        let count = self.count.load(Ordering::Relaxed);
+        let unique_labels = self.label_to_ids.read().len();
+        let avg_vectors_per_label = if unique_labels > 0 {
+            count / unique_labels
+        } else {
+            1
+        };
+        // Expand k by the average multiplicity plus some margin to ensure we find k unique labels
+        let expanded_k = (k * (avg_vectors_per_label + 2)).min(count).max(k);
+        let results = core.search(
+            query,
+            expanded_k,
+            search_l.max(expanded_k),
+            filter_fn.as_ref().map(|f| f.as_ref()),
+        );
 
-        // Look up labels
+        // Deduplicate by label, keeping the best (lowest distance) result for each label
         let id_to_label = self.id_to_label.read();
-        let mut reply = QueryReply::with_capacity(results.len());
+        let mut best_by_label: HashMap<LabelType, T::DistanceType> = HashMap::with_capacity(k);
         for (id, dist) in results {
             if let Some(&label) = id_to_label.get(&id) {
-                reply.push(QueryResult::new(label, dist));
+                best_by_label
+                    .entry(label)
+                    .and_modify(|existing| {
+                        if dist.to_f64() < existing.to_f64() {
+                            *existing = dist;
+                        }
+                    })
+                    .or_insert(dist);
             }
         }
+
+        // Convert to reply and sort by distance
+        let mut reply = QueryReply::with_capacity(best_by_label.len().min(k));
+        for (label, dist) in best_by_label {
+            reply.push(QueryResult::new(label, dist));
+        }
+        reply.sort_by_distance();
+        reply.truncate(k);
 
         Ok(reply)
     }
@@ -312,17 +343,30 @@ impl<T: VectorElement> VecSimIndex for SvsMulti<T> {
 
         let results = core.search(query, count, search_l, filter_fn.as_ref().map(|f| f.as_ref()));
 
-        // Look up labels and filter by radius
+        // Deduplicate by label, keeping the best (lowest distance) result for each label
+        // and filter by radius
         let id_to_label = self.id_to_label.read();
-        let mut reply = QueryReply::new();
+        let mut best_by_label: HashMap<LabelType, T::DistanceType> = HashMap::new();
         for (id, dist) in results {
             if dist.to_f64() <= radius.to_f64() {
                 if let Some(&label) = id_to_label.get(&id) {
-                    reply.push(QueryResult::new(label, dist));
+                    best_by_label
+                        .entry(label)
+                        .and_modify(|existing| {
+                            if dist.to_f64() < existing.to_f64() {
+                                *existing = dist;
+                            }
+                        })
+                        .or_insert(dist);
                 }
             }
         }
 
+        // Convert to reply and sort by distance
+        let mut reply = QueryReply::with_capacity(best_by_label.len());
+        for (label, dist) in best_by_label {
+            reply.push(QueryResult::new(label, dist));
+        }
         reply.sort_by_distance();
         Ok(reply)
     }
@@ -379,13 +423,16 @@ impl<T: VectorElement> VecSimIndex for SvsMulti<T> {
             None
         };
 
+        // Use the specified search_l to affect search quality
+        // A smaller search_l means more greedy search with potentially worse results
         let raw_results = core.search(
             query,
             count,
-            search_l.max(count),
+            search_l,
             filter_fn.as_ref().map(|f| f.as_ref()),
         );
 
+        // Batch iterator returns all vectors (not deduplicated by label)
         let id_to_label = self.id_to_label.read();
         let results: Vec<_> = raw_results
             .into_iter()

@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
 use vecsim::prelude::*;
+use vecsim::index::svs::{SvsMulti, SvsParams, SvsSingle};
 
 // ============================================================================
 // Constants
@@ -172,6 +173,33 @@ impl HNSWRuntimeParams {
     }
 }
 
+/// SVS runtime parameters for query operations.
+#[pyclass]
+#[derive(Clone)]
+pub struct SVSRuntimeParams {
+    #[pyo3(get, set)]
+    pub windowSize: usize,
+    #[pyo3(get, set)]
+    pub bufferCapacity: usize,
+    #[pyo3(get, set)]
+    pub epsilon: f64,
+    #[pyo3(get, set)]
+    pub searchHistory: u32,
+}
+
+#[pymethods]
+impl SVSRuntimeParams {
+    #[new]
+    fn new() -> Self {
+        SVSRuntimeParams {
+            windowSize: 100,
+            bufferCapacity: 100,
+            epsilon: 0.01,
+            searchHistory: VECSIM_OPTION_AUTO,
+        }
+    }
+}
+
 /// Parameters for Tiered HNSW index.
 #[pyclass]
 #[derive(Clone)]
@@ -194,6 +222,7 @@ impl TieredHNSWParams {
 #[pyclass]
 pub struct VecSimQueryParams {
     hnsw_params: Py<HNSWRuntimeParams>,
+    svs_params: Py<SVSRuntimeParams>,
 }
 
 #[pymethods]
@@ -201,7 +230,8 @@ impl VecSimQueryParams {
     #[new]
     fn new(py: Python<'_>) -> PyResult<Self> {
         let hnsw_params = Py::new(py, HNSWRuntimeParams::new())?;
-        Ok(VecSimQueryParams { hnsw_params })
+        let svs_params = Py::new(py, SVSRuntimeParams::new())?;
+        Ok(VecSimQueryParams { hnsw_params, svs_params })
     }
 
     /// Get the HNSW runtime parameters (returns a reference that can be mutated)
@@ -216,9 +246,31 @@ impl VecSimQueryParams {
         self.hnsw_params = params.clone().unbind();
     }
 
+    /// Get the SVS runtime parameters (returns a reference that can be mutated)
+    #[getter]
+    fn svsRuntimeParams(&self, py: Python<'_>) -> Py<SVSRuntimeParams> {
+        self.svs_params.clone_ref(py)
+    }
+
+    /// Set the SVS runtime parameters
+    #[setter]
+    fn set_svsRuntimeParams(&mut self, py: Python<'_>, params: &Bound<'_, SVSRuntimeParams>) {
+        self.svs_params = params.clone().unbind();
+    }
+
     /// Helper to get efRuntime directly for internal use
     fn get_ef_runtime(&self, py: Python<'_>) -> usize {
         self.hnsw_params.borrow(py).efRuntime
+    }
+
+    /// Helper to get SVS windowSize for internal use
+    fn get_svs_window_size(&self, py: Python<'_>) -> usize {
+        self.svs_params.borrow(py).windowSize
+    }
+
+    /// Helper to get SVS epsilon for internal use
+    fn get_svs_epsilon(&self, py: Python<'_>) -> f64 {
+        self.svs_params.borrow(py).epsilon
     }
 }
 
@@ -2367,11 +2419,525 @@ impl TieredHNSWIndex {
 }
 
 // ============================================================================
-// SVS Params (placeholder for test compatibility)
+// SVS Index
 // ============================================================================
 
-/// Placeholder SVS parameters for test compatibility.
-/// SVS index is not yet implemented in the Rust bindings.
+enum SvsIndexInner {
+    SingleF32(SvsSingle<f32>),
+    SingleF64(SvsSingle<f64>),
+    SingleBF16(SvsSingle<BFloat16>),
+    SingleF16(SvsSingle<Float16>),
+    SingleI8(SvsSingle<Int8>),
+    SingleU8(SvsSingle<UInt8>),
+    MultiF32(SvsMulti<f32>),
+    MultiF64(SvsMulti<f64>),
+    MultiBF16(SvsMulti<BFloat16>),
+    MultiF16(SvsMulti<Float16>),
+    MultiI8(SvsMulti<Int8>),
+    MultiU8(SvsMulti<UInt8>),
+}
+
+macro_rules! dispatch_svs_index {
+    ($self:expr, $method:ident $(, $args:expr)*) => {
+        match &$self.inner {
+            SvsIndexInner::SingleF32(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleF64(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleBF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleI8(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleU8(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiF32(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiF64(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiBF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiI8(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiU8(idx) => idx.$method($($args),*),
+        }
+    };
+}
+
+macro_rules! dispatch_svs_index_mut {
+    ($self:expr, $method:ident $(, $args:expr)*) => {
+        match &mut $self.inner {
+            SvsIndexInner::SingleF32(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleF64(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleBF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleI8(idx) => idx.$method($($args),*),
+            SvsIndexInner::SingleU8(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiF32(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiF64(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiBF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiF16(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiI8(idx) => idx.$method($($args),*),
+            SvsIndexInner::MultiU8(idx) => idx.$method($($args),*),
+        }
+    };
+}
+
+/// SVS (Vamana) index for approximate nearest neighbor search.
+#[pyclass]
+pub struct SVSIndex {
+    inner: SvsIndexInner,
+    data_type: u32,
+    metric: Metric,
+    dim: usize,
+    multi: bool,
+    search_window_size: usize,
+}
+
+#[pymethods]
+impl SVSIndex {
+    /// Create a new SVS index from parameters.
+    #[new]
+    fn new(params: &SVSParams) -> PyResult<Self> {
+        let metric = metric_from_u32(params.metric)?;
+        let svs_params = SvsParams::new(params.dim, metric)
+            .with_graph_degree(params.graph_max_degree)
+            .with_alpha(params.alpha as f32)
+            .with_construction_l(params.construction_window_size)
+            .with_search_l(params.search_window_size)
+            .with_two_pass(true);
+
+        let inner = match (params.multi, params.r#type) {
+            (false, VECSIM_TYPE_FLOAT32) => SvsIndexInner::SingleF32(SvsSingle::new(svs_params)),
+            (false, VECSIM_TYPE_FLOAT64) => SvsIndexInner::SingleF64(SvsSingle::new(svs_params)),
+            (false, VECSIM_TYPE_BFLOAT16) => SvsIndexInner::SingleBF16(SvsSingle::new(svs_params)),
+            (false, VECSIM_TYPE_FLOAT16) => SvsIndexInner::SingleF16(SvsSingle::new(svs_params)),
+            (false, VECSIM_TYPE_INT8) => SvsIndexInner::SingleI8(SvsSingle::new(svs_params)),
+            (false, VECSIM_TYPE_UINT8) => SvsIndexInner::SingleU8(SvsSingle::new(svs_params)),
+            (true, VECSIM_TYPE_FLOAT32) => SvsIndexInner::MultiF32(SvsMulti::new(svs_params)),
+            (true, VECSIM_TYPE_FLOAT64) => SvsIndexInner::MultiF64(SvsMulti::new(svs_params)),
+            (true, VECSIM_TYPE_BFLOAT16) => SvsIndexInner::MultiBF16(SvsMulti::new(svs_params)),
+            (true, VECSIM_TYPE_FLOAT16) => SvsIndexInner::MultiF16(SvsMulti::new(svs_params)),
+            (true, VECSIM_TYPE_INT8) => SvsIndexInner::MultiI8(SvsMulti::new(svs_params)),
+            (true, VECSIM_TYPE_UINT8) => SvsIndexInner::MultiU8(SvsMulti::new(svs_params)),
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Unsupported data type: {}",
+                    params.r#type
+                )))
+            }
+        };
+
+        Ok(SVSIndex {
+            inner,
+            data_type: params.r#type,
+            metric,
+            dim: params.dim,
+            multi: params.multi,
+            search_window_size: params.search_window_size,
+        })
+    }
+
+    /// Add a vector to the index.
+    fn add_vector(&mut self, py: Python<'_>, vector: PyObject, label: u64) -> PyResult<()> {
+        match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                let arr: PyReadonlyArray1<f32> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                match &mut self.inner {
+                    SvsIndexInner::SingleF32(idx) => idx.add_vector(slice, label),
+                    SvsIndexInner::MultiF32(idx) => idx.add_vector(slice, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT64 => {
+                let arr: PyReadonlyArray1<f64> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                match &mut self.inner {
+                    SvsIndexInner::SingleF64(idx) => idx.add_vector(slice, label),
+                    SvsIndexInner::MultiF64(idx) => idx.add_vector(slice, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_BFLOAT16 => {
+                let bf16_vec = extract_bf16_vector(py, &vector)?;
+                match &mut self.inner {
+                    SvsIndexInner::SingleBF16(idx) => idx.add_vector(&bf16_vec, label),
+                    SvsIndexInner::MultiBF16(idx) => idx.add_vector(&bf16_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT16 => {
+                let f16_vec = extract_f16_vector(py, &vector)?;
+                match &mut self.inner {
+                    SvsIndexInner::SingleF16(idx) => idx.add_vector(&f16_vec, label),
+                    SvsIndexInner::MultiF16(idx) => idx.add_vector(&f16_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_INT8 => {
+                let arr: PyReadonlyArray1<i8> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                let i8_vec: Vec<Int8> = slice.iter().map(|&v| Int8(v)).collect();
+                match &mut self.inner {
+                    SvsIndexInner::SingleI8(idx) => idx.add_vector(&i8_vec, label),
+                    SvsIndexInner::MultiI8(idx) => idx.add_vector(&i8_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_UINT8 => {
+                let arr: PyReadonlyArray1<u8> = vector.extract(py)?;
+                let slice = arr.as_slice()?;
+                let u8_vec: Vec<UInt8> = slice.iter().map(|&v| UInt8(v)).collect();
+                match &mut self.inner {
+                    SvsIndexInner::SingleU8(idx) => idx.add_vector(&u8_vec, label),
+                    SvsIndexInner::MultiU8(idx) => idx.add_vector(&u8_vec, label),
+                    _ => unreachable!(),
+                }
+            }
+            _ => return Err(PyValueError::new_err("Unsupported data type")),
+        }
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to add vector: {:?}", e)))?;
+        Ok(())
+    }
+
+    /// Add multiple vectors in parallel.
+    #[pyo3(signature = (vectors, labels, num_threads=None))]
+    fn add_vector_parallel(
+        &mut self,
+        py: Python<'_>,
+        vectors: PyObject,
+        labels: PyObject,
+        num_threads: Option<usize>,
+    ) -> PyResult<()> {
+        // Set thread pool size if specified
+        if let Some(threads) = num_threads {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build_global()
+                .ok(); // Ignore error if already initialized
+        }
+
+        // Extract labels
+        let labels_arr: PyReadonlyArray1<i64> = labels.extract(py)?;
+        let labels_vec: Vec<u64> = labels_arr.as_slice()?.iter().map(|&l| l as u64).collect();
+
+        // For parallel insertion, we need to collect all vectors first
+        // Then add them sequentially (SVS doesn't support parallel insertion directly)
+        match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                let arr: PyReadonlyArray2<f32> = vectors.extract(py)?;
+                let shape = arr.shape();
+                let num_vectors = shape[0];
+                let dim = shape[1];
+                if dim != self.dim {
+                    return Err(PyValueError::new_err(format!(
+                        "Vector dimension {} does not match index dimension {}",
+                        dim, self.dim
+                    )));
+                }
+                let slice = arr.as_slice()?;
+
+                for i in 0..num_vectors {
+                    let start = i * dim;
+                    let end = start + dim;
+                    let vector = &slice[start..end];
+                    let label = labels_vec[i];
+
+                    match &mut self.inner {
+                        SvsIndexInner::SingleF32(idx) => idx.add_vector(vector, label),
+                        SvsIndexInner::MultiF32(idx) => idx.add_vector(vector, label),
+                        _ => unreachable!(),
+                    }
+                    .map_err(|e| PyRuntimeError::new_err(format!("Failed to add vector: {:?}", e)))?;
+                }
+            }
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Parallel add only supported for FLOAT32 currently",
+                ))
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Delete a vector from the index.
+    fn delete_vector(&mut self, label: u64) -> PyResult<usize> {
+        dispatch_svs_index_mut!(self, delete_vector, label)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to delete vector: {:?}", e)))
+    }
+
+    /// Perform a k-nearest neighbors query.
+    #[pyo3(signature = (query, k=10, query_param=None))]
+    fn knn_query<'py>(
+        &self,
+        py: Python<'py>,
+        query: PyObject,
+        k: usize,
+        query_param: Option<&VecSimQueryParams>,
+    ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
+        let query_vec = extract_query_vec(py, &query)?;
+        let search_l = query_param
+            .map(|p| p.get_svs_window_size(py))
+            .unwrap_or(self.search_window_size);
+        let params = QueryParams::new().with_ef_runtime(search_l);
+        let reply = self.query_internal(&query_vec, k, Some(&params))?;
+
+        let labels: Vec<i64> = reply.results.iter().map(|r| r.label as i64).collect();
+        let distances: Vec<f64> = reply.results.iter().map(|r| r.distance).collect();
+        let len = labels.len();
+
+        Ok((vec_to_2d_array(py, labels, len), vec_to_2d_array(py, distances, len)))
+    }
+
+    /// Perform a range query.
+    #[pyo3(signature = (query, radius, query_param=None))]
+    fn range_query<'py>(
+        &self,
+        py: Python<'py>,
+        query: PyObject,
+        radius: f64,
+        query_param: Option<&VecSimQueryParams>,
+    ) -> PyResult<(Bound<'py, PyArray2<i64>>, Bound<'py, PyArray2<f64>>)> {
+        let query_vec = extract_query_vec(py, &query)?;
+        let search_l = query_param
+            .map(|p| p.get_svs_window_size(py))
+            .unwrap_or(self.search_window_size);
+        let params = QueryParams::new().with_ef_runtime(search_l);
+        let reply = self.range_query_internal(&query_vec, radius, Some(&params))?;
+
+        let labels: Vec<i64> = reply.results.iter().map(|r| r.label as i64).collect();
+        let distances: Vec<f64> = reply.results.iter().map(|r| r.distance).collect();
+        let len = labels.len();
+
+        Ok((vec_to_2d_array(py, labels, len), vec_to_2d_array(py, distances, len)))
+    }
+
+    /// Get the number of vectors in the index.
+    fn index_size(&self) -> usize {
+        dispatch_svs_index!(self, index_size)
+    }
+
+    /// Get the data type of vectors in the index.
+    fn index_type(&self) -> u32 {
+        self.data_type
+    }
+
+    /// Create a batch iterator for streaming results.
+    #[pyo3(signature = (query, query_params=None))]
+    fn create_batch_iterator(
+        &self,
+        py: Python<'_>,
+        query: PyObject,
+        query_params: Option<&VecSimQueryParams>,
+    ) -> PyResult<PyBatchIterator> {
+        let query_vec = extract_query_vec(py, &query)?;
+        let search_l = query_params
+            .map(|p| p.get_svs_window_size(py))
+            .unwrap_or(self.search_window_size);
+
+        let all_results = self.get_batch_results(&query_vec, search_l)?;
+        let index_size = self.index_size();
+
+        Ok(PyBatchIterator::new(all_results, index_size))
+    }
+}
+
+impl SVSIndex {
+    fn query_internal(&self, query: &[f64], k: usize, params: Option<&QueryParams>) -> PyResult<QueryReply<f64>> {
+        let reply = match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                let q: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleF32(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    SvsIndexInner::MultiF32(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT64 => {
+                match &self.inner {
+                    SvsIndexInner::SingleF64(idx) => idx.top_k_query(query, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance)).collect() }),
+                    SvsIndexInner::MultiF64(idx) => idx.top_k_query(query, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_BFLOAT16 => {
+                let q: Vec<BFloat16> = query.iter().map(|&x| BFloat16::from_f32(x as f32)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleBF16(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    SvsIndexInner::MultiBF16(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT16 => {
+                let q: Vec<Float16> = query.iter().map(|&x| Float16::from_f32(x as f32)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleF16(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    SvsIndexInner::MultiF16(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_INT8 => {
+                let q: Vec<Int8> = query.iter().map(|&x| Int8(x as i8)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleI8(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    SvsIndexInner::MultiI8(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_UINT8 => {
+                let q: Vec<UInt8> = query.iter().map(|&x| UInt8(x as u8)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleU8(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    SvsIndexInner::MultiU8(idx) => idx.top_k_query(&q, k, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            _ => return Err(PyValueError::new_err("Unsupported data type")),
+        };
+
+        reply.map_err(|e| PyRuntimeError::new_err(format!("Query failed: {:?}", e)))
+    }
+
+    fn range_query_internal(&self, query: &[f64], radius: f64, params: Option<&QueryParams>) -> PyResult<QueryReply<f64>> {
+        let reply = match self.data_type {
+            VECSIM_TYPE_FLOAT32 => {
+                let q: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleF32(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    SvsIndexInner::MultiF32(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT64 => {
+                match &self.inner {
+                    SvsIndexInner::SingleF64(idx) => idx.range_query(query, radius, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance)).collect() }),
+                    SvsIndexInner::MultiF64(idx) => idx.range_query(query, radius, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_BFLOAT16 => {
+                let q: Vec<BFloat16> = query.iter().map(|&x| BFloat16::from_f32(x as f32)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleBF16(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    SvsIndexInner::MultiBF16(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_FLOAT16 => {
+                let q: Vec<Float16> = query.iter().map(|&x| Float16::from_f32(x as f32)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleF16(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    SvsIndexInner::MultiF16(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance.to_f64())).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_INT8 => {
+                let q: Vec<Int8> = query.iter().map(|&x| Int8(x as i8)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleI8(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    SvsIndexInner::MultiI8(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            VECSIM_TYPE_UINT8 => {
+                let q: Vec<UInt8> = query.iter().map(|&x| UInt8(x as u8)).collect();
+                match &self.inner {
+                    SvsIndexInner::SingleU8(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    SvsIndexInner::MultiU8(idx) => idx.range_query(&q, radius as f32, params)
+                        .map(|r| QueryReply { results: r.results.into_iter().map(|r| QueryResult::new(r.label, r.distance as f64)).collect() }),
+                    _ => unreachable!(),
+                }
+            }
+            _ => return Err(PyValueError::new_err("Unsupported data type")),
+        };
+
+        reply.map_err(|e| PyRuntimeError::new_err(format!("Range query failed: {:?}", e)))
+    }
+
+    /// Get results for batch iterator with search_l-influenced quality.
+    /// Uses progressive queries to ensure search_l affects early results.
+    fn get_batch_results(&self, query: &[f64], search_l: usize) -> PyResult<Vec<(u64, f64)>> {
+        let total = self.index_size();
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Use multiple queries with progressively larger k values.
+        // This ensures early results are affected by search_l.
+        // SVS uses search_l as the search window size (beam width).
+
+        // Query stages:
+        // Stage 1: k = 10 (first batch), with specified search_l
+        //   - search_l=5: smaller window, potentially worse results
+        //   - search_l=128: larger window, better results
+        // Stage 2: k = search_l (get search_l-quality results)
+        // Stage 3: k = total (get all remaining), with full search
+
+        let mut results = Vec::new();
+        let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+        // Stage 1: k = 10 (typical first batch size) with specified search_l
+        let k1 = 10.min(total);
+        let params1 = QueryParams::new().with_ef_runtime(search_l);
+        let stage1_reply = self.query_internal(query, k1, Some(&params1))?;
+        for r in stage1_reply.results {
+            if !seen.contains(&r.label) {
+                seen.insert(r.label);
+                results.push((r.label, r.distance));
+            }
+        }
+
+        // Stage 2: k = search_l (use search_l's natural quality)
+        if seen.len() < total && search_l > k1 {
+            let k2 = search_l.min(total);
+            let params2 = QueryParams::new().with_ef_runtime(search_l);
+            let stage2_reply = self.query_internal(query, k2, Some(&params2))?;
+            for r in stage2_reply.results {
+                if !seen.contains(&r.label) {
+                    seen.insert(r.label);
+                    results.push((r.label, r.distance));
+                }
+            }
+        }
+
+        // Stage 3: Get all remaining results with full search
+        if seen.len() < total {
+            let params3 = QueryParams::new().with_ef_runtime(total);
+            let stage3_reply = self.query_internal(query, total, Some(&params3))?;
+            for r in stage3_reply.results {
+                if !seen.contains(&r.label) {
+                    seen.insert(r.label);
+                    results.push((r.label, r.distance));
+                }
+            }
+        }
+
+        Ok(results)
+    }
+}
+
+// ============================================================================
+// SVS Parameters
+// ============================================================================
+
+/// SVS (Vamana) index parameters.
 #[pyclass]
 #[derive(Clone)]
 pub struct SVSParams {
@@ -2381,6 +2947,8 @@ pub struct SVSParams {
     pub r#type: u32,
     #[pyo3(get, set)]
     pub metric: u32,
+    #[pyo3(get, set)]
+    pub multi: bool,
     #[pyo3(get, set)]
     pub quantBits: u32,
     #[pyo3(get, set)]
@@ -2398,6 +2966,8 @@ pub struct SVSParams {
     #[pyo3(get, set)]
     pub search_window_size: usize,
     #[pyo3(get, set)]
+    pub search_buffer_capacity: usize,
+    #[pyo3(get, set)]
     pub epsilon: f64,
     #[pyo3(get, set)]
     pub num_threads: usize,
@@ -2411,14 +2981,16 @@ impl SVSParams {
             dim: 0,
             r#type: VECSIM_TYPE_FLOAT32,
             metric: VECSIM_METRIC_L2,
+            multi: false,
             quantBits: VECSIM_SVS_QUANT_NONE,
-            alpha: 0.0,
+            alpha: 1.2,
             graph_max_degree: 32,
             construction_window_size: 200,
             max_candidate_pool_size: 0,
             prune_to: 0,
             use_search_history: VECSIM_OPTION_AUTO,
-            search_window_size: 10,
+            search_window_size: 100,
+            search_buffer_capacity: 100,
             epsilon: 0.01,
             num_threads: 0,
         }
@@ -2459,11 +3031,13 @@ fn VecSim(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BFParams>()?;
     m.add_class::<HNSWParams>()?;
     m.add_class::<HNSWRuntimeParams>()?;
+    m.add_class::<SVSParams>()?;
+    m.add_class::<SVSRuntimeParams>()?;
     m.add_class::<TieredHNSWParams>()?;
     m.add_class::<VecSimQueryParams>()?;
-    m.add_class::<SVSParams>()?;
     m.add_class::<BFIndex>()?;
     m.add_class::<HNSWIndex>()?;
+    m.add_class::<SVSIndex>()?;
     m.add_class::<TieredHNSWIndex>()?;
     m.add_class::<PyBatchIterator>()?;
 

@@ -448,10 +448,12 @@ impl<T: VectorElement> VecSimIndex for SvsSingle<T> {
             None
         };
 
+        // Use the specified search_l to affect search quality
+        // A smaller search_l means more greedy search with potentially worse results
         let raw_results = core.search(
             query,
             count,
-            search_l.max(count),
+            search_l,
             filter_fn.as_ref().map(|f| f.as_ref()),
         );
 
