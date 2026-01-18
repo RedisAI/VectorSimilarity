@@ -784,6 +784,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vecsim-c"
+version = "0.1.0"
+dependencies = [
+ "half",
+ "parking_lot",
+ "vecsim",
+]
+
+[[package]]
 name = "vecsim-python"
 version = "0.1.0"
 dependencies = [
