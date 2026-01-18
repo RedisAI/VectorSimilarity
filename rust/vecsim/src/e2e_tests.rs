@@ -25,33 +25,6 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<Vec<f32>>
         .collect()
 }
 
-/// Generate clustered vectors around k centroids (simulates real embeddings).
-fn generate_clustered_vectors(
-    count: usize,
-    dim: usize,
-    num_clusters: usize,
-    spread: f32,
-    seed: u64,
-) -> Vec<Vec<f32>> {
-    let mut rng = StdRng::seed_from_u64(seed);
-
-    // Generate centroids
-    let centroids: Vec<Vec<f32>> = (0..num_clusters)
-        .map(|_| (0..dim).map(|_| rng.gen_range(-5.0..5.0)).collect())
-        .collect();
-
-    // Generate points around centroids
-    (0..count)
-        .map(|_| {
-            let centroid = &centroids[rng.gen_range(0..num_clusters)];
-            centroid
-                .iter()
-                .map(|&c| c + rng.gen_range(-spread..spread))
-                .collect()
-        })
-        .collect()
-}
-
 /// Normalize a vector to unit length.
 fn normalize_vector(v: &[f32]) -> Vec<f32> {
     let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
