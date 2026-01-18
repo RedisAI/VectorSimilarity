@@ -29,12 +29,13 @@ use data_loader::{
     generate_normalized_vectors, try_load_dataset_queries, try_load_dataset_vectors,
     DBPEDIA_SINGLE_FP32,
 };
+use std::collections::HashSet;
 use vecsim::distance::Metric;
 use vecsim::index::brute_force::{BruteForceParams, BruteForceSingle};
 use vecsim::index::hnsw::{HnswParams, HnswSingle};
 use vecsim::index::VecSimIndex;
 use vecsim::query::QueryParams;
-use vecsim::types::{BFloat16, Float16, Int8, UInt8, VectorElement};
+use vecsim::types::{BFloat16, DistanceType, Float16, Int8, UInt8, VectorElement};
 
 // ============================================================================
 // Data Loading
@@ -140,6 +141,107 @@ fn build_bf_index<T: VectorElement>(
         index.add_vector(v, i as u64).unwrap();
     }
     index
+}
+
+/// Build HNSW index with lighter parameters for faster recall testing.
+fn build_hnsw_index_light<T: VectorElement>(
+    vectors: &[Vec<T>],
+    dim: usize,
+    n_vectors: usize,
+) -> HnswSingle<T> {
+    // Use lighter parameters for faster benchmark execution
+    let params = HnswParams::new(dim, Metric::Cosine)
+        .with_m(16)             // Smaller M for faster construction
+        .with_ef_construction(64) // Smaller ef_c for faster construction
+        .with_ef_runtime(10);
+
+    let mut index = HnswSingle::<T>::new(params);
+    for (i, v) in vectors.iter().take(n_vectors).enumerate() {
+        index.add_vector(v, i as u64).unwrap();
+    }
+    index
+}
+
+// ============================================================================
+// Recall Measurement
+// ============================================================================
+
+/// Compute recall: fraction of ground truth results found in approximate results.
+///
+/// Recall = |approximate ∩ ground_truth| / |ground_truth|
+fn compute_recall(approximate: &[(u64, f64)], ground_truth: &[(u64, f64)]) -> f64 {
+    if ground_truth.is_empty() {
+        return 1.0;
+    }
+
+    let gt_ids: HashSet<u64> = ground_truth.iter().map(|(id, _)| *id).collect();
+    let found = approximate.iter().filter(|(id, _)| gt_ids.contains(id)).count();
+
+    found as f64 / ground_truth.len() as f64
+}
+
+/// Compute ground truth for a set of queries using brute force search.
+fn compute_ground_truth<T: VectorElement>(
+    bf_index: &BruteForceSingle<T>,
+    queries: &[Vec<T>],
+    k: usize,
+) -> Vec<Vec<(u64, f64)>> {
+    queries
+        .iter()
+        .map(|q| {
+            bf_index
+                .top_k_query(q, k, None)
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.label, r.distance.to_f64()))
+                .collect()
+        })
+        .collect()
+}
+
+/// Compute average recall for HNSW index against ground truth.
+fn measure_recall<T: VectorElement>(
+    hnsw_index: &HnswSingle<T>,
+    queries: &[Vec<T>],
+    ground_truth: &[Vec<(u64, f64)>],
+    k: usize,
+    ef_runtime: usize,
+) -> f64 {
+    let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+
+    let total_recall: f64 = queries
+        .iter()
+        .zip(ground_truth.iter())
+        .map(|(q, gt)| {
+            let results: Vec<(u64, f64)> = hnsw_index
+                .top_k_query(q, k, Some(&query_params))
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.label, r.distance.to_f64()))
+                .collect();
+            compute_recall(&results, gt)
+        })
+        .sum();
+
+    total_recall / queries.len() as f64
+}
+
+/// Print recall measurements for various ef_runtime values.
+fn print_recall_report<T: VectorElement>(
+    hnsw_index: &HnswSingle<T>,
+    queries: &[Vec<T>],
+    ground_truth: &[Vec<(u64, f64)>],
+    k: usize,
+    type_name: &str,
+) {
+    println!("\n{} Recall Report (k={}):", type_name, k);
+    println!("{:>10} {:>10}", "ef_runtime", "recall");
+    println!("{:-<22}", "");
+
+    for ef in [10, 20, 50, 100, 200, 500, 1000] {
+        let recall = measure_recall(hnsw_index, queries, ground_truth, k, ef);
+        println!("{:>10} {:>10.4}", ef, recall);
+    }
 }
 
 // ============================================================================
@@ -636,6 +738,246 @@ fn bench_all_types_add(c: &mut Criterion) {
 }
 
 // ============================================================================
+// Recall Benchmarks
+// ============================================================================
+
+/// Benchmark that measures and reports recall for f32 HNSW at various ef_runtime values.
+fn bench_f32_recall(c: &mut Criterion) {
+    // Use smaller dataset and lighter HNSW params for faster benchmark execution
+    let n_vectors = 5_000;
+    let n_queries = 50;
+    let data = BenchmarkData::load(n_vectors, n_queries);
+    let vectors = data.vectors_as::<f32>();
+    let queries = data.queries_as::<f32>();
+
+    println!("\nBuilding indices for recall measurement ({} vectors, {} queries)...", n_vectors, n_queries);
+    let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+    let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+
+    let k = 10;
+    println!("Computing ground truth (k={})...", k);
+    let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+
+    // Print recall report
+    print_recall_report(&hnsw_index, &queries, &ground_truth, k, "f32");
+
+    // Benchmark recall computation at different ef values
+    let mut group = c.benchmark_group("f32_recall_vs_ef");
+
+    for ef in [10, 50, 100, 200, 500] {
+        let label = format!("{}_{}", data.data_label(), ef);
+
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef);
+            let mut query_idx = 0;
+
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    group.finish();
+}
+
+/// Measure recall across all data types at a fixed ef_runtime.
+fn bench_all_types_recall(c: &mut Criterion) {
+    // Use smaller dataset for faster benchmark execution
+    let n_vectors = 5_000;
+    let n_queries = 50;
+    let data = BenchmarkData::load(n_vectors, n_queries);
+    let k = 10;
+    let ef_runtime = 100;
+
+    println!("\n============================================");
+    println!("Cross-Type Recall Comparison (k={}, ef={})", k, ef_runtime);
+    println!("============================================");
+
+    let mut group = c.benchmark_group("all_types_recall");
+
+    // f32
+    {
+        let vectors = data.vectors_as::<f32>();
+        let queries = data.queries_as::<f32>();
+        let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+        let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+        let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+        let recall = measure_recall(&hnsw_index, &queries, &ground_truth, k, ef_runtime);
+        println!("f32 recall:   {:.4}", recall);
+
+        group.bench_function("f32", |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    // f64
+    {
+        let vectors = data.vectors_as::<f64>();
+        let queries = data.queries_as::<f64>();
+        let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+        let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+        let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+        let recall = measure_recall(&hnsw_index, &queries, &ground_truth, k, ef_runtime);
+        println!("f64 recall:   {:.4}", recall);
+
+        group.bench_function("f64", |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    // bf16
+    {
+        let vectors = data.vectors_as::<BFloat16>();
+        let queries = data.queries_as::<BFloat16>();
+        let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+        let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+        let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+        let recall = measure_recall(&hnsw_index, &queries, &ground_truth, k, ef_runtime);
+        println!("bf16 recall:  {:.4}", recall);
+
+        group.bench_function("bf16", |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    // fp16
+    {
+        let vectors = data.vectors_as::<Float16>();
+        let queries = data.queries_as::<Float16>();
+        let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+        let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+        let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+        let recall = measure_recall(&hnsw_index, &queries, &ground_truth, k, ef_runtime);
+        println!("fp16 recall:  {:.4}", recall);
+
+        group.bench_function("fp16", |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    // int8
+    {
+        let vectors = data.vectors_as::<Int8>();
+        let queries = data.queries_as::<Int8>();
+        let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+        let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+        let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+        let recall = measure_recall(&hnsw_index, &queries, &ground_truth, k, ef_runtime);
+        println!("int8 recall:  {:.4}", recall);
+
+        group.bench_function("int8", |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    // uint8
+    {
+        let vectors = data.vectors_as::<UInt8>();
+        let queries = data.queries_as::<UInt8>();
+        let hnsw_index = build_hnsw_index_light(&vectors, data.dim, n_vectors);
+        let bf_index = build_bf_index(&vectors, data.dim, n_vectors);
+        let ground_truth = compute_ground_truth(&bf_index, &queries, k);
+        let recall = measure_recall(&hnsw_index, &queries, &ground_truth, k, ef_runtime);
+        println!("uint8 recall: {:.4}", recall);
+
+        group.bench_function("uint8", |b| {
+            let query_params = QueryParams::new().with_ef_runtime(ef_runtime);
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                let gt = &ground_truth[query_idx % ground_truth.len()];
+                query_idx += 1;
+                let results: Vec<(u64, f64)> = hnsw_index
+                    .top_k_query(black_box(query), black_box(k), Some(&query_params))
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| (r.label, r.distance.to_f64()))
+                    .collect();
+                compute_recall(&results, gt)
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
 // Main Benchmark Groups
 // ============================================================================
 
@@ -654,6 +996,9 @@ criterion_group!(
     // Cross-type comparisons
     bench_all_types_comparison,
     bench_all_types_add,
+    // Recall measurements
+    bench_f32_recall,
+    bench_all_types_recall,
 );
 
 criterion_main!(benches);
