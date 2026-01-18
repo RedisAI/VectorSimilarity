@@ -9,6 +9,14 @@
 //! - 10K query vectors
 //! - HNSW parameters: M=64, EF_C=512
 //!
+//! Tested data types (matching C++ benchmarks):
+//! - f32 (fp32)
+//! - f64 (fp64)
+//! - BFloat16 (bf16)
+//! - Float16 (fp16)
+//! - Int8 (int8)
+//! - UInt8 (uint8)
+//!
 //! To download the benchmark data files, run from repository root:
 //!   bash tests/benchmark/bm_files.sh benchmarks-all
 //!
@@ -26,11 +34,16 @@ use vecsim::index::brute_force::{BruteForceParams, BruteForceSingle};
 use vecsim::index::hnsw::{HnswParams, HnswSingle};
 use vecsim::index::VecSimIndex;
 use vecsim::query::QueryParams;
+use vecsim::types::{BFloat16, Float16, Int8, UInt8, VectorElement};
+
+// ============================================================================
+// Data Loading
+// ============================================================================
 
 /// Benchmark data holder - loaded once for all benchmarks.
 struct BenchmarkData {
-    vectors: Vec<Vec<f32>>,
-    queries: Vec<Vec<f32>>,
+    vectors_f32: Vec<Vec<f32>>,
+    queries_f32: Vec<Vec<f32>>,
     dim: usize,
     is_real_data: bool,
 }
@@ -44,11 +57,15 @@ impl BenchmarkData {
             try_load_dataset_vectors(config, max_vectors),
             try_load_dataset_queries(config, max_queries),
         ) {
-            println!("Loaded real DBPedia dataset: {} vectors, {} queries, dim={}",
-                vectors.len(), queries.len(), config.dim);
+            println!(
+                "Loaded real DBPedia dataset: {} vectors, {} queries, dim={}",
+                vectors.len(),
+                queries.len(),
+                config.dim
+            );
             return Self {
-                vectors,
-                queries,
+                vectors_f32: vectors,
+                queries_f32: queries,
                 dim: config.dim,
                 is_real_data: true,
             };
@@ -59,54 +76,93 @@ impl BenchmarkData {
         println!("To use real data, run: bash tests/benchmark/bm_files.sh benchmarks-all");
         let dim = config.dim;
         Self {
-            vectors: generate_normalized_vectors(max_vectors, dim),
-            queries: generate_normalized_vectors(max_queries, dim),
+            vectors_f32: generate_normalized_vectors(max_vectors, dim),
+            queries_f32: generate_normalized_vectors(max_queries, dim),
             dim,
             is_real_data: false,
         }
     }
+
+    /// Convert vectors to a different element type.
+    fn vectors_as<T: VectorElement>(&self) -> Vec<Vec<T>> {
+        self.vectors_f32
+            .iter()
+            .map(|v| v.iter().map(|&x| T::from_f32(x)).collect())
+            .collect()
+    }
+
+    /// Convert queries to a different element type.
+    fn queries_as<T: VectorElement>(&self) -> Vec<Vec<T>> {
+        self.queries_f32
+            .iter()
+            .map(|v| v.iter().map(|&x| T::from_f32(x)).collect())
+            .collect()
+    }
+
+    fn data_label(&self) -> &'static str {
+        if self.is_real_data {
+            "real"
+        } else {
+            "random"
+        }
+    }
 }
 
-/// Build HNSW index with DBPedia parameters (M=64, EF_C=512).
-fn build_hnsw_index(data: &BenchmarkData, n_vectors: usize) -> HnswSingle<f32> {
-    let params = HnswParams::new(data.dim, Metric::Cosine)
+// ============================================================================
+// Generic Index Builders
+// ============================================================================
+
+fn build_hnsw_index<T: VectorElement>(
+    vectors: &[Vec<T>],
+    dim: usize,
+    n_vectors: usize,
+) -> HnswSingle<T> {
+    let params = HnswParams::new(dim, Metric::Cosine)
         .with_m(DBPEDIA_SINGLE_FP32.m)
         .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction)
         .with_ef_runtime(10);
 
-    let mut index = HnswSingle::<f32>::new(params);
-    for (i, v) in data.vectors.iter().take(n_vectors).enumerate() {
+    let mut index = HnswSingle::<T>::new(params);
+    for (i, v) in vectors.iter().take(n_vectors).enumerate() {
         index.add_vector(v, i as u64).unwrap();
     }
     index
 }
 
-/// Build BruteForce index for comparison.
-fn build_bf_index(data: &BenchmarkData, n_vectors: usize) -> BruteForceSingle<f32> {
-    let params = BruteForceParams::new(data.dim, Metric::Cosine);
-    let mut index = BruteForceSingle::<f32>::new(params);
-    for (i, v) in data.vectors.iter().take(n_vectors).enumerate() {
+fn build_bf_index<T: VectorElement>(
+    vectors: &[Vec<T>],
+    dim: usize,
+    n_vectors: usize,
+) -> BruteForceSingle<T> {
+    let params = BruteForceParams::new(dim, Metric::Cosine);
+    let mut index = BruteForceSingle::<T>::new(params);
+    for (i, v) in vectors.iter().take(n_vectors).enumerate() {
         index.add_vector(v, i as u64).unwrap();
     }
     index
 }
 
-/// Benchmark top-k queries on HNSW with varying ef_runtime.
-fn bench_hnsw_topk_ef_runtime(c: &mut Criterion) {
+// ============================================================================
+// F32 Benchmarks (Primary - most detailed)
+// ============================================================================
+
+/// Benchmark top-k queries on HNSW with varying ef_runtime (f32).
+fn bench_f32_topk_ef_runtime(c: &mut Criterion) {
     let data = BenchmarkData::load(100_000, 1_000);
-    let index = build_hnsw_index(&data, 100_000);
+    let vectors = data.vectors_as::<f32>();
+    let queries = data.queries_as::<f32>();
+    let index = build_hnsw_index(&vectors, data.dim, 100_000);
 
-    let mut group = c.benchmark_group("dbpedia_hnsw_topk_ef");
-    let data_label = if data.is_real_data { "real" } else { "random" };
+    let mut group = c.benchmark_group("f32_hnsw_topk_ef");
 
     for ef in [10, 50, 100, 200, 500] {
         let query_params = QueryParams::new().with_ef_runtime(ef);
-        let label = format!("{}_{}", data_label, ef);
+        let label = format!("{}_{}", data.data_label(), ef);
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             let mut query_idx = 0;
             b.iter(|| {
-                let query = &data.queries[query_idx % data.queries.len()];
+                let query = &queries[query_idx % queries.len()];
                 query_idx += 1;
                 index
                     .top_k_query(black_box(query), black_box(10), Some(&query_params))
@@ -118,24 +174,23 @@ fn bench_hnsw_topk_ef_runtime(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark top-k queries with varying k.
-fn bench_hnsw_topk_k(c: &mut Criterion) {
+/// Benchmark top-k queries with varying k (f32).
+fn bench_f32_topk_k(c: &mut Criterion) {
     let data = BenchmarkData::load(100_000, 1_000);
-    let index = build_hnsw_index(&data, 100_000);
+    let vectors = data.vectors_as::<f32>();
+    let queries = data.queries_as::<f32>();
+    let index = build_hnsw_index(&vectors, data.dim, 100_000);
 
-    let mut group = c.benchmark_group("dbpedia_hnsw_topk_k");
-    let data_label = if data.is_real_data { "real" } else { "random" };
-
-    // Use ef_runtime = 200 like C++ benchmarks
+    let mut group = c.benchmark_group("f32_hnsw_topk_k");
     let query_params = QueryParams::new().with_ef_runtime(200);
 
     for k in [1, 10, 50, 100, 500] {
-        let label = format!("{}_{}", data_label, k);
+        let label = format!("{}_{}", data.data_label(), k);
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             let mut query_idx = 0;
             b.iter(|| {
-                let query = &data.queries[query_idx % data.queries.len()];
+                let query = &queries[query_idx % queries.len()];
                 query_idx += 1;
                 index
                     .top_k_query(black_box(query), black_box(k), Some(&query_params))
@@ -147,21 +202,22 @@ fn bench_hnsw_topk_k(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark HNSW vs BruteForce comparison (like C++ benchmarks).
-fn bench_hnsw_vs_bf(c: &mut Criterion) {
+/// Benchmark HNSW vs BruteForce comparison (f32).
+fn bench_f32_hnsw_vs_bf(c: &mut Criterion) {
     let data = BenchmarkData::load(100_000, 1_000);
+    let vectors = data.vectors_as::<f32>();
+    let queries = data.queries_as::<f32>();
 
-    let hnsw_index = build_hnsw_index(&data, 100_000);
-    let bf_index = build_bf_index(&data, 100_000);
+    let hnsw_index = build_hnsw_index(&vectors, data.dim, 100_000);
+    let bf_index = build_bf_index(&vectors, data.dim, 100_000);
 
-    let mut group = c.benchmark_group("dbpedia_hnsw_vs_bf");
-    let data_label = if data.is_real_data { "real" } else { "random" };
+    let mut group = c.benchmark_group("f32_hnsw_vs_bf");
 
     // BruteForce baseline
-    group.bench_function(format!("{}_bf", data_label), |b| {
+    group.bench_function(format!("{}_bf", data.data_label()), |b| {
         let mut query_idx = 0;
         b.iter(|| {
-            let query = &data.queries[query_idx % data.queries.len()];
+            let query = &queries[query_idx % queries.len()];
             query_idx += 1;
             bf_index
                 .top_k_query(black_box(query), black_box(10), None)
@@ -169,62 +225,315 @@ fn bench_hnsw_vs_bf(c: &mut Criterion) {
         });
     });
 
-    // HNSW with ef=10 (fastest, lowest quality)
-    let query_params_10 = QueryParams::new().with_ef_runtime(10);
-    group.bench_function(format!("{}_hnsw_ef10", data_label), |b| {
-        let mut query_idx = 0;
-        b.iter(|| {
-            let query = &data.queries[query_idx % data.queries.len()];
-            query_idx += 1;
-            hnsw_index
-                .top_k_query(black_box(query), black_box(10), Some(&query_params_10))
-                .unwrap()
+    // HNSW with various ef values
+    for ef in [10, 100, 500] {
+        let query_params = QueryParams::new().with_ef_runtime(ef);
+        group.bench_function(format!("{}_hnsw_ef{}", data.data_label(), ef), |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                hnsw_index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
         });
-    });
-
-    // HNSW with ef=100 (balanced)
-    let query_params_100 = QueryParams::new().with_ef_runtime(100);
-    group.bench_function(format!("{}_hnsw_ef100", data_label), |b| {
-        let mut query_idx = 0;
-        b.iter(|| {
-            let query = &data.queries[query_idx % data.queries.len()];
-            query_idx += 1;
-            hnsw_index
-                .top_k_query(black_box(query), black_box(10), Some(&query_params_100))
-                .unwrap()
-        });
-    });
-
-    // HNSW with ef=500 (high quality)
-    let query_params_500 = QueryParams::new().with_ef_runtime(500);
-    group.bench_function(format!("{}_hnsw_ef500", data_label), |b| {
-        let mut query_idx = 0;
-        b.iter(|| {
-            let query = &data.queries[query_idx % data.queries.len()];
-            query_idx += 1;
-            hnsw_index
-                .top_k_query(black_box(query), black_box(10), Some(&query_params_500))
-                .unwrap()
-        });
-    });
+    }
 
     group.finish();
 }
 
-/// Benchmark adding vectors to HNSW.
-fn bench_hnsw_add(c: &mut Criterion) {
-    let data = BenchmarkData::load(10_000, 100);
+// ============================================================================
+// F64 Benchmarks
+// ============================================================================
 
-    let mut group = c.benchmark_group("dbpedia_hnsw_add");
-    group.sample_size(10); // HNSW add is slow
+fn bench_f64_topk(c: &mut Criterion) {
+    let data = BenchmarkData::load(50_000, 500);
+    let vectors = data.vectors_as::<f64>();
+    let queries = data.queries_as::<f64>();
+    let index = build_hnsw_index(&vectors, data.dim, 50_000);
 
-    let data_label = if data.is_real_data { "real" } else { "random" };
+    let mut group = c.benchmark_group("f64_hnsw_topk");
 
-    for n_vectors in [1_000, 5_000, 10_000] {
-        let label = format!("{}_{}", data_label, n_vectors);
-        let vectors: Vec<_> = data.vectors.iter().take(n_vectors).cloned().collect();
+    for ef in [10, 100, 500] {
+        let query_params = QueryParams::new().with_ef_runtime(ef);
+        let label = format!("{}_{}", data.data_label(), ef);
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// BFloat16 Benchmarks
+// ============================================================================
+
+fn bench_bf16_topk(c: &mut Criterion) {
+    let data = BenchmarkData::load(100_000, 1_000);
+    let vectors = data.vectors_as::<BFloat16>();
+    let queries = data.queries_as::<BFloat16>();
+    let index = build_hnsw_index(&vectors, data.dim, 100_000);
+
+    let mut group = c.benchmark_group("bf16_hnsw_topk");
+
+    for ef in [10, 100, 500] {
+        let query_params = QueryParams::new().with_ef_runtime(ef);
+        let label = format!("{}_{}", data.data_label(), ef);
+
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// Float16 Benchmarks
+// ============================================================================
+
+fn bench_fp16_topk(c: &mut Criterion) {
+    let data = BenchmarkData::load(100_000, 1_000);
+    let vectors = data.vectors_as::<Float16>();
+    let queries = data.queries_as::<Float16>();
+    let index = build_hnsw_index(&vectors, data.dim, 100_000);
+
+    let mut group = c.benchmark_group("fp16_hnsw_topk");
+
+    for ef in [10, 100, 500] {
+        let query_params = QueryParams::new().with_ef_runtime(ef);
+        let label = format!("{}_{}", data.data_label(), ef);
+
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// Int8 Benchmarks
+// ============================================================================
+
+fn bench_int8_topk(c: &mut Criterion) {
+    let data = BenchmarkData::load(100_000, 1_000);
+    let vectors = data.vectors_as::<Int8>();
+    let queries = data.queries_as::<Int8>();
+    let index = build_hnsw_index(&vectors, data.dim, 100_000);
+
+    let mut group = c.benchmark_group("int8_hnsw_topk");
+
+    for ef in [10, 100, 500] {
+        let query_params = QueryParams::new().with_ef_runtime(ef);
+        let label = format!("{}_{}", data.data_label(), ef);
+
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// UInt8 Benchmarks
+// ============================================================================
+
+fn bench_uint8_topk(c: &mut Criterion) {
+    let data = BenchmarkData::load(100_000, 1_000);
+    let vectors = data.vectors_as::<UInt8>();
+    let queries = data.queries_as::<UInt8>();
+    let index = build_hnsw_index(&vectors, data.dim, 100_000);
+
+    let mut group = c.benchmark_group("uint8_hnsw_topk");
+
+    for ef in [10, 100, 500] {
+        let query_params = QueryParams::new().with_ef_runtime(ef);
+        let label = format!("{}_{}", data.data_label(), ef);
+
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// Cross-Type Comparison Benchmarks
+// ============================================================================
+
+/// Compare query performance across all data types.
+fn bench_all_types_comparison(c: &mut Criterion) {
+    let data = BenchmarkData::load(50_000, 500);
+    let query_params = QueryParams::new().with_ef_runtime(100);
+
+    let mut group = c.benchmark_group("all_types_topk10_ef100");
+
+    // f32
+    {
+        let vectors = data.vectors_as::<f32>();
+        let queries = data.queries_as::<f32>();
+        let index = build_hnsw_index(&vectors, data.dim, 50_000);
+
+        group.bench_function("f32", |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    // f64
+    {
+        let vectors = data.vectors_as::<f64>();
+        let queries = data.queries_as::<f64>();
+        let index = build_hnsw_index(&vectors, data.dim, 50_000);
+
+        group.bench_function("f64", |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    // bf16
+    {
+        let vectors = data.vectors_as::<BFloat16>();
+        let queries = data.queries_as::<BFloat16>();
+        let index = build_hnsw_index(&vectors, data.dim, 50_000);
+
+        group.bench_function("bf16", |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    // fp16
+    {
+        let vectors = data.vectors_as::<Float16>();
+        let queries = data.queries_as::<Float16>();
+        let index = build_hnsw_index(&vectors, data.dim, 50_000);
+
+        group.bench_function("fp16", |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    // int8
+    {
+        let vectors = data.vectors_as::<Int8>();
+        let queries = data.queries_as::<Int8>();
+        let index = build_hnsw_index(&vectors, data.dim, 50_000);
+
+        group.bench_function("int8", |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    // uint8
+    {
+        let vectors = data.vectors_as::<UInt8>();
+        let queries = data.queries_as::<UInt8>();
+        let index = build_hnsw_index(&vectors, data.dim, 50_000);
+
+        group.bench_function("uint8", |b| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                index
+                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
+                    .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// Index Construction Benchmarks (all types)
+// ============================================================================
+
+fn bench_all_types_add(c: &mut Criterion) {
+    let data = BenchmarkData::load(5_000, 100);
+
+    let mut group = c.benchmark_group("all_types_add_5000");
+    group.sample_size(10);
+
+    // f32
+    {
+        let vectors = data.vectors_as::<f32>();
+        group.bench_function("f32", |b| {
             b.iter(|| {
                 let params = HnswParams::new(data.dim, Metric::Cosine)
                     .with_m(DBPEDIA_SINGLE_FP32.m)
@@ -238,69 +547,87 @@ fn bench_hnsw_add(c: &mut Criterion) {
         });
     }
 
-    group.finish();
-}
-
-/// Benchmark delete operations on HNSW.
-fn bench_hnsw_delete(c: &mut Criterion) {
-    let data = BenchmarkData::load(10_000, 100);
-
-    let mut group = c.benchmark_group("dbpedia_hnsw_delete");
-    group.sample_size(10);
-
-    let data_label = if data.is_real_data { "real" } else { "random" };
-
-    for n_vectors in [1_000, 5_000] {
-        let label = format!("{}_{}", data_label, n_vectors);
-        let vectors: Vec<_> = data.vectors.iter().take(n_vectors).cloned().collect();
-
-        group.bench_function(BenchmarkId::from_parameter(label), |b| {
-            b.iter_batched(
-                || {
-                    let params = HnswParams::new(data.dim, Metric::Cosine)
-                        .with_m(DBPEDIA_SINGLE_FP32.m)
-                        .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction);
-                    let mut index = HnswSingle::<f32>::new(params);
-                    for (i, v) in vectors.iter().enumerate() {
-                        index.add_vector(v, i as u64).unwrap();
-                    }
-                    index
-                },
-                |mut index| {
-                    // Delete half the vectors
-                    for i in (0..n_vectors).step_by(2) {
-                        index.delete_vector(i as u64).unwrap();
-                    }
-                    index
-                },
-                criterion::BatchSize::SmallInput,
-            );
+    // f64
+    {
+        let vectors = data.vectors_as::<f64>();
+        group.bench_function("f64", |b| {
+            b.iter(|| {
+                let params = HnswParams::new(data.dim, Metric::Cosine)
+                    .with_m(DBPEDIA_SINGLE_FP32.m)
+                    .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction);
+                let mut index = HnswSingle::<f64>::new(params);
+                for (i, v) in vectors.iter().enumerate() {
+                    index.add_vector(black_box(v), i as u64).unwrap();
+                }
+                index
+            });
         });
     }
 
-    group.finish();
-}
-
-/// Benchmark range queries on HNSW.
-fn bench_hnsw_range(c: &mut Criterion) {
-    let data = BenchmarkData::load(100_000, 1_000);
-    let index = build_hnsw_index(&data, 100_000);
-
-    let mut group = c.benchmark_group("dbpedia_hnsw_range");
-    let data_label = if data.is_real_data { "real" } else { "random" };
-
-    // For cosine distance, typical radius values
-    for radius in [0.1f32, 0.2, 0.3, 0.5] {
-        let label = format!("{}_{}", data_label, radius);
-
-        group.bench_function(BenchmarkId::from_parameter(label), |b| {
-            let mut query_idx = 0;
+    // bf16
+    {
+        let vectors = data.vectors_as::<BFloat16>();
+        group.bench_function("bf16", |b| {
             b.iter(|| {
-                let query = &data.queries[query_idx % data.queries.len()];
-                query_idx += 1;
+                let params = HnswParams::new(data.dim, Metric::Cosine)
+                    .with_m(DBPEDIA_SINGLE_FP32.m)
+                    .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction);
+                let mut index = HnswSingle::<BFloat16>::new(params);
+                for (i, v) in vectors.iter().enumerate() {
+                    index.add_vector(black_box(v), i as u64).unwrap();
+                }
                 index
-                    .range_query(black_box(query), black_box(radius), None)
-                    .unwrap()
+            });
+        });
+    }
+
+    // fp16
+    {
+        let vectors = data.vectors_as::<Float16>();
+        group.bench_function("fp16", |b| {
+            b.iter(|| {
+                let params = HnswParams::new(data.dim, Metric::Cosine)
+                    .with_m(DBPEDIA_SINGLE_FP32.m)
+                    .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction);
+                let mut index = HnswSingle::<Float16>::new(params);
+                for (i, v) in vectors.iter().enumerate() {
+                    index.add_vector(black_box(v), i as u64).unwrap();
+                }
+                index
+            });
+        });
+    }
+
+    // int8
+    {
+        let vectors = data.vectors_as::<Int8>();
+        group.bench_function("int8", |b| {
+            b.iter(|| {
+                let params = HnswParams::new(data.dim, Metric::Cosine)
+                    .with_m(DBPEDIA_SINGLE_FP32.m)
+                    .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction);
+                let mut index = HnswSingle::<Int8>::new(params);
+                for (i, v) in vectors.iter().enumerate() {
+                    index.add_vector(black_box(v), i as u64).unwrap();
+                }
+                index
+            });
+        });
+    }
+
+    // uint8
+    {
+        let vectors = data.vectors_as::<UInt8>();
+        group.bench_function("uint8", |b| {
+            b.iter(|| {
+                let params = HnswParams::new(data.dim, Metric::Cosine)
+                    .with_m(DBPEDIA_SINGLE_FP32.m)
+                    .with_ef_construction(DBPEDIA_SINGLE_FP32.ef_construction);
+                let mut index = HnswSingle::<UInt8>::new(params);
+                for (i, v) in vectors.iter().enumerate() {
+                    index.add_vector(black_box(v), i as u64).unwrap();
+                }
+                index
             });
         });
     }
@@ -308,43 +635,25 @@ fn bench_hnsw_range(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark index scaling (varying index size).
-fn bench_hnsw_scaling(c: &mut Criterion) {
-    let data = BenchmarkData::load(100_000, 1_000);
-
-    let mut group = c.benchmark_group("dbpedia_hnsw_scaling");
-    let data_label = if data.is_real_data { "real" } else { "random" };
-
-    let query_params = QueryParams::new().with_ef_runtime(100);
-
-    for n_vectors in [10_000, 50_000, 100_000] {
-        let index = build_hnsw_index(&data, n_vectors);
-        let label = format!("{}_{}", data_label, n_vectors);
-
-        group.bench_function(BenchmarkId::from_parameter(label), |b| {
-            let mut query_idx = 0;
-            b.iter(|| {
-                let query = &data.queries[query_idx % data.queries.len()];
-                query_idx += 1;
-                index
-                    .top_k_query(black_box(query), black_box(10), Some(&query_params))
-                    .unwrap()
-            });
-        });
-    }
-
-    group.finish();
-}
+// ============================================================================
+// Main Benchmark Groups
+// ============================================================================
 
 criterion_group!(
     benches,
-    bench_hnsw_topk_ef_runtime,
-    bench_hnsw_topk_k,
-    bench_hnsw_vs_bf,
-    bench_hnsw_add,
-    bench_hnsw_delete,
-    bench_hnsw_range,
-    bench_hnsw_scaling,
+    // F32 detailed benchmarks
+    bench_f32_topk_ef_runtime,
+    bench_f32_topk_k,
+    bench_f32_hnsw_vs_bf,
+    // Per-type benchmarks
+    bench_f64_topk,
+    bench_bf16_topk,
+    bench_fp16_topk,
+    bench_int8_topk,
+    bench_uint8_topk,
+    // Cross-type comparisons
+    bench_all_types_comparison,
+    bench_all_types_add,
 );
 
 criterion_main!(benches);
