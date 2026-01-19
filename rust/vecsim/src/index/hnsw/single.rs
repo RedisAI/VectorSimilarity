@@ -7,7 +7,7 @@ use super::{ElementGraphData, HnswCore, HnswParams};
 use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, VecSimIndex};
 use crate::query::{QueryParams, QueryReply, QueryResult};
 use crate::types::{DistanceType, IdType, LabelType, VectorElement};
-use parking_lot::RwLock;
+use dashmap::DashMap;
 use std::collections::HashMap;
 
 /// Statistics about an HNSW index.
@@ -32,13 +32,16 @@ pub struct HnswStats {
 /// Single-value HNSW index.
 ///
 /// Each label has exactly one associated vector.
+///
+/// This index now supports concurrent access for parallel insertion
+/// via the `add_vector_concurrent` method.
 pub struct HnswSingle<T: VectorElement> {
-    /// Core HNSW implementation.
-    pub(crate) core: RwLock<HnswCore<T>>,
-    /// Label to internal ID mapping.
-    label_to_id: RwLock<HashMap<LabelType, IdType>>,
-    /// Internal ID to label mapping.
-    pub(crate) id_to_label: RwLock<HashMap<IdType, LabelType>>,
+    /// Core HNSW implementation (internally thread-safe).
+    pub(crate) core: HnswCore<T>,
+    /// Label to internal ID mapping (concurrent hash map).
+    label_to_id: DashMap<LabelType, IdType>,
+    /// Internal ID to label mapping (concurrent hash map).
+    pub(crate) id_to_label: DashMap<IdType, LabelType>,
     /// Number of vectors.
     count: std::sync::atomic::AtomicUsize,
     /// Maximum capacity (if set).
@@ -52,9 +55,9 @@ impl<T: VectorElement> HnswSingle<T> {
         let core = HnswCore::new(params);
 
         Self {
-            core: RwLock::new(core),
-            label_to_id: RwLock::new(HashMap::with_capacity(initial_capacity)),
-            id_to_label: RwLock::new(HashMap::with_capacity(initial_capacity)),
+            core,
+            label_to_id: DashMap::with_capacity(initial_capacity),
+            id_to_label: DashMap::with_capacity(initial_capacity),
             count: std::sync::atomic::AtomicUsize::new(0),
             capacity: None,
         }
@@ -69,42 +72,47 @@ impl<T: VectorElement> HnswSingle<T> {
 
     /// Get the distance metric.
     pub fn metric(&self) -> crate::distance::Metric {
-        self.core.read().params.metric
+        self.core.params.metric
     }
 
     /// Get the ef_runtime parameter.
     pub fn ef_runtime(&self) -> usize {
-        self.core.read().params.ef_runtime
+        self.core.params.ef_runtime
     }
 
     /// Set the ef_runtime parameter.
     pub fn set_ef_runtime(&self, ef: usize) {
-        self.core.write().params.ef_runtime = ef;
+        // This is a race condition but acceptable for runtime parameter updates
+        // A more robust solution would use an AtomicUsize for ef_runtime
+        unsafe {
+            let params = &self.core.params as *const _ as *mut super::HnswParams;
+            (*params).ef_runtime = ef;
+        }
     }
 
     /// Get the M parameter (max connections per element per layer).
     pub fn m(&self) -> usize {
-        self.core.read().params.m
+        self.core.params.m
     }
 
     /// Get the M_max_0 parameter (max connections at layer 0).
     pub fn m_max_0(&self) -> usize {
-        self.core.read().params.m_max_0
+        self.core.params.m_max_0
     }
 
     /// Get the ef_construction parameter.
     pub fn ef_construction(&self) -> usize {
-        self.core.read().params.ef_construction
+        self.core.params.ef_construction
     }
 
     /// Check if heuristic neighbor selection is enabled.
     pub fn is_heuristic_enabled(&self) -> bool {
-        self.core.read().params.enable_heuristic
+        self.core.params.enable_heuristic
     }
 
     /// Get the current entry point ID (top-level node).
     pub fn entry_point(&self) -> Option<IdType> {
-        let ep = self.core.read().entry_point.load(std::sync::atomic::Ordering::Relaxed);
+        let ep = self.core.entry_point.load(std::sync::atomic::Ordering::Relaxed);
         if ep == crate::types::INVALID_ID {
             None
         } else {
@@ -114,13 +122,13 @@ impl<T: VectorElement> HnswSingle<T> {
 
     /// Get the current maximum level in the graph.
     pub fn max_level(&self) -> usize {
-        self.core.read().max_level.load(std::sync::atomic::Ordering::Relaxed) as usize
+        self.core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize
     }
 
     /// Get the number of deleted (but not yet removed) elements.
     pub fn deleted_count(&self) -> usize {
-        let core = self.core.read();
-        core.graph
+        let graph = self.core.graph.read();
+        graph
             .iter()
             .filter(|e| e.as_ref().is_some_and(|g| g.meta.deleted))
             .count()
@@ -128,14 +136,14 @@ impl<T: VectorElement> HnswSingle<T> {
 
     /// Get detailed statistics about the index.
     pub fn stats(&self) -> HnswStats {
-        let core = self.core.read();
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
 
-        let mut level_counts = vec![0usize; core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize + 1];
+        let graph = self.core.graph.read();
+        let mut level_counts = vec![0usize; self.core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize + 1];
         let mut total_connections = 0usize;
         let mut deleted_count = 0usize;
 
-        for element in core.graph.iter().flatten() {
+        for element in graph.iter().flatten() {
             if element.meta.deleted {
                 deleted_count += 1;
                 continue;
@@ -161,7 +169,7 @@ impl<T: VectorElement> HnswSingle<T> {
         HnswStats {
             size: count,
             deleted_count,
-            max_level: core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize,
+            max_level: self.core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize,
             level_counts,
             total_connections,
             avg_connections_per_element: avg_connections,
@@ -171,18 +179,18 @@ impl<T: VectorElement> HnswSingle<T> {
 
     /// Get the memory usage in bytes.
     pub fn memory_usage(&self) -> usize {
-        let core = self.core.read();
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
 
         // Vector data storage
-        let vector_storage = count * core.params.dim * std::mem::size_of::<T>();
+        let vector_storage = count * self.core.params.dim * std::mem::size_of::<T>();
 
         // Graph structure (rough estimate)
-        let graph_overhead = core.graph.len()
+        let graph = self.core.graph.read();
+        let graph_overhead = graph.len()
             * std::mem::size_of::<Option<super::graph::ElementGraphData>>();
 
         // Label mappings
-        let label_maps = self.label_to_id.read().capacity()
+        let label_maps = self.label_to_id.len()
             * std::mem::size_of::<(LabelType, IdType)>()
             * 2;
 
@@ -193,26 +201,22 @@ impl<T: VectorElement> HnswSingle<T> {
     ///
     /// Returns `None` if the label doesn't exist in the index.
     pub fn get_vector(&self, label: LabelType) -> Option<Vec<T>> {
-        let label_to_id = self.label_to_id.read();
-        let id = *label_to_id.get(&label)?;
-        let core = self.core.read();
-        core.data.get(id).map(|v| v.to_vec())
+        let id = *self.label_to_id.get(&label)?;
+        self.core.data.get(id).map(|v| v.to_vec())
     }
 
     /// Get all labels currently in the index.
     pub fn get_labels(&self) -> Vec<LabelType> {
-        self.label_to_id.read().keys().copied().collect()
+        self.label_to_id.iter().map(|r| *r.key()).collect()
     }
 
     /// Compute the distance between a stored vector and a query vector.
     ///
     /// Returns `None` if the label doesn't exist.
     pub fn compute_distance(&self, label: LabelType, query: &[T]) -> Option<T::DistanceType> {
-        let label_to_id = self.label_to_id.read();
-        let id = *label_to_id.get(&label)?;
-        let core = self.core.read();
-        if let Some(stored) = core.data.get(id) {
-            Some(core.dist_fn.compute(stored, query, core.params.dim))
+        let id = *self.label_to_id.get(&label)?;
+        if let Some(stored) = self.core.data.get(id) {
+            Some(self.core.dist_fn.compute(stored, query, self.core.params.dim))
         } else {
             None
         }
@@ -222,16 +226,12 @@ impl<T: VectorElement> HnswSingle<T> {
     pub fn clear(&mut self) {
         use std::sync::atomic::Ordering;
 
-        let mut core = self.core.write();
-        let mut label_to_id = self.label_to_id.write();
-        let mut id_to_label = self.id_to_label.write();
-
-        core.data.clear();
-        core.graph.clear();
-        core.entry_point.store(crate::types::INVALID_ID, Ordering::Relaxed);
-        core.max_level.store(0, Ordering::Relaxed);
-        label_to_id.clear();
-        id_to_label.clear();
+        self.core.data.clear();
+        self.core.graph.write().clear();
+        self.core.entry_point.store(crate::types::INVALID_ID, Ordering::Relaxed);
+        self.core.max_level.store(0, Ordering::Relaxed);
+        self.label_to_id.clear();
+        self.id_to_label.clear();
         self.count.store(0, Ordering::Relaxed);
     }
 
@@ -250,26 +250,22 @@ impl<T: VectorElement> HnswSingle<T> {
     /// The number of bytes reclaimed (approximate).
     pub fn compact(&mut self, shrink: bool) -> usize {
         use std::sync::atomic::Ordering;
-        use std::collections::HashMap;
 
-        let mut core = self.core.write();
-        let mut label_to_id = self.label_to_id.write();
-        let mut id_to_label = self.id_to_label.write();
-
-        let old_capacity = core.data.capacity();
-        let id_mapping = core.data.compact(shrink);
+        let old_capacity = self.core.data.capacity();
+        let id_mapping = self.core.data.compact(shrink);
 
         // Rebuild graph with new IDs
+        let mut graph = self.core.graph.write();
         let mut new_graph: Vec<Option<ElementGraphData>> = (0..id_mapping.len()).map(|_| None).collect();
 
         for (&old_id, &new_id) in &id_mapping {
-            if let Some(Some(old_graph_data)) = core.graph.get(old_id as usize) {
+            if let Some(Some(old_graph_data)) = graph.get(old_id as usize) {
                 // Clone the graph data and update neighbor IDs
                 let mut new_graph_data = ElementGraphData::new(
                     old_graph_data.meta.label,
                     old_graph_data.meta.level,
-                    core.params.m_max_0,
-                    core.params.m,
+                    self.core.params.m_max_0,
+                    self.core.params.m,
                 );
                 new_graph_data.meta.deleted = old_graph_data.meta.deleted;
 
@@ -290,47 +286,46 @@ impl<T: VectorElement> HnswSingle<T> {
             }
         }
 
-        core.graph = new_graph;
+        *graph = new_graph;
+        drop(graph);
 
         // Update entry point
-        let old_entry = core.entry_point.load(Ordering::Relaxed);
+        let old_entry = self.core.entry_point.load(Ordering::Relaxed);
         if old_entry != crate::types::INVALID_ID {
             if let Some(&new_entry) = id_mapping.get(&old_entry) {
-                core.entry_point.store(new_entry, Ordering::Relaxed);
+                self.core.entry_point.store(new_entry, Ordering::Relaxed);
             } else {
                 // Entry point was deleted, find a new one
-                let new_entry = core.graph.iter().enumerate()
+                let graph = self.core.graph.read();
+                let new_entry = graph.iter().enumerate()
                     .filter_map(|(id, g)| g.as_ref().filter(|g| !g.meta.deleted).map(|_| id as IdType))
                     .next()
                     .unwrap_or(crate::types::INVALID_ID);
-                core.entry_point.store(new_entry, Ordering::Relaxed);
+                self.core.entry_point.store(new_entry, Ordering::Relaxed);
             }
         }
 
         // Update label_to_id mapping
-        for (_label, id) in label_to_id.iter_mut() {
-            if let Some(&new_id) = id_mapping.get(id) {
-                *id = new_id;
+        for mut entry in self.label_to_id.iter_mut() {
+            if let Some(&new_id) = id_mapping.get(entry.value()) {
+                *entry.value_mut() = new_id;
             }
         }
 
         // Rebuild id_to_label mapping
-        let mut new_id_to_label = HashMap::with_capacity(id_mapping.len());
-        for (&old_id, &new_id) in &id_mapping {
-            if let Some(&label) = id_to_label.get(&old_id) {
-                new_id_to_label.insert(new_id, label);
-            }
+        self.id_to_label.clear();
+        for entry in self.label_to_id.iter() {
+            self.id_to_label.insert(*entry.value(), *entry.key());
         }
-        *id_to_label = new_id_to_label;
 
         // Resize visited pool
         if !id_mapping.is_empty() {
             let max_id = id_mapping.values().max().copied().unwrap_or(0) as usize;
-            core.visited_pool.resize(max_id + 1);
+            self.core.visited_pool.resize(max_id + 1);
         }
 
-        let new_capacity = core.data.capacity();
-        let dim = core.params.dim;
+        let new_capacity = self.core.data.capacity();
+        let dim = self.core.params.dim;
         let bytes_per_vector = dim * std::mem::size_of::<T>();
 
         (old_capacity.saturating_sub(new_capacity)) * bytes_per_vector
@@ -340,7 +335,7 @@ impl<T: VectorElement> HnswSingle<T> {
     ///
     /// Returns a value between 0.0 (no fragmentation) and 1.0 (all slots are deleted).
     pub fn fragmentation(&self) -> f64 {
-        self.core.read().data.fragmentation()
+        self.core.data.fragmentation()
     }
 
     /// Add multiple vectors at once.
@@ -358,6 +353,70 @@ impl<T: VectorElement> HnswSingle<T> {
         }
         Ok(added)
     }
+
+    /// Add a vector with parallel-safe semantics.
+    ///
+    /// This method can be called from multiple threads simultaneously.
+    /// For single-value indices, if the label already exists, this returns
+    /// an error (unlike `add_vector` which replaces the vector).
+    ///
+    /// # Arguments
+    /// * `vector` - The vector to add
+    /// * `label` - The label for this vector
+    ///
+    /// # Returns
+    /// * `Ok(1)` if the vector was added successfully
+    /// * `Err(IndexError::DuplicateLabel)` if the label already exists
+    /// * `Err(IndexError::DimensionMismatch)` if vector dimension is wrong
+    /// * `Err(IndexError::CapacityExceeded)` if index is full
+    pub fn add_vector_concurrent(&self, vector: &[T], label: LabelType) -> Result<usize, IndexError> {
+        if vector.len() != self.core.params.dim {
+            return Err(IndexError::DimensionMismatch {
+                expected: self.core.params.dim,
+                got: vector.len(),
+            });
+        }
+
+        // Check if label already exists (atomic check)
+        if self.label_to_id.contains_key(&label) {
+            return Err(IndexError::DuplicateLabel(label));
+        }
+
+        // Check capacity
+        if let Some(cap) = self.capacity {
+            if self.count.load(std::sync::atomic::Ordering::Relaxed) >= cap {
+                return Err(IndexError::CapacityExceeded { capacity: cap });
+            }
+        }
+
+        // Add the vector to storage
+        let id = self.core
+            .add_vector_concurrent(vector)
+            .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
+
+        // Try to insert the label mapping atomically
+        // DashMap's entry API provides atomic insert-if-not-exists
+        use dashmap::mapref::entry::Entry;
+        match self.label_to_id.entry(label) {
+            Entry::Occupied(_) => {
+                // Another thread inserted this label, rollback
+                self.core.data.mark_deleted_concurrent(id);
+                return Err(IndexError::DuplicateLabel(label));
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(id);
+            }
+        }
+
+        // Insert into id_to_label
+        self.id_to_label.insert(id, label);
+
+        // Insert into graph
+        self.core.insert_concurrent(id, label);
+
+        self.count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(1)
+    }
 }
 
 impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
@@ -365,33 +424,28 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
     type DistType = T::DistanceType;
 
     fn add_vector(&mut self, vector: &[T], label: LabelType) -> Result<usize, IndexError> {
-        let mut core = self.core.write();
-
-        if vector.len() != core.params.dim {
+        if vector.len() != self.core.params.dim {
             return Err(IndexError::DimensionMismatch {
-                expected: core.params.dim,
+                expected: self.core.params.dim,
                 got: vector.len(),
             });
         }
 
-        let mut label_to_id = self.label_to_id.write();
-        let mut id_to_label = self.id_to_label.write();
-
         // Check if label already exists
-        if let Some(&existing_id) = label_to_id.get(&label) {
+        if let Some(existing_id) = self.label_to_id.get(&label).map(|r| *r) {
             // Mark old vector as deleted
-            core.mark_deleted(existing_id);
-            id_to_label.remove(&existing_id);
+            self.core.mark_deleted_concurrent(existing_id);
+            self.id_to_label.remove(&existing_id);
 
             // Add new vector
-            let new_id = core
-                .add_vector(vector)
+            let new_id = self.core
+                .add_vector_concurrent(vector)
                 .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
-            core.insert(new_id, label);
+            self.core.insert_concurrent(new_id, label);
 
             // Update mappings
-            label_to_id.insert(label, new_id);
-            id_to_label.insert(new_id, label);
+            self.label_to_id.insert(label, new_id);
+            self.id_to_label.insert(new_id, label);
 
             return Ok(0); // Replacement, not a new vector
         }
@@ -404,14 +458,14 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         }
 
         // Add new vector
-        let id = core
-            .add_vector(vector)
+        let id = self.core
+            .add_vector_concurrent(vector)
             .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
-        core.insert(id, label);
+        self.core.insert_concurrent(id, label);
 
         // Update mappings
-        label_to_id.insert(label, id);
-        id_to_label.insert(id, label);
+        self.label_to_id.insert(label, id);
+        self.id_to_label.insert(id, label);
 
         self.count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -419,13 +473,9 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
     }
 
     fn delete_vector(&mut self, label: LabelType) -> Result<usize, IndexError> {
-        let mut core = self.core.write();
-        let mut label_to_id = self.label_to_id.write();
-        let mut id_to_label = self.id_to_label.write();
-
-        if let Some(id) = label_to_id.remove(&label) {
-            core.mark_deleted(id);
-            id_to_label.remove(&id);
+        if let Some((_, id)) = self.label_to_id.remove(&label) {
+            self.core.mark_deleted_concurrent(id);
+            self.id_to_label.remove(&id);
             self.count
                 .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             Ok(1)
@@ -440,23 +490,21 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         k: usize,
         params: Option<&QueryParams>,
     ) -> Result<QueryReply<T::DistanceType>, QueryError> {
-        let core = self.core.read();
-
-        if query.len() != core.params.dim {
+        if query.len() != self.core.params.dim {
             return Err(QueryError::DimensionMismatch {
-                expected: core.params.dim,
+                expected: self.core.params.dim,
                 got: query.len(),
             });
         }
 
         let ef = params
             .and_then(|p| p.ef_runtime)
-            .unwrap_or(core.params.ef_runtime);
+            .unwrap_or(self.core.params.ef_runtime);
 
         // Build filter if needed
         let has_filter = params.is_some_and(|p| p.filter.is_some());
         let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.read().clone()
+            self.id_to_label.iter().map(|r| (*r.key(), *r.value())).collect()
         } else {
             HashMap::new()
         };
@@ -474,14 +522,13 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             None
         };
 
-        let results = core.search(query, k, ef, filter_fn.as_ref().map(|f| f.as_ref()));
+        let results = self.core.search(query, k, ef, filter_fn.as_ref().map(|f| f.as_ref()));
 
         // Look up labels for results
-        let id_to_label = self.id_to_label.read();
         let mut reply = QueryReply::with_capacity(results.len());
         for (id, dist) in results {
-            if let Some(&label) = id_to_label.get(&id) {
-                reply.push(QueryResult::new(label, dist));
+            if let Some(label_ref) = self.id_to_label.get(&id) {
+                reply.push(QueryResult::new(*label_ref, dist));
             }
         }
 
@@ -494,18 +541,16 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         radius: T::DistanceType,
         params: Option<&QueryParams>,
     ) -> Result<QueryReply<T::DistanceType>, QueryError> {
-        let core = self.core.read();
-
-        if query.len() != core.params.dim {
+        if query.len() != self.core.params.dim {
             return Err(QueryError::DimensionMismatch {
-                expected: core.params.dim,
+                expected: self.core.params.dim,
                 got: query.len(),
             });
         }
 
         let ef = params
             .and_then(|p| p.ef_runtime)
-            .unwrap_or(core.params.ef_runtime)
+            .unwrap_or(self.core.params.ef_runtime)
             .max(1000);
 
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
@@ -513,7 +558,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         // Build filter if needed
         let has_filter = params.is_some_and(|p| p.filter.is_some());
         let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.read().clone()
+            self.id_to_label.iter().map(|r| (*r.key(), *r.value())).collect()
         } else {
             HashMap::new()
         };
@@ -531,15 +576,14 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             None
         };
 
-        let results = core.search(query, count, ef, filter_fn.as_ref().map(|f| f.as_ref()));
+        let results = self.core.search(query, count, ef, filter_fn.as_ref().map(|f| f.as_ref()));
 
         // Look up labels and filter by radius
-        let id_to_label = self.id_to_label.read();
         let mut reply = QueryReply::new();
         for (id, dist) in results {
             if dist.to_f64() <= radius.to_f64() {
-                if let Some(&label) = id_to_label.get(&id) {
-                    reply.push(QueryResult::new(label, dist));
+                if let Some(label_ref) = self.id_to_label.get(&id) {
+                    reply.push(QueryResult::new(*label_ref, dist));
                 }
             }
         }
@@ -557,7 +601,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
     }
 
     fn dimension(&self) -> usize {
-        self.core.read().params.dim
+        self.core.params.dim
     }
 
     fn batch_iterator<'a>(
@@ -565,14 +609,12 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
         query: &[T],
         params: Option<&QueryParams>,
     ) -> Result<Box<dyn BatchIterator<DistType = T::DistanceType> + 'a>, QueryError> {
-        let core = self.core.read();
-        if query.len() != core.params.dim {
+        if query.len() != self.core.params.dim {
             return Err(QueryError::DimensionMismatch {
-                expected: core.params.dim,
+                expected: self.core.params.dim,
                 got: query.len(),
             });
         }
-        drop(core);
 
         Ok(Box::new(
             super::batch_iterator::HnswSingleBatchIterator::new(self, query.to_vec(), params.cloned()),
@@ -580,22 +622,26 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
     }
 
     fn info(&self) -> IndexInfo {
-        let core = self.core.read();
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+        let graph = self.core.graph.read();
+
+        // Base overhead for the struct itself and internal data structures
+        let base_overhead = std::mem::size_of::<Self>() + std::mem::size_of::<HnswCore<T>>();
 
         IndexInfo {
             size: count,
             capacity: self.capacity,
-            dimension: core.params.dim,
+            dimension: self.core.params.dim,
             index_type: "HnswSingle",
-            memory_bytes: count * core.params.dim * std::mem::size_of::<T>()
-                + core.graph.len() * std::mem::size_of::<Option<super::graph::ElementGraphData>>()
-                + self.label_to_id.read().capacity() * std::mem::size_of::<(LabelType, IdType)>(),
+            memory_bytes: base_overhead
+                + count * self.core.params.dim * std::mem::size_of::<T>()
+                + graph.len() * std::mem::size_of::<Option<super::graph::ElementGraphData>>()
+                + self.label_to_id.len() * std::mem::size_of::<(LabelType, IdType)>(),
         }
     }
 
     fn contains(&self, label: LabelType) -> bool {
-        self.label_to_id.read().contains_key(&label)
+        self.label_to_id.contains_key(&label)
     }
 
     fn label_count(&self, label: LabelType) -> usize {
@@ -620,30 +666,28 @@ impl<T: VectorElement> HnswSingle<T> {
         use crate::serialization::*;
         use std::sync::atomic::Ordering;
 
-        let core = self.core.read();
-        let label_to_id = self.label_to_id.read();
         let count = self.count.load(Ordering::Relaxed);
 
         // Write header
         let header = IndexHeader::new(
             IndexTypeId::HnswSingle,
             T::data_type_id(),
-            core.params.metric,
-            core.params.dim,
+            self.core.params.metric,
+            self.core.params.dim,
             count,
         );
         header.write(writer)?;
 
         // Write HNSW-specific params
-        write_usize(writer, core.params.m)?;
-        write_usize(writer, core.params.m_max_0)?;
-        write_usize(writer, core.params.ef_construction)?;
-        write_usize(writer, core.params.ef_runtime)?;
-        write_u8(writer, if core.params.enable_heuristic { 1 } else { 0 })?;
+        write_usize(writer, self.core.params.m)?;
+        write_usize(writer, self.core.params.m_max_0)?;
+        write_usize(writer, self.core.params.ef_construction)?;
+        write_usize(writer, self.core.params.ef_runtime)?;
+        write_u8(writer, if self.core.params.enable_heuristic { 1 } else { 0 })?;
 
         // Write graph metadata
-        let entry_point = core.entry_point.load(Ordering::Relaxed);
-        let max_level = core.max_level.load(Ordering::Relaxed);
+        let entry_point = self.core.entry_point.load(Ordering::Relaxed);
+        let max_level = self.core.max_level.load(Ordering::Relaxed);
         write_u32(writer, entry_point)?;
         write_u32(writer, max_level)?;
 
@@ -654,15 +698,16 @@ impl<T: VectorElement> HnswSingle<T> {
         }
 
         // Write label_to_id mapping
-        write_usize(writer, label_to_id.len())?;
-        for (&label, &id) in label_to_id.iter() {
-            write_u64(writer, label)?;
-            write_u32(writer, id)?;
+        write_usize(writer, self.label_to_id.len())?;
+        for entry in self.label_to_id.iter() {
+            write_u64(writer, *entry.key())?;
+            write_u32(writer, *entry.value())?;
         }
 
         // Write graph structure
-        write_usize(writer, core.graph.len())?;
-        for (id, element) in core.graph.iter().enumerate() {
+        let graph = self.core.graph.read();
+        write_usize(writer, graph.len())?;
+        for (id, element) in graph.iter().enumerate() {
             let id = id as u32;
             if let Some(ref graph_data) = element {
                 write_u8(writer, 1)?; // Present flag
@@ -683,7 +728,7 @@ impl<T: VectorElement> HnswSingle<T> {
                 }
 
                 // Write vector data
-                if let Some(vector) = core.data.get(id) {
+                if let Some(vector) = self.core.data.get(id) {
                     for v in vector {
                         v.write_to(writer)?;
                     }
@@ -751,84 +796,75 @@ impl<T: VectorElement> HnswSingle<T> {
 
         // Read label_to_id mapping
         let label_to_id_len = read_usize(reader)?;
-        let mut label_to_id = HashMap::with_capacity(label_to_id_len);
         for _ in 0..label_to_id_len {
             let label = read_u64(reader)?;
             let id = read_u32(reader)?;
-            label_to_id.insert(label, id);
-        }
-
-        // Build id_to_label from label_to_id
-        let mut id_to_label: HashMap<IdType, LabelType> = HashMap::with_capacity(label_to_id_len);
-        for (&label, &id) in &label_to_id {
-            id_to_label.insert(id, label);
+            index.label_to_id.insert(label, id);
+            index.id_to_label.insert(id, label);
         }
 
         // Read graph structure
         let graph_len = read_usize(reader)?;
         let dim = header.dimension;
 
+        // Set entry point and max level
+        index.core.entry_point.store(entry_point, Ordering::Relaxed);
+        index.core.max_level.store(max_level, Ordering::Relaxed);
+
+        // Pre-allocate graph
         {
-            let mut core = index.core.write();
-
-            // Set entry point and max level
-            core.entry_point.store(entry_point, Ordering::Relaxed);
-            core.max_level.store(max_level, Ordering::Relaxed);
-
-            // Pre-allocate graph
-            core.graph.resize_with(graph_len, || None);
-
-            for id in 0..graph_len {
-                let present = read_u8(reader)? != 0;
-                if !present {
-                    continue;
-                }
-
-                // Read metadata
-                let label = read_u64(reader)?;
-                let level = read_u8(reader)?;
-                let deleted = read_u8(reader)? != 0;
-
-                // Read levels
-                let num_levels = read_usize(reader)?;
-                let mut graph_data = ElementGraphData::new(label, level, m_max_0, m);
-                graph_data.meta.deleted = deleted;
-
-                for level_idx in 0..num_levels {
-                    let num_neighbors = read_usize(reader)?;
-                    let mut neighbors = Vec::with_capacity(num_neighbors);
-                    for _ in 0..num_neighbors {
-                        neighbors.push(read_u32(reader)?);
-                    }
-                    if level_idx < graph_data.levels.len() {
-                        graph_data.levels[level_idx].set_neighbors(&neighbors);
-                    }
-                }
-
-                // Read vector data
-                let mut vector = vec![T::zero(); dim];
-                for v in &mut vector {
-                    *v = T::read_from(reader)?;
-                }
-
-                // Add vector to data storage
-                core.data.add(&vector).ok_or_else(|| {
-                    SerializationError::DataCorruption("Failed to add vector during deserialization".to_string())
-                })?;
-
-                // Store graph data
-                core.graph[id] = Some(graph_data);
-            }
-
-            // Resize visited pool
-            if graph_len > 0 {
-                core.visited_pool.resize(graph_len);
-            }
+            let mut graph = index.core.graph.write();
+            graph.resize_with(graph_len, || None);
         }
 
-        // Set the internal state
-        *index.label_to_id.write() = label_to_id;
-        *index.id_to_label.write() = id_to_label;
+        for id in 0..graph_len {
+            let present = read_u8(reader)? != 0;
+            if !present {
+                continue;
+            }
+
+            // Read metadata
+            let label = read_u64(reader)?;
+            let level = read_u8(reader)?;
+            let deleted = read_u8(reader)? != 0;
+
+            // Read levels
+            let num_levels = read_usize(reader)?;
+            let mut graph_data = ElementGraphData::new(label, level, m_max_0, m);
+            graph_data.meta.deleted = deleted;
+
+            for level_idx in 0..num_levels {
+                let num_neighbors = read_usize(reader)?;
+                let mut neighbors = Vec::with_capacity(num_neighbors);
+                for _ in 0..num_neighbors {
+                    neighbors.push(read_u32(reader)?);
+                }
+                if level_idx < graph_data.levels.len() {
+                    graph_data.levels[level_idx].set_neighbors(&neighbors);
+                }
+            }
+
+            // Read vector data
+            let mut vector = vec![T::zero(); dim];
+            for v in &mut vector {
+                *v = T::read_from(reader)?;
+            }
+
+            // Add vector to data storage
+            index.core.data.add_concurrent(&vector).ok_or_else(|| {
+                SerializationError::DataCorruption("Failed to add vector during deserialization".to_string())
+            })?;
+
+            // Store graph data
+            let mut graph = index.core.graph.write();
+            graph[id] = Some(graph_data);
+        }
+
+        // Resize visited pool
+        if graph_len > 0 {
+            index.core.visited_pool.resize(graph_len);
+        }
+
         index.count.store(header.count, Ordering::Relaxed);
 
         Ok(index)

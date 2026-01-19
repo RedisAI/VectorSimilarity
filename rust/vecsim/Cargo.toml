@@ -14,6 +14,7 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 memmap2 = { workspace = true }
+dashmap = "5.5"
 
 [features]
 default = []

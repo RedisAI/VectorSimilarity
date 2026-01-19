@@ -37,7 +37,7 @@ impl<'a, T: VectorElement> HnswSingleBatchIterator<'a, T> {
             return;
         }
 
-        let core = self.index.core.read();
+        let core = &self.index.core;
 
         let ef = self.params
             .as_ref()
@@ -51,7 +51,9 @@ impl<'a, T: VectorElement> HnswSingleBatchIterator<'a, T> {
         let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> =
             if let Some(ref p) = self.params {
                 if let Some(ref f) = p.filter {
-                    let id_to_label_for_filter = self.index.id_to_label.read().clone();
+                    // Collect DashMap entries into a regular HashMap for the closure
+                    let id_to_label_for_filter: std::collections::HashMap<IdType, LabelType> =
+                        self.index.id_to_label.iter().map(|r| (*r.key(), *r.value())).collect();
                     Some(Box::new(move |id: IdType| {
                         id_to_label_for_filter.get(&id).is_some_and(|&label| f(label))
                     }))
@@ -69,12 +71,11 @@ impl<'a, T: VectorElement> HnswSingleBatchIterator<'a, T> {
             filter_fn.as_ref().map(|f| f.as_ref()),
         );
 
-        // Read id_to_label again for result processing
-        let id_to_label = self.index.id_to_label.read();
+        // Process results using DashMap
         self.results = search_results
             .into_iter()
             .filter_map(|(id, dist)| {
-                id_to_label.get(&id).map(|&label| (id, label, dist))
+                self.index.id_to_label.get(&id).map(|label_ref| (id, *label_ref, dist))
             })
             .collect();
 
@@ -145,7 +146,7 @@ impl<'a, T: VectorElement> HnswMultiBatchIterator<'a, T> {
             return;
         }
 
-        let core = self.index.core.read();
+        let core = &self.index.core;
 
         let ef = self.params
             .as_ref()
@@ -159,7 +160,9 @@ impl<'a, T: VectorElement> HnswMultiBatchIterator<'a, T> {
         let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> =
             if let Some(ref p) = self.params {
                 if let Some(ref f) = p.filter {
-                    let id_to_label_for_filter = self.index.id_to_label.read().clone();
+                    // Collect DashMap entries into a regular HashMap for the closure
+                    let id_to_label_for_filter: std::collections::HashMap<IdType, LabelType> =
+                        self.index.id_to_label.iter().map(|r| (*r.key(), *r.value())).collect();
                     Some(Box::new(move |id: IdType| {
                         id_to_label_for_filter.get(&id).is_some_and(|&label| f(label))
                     }))
@@ -177,12 +180,11 @@ impl<'a, T: VectorElement> HnswMultiBatchIterator<'a, T> {
             filter_fn.as_ref().map(|f| f.as_ref()),
         );
 
-        // Read id_to_label again for result processing
-        let id_to_label = self.index.id_to_label.read();
+        // Process results using DashMap
         self.results = search_results
             .into_iter()
             .filter_map(|(id, dist)| {
-                id_to_label.get(&id).map(|&label| (id, label, dist))
+                self.index.id_to_label.get(&id).map(|label_ref| (id, *label_ref, dist))
             })
             .collect();
 

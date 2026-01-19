@@ -1263,17 +1263,24 @@ impl HNSWIndex {
     }
 
     /// Add multiple vectors to the index in parallel.
-    /// Note: Currently uses sequential insertion as the underlying HNSW index
-    /// requires synchronization. Future versions may support true parallel insertion.
+    /// Uses true parallel insertion with fine-grained locking.
     #[pyo3(signature = (vectors, labels, num_threads=None))]
     fn add_vector_parallel(
-        &mut self,
+        &self,
         py: Python<'_>,
         vectors: PyObject,
         labels: PyObject,
         num_threads: Option<usize>,
     ) -> PyResult<()> {
-        let _ = num_threads; // Currently unused - sequential insertion
+        use rayon::prelude::*;
+
+        // Configure thread pool if specified
+        if let Some(threads) = num_threads {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build_global()
+                .ok(); // Ignore error if already initialized
+        }
 
         // Extract labels array - try i64 first, then i32
         let labels_vec: Vec<u64> = if let Ok(labels_arr) = labels.extract::<PyReadonlyArray1<i64>>(py) {
@@ -1300,18 +1307,28 @@ impl HNSWIndex {
                 let dim = shape[1];
                 let slice = vectors_arr.as_slice()?;
 
-                // Sequential insertion
-                for i in 0..num_vectors {
-                    let start = i * dim;
-                    let end = start + dim;
-                    let vec = &slice[start..end];
-                    let label = labels_vec[i];
-                    match &mut self.inner {
-                        HnswIndexInner::SingleF32(idx) => { let _ = idx.add_vector(vec, label); }
-                        HnswIndexInner::MultiF32(idx) => { let _ = idx.add_vector(vec, label); }
-                        _ => {}
-                    }
-                }
+                // Parallel insertion using rayon
+                let result: Result<(), String> = py.allow_threads(|| {
+                    (0..num_vectors).into_par_iter().try_for_each(|i| {
+                        let start = i * dim;
+                        let end = start + dim;
+                        let vec = &slice[start..end];
+                        let label = labels_vec[i];
+                        match &self.inner {
+                            HnswIndexInner::SingleF32(idx) => {
+                                idx.add_vector_concurrent(vec, label)
+                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
+                            }
+                            HnswIndexInner::MultiF32(idx) => {
+                                idx.add_vector_concurrent(vec, label)
+                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
+                            }
+                            _ => {}
+                        }
+                        Ok(())
+                    })
+                });
+                result.map_err(|e| PyRuntimeError::new_err(e))?;
             }
             VECSIM_TYPE_FLOAT64 => {
                 let vectors_arr: PyReadonlyArray2<f64> = vectors.extract(py)?;
@@ -1325,18 +1342,28 @@ impl HNSWIndex {
                 let dim = shape[1];
                 let slice = vectors_arr.as_slice()?;
 
-                // Sequential insertion
-                for i in 0..num_vectors {
-                    let start = i * dim;
-                    let end = start + dim;
-                    let vec = &slice[start..end];
-                    let label = labels_vec[i];
-                    match &mut self.inner {
-                        HnswIndexInner::SingleF64(idx) => { let _ = idx.add_vector(vec, label); }
-                        HnswIndexInner::MultiF64(idx) => { let _ = idx.add_vector(vec, label); }
-                        _ => {}
-                    }
-                }
+                // Parallel insertion using rayon
+                let result: Result<(), String> = py.allow_threads(|| {
+                    (0..num_vectors).into_par_iter().try_for_each(|i| {
+                        let start = i * dim;
+                        let end = start + dim;
+                        let vec = &slice[start..end];
+                        let label = labels_vec[i];
+                        match &self.inner {
+                            HnswIndexInner::SingleF64(idx) => {
+                                idx.add_vector_concurrent(vec, label)
+                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
+                            }
+                            HnswIndexInner::MultiF64(idx) => {
+                                idx.add_vector_concurrent(vec, label)
+                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
+                            }
+                            _ => {}
+                        }
+                        Ok(())
+                    })
+                });
+                result.map_err(|e| PyRuntimeError::new_err(e))?;
             }
             _ => {
                 return Err(PyValueError::new_err(

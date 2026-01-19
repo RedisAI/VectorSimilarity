@@ -5,9 +5,11 @@
 
 use crate::distance::simd::optimal_alignment;
 use crate::types::{IdType, VectorElement, INVALID_ID};
+use parking_lot::{Mutex, RwLock};
 use std::alloc::{self, Layout};
 use std::collections::HashSet;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Default block size (number of vectors per block).
 const DEFAULT_BLOCK_SIZE: usize = 1024;
@@ -108,6 +110,30 @@ impl<T: VectorElement> DataBlock<T> {
         }
         true
     }
+
+    /// Write a vector at the given index (concurrent version).
+    ///
+    /// This is safe for concurrent writes to different indices within the same block.
+    /// Returns `false` if the index is out of bounds or data length doesn't match dim.
+    ///
+    /// # Safety
+    /// Caller must ensure no two threads write to the same index simultaneously.
+    #[inline]
+    fn write_vector_concurrent(&self, index: usize, dim: usize, data: &[T]) -> bool {
+        if data.len() != dim || !self.is_valid_index(index, dim) {
+            return false;
+        }
+        // SAFETY: We verified the index is valid and data length matches.
+        // The caller ensures no concurrent writes to the same index.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                self.data.as_ptr().add(index * dim),
+                dim,
+            );
+        }
+        true
+    }
 }
 
 impl<T: VectorElement> Drop for DataBlock<T> {
@@ -128,20 +154,24 @@ unsafe impl<T: VectorElement> Sync for DataBlock<T> {}
 ///
 /// Vectors are stored in contiguous blocks for cache efficiency.
 /// Each vector is accessed by its internal ID.
+///
+/// This structure supports both mutable (single-threaded) and concurrent
+/// (multi-threaded) access patterns via different methods.
 pub struct DataBlocks<T: VectorElement> {
-    /// The blocks storing vector data.
-    blocks: Vec<DataBlock<T>>,
+    /// The blocks storing vector data. RwLock allows concurrent reads
+    /// and exclusive writes for block growth.
+    blocks: RwLock<Vec<DataBlock<T>>>,
     /// Number of vectors per block.
     vectors_per_block: usize,
     /// Vector dimension.
     dim: usize,
     /// Total number of vectors stored (excluding deleted).
-    count: usize,
-    /// Free slots from deleted vectors (for reuse). Uses HashSet for O(1) lookup.
-    free_slots: HashSet<IdType>,
+    count: AtomicUsize,
+    /// Free slots from deleted vectors (for reuse). Uses Mutex for thread-safe access.
+    free_slots: Mutex<HashSet<IdType>>,
     /// High water mark: the highest ID ever allocated + 1.
     /// Used to determine which slots are valid vs never-allocated.
-    high_water_mark: usize,
+    high_water_mark: AtomicUsize,
 }
 
 impl<T: VectorElement> DataBlocks<T> {
@@ -159,12 +189,12 @@ impl<T: VectorElement> DataBlocks<T> {
             .collect();
 
         Self {
-            blocks,
+            blocks: RwLock::new(blocks),
             vectors_per_block,
             dim,
-            count: 0,
-            free_slots: HashSet::new(),
-            high_water_mark: 0,
+            count: AtomicUsize::new(0),
+            free_slots: Mutex::new(HashSet::new()),
+            high_water_mark: AtomicUsize::new(0),
         }
     }
 
@@ -178,12 +208,12 @@ impl<T: VectorElement> DataBlocks<T> {
             .collect();
 
         Self {
-            blocks,
+            blocks: RwLock::new(blocks),
             vectors_per_block,
             dim,
-            count: 0,
-            free_slots: HashSet::new(),
-            high_water_mark: 0,
+            count: AtomicUsize::new(0),
+            free_slots: Mutex::new(HashSet::new()),
+            high_water_mark: AtomicUsize::new(0),
         }
     }
 
@@ -196,19 +226,19 @@ impl<T: VectorElement> DataBlocks<T> {
     /// Get the number of vectors stored.
     #[inline]
     pub fn len(&self) -> usize {
-        self.count
+        self.count.load(Ordering::Acquire)
     }
 
     /// Check if empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.count == 0
+        self.count.load(Ordering::Acquire) == 0
     }
 
     /// Get the total capacity (number of vector slots).
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.blocks.len() * self.vectors_per_block
+        self.blocks.read().len() * self.vectors_per_block
     }
 
     /// Convert an internal ID to block and offset indices.
@@ -228,41 +258,81 @@ impl<T: VectorElement> DataBlocks<T> {
     /// Add a vector and return its internal ID.
     ///
     /// Returns `None` if the vector dimension doesn't match the container's dimension.
+    ///
+    /// This method requires `&mut self` for API compatibility. For concurrent access,
+    /// use `add_concurrent` instead.
     pub fn add(&mut self, vector: &[T]) -> Option<IdType> {
+        // Delegate to concurrent implementation since the data structures
+        // are now thread-safe
+        self.add_concurrent(vector)
+    }
+
+    /// Add a vector concurrently and return its internal ID.
+    ///
+    /// This method is thread-safe and can be called from multiple threads simultaneously.
+    /// Returns `None` if the vector dimension doesn't match the container's dimension.
+    pub fn add_concurrent(&self, vector: &[T]) -> Option<IdType> {
         if vector.len() != self.dim {
             return None;
         }
 
         // Try to reuse a free slot first
-        if let Some(&id) = self.free_slots.iter().next() {
-            self.free_slots.remove(&id);
-            let (block_idx, offset) = self.id_to_indices(id);
-            if self.blocks[block_idx].write_vector(offset, self.dim, vector) {
-                self.count += 1;
-                return Some(id);
+        {
+            let mut free_slots = self.free_slots.lock();
+            if let Some(&id) = free_slots.iter().next() {
+                free_slots.remove(&id);
+                drop(free_slots); // Release lock before writing
+
+                let (block_idx, offset) = self.id_to_indices(id);
+                let blocks = self.blocks.read();
+                if blocks[block_idx].write_vector_concurrent(offset, self.dim, vector) {
+                    self.count.fetch_add(1, Ordering::AcqRel);
+                    return Some(id);
+                }
+                // Write failed (shouldn't happen), put the slot back
+                self.free_slots.lock().insert(id);
+                return None;
             }
-            // Write failed (shouldn't happen), put the slot back
-            self.free_slots.insert(id);
+        }
+
+        // Allocate a new slot using atomic increment
+        loop {
+            let next_slot = self.high_water_mark.fetch_add(1, Ordering::AcqRel);
+
+            // Check if we need to grow the blocks
+            {
+                let blocks = self.blocks.read();
+                let total_slots = blocks.len() * self.vectors_per_block;
+                if next_slot < total_slots {
+                    // We have space, write the vector
+                    let (block_idx, offset) = self.id_to_indices(next_slot as IdType);
+                    if blocks[block_idx].write_vector_concurrent(offset, self.dim, vector) {
+                        self.count.fetch_add(1, Ordering::AcqRel);
+                        return Some(next_slot as IdType);
+                    }
+                    // Write failed (shouldn't happen)
+                    return None;
+                }
+            }
+
+            // Need to grow - acquire write lock
+            let mut blocks = self.blocks.write();
+            let total_slots = blocks.len() * self.vectors_per_block;
+
+            // Double-check after acquiring write lock
+            if next_slot >= total_slots {
+                // Still need more space, allocate a new block
+                blocks.push(DataBlock::new(self.vectors_per_block, self.dim));
+            }
+
+            // Now write the vector
+            let (block_idx, offset) = self.id_to_indices(next_slot as IdType);
+            if blocks[block_idx].write_vector_concurrent(offset, self.dim, vector) {
+                self.count.fetch_add(1, Ordering::AcqRel);
+                return Some(next_slot as IdType);
+            }
+            // Write failed (shouldn't happen)
             return None;
-        }
-
-        // Find the next available slot using high water mark
-        let next_slot = self.high_water_mark;
-        let total_slots = self.blocks.len() * self.vectors_per_block;
-
-        if next_slot >= total_slots {
-            // Need to allocate a new block
-            self.blocks
-                .push(DataBlock::new(self.vectors_per_block, self.dim));
-        }
-
-        let (block_idx, offset) = self.id_to_indices(next_slot as IdType);
-        if self.blocks[block_idx].write_vector(offset, self.dim, vector) {
-            self.count += 1;
-            self.high_water_mark += 1;
-            Some(next_slot as IdType)
-        } else {
-            None
         }
     }
 
@@ -274,7 +344,7 @@ impl<T: VectorElement> DataBlocks<T> {
         }
         let id_usize = id as usize;
         // Must be within allocated range and not deleted
-        id_usize < self.high_water_mark && !self.free_slots.contains(&id)
+        id_usize < self.high_water_mark.load(Ordering::Acquire) && !self.free_slots.lock().contains(&id)
     }
 
     /// Get a vector by its internal ID.
@@ -286,10 +356,23 @@ impl<T: VectorElement> DataBlocks<T> {
             return None;
         }
         let (block_idx, offset) = self.id_to_indices(id);
-        if block_idx >= self.blocks.len() {
+        let blocks = self.blocks.read();
+        if block_idx >= blocks.len() {
             return None;
         }
-        self.blocks[block_idx].get_vector(offset, self.dim)
+        // SAFETY: We hold the read lock and verified the index is valid.
+        // The returned reference is safe because:
+        // 1. The block data is never moved (blocks can only grow, not shrink during normal operation)
+        // 2. Individual vector slots are never reallocated while valid
+        // 3. The ID was validated as not deleted
+        unsafe {
+            let block = &blocks[block_idx];
+            if !block.is_valid_index(offset, self.dim) {
+                return None;
+            }
+            let ptr = block.get_vector_ptr_unchecked(offset, self.dim);
+            Some(std::slice::from_raw_parts(ptr, self.dim))
+        }
     }
 
     /// Get a raw pointer to a vector (for SIMD operations).
@@ -301,10 +384,11 @@ impl<T: VectorElement> DataBlocks<T> {
             return None;
         }
         let (block_idx, offset) = self.id_to_indices(id);
-        if block_idx >= self.blocks.len() {
+        let blocks = self.blocks.read();
+        if block_idx >= blocks.len() {
             return None;
         }
-        let block = &self.blocks[block_idx];
+        let block = &blocks[block_idx];
         if !block.is_valid_index(offset, self.dim) {
             return None;
         }
@@ -319,16 +403,26 @@ impl<T: VectorElement> DataBlocks<T> {
     ///
     /// Note: This doesn't actually clear the data, just marks the slot as available.
     pub fn mark_deleted(&mut self, id: IdType) -> bool {
+        self.mark_deleted_concurrent(id)
+    }
+
+    /// Mark a slot as free for reuse (concurrent version).
+    ///
+    /// Returns `true` if the slot was successfully marked as deleted,
+    /// `false` if the ID is invalid, already deleted, or out of bounds.
+    pub fn mark_deleted_concurrent(&self, id: IdType) -> bool {
         if id == INVALID_ID {
             return false;
         }
         let id_usize = id as usize;
+        let high_water_mark = self.high_water_mark.load(Ordering::Acquire);
+        let mut free_slots = self.free_slots.lock();
         // Check bounds and ensure not already deleted
-        if id_usize >= self.high_water_mark || self.free_slots.contains(&id) {
+        if id_usize >= high_water_mark || free_slots.contains(&id) {
             return false;
         }
-        self.free_slots.insert(id);
-        self.count = self.count.saturating_sub(1);
+        free_slots.insert(id);
+        self.count.fetch_sub(1, Ordering::AcqRel);
         true
     }
 
@@ -341,40 +435,42 @@ impl<T: VectorElement> DataBlocks<T> {
             return false;
         }
         let (block_idx, offset) = self.id_to_indices(id);
-        if block_idx >= self.blocks.len() {
+        let blocks = self.blocks.read();
+        if block_idx >= blocks.len() {
             return false;
         }
-        self.blocks[block_idx].write_vector(offset, self.dim, vector)
+        blocks[block_idx].write_vector_concurrent(offset, self.dim, vector)
     }
 
     /// Clear all vectors, resetting to empty state.
     ///
     /// This keeps the allocated blocks but marks them as empty.
     pub fn clear(&mut self) {
-        self.count = 0;
-        self.free_slots.clear();
-        self.high_water_mark = 0;
+        self.count.store(0, Ordering::Release);
+        self.free_slots.lock().clear();
+        self.high_water_mark.store(0, Ordering::Release);
     }
 
     /// Reserve space for additional vectors.
     pub fn reserve(&mut self, additional: usize) {
-        let needed = self.count + additional;
+        let needed = self.count.load(Ordering::Acquire) + additional;
         let current_capacity = self.capacity();
 
         if needed > current_capacity {
             let additional_blocks =
                 (needed - current_capacity).div_ceil(self.vectors_per_block);
 
+            let mut blocks = self.blocks.write();
             for _ in 0..additional_blocks {
-                self.blocks
-                    .push(DataBlock::new(self.vectors_per_block, self.dim));
+                blocks.push(DataBlock::new(self.vectors_per_block, self.dim));
             }
         }
     }
 
     /// Iterate over all valid (non-deleted) vector IDs.
     pub fn iter_ids(&self) -> impl Iterator<Item = IdType> + '_ {
-        (0..self.high_water_mark as IdType).filter(move |&id| !self.free_slots.contains(&id))
+        let high_water_mark = self.high_water_mark.load(Ordering::Acquire);
+        (0..high_water_mark as IdType).filter(move |&id| !self.free_slots.lock().contains(&id))
     }
 
     /// Compact the storage by removing gaps from deleted vectors.
@@ -393,20 +489,26 @@ impl<T: VectorElement> DataBlocks<T> {
     pub fn compact(&mut self, shrink: bool) -> std::collections::HashMap<IdType, IdType> {
         use std::collections::HashMap;
 
-        if self.free_slots.is_empty() {
+        let high_water_mark = self.high_water_mark.load(Ordering::Acquire);
+        let free_slots = self.free_slots.lock();
+
+        if free_slots.is_empty() {
+            drop(free_slots);
             // No gaps to fill, just return identity mapping
-            return (0..self.high_water_mark as IdType)
+            return (0..high_water_mark as IdType)
                 .map(|id| (id, id))
                 .collect();
         }
 
-        let mut id_mapping = HashMap::with_capacity(self.count);
+        let count = self.count.load(Ordering::Acquire);
+        let mut id_mapping = HashMap::with_capacity(count);
         let mut new_id: IdType = 0;
 
         // Collect valid vectors and their data
-        let valid_ids: Vec<IdType> = (0..self.high_water_mark as IdType)
-            .filter(|id| !self.free_slots.contains(id))
+        let valid_ids: Vec<IdType> = (0..high_water_mark as IdType)
+            .filter(|id| !free_slots.contains(id))
             .collect();
+        drop(free_slots); // Release lock before reading vectors
 
         // Copy vectors to temporary storage
         let vectors: Vec<Vec<T>> = valid_ids
@@ -415,9 +517,9 @@ impl<T: VectorElement> DataBlocks<T> {
             .collect();
 
         // Clear and rebuild
-        self.free_slots.clear();
-        self.high_water_mark = 0;
-        self.count = 0;
+        self.free_slots.lock().clear();
+        self.high_water_mark.store(0, Ordering::Release);
+        self.count.store(0, Ordering::Release);
 
         // Re-add vectors in order
         for (old_id, vector) in valid_ids.into_iter().zip(vectors.into_iter()) {
@@ -430,8 +532,9 @@ impl<T: VectorElement> DataBlocks<T> {
         // Shrink blocks if requested
         if shrink {
             let needed_blocks = new_id as usize / self.vectors_per_block + 1;
-            if self.blocks.len() > needed_blocks {
-                self.blocks.truncate(needed_blocks);
+            let mut blocks = self.blocks.write();
+            if blocks.len() > needed_blocks {
+                blocks.truncate(needed_blocks);
             }
         }
 
@@ -441,7 +544,7 @@ impl<T: VectorElement> DataBlocks<T> {
     /// Get the number of deleted (free) slots.
     #[inline]
     pub fn deleted_count(&self) -> usize {
-        self.free_slots.len()
+        self.free_slots.lock().len()
     }
 
     /// Get the fragmentation ratio (deleted / total allocated).
@@ -449,10 +552,11 @@ impl<T: VectorElement> DataBlocks<T> {
     /// Returns 0.0 if no vectors have been allocated.
     #[inline]
     pub fn fragmentation(&self) -> f64 {
-        if self.high_water_mark == 0 {
+        let high_water_mark = self.high_water_mark.load(Ordering::Acquire);
+        if high_water_mark == 0 {
             0.0
         } else {
-            self.free_slots.len() as f64 / self.high_water_mark as f64
+            self.free_slots.lock().len() as f64 / high_water_mark as f64
         }
     }
 }
