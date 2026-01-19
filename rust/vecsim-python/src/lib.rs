@@ -1267,11 +1267,10 @@ impl HNSWIndex {
     /// requires sophisticated synchronization to maintain graph quality. Concurrent
     /// insertions where threads don't see each other's nodes during neighbor search
     /// lead to poor graph connectivity and low recall. The underlying Rust infrastructure
-    /// supports concurrent access for read/write operations, but parallel insertion
-    /// needs additional work to match the C++ implementation's approach.
+    /// supports concurrent access for read/write operations using batch construction.
     #[pyo3(signature = (vectors, labels, num_threads=None))]
     fn add_vector_parallel(
-        &self,  // Changed to &self for parallel access
+        &self,
         py: Python<'_>,
         vectors: PyObject,
         labels: PyObject,
@@ -1310,26 +1309,21 @@ impl HNSWIndex {
                 let dim = shape[1];
                 let slice = vectors_arr.as_slice()?;
 
-                // True parallel insertion using rayon
-                // The new lock-ordering synchronization ensures high recall
+                // Use batch construction for parallel speedup
                 match &self.inner {
                     HnswIndexInner::SingleF32(idx) => {
-                        (0..num_vectors).into_par_iter().for_each(|i| {
-                            let start = i * dim;
-                            let end = start + dim;
-                            let vec = &slice[start..end];
-                            let label = labels_vec[i];
-                            let _ = idx.add_vector_concurrent(vec, label);
-                        });
+                        idx.add_vectors_batch(slice, &labels_vec, dim)
+                            .map_err(|e| PyRuntimeError::new_err(format!("Batch insert failed: {:?}", e)))?;
                     }
                     HnswIndexInner::MultiF32(idx) => {
-                        (0..num_vectors).into_par_iter().for_each(|i| {
+                        // Multi doesn't have batch yet, fall back to per-element
+                        for i in 0..num_vectors {
                             let start = i * dim;
                             let end = start + dim;
                             let vec = &slice[start..end];
                             let label = labels_vec[i];
                             let _ = idx.add_vector_concurrent(vec, label);
-                        });
+                        }
                     }
                     _ => {}
                 }
@@ -1346,25 +1340,21 @@ impl HNSWIndex {
                 let dim = shape[1];
                 let slice = vectors_arr.as_slice()?;
 
-                // True parallel insertion using rayon
+                // Use batch construction for parallel speedup
                 match &self.inner {
                     HnswIndexInner::SingleF64(idx) => {
-                        (0..num_vectors).into_par_iter().for_each(|i| {
-                            let start = i * dim;
-                            let end = start + dim;
-                            let vec = &slice[start..end];
-                            let label = labels_vec[i];
-                            let _ = idx.add_vector_concurrent(vec, label);
-                        });
+                        idx.add_vectors_batch(slice, &labels_vec, dim)
+                            .map_err(|e| PyRuntimeError::new_err(format!("Batch insert failed: {:?}", e)))?;
                     }
                     HnswIndexInner::MultiF64(idx) => {
-                        (0..num_vectors).into_par_iter().for_each(|i| {
+                        // Multi doesn't have batch yet, fall back to per-element
+                        for i in 0..num_vectors {
                             let start = i * dim;
                             let end = start + dim;
                             let vec = &slice[start..end];
                             let label = labels_vec[i];
                             let _ = idx.add_vector_concurrent(vec, label);
-                        });
+                        }
                     }
                     _ => {}
                 }

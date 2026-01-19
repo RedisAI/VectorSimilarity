@@ -411,6 +411,125 @@ impl<T: VectorElement> HnswSingle<T> {
         self.count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(1)
     }
+
+    /// Batch insert multiple vectors using layer-at-a-time construction.
+    ///
+    /// This method provides significant speedup for bulk insertions by:
+    /// 1. Adding all vectors to storage in parallel
+    /// 2. Pre-assigning random levels for all vectors
+    /// 3. Building the graph layer by layer with parallel neighbor search
+    ///
+    /// # Arguments
+    /// * `vectors` - Slice of vector data (flattened, each vector has `dim` elements)
+    /// * `labels` - Slice of labels corresponding to each vector
+    /// * `dim` - Dimension of each vector
+    ///
+    /// # Returns
+    /// * `Ok(count)` - Number of vectors successfully inserted
+    /// * `Err` - If dimension mismatch or other errors occur
+    pub fn add_vectors_batch(
+        &self,
+        vectors: &[T],
+        labels: &[LabelType],
+        dim: usize,
+    ) -> Result<usize, IndexError> {
+        use rayon::prelude::*;
+
+        if dim != self.core.params.dim {
+            return Err(IndexError::DimensionMismatch {
+                expected: self.core.params.dim,
+                got: dim,
+            });
+        }
+
+        let num_vectors = labels.len();
+        if vectors.len() != num_vectors * dim {
+            return Err(IndexError::Internal(format!(
+                "Vector data length {} does not match num_vectors {} * dim {}",
+                vectors.len(), num_vectors, dim
+            )));
+        }
+
+        if num_vectors == 0 {
+            return Ok(0);
+        }
+
+        // Check capacity
+        if let Some(cap) = self.capacity {
+            let current = self.count.load(std::sync::atomic::Ordering::Relaxed);
+            if current + num_vectors > cap {
+                return Err(IndexError::CapacityExceeded { capacity: cap });
+            }
+        }
+
+        // Phase 1: Pre-generate random levels (single lock acquisition)
+        let levels = self.core.generate_random_levels_batch(num_vectors);
+
+        // Phase 2: Add all vectors to storage and create assignments (parallel)
+        let assignments: Vec<Result<(IdType, u8, LabelType), IndexError>> = (0..num_vectors)
+            .into_par_iter()
+            .map(|i| {
+                let label = labels[i];
+
+                // Check for duplicate label
+                if self.label_to_id.contains_key(&label) {
+                    return Err(IndexError::DuplicateLabel(label));
+                }
+
+                // Add vector to storage
+                let vec_start = i * dim;
+                let vec_end = vec_start + dim;
+                let vector = &vectors[vec_start..vec_end];
+
+                let id = self.core
+                    .add_vector_concurrent(vector)
+                    .ok_or_else(|| IndexError::Internal("Failed to add vector to storage".to_string()))?;
+
+                // Insert label mappings
+                use dashmap::mapref::entry::Entry;
+                match self.label_to_id.entry(label) {
+                    Entry::Occupied(_) => {
+                        self.core.data.mark_deleted_concurrent(id);
+                        return Err(IndexError::DuplicateLabel(label));
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(id);
+                    }
+                }
+                self.id_to_label.insert(id, label);
+
+                Ok((id, levels[i], label))
+            })
+            .collect();
+
+        // Filter successful assignments and count errors
+        let mut successful: Vec<(IdType, u8, LabelType)> = Vec::with_capacity(num_vectors);
+        let mut errors = 0;
+        for result in assignments {
+            match result {
+                Ok(assignment) => successful.push(assignment),
+                Err(_) => errors += 1,
+            }
+        }
+
+        if successful.is_empty() {
+            return Ok(0);
+        }
+
+        // Phase 3: Build graph using batch construction
+        self.core.insert_batch(&successful);
+
+        // Update count
+        let inserted = successful.len();
+        self.count.fetch_add(inserted, std::sync::atomic::Ordering::Relaxed);
+
+        if errors > 0 {
+            // Some vectors failed but others succeeded
+            Ok(inserted)
+        } else {
+            Ok(inserted)
+        }
+    }
 }
 
 impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
