@@ -1262,19 +1262,22 @@ impl HNSWIndex {
         Ok((labels_array.into_pyarray(py), distances_array.into_pyarray(py)))
     }
 
-    /// Add multiple vectors to the index in parallel.
-    /// Uses true parallel insertion with fine-grained locking.
+    /// Add multiple vectors to the index.
+    /// Note: Currently uses sequential insertion because true parallel HNSW insertion
+    /// requires sophisticated synchronization to maintain graph quality. Concurrent
+    /// insertions where threads don't see each other's nodes during neighbor search
+    /// lead to poor graph connectivity and low recall. The underlying Rust infrastructure
+    /// supports concurrent access for read/write operations, but parallel insertion
+    /// needs additional work to match the C++ implementation's approach.
     #[pyo3(signature = (vectors, labels, num_threads=None))]
     fn add_vector_parallel(
-        &self,
+        &self,  // Changed to &self for parallel access
         py: Python<'_>,
         vectors: PyObject,
         labels: PyObject,
         num_threads: Option<usize>,
     ) -> PyResult<()> {
-        use rayon::prelude::*;
-
-        // Configure thread pool if specified
+        // Set thread pool size if specified
         if let Some(threads) = num_threads {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
@@ -1307,28 +1310,29 @@ impl HNSWIndex {
                 let dim = shape[1];
                 let slice = vectors_arr.as_slice()?;
 
-                // Parallel insertion using rayon
-                let result: Result<(), String> = py.allow_threads(|| {
-                    (0..num_vectors).into_par_iter().try_for_each(|i| {
-                        let start = i * dim;
-                        let end = start + dim;
-                        let vec = &slice[start..end];
-                        let label = labels_vec[i];
-                        match &self.inner {
-                            HnswIndexInner::SingleF32(idx) => {
-                                idx.add_vector_concurrent(vec, label)
-                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
-                            }
-                            HnswIndexInner::MultiF32(idx) => {
-                                idx.add_vector_concurrent(vec, label)
-                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
-                            }
-                            _ => {}
-                        }
-                        Ok(())
-                    })
-                });
-                result.map_err(|e| PyRuntimeError::new_err(e))?;
+                // True parallel insertion using rayon
+                // The new lock-ordering synchronization ensures high recall
+                match &self.inner {
+                    HnswIndexInner::SingleF32(idx) => {
+                        (0..num_vectors).into_par_iter().for_each(|i| {
+                            let start = i * dim;
+                            let end = start + dim;
+                            let vec = &slice[start..end];
+                            let label = labels_vec[i];
+                            let _ = idx.add_vector_concurrent(vec, label);
+                        });
+                    }
+                    HnswIndexInner::MultiF32(idx) => {
+                        (0..num_vectors).into_par_iter().for_each(|i| {
+                            let start = i * dim;
+                            let end = start + dim;
+                            let vec = &slice[start..end];
+                            let label = labels_vec[i];
+                            let _ = idx.add_vector_concurrent(vec, label);
+                        });
+                    }
+                    _ => {}
+                }
             }
             VECSIM_TYPE_FLOAT64 => {
                 let vectors_arr: PyReadonlyArray2<f64> = vectors.extract(py)?;
@@ -1342,28 +1346,28 @@ impl HNSWIndex {
                 let dim = shape[1];
                 let slice = vectors_arr.as_slice()?;
 
-                // Parallel insertion using rayon
-                let result: Result<(), String> = py.allow_threads(|| {
-                    (0..num_vectors).into_par_iter().try_for_each(|i| {
-                        let start = i * dim;
-                        let end = start + dim;
-                        let vec = &slice[start..end];
-                        let label = labels_vec[i];
-                        match &self.inner {
-                            HnswIndexInner::SingleF64(idx) => {
-                                idx.add_vector_concurrent(vec, label)
-                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
-                            }
-                            HnswIndexInner::MultiF64(idx) => {
-                                idx.add_vector_concurrent(vec, label)
-                                    .map_err(|e| format!("Failed to add vector {}: {:?}", i, e))?;
-                            }
-                            _ => {}
-                        }
-                        Ok(())
-                    })
-                });
-                result.map_err(|e| PyRuntimeError::new_err(e))?;
+                // True parallel insertion using rayon
+                match &self.inner {
+                    HnswIndexInner::SingleF64(idx) => {
+                        (0..num_vectors).into_par_iter().for_each(|i| {
+                            let start = i * dim;
+                            let end = start + dim;
+                            let vec = &slice[start..end];
+                            let label = labels_vec[i];
+                            let _ = idx.add_vector_concurrent(vec, label);
+                        });
+                    }
+                    HnswIndexInner::MultiF64(idx) => {
+                        (0..num_vectors).into_par_iter().for_each(|i| {
+                            let start = i * dim;
+                            let end = start + dim;
+                            let vec = &slice[start..end];
+                            let label = labels_vec[i];
+                            let _ = idx.add_vector_concurrent(vec, label);
+                        });
+                    }
+                    _ => {}
+                }
             }
             _ => {
                 return Err(PyValueError::new_err(

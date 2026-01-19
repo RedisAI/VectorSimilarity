@@ -127,10 +127,8 @@ impl<T: VectorElement> HnswSingle<T> {
 
     /// Get the number of deleted (but not yet removed) elements.
     pub fn deleted_count(&self) -> usize {
-        let graph = self.core.graph.read();
-        graph
-            .iter()
-            .filter(|e| e.as_ref().is_some_and(|g| g.meta.deleted))
+        self.core.graph.iter()
+            .filter(|(_, g)| g.meta.deleted)
             .count()
     }
 
@@ -138,12 +136,11 @@ impl<T: VectorElement> HnswSingle<T> {
     pub fn stats(&self) -> HnswStats {
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
 
-        let graph = self.core.graph.read();
         let mut level_counts = vec![0usize; self.core.max_level.load(std::sync::atomic::Ordering::Relaxed) as usize + 1];
         let mut total_connections = 0usize;
         let mut deleted_count = 0usize;
 
-        for element in graph.iter().flatten() {
+        for (_, element) in self.core.graph.iter() {
             if element.meta.deleted {
                 deleted_count += 1;
                 continue;
@@ -185,8 +182,7 @@ impl<T: VectorElement> HnswSingle<T> {
         let vector_storage = count * self.core.params.dim * std::mem::size_of::<T>();
 
         // Graph structure (rough estimate)
-        let graph = self.core.graph.read();
-        let graph_overhead = graph.len()
+        let graph_overhead = self.core.graph.len()
             * std::mem::size_of::<Option<super::graph::ElementGraphData>>();
 
         // Label mappings
@@ -227,7 +223,7 @@ impl<T: VectorElement> HnswSingle<T> {
         use std::sync::atomic::Ordering;
 
         self.core.data.clear();
-        self.core.graph.write().clear();
+        self.core.graph.clear();
         self.core.entry_point.store(crate::types::INVALID_ID, Ordering::Relaxed);
         self.core.max_level.store(0, Ordering::Relaxed);
         self.label_to_id.clear();
@@ -255,11 +251,10 @@ impl<T: VectorElement> HnswSingle<T> {
         let id_mapping = self.core.data.compact(shrink);
 
         // Rebuild graph with new IDs
-        let mut graph = self.core.graph.write();
         let mut new_graph: Vec<Option<ElementGraphData>> = (0..id_mapping.len()).map(|_| None).collect();
 
         for (&old_id, &new_id) in &id_mapping {
-            if let Some(Some(old_graph_data)) = graph.get(old_id as usize) {
+            if let Some(old_graph_data) = self.core.graph.get(old_id) {
                 // Clone the graph data and update neighbor IDs
                 let mut new_graph_data = ElementGraphData::new(
                     old_graph_data.meta.label,
@@ -286,8 +281,7 @@ impl<T: VectorElement> HnswSingle<T> {
             }
         }
 
-        *graph = new_graph;
-        drop(graph);
+        self.core.graph.replace(new_graph);
 
         // Update entry point
         let old_entry = self.core.entry_point.load(Ordering::Relaxed);
@@ -296,9 +290,9 @@ impl<T: VectorElement> HnswSingle<T> {
                 self.core.entry_point.store(new_entry, Ordering::Relaxed);
             } else {
                 // Entry point was deleted, find a new one
-                let graph = self.core.graph.read();
-                let new_entry = graph.iter().enumerate()
-                    .filter_map(|(id, g)| g.as_ref().filter(|g| !g.meta.deleted).map(|_| id as IdType))
+                let new_entry = self.core.graph.iter()
+                    .filter(|(_, g)| !g.meta.deleted)
+                    .map(|(id, _)| id)
                     .next()
                     .unwrap_or(crate::types::INVALID_ID);
                 self.core.entry_point.store(new_entry, Ordering::Relaxed);
@@ -623,7 +617,6 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
 
     fn info(&self) -> IndexInfo {
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
-        let graph = self.core.graph.read();
 
         // Base overhead for the struct itself and internal data structures
         let base_overhead = std::mem::size_of::<Self>() + std::mem::size_of::<HnswCore<T>>();
@@ -635,7 +628,7 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             index_type: "HnswSingle",
             memory_bytes: base_overhead
                 + count * self.core.params.dim * std::mem::size_of::<T>()
-                + graph.len() * std::mem::size_of::<Option<super::graph::ElementGraphData>>()
+                + self.core.graph.len() * std::mem::size_of::<Option<super::graph::ElementGraphData>>()
                 + self.label_to_id.len() * std::mem::size_of::<(LabelType, IdType)>(),
         }
     }
@@ -705,11 +698,10 @@ impl<T: VectorElement> HnswSingle<T> {
         }
 
         // Write graph structure
-        let graph = self.core.graph.read();
-        write_usize(writer, graph.len())?;
-        for (id, element) in graph.iter().enumerate() {
-            let id = id as u32;
-            if let Some(ref graph_data) = element {
+        let graph_len = self.core.graph.len();
+        write_usize(writer, graph_len)?;
+        for id in 0..graph_len as u32 {
+            if let Some(graph_data) = self.core.graph.get(id) {
                 write_u8(writer, 1)?; // Present flag
 
                 // Write metadata
@@ -811,12 +803,6 @@ impl<T: VectorElement> HnswSingle<T> {
         index.core.entry_point.store(entry_point, Ordering::Relaxed);
         index.core.max_level.store(max_level, Ordering::Relaxed);
 
-        // Pre-allocate graph
-        {
-            let mut graph = index.core.graph.write();
-            graph.resize_with(graph_len, || None);
-        }
-
         for id in 0..graph_len {
             let present = read_u8(reader)? != 0;
             if !present {
@@ -856,8 +842,7 @@ impl<T: VectorElement> HnswSingle<T> {
             })?;
 
             // Store graph data
-            let mut graph = index.core.graph.write();
-            graph[id] = Some(graph_data);
+            index.core.graph.set(id as IdType, graph_data);
         }
 
         // Resize visited pool

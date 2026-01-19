@@ -4,11 +4,45 @@
 //! - `greedy_search`: Single entry point search (for upper layers)
 //! - `search_layer`: Full layer search with candidate exploration
 
+use super::concurrent_graph::ConcurrentGraph;
 use super::graph::ElementGraphData;
 use super::visited::VisitedNodesHandler;
 use crate::distance::DistanceFunction;
 use crate::types::{DistanceType, IdType, VectorElement};
 use crate::utils::{MaxHeap, MinHeap};
+
+/// Trait for graph access abstraction.
+///
+/// This allows search functions to work with both slice-based graphs
+/// (for tests) and the concurrent graph structure (for production).
+pub trait GraphAccess {
+    /// Get an element by ID.
+    fn get(&self, id: IdType) -> Option<&ElementGraphData>;
+}
+
+/// Implementation for slice-based graphs (used in tests).
+impl GraphAccess for [Option<ElementGraphData>] {
+    #[inline]
+    fn get(&self, id: IdType) -> Option<&ElementGraphData> {
+        <[Option<ElementGraphData>]>::get(self, id as usize).and_then(|x| x.as_ref())
+    }
+}
+
+/// Implementation for Vec-based graphs (used in tests).
+impl GraphAccess for Vec<Option<ElementGraphData>> {
+    #[inline]
+    fn get(&self, id: IdType) -> Option<&ElementGraphData> {
+        self.as_slice().get(id as usize).and_then(|x| x.as_ref())
+    }
+}
+
+/// Implementation for ConcurrentGraph.
+impl GraphAccess for ConcurrentGraph {
+    #[inline]
+    fn get(&self, id: IdType) -> Option<&ElementGraphData> {
+        ConcurrentGraph::get(self, id)
+    }
+}
 
 /// Result of a layer search: (id, distance) pairs.
 pub type SearchResult<D> = Vec<(IdType, D)>;
@@ -17,11 +51,11 @@ pub type SearchResult<D> = Vec<(IdType, D)>;
 ///
 /// This is used to traverse upper layers where we just need to find
 /// the best entry point for the next layer.
-pub fn greedy_search<'a, T, D, F>(
+pub fn greedy_search<'a, T, D, F, G>(
     entry_point: IdType,
     query: &[T],
     level: usize,
-    graph: &[Option<ElementGraphData>],
+    graph: &G,
     data_getter: F,
     dist_fn: &dyn DistanceFunction<T, Output = D>,
     dim: usize,
@@ -30,6 +64,7 @@ where
     T: VectorElement,
     D: DistanceType,
     F: Fn(IdType) -> Option<&'a [T]>,
+    G: GraphAccess + ?Sized,
 {
     let mut current = entry_point;
     let mut current_dist = if let Some(data) = data_getter(entry_point) {
@@ -41,7 +76,7 @@ where
     loop {
         let mut changed = false;
 
-        if let Some(Some(element)) = graph.get(current as usize) {
+        if let Some(element) = graph.get(current) {
             for neighbor in element.iter_neighbors(level) {
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
@@ -67,12 +102,12 @@ where
 /// This is the main search algorithm for finding nearest neighbors
 /// at a given layer.
 #[allow(clippy::too_many_arguments)]
-pub fn search_layer<'a, T, D, F, P>(
+pub fn search_layer<'a, T, D, F, P, G>(
     entry_points: &[(IdType, D)],
     query: &[T],
     level: usize,
     ef: usize,
-    graph: &[Option<ElementGraphData>],
+    graph: &G,
     data_getter: F,
     dist_fn: &dyn DistanceFunction<T, Output = D>,
     dim: usize,
@@ -84,6 +119,7 @@ where
     D: DistanceType,
     F: Fn(IdType) -> Option<&'a [T]>,
     P: Fn(IdType) -> bool + ?Sized,
+    G: GraphAccess + ?Sized,
 {
     // Candidates to explore (min-heap: closest first)
     let mut candidates = MinHeap::<D>::with_capacity(ef * 2);
@@ -116,7 +152,7 @@ where
         }
 
         // Get neighbors of this candidate
-        if let Some(Some(element)) = graph.get(candidate.id as usize) {
+        if let Some(element) = graph.get(candidate.id) {
             if element.meta.deleted {
                 continue;
             }
@@ -127,7 +163,7 @@ where
                 }
 
                 // Check if neighbor is valid
-                if let Some(Some(neighbor_element)) = graph.get(neighbor as usize) {
+                if let Some(neighbor_element) = graph.get(neighbor) {
                     if neighbor_element.meta.deleted {
                         continue;
                     }
@@ -177,13 +213,13 @@ pub type MultiSearchResult<D> = Vec<(LabelType, D)>;
 /// only count once in the label results. This prevents early termination from
 /// cutting off exploration when vectors cluster by label.
 #[allow(clippy::too_many_arguments)]
-pub fn search_layer_multi<'a, T, D, F, P>(
+pub fn search_layer_multi<'a, T, D, F, P, G>(
     entry_points: &[(IdType, D)],
     query: &[T],
     level: usize,
     k: usize,
     ef: usize,
-    graph: &[Option<ElementGraphData>],
+    graph: &G,
     data_getter: F,
     dist_fn: &dyn DistanceFunction<T, Output = D>,
     dim: usize,
@@ -196,6 +232,7 @@ where
     D: DistanceType,
     F: Fn(IdType) -> Option<&'a [T]>,
     P: Fn(LabelType) -> bool + ?Sized,
+    G: GraphAccess + ?Sized,
 {
     // Track labels we've found and their best distances
     let mut label_best: HashMap<LabelType, D> = HashMap::with_capacity(k * 2);
@@ -248,7 +285,7 @@ where
         }
 
         // Get neighbors of this candidate
-        if let Some(Some(element)) = graph.get(candidate.id as usize) {
+        if let Some(element) = graph.get(candidate.id) {
             if element.meta.deleted {
                 continue;
             }
@@ -259,7 +296,7 @@ where
                 }
 
                 // Check if neighbor is valid
-                if let Some(Some(neighbor_element)) = graph.get(neighbor as usize) {
+                if let Some(neighbor_element) = graph.get(neighbor) {
                     if neighbor_element.meta.deleted {
                         continue;
                     }
@@ -684,7 +721,7 @@ mod tests {
         let query = [1.0, 0.0]; // Closest to id 1
         let entry_points = vec![(0u32, 1.0f32)]; // Start from id 0
 
-        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool, _>(
             &entry_points,
             &query,
             0,
@@ -796,7 +833,7 @@ mod tests {
         let query = [1.0, 0.0]; // Closest to id 1 (which is deleted)
         let entry_points = vec![(0u32, 1.0f32)];
 
-        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool, _>(
             &entry_points,
             &query,
             0,
@@ -830,7 +867,7 @@ mod tests {
         let query = [1.0, 0.0];
         let entry_points: Vec<(IdType, f32)> = vec![];
 
-        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool, _>(
             &entry_points,
             &query,
             0,
@@ -879,7 +916,7 @@ mod tests {
         let entry_points = vec![(5u32, 25.0f32)];
 
         // Set ef = 3, should return at most 3 results
-        let results = search_layer::<f32, f32, _, fn(IdType) -> bool>(
+        let results = search_layer::<f32, f32, _, fn(IdType) -> bool, _>(
             &entry_points,
             &query,
             0,

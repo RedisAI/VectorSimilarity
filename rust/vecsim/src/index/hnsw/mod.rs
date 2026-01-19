@@ -10,6 +10,7 @@
 //! - `ef_runtime`: Size of dynamic candidate list during search (runtime)
 
 pub mod batch_iterator;
+pub mod concurrent_graph;
 pub mod graph;
 pub mod multi;
 pub mod search;
@@ -27,7 +28,7 @@ pub use visited::{VisitedNodesHandler, VisitedNodesHandlerPool};
 use crate::containers::DataBlocks;
 use crate::distance::{create_distance_function, DistanceFunction, Metric};
 use crate::types::{DistanceType, IdType, LabelType, VectorElement, INVALID_ID};
-use parking_lot::RwLock;
+use concurrent_graph::ConcurrentGraph;
 use rand::Rng;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -197,14 +198,14 @@ impl HnswParams {
 
 /// Core HNSW implementation shared between single and multi variants.
 ///
-/// This structure now supports concurrent access for parallel insertion.
-/// The graph uses an RwLock to allow concurrent reads during search
-/// while serializing writes for new elements.
+/// This structure supports concurrent access for parallel insertion using
+/// a lock-free graph structure. Only per-node locks are used for neighbor
+/// modifications, matching the C++ implementation approach.
 pub(crate) struct HnswCore<T: VectorElement> {
     /// Vector storage (thread-safe with interior mutability).
     pub data: DataBlocks<T>,
-    /// Graph structure for each element (RwLock for concurrent access).
-    pub graph: RwLock<Vec<Option<ElementGraphData>>>,
+    /// Graph structure for each element (lock-free concurrent access).
+    pub graph: ConcurrentGraph,
     /// Distance function.
     pub dist_fn: Box<dyn DistanceFunction<T, Output = T::DistanceType>>,
     /// Entry point to the graph (top level).
@@ -241,7 +242,7 @@ impl<T: VectorElement> HnswCore<T> {
 
         Self {
             data,
-            graph: RwLock::new(Vec::with_capacity(params.initial_capacity)),
+            graph: ConcurrentGraph::new(params.initial_capacity),
             dist_fn,
             entry_point: AtomicU32::new(INVALID_ID),
             max_level: AtomicU32::new(0),
@@ -312,22 +313,6 @@ impl<T: VectorElement> HnswCore<T> {
         PROFILE_STATS.with(|s| s.borrow_mut().calls += 1);
     }
 
-    /// Ensure the graph has capacity for the given ID.
-    fn ensure_graph_capacity(&self, min_id: usize) {
-        // Fast path - read lock only
-        {
-            let graph = self.graph.read();
-            if min_id < graph.len() {
-                return;
-            }
-        }
-        // Slow path - need write lock
-        let mut graph = self.graph.write();
-        if min_id >= graph.len() {
-            graph.resize_with(min_id + 1024, || None);
-        }
-    }
-
     /// Concurrent insert implementation.
     fn insert_concurrent_impl(&self, id: IdType, label: LabelType) {
         let level = self.generate_random_level();
@@ -340,16 +325,9 @@ impl<T: VectorElement> HnswCore<T> {
             self.params.m,
         );
 
-        // Ensure graph vector is large enough and set the graph data
+        // Set the graph data (ConcurrentGraph handles capacity automatically)
         let id_usize = id as usize;
-        self.ensure_graph_capacity(id_usize);
-        {
-            let mut graph = self.graph.write();
-            if id_usize >= graph.len() {
-                graph.resize_with(id_usize + 1, || None);
-            }
-            graph[id_usize] = Some(graph_data);
-        }
+        self.graph.set(id, graph_data);
 
         // Update visited pool if needed
         if id_usize >= self.visited_pool.current_capacity() {
@@ -384,20 +362,18 @@ impl<T: VectorElement> HnswCore<T> {
         #[cfg(feature = "profile")]
         let greedy_start = Instant::now();
 
-        let graph = self.graph.read();
         for l in (level as usize + 1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
                 current_entry,
                 query,
                 l,
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
             );
             current_entry = new_entry;
         }
-        drop(graph);
 
         #[cfg(feature = "profile")]
         PROFILE_STATS.with(|s| s.borrow_mut().greedy_search_ns += greedy_start.elapsed().as_nanos() as u64);
@@ -420,20 +396,18 @@ impl<T: VectorElement> HnswCore<T> {
             #[cfg(feature = "profile")]
             let search_start = Instant::now();
 
-            let graph = self.graph.read();
-            let neighbors = search::search_layer::<T, T::DistanceType, _, fn(IdType) -> bool>(
+            let neighbors = search::search_layer::<T, T::DistanceType, _, fn(IdType) -> bool, _>(
                 &entry_points,
                 query,
                 l,
                 self.params.ef_construction,
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
                 &visited,
                 None,
             );
-            drop(graph);
 
             #[cfg(feature = "profile")]
             PROFILE_STATS.with(|s| s.borrow_mut().search_layer_ns += search_start.elapsed().as_nanos() as u64);
@@ -461,21 +435,22 @@ impl<T: VectorElement> HnswCore<T> {
             #[cfg(feature = "profile")]
             PROFILE_STATS.with(|s| s.borrow_mut().select_neighbors_ns += select_start.elapsed().as_nanos() as u64);
 
-            // Set outgoing edges for new element
-            {
-                let graph = self.graph.read();
-                if let Some(Some(element)) = graph.get(id as usize) {
-                    element.set_neighbors(l, &selected);
-                }
-            }
+            // Build selected neighbors with distances for mutually_connect_new_element
+            let selected_with_distances: Vec<(IdType, T::DistanceType)> = selected
+                .iter()
+                .filter_map(|&neighbor_id| {
+                    // Find the distance from the search results
+                    neighbors.iter()
+                        .find(|&&(nid, _)| nid == neighbor_id)
+                        .map(|&(nid, dist)| (nid, dist))
+                })
+                .collect();
 
-            // Add incoming edges from selected neighbors
+            // Mutually connect new element with its neighbors using lock ordering
             #[cfg(feature = "profile")]
             let links_start = Instant::now();
 
-            for &neighbor_id in &selected {
-                self.add_bidirectional_link_concurrent(neighbor_id, id, l);
-            }
+            self.mutually_connect_new_element(id, &selected_with_distances, l);
 
             #[cfg(feature = "profile")]
             PROFILE_STATS.with(|s| s.borrow_mut().add_links_ns += links_start.elapsed().as_nanos() as u64);
@@ -507,12 +482,143 @@ impl<T: VectorElement> HnswCore<T> {
         }
     }
 
+    /// Mutually connect a new element with its selected neighbors at a given level.
+    ///
+    /// This method implements the C++ lock ordering strategy:
+    /// 1. Lock nodes in sorted ID order to prevent deadlocks
+    /// 2. Fast path: if neighbor has space, append link directly
+    /// 3. Slow path: if neighbor is full, call revisit_neighbor_connections
+    ///
+    /// This is the key function for achieving true parallel insertion with high recall.
+    fn mutually_connect_new_element(
+        &self,
+        new_node_id: IdType,
+        selected_neighbors: &[(IdType, T::DistanceType)],
+        level: usize,
+    ) {
+        let max_m = if level == 0 { self.params.m_max_0 } else { self.params.m };
+
+        for &(neighbor_id, dist_to_neighbor) in selected_neighbors {
+            // Get both elements
+            let (new_element, neighbor_element) = match (
+                self.graph.get(new_node_id),
+                self.graph.get(neighbor_id),
+            ) {
+                (Some(n), Some(e)) => (n, e),
+                _ => continue,
+            };
+
+            // Check level bounds
+            if level >= new_element.levels.len() || level >= neighbor_element.levels.len() {
+                continue;
+            }
+
+            // Lock in sorted ID order to prevent deadlocks (C++ pattern)
+            let (_lock1, _lock2) = if new_node_id < neighbor_id {
+                (new_element.lock.lock(), neighbor_element.lock.lock())
+            } else {
+                (neighbor_element.lock.lock(), new_element.lock.lock())
+            };
+
+            // Check if new node can still add neighbors (may have changed between iterations)
+            let new_node_neighbors = new_element.get_neighbors(level);
+            if new_node_neighbors.len() >= max_m {
+                // New node is full, skip remaining neighbors
+                break;
+            }
+
+            // Check if connection already exists
+            if new_node_neighbors.contains(&neighbor_id) {
+                continue;
+            }
+
+            // Check if neighbor has space for the new node
+            let neighbor_neighbors = neighbor_element.get_neighbors(level);
+            if neighbor_neighbors.len() < max_m {
+                // Fast path: neighbor has space, make bidirectional connection
+                let mut new_neighbors = new_node_neighbors;
+                new_neighbors.push(neighbor_id);
+                new_element.set_neighbors(level, &new_neighbors);
+
+                let mut updated_neighbor_neighbors = neighbor_neighbors;
+                updated_neighbor_neighbors.push(new_node_id);
+                neighbor_element.set_neighbors(level, &updated_neighbor_neighbors);
+            } else {
+                // Slow path: neighbor is full, need to revisit its connections
+                // First add new_node -> neighbor (new node has space, we checked above)
+                let mut new_neighbors = new_node_neighbors;
+                new_neighbors.push(neighbor_id);
+                new_element.set_neighbors(level, &new_neighbors);
+
+                // Now revisit neighbor's connections to possibly include new_node
+                self.revisit_neighbor_connections_locked(
+                    new_node_id,
+                    neighbor_id,
+                    dist_to_neighbor,
+                    neighbor_element,
+                    level,
+                    max_m,
+                );
+            }
+        }
+    }
+
+    /// Revisit a neighbor's connections when it's at capacity.
+    ///
+    /// This is called while holding both the new_node and neighbor locks.
+    /// It re-evaluates which neighbors the neighbor should keep, possibly
+    /// including the new node if it's closer than existing neighbors.
+    fn revisit_neighbor_connections_locked(
+        &self,
+        new_node_id: IdType,
+        neighbor_id: IdType,
+        dist_to_new_node: T::DistanceType,
+        neighbor_element: &ElementGraphData,
+        level: usize,
+        max_m: usize,
+    ) {
+        // Collect all candidates: existing neighbors + new node
+        let neighbor_data = match self.data.get(neighbor_id) {
+            Some(d) => d,
+            None => return,
+        };
+
+        let current_neighbors = neighbor_element.get_neighbors(level);
+        let mut candidates: Vec<(IdType, T::DistanceType)> = Vec::with_capacity(current_neighbors.len() + 1);
+
+        // Add new node as candidate with its pre-computed distance
+        candidates.push((new_node_id, dist_to_new_node));
+
+        // Add existing neighbors with their distances to the neighbor
+        for &existing_neighbor_id in &current_neighbors {
+            if let Some(existing_data) = self.data.get(existing_neighbor_id) {
+                let dist = self.dist_fn.compute(existing_data, neighbor_data, self.params.dim);
+                candidates.push((existing_neighbor_id, dist));
+            }
+        }
+
+        // Select best M neighbors using simple selection (M closest)
+        if candidates.len() > max_m {
+            candidates.select_nth_unstable_by(max_m - 1, |a, b| {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            candidates.truncate(max_m);
+        }
+
+        let selected: Vec<IdType> = candidates.iter().map(|&(id, _)| id).collect();
+
+        // Update neighbor's connections
+        neighbor_element.set_neighbors(level, &selected);
+    }
+
     /// Add a bidirectional link between two elements at a given level (concurrent version).
     ///
     /// This method uses the per-node lock in ElementGraphData for thread safety.
+    /// NOTE: This is the legacy single-lock version, kept for compatibility.
+    /// For parallel insertion, use mutually_connect_new_element instead.
+    #[allow(dead_code)]
     fn add_bidirectional_link_concurrent(&self, from: IdType, to: IdType, level: usize) {
-        let graph = self.graph.read();
-        if let Some(Some(from_element)) = graph.get(from as usize) {
+        if let Some(from_element) = self.graph.get(from) {
             if level < from_element.levels.len() {
                 #[cfg(feature = "profile")]
                 let lock_start = Instant::now();
@@ -624,18 +730,15 @@ impl<T: VectorElement> HnswCore<T> {
 
     /// Mark an element as deleted (concurrent version).
     pub fn mark_deleted_concurrent(&self, id: IdType) {
-        {
-            let graph = self.graph.read();
-            if let Some(Some(element)) = graph.get(id as usize) {
-                // ElementMetaData.deleted is not atomic, but this is a best-effort
-                // tombstone - reads may see stale state briefly, which is acceptable
-                // for deletion semantics. Use a separate lock if stronger guarantees needed.
-                let _lock = element.lock.lock();
-                // SAFETY: We hold the element's lock, so this is the only writer
-                unsafe {
-                    let meta = &element.meta as *const _ as *mut graph::ElementMetaData;
-                    (*meta).deleted = true;
-                }
+        if let Some(element) = self.graph.get(id) {
+            // ElementMetaData.deleted is not atomic, but this is a best-effort
+            // tombstone - reads may see stale state briefly, which is acceptable
+            // for deletion semantics. Use a separate lock if stronger guarantees needed.
+            let _lock = element.lock.lock();
+            // SAFETY: We hold the element's lock, so this is the only writer
+            unsafe {
+                let meta = &element.meta as *const _ as *mut graph::ElementMetaData;
+                (*meta).deleted = true;
             }
         }
         self.data.mark_deleted_concurrent(id);
@@ -658,13 +761,12 @@ impl<T: VectorElement> HnswCore<T> {
         let mut current_entry = entry_point;
 
         // Greedy search through upper layers
-        let graph = self.graph.read();
         for l in (1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
                 current_entry,
                 query,
                 l,
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
@@ -685,7 +787,7 @@ impl<T: VectorElement> HnswCore<T> {
                 query,
                 0,
                 ef.max(k),
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
@@ -693,12 +795,12 @@ impl<T: VectorElement> HnswCore<T> {
                 Some(f),
             )
         } else {
-            search::search_layer::<T, T::DistanceType, _, fn(IdType) -> bool>(
+            search::search_layer::<T, T::DistanceType, _, fn(IdType) -> bool, _>(
                 &entry_points,
                 query,
                 0,
                 ef.max(k),
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
@@ -733,13 +835,12 @@ impl<T: VectorElement> HnswCore<T> {
         let mut current_entry = entry_point;
 
         // Greedy search through upper layers
-        let graph = self.graph.read();
         for l in (1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
                 current_entry,
                 query,
                 l,
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
@@ -761,7 +862,7 @@ impl<T: VectorElement> HnswCore<T> {
                 0,
                 k,
                 ef.max(k),
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
@@ -770,13 +871,13 @@ impl<T: VectorElement> HnswCore<T> {
                 Some(f),
             )
         } else {
-            search::search_layer_multi::<T, T::DistanceType, _, fn(LabelType) -> bool>(
+            search::search_layer_multi::<T, T::DistanceType, _, fn(LabelType) -> bool, _>(
                 &entry_points,
                 query,
                 0,
                 k,
                 ef.max(k),
-                &*graph,
+                &self.graph,
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
