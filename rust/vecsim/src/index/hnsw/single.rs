@@ -8,7 +8,6 @@ use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, Vec
 use crate::query::{QueryParams, QueryReply, QueryResult};
 use crate::types::{DistanceType, IdType, LabelType, VectorElement};
 use dashmap::DashMap;
-use std::collections::HashMap;
 
 /// Statistics about an HNSW index.
 #[derive(Debug, Clone)]
@@ -614,19 +613,13 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             .and_then(|p| p.ef_runtime)
             .unwrap_or(self.core.params.ef_runtime);
 
-        // Build filter if needed
-        let has_filter = params.is_some_and(|p| p.filter.is_some());
-        let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.iter().map(|r| (*r.key(), *r.value())).collect()
-        } else {
-            HashMap::new()
-        };
-
-        let filter_fn: Option<Box<dyn Fn(IdType) -> bool>> = if let Some(p) = params {
+        // Build filter if needed - use DashMap directly instead of copying
+        let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
             if let Some(ref f) = p.filter {
-                let f = f.as_ref();
+                // Use reference to DashMap directly - avoids O(n) copy
+                let id_to_label_ref = &self.id_to_label;
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).is_some_and(|&label| f(label))
+                    id_to_label_ref.get(&id).is_some_and(|label_ref| f(*label_ref))
                 }))
             } else {
                 None
@@ -668,19 +661,13 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
 
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
 
-        // Build filter if needed
-        let has_filter = params.is_some_and(|p| p.filter.is_some());
-        let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.iter().map(|r| (*r.key(), *r.value())).collect()
-        } else {
-            HashMap::new()
-        };
-
-        let filter_fn: Option<Box<dyn Fn(IdType) -> bool>> = if let Some(p) = params {
+        // Build filter if needed - use DashMap directly instead of copying
+        let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
             if let Some(ref f) = p.filter {
-                let f = f.as_ref();
+                // Use reference to DashMap directly - avoids O(n) copy
+                let id_to_label_ref = &self.id_to_label;
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).is_some_and(|&label| f(label))
+                    id_to_label_ref.get(&id).is_some_and(|label_ref| f(*label_ref))
                 }))
             } else {
                 None
