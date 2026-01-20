@@ -1111,4 +1111,29 @@ impl<T: VectorElement> HnswCore<T> {
             }
         }
     }
+
+    /// Get the neighbors of an element at all levels by internal ID.
+    ///
+    /// Returns None if the ID doesn't exist in the index.
+    /// Returns Some(Vec<Vec<LabelType>>) where each inner Vec contains the neighbor labels at that level.
+    pub fn get_element_neighbors_by_id(&self, id: IdType) -> Option<Vec<Vec<LabelType>>> {
+        // Get the graph element
+        let element = self.graph.get(id)?;
+
+        // Collect neighbors at each level, converting internal IDs to labels
+        let mut result = Vec::with_capacity(element.levels.len());
+
+        for level in 0..element.levels.len() {
+            let neighbor_ids = element.get_neighbors(level);
+            let neighbor_labels: Vec<LabelType> = neighbor_ids
+                .iter()
+                .filter_map(|&neighbor_id| {
+                    self.graph.get(neighbor_id).map(|e| e.meta.label)
+                })
+                .collect();
+            result.push(neighbor_labels);
+        }
+
+        Some(result)
+    }
 }

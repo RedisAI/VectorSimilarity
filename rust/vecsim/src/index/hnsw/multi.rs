@@ -130,6 +130,19 @@ impl<T: VectorElement> HnswMulti<T> {
         self.count.store(0, Ordering::Relaxed);
     }
 
+    /// Get the neighbors of an element in the HNSW graph by label.
+    ///
+    /// For multi-value indices, this returns the neighbors of the first internal ID
+    /// associated with the label. Returns a vector of vectors, where each inner vector
+    /// contains the neighbor labels for that level (level 0 first).
+    /// Returns None if the label doesn't exist.
+    pub fn get_element_neighbors(&self, label: LabelType) -> Option<Vec<Vec<LabelType>>> {
+        // Get the first internal ID for this label
+        let ids = self.label_to_ids.get(&label)?;
+        let first_id = *ids.iter().next()?;
+        self.core.get_element_neighbors_by_id(first_id)
+    }
+
     /// Compact the index by removing gaps from deleted vectors.
     ///
     /// This reorganizes the internal storage and graph structure to reclaim space

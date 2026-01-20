@@ -119,6 +119,14 @@ pub trait IndexWrapper: Send + Sync {
     fn disk_flush(&self) -> bool {
         false
     }
+
+    /// Get the neighbors of an element at all levels (HNSW/Tiered only).
+    ///
+    /// Returns None if the label doesn't exist or if the index type doesn't support this.
+    /// Returns Some(Vec<Vec<u64>>) where each inner Vec contains the neighbor labels at that level.
+    fn get_element_neighbors(&self, _label: u64) -> Option<Vec<Vec<u64>>> {
+        None
+    }
 }
 
 /// Trait for type-erased batch iterator operations.
@@ -477,50 +485,143 @@ impl_index_wrapper!(
     true
 );
 
-// Implement wrappers for HNSW indices
-// Note: HNSW has serialization for all VectorElement types
-impl_index_wrapper_with_serialization!(
-    HnswSingleF32Wrapper,
-    HnswSingle<f32>,
-    f32,
-    VecSimAlgo::VecSimAlgo_HNSWLIB,
-    false
-);
-impl_index_wrapper_with_serialization!(
-    HnswSingleF64Wrapper,
-    HnswSingle<f64>,
-    f64,
-    VecSimAlgo::VecSimAlgo_HNSWLIB,
-    false
-);
-impl_index_wrapper_with_serialization!(
-    HnswSingleBF16Wrapper,
-    HnswSingle<BFloat16>,
-    BFloat16,
-    VecSimAlgo::VecSimAlgo_HNSWLIB,
-    false
-);
-impl_index_wrapper_with_serialization!(
-    HnswSingleFP16Wrapper,
-    HnswSingle<Float16>,
-    Float16,
-    VecSimAlgo::VecSimAlgo_HNSWLIB,
-    false
-);
-impl_index_wrapper_with_serialization!(
-    HnswSingleI8Wrapper,
-    HnswSingle<Int8>,
-    Int8,
-    VecSimAlgo::VecSimAlgo_HNSWLIB,
-    false
-);
-impl_index_wrapper_with_serialization!(
-    HnswSingleU8Wrapper,
-    HnswSingle<UInt8>,
-    UInt8,
-    VecSimAlgo::VecSimAlgo_HNSWLIB,
-    false
-);
+// Macro for HNSW Single wrappers with get_element_neighbors support
+macro_rules! impl_hnsw_single_wrapper {
+    ($wrapper:ident, $index:ty, $data:ty) => {
+        pub struct $wrapper {
+            index: $index,
+            data_type: VecSimType,
+        }
+
+        impl $wrapper {
+            pub fn new(index: $index, data_type: VecSimType) -> Self {
+                Self { index, data_type }
+            }
+
+            #[allow(dead_code)]
+            pub fn inner(&self) -> &$index {
+                &self.index
+            }
+        }
+
+        impl IndexWrapper for $wrapper {
+            fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
+                match self.index.add_vector(slice, label) {
+                    Ok(count) => count as i32,
+                    Err(_) => -1,
+                }
+            }
+
+            fn delete_vector(&mut self, label: labelType) -> i32 {
+                match self.index.delete_vector(label) {
+                    Ok(count) => count as i32,
+                    Err(_) => 0,
+                }
+            }
+
+            fn top_k_query(
+                &self,
+                query: *const c_void,
+                k: usize,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+
+                match self.index.top_k_query(slice, k, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn range_query(
+                &self,
+                query: *const c_void,
+                radius: f64,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+                let radius_typed =
+                    <<$data as VectorElement>::DistanceType as DistanceType>::from_f64(radius);
+
+                match self.index.range_query(slice, radius_typed, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
+                f64::INFINITY
+            }
+
+            fn index_size(&self) -> usize {
+                self.index.index_size()
+            }
+
+            fn dimension(&self) -> usize {
+                self.index.dimension()
+            }
+
+            fn contains(&self, label: labelType) -> bool {
+                self.index.contains(label)
+            }
+
+            fn label_count(&self, label: labelType) -> usize {
+                self.index.label_count(label)
+            }
+
+            fn data_type(&self) -> VecSimType {
+                self.data_type
+            }
+
+            fn algo(&self) -> VecSimAlgo {
+                VecSimAlgo::VecSimAlgo_HNSWLIB
+            }
+
+            fn metric(&self) -> VecSimMetric {
+                // Metric is not directly available from IndexInfo, use placeholder
+                VecSimMetric::VecSimMetric_L2
+            }
+
+            fn is_multi(&self) -> bool {
+                false
+            }
+
+            fn create_batch_iterator(
+                &self,
+                _query: *const c_void,
+                _params: Option<&VecSimQueryParams>,
+            ) -> Option<Box<dyn BatchIteratorWrapper>> {
+                None
+            }
+
+            fn memory_usage(&self) -> usize {
+                self.index.info().memory_bytes
+            }
+
+            fn save_to_file(&self, path: &std::path::Path) -> bool {
+                self.index.save_to_file(path).is_ok()
+            }
+
+            fn get_element_neighbors(&self, label: u64) -> Option<Vec<Vec<u64>>> {
+                self.index.get_element_neighbors(label)
+            }
+        }
+    };
+}
+
+// Implement wrappers for HNSW Single indices
+impl_hnsw_single_wrapper!(HnswSingleF32Wrapper, HnswSingle<f32>, f32);
+impl_hnsw_single_wrapper!(HnswSingleF64Wrapper, HnswSingle<f64>, f64);
+impl_hnsw_single_wrapper!(HnswSingleBF16Wrapper, HnswSingle<BFloat16>, BFloat16);
+impl_hnsw_single_wrapper!(HnswSingleFP16Wrapper, HnswSingle<Float16>, Float16);
+impl_hnsw_single_wrapper!(HnswSingleI8Wrapper, HnswSingle<Int8>, Int8);
+impl_hnsw_single_wrapper!(HnswSingleU8Wrapper, HnswSingle<UInt8>, UInt8);
 
 impl_index_wrapper_with_serialization!(
     HnswMultiF32Wrapper,
@@ -810,6 +911,10 @@ macro_rules! impl_tiered_wrapper {
 
             fn tiered_release_shared_locks(&mut self) {
                 // No-op for now
+            }
+
+            fn get_element_neighbors(&self, label: u64) -> Option<Vec<Vec<u64>>> {
+                self.index.get_element_neighbors(label)
             }
         }
     };

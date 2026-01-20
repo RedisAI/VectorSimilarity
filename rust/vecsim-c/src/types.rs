@@ -103,6 +103,22 @@ pub enum VecsimQueryType {
     QUERY_TYPE_RANGE = 3,
 }
 
+/// Debug command return codes.
+///
+/// These codes are returned by debug functions like VecSimDebug_GetElementNeighborsInHNSWGraph.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecSimDebugCommandCode {
+    /// Command succeeded.
+    VecSimDebugCommandCode_OK = 0,
+    /// Bad index (null, wrong type, or unsupported).
+    VecSimDebugCommandCode_BadIndex = 1,
+    /// Label does not exist in the index.
+    VecSimDebugCommandCode_LabelNotExists = 2,
+    /// Multi-value indices are not supported for this operation.
+    VecSimDebugCommandCode_MultiNotSupported = 3,
+}
+
 /// Raw parameter for runtime query configuration.
 ///
 /// Used to pass string-based parameters that are resolved into typed
@@ -163,16 +179,6 @@ pub enum VecSearchMode {
     HYBRID_BATCHES = 3,
     HYBRID_BATCHES_TO_ADHOC_BF = 4,
     RANGE_QUERY = 5,
-}
-
-/// Debug command result codes.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VecSimDebugCommandCode {
-    VecSimDebugCommandCode_OK = 0,
-    VecSimDebugCommandCode_BadIndex = 1,
-    VecSimDebugCommandCode_LabelNotExists = 2,
-    VecSimDebugCommandCode_MultiNotSupported = 3,
 }
 
 /// Timeout callback function type.

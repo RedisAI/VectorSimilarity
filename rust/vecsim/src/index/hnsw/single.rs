@@ -218,6 +218,15 @@ impl<T: VectorElement> HnswSingle<T> {
         }
     }
 
+    /// Get the neighbors of an element at all levels.
+    ///
+    /// Returns None if the label doesn't exist in the index.
+    /// Returns Some(Vec<Vec<LabelType>>) where each inner Vec contains the neighbor labels at that level.
+    pub fn get_element_neighbors(&self, label: LabelType) -> Option<Vec<Vec<LabelType>>> {
+        let id = *self.label_to_id.get(&label)?;
+        self.core.get_element_neighbors_by_id(id)
+    }
+
     /// Clear all vectors from the index, resetting it to empty state.
     pub fn clear(&mut self) {
         use std::sync::atomic::Ordering;

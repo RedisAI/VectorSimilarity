@@ -34,12 +34,12 @@ use query::{
     QueryReplyIteratorHandle,
 };
 use types::{
-    labelType, QueryResultInternal, VecSimAlgo, VecSimBatchIterator, VecSimIndex, VecSimMetric,
-    VecSimParamResolveCode, VecSimQueryReply, VecSimQueryReply_Iterator, VecSimQueryReply_Order,
-    VecSimQueryResult, VecSimRawParam, VecSimType, VecsimQueryType,
+    labelType, QueryResultInternal, VecSimAlgo, VecSimBatchIterator, VecSimDebugCommandCode,
+    VecSimIndex, VecSimMetric, VecSimParamResolveCode, VecSimQueryReply, VecSimQueryReply_Iterator,
+    VecSimQueryReply_Order, VecSimQueryResult, VecSimRawParam, VecSimType, VecsimQueryType,
 };
 
-use std::ffi::{c_char, c_void};
+use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -1973,6 +1973,118 @@ pub unsafe extern "C" fn VecSimDebugInfoIterator_Free(
     if !info_iterator.is_null() {
         drop(Box::from_raw(info_iterator));
     }
+}
+
+/// Dump the neighbors of an element in HNSW index.
+///
+/// Returns an array with <topLevel+2> entries, where each entry is an array itself.
+/// Every internal array in a position <l> where <0<=l<=topLevel> corresponds to the neighbors
+/// of the element in the graph in level <l>. It contains <n_l+1> entries, where <n_l> is the
+/// number of neighbors in level l. The last entry in the external array is NULL (indicates its length).
+/// The first entry in each internal array contains the number <n_l>, while the next
+/// <n_l> entries are the labels of the elements neighbors in this level.
+///
+/// # Safety
+/// - `index` must be a valid pointer returned by `VecSimIndex_New`
+/// - `neighbors_data` must be a valid pointer to a pointer that will receive the result
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebug_GetElementNeighborsInHNSWGraph(
+    index: *mut VecSimIndex,
+    label: usize,
+    neighbors_data: *mut *mut *mut c_int,
+) -> VecSimDebugCommandCode {
+    if index.is_null() || neighbors_data.is_null() {
+        return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex;
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    let basic_info = VecSimIndex_BasicInfo(index);
+
+    // Only HNSW and Tiered (with HNSW backend) are supported
+    match basic_info.algo {
+        VecSimAlgo::VecSimAlgo_HNSWLIB | VecSimAlgo::VecSimAlgo_TIERED => {}
+        _ => return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex,
+    }
+
+    // Get the element neighbors using the trait method
+    let hnsw_result = handle.wrapper.get_element_neighbors(label as u64);
+
+    match hnsw_result {
+        None => VecSimDebugCommandCode::VecSimDebugCommandCode_LabelNotExists,
+        Some(neighbors_by_level) => {
+            // Allocate the outer array: topLevel + 2 entries (one for each level + NULL terminator)
+            let num_levels = neighbors_by_level.len();
+            let outer_size = num_levels + 1; // +1 for NULL terminator
+            let outer_array = libc::malloc(outer_size * std::mem::size_of::<*mut c_int>())
+                as *mut *mut c_int;
+
+            if outer_array.is_null() {
+                return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex;
+            }
+
+            // Fill in each level's neighbors
+            for (level, level_neighbors) in neighbors_by_level.iter().enumerate() {
+                let num_neighbors = level_neighbors.len();
+                // Each inner array has: count + neighbor labels
+                let inner_size = num_neighbors + 1;
+                let inner_array =
+                    libc::malloc(inner_size * std::mem::size_of::<c_int>()) as *mut c_int;
+
+                if inner_array.is_null() {
+                    // Clean up already allocated arrays
+                    for i in 0..level {
+                        libc::free(*outer_array.add(i) as *mut libc::c_void);
+                    }
+                    libc::free(outer_array as *mut libc::c_void);
+                    return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex;
+                }
+
+                // First entry is the count
+                *inner_array = num_neighbors as c_int;
+
+                // Remaining entries are the neighbor labels
+                for (i, &neighbor_label) in level_neighbors.iter().enumerate() {
+                    *inner_array.add(i + 1) = neighbor_label as c_int;
+                }
+
+                *outer_array.add(level) = inner_array;
+            }
+
+            // NULL terminator
+            *outer_array.add(num_levels) = std::ptr::null_mut();
+
+            *neighbors_data = outer_array;
+            VecSimDebugCommandCode::VecSimDebugCommandCode_OK
+        }
+    }
+}
+
+/// Release the neighbors data allocated by VecSimDebug_GetElementNeighborsInHNSWGraph.
+///
+/// # Safety
+/// `neighbors_data` must be a valid pointer returned by `VecSimDebug_GetElementNeighborsInHNSWGraph`,
+/// or null.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebug_ReleaseElementNeighborsInHNSWGraph(
+    neighbors_data: *mut *mut c_int,
+) {
+    if neighbors_data.is_null() {
+        return;
+    }
+
+    // Free each inner array until we hit NULL
+    let mut level = 0;
+    loop {
+        let inner_array = *neighbors_data.add(level);
+        if inner_array.is_null() {
+            break;
+        }
+        libc::free(inner_array as *mut libc::c_void);
+        level += 1;
+    }
+
+    // Free the outer array
+    libc::free(neighbors_data as *mut libc::c_void);
 }
 
 // ============================================================================

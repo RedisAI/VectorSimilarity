@@ -1300,6 +1300,36 @@ VecSim_InfoField *VecSimDebugInfoIterator_NextField(VecSimDebugInfoIterator *inf
 void VecSimDebugInfoIterator_Free(VecSimDebugInfoIterator *infoIterator);
 
 /**
+ * @brief Dump the neighbors of an element in HNSW index.
+ *
+ * Returns an array with <topLevel+2> entries, where each entry is an array itself.
+ * Every internal array in a position <l> where <0<=l<=topLevel> corresponds to the neighbors
+ * of the element in the graph in level <l>. It contains <n_l+1> entries, where <n_l> is the
+ * number of neighbors in level l. The last entry in the external array is NULL (indicates its length).
+ * The first entry in each internal array contains the number <n_l>, while the next
+ * <n_l> entries are the labels of the elements neighbors in this level.
+ *
+ * Note: currently only HNSW indexes of type single are supported (multi not yet) - tiered included.
+ * For cleanup, VecSimDebug_ReleaseElementNeighborsInHNSWGraph needs to be called with the value
+ * pointed by neighborsData as returned from this call.
+ *
+ * @param index The index in which the element resides.
+ * @param label The label to dump its neighbors in every level in which it exists.
+ * @param neighborsData A pointer to a 2-dim array of integer which is a placeholder for the
+ *                      output of the neighbors' labels that will be allocated and stored.
+ * @return VecSimDebugCommandCode indicating success or failure reason.
+ */
+VecSimDebugCommandCode VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
+                                                                   int ***neighborsData);
+
+/**
+ * @brief Release the neighbors data allocated by VecSimDebug_GetElementNeighborsInHNSWGraph.
+ *
+ * @param neighborsData The 2-dim array returned in the placeholder to be de-allocated.
+ */
+void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData);
+
+/**
  * @brief Determine if ad-hoc brute-force search is preferred over batched search.
  *
  * This is a heuristic function that helps decide the optimal search strategy
