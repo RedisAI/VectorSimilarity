@@ -712,6 +712,46 @@ typedef struct VecSimIndexDebugInfo {
 } VecSimIndexDebugInfo;
 
 /* ============================================================================
+ * Debug Info Iterator Types
+ * ========================================================================== */
+
+/**
+ * @brief Opaque handle to a debug info iterator.
+ */
+typedef struct VecSimDebugInfoIterator VecSimDebugInfoIterator;
+
+/**
+ * @brief Field type for debug info fields.
+ */
+typedef enum {
+    INFOFIELD_STRING = 0,   /**< String value */
+    INFOFIELD_INT64 = 1,    /**< Signed 64-bit integer */
+    INFOFIELD_UINT64 = 2,   /**< Unsigned 64-bit integer */
+    INFOFIELD_FLOAT64 = 3,  /**< 64-bit floating point */
+    INFOFIELD_ITERATOR = 4  /**< Nested iterator */
+} VecSim_InfoFieldType;
+
+/**
+ * @brief Union of field values.
+ */
+typedef union {
+    double floatingPointValue;              /**< 64-bit float value */
+    int64_t integerValue;                   /**< Signed 64-bit integer */
+    uint64_t uintegerValue;                 /**< Unsigned 64-bit integer */
+    const char *stringValue;                /**< String value */
+    VecSimDebugInfoIterator *iteratorValue; /**< Nested iterator */
+} FieldValue;
+
+/**
+ * @brief A field in the debug info iterator.
+ */
+typedef struct {
+    const char *fieldName;          /**< Field name */
+    VecSim_InfoFieldType fieldType; /**< Field type */
+    FieldValue fieldValue;          /**< Field value */
+} VecSim_InfoField;
+
+/* ============================================================================
  * Index Lifecycle Functions
  * ========================================================================== */
 
@@ -1210,6 +1250,54 @@ VecSimIndexStatsInfo VecSimIndex_StatsInfo(const VecSimIndex *index);
  * @return Debug information.
  */
 VecSimIndexDebugInfo VecSimIndex_DebugInfo(const VecSimIndex *index);
+
+/**
+ * @brief Create a debug info iterator for an index.
+ *
+ * The iterator provides a way to traverse all debug information fields
+ * for an index, including nested information for tiered indices.
+ *
+ * @param index The index handle.
+ * @return A debug info iterator, or NULL on failure.
+ *         Must be freed with VecSimDebugInfoIterator_Free().
+ */
+VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(const VecSimIndex *index);
+
+/**
+ * @brief Returns the number of fields in the info iterator.
+ *
+ * @param infoIterator The info iterator.
+ * @return Number of fields.
+ */
+size_t VecSimDebugInfoIterator_NumberOfFields(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Check if the iterator has more fields.
+ *
+ * @param infoIterator The info iterator.
+ * @return true if more fields are available, false otherwise.
+ */
+bool VecSimDebugInfoIterator_HasNextField(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Get the next field from the iterator.
+ *
+ * The returned pointer is valid until the next call to this function
+ * or until the iterator is freed.
+ *
+ * @param infoIterator The info iterator.
+ * @return Pointer to the next info field, or NULL if no more fields.
+ */
+VecSim_InfoField *VecSimDebugInfoIterator_NextField(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Free a debug info iterator.
+ *
+ * This also frees all nested iterators.
+ *
+ * @param infoIterator The info iterator to free.
+ */
+void VecSimDebugInfoIterator_Free(VecSimDebugInfoIterator *infoIterator);
 
 /**
  * @brief Determine if ad-hoc brute-force search is preferred over batched search.

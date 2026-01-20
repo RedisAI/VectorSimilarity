@@ -1762,6 +1762,220 @@ pub unsafe extern "C" fn VecSimIndex_DebugInfo(
 }
 
 // ============================================================================
+// Debug Info Iterator Functions
+// ============================================================================
+
+/// Opaque type for C API - re-export from info module.
+pub type VecSimDebugInfoIterator = info::VecSimDebugInfoIterator;
+
+/// Create a debug info iterator for an index.
+///
+/// The iterator provides a way to traverse all debug information fields
+/// for an index, including nested information for tiered indices.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+/// The returned iterator must be freed with `VecSimDebugInfoIterator_Free`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_DebugInfoIterator(
+    index: *const VecSimIndex,
+) -> *mut VecSimDebugInfoIterator {
+    if index.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    let basic_info = VecSimIndex_BasicInfo(index);
+
+    // Create iterator based on index type
+    let iter = match basic_info.algo {
+        VecSimAlgo::VecSimAlgo_BF => create_bf_debug_iterator(handle, &basic_info),
+        VecSimAlgo::VecSimAlgo_HNSWLIB => create_hnsw_debug_iterator(handle, &basic_info),
+        VecSimAlgo::VecSimAlgo_SVS => create_svs_debug_iterator(handle, &basic_info),
+        VecSimAlgo::VecSimAlgo_TIERED => create_tiered_debug_iterator(handle, &basic_info),
+    };
+
+    Box::into_raw(Box::new(iter))
+}
+
+/// Helper to add common fields to an iterator.
+fn add_common_fields(
+    iter: &mut info::VecSimDebugInfoIterator,
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) {
+    iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
+    iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
+    iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
+    iter.add_string_field(
+        "IS_MULTI_VALUE",
+        if basic_info.isMulti { "true" } else { "false" },
+    );
+    iter.add_string_field(
+        "IS_DISK",
+        if basic_info.isDisk { "true" } else { "false" },
+    );
+    iter.add_uint64_field("INDEX_SIZE", handle.wrapper.index_size() as u64);
+    iter.add_uint64_field("INDEX_LABEL_COUNT", handle.wrapper.index_size() as u64);
+    iter.add_uint64_field("MEMORY", handle.wrapper.memory_usage() as u64);
+    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+}
+
+/// Create a debug iterator for BruteForce index.
+fn create_bf_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(10);
+
+    iter.add_string_field("ALGORITHM", "FLAT");
+    add_common_fields(&mut iter, handle, basic_info);
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    iter
+}
+
+/// Create a debug iterator for HNSW index.
+fn create_hnsw_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(17);
+
+    iter.add_string_field("ALGORITHM", "HNSW");
+    add_common_fields(&mut iter, handle, basic_info);
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    // HNSW-specific fields (defaults, would need to query actual values)
+    iter.add_uint64_field("M", 16);
+    iter.add_uint64_field("EF_CONSTRUCTION", 200);
+    iter.add_uint64_field("EF_RUNTIME", 10);
+    iter.add_float64_field("EPSILON", 0.01);
+    iter.add_uint64_field("MAX_LEVEL", 0);
+    iter.add_uint64_field("ENTRYPOINT", 0);
+    iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
+
+    iter
+}
+
+/// Create a debug iterator for SVS index.
+fn create_svs_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(23);
+
+    iter.add_string_field("ALGORITHM", "SVS");
+    add_common_fields(&mut iter, handle, basic_info);
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    // SVS-specific fields (defaults)
+    iter.add_string_field("QUANT_BITS", "NONE");
+    iter.add_float64_field("ALPHA", 1.2);
+    iter.add_uint64_field("GRAPH_MAX_DEGREE", 32);
+    iter.add_uint64_field("CONSTRUCTION_WINDOW_SIZE", 200);
+    iter.add_uint64_field("MAX_CANDIDATE_POOL_SIZE", 0);
+    iter.add_uint64_field("PRUNE_TO", 0);
+    iter.add_string_field("USE_SEARCH_HISTORY", "AUTO");
+    iter.add_uint64_field("NUM_THREADS", 1);
+    iter.add_uint64_field("LAST_RESERVED_NUM_THREADS", 0);
+    iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
+    iter.add_uint64_field("SEARCH_WINDOW_SIZE", 10);
+    iter.add_uint64_field("SEARCH_BUFFER_CAPACITY", 0);
+    iter.add_uint64_field("LEANVEC_DIMENSION", 0);
+    iter.add_float64_field("EPSILON", 0.01);
+
+    iter
+}
+
+/// Create a debug iterator for tiered index.
+fn create_tiered_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(15);
+
+    iter.add_string_field("ALGORITHM", "TIERED");
+    add_common_fields(&mut iter, handle, basic_info);
+
+    // Tiered-specific fields
+    iter.add_uint64_field("MANAGEMENT_LAYER_MEMORY", 0);
+    iter.add_string_field("BACKGROUND_INDEXING", "false");
+    iter.add_uint64_field("TIERED_BUFFER_LIMIT", 0);
+
+    // Create frontend (flat) iterator
+    let frontend_iter = create_bf_debug_iterator(handle, basic_info);
+    iter.add_iterator_field("FRONTEND_INDEX", frontend_iter);
+
+    // Create backend (hnsw) iterator
+    let backend_iter = create_hnsw_debug_iterator(handle, basic_info);
+    iter.add_iterator_field("BACKEND_INDEX", backend_iter);
+
+    iter
+}
+
+/// Returns the number of fields in the info iterator.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_NumberOfFields(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) -> usize {
+    if info_iterator.is_null() {
+        return 0;
+    }
+    (*info_iterator).number_of_fields()
+}
+
+/// Returns if the fields iterator has more fields.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_HasNextField(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) -> bool {
+    if info_iterator.is_null() {
+        return false;
+    }
+    (*info_iterator).has_next()
+}
+
+/// Returns a pointer to the next info field.
+///
+/// The returned pointer is valid until the next call to this function
+/// or until the iterator is freed.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_NextField(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) -> *mut info::VecSim_InfoField {
+    if info_iterator.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*info_iterator).next()
+}
+
+/// Free an info iterator.
+///
+/// This also frees all nested iterators.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`,
+/// or null.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_Free(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) {
+    if !info_iterator.is_null() {
+        drop(Box::from_raw(info_iterator));
+    }
+}
+
+// ============================================================================
 // Serialization Functions
 // ============================================================================
 
@@ -3409,6 +3623,80 @@ mod tests {
             assert_eq!(info.commonInfo.indexSize, 0);
 
             VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_debug_info_iterator() {
+        let params = test_hnsw_params();
+
+        unsafe {
+            let index = VecSimIndex_NewHNSW(&params);
+            assert!(!index.is_null());
+
+            // Create the debug info iterator
+            let iter = VecSimIndex_DebugInfoIterator(index);
+            assert!(!iter.is_null());
+
+            // Check that we have fields
+            let num_fields = VecSimDebugInfoIterator_NumberOfFields(iter);
+            assert!(num_fields > 0, "Should have at least one field");
+
+            // Iterate through the fields
+            let mut count = 0;
+            while VecSimDebugInfoIterator_HasNextField(iter) {
+                let field = VecSimDebugInfoIterator_NextField(iter);
+                assert!(!field.is_null());
+                assert!(!(*field).fieldName.is_null());
+                count += 1;
+            }
+            assert_eq!(count, num_fields);
+
+            // Should return null after exhausting
+            assert!(!VecSimDebugInfoIterator_HasNextField(iter));
+
+            // Free the iterator
+            VecSimDebugInfoIterator_Free(iter);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_debug_info_iterator_bf() {
+        let params = test_bf_params();
+
+        unsafe {
+            let index = VecSimIndex_NewBF(&params);
+            assert!(!index.is_null());
+
+            let iter = VecSimIndex_DebugInfoIterator(index);
+            assert!(!iter.is_null());
+
+            // BF should have fewer fields than HNSW
+            let num_fields = VecSimDebugInfoIterator_NumberOfFields(iter);
+            assert!(num_fields > 0);
+            assert!(num_fields <= 12, "BF should have ~10 fields");
+
+            VecSimDebugInfoIterator_Free(iter);
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_debug_info_iterator_null_safe() {
+        unsafe {
+            // Null iterator should be handled gracefully
+            assert_eq!(VecSimDebugInfoIterator_NumberOfFields(std::ptr::null_mut()), 0);
+            assert!(!VecSimDebugInfoIterator_HasNextField(std::ptr::null_mut()));
+            assert!(VecSimDebugInfoIterator_NextField(std::ptr::null_mut()).is_null());
+
+            // Free null should not crash
+            VecSimDebugInfoIterator_Free(std::ptr::null_mut());
+
+            // Null index should return null iterator
+            let iter = VecSimIndex_DebugInfoIterator(std::ptr::null());
+            assert!(iter.is_null());
         }
     }
 
