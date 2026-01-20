@@ -234,18 +234,12 @@ impl<T: VectorElement> VecSimIndex for SvsMulti<T> {
             .unwrap_or(core.params.search_window_size);
 
         // Build filter if needed
-        let has_filter = params.is_some_and(|p| p.filter.is_some());
-        let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.read().clone()
-        } else {
-            HashMap::new()
-        };
-
-        let filter_fn: Option<Box<dyn Fn(IdType) -> bool>> = if let Some(p) = params {
+        let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
             if let Some(ref f) = p.filter {
-                let f = f.as_ref();
+                // Use reference to RwLock directly - avoids O(n) copy
+                let id_to_label_ref = &self.id_to_label;
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).is_some_and(|&label| f(label))
+                    id_to_label_ref.read().get(&id).is_some_and(|&label| f(label))
                 }))
             } else {
                 None
@@ -321,18 +315,12 @@ impl<T: VectorElement> VecSimIndex for SvsMulti<T> {
             .max(count.min(1000));
 
         // Build filter if needed
-        let has_filter = params.is_some_and(|p| p.filter.is_some());
-        let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.read().clone()
-        } else {
-            HashMap::new()
-        };
-
-        let filter_fn: Option<Box<dyn Fn(IdType) -> bool>> = if let Some(p) = params {
+        let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
             if let Some(ref f) = p.filter {
-                let f = f.as_ref();
+                // Use reference to RwLock directly - avoids O(n) copy
+                let id_to_label_ref = &self.id_to_label;
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).is_some_and(|&label| f(label))
+                    id_to_label_ref.read().get(&id).is_some_and(|&label| f(label))
                 }))
             } else {
                 None
@@ -403,18 +391,12 @@ impl<T: VectorElement> VecSimIndex for SvsMulti<T> {
         let count = self.count.load(Ordering::Relaxed);
 
         // Build filter if needed
-        let has_filter = params.is_some_and(|p| p.filter.is_some());
-        let id_label_map: HashMap<IdType, LabelType> = if has_filter {
-            self.id_to_label.read().clone()
-        } else {
-            HashMap::new()
-        };
-
-        let filter_fn: Option<Box<dyn Fn(IdType) -> bool>> = if let Some(p) = params {
+        let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
             if let Some(ref f) = p.filter {
-                let f = f.as_ref();
+                // Use reference to RwLock directly - avoids O(n) copy
+                let id_to_label_ref = &self.id_to_label;
                 Some(Box::new(move |id: IdType| {
-                    id_label_map.get(&id).is_some_and(|&label| f(label))
+                    id_to_label_ref.read().get(&id).is_some_and(|&label| f(label))
                 }))
             } else {
                 None
