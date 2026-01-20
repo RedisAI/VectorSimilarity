@@ -154,7 +154,7 @@ mod x86_64_tests {
 
                 let scalar_result = cosine_distance_scalar_f32(&a, &b, dim);
                 let simd_result = unsafe {
-                    crate::distance::simd::sse::cosine_distance_f32_sse(
+                    crate::distance::simd::sse::cosine_f32_sse(
                         a.as_ptr(), b.as_ptr(), dim
                     )
                 };
@@ -606,7 +606,7 @@ mod x86_64_tests {
 
         if is_x86_feature_detected!("sse") {
             let sse_cos = unsafe {
-                crate::distance::simd::sse::cosine_distance_f32_sse(a.as_ptr(), b.as_ptr(), dim)
+                crate::distance::simd::sse::cosine_f32_sse(a.as_ptr(), b.as_ptr(), dim)
             };
             assert!((sse_cos - 1.0).abs() < 0.01, "SSE cosine of orthogonal vectors should be ~1.0, got {}", sse_cos);
         }
@@ -631,7 +631,7 @@ mod x86_64_tests {
 
         if is_x86_feature_detected!("sse") {
             let sse_cos = unsafe {
-                crate::distance::simd::sse::cosine_distance_f32_sse(a.as_ptr(), b.as_ptr(), dim)
+                crate::distance::simd::sse::cosine_f32_sse(a.as_ptr(), b.as_ptr(), dim)
             };
             assert!((sse_cos - 2.0).abs() < 0.01, "SSE cosine of opposite vectors should be ~2.0, got {}", sse_cos);
         }
@@ -662,7 +662,7 @@ mod x86_64_tests {
             unsafe {
                 results_l2.push(("sse", crate::distance::simd::sse::l2_squared_f32_sse(a.as_ptr(), b.as_ptr(), dim)));
                 results_ip.push(("sse", crate::distance::simd::sse::inner_product_f32_sse(a.as_ptr(), b.as_ptr(), dim)));
-                results_cos.push(("sse", crate::distance::simd::sse::cosine_distance_f32_sse(a.as_ptr(), b.as_ptr(), dim)));
+                results_cos.push(("sse", crate::distance::simd::sse::cosine_f32_sse(a.as_ptr(), b.as_ptr(), dim)));
             }
         }
 
