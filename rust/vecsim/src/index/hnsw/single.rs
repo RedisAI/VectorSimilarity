@@ -3,7 +3,6 @@
 //! This index stores one vector per label. When adding a vector with
 //! an existing label, the old vector is replaced.
 
-use rayon::prelude::*;
 use super::{ElementGraphData, HnswCore, HnswParams};
 use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, VecSimIndex};
 use crate::query::{QueryParams, QueryReply, QueryResult};
@@ -70,10 +69,11 @@ impl<T: VectorElement> HnswSingle<T> {
         index
     }
 
-    /// Process multiple queries in parallel.
+    /// Process multiple queries sequentially.
     ///
-    /// This method efficiently processes multiple queries concurrently using rayon,
-    /// providing significant throughput improvements for batch workloads.
+    /// This method processes multiple queries and returns results in the same order.
+    /// For parallel processing, consider using rayon at the application level with
+    /// multiple index instances or accepting the RwLock contention overhead.
     ///
     /// # Arguments
     /// * `queries` - Slice of query vectors (each must have length == dimension)
@@ -88,40 +88,15 @@ impl<T: VectorElement> HnswSingle<T> {
         k: usize,
         params: Option<&QueryParams>,
     ) -> Vec<Result<QueryReply<T::DistanceType>, QueryError>> {
-        let ef = params
-            .and_then(|p| p.ef_runtime)
-            .unwrap_or(self.core.params.ef_runtime);
-
         queries
-            .par_iter()
-            .map(|query| {
-                if query.len() != self.core.params.dim {
-                    return Err(QueryError::DimensionMismatch {
-                        expected: self.core.params.dim,
-                        got: query.len(),
-                    });
-                }
-
-                let filter: Option<&dyn Fn(IdType) -> bool> = None;
-                let results = self.core.search(query, k, ef, filter);
-
-                // Look up labels for results
-                let mut reply = QueryReply::with_capacity(results.len());
-                for (id, dist) in results {
-                    if let Some(label_ref) = self.id_to_label.get(&id) {
-                        reply.push(QueryResult::new(*label_ref, dist));
-                    }
-                }
-
-                Ok(reply)
-            })
+            .iter()
+            .map(|query| self.top_k_query(query, k, params))
             .collect()
     }
 
-    /// Process multiple queries in parallel with a filter.
+    /// Process multiple queries with a filter.
     ///
     /// Similar to `batch_search` but applies a filter function to all queries.
-    /// Note: The filter is shared across all queries (must be Sync).
     ///
     /// # Arguments
     /// * `queries` - Slice of query vectors
@@ -133,13 +108,13 @@ impl<T: VectorElement> HnswSingle<T> {
         queries: &[Vec<T>],
         k: usize,
         ef: usize,
-        filter: &F,
+        filter: F,
     ) -> Vec<Result<QueryReply<T::DistanceType>, QueryError>>
     where
-        F: Fn(LabelType) -> bool + Sync,
+        F: Fn(LabelType) -> bool,
     {
         queries
-            .par_iter()
+            .iter()
             .map(|query| {
                 if query.len() != self.core.params.dim {
                     return Err(QueryError::DimensionMismatch {
@@ -197,26 +172,10 @@ impl<T: VectorElement> HnswSingle<T> {
             })];
         }
 
-        let ef = params
-            .and_then(|p| p.ef_runtime)
-            .unwrap_or(self.core.params.ef_runtime);
-
         (0..num_queries)
-            .into_par_iter()
             .map(|i| {
                 let query = &query_data[i * dim..(i + 1) * dim];
-                let filter: Option<&dyn Fn(IdType) -> bool> = None;
-                let results = self.core.search(query, k, ef, filter);
-
-                // Look up labels for results
-                let mut reply = QueryReply::with_capacity(results.len());
-                for (id, dist) in results {
-                    if let Some(label_ref) = self.id_to_label.get(&id) {
-                        reply.push(QueryResult::new(*label_ref, dist));
-                    }
-                }
-
-                Ok(reply)
+                self.top_k_query(query, k, params)
             })
             .collect()
     }

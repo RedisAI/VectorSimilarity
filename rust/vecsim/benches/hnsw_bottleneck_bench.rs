@@ -416,6 +416,45 @@ fn bench_batch_distance(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark batch query processing.
+///
+/// Measures batch query throughput at different batch sizes.
+fn bench_batch_query(c: &mut Criterion) {
+    let mut group = c.benchmark_group("batch_query");
+
+    let dim = 128;
+    let num_vectors = 10_000;
+
+    // Build index
+    let params = HnswParams::new(dim, vecsim::distance::Metric::L2)
+        .with_m(16)
+        .with_ef_construction(100)
+        .with_ef_runtime(50);
+
+    let mut index = HnswSingle::<f32>::new(params);
+
+    // Add vectors
+    let vectors = generate_vectors(num_vectors, dim);
+    for (label, vec) in vectors.iter().enumerate() {
+        let _ = index.add_vector(vec, label as u64);
+    }
+
+    // Generate query batches and benchmark
+    for batch_size in [1, 10, 50, 100] {
+        let queries = generate_vectors(batch_size, dim);
+
+        group.bench_with_input(
+            BenchmarkId::new("batch_search", batch_size),
+            &batch_size,
+            |b, _| {
+                b.iter(|| index.batch_search(black_box(&queries), 10, None));
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_distance_computation,
@@ -425,5 +464,6 @@ criterion_group!(
     bench_search_with_filters,
     bench_memory_access_patterns,
     bench_batch_distance,
+    bench_batch_query,
 );
 criterion_main!(benches);

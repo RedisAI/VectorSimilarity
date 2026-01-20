@@ -752,6 +752,23 @@ impl<T: VectorElement> HnswCore<T> {
         ef: usize,
         filter: Option<&dyn Fn(IdType) -> bool>,
     ) -> Vec<(IdType, T::DistanceType)> {
+        let mut visited = self.visited_pool.get();
+        visited.reset();
+        self.search_with_visited(query, k, ef, filter, &mut visited)
+    }
+
+    /// Search for nearest neighbors using a provided visited handler.
+    ///
+    /// This variant allows callers to provide their own visited handler,
+    /// which is useful for batch queries to avoid pool contention.
+    pub fn search_with_visited(
+        &self,
+        query: &[T],
+        k: usize,
+        ef: usize,
+        filter: Option<&dyn Fn(IdType) -> bool>,
+        visited: &mut VisitedNodesHandler,
+    ) -> Vec<(IdType, T::DistanceType)> {
         let entry_point = self.entry_point.load(Ordering::Acquire);
         if entry_point == INVALID_ID {
             return Vec::new();
@@ -774,10 +791,6 @@ impl<T: VectorElement> HnswCore<T> {
             current_entry = new_entry;
         }
 
-        // Search layer 0 with full ef
-        let mut visited = self.visited_pool.get();
-        visited.reset();
-
         let entry_dist = self.compute_distance(current_entry, query);
         let entry_points = vec![(current_entry, entry_dist)];
 
@@ -791,7 +804,7 @@ impl<T: VectorElement> HnswCore<T> {
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
-                &visited,
+                visited,
                 Some(f),
             )
         } else {
@@ -804,7 +817,7 @@ impl<T: VectorElement> HnswCore<T> {
                 |id| self.data.get(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
-                &visited,
+                visited,
                 None,
             )
         };
