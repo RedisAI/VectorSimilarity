@@ -101,10 +101,7 @@ pub trait IndexWrapper: Send + Sync {
     }
 
     /// Run garbage collection on a tiered index.
-    /// Returns the number of vectors cleaned up.
-    fn tiered_gc(&mut self) -> usize {
-        0
-    }
+    fn tiered_gc(&mut self) {}
 
     /// Acquire shared locks on a tiered index.
     fn tiered_acquire_shared_locks(&mut self) {}
@@ -803,8 +800,8 @@ macro_rules! impl_tiered_wrapper {
                 self.index.hnsw_size()
             }
 
-            fn tiered_gc(&mut self) -> usize {
-                0 // No-op for now
+            fn tiered_gc(&mut self) {
+                // No-op for now
             }
 
             fn tiered_acquire_shared_locks(&mut self) {

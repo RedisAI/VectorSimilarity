@@ -808,9 +808,8 @@ size_t VecSimTieredIndex_BackendSize(const VecSimIndex *index);
  * This cleans up deleted vectors and optimizes the index structure.
  *
  * @param index The tiered index handle.
- * @return The number of vectors cleaned up.
  */
-size_t VecSimTieredIndex_GC(VecSimIndex *index);
+void VecSimTieredIndex_GC(VecSimIndex *index);
 
 /**
  * @brief Acquire shared locks on a tiered index.

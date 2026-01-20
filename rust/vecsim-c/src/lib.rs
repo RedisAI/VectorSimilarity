@@ -644,17 +644,15 @@ pub unsafe extern "C" fn VecSimTieredIndex_BackendSize(index: *const VecSimIndex
 /// Run garbage collection on a tiered index.
 ///
 /// This cleans up deleted vectors and optimizes the index structure.
-/// Returns the number of vectors cleaned up.
-///
 /// # Safety
 /// `index` must be a valid pointer returned by `VecSimIndex_NewTiered`.
 #[no_mangle]
-pub unsafe extern "C" fn VecSimTieredIndex_GC(index: *mut VecSimIndex) -> usize {
+pub unsafe extern "C" fn VecSimTieredIndex_GC(index: *mut VecSimIndex) {
     if index.is_null() {
-        return 0;
+        return;
     }
     let handle = &mut *(index as *mut IndexHandle);
-    handle.wrapper.tiered_gc()
+    handle.wrapper.tiered_gc();
 }
 
 /// Acquire shared locks on a tiered index.
@@ -3470,9 +3468,8 @@ mod tests {
             let index = VecSimIndex_NewTiered(&params);
             assert!(!index.is_null());
 
-            // GC on empty index should return 0
-            let cleaned = VecSimTieredIndex_GC(index);
-            assert_eq!(cleaned, 0);
+            // GC on empty index should not crash
+            VecSimTieredIndex_GC(index);
 
             VecSimIndex_Free(index);
         }
