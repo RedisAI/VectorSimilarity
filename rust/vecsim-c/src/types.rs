@@ -41,6 +41,17 @@ pub enum VecSimQueryReply_Order {
     BY_ID = 1,
 }
 
+/// Query reply status code (for detecting timeouts, etc.).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VecSimQueryReply_Code {
+    /// Query completed successfully.
+    #[default]
+    VecSim_QueryReply_OK = 0,
+    /// Query was aborted due to timeout.
+    VecSim_QueryReply_TimedOut = 1,
+}
+
 /// Index resolve codes for resolving index state.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,21 +265,29 @@ pub struct QueryResultInternal {
 /// Internal representation of query reply.
 pub struct QueryReplyInternal {
     pub results: Vec<QueryResultInternal>,
+    pub code: VecSimQueryReply_Code,
 }
 
 impl QueryReplyInternal {
     pub fn new() -> Self {
-        Self { results: Vec::new() }
+        Self {
+            results: Vec::new(),
+            code: VecSimQueryReply_Code::VecSim_QueryReply_OK,
+        }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             results: Vec::with_capacity(capacity),
+            code: VecSimQueryReply_Code::VecSim_QueryReply_OK,
         }
     }
 
     pub fn from_results(results: Vec<QueryResultInternal>) -> Self {
-        Self { results }
+        Self {
+            results,
+            code: VecSimQueryReply_Code::VecSim_QueryReply_OK,
+        }
     }
 
     pub fn len(&self) -> usize {

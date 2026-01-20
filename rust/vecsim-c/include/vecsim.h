@@ -109,6 +109,14 @@ typedef enum VecSimQueryReply_Order {
 } VecSimQueryReply_Order;
 
 /**
+ * @brief Query reply status code.
+ */
+typedef enum VecSimQueryReply_Code {
+    VecSim_QueryReply_OK = 0,      /**< Query completed successfully */
+    VecSim_QueryReply_TimedOut = 1 /**< Query was aborted due to timeout */
+} VecSimQueryReply_Code;
+
+/**
  * @brief Search mode for queries.
  */
 typedef enum VecSimSearchMode {
@@ -964,6 +972,16 @@ VecSimQueryReply *VecSimIndex_RangeQuery(
  * @return Number of results
  */
 size_t VecSimQueryReply_Len(const VecSimQueryReply *reply);
+
+/**
+ * @brief Get the status code of a query reply.
+ *
+ * This is used to detect if the query timed out.
+ *
+ * @param reply Pointer to the query reply
+ * @return The status code (VecSim_QueryReply_OK or VecSim_QueryReply_TimedOut)
+ */
+VecSimQueryReply_Code VecSimQueryReply_GetCode(const VecSimQueryReply *reply);
 
 /**
  * @brief Free a query reply.

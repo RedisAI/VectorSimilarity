@@ -1288,6 +1288,23 @@ pub unsafe extern "C" fn VecSimQueryReply_Len(reply: *const VecSimQueryReply) ->
     handle.len()
 }
 
+/// Get the status code of a query reply.
+///
+/// This is used to detect if the query timed out.
+///
+/// # Safety
+/// `reply` must be a valid pointer returned by `VecSimIndex_TopKQuery` or `VecSimIndex_RangeQuery`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimQueryReply_GetCode(
+    reply: *const VecSimQueryReply,
+) -> types::VecSimQueryReply_Code {
+    if reply.is_null() {
+        return types::VecSimQueryReply_Code::VecSim_QueryReply_OK;
+    }
+    let handle = &*(reply as *const query::QueryReplyHandle);
+    handle.code()
+}
+
 /// Free a query reply.
 ///
 /// # Safety
@@ -3643,6 +3660,57 @@ mod tests {
         unsafe {
             let index = VecSimIndex_New(ptr::null());
             assert!(index.is_null(), "VecSimIndex_New should return null for null params");
+        }
+    }
+
+    #[test]
+    fn test_query_reply_get_code() {
+        unsafe {
+            // Create an index
+            let params = BFParams {
+                base: VecSimParams {
+                    algo: VecSimAlgo::VecSimAlgo_BF,
+                    type_: VecSimType::VecSimType_FLOAT32,
+                    metric: VecSimMetric::VecSimMetric_L2,
+                    dim: 4,
+                    multi: false,
+                    initialCapacity: 100,
+                    blockSize: 0,
+                },
+            };
+            let index = VecSimIndex_NewBF(&params);
+            assert!(!index.is_null());
+
+            // Add a vector
+            let v: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+            VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, 1);
+
+            // Query
+            let reply = VecSimIndex_TopKQuery(
+                index,
+                v.as_ptr() as *const c_void,
+                10,
+                ptr::null(),
+                VecSimQueryReply_Order::BY_SCORE,
+            );
+            assert!(!reply.is_null());
+
+            // Check code - should be OK (not timed out)
+            let code = VecSimQueryReply_GetCode(reply);
+            assert_eq!(code, types::VecSimQueryReply_Code::VecSim_QueryReply_OK);
+
+            // Cleanup
+            VecSimQueryReply_Free(reply);
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_query_reply_get_code_null_is_safe() {
+        unsafe {
+            // Should not crash with null, returns OK
+            let code = VecSimQueryReply_GetCode(ptr::null());
+            assert_eq!(code, types::VecSimQueryReply_Code::VecSim_QueryReply_OK);
         }
     }
 }

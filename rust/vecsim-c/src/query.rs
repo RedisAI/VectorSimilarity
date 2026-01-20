@@ -3,7 +3,8 @@
 use crate::index::{BatchIteratorWrapper, IndexHandle};
 use crate::params::VecSimQueryParams;
 use crate::types::{
-    QueryReplyInternal, QueryReplyIteratorInternal, QueryResultInternal, VecSimQueryReply_Order,
+    QueryReplyInternal, QueryReplyIteratorInternal, QueryResultInternal, VecSimQueryReply_Code,
+    VecSimQueryReply_Order,
 };
 use std::ffi::c_void;
 
@@ -34,6 +35,10 @@ impl QueryReplyHandle {
 
     pub fn get_iterator(&self) -> QueryReplyIteratorHandle {
         QueryReplyIteratorHandle::new(&self.reply.results)
+    }
+
+    pub fn code(&self) -> VecSimQueryReply_Code {
+        self.reply.code
     }
 }
 
