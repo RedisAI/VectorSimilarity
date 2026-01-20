@@ -439,12 +439,13 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             });
         }
 
-        let ef = params
-            .and_then(|p| p.ef_runtime)
-            .unwrap_or(self.core.params.ef_runtime)
-            .max(1000);
-
-        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+        // Get epsilon from params or use default (1.0 = 100% expansion)
+        // Note: C++ uses 0.01 (1%) but the Rust HNSW graph structure may require
+        // a larger epsilon to ensure reliable range search results. With 100%
+        // expansion, the algorithm explores candidates up to 2x the dynamic range.
+        let epsilon = params
+            .and_then(|p| p.epsilon)
+            .unwrap_or(1.0);
 
         // Build filter if needed
         let has_filter = params.is_some_and(|p| p.filter.is_some());
@@ -467,25 +468,28 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             None
         };
 
-        let results = self.core.search(query, count, ef, filter_fn.as_ref().map(|f| f.as_ref()));
+        // Use epsilon-neighborhood search for efficient range query
+        let results = self.core.search_range(
+            query,
+            radius,
+            epsilon,
+            filter_fn.as_ref().map(|f| f.as_ref()),
+        );
 
-        // Look up labels and filter by radius
         // For multi-value index, deduplicate by label and keep best distance per label
         let mut label_best: HashMap<LabelType, T::DistanceType> = HashMap::new();
 
         for (id, dist) in results {
-            if dist.to_f64() <= radius.to_f64() {
-                if let Some(label_ref) = self.id_to_label.get(&id) {
-                    let label = *label_ref;
-                    label_best
-                        .entry(label)
-                        .and_modify(|best| {
-                            if dist.to_f64() < best.to_f64() {
-                                *best = dist;
-                            }
-                        })
-                        .or_insert(dist);
-                }
+            if let Some(label_ref) = self.id_to_label.get(&id) {
+                let label = *label_ref;
+                label_best
+                    .entry(label)
+                    .and_modify(|best| {
+                        if dist.to_f64() < best.to_f64() {
+                            *best = dist;
+                        }
+                    })
+                    .or_insert(dist);
             }
         }
 

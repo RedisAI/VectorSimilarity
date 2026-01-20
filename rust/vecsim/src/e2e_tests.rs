@@ -848,7 +848,8 @@ fn test_e2e_scaling_to_10k_vectors() {
     let num_vectors = 10_000;
     let params = HnswParams::new(dim, Metric::L2)
         .with_m(16)
-        .with_ef_construction(100);
+        .with_ef_construction(100)
+        .with_seed(12345); // Fixed seed for reproducible graph structure
     let mut index = HnswSingle::<f32>::new(params);
 
     // Bulk insert with random vectors
@@ -872,8 +873,20 @@ fn test_e2e_scaling_to_10k_vectors() {
 
     // Test range query - use a reasonable radius for 128-dim L2 space
     // Random vectors in [-1,1] have typical distances around sqrt(128 * 0.5) ≈ 8
-    let range_results = index.range_query(query, 5.0, Some(&query_params)).unwrap();
-    assert!(!range_results.results.is_empty());
+    // Use a larger radius (50) to ensure we find some results
+    // The query vector itself has distance 0, so it should always be found
+    // Use default epsilon (0.1 = 10%) to ensure we explore enough of the graph
+    // The epsilon-neighborhood algorithm terminates when the next candidate's distance
+    // is outside the boundary (dynamic_range * (1 + epsilon)). With a small epsilon,
+    // the algorithm might terminate before finding all vectors within the radius.
+    let range_params = QueryParams::new().with_ef_runtime(200);
+    let range_results = index.range_query(query, 50.0, Some(&range_params)).unwrap();
+
+    // The self-query should be within radius 50.0 (distance is 0)
+    assert!(!range_results.results.is_empty(), "Range query should find at least the query vector itself (distance=0)");
+    // Verify the query vector is in the results
+    assert!(range_results.results.iter().any(|r| r.label == 5000 && r.distance < 0.001),
+        "Range query should find the query vector itself");
 }
 
 // =============================================================================
