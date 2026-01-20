@@ -238,6 +238,187 @@ typedef int (*timeoutCallbackFunction)(void *ctx);
  */
 typedef void (*logCallbackFunction)(void *ctx, const char *level, const char *message);
 
+// ============================================================================
+// C++-Compatible Structures (for drop-in API compatibility)
+// ============================================================================
+
+/**
+ * @brief HNSW parameters (C++-compatible layout).
+ */
+typedef struct {
+    VecSimType type;
+    size_t dim;
+    VecSimMetric metric;
+    bool multi;
+    size_t initialCapacity;
+    size_t blockSize;
+    size_t M;
+    size_t efConstruction;
+    size_t efRuntime;
+    double epsilon;
+} HNSWParams_C;
+
+/**
+ * @brief BruteForce parameters (C++-compatible layout).
+ */
+typedef struct {
+    VecSimType type;
+    size_t dim;
+    VecSimMetric metric;
+    bool multi;
+    size_t initialCapacity;
+    size_t blockSize;
+} BFParams_C;
+
+/**
+ * @brief SVS quantization bits.
+ */
+typedef enum {
+    VecSimSvsQuant_NONE = 0,
+    VecSimSvsQuant_Scalar = 1,
+    VecSimSvsQuant_4 = 4,
+    VecSimSvsQuant_8 = 8
+} VecSimSvsQuantBits;
+
+/**
+ * @brief SVS parameters (C++-compatible layout).
+ */
+typedef struct {
+    VecSimType type;
+    size_t dim;
+    VecSimMetric metric;
+    bool multi;
+    size_t blockSize;
+    VecSimSvsQuantBits quantBits;
+    float alpha;
+    size_t graph_max_degree;
+    size_t construction_window_size;
+    size_t max_candidate_pool_size;
+    size_t prune_to;
+    VecSimOptionMode use_search_history;
+    size_t num_threads;
+    size_t search_window_size;
+    size_t search_buffer_capacity;
+    size_t leanvec_dim;
+    double epsilon;
+} SVSParams_C;
+
+/**
+ * @brief Tiered HNSW specific parameters.
+ */
+typedef struct {
+    size_t swapJobThreshold;
+} TieredHNSWParams_C;
+
+/**
+ * @brief Tiered SVS specific parameters.
+ */
+typedef struct {
+    size_t trainingTriggerThreshold;
+    size_t updateTriggerThreshold;
+    size_t updateJobWaitTime;
+} TieredSVSParams_C;
+
+/**
+ * @brief Tiered HNSW Disk specific parameters.
+ */
+typedef struct {
+    char _placeholder;
+} TieredHNSWDiskParams_C;
+
+/* Forward declaration */
+typedef struct VecSimParams_C VecSimParams_C;
+
+/**
+ * @brief Callback for submitting async jobs.
+ */
+typedef int (*SubmitCB)(void *job_queue, void *index_ctx, void **jobs, void **cbs, size_t jobs_len);
+
+/**
+ * @brief Tiered index parameters (C++-compatible layout).
+ */
+typedef struct {
+    void *jobQueue;
+    void *jobQueueCtx;
+    SubmitCB submitCb;
+    size_t flatBufferLimit;
+    VecSimParams_C *primaryIndexParams;
+    union {
+        TieredHNSWParams_C tieredHnswParams;
+        TieredSVSParams_C tieredSVSParams;
+        TieredHNSWDiskParams_C tieredHnswDiskParams;
+    } specificParams;
+} TieredIndexParams_C;
+
+/**
+ * @brief Union of algorithm parameters (C++-compatible layout).
+ */
+typedef union {
+    HNSWParams_C hnswParams;
+    BFParams_C bfParams;
+    TieredIndexParams_C tieredParams;
+    SVSParams_C svsParams;
+} AlgoParams_C;
+
+/**
+ * @brief VecSimParams (C++-compatible layout).
+ *
+ * This structure matches the C++ VecSim API exactly for drop-in compatibility.
+ */
+struct VecSimParams_C {
+    VecSimAlgo algo;
+    AlgoParams_C algoParams;
+    void *logCtx;
+};
+
+/**
+ * @brief Disk context (C++-compatible layout).
+ */
+typedef struct {
+    void *storage;
+    const char *indexName;
+    size_t indexNameLen;
+} VecSimDiskContext_C;
+
+/**
+ * @brief Disk parameters (C++-compatible layout).
+ */
+typedef struct {
+    VecSimParams_C *indexParams;
+    VecSimDiskContext_C *diskContext;
+} VecSimParamsDisk_C;
+
+/**
+ * @brief HNSW runtime parameters (C++-compatible layout).
+ */
+typedef struct {
+    size_t efRuntime;
+    double epsilon;
+} HNSWRuntimeParams_C;
+
+/**
+ * @brief SVS runtime parameters (C++-compatible layout).
+ */
+typedef struct {
+    size_t windowSize;
+    size_t bufferCapacity;
+    VecSimOptionMode searchHistory;
+    double epsilon;
+} SVSRuntimeParams_C;
+
+/**
+ * @brief Query parameters (C++-compatible layout).
+ */
+typedef struct {
+    union {
+        HNSWRuntimeParams_C hnswRuntimeParams;
+        SVSRuntimeParams_C svsRuntimeParams;
+    };
+    size_t batchSize;
+    VecSearchMode searchMode;
+    void *timeoutCtx;
+} VecSimQueryParams_C;
+
 /* ============================================================================
  * Memory Function Types
  * ========================================================================== */
@@ -527,15 +708,19 @@ typedef struct VecSimIndexDebugInfo {
  * ========================================================================== */
 
 /**
- * @brief Create a new vector similarity index.
+ * @brief Create a new vector similarity index (C++-compatible API).
  *
- * @param params Pointer to index parameters (VecSimParams, BFParams, HNSWParams, or SVSParams)
- * @return Pointer to the created index, or NULL on failure
+ * This function provides drop-in compatibility with the C++ VecSim API.
+ * It reads the algo field to determine which type of index to create,
+ * then accesses the appropriate union variant in algoParams.
  *
- * @note The params pointer is interpreted based on the algo field.
- *       For full control, use VecSimIndex_NewBF(), VecSimIndex_NewHNSW(), or VecSimIndex_NewSVS().
+ * @param params Index parameters with algorithm-specific params in the union.
+ * @return A new index handle, or NULL on failure.
+ *
+ * @note For type-safe index creation, use VecSimIndex_NewBF(), VecSimIndex_NewHNSW(),
+ *       VecSimIndex_NewSVS(), VecSimIndex_NewTiered(), or VecSimIndex_NewDisk().
  */
-VecSimIndex *VecSimIndex_New(const VecSimParams *params);
+VecSimIndex *VecSimIndex_New(const VecSimParams_C *params);
 
 /**
  * @brief Create a new BruteForce index.

@@ -8,6 +8,7 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
+pub mod compat;
 pub mod index;
 pub mod info;
 pub mod params;
@@ -16,7 +17,13 @@ pub mod types;
 
 use index::{
     create_brute_force_index, create_disk_index, create_hnsw_index, create_svs_index,
-    create_tiered_index, IndexHandle,
+    create_tiered_index, IndexHandle, IndexWrapper,
+    BruteForceSingleF32Wrapper, BruteForceSingleF64Wrapper,
+    BruteForceMultiF32Wrapper, BruteForceMultiF64Wrapper,
+    HnswSingleF32Wrapper, HnswSingleF64Wrapper,
+    HnswMultiF32Wrapper, HnswMultiF64Wrapper,
+    SvsSingleF32Wrapper, SvsSingleF64Wrapper,
+    TieredSingleF32Wrapper, TieredMultiF32Wrapper,
 };
 use info::{get_index_info, VecSimIndexInfo};
 use params::{
@@ -37,6 +44,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use types::{VecSimMemoryFunctions, VecSimWriteMode};
+use compat::VecSimParams_C;
 
 // ============================================================================
 // Global Memory Functions
@@ -512,57 +520,6 @@ fn resolve_use_search_history(
 // Index Lifecycle Functions
 // ============================================================================
 
-/// Create a new vector similarity index.
-///
-/// # Safety
-/// The `params` pointer must be valid and point to a properly initialized
-/// `VecSimParams`, `BFParams`, or `HNSWParams` struct.
-#[no_mangle]
-pub unsafe extern "C" fn VecSimIndex_New(params: *const VecSimParams) -> *mut VecSimIndex {
-    if params.is_null() {
-        return ptr::null_mut();
-    }
-
-    let params = &*params;
-
-    let handle = match params.algo {
-        VecSimAlgo::VecSimAlgo_BF => {
-            let bf_params = BFParams { base: *params };
-            create_brute_force_index(&bf_params)
-        }
-        VecSimAlgo::VecSimAlgo_HNSWLIB => {
-            // For HNSW, we need to cast to HNSWParams if the full struct was passed
-            // For now, create with default HNSW params
-            let hnsw_params = HNSWParams {
-                base: *params,
-                ..HNSWParams::default()
-            };
-            create_hnsw_index(&hnsw_params)
-        }
-        VecSimAlgo::VecSimAlgo_SVS => {
-            // For SVS, create with default SVS params
-            let svs_params = SVSParams {
-                base: *params,
-                ..SVSParams::default()
-            };
-            create_svs_index(&svs_params)
-        }
-        VecSimAlgo::VecSimAlgo_TIERED => {
-            // For Tiered, create with default tiered params
-            let tiered_params = TieredParams {
-                base: *params,
-                ..TieredParams::default()
-            };
-            create_tiered_index(&tiered_params)
-        }
-    };
-
-    match handle {
-        Some(boxed) => Box::into_raw(boxed) as *mut VecSimIndex,
-        None => ptr::null_mut(),
-    }
-}
-
 /// Create a new BruteForce index with specific parameters.
 ///
 /// # Safety
@@ -772,6 +729,334 @@ pub unsafe extern "C" fn VecSimIndex_NewDisk(params: *const DiskParams) -> *mut 
         Some(handle) => Box::into_raw(handle) as *mut VecSimIndex,
         None => ptr::null_mut(),
     }
+}
+
+// ============================================================================
+// Generic C++-compatible Index Creation
+// ============================================================================
+
+/// Create a new index using C++-compatible VecSimParams structure.
+///
+/// This function provides drop-in compatibility with the C++ VecSim API.
+/// It reads the `algo` field to determine which type of index to create,
+/// then accesses the appropriate union variant.
+///
+/// # Safety
+/// - `params` must be a valid pointer to a VecSimParams_C struct
+/// - The `algo` field must match the initialized union variant in `algoParams`
+/// - For tiered indices, `primaryIndexParams` must be a valid pointer
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_New(params: *const VecSimParams_C) -> *mut VecSimIndex {
+    if params.is_null() {
+        return ptr::null_mut();
+    }
+
+    let params = &*params;
+
+    match params.algo {
+        VecSimAlgo::VecSimAlgo_BF => {
+            let bf = params.algoParams.bfParams;
+            create_bf_index_raw(
+                bf.type_,
+                bf.metric,
+                bf.dim,
+                bf.multi,
+                bf.initialCapacity,
+                bf.blockSize,
+            )
+        }
+        VecSimAlgo::VecSimAlgo_HNSWLIB => {
+            let hnsw = params.algoParams.hnswParams;
+            create_hnsw_index_raw(
+                hnsw.type_,
+                hnsw.metric,
+                hnsw.dim,
+                hnsw.multi,
+                hnsw.initialCapacity,
+                hnsw.M,
+                hnsw.efConstruction,
+                hnsw.efRuntime,
+            )
+        }
+        VecSimAlgo::VecSimAlgo_SVS => {
+            let svs = params.algoParams.svsParams;
+            create_svs_index_raw(
+                svs.type_,
+                svs.metric,
+                svs.dim,
+                svs.multi,
+                svs.graph_max_degree,
+                svs.alpha,
+                svs.construction_window_size,
+                svs.search_window_size,
+            )
+        }
+        VecSimAlgo::VecSimAlgo_TIERED => {
+            let tiered = &*params.algoParams.tieredParams;
+
+            // Get primary index params
+            if tiered.primaryIndexParams.is_null() {
+                return ptr::null_mut();
+            }
+            let primary = &*tiered.primaryIndexParams;
+
+            // Determine the backend type from primary params
+            match primary.algo {
+                VecSimAlgo::VecSimAlgo_HNSWLIB => {
+                    let hnsw = primary.algoParams.hnswParams;
+                    create_tiered_index_raw(
+                        hnsw.type_,
+                        hnsw.metric,
+                        hnsw.dim,
+                        hnsw.multi,
+                        hnsw.M,
+                        hnsw.efConstruction,
+                        hnsw.efRuntime,
+                        tiered.flatBufferLimit,
+                    )
+                }
+                _ => ptr::null_mut(), // Only HNSW backend supported for now
+            }
+        }
+    }
+}
+
+// Helper function to create BF index
+unsafe fn create_bf_index_raw(
+    type_: VecSimType,
+    metric: VecSimMetric,
+    dim: usize,
+    multi: bool,
+    initial_capacity: usize,
+    block_size: usize,
+) -> *mut VecSimIndex {
+    let rust_metric = metric.to_rust_metric();
+    let block = if block_size > 0 { block_size } else { 1024 };
+
+    let wrapper: Box<dyn IndexWrapper> = match (type_, multi) {
+        (VecSimType::VecSimType_FLOAT32, false) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(initial_capacity)
+                .with_block_size(block);
+            Box::new(BruteForceSingleF32Wrapper::new(
+                vecsim::index::BruteForceSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT64, false) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(initial_capacity)
+                .with_block_size(block);
+            Box::new(BruteForceSingleF64Wrapper::new(
+                vecsim::index::BruteForceSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT32, true) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(initial_capacity)
+                .with_block_size(block);
+            Box::new(BruteForceMultiF32Wrapper::new(
+                vecsim::index::BruteForceMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT64, true) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(initial_capacity)
+                .with_block_size(block);
+            Box::new(BruteForceMultiF64Wrapper::new(
+                vecsim::index::BruteForceMulti::new(params),
+                type_,
+            ))
+        }
+        _ => return ptr::null_mut(),
+    };
+
+    Box::into_raw(Box::new(IndexHandle::new(
+        wrapper,
+        type_,
+        VecSimAlgo::VecSimAlgo_BF,
+        metric,
+        dim,
+        multi,
+    ))) as *mut VecSimIndex
+}
+
+// Helper function to create HNSW index
+unsafe fn create_hnsw_index_raw(
+    type_: VecSimType,
+    metric: VecSimMetric,
+    dim: usize,
+    multi: bool,
+    initial_capacity: usize,
+    m: usize,
+    ef_construction: usize,
+    ef_runtime: usize,
+) -> *mut VecSimIndex {
+    let rust_metric = metric.to_rust_metric();
+
+    let wrapper: Box<dyn IndexWrapper> = match (type_, multi) {
+        (VecSimType::VecSimType_FLOAT32, false) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(initial_capacity);
+            Box::new(HnswSingleF32Wrapper::new(
+                vecsim::index::HnswSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT64, false) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(initial_capacity);
+            Box::new(HnswSingleF64Wrapper::new(
+                vecsim::index::HnswSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT32, true) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(initial_capacity);
+            Box::new(HnswMultiF32Wrapper::new(
+                vecsim::index::HnswMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT64, true) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(initial_capacity);
+            Box::new(HnswMultiF64Wrapper::new(
+                vecsim::index::HnswMulti::new(params),
+                type_,
+            ))
+        }
+        _ => return ptr::null_mut(),
+    };
+
+    Box::into_raw(Box::new(IndexHandle::new(
+        wrapper,
+        type_,
+        VecSimAlgo::VecSimAlgo_HNSWLIB,
+        metric,
+        dim,
+        multi,
+    ))) as *mut VecSimIndex
+}
+
+// Helper function to create SVS index
+unsafe fn create_svs_index_raw(
+    type_: VecSimType,
+    metric: VecSimMetric,
+    dim: usize,
+    multi: bool,
+    graph_degree: usize,
+    alpha: f32,
+    construction_l: usize,
+    search_l: usize,
+) -> *mut VecSimIndex {
+    let rust_metric = metric.to_rust_metric();
+
+    // SVS only supports single-label for now
+    if multi {
+        return ptr::null_mut();
+    }
+
+    let wrapper: Box<dyn IndexWrapper> = match type_ {
+        VecSimType::VecSimType_FLOAT32 => {
+            let params = vecsim::index::SvsParams::new(dim, rust_metric)
+                .with_graph_degree(graph_degree)
+                .with_alpha(alpha)
+                .with_construction_l(construction_l)
+                .with_search_l(search_l);
+            Box::new(SvsSingleF32Wrapper::new(
+                vecsim::index::SvsSingle::new(params),
+                type_,
+            ))
+        }
+        VecSimType::VecSimType_FLOAT64 => {
+            let params = vecsim::index::SvsParams::new(dim, rust_metric)
+                .with_graph_degree(graph_degree)
+                .with_alpha(alpha)
+                .with_construction_l(construction_l)
+                .with_search_l(search_l);
+            Box::new(SvsSingleF64Wrapper::new(
+                vecsim::index::SvsSingle::new(params),
+                type_,
+            ))
+        }
+        _ => return ptr::null_mut(),
+    };
+
+    Box::into_raw(Box::new(IndexHandle::new(
+        wrapper,
+        type_,
+        VecSimAlgo::VecSimAlgo_SVS,
+        metric,
+        dim,
+        false,
+    ))) as *mut VecSimIndex
+}
+
+// Helper function to create tiered index
+// Note: Tiered only supports f32 currently
+unsafe fn create_tiered_index_raw(
+    type_: VecSimType,
+    metric: VecSimMetric,
+    dim: usize,
+    multi: bool,
+    m: usize,
+    ef_construction: usize,
+    ef_runtime: usize,
+    flat_buffer_limit: usize,
+) -> *mut VecSimIndex {
+    // Tiered only supports f32 currently
+    if type_ != VecSimType::VecSimType_FLOAT32 {
+        return ptr::null_mut();
+    }
+
+    let rust_metric = metric.to_rust_metric();
+
+    let wrapper: Box<dyn IndexWrapper> = if multi {
+        let params = vecsim::index::TieredParams::new(dim, rust_metric)
+            .with_m(m)
+            .with_ef_construction(ef_construction)
+            .with_ef_runtime(ef_runtime)
+            .with_flat_buffer_limit(flat_buffer_limit);
+        Box::new(TieredMultiF32Wrapper::new(
+            vecsim::index::TieredMulti::new(params),
+            type_,
+        ))
+    } else {
+        let params = vecsim::index::TieredParams::new(dim, rust_metric)
+            .with_m(m)
+            .with_ef_construction(ef_construction)
+            .with_ef_runtime(ef_runtime)
+            .with_flat_buffer_limit(flat_buffer_limit);
+        Box::new(TieredSingleF32Wrapper::new(
+            vecsim::index::TieredSingle::new(params),
+            type_,
+        ))
+    };
+
+    Box::into_raw(Box::new(IndexHandle::new(
+        wrapper,
+        type_,
+        VecSimAlgo::VecSimAlgo_TIERED,
+        metric,
+        dim,
+        multi,
+    ))) as *mut VecSimIndex
 }
 
 /// Check if the index is a disk-based index.
@@ -3220,6 +3505,147 @@ mod tests {
 
             // Test log context
             VecSim_SetTestLogContext(ptr::null(), ptr::null());
+        }
+    }
+
+    // ========================================================================
+    // C++-Compatible API Tests
+    // ========================================================================
+
+    #[test]
+    fn test_vecsim_index_new_bf() {
+        use crate::compat::{AlgoParams_C, BFParams_C, VecSimParams_C};
+
+        unsafe {
+            let bf_params = BFParams_C {
+                type_: VecSimType::VecSimType_FLOAT32,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_BF,
+                algoParams: AlgoParams_C { bfParams: bf_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null(), "VecSimIndex_New should create BF index");
+
+            // Verify it works
+            let v: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+            VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, 1);
+            assert_eq!(VecSimIndex_IndexSize(index), 1);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_vecsim_index_new_hnsw() {
+        use crate::compat::{AlgoParams_C, HNSWParams_C, VecSimParams_C};
+
+        unsafe {
+            let hnsw_params = HNSWParams_C {
+                type_: VecSimType::VecSimType_FLOAT32,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+                M: 16,
+                efConstruction: 200,
+                efRuntime: 10,
+                epsilon: 0.0,
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+                algoParams: AlgoParams_C { hnswParams: hnsw_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null(), "VecSimIndex_New should create HNSW index");
+
+            // Verify it works
+            let v: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+            VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, 1);
+            assert_eq!(VecSimIndex_IndexSize(index), 1);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_vecsim_index_new_tiered() {
+        use crate::compat::{
+            AlgoParams_C, HNSWParams_C, TieredHNSWParams_C, TieredIndexParams_C,
+            TieredSpecificParams_C, VecSimParams_C,
+        };
+        use std::mem::ManuallyDrop;
+
+        unsafe {
+            // Create the primary (backend) params
+            let hnsw_params = HNSWParams_C {
+                type_: VecSimType::VecSimType_FLOAT32,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+                M: 16,
+                efConstruction: 200,
+                efRuntime: 10,
+                epsilon: 0.0,
+            };
+
+            let mut primary_params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+                algoParams: AlgoParams_C { hnswParams: hnsw_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            let tiered_params = TieredIndexParams_C {
+                jobQueue: ptr::null_mut(),
+                jobQueueCtx: ptr::null_mut(),
+                submitCb: None,
+                flatBufferLimit: 100,
+                primaryIndexParams: &mut primary_params,
+                specificParams: TieredSpecificParams_C {
+                    tieredHnswParams: TieredHNSWParams_C { swapJobThreshold: 0 },
+                },
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_TIERED,
+                algoParams: AlgoParams_C {
+                    tieredParams: ManuallyDrop::new(tiered_params),
+                },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null(), "VecSimIndex_New should create tiered index");
+
+            // Verify it works
+            assert!(VecSimIndex_IsTiered(index));
+            let v: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+            VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, 1);
+            assert_eq!(VecSimIndex_IndexSize(index), 1);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_vecsim_index_new_null_returns_null() {
+        unsafe {
+            let index = VecSimIndex_New(ptr::null());
+            assert!(index.is_null(), "VecSimIndex_New should return null for null params");
         }
     }
 }

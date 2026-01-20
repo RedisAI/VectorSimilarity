@@ -125,8 +125,9 @@ pub enum VecSimWriteMode {
 
 /// Option mode for various settings.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VecSimOptionMode {
+    #[default]
     VecSimOption_AUTO = 0,
     VecSimOption_ENABLE = 1,
     VecSimOption_DISABLE = 2,
