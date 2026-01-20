@@ -48,6 +48,8 @@ impl GraphAccess for ConcurrentGraph {
 /// Result of a layer search: (id, distance) pairs.
 pub type SearchResult<D> = Vec<(IdType, D)>;
 
+
+
 /// Greedy search to find the single closest element at a given layer.
 ///
 /// This is used to traverse upper layers where we just need to find

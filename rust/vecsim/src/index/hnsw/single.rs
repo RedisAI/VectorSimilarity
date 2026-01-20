@@ -3,6 +3,7 @@
 //! This index stores one vector per label. When adding a vector with
 //! an existing label, the old vector is replaced.
 
+use rayon::prelude::*;
 use super::{ElementGraphData, HnswCore, HnswParams};
 use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, VecSimIndex};
 use crate::query::{QueryParams, QueryReply, QueryResult};
@@ -67,6 +68,157 @@ impl<T: VectorElement> HnswSingle<T> {
         let mut index = Self::new(params);
         index.capacity = Some(max_capacity);
         index
+    }
+
+    /// Process multiple queries in parallel.
+    ///
+    /// This method efficiently processes multiple queries concurrently using rayon,
+    /// providing significant throughput improvements for batch workloads.
+    ///
+    /// # Arguments
+    /// * `queries` - Slice of query vectors (each must have length == dimension)
+    /// * `k` - Number of nearest neighbors to return per query
+    /// * `params` - Optional query parameters (applied to all queries)
+    ///
+    /// # Returns
+    /// A vector of QueryReply, one per input query, in the same order.
+    pub fn batch_search(
+        &self,
+        queries: &[Vec<T>],
+        k: usize,
+        params: Option<&QueryParams>,
+    ) -> Vec<Result<QueryReply<T::DistanceType>, QueryError>> {
+        let ef = params
+            .and_then(|p| p.ef_runtime)
+            .unwrap_or(self.core.params.ef_runtime);
+
+        queries
+            .par_iter()
+            .map(|query| {
+                if query.len() != self.core.params.dim {
+                    return Err(QueryError::DimensionMismatch {
+                        expected: self.core.params.dim,
+                        got: query.len(),
+                    });
+                }
+
+                let filter: Option<&dyn Fn(IdType) -> bool> = None;
+                let results = self.core.search(query, k, ef, filter);
+
+                // Look up labels for results
+                let mut reply = QueryReply::with_capacity(results.len());
+                for (id, dist) in results {
+                    if let Some(label_ref) = self.id_to_label.get(&id) {
+                        reply.push(QueryResult::new(*label_ref, dist));
+                    }
+                }
+
+                Ok(reply)
+            })
+            .collect()
+    }
+
+    /// Process multiple queries in parallel with a filter.
+    ///
+    /// Similar to `batch_search` but applies a filter function to all queries.
+    /// Note: The filter is shared across all queries (must be Sync).
+    ///
+    /// # Arguments
+    /// * `queries` - Slice of query vectors
+    /// * `k` - Number of nearest neighbors to return per query
+    /// * `ef` - Search expansion factor (higher = better recall, slower)
+    /// * `filter` - Filter function applied to candidate labels
+    pub fn batch_search_filtered<F>(
+        &self,
+        queries: &[Vec<T>],
+        k: usize,
+        ef: usize,
+        filter: &F,
+    ) -> Vec<Result<QueryReply<T::DistanceType>, QueryError>>
+    where
+        F: Fn(LabelType) -> bool + Sync,
+    {
+        queries
+            .par_iter()
+            .map(|query| {
+                if query.len() != self.core.params.dim {
+                    return Err(QueryError::DimensionMismatch {
+                        expected: self.core.params.dim,
+                        got: query.len(),
+                    });
+                }
+
+                // Build filter closure for this search
+                let id_to_label_ref = &self.id_to_label;
+                let filter_fn = |id: IdType| -> bool {
+                    id_to_label_ref
+                        .get(&id)
+                        .is_some_and(|label_ref| filter(*label_ref))
+                };
+
+                let results = self.core.search(query, k, ef, Some(&filter_fn));
+
+                // Look up labels for results
+                let mut reply = QueryReply::with_capacity(results.len());
+                for (id, dist) in results {
+                    if let Some(label_ref) = self.id_to_label.get(&id) {
+                        reply.push(QueryResult::new(*label_ref, dist));
+                    }
+                }
+
+                Ok(reply)
+            })
+            .collect()
+    }
+
+    /// Process queries from a contiguous slice of vectors.
+    ///
+    /// This is optimized for the case where queries are stored contiguously
+    /// in memory (e.g., from a matrix where each row is a query).
+    ///
+    /// # Arguments
+    /// * `query_data` - Contiguous slice containing all query vectors
+    /// * `num_queries` - Number of queries (query_data.len() / dim)
+    /// * `k` - Number of nearest neighbors per query
+    /// * `params` - Optional query parameters
+    pub fn batch_search_contiguous(
+        &self,
+        query_data: &[T],
+        num_queries: usize,
+        k: usize,
+        params: Option<&QueryParams>,
+    ) -> Vec<Result<QueryReply<T::DistanceType>, QueryError>> {
+        let dim = self.core.params.dim;
+
+        if query_data.len() != num_queries * dim {
+            return vec![Err(QueryError::DimensionMismatch {
+                expected: num_queries * dim,
+                got: query_data.len(),
+            })];
+        }
+
+        let ef = params
+            .and_then(|p| p.ef_runtime)
+            .unwrap_or(self.core.params.ef_runtime);
+
+        (0..num_queries)
+            .into_par_iter()
+            .map(|i| {
+                let query = &query_data[i * dim..(i + 1) * dim];
+                let filter: Option<&dyn Fn(IdType) -> bool> = None;
+                let results = self.core.search(query, k, ef, filter);
+
+                // Look up labels for results
+                let mut reply = QueryReply::with_capacity(results.len());
+                for (id, dist) in results {
+                    if let Some(label_ref) = self.id_to_label.get(&id) {
+                        reply.push(QueryResult::new(*label_ref, dist));
+                    }
+                }
+
+                Ok(reply)
+            })
+            .collect()
     }
 
     /// Get the distance metric.
