@@ -186,6 +186,18 @@ impl<T: VectorElement> TieredMulti<T> {
         self.hnsw_label_counts.write().clear();
         self.count.store(0, Ordering::Relaxed);
     }
+
+    /// Get the neighbors of an element in the HNSW graph by label.
+    ///
+    /// Returns a vector of vectors, where each inner vector contains the neighbor labels
+    /// for that level (level 0 first). Returns None if the label is not in the HNSW backend.
+    pub fn get_element_neighbors(&self, label: LabelType) -> Option<Vec<Vec<LabelType>>> {
+        // Only check HNSW backend - flat buffer doesn't have graph structure
+        if self.hnsw_label_counts.read().contains_key(&label) {
+            return self.hnsw.read().get_element_neighbors(label);
+        }
+        None
+    }
 }
 
 impl<T: VectorElement> VecSimIndex for TieredMulti<T> {

@@ -11,6 +11,11 @@ use crate::distance::DistanceFunction;
 use crate::types::{DistanceType, IdType, VectorElement};
 use crate::utils::prefetch::prefetch_slice;
 use crate::utils::{MaxHeap, MinHeap};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// Global counters for debugging
+pub static RANGE_SEARCH_ITERATIONS: AtomicUsize = AtomicUsize::new(0);
+pub static RANGE_SEARCH_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 /// Trait for graph access abstraction.
 ///
@@ -400,6 +405,152 @@ where
     results_vec.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     results_vec.truncate(k);
     results_vec
+}
+
+/// Range search on a layer to find all elements within a radius.
+///
+/// This implements the epsilon-neighborhood search algorithm from the C++ implementation:
+/// - Uses a dynamic range that shrinks as closer candidates are found
+/// - Terminates early when no candidates are within range * (1 + epsilon)
+/// - Returns all vectors within the radius
+///
+/// # Arguments
+/// * `entry_points` - Initial entry points with their distances
+/// * `query` - Query vector
+/// * `level` - Graph level to search (typically 0 for range queries)
+/// * `radius` - Maximum distance for results
+/// * `epsilon` - Expansion factor for search boundaries (e.g., 0.01 = 1% expansion)
+/// * `graph` - Graph structure
+/// * `data_getter` - Function to get vector data by ID
+/// * `dist_fn` - Distance function
+/// * `dim` - Vector dimension
+/// * `visited` - Visited nodes handler for deduplication
+/// * `filter` - Optional filter function for results
+#[allow(clippy::too_many_arguments)]
+pub fn search_layer_range<'a, T, D, F, P, G>(
+    entry_points: &[(IdType, D)],
+    query: &[T],
+    level: usize,
+    radius: D,
+    epsilon: f64,
+    graph: &G,
+    data_getter: F,
+    dist_fn: &dyn DistanceFunction<T, Output = D>,
+    dim: usize,
+    visited: &VisitedNodesHandler,
+    filter: Option<&P>,
+) -> SearchResult<D>
+where
+    T: VectorElement,
+    D: DistanceType,
+    F: Fn(IdType) -> Option<&'a [T]>,
+    P: Fn(IdType) -> bool + ?Sized,
+    G: GraphAccess + ?Sized,
+{
+    // Results container
+    let mut results: Vec<(IdType, D)> = Vec::new();
+
+    // Candidates to explore (min-heap: closest first, stored as negative for max-heap behavior)
+    // We use MinHeap but negate distances to get max-heap behavior (pop largest = closest)
+    let mut candidates = MinHeap::<D>::with_capacity(256);
+
+    // Initialize dynamic range based on entry point
+    let mut dynamic_range = D::infinity();
+
+    // Initialize with entry points
+    for &(id, dist) in entry_points {
+        if !visited.visit(id) {
+            candidates.push(id, dist);
+
+            // Check if entry point is within radius
+            let passes_filter = filter.is_none_or(|f| f(id));
+            if passes_filter && dist.to_f64() <= radius.to_f64() {
+                results.push((id, dist));
+            }
+
+            // Update dynamic range
+            if dist.to_f64() < dynamic_range.to_f64() {
+                dynamic_range = dist;
+            }
+        }
+    }
+
+    // Ensure dynamic_range >= radius (we need to explore at least to the radius)
+    if dynamic_range.to_f64() < radius.to_f64() {
+        dynamic_range = radius;
+    }
+
+    // Search boundary includes epsilon expansion
+    let compute_boundary = |range: D| -> f64 { range.to_f64() * (1.0 + epsilon) };
+
+    // Explore candidates
+    // Compute initial boundary (matching C++ behavior: boundary is computed BEFORE shrinking)
+    let mut current_boundary = compute_boundary(dynamic_range);
+    let mut iterations = 0usize;
+
+    while let Some(candidate) = candidates.pop() {
+        iterations += 1;
+
+        // Early termination: stop if best candidate is outside the dynamic search boundary
+        if candidate.distance.to_f64() > current_boundary {
+            break;
+        }
+
+        // Shrink dynamic range if this candidate is closer but still >= radius
+        // Update boundary AFTER shrinking (matching C++ behavior)
+        let cand_dist = candidate.distance.to_f64();
+        if cand_dist < dynamic_range.to_f64() && cand_dist >= radius.to_f64() {
+            dynamic_range = candidate.distance;
+            current_boundary = compute_boundary(dynamic_range);
+        }
+
+        // Get neighbors of this candidate
+        if let Some(element) = graph.get(candidate.id) {
+            if element.meta.deleted {
+                continue;
+            }
+
+            for neighbor in element.iter_neighbors(level) {
+                if visited.visit(neighbor) {
+                    continue; // Already visited
+                }
+
+                // Check if neighbor is valid
+                if let Some(neighbor_element) = graph.get(neighbor) {
+                    if neighbor_element.meta.deleted {
+                        continue;
+                    }
+                }
+
+                // Compute distance to neighbor
+                if let Some(data) = data_getter(neighbor) {
+                    let dist = dist_fn.compute(data, query, dim);
+                    let dist_f64 = dist.to_f64();
+
+                    // Add to candidates if within dynamic search boundary
+                    if dist_f64 < current_boundary {
+                        candidates.push(neighbor, dist);
+
+                        // Add to results if within radius and passes filter
+                        if dist_f64 <= radius.to_f64() {
+                            let passes = filter.is_none_or(|f| f(neighbor));
+                            if passes {
+                                results.push((neighbor, dist));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Update global counters
+    RANGE_SEARCH_ITERATIONS.fetch_add(iterations, Ordering::Relaxed);
+    RANGE_SEARCH_CALLS.fetch_add(1, Ordering::Relaxed);
+
+    // Sort results by distance
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    results
 }
 
 /// Select neighbors using the simple heuristic (just keep closest).

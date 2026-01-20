@@ -14,9 +14,9 @@ crate-type = ["staticlib", "cdylib"]
 vecsim = { path = "../vecsim" }
 half = { workspace = true }
 parking_lot = { workspace = true }
+libc = "0.2.180"
 
 [dev-dependencies]
-libc = "0.2.180"
 tempfile = "3"
 
 [features]

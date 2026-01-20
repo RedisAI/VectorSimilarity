@@ -24,6 +24,7 @@ pub use graph::{ElementGraphData, DEFAULT_M, DEFAULT_M_MAX, DEFAULT_M_MAX_0};
 pub use multi::HnswMulti;
 pub use single::{HnswSingle, HnswStats};
 pub use visited::{VisitedNodesHandler, VisitedNodesHandlerPool};
+pub use search::{RANGE_SEARCH_ITERATIONS, RANGE_SEARCH_CALLS};
 
 use crate::containers::DataBlocks;
 use crate::distance::{create_distance_function, DistanceFunction, Metric};
@@ -714,9 +715,10 @@ impl<T: VectorElement> HnswCore<T> {
     }
 
     /// Compute distance between two elements.
+    /// Uses get_unchecked_deleted for faster access during search.
     #[inline]
     fn compute_distance(&self, id: IdType, query: &[T]) -> T::DistanceType {
-        if let Some(data) = self.data.get(id) {
+        if let Some(data) = self.data.get_unchecked_deleted(id) {
             self.dist_fn.compute(data, query, self.params.dim)
         } else {
             T::DistanceType::infinity()
@@ -778,13 +780,14 @@ impl<T: VectorElement> HnswCore<T> {
         let mut current_entry = entry_point;
 
         // Greedy search through upper layers
+        // Use get_unchecked_deleted for faster access during search
         for l in (1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
                 current_entry,
                 query,
                 l,
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
             );
@@ -792,6 +795,9 @@ impl<T: VectorElement> HnswCore<T> {
         }
 
         let entry_dist = self.compute_distance(current_entry, query);
+        #[cfg(debug_assertions)]
+        eprintln!("KNN search: entry_point={}, entry_dist={}, k={}, ef={}",
+            current_entry, entry_dist.to_f64(), k, ef);
         let entry_points = vec![(current_entry, entry_dist)];
 
         let results = if let Some(f) = filter {
@@ -801,7 +807,7 @@ impl<T: VectorElement> HnswCore<T> {
                 0,
                 ef.max(k),
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
                 visited,
@@ -814,7 +820,7 @@ impl<T: VectorElement> HnswCore<T> {
                 0,
                 ef.max(k),
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
                 visited,
@@ -824,6 +830,86 @@ impl<T: VectorElement> HnswCore<T> {
 
         // Return top k
         results.into_iter().take(k).collect()
+    }
+
+    /// Range search for all vectors within a radius.
+    ///
+    /// Uses epsilon-neighborhood search algorithm for efficient graph traversal.
+    /// The search terminates early when no candidates are within the dynamic range.
+    ///
+    /// # Arguments
+    /// * `query` - Query vector
+    /// * `radius` - Maximum distance for results
+    /// * `epsilon` - Search boundary expansion factor (e.g., 0.01 = 1% expansion)
+    /// * `filter` - Optional filter function
+    pub fn search_range(
+        &self,
+        query: &[T],
+        radius: T::DistanceType,
+        epsilon: f64,
+        filter: Option<&dyn Fn(IdType) -> bool>,
+    ) -> Vec<(IdType, T::DistanceType)> {
+        let entry_point = self.entry_point.load(Ordering::Acquire);
+        if entry_point == INVALID_ID {
+            return Vec::new();
+        }
+
+        let current_max = self.max_level.load(Ordering::Acquire) as usize;
+        let mut current_entry = entry_point;
+
+        // Greedy search through upper layers to find entry point for layer 0
+        // Use get_unchecked_deleted for faster access during search
+        for l in (1..=current_max).rev() {
+            let (new_entry, _) = search::greedy_search(
+                current_entry,
+                query,
+                l,
+                &self.graph,
+                |id| self.data.get_unchecked_deleted(id),
+                self.dist_fn.as_ref(),
+                self.params.dim,
+            );
+            current_entry = new_entry;
+        }
+
+        // Range search on layer 0
+        let mut visited = self.visited_pool.get();
+        visited.reset();
+
+        let entry_dist = self.compute_distance(current_entry, query);
+        let entry_points = vec![(current_entry, entry_dist)];
+
+        // Use get_unchecked_deleted for faster access during search
+        // (skips the Mutex lock on free_slots)
+        if let Some(f) = filter {
+            search::search_layer_range(
+                &entry_points,
+                query,
+                0,
+                radius,
+                epsilon,
+                &self.graph,
+                |id| self.data.get_unchecked_deleted(id),
+                self.dist_fn.as_ref(),
+                self.params.dim,
+                &visited,
+                Some(f),
+            )
+        } else {
+            search::search_layer_range::<T, T::DistanceType, _, fn(IdType) -> bool, _>(
+                &entry_points,
+                query,
+                0,
+                radius,
+                epsilon,
+                &self.graph,
+                |id| self.data.get_unchecked_deleted(id),
+                self.dist_fn.as_ref(),
+                self.params.dim,
+                &visited,
+                None,
+            )
+        }
     }
 
     /// Search for k nearest unique labels (for multi-value indices).
@@ -848,13 +934,14 @@ impl<T: VectorElement> HnswCore<T> {
         let mut current_entry = entry_point;
 
         // Greedy search through upper layers
+        // Use get_unchecked_deleted for faster access during search
         for l in (1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
                 current_entry,
                 query,
                 l,
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
             );
@@ -876,7 +963,7 @@ impl<T: VectorElement> HnswCore<T> {
                 k,
                 ef.max(k),
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
                 &visited,
@@ -891,7 +978,7 @@ impl<T: VectorElement> HnswCore<T> {
                 k,
                 ef.max(k),
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
                 &visited,
@@ -973,6 +1060,7 @@ impl<T: VectorElement> HnswCore<T> {
         let current_max = self.max_level.load(Ordering::Acquire) as usize;
 
         // Greedy search from entry point down to target layer
+        // Use get_unchecked_deleted for faster access during search
         let mut current_entry = entry_point;
         for l in (layer + 1..=current_max).rev() {
             let (new_entry, _) = search::greedy_search(
@@ -980,7 +1068,7 @@ impl<T: VectorElement> HnswCore<T> {
                 query,
                 l,
                 &self.graph,
-                |id| self.data.get(id),
+                |id| self.data.get_unchecked_deleted(id),
                 self.dist_fn.as_ref(),
                 self.params.dim,
             );
@@ -1000,7 +1088,7 @@ impl<T: VectorElement> HnswCore<T> {
             layer,
             self.params.ef_construction,
             &self.graph,
-            |nid| self.data.get(nid),
+            |nid| self.data.get_unchecked_deleted(nid),
             self.dist_fn.as_ref(),
             self.params.dim,
             &visited,
@@ -1014,7 +1102,7 @@ impl<T: VectorElement> HnswCore<T> {
                 id,
                 &neighbors,
                 m,
-                |nid| self.data.get(nid),
+                |nid| self.data.get_unchecked_deleted(nid),
                 self.dist_fn.as_ref(),
                 self.params.dim,
                 false,
@@ -1123,5 +1211,30 @@ impl<T: VectorElement> HnswCore<T> {
                 to_element.set_neighbors(layer, &current_neighbors);
             }
         }
+    }
+
+    /// Get the neighbors of an element at all levels by internal ID.
+    ///
+    /// Returns None if the ID doesn't exist in the index.
+    /// Returns Some(Vec<Vec<LabelType>>) where each inner Vec contains the neighbor labels at that level.
+    pub fn get_element_neighbors_by_id(&self, id: IdType) -> Option<Vec<Vec<LabelType>>> {
+        // Get the graph element
+        let element = self.graph.get(id)?;
+
+        // Collect neighbors at each level, converting internal IDs to labels
+        let mut result = Vec::with_capacity(element.levels.len());
+
+        for level in 0..element.levels.len() {
+            let neighbor_ids = element.get_neighbors(level);
+            let neighbor_labels: Vec<LabelType> = neighbor_ids
+                .iter()
+                .filter_map(|&neighbor_id| {
+                    self.graph.get(neighbor_id).map(|e| e.meta.label)
+                })
+                .collect();
+            result.push(neighbor_labels);
+        }
+
+        Some(result)
     }
 }

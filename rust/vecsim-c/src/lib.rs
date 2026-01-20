@@ -34,17 +34,17 @@ use query::{
     QueryReplyIteratorHandle,
 };
 use types::{
-    labelType, QueryResultInternal, VecSimAlgo, VecSimBatchIterator, VecSimIndex, VecSimMetric,
-    VecSimParamResolveCode, VecSimQueryReply, VecSimQueryReply_Iterator, VecSimQueryReply_Order,
-    VecSimQueryResult, VecSimRawParam, VecSimType, VecsimQueryType,
+    labelType, QueryResultInternal, VecSimAlgo, VecSimBatchIterator, VecSimDebugCommandCode,
+    VecSimIndex, VecSimMetric, VecSimParamResolveCode, VecSimQueryReply, VecSimQueryReply_Iterator,
+    VecSimQueryReply_Order, VecSimQueryResult, VecSimRawParam, VecSimType, VecsimQueryType,
 };
 
-use std::ffi::{c_char, c_void};
+use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use types::{VecSimMemoryFunctions, VecSimWriteMode};
-use compat::VecSimParams_C;
+use compat::{VecSimParams_C, BFParams_C, HNSWParams_C, SVSParams_C};
 
 // ============================================================================
 // Global Memory Functions
@@ -230,11 +230,11 @@ pub unsafe extern "C" fn VecSimIndex_ResolveParams(
     // Zero out qparams
     let qparams = &mut *qparams;
     *qparams = VecSimQueryParams::default();
-    qparams.hnswRuntimeParams.efRuntime = 0; // Reset to 0 for checking duplicates
-    qparams.hnswRuntimeParams.epsilon = 0.0;
-    qparams.svsRuntimeParams = params::SVSRuntimeParams::default();
+    qparams.hnsw_params_mut().efRuntime = 0; // Reset to 0 for checking duplicates
+    qparams.hnsw_params_mut().epsilon = 0.0;
+    *qparams.svs_params_mut() = params::SVSRuntimeParams::default();
     qparams.batchSize = 0;
-    qparams.searchMode = params::VecSimSearchMode::STANDARD;
+    qparams.searchMode = 1; // STANDARD_KNN
 
     if paramNum == 0 {
         return VecSimParamResolver_OK;
@@ -300,14 +300,15 @@ pub unsafe extern "C" fn VecSimIndex_ResolveParams(
 
     // Validate parameter combinations
     // AD-HOC with batch_size is invalid
-    if qparams.hybridPolicy == params::VecSimHybridPolicy::ADHOC && qparams.batchSize > 0 {
+    // searchMode == 2 is HYBRID_ADHOC_BF
+    if qparams.searchMode == 2 && qparams.batchSize > 0 {
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize;
     }
 
     // AD-HOC with ef_runtime is invalid for HNSW
-    if qparams.hybridPolicy == params::VecSimHybridPolicy::ADHOC
+    if qparams.searchMode == 2
         && index_type == VecSimAlgo::VecSimAlgo_HNSWLIB
-        && qparams.hnswRuntimeParams.efRuntime > 0
+        && qparams.hnsw_params().efRuntime > 0
     {
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
     }
@@ -332,13 +333,13 @@ fn resolve_ef_runtime(
         return VecSimParamResolverErr_UnknownParam;
     }
     // Check if already set
-    if qparams.hnswRuntimeParams.efRuntime != 0 {
+    if qparams.hnsw_params().efRuntime != 0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value
     match parse_positive_integer(value) {
         Some(v) => {
-            qparams.hnswRuntimeParams.efRuntime = v;
+            qparams.hnsw_params_mut().efRuntime = v;
             VecSimParamResolver_OK
         }
         None => VecSimParamResolverErr_BadValue,
@@ -362,18 +363,22 @@ fn resolve_epsilon(
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
     // Check if already set (based on index type)
-    let epsilon_ref = if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
-        &mut qparams.hnswRuntimeParams.epsilon
+    let current_epsilon = if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
+        qparams.hnsw_params().epsilon
     } else {
-        &mut qparams.svsRuntimeParams.epsilon
+        qparams.svs_params().epsilon
     };
-    if *epsilon_ref != 0.0 {
+    if current_epsilon != 0.0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value
     match parse_positive_double(value) {
         Some(v) => {
-            *epsilon_ref = v;
+            if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
+                qparams.hnsw_params_mut().epsilon = v;
+            } else {
+                qparams.svs_params_mut().epsilon = v;
+            }
             VecSimParamResolver_OK
         }
         None => VecSimParamResolverErr_BadValue,
@@ -416,20 +421,19 @@ fn resolve_hybrid_policy(
     if query_type != VecsimQueryType::QUERY_TYPE_HYBRID {
         return VecSimParamResolverErr_InvalidPolicy_NHybrid;
     }
-    // Check if already set (searchMode != STANDARD indicates it was set)
-    if qparams.searchMode != params::VecSimSearchMode::STANDARD {
+    // Check if already set (searchMode != STANDARD_KNN indicates it was set)
+    // VecSearchMode values: EMPTY_MODE=0, STANDARD_KNN=1, HYBRID_ADHOC_BF=2, HYBRID_BATCHES=3
+    if qparams.searchMode != 1 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value (case-insensitive)
     match value.to_lowercase().as_str() {
         param_names::POLICY_BATCHES => {
-            qparams.searchMode = params::VecSimSearchMode::HYBRID;
-            qparams.hybridPolicy = params::VecSimHybridPolicy::BATCHES;
+            qparams.searchMode = 3; // HYBRID_BATCHES
             VecSimParamResolver_OK
         }
         param_names::POLICY_ADHOC_BF => {
-            qparams.searchMode = params::VecSimSearchMode::HYBRID;
-            qparams.hybridPolicy = params::VecSimHybridPolicy::ADHOC;
+            qparams.searchMode = 2; // HYBRID_ADHOC_BF
             VecSimParamResolver_OK
         }
         _ => VecSimParamResolverErr_InvalidPolicy_NExits,
@@ -448,13 +452,13 @@ fn resolve_search_window_size(
         return VecSimParamResolverErr_UnknownParam;
     }
     // Check if already set
-    if qparams.svsRuntimeParams.windowSize != 0 {
+    if qparams.svs_params().windowSize != 0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value
     match parse_positive_integer(value) {
         Some(v) => {
-            qparams.svsRuntimeParams.windowSize = v;
+            qparams.svs_params_mut().windowSize = v;
             VecSimParamResolver_OK
         }
         None => VecSimParamResolverErr_BadValue,
@@ -473,13 +477,13 @@ fn resolve_search_buffer_capacity(
         return VecSimParamResolverErr_UnknownParam;
     }
     // Check if already set
-    if qparams.svsRuntimeParams.bufferCapacity != 0 {
+    if qparams.svs_params().bufferCapacity != 0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value
     match parse_positive_integer(value) {
         Some(v) => {
-            qparams.svsRuntimeParams.bufferCapacity = v;
+            qparams.svs_params_mut().bufferCapacity = v;
             VecSimParamResolver_OK
         }
         None => VecSimParamResolverErr_BadValue,
@@ -498,7 +502,7 @@ fn resolve_use_search_history(
         return VecSimParamResolverErr_UnknownParam;
     }
     // Check if already set
-    if qparams.svsRuntimeParams.searchHistory != 0 {
+    if qparams.svs_params().searchHistory != 0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse as boolean (1/0, true/false, yes/no)
@@ -509,7 +513,7 @@ fn resolve_use_search_history(
     };
     match bool_val {
         Some(v) => {
-            qparams.svsRuntimeParams.searchHistory = v;
+            qparams.svs_params_mut().searchHistory = v;
             VecSimParamResolver_OK
         }
         None => VecSimParamResolverErr_BadValue,
@@ -524,14 +528,27 @@ fn resolve_use_search_history(
 ///
 /// # Safety
 /// The `params` pointer must be valid.
+/// This function accepts the C++-compatible BFParams struct (BFParams_C).
 #[no_mangle]
-pub unsafe extern "C" fn VecSimIndex_NewBF(params: *const BFParams) -> *mut VecSimIndex {
+pub unsafe extern "C" fn VecSimIndex_NewBF(params: *const BFParams_C) -> *mut VecSimIndex {
     if params.is_null() {
         return ptr::null_mut();
     }
 
-    let params = &*params;
-    match create_brute_force_index(params) {
+    let c_params = &*params;
+    // Convert C++-compatible BFParams to internal BFParams
+    let rust_params = BFParams {
+        base: VecSimParams {
+            algo: VecSimAlgo::VecSimAlgo_BF,
+            type_: c_params.type_,
+            metric: c_params.metric,
+            dim: c_params.dim,
+            multi: c_params.multi,
+            initialCapacity: c_params.initialCapacity,
+            blockSize: c_params.blockSize,
+        },
+    };
+    match create_brute_force_index(&rust_params) {
         Some(boxed) => Box::into_raw(boxed) as *mut VecSimIndex,
         None => ptr::null_mut(),
     }
@@ -541,14 +558,31 @@ pub unsafe extern "C" fn VecSimIndex_NewBF(params: *const BFParams) -> *mut VecS
 ///
 /// # Safety
 /// The `params` pointer must be valid.
+/// This function accepts the C++-compatible HNSWParams struct (HNSWParams_C).
 #[no_mangle]
-pub unsafe extern "C" fn VecSimIndex_NewHNSW(params: *const HNSWParams) -> *mut VecSimIndex {
+pub unsafe extern "C" fn VecSimIndex_NewHNSW(params: *const HNSWParams_C) -> *mut VecSimIndex {
     if params.is_null() {
         return ptr::null_mut();
     }
 
-    let params = &*params;
-    match create_hnsw_index(params) {
+    let c_params = &*params;
+    // Convert C++-compatible HNSWParams to internal HNSWParams
+    let rust_params = HNSWParams {
+        base: VecSimParams {
+            algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+            type_: c_params.type_,
+            metric: c_params.metric,
+            dim: c_params.dim,
+            multi: c_params.multi,
+            initialCapacity: c_params.initialCapacity,
+            blockSize: c_params.blockSize,
+        },
+        M: c_params.M,
+        efConstruction: c_params.efConstruction,
+        efRuntime: c_params.efRuntime,
+        epsilon: c_params.epsilon,
+    };
+    match create_hnsw_index(&rust_params) {
         Some(boxed) => Box::into_raw(boxed) as *mut VecSimIndex,
         None => ptr::null_mut(),
     }
@@ -558,14 +592,32 @@ pub unsafe extern "C" fn VecSimIndex_NewHNSW(params: *const HNSWParams) -> *mut 
 ///
 /// # Safety
 /// The `params` pointer must be valid.
+/// This function accepts the C++-compatible SVSParams struct (SVSParams_C).
 #[no_mangle]
-pub unsafe extern "C" fn VecSimIndex_NewSVS(params: *const SVSParams) -> *mut VecSimIndex {
+pub unsafe extern "C" fn VecSimIndex_NewSVS(params: *const SVSParams_C) -> *mut VecSimIndex {
     if params.is_null() {
         return ptr::null_mut();
     }
 
-    let params = &*params;
-    match create_svs_index(params) {
+    let c_params = &*params;
+    // Convert C++-compatible SVSParams to internal SVSParams
+    let rust_params = SVSParams {
+        base: VecSimParams {
+            algo: VecSimAlgo::VecSimAlgo_SVS,
+            type_: c_params.type_,
+            metric: c_params.metric,
+            dim: c_params.dim,
+            multi: c_params.multi,
+            initialCapacity: 0, // SVS doesn't use initialCapacity
+            blockSize: c_params.blockSize,
+        },
+        graphMaxDegree: c_params.graph_max_degree,
+        alpha: c_params.alpha,
+        constructionWindowSize: c_params.construction_window_size,
+        searchWindowSize: c_params.search_window_size,
+        twoPassConstruction: true, // Default value
+    };
+    match create_svs_index(&rust_params) {
         Some(boxed) => Box::into_raw(boxed) as *mut VecSimIndex,
         None => ptr::null_mut(),
     }
@@ -830,11 +882,14 @@ unsafe fn create_bf_index_raw(
 ) -> *mut VecSimIndex {
     let rust_metric = metric.to_rust_metric();
     let block = if block_size > 0 { block_size } else { 1024 };
+    // SIZE_MAX is used as a sentinel value meaning "use default capacity"
+    // The C++ VecSim library treats initialCapacity as deprecated
+    let capacity = if initial_capacity == usize::MAX { 1024 } else { initial_capacity };
 
     let wrapper: Box<dyn IndexWrapper> = match (type_, multi) {
         (VecSimType::VecSimType_FLOAT32, false) => {
             let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
-                .with_capacity(initial_capacity)
+                .with_capacity(capacity)
                 .with_block_size(block);
             Box::new(BruteForceSingleF32Wrapper::new(
                 vecsim::index::BruteForceSingle::new(params),
@@ -843,7 +898,7 @@ unsafe fn create_bf_index_raw(
         }
         (VecSimType::VecSimType_FLOAT64, false) => {
             let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
-                .with_capacity(initial_capacity)
+                .with_capacity(capacity)
                 .with_block_size(block);
             Box::new(BruteForceSingleF64Wrapper::new(
                 vecsim::index::BruteForceSingle::new(params),
@@ -852,7 +907,7 @@ unsafe fn create_bf_index_raw(
         }
         (VecSimType::VecSimType_FLOAT32, true) => {
             let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
-                .with_capacity(initial_capacity)
+                .with_capacity(capacity)
                 .with_block_size(block);
             Box::new(BruteForceMultiF32Wrapper::new(
                 vecsim::index::BruteForceMulti::new(params),
@@ -861,7 +916,7 @@ unsafe fn create_bf_index_raw(
         }
         (VecSimType::VecSimType_FLOAT64, true) => {
             let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
-                .with_capacity(initial_capacity)
+                .with_capacity(capacity)
                 .with_block_size(block);
             Box::new(BruteForceMultiF64Wrapper::new(
                 vecsim::index::BruteForceMulti::new(params),
@@ -893,6 +948,8 @@ unsafe fn create_hnsw_index_raw(
     ef_runtime: usize,
 ) -> *mut VecSimIndex {
     let rust_metric = metric.to_rust_metric();
+    // SIZE_MAX is used as a sentinel value meaning "use default capacity"
+    let capacity = if initial_capacity == usize::MAX { 1024 } else { initial_capacity };
 
     let wrapper: Box<dyn IndexWrapper> = match (type_, multi) {
         (VecSimType::VecSimType_FLOAT32, false) => {
@@ -900,7 +957,7 @@ unsafe fn create_hnsw_index_raw(
                 .with_m(m)
                 .with_ef_construction(ef_construction)
                 .with_ef_runtime(ef_runtime)
-                .with_capacity(initial_capacity);
+                .with_capacity(capacity);
             Box::new(HnswSingleF32Wrapper::new(
                 vecsim::index::HnswSingle::new(params),
                 type_,
@@ -911,7 +968,7 @@ unsafe fn create_hnsw_index_raw(
                 .with_m(m)
                 .with_ef_construction(ef_construction)
                 .with_ef_runtime(ef_runtime)
-                .with_capacity(initial_capacity);
+                .with_capacity(capacity);
             Box::new(HnswSingleF64Wrapper::new(
                 vecsim::index::HnswSingle::new(params),
                 type_,
@@ -922,7 +979,7 @@ unsafe fn create_hnsw_index_raw(
                 .with_m(m)
                 .with_ef_construction(ef_construction)
                 .with_ef_runtime(ef_runtime)
-                .with_capacity(initial_capacity);
+                .with_capacity(capacity);
             Box::new(HnswMultiF32Wrapper::new(
                 vecsim::index::HnswMulti::new(params),
                 type_,
@@ -933,7 +990,7 @@ unsafe fn create_hnsw_index_raw(
                 .with_m(m)
                 .with_ef_construction(ef_construction)
                 .with_ef_runtime(ef_runtime)
-                .with_capacity(initial_capacity);
+                .with_capacity(capacity);
             Box::new(HnswMultiF64Wrapper::new(
                 vecsim::index::HnswMulti::new(params),
                 type_,
@@ -1762,6 +1819,332 @@ pub unsafe extern "C" fn VecSimIndex_DebugInfo(
 }
 
 // ============================================================================
+// Debug Info Iterator Functions
+// ============================================================================
+
+/// Opaque type for C API - re-export from info module.
+pub type VecSimDebugInfoIterator = info::VecSimDebugInfoIterator;
+
+/// Create a debug info iterator for an index.
+///
+/// The iterator provides a way to traverse all debug information fields
+/// for an index, including nested information for tiered indices.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+/// The returned iterator must be freed with `VecSimDebugInfoIterator_Free`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_DebugInfoIterator(
+    index: *const VecSimIndex,
+) -> *mut VecSimDebugInfoIterator {
+    if index.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    let basic_info = VecSimIndex_BasicInfo(index);
+
+    // Create iterator based on index type
+    let iter = match basic_info.algo {
+        VecSimAlgo::VecSimAlgo_BF => create_bf_debug_iterator(handle, &basic_info),
+        VecSimAlgo::VecSimAlgo_HNSWLIB => create_hnsw_debug_iterator(handle, &basic_info),
+        VecSimAlgo::VecSimAlgo_SVS => create_svs_debug_iterator(handle, &basic_info),
+        VecSimAlgo::VecSimAlgo_TIERED => create_tiered_debug_iterator(handle, &basic_info),
+    };
+
+    Box::into_raw(Box::new(iter))
+}
+
+/// Helper to add common fields to an iterator.
+fn add_common_fields(
+    iter: &mut info::VecSimDebugInfoIterator,
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) {
+    iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
+    iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
+    iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
+    iter.add_string_field(
+        "IS_MULTI_VALUE",
+        if basic_info.isMulti { "true" } else { "false" },
+    );
+    iter.add_string_field(
+        "IS_DISK",
+        if basic_info.isDisk { "true" } else { "false" },
+    );
+    iter.add_uint64_field("INDEX_SIZE", handle.wrapper.index_size() as u64);
+    iter.add_uint64_field("INDEX_LABEL_COUNT", handle.wrapper.index_size() as u64);
+    iter.add_uint64_field("MEMORY", handle.wrapper.memory_usage() as u64);
+    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+}
+
+/// Create a debug iterator for BruteForce index.
+fn create_bf_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(10);
+
+    iter.add_string_field("ALGORITHM", "FLAT");
+    add_common_fields(&mut iter, handle, basic_info);
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    iter
+}
+
+/// Create a debug iterator for HNSW index.
+fn create_hnsw_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(17);
+
+    iter.add_string_field("ALGORITHM", "HNSW");
+    add_common_fields(&mut iter, handle, basic_info);
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    // HNSW-specific fields (defaults, would need to query actual values)
+    iter.add_uint64_field("M", 16);
+    iter.add_uint64_field("EF_CONSTRUCTION", 200);
+    iter.add_uint64_field("EF_RUNTIME", 10);
+    iter.add_float64_field("EPSILON", 0.01);
+    iter.add_uint64_field("MAX_LEVEL", 0);
+    iter.add_uint64_field("ENTRYPOINT", 0);
+    iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
+
+    iter
+}
+
+/// Create a debug iterator for SVS index.
+fn create_svs_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(23);
+
+    iter.add_string_field("ALGORITHM", "SVS");
+    add_common_fields(&mut iter, handle, basic_info);
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    // SVS-specific fields (defaults)
+    iter.add_string_field("QUANT_BITS", "NONE");
+    iter.add_float64_field("ALPHA", 1.2);
+    iter.add_uint64_field("GRAPH_MAX_DEGREE", 32);
+    iter.add_uint64_field("CONSTRUCTION_WINDOW_SIZE", 200);
+    iter.add_uint64_field("MAX_CANDIDATE_POOL_SIZE", 0);
+    iter.add_uint64_field("PRUNE_TO", 0);
+    iter.add_string_field("USE_SEARCH_HISTORY", "AUTO");
+    iter.add_uint64_field("NUM_THREADS", 1);
+    iter.add_uint64_field("LAST_RESERVED_NUM_THREADS", 0);
+    iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
+    iter.add_uint64_field("SEARCH_WINDOW_SIZE", 10);
+    iter.add_uint64_field("SEARCH_BUFFER_CAPACITY", 0);
+    iter.add_uint64_field("LEANVEC_DIMENSION", 0);
+    iter.add_float64_field("EPSILON", 0.01);
+
+    iter
+}
+
+/// Create a debug iterator for tiered index.
+fn create_tiered_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(15);
+
+    iter.add_string_field("ALGORITHM", "TIERED");
+    add_common_fields(&mut iter, handle, basic_info);
+
+    // Tiered-specific fields
+    iter.add_uint64_field("MANAGEMENT_LAYER_MEMORY", 0);
+    iter.add_string_field("BACKGROUND_INDEXING", "false");
+    iter.add_uint64_field("TIERED_BUFFER_LIMIT", 0);
+
+    // Create frontend (flat) iterator
+    let frontend_iter = create_bf_debug_iterator(handle, basic_info);
+    iter.add_iterator_field("FRONTEND_INDEX", frontend_iter);
+
+    // Create backend (hnsw) iterator
+    let backend_iter = create_hnsw_debug_iterator(handle, basic_info);
+    iter.add_iterator_field("BACKEND_INDEX", backend_iter);
+
+    iter
+}
+
+/// Returns the number of fields in the info iterator.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_NumberOfFields(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) -> usize {
+    if info_iterator.is_null() {
+        return 0;
+    }
+    (*info_iterator).number_of_fields()
+}
+
+/// Returns if the fields iterator has more fields.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_HasNextField(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) -> bool {
+    if info_iterator.is_null() {
+        return false;
+    }
+    (*info_iterator).has_next()
+}
+
+/// Returns a pointer to the next info field.
+///
+/// The returned pointer is valid until the next call to this function
+/// or until the iterator is freed.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_NextField(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) -> *mut info::VecSim_InfoField {
+    if info_iterator.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*info_iterator).next()
+}
+
+/// Free an info iterator.
+///
+/// This also frees all nested iterators.
+///
+/// # Safety
+/// `info_iterator` must be a valid pointer returned by `VecSimIndex_DebugInfoIterator`,
+/// or null.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebugInfoIterator_Free(
+    info_iterator: *mut VecSimDebugInfoIterator,
+) {
+    if !info_iterator.is_null() {
+        drop(Box::from_raw(info_iterator));
+    }
+}
+
+/// Dump the neighbors of an element in HNSW index.
+///
+/// Returns an array with <topLevel+2> entries, where each entry is an array itself.
+/// Every internal array in a position <l> where <0<=l<=topLevel> corresponds to the neighbors
+/// of the element in the graph in level <l>. It contains <n_l+1> entries, where <n_l> is the
+/// number of neighbors in level l. The last entry in the external array is NULL (indicates its length).
+/// The first entry in each internal array contains the number <n_l>, while the next
+/// <n_l> entries are the labels of the elements neighbors in this level.
+///
+/// # Safety
+/// - `index` must be a valid pointer returned by `VecSimIndex_New`
+/// - `neighbors_data` must be a valid pointer to a pointer that will receive the result
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebug_GetElementNeighborsInHNSWGraph(
+    index: *mut VecSimIndex,
+    label: usize,
+    neighbors_data: *mut *mut *mut c_int,
+) -> VecSimDebugCommandCode {
+    if index.is_null() || neighbors_data.is_null() {
+        return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex;
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    let basic_info = VecSimIndex_BasicInfo(index);
+
+    // Only HNSW and Tiered (with HNSW backend) are supported
+    match basic_info.algo {
+        VecSimAlgo::VecSimAlgo_HNSWLIB | VecSimAlgo::VecSimAlgo_TIERED => {}
+        _ => return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex,
+    }
+
+    // Get the element neighbors using the trait method
+    let hnsw_result = handle.wrapper.get_element_neighbors(label as u64);
+
+    match hnsw_result {
+        None => VecSimDebugCommandCode::VecSimDebugCommandCode_LabelNotExists,
+        Some(neighbors_by_level) => {
+            // Allocate the outer array: topLevel + 2 entries (one for each level + NULL terminator)
+            let num_levels = neighbors_by_level.len();
+            let outer_size = num_levels + 1; // +1 for NULL terminator
+            let outer_array = libc::malloc(outer_size * std::mem::size_of::<*mut c_int>())
+                as *mut *mut c_int;
+
+            if outer_array.is_null() {
+                return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex;
+            }
+
+            // Fill in each level's neighbors
+            for (level, level_neighbors) in neighbors_by_level.iter().enumerate() {
+                let num_neighbors = level_neighbors.len();
+                // Each inner array has: count + neighbor labels
+                let inner_size = num_neighbors + 1;
+                let inner_array =
+                    libc::malloc(inner_size * std::mem::size_of::<c_int>()) as *mut c_int;
+
+                if inner_array.is_null() {
+                    // Clean up already allocated arrays
+                    for i in 0..level {
+                        libc::free(*outer_array.add(i) as *mut libc::c_void);
+                    }
+                    libc::free(outer_array as *mut libc::c_void);
+                    return VecSimDebugCommandCode::VecSimDebugCommandCode_BadIndex;
+                }
+
+                // First entry is the count
+                *inner_array = num_neighbors as c_int;
+
+                // Remaining entries are the neighbor labels
+                for (i, &neighbor_label) in level_neighbors.iter().enumerate() {
+                    *inner_array.add(i + 1) = neighbor_label as c_int;
+                }
+
+                *outer_array.add(level) = inner_array;
+            }
+
+            // NULL terminator
+            *outer_array.add(num_levels) = std::ptr::null_mut();
+
+            *neighbors_data = outer_array;
+            VecSimDebugCommandCode::VecSimDebugCommandCode_OK
+        }
+    }
+}
+
+/// Release the neighbors data allocated by VecSimDebug_GetElementNeighborsInHNSWGraph.
+///
+/// # Safety
+/// `neighbors_data` must be a valid pointer returned by `VecSimDebug_GetElementNeighborsInHNSWGraph`,
+/// or null.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimDebug_ReleaseElementNeighborsInHNSWGraph(
+    neighbors_data: *mut *mut c_int,
+) {
+    if neighbors_data.is_null() {
+        return;
+    }
+
+    // Free each inner array until we hit NULL
+    let mut level = 0;
+    loop {
+        let inner_array = *neighbors_data.add(level);
+        if inner_array.is_null() {
+            break;
+        }
+        libc::free(inner_array as *mut libc::c_void);
+        level += 1;
+    }
+
+    // Free the outer array
+    libc::free(neighbors_data as *mut libc::c_void);
+}
+
+// ============================================================================
 // Serialization Functions
 // ============================================================================
 
@@ -1802,7 +2185,7 @@ pub unsafe extern "C" fn VecSimIndex_SaveIndex(
 #[no_mangle]
 pub unsafe extern "C" fn VecSimIndex_LoadIndex(
     path: *const c_char,
-    _params: *const VecSimParams,
+    _params: *const VecSimParams_C,
 ) -> *mut VecSimIndex {
     if path.is_null() {
         return ptr::null_mut();
@@ -2019,36 +2402,38 @@ pub extern "C" fn VecSimIndex_EstimateHNSWElementSize(dim: usize, m: usize) -> u
 /// Estimate initial memory size for an index based on parameters.
 ///
 /// # Safety
-/// `params` must be a valid pointer to a VecSimParams struct.
+/// `params` must be a valid pointer to a VecSimParams_C struct.
 #[no_mangle]
 pub unsafe extern "C" fn VecSimIndex_EstimateInitialSize(
-    params: *const VecSimParams,
+    params: *const VecSimParams_C,
 ) -> usize {
     if params.is_null() {
         return 0;
     }
 
     let params = &*params;
-    let dim = params.dim;
-    let initial_capacity = params.initialCapacity;
 
     match params.algo {
         VecSimAlgo::VecSimAlgo_BF => {
-            vecsim::index::estimate_brute_force_initial_size(dim, initial_capacity)
+            let bf = params.algoParams.bfParams;
+            vecsim::index::estimate_brute_force_initial_size(bf.dim, bf.initialCapacity)
         }
         VecSimAlgo::VecSimAlgo_HNSWLIB => {
-            // Default M = 16
-            vecsim::index::estimate_hnsw_initial_size(dim, initial_capacity, 16)
+            let hnsw = params.algoParams.hnswParams;
+            vecsim::index::estimate_hnsw_initial_size(hnsw.dim, hnsw.initialCapacity, hnsw.M)
         }
         VecSimAlgo::VecSimAlgo_TIERED => {
-            // Tiered = BF frontend + HNSW backend
-            let bf_size = vecsim::index::estimate_brute_force_initial_size(dim, initial_capacity);
-            let hnsw_size = vecsim::index::estimate_hnsw_initial_size(dim, initial_capacity, 16);
+            // Tiered uses HNSW params from the tieredParams.primaryIndexParams
+            // For now, use HNSW params from the union
+            let hnsw = params.algoParams.hnswParams;
+            let bf_size = vecsim::index::estimate_brute_force_initial_size(hnsw.dim, hnsw.initialCapacity);
+            let hnsw_size = vecsim::index::estimate_hnsw_initial_size(hnsw.dim, hnsw.initialCapacity, hnsw.M);
             bf_size + hnsw_size
         }
         VecSimAlgo::VecSimAlgo_SVS => {
-            // SVS is similar to HNSW in memory usage
-            vecsim::index::estimate_hnsw_initial_size(dim, initial_capacity, 32)
+            let svs = params.algoParams.svsParams;
+            // SVS doesn't have initialCapacity, use a default
+            vecsim::index::estimate_hnsw_initial_size(svs.dim, 1024, svs.graph_max_degree)
         }
     }
 }
@@ -2056,33 +2441,34 @@ pub unsafe extern "C" fn VecSimIndex_EstimateInitialSize(
 /// Estimate memory size per element for an index based on parameters.
 ///
 /// # Safety
-/// `params` must be a valid pointer to a VecSimParams struct.
+/// `params` must be a valid pointer to a VecSimParams_C struct.
 #[no_mangle]
 pub unsafe extern "C" fn VecSimIndex_EstimateElementSize(
-    params: *const VecSimParams,
+    params: *const VecSimParams_C,
 ) -> usize {
     if params.is_null() {
         return 0;
     }
 
     let params = &*params;
-    let dim = params.dim;
 
     match params.algo {
         VecSimAlgo::VecSimAlgo_BF => {
-            vecsim::index::estimate_brute_force_element_size(dim)
+            let bf = params.algoParams.bfParams;
+            vecsim::index::estimate_brute_force_element_size(bf.dim)
         }
         VecSimAlgo::VecSimAlgo_HNSWLIB => {
-            // Default M = 16
-            vecsim::index::estimate_hnsw_element_size(dim, 16)
+            let hnsw = params.algoParams.hnswParams;
+            vecsim::index::estimate_hnsw_element_size(hnsw.dim, hnsw.M)
         }
         VecSimAlgo::VecSimAlgo_TIERED => {
             // Use HNSW element size (vectors end up in HNSW)
-            vecsim::index::estimate_hnsw_element_size(dim, 16)
+            let hnsw = params.algoParams.hnswParams;
+            vecsim::index::estimate_hnsw_element_size(hnsw.dim, hnsw.M)
         }
         VecSimAlgo::VecSimAlgo_SVS => {
-            // SVS with default graph degree 32
-            vecsim::index::estimate_hnsw_element_size(dim, 32)
+            let svs = params.algoParams.svsParams;
+            vecsim::index::estimate_hnsw_element_size(svs.dim, svs.graph_max_degree)
         }
     }
 }
@@ -2132,18 +2518,33 @@ mod tests {
         }
     }
 
-    // Helper to create HNSW params with valid dimensions
-    fn test_hnsw_params() -> HNSWParams {
-        HNSWParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
+    #[test]
+    fn test_struct_sizes_match_c() {
+        use std::mem::size_of;
+        use crate::compat::AlgoParams_C;
+        // These sizes must match the C header exactly
+        // C header sizes (from check_rust_header_sizes.c):
+        // sizeof(BFParams): 40
+        // sizeof(HNSWParams): 72
+        // sizeof(SVSParams): 120
+        // sizeof(AlgoParams): 120
+        // sizeof(VecSimParams): 136
+        assert_eq!(size_of::<BFParams_C>(), 40, "BFParams_C size mismatch");
+        assert_eq!(size_of::<HNSWParams_C>(), 72, "HNSWParams_C size mismatch");
+        assert_eq!(size_of::<SVSParams_C>(), 120, "SVSParams_C size mismatch");
+        assert_eq!(size_of::<AlgoParams_C>(), 120, "AlgoParams_C size mismatch");
+        assert_eq!(size_of::<VecSimParams_C>(), 136, "VecSimParams_C size mismatch");
+    }
+
+    // Helper to create HNSW params with valid dimensions (C++-compatible)
+    fn test_hnsw_params() -> HNSWParams_C {
+        HNSWParams_C {
+            type_: VecSimType::VecSimType_FLOAT32,
+            metric: VecSimMetric::VecSimMetric_L2,
+            dim: 4,
+            multi: false,
+            initialCapacity: 100,
+            blockSize: 0,
             M: 16,
             efConstruction: 200,
             efRuntime: 10,
@@ -2151,18 +2552,15 @@ mod tests {
         }
     }
 
-    // Helper to create BF params with valid dimensions
-    fn test_bf_params() -> BFParams {
-        BFParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_BF,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
+    // Helper to create BF params with valid dimensions (C++-compatible)
+    fn test_bf_params() -> BFParams_C {
+        BFParams_C {
+            type_: VecSimType::VecSimType_FLOAT32,
+            metric: VecSimMetric::VecSimMetric_L2,
+            dim: 4,
+            multi: false,
+            initialCapacity: 100,
+            blockSize: 0,
         }
     }
 
@@ -2227,7 +2625,7 @@ mod tests {
                 VecsimQueryType::QUERY_TYPE_KNN,
             );
             assert_eq!(result, VecSimParamResolveCode::VecSimParamResolver_OK);
-            assert_eq!(qparams.hnswRuntimeParams.efRuntime, 100);
+            assert_eq!(qparams.hnsw_params().efRuntime, 100);
 
             VecSimIndex_Free(index);
         }
@@ -2278,7 +2676,7 @@ mod tests {
                 VecsimQueryType::QUERY_TYPE_RANGE,
             );
             assert_eq!(result, VecSimParamResolveCode::VecSimParamResolver_OK);
-            assert!((qparams.hnswRuntimeParams.epsilon - 0.01).abs() < 0.0001);
+            assert!((qparams.hnsw_params().epsilon - 0.01).abs() < 0.0001);
 
             VecSimIndex_Free(index);
         }
@@ -2417,17 +2815,7 @@ mod tests {
 
     #[test]
     fn test_create_and_free_bf_index() {
-        let params = BFParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_BF,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
-        };
+        let params = test_bf_params();
 
         unsafe {
             let index = VecSimIndex_NewBF(&params);
@@ -2444,17 +2832,7 @@ mod tests {
 
     #[test]
     fn test_add_and_query_vectors() {
-        let params = BFParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_BF,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
-        };
+        let params = test_bf_params();
 
         unsafe {
             let index = VecSimIndex_NewBF(&params);
@@ -2517,21 +2895,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_index() {
-        let params = HNSWParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
-            M: 16,
-            efConstruction: 200,
-            efRuntime: 10,
-            epsilon: 0.0,
-        };
+        let params = test_hnsw_params();
 
         unsafe {
             let index = VecSimIndex_NewHNSW(&params);
@@ -2552,17 +2916,7 @@ mod tests {
 
     #[test]
     fn test_range_query() {
-        let params = BFParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_BF,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
-        };
+        let params = test_bf_params();
 
         unsafe {
             let index = VecSimIndex_NewBF(&params);
@@ -2596,21 +2950,24 @@ mod tests {
 
     #[test]
     fn test_svs_index() {
-        let params = SVSParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_SVS,
-                type_: VecSimType::VecSimType_FLOAT32,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
-            graphMaxDegree: 32,
+        let params = SVSParams_C {
+            type_: VecSimType::VecSimType_FLOAT32,
+            metric: VecSimMetric::VecSimMetric_L2,
+            dim: 4,
+            multi: false,
+            blockSize: 0,
+            quantBits: compat::VecSimSvsQuantBits::VecSimSvsQuant_NONE,
             alpha: 1.2,
-            constructionWindowSize: 200,
-            searchWindowSize: 100,
-            twoPassConstruction: true,
+            graph_max_degree: 32,
+            construction_window_size: 200,
+            max_candidate_pool_size: 0,
+            prune_to: 0,
+            use_search_history: types::VecSimOptionMode::VecSimOption_AUTO,
+            num_threads: 0,
+            search_window_size: 100,
+            search_buffer_capacity: 0,
+            leanvec_dim: 0,
+            epsilon: 0.0,
         };
 
         unsafe {
@@ -2770,16 +3127,13 @@ mod tests {
         use tempfile::NamedTempFile;
 
         // Create a BruteForce index with f64 (not supported for serialization)
-        let params = BFParams {
-            base: VecSimParams {
-                algo: VecSimAlgo::VecSimAlgo_BF,
-                type_: VecSimType::VecSimType_FLOAT64,
-                metric: VecSimMetric::VecSimMetric_L2,
-                dim: 4,
-                multi: false,
-                initialCapacity: 100,
-                blockSize: 0,
-            },
+        let params = BFParams_C {
+            type_: VecSimType::VecSimType_FLOAT64,
+            metric: VecSimMetric::VecSimMetric_L2,
+            dim: 4,
+            multi: false,
+            initialCapacity: 100,
+            blockSize: 0,
         };
 
         unsafe {
@@ -3413,6 +3767,80 @@ mod tests {
     }
 
     #[test]
+    fn test_debug_info_iterator() {
+        let params = test_hnsw_params();
+
+        unsafe {
+            let index = VecSimIndex_NewHNSW(&params);
+            assert!(!index.is_null());
+
+            // Create the debug info iterator
+            let iter = VecSimIndex_DebugInfoIterator(index);
+            assert!(!iter.is_null());
+
+            // Check that we have fields
+            let num_fields = VecSimDebugInfoIterator_NumberOfFields(iter);
+            assert!(num_fields > 0, "Should have at least one field");
+
+            // Iterate through the fields
+            let mut count = 0;
+            while VecSimDebugInfoIterator_HasNextField(iter) {
+                let field = VecSimDebugInfoIterator_NextField(iter);
+                assert!(!field.is_null());
+                assert!(!(*field).fieldName.is_null());
+                count += 1;
+            }
+            assert_eq!(count, num_fields);
+
+            // Should return null after exhausting
+            assert!(!VecSimDebugInfoIterator_HasNextField(iter));
+
+            // Free the iterator
+            VecSimDebugInfoIterator_Free(iter);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_debug_info_iterator_bf() {
+        let params = test_bf_params();
+
+        unsafe {
+            let index = VecSimIndex_NewBF(&params);
+            assert!(!index.is_null());
+
+            let iter = VecSimIndex_DebugInfoIterator(index);
+            assert!(!iter.is_null());
+
+            // BF should have fewer fields than HNSW
+            let num_fields = VecSimDebugInfoIterator_NumberOfFields(iter);
+            assert!(num_fields > 0);
+            assert!(num_fields <= 12, "BF should have ~10 fields");
+
+            VecSimDebugInfoIterator_Free(iter);
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_debug_info_iterator_null_safe() {
+        unsafe {
+            // Null iterator should be handled gracefully
+            assert_eq!(VecSimDebugInfoIterator_NumberOfFields(std::ptr::null_mut()), 0);
+            assert!(!VecSimDebugInfoIterator_HasNextField(std::ptr::null_mut()));
+            assert!(VecSimDebugInfoIterator_NextField(std::ptr::null_mut()).is_null());
+
+            // Free null should not crash
+            VecSimDebugInfoIterator_Free(std::ptr::null_mut());
+
+            // Null index should return null iterator
+            let iter = VecSimIndex_DebugInfoIterator(std::ptr::null());
+            assert!(iter.is_null());
+        }
+    }
+
+    #[test]
     fn test_prefer_adhoc_search() {
         let params = test_bf_params();
 
@@ -3441,14 +3869,20 @@ mod tests {
 
     #[test]
     fn test_estimate_initial_size() {
-        let params = VecSimParams {
+        use crate::compat::AlgoParams_C;
+        let params = VecSimParams_C {
             algo: VecSimAlgo::VecSimAlgo_BF,
-            type_: VecSimType::VecSimType_FLOAT32,
-            metric: VecSimMetric::VecSimMetric_L2,
-            dim: 128,
-            multi: false,
-            initialCapacity: 1000,
-            blockSize: 0,
+            algoParams: AlgoParams_C {
+                bfParams: BFParams_C {
+                    type_: VecSimType::VecSimType_FLOAT32,
+                    dim: 128,
+                    metric: VecSimMetric::VecSimMetric_L2,
+                    multi: false,
+                    initialCapacity: 1000,
+                    blockSize: 0,
+                },
+            },
+            logCtx: std::ptr::null_mut(),
         };
 
         unsafe {
@@ -3459,14 +3893,24 @@ mod tests {
 
     #[test]
     fn test_estimate_element_size() {
-        let params = VecSimParams {
+        use crate::compat::AlgoParams_C;
+        let params = VecSimParams_C {
             algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
-            type_: VecSimType::VecSimType_FLOAT32,
-            metric: VecSimMetric::VecSimMetric_L2,
-            dim: 128,
-            multi: false,
-            initialCapacity: 1000,
-            blockSize: 0,
+            algoParams: AlgoParams_C {
+                hnswParams: HNSWParams_C {
+                    type_: VecSimType::VecSimType_FLOAT32,
+                    dim: 128,
+                    metric: VecSimMetric::VecSimMetric_L2,
+                    multi: false,
+                    initialCapacity: 1000,
+                    blockSize: 0,
+                    M: 16,
+                    efConstruction: 200,
+                    efRuntime: 10,
+                    epsilon: 0.01,
+                },
+            },
+            logCtx: std::ptr::null_mut(),
         };
 
         unsafe {
@@ -3667,17 +4111,7 @@ mod tests {
     fn test_query_reply_get_code() {
         unsafe {
             // Create an index
-            let params = BFParams {
-                base: VecSimParams {
-                    algo: VecSimAlgo::VecSimAlgo_BF,
-                    type_: VecSimType::VecSimType_FLOAT32,
-                    metric: VecSimMetric::VecSimMetric_L2,
-                    dim: 4,
-                    multi: false,
-                    initialCapacity: 100,
-                    blockSize: 0,
-                },
-            };
+            let params = test_bf_params();
             let index = VecSimIndex_NewBF(&params);
             assert!(!index.is_null());
 
@@ -3713,4 +4147,27 @@ mod tests {
             assert_eq!(code, types::VecSimQueryReply_Code::VecSim_QueryReply_OK);
         }
     }
+}
+
+// ============================================================================
+// Debug Functions
+// ============================================================================
+
+/// Get the total number of iterations in range search (for debugging).
+#[no_mangle]
+pub extern "C" fn VecSim_GetRangeSearchIterations() -> usize {
+    vecsim::index::hnsw::RANGE_SEARCH_ITERATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Get the total number of range search calls (for debugging).
+#[no_mangle]
+pub extern "C" fn VecSim_GetRangeSearchCalls() -> usize {
+    vecsim::index::hnsw::RANGE_SEARCH_CALLS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Reset the range search counters (for debugging).
+#[no_mangle]
+pub extern "C" fn VecSim_ResetRangeSearchCounters() {
+    vecsim::index::hnsw::RANGE_SEARCH_ITERATIONS.store(0, std::sync::atomic::Ordering::Relaxed);
+    vecsim::index::hnsw::RANGE_SEARCH_CALLS.store(0, std::sync::atomic::Ordering::Relaxed);
 }

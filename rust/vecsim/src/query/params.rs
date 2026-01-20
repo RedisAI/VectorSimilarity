@@ -32,6 +32,12 @@ pub struct QueryParams {
     /// Query timeout duration.
     /// If set, creates an automatic timeout based on elapsed time.
     pub timeout: Option<Duration>,
+
+    /// Epsilon for range query search boundary expansion.
+    /// Controls how far beyond the current best distance to search.
+    /// E.g., 0.01 means search 1% beyond the dynamic range.
+    /// If None, uses default of 0.01.
+    pub epsilon: Option<f64>,
 }
 
 impl std::fmt::Debug for QueryParams {
@@ -59,6 +65,7 @@ impl Clone for QueryParams {
             parallel: self.parallel,
             timeout_callback: None, // Callback cannot be cloned
             timeout: self.timeout,
+            epsilon: self.epsilon,
         }
     }
 }
@@ -126,6 +133,15 @@ impl QueryParams {
     /// Set a timeout in milliseconds.
     pub fn with_timeout_ms(self, ms: u64) -> Self {
         self.with_timeout(Duration::from_millis(ms))
+    }
+
+    /// Set epsilon for range query search boundary expansion.
+    ///
+    /// Controls how far beyond the current best distance to search.
+    /// E.g., 0.01 means search 1% beyond the dynamic range.
+    pub fn with_epsilon(mut self, epsilon: f64) -> Self {
+        self.epsilon = Some(epsilon);
+        self
     }
 
     /// Create a timeout checker that can be used during search.

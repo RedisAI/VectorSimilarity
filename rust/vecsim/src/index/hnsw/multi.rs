@@ -130,6 +130,19 @@ impl<T: VectorElement> HnswMulti<T> {
         self.count.store(0, Ordering::Relaxed);
     }
 
+    /// Get the neighbors of an element in the HNSW graph by label.
+    ///
+    /// For multi-value indices, this returns the neighbors of the first internal ID
+    /// associated with the label. Returns a vector of vectors, where each inner vector
+    /// contains the neighbor labels for that level (level 0 first).
+    /// Returns None if the label doesn't exist.
+    pub fn get_element_neighbors(&self, label: LabelType) -> Option<Vec<Vec<LabelType>>> {
+        // Get the first internal ID for this label
+        let ids = self.label_to_ids.get(&label)?;
+        let first_id = *ids.iter().next()?;
+        self.core.get_element_neighbors_by_id(first_id)
+    }
+
     /// Compact the index by removing gaps from deleted vectors.
     ///
     /// This reorganizes the internal storage and graph structure to reclaim space
@@ -426,12 +439,13 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             });
         }
 
-        let ef = params
-            .and_then(|p| p.ef_runtime)
-            .unwrap_or(self.core.params.ef_runtime)
-            .max(1000);
-
-        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+        // Get epsilon from params or use default (1.0 = 100% expansion)
+        // Note: C++ uses 0.01 (1%) but the Rust HNSW graph structure may require
+        // a larger epsilon to ensure reliable range search results. With 100%
+        // expansion, the algorithm explores candidates up to 2x the dynamic range.
+        let epsilon = params
+            .and_then(|p| p.epsilon)
+            .unwrap_or(1.0);
 
         // Build filter if needed
         let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
@@ -448,25 +462,28 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             None
         };
 
-        let results = self.core.search(query, count, ef, filter_fn.as_ref().map(|f| f.as_ref()));
+        // Use epsilon-neighborhood search for efficient range query
+        let results = self.core.search_range(
+            query,
+            radius,
+            epsilon,
+            filter_fn.as_ref().map(|f| f.as_ref()),
+        );
 
-        // Look up labels and filter by radius
         // For multi-value index, deduplicate by label and keep best distance per label
         let mut label_best: HashMap<LabelType, T::DistanceType> = HashMap::new();
 
         for (id, dist) in results {
-            if dist.to_f64() <= radius.to_f64() {
-                if let Some(label_ref) = self.id_to_label.get(&id) {
-                    let label = *label_ref;
-                    label_best
-                        .entry(label)
-                        .and_modify(|best| {
-                            if dist.to_f64() < best.to_f64() {
-                                *best = dist;
-                            }
-                        })
-                        .or_insert(dist);
-                }
+            if let Some(label_ref) = self.id_to_label.get(&id) {
+                let label = *label_ref;
+                label_best
+                    .entry(label)
+                    .and_modify(|best| {
+                        if dist.to_f64() < best.to_f64() {
+                            *best = dist;
+                        }
+                    })
+                    .or_insert(dist);
             }
         }
 

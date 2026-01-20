@@ -396,6 +396,41 @@ impl<T: VectorElement> DataBlocks<T> {
         unsafe { Some(block.get_vector_ptr_unchecked(offset, self.dim)) }
     }
 
+    /// Get a vector by its internal ID, skipping the deleted check.
+    ///
+    /// This is faster than `get()` because it doesn't acquire the Mutex lock
+    /// on `free_slots` to check if the ID is deleted.
+    ///
+    /// # Safety
+    /// This method is safe but may return data for deleted vectors.
+    /// Use this only during search operations where:
+    /// - The ID is known to be valid (from graph traversal)
+    /// - Deleted vectors are handled separately (e.g., via isMarkedDeleted check)
+    #[inline]
+    pub fn get_unchecked_deleted(&self, id: IdType) -> Option<&[T]> {
+        if id == INVALID_ID {
+            return None;
+        }
+        let id_usize = id as usize;
+        if id_usize >= self.high_water_mark.load(Ordering::Acquire) {
+            return None;
+        }
+        let (block_idx, offset) = self.id_to_indices(id);
+        let blocks = self.blocks.read();
+        if block_idx >= blocks.len() {
+            return None;
+        }
+        // SAFETY: We hold the read lock and verified the index is within high_water_mark.
+        unsafe {
+            let block = &blocks[block_idx];
+            if !block.is_valid_index(offset, self.dim) {
+                return None;
+            }
+            let ptr = block.get_vector_ptr_unchecked(offset, self.dim);
+            Some(std::slice::from_raw_parts(ptr, self.dim))
+        }
+    }
+
     /// Mark a slot as free for reuse.
     ///
     /// Returns `true` if the slot was successfully marked as deleted,

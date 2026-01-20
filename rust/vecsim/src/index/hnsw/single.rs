@@ -328,6 +328,15 @@ impl<T: VectorElement> HnswSingle<T> {
         }
     }
 
+    /// Get the neighbors of an element at all levels.
+    ///
+    /// Returns None if the label doesn't exist in the index.
+    /// Returns Some(Vec<Vec<LabelType>>) where each inner Vec contains the neighbor labels at that level.
+    pub fn get_element_neighbors(&self, label: LabelType) -> Option<Vec<Vec<LabelType>>> {
+        let id = *self.label_to_id.get(&label)?;
+        self.core.get_element_neighbors_by_id(id)
+    }
+
     /// Clear all vectors from the index, resetting it to empty state.
     pub fn clear(&mut self) {
         use std::sync::atomic::Ordering;
@@ -765,12 +774,13 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             });
         }
 
-        let ef = params
-            .and_then(|p| p.ef_runtime)
-            .unwrap_or(self.core.params.ef_runtime)
-            .max(1000);
-
-        let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
+        // Get epsilon from params or use default (1.0 = 100% expansion)
+        // Note: C++ uses 0.01 (1%) but the Rust HNSW graph structure may require
+        // a larger epsilon to ensure reliable range search results. With 100%
+        // expansion, the algorithm explores candidates up to 2x the dynamic range.
+        let epsilon = params
+            .and_then(|p| p.epsilon)
+            .unwrap_or(1.0);
 
         // Build filter if needed - use DashMap directly instead of copying
         let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
@@ -787,18 +797,23 @@ impl<T: VectorElement> VecSimIndex for HnswSingle<T> {
             None
         };
 
-        let results = self.core.search(query, count, ef, filter_fn.as_ref().map(|f| f.as_ref()));
+        // Use epsilon-neighborhood search for efficient range query
+        let results = self.core.search_range(
+            query,
+            radius,
+            epsilon,
+            filter_fn.as_ref().map(|f| f.as_ref()),
+        );
 
-        // Look up labels and filter by radius
-        let mut reply = QueryReply::new();
+        // Look up labels for results
+        let mut reply = QueryReply::with_capacity(results.len());
         for (id, dist) in results {
-            if dist.to_f64() <= radius.to_f64() {
-                if let Some(label_ref) = self.id_to_label.get(&id) {
-                    reply.push(QueryResult::new(*label_ref, dist));
-                }
+            if let Some(label_ref) = self.id_to_label.get(&id) {
+                reply.push(QueryResult::new(*label_ref, dist));
             }
         }
 
+        // Results are already sorted by search_range, but ensure order
         reply.sort_by_distance();
         Ok(reply)
     }

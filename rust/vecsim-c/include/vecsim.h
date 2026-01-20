@@ -59,6 +59,53 @@ extern "C" {
 #endif
 
 /* ============================================================================
+ * Constants and Macros
+ * ========================================================================== */
+
+/**
+ * @brief Default block size for vector storage.
+ */
+#define DEFAULT_BLOCK_SIZE 1024
+
+/**
+ * @brief Macro to suppress unused variable warnings.
+ */
+#define UNUSED(x) (void)(x)
+
+/**
+ * @brief String constant for ad-hoc brute force policy.
+ */
+#define VECSIM_POLICY_ADHOC_BF "adhoc_bf"
+
+/**
+ * @brief HNSW default parameters.
+ */
+#define HNSW_DEFAULT_M       16
+#define HNSW_DEFAULT_EF_C    200
+#define HNSW_DEFAULT_EF_RT   10
+#define HNSW_DEFAULT_EPSILON 0.01
+
+/**
+ * @brief SVS Vamana default parameters.
+ */
+#define SVS_VAMANA_DEFAULT_ALPHA_L2                 1.2f
+#define SVS_VAMANA_DEFAULT_ALPHA_IP                 0.95f
+#define SVS_VAMANA_DEFAULT_GRAPH_MAX_DEGREE         32
+#define SVS_VAMANA_DEFAULT_CONSTRUCTION_WINDOW_SIZE 200
+#define SVS_VAMANA_DEFAULT_USE_SEARCH_HISTORY       true
+#define SVS_VAMANA_DEFAULT_NUM_THREADS              1
+#define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD       (10 * DEFAULT_BLOCK_SIZE)
+#define SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD         (1 * DEFAULT_BLOCK_SIZE)
+#define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE       10
+#define SVS_VAMANA_DEFAULT_LEANVEC_DIM              0
+#define SVS_VAMANA_DEFAULT_EPSILON                  0.01f
+
+/**
+ * @brief General success code.
+ */
+#define VecSim_OK 0
+
+/* ============================================================================
  * Type Definitions
  * ========================================================================== */
 
@@ -117,13 +164,15 @@ typedef enum VecSimQueryReply_Code {
 } VecSimQueryReply_Code;
 
 /**
- * @brief Search mode for queries.
+ * @brief Search mode for queries (internal Rust representation).
+ * Note: RediSearch defines its own VecSimSearchMode with VECSIM_ prefix.
+ * This enum is used internally by the Rust library.
  */
-typedef enum VecSimSearchMode {
-    STANDARD = 0,  /**< Standard search mode */
-    HYBRID = 1,    /**< Hybrid search mode */
-    RANGE = 2      /**< Range search mode */
-} VecSimSearchMode;
+typedef enum VecSimSearchMode_Internal {
+    VECSIM_SEARCH_STANDARD = 0,  /**< Standard search mode */
+    VECSIM_SEARCH_HYBRID = 1,    /**< Hybrid search mode */
+    VECSIM_SEARCH_RANGE = 2      /**< Range search mode */
+} VecSimSearchMode_Internal;
 
 /**
  * @brief Hybrid search policy.
@@ -285,7 +334,11 @@ typedef enum {
     VecSimSvsQuant_NONE = 0,
     VecSimSvsQuant_Scalar = 1,
     VecSimSvsQuant_4 = 4,
-    VecSimSvsQuant_8 = 8
+    VecSimSvsQuant_8 = 8,
+    VecSimSvsQuant_4x4 = 4 | (4 << 8),
+    VecSimSvsQuant_4x8 = 4 | (8 << 8),
+    VecSimSvsQuant_4x8_LeanVec = 4 | (8 << 8) | (1 << 16),
+    VecSimSvsQuant_8x8_LeanVec = 8 | (8 << 8) | (1 << 16)
 } VecSimSvsQuantBits;
 
 /**
@@ -396,6 +449,26 @@ typedef struct {
     VecSimDiskContext_C *diskContext;
 } VecSimParamsDisk_C;
 
+/* ============================================================================
+ * C++ API Compatibility Typedefs
+ * ============================================================================
+ * These typedefs provide drop-in compatibility with the C++ VecSim API.
+ */
+typedef VecSimDiskContext_C VecSimDiskContext;
+typedef VecSimParamsDisk_C VecSimParamsDisk;
+typedef TieredIndexParams_C TieredIndexParams;
+typedef AlgoParams_C AlgoParams;
+typedef HNSWParams_C HNSWParams;
+typedef BFParams_C BFParams;
+typedef SVSParams_C SVSParams;
+typedef VecSimParams_C VecSimParams;
+
+/* Forward declarations for Rust-native types (defined later in this header) */
+struct TieredParams_Rust;
+struct DiskParams_Rust;
+typedef struct TieredParams_Rust TieredParams;
+typedef struct DiskParams_Rust DiskParams;
+
 /**
  * @brief HNSW runtime parameters (C++-compatible layout).
  */
@@ -403,6 +476,8 @@ typedef struct {
     size_t efRuntime;
     double epsilon;
 } HNSWRuntimeParams_C;
+
+typedef HNSWRuntimeParams_C HNSWRuntimeParams;
 
 /**
  * @brief SVS runtime parameters (C++-compatible layout).
@@ -413,6 +488,8 @@ typedef struct {
     VecSimOptionMode searchHistory;
     double epsilon;
 } SVSRuntimeParams_C;
+
+typedef SVSRuntimeParams_C SVSRuntimeParams;
 
 /**
  * @brief Query parameters (C++-compatible layout).
@@ -498,9 +575,9 @@ typedef struct VecSimBatchIterator VecSimBatchIterator;
  * ========================================================================== */
 
 /**
- * @brief Common base parameters for all index types.
+ * @brief Common base parameters for all index types (Rust-native API).
  */
-typedef struct VecSimParams {
+typedef struct VecSimBaseParams {
     VecSimAlgo algo;           /**< Algorithm type */
     VecSimType type_;          /**< Vector element data type */
     VecSimMetric metric;       /**< Distance metric */
@@ -508,57 +585,57 @@ typedef struct VecSimParams {
     bool multi;                /**< Whether multiple vectors per label are allowed */
     size_t initialCapacity;    /**< Initial capacity (number of vectors) */
     size_t blockSize;          /**< Block size for storage (0 for default) */
-} VecSimParams;
+} VecSimBaseParams;
 
 /**
- * @brief Parameters for BruteForce index creation.
+ * @brief Parameters for BruteForce index creation (Rust-native API).
  */
-typedef struct BFParams {
-    VecSimParams base;  /**< Common parameters */
-} BFParams;
+typedef struct BFParams_Rust {
+    VecSimBaseParams base;  /**< Common parameters */
+} BFParams_Rust;
 
 /**
- * @brief Parameters for HNSW index creation.
+ * @brief Parameters for HNSW index creation (Rust-native API).
  */
-typedef struct HNSWParams {
-    VecSimParams base;       /**< Common parameters */
+typedef struct HNSWParams_Rust {
+    VecSimBaseParams base;       /**< Common parameters */
     size_t M;                /**< Max connections per element per layer (default: 16) */
     size_t efConstruction;   /**< Dynamic candidate list size during construction (default: 200) */
     size_t efRuntime;        /**< Dynamic candidate list size during search (default: 10) */
     double epsilon;          /**< Approximation factor (0 = exact) */
-} HNSWParams;
+} HNSWParams_Rust;
 
 /**
- * @brief Parameters for SVS (Vamana) index creation.
+ * @brief Parameters for SVS (Vamana) index creation (Rust-native API).
  *
  * SVS (Search via Satellite) is a graph-based approximate nearest neighbor
  * index using the Vamana algorithm with robust pruning.
  */
-typedef struct SVSParams {
-    VecSimParams base;           /**< Common parameters */
+typedef struct SVSParams_Rust {
+    VecSimBaseParams base;           /**< Common parameters */
     size_t graphMaxDegree;       /**< Maximum neighbors per node (R, default: 32) */
     float alpha;                 /**< Pruning parameter for diversity (default: 1.2) */
     size_t constructionWindowSize; /**< Beam width during construction (L, default: 200) */
     size_t searchWindowSize;     /**< Default beam width during search (default: 100) */
     bool twoPassConstruction;    /**< Enable two-pass construction (default: true) */
-} SVSParams;
+} SVSParams_Rust;
 
 /**
- * @brief Parameters for Tiered index creation.
+ * @brief Parameters for Tiered index creation (Rust-native API).
  *
  * The tiered index combines a BruteForce frontend (for fast writes) with
  * an HNSW backend (for efficient queries). Vectors are first added to the
  * flat buffer, then migrated to HNSW via VecSimTieredIndex_Flush() or
  * automatically when the buffer is full.
  */
-typedef struct TieredParams {
-    VecSimParams base;           /**< Common parameters */
+typedef struct TieredParams_Rust {
+    VecSimBaseParams base;           /**< Common parameters */
     size_t M;                    /**< HNSW M parameter (default: 16) */
     size_t efConstruction;       /**< HNSW ef_construction (default: 200) */
     size_t efRuntime;            /**< HNSW ef_runtime (default: 10) */
     size_t flatBufferLimit;      /**< Max flat buffer size before in-place writes (default: 10000) */
     uint32_t writeMode;          /**< 0 = Async (buffer first), 1 = InPlace (direct to HNSW) */
-} TieredParams;
+} TieredParams_Rust;
 
 /**
  * @brief Backend type for disk-based indices.
@@ -569,52 +646,61 @@ typedef enum DiskBackend {
 } DiskBackend;
 
 /**
- * @brief Parameters for disk-based index creation.
+ * @brief Parameters for disk-based index creation (Rust-native API).
  *
  * Disk indices store vectors in memory-mapped files for persistence.
  * They support two backends:
  * - BruteForce: Linear scan (exact results, O(n))
  * - Vamana: Graph-based approximate search (fast, O(log n))
  */
-typedef struct DiskParams {
-    VecSimParams base;           /**< Common parameters */
+typedef struct DiskParams_Rust {
+    VecSimBaseParams base;           /**< Common parameters */
     const char *dataPath;        /**< Path to the data file (null-terminated) */
     DiskBackend backend;         /**< Backend algorithm (default: BruteForce) */
     size_t graphMaxDegree;       /**< Graph max degree for Vamana (default: 32) */
     float alpha;                 /**< Alpha parameter for Vamana (default: 1.2) */
     size_t constructionL;        /**< Construction window size for Vamana (default: 200) */
     size_t searchL;              /**< Search window size for Vamana (default: 100) */
-} DiskParams;
+} DiskParams_Rust;
 
 /**
- * @brief HNSW-specific runtime parameters.
+ * @brief HNSW-specific runtime parameters (Rust-native layout).
  */
-typedef struct HNSWRuntimeParams {
+typedef struct HNSWRuntimeParams_Rust {
     size_t efRuntime;  /**< Dynamic candidate list size during search */
     double epsilon;    /**< Approximation factor */
-} HNSWRuntimeParams;
+} HNSWRuntimeParams_Rust;
 
 /**
- * @brief SVS-specific runtime parameters.
+ * @brief SVS-specific runtime parameters (Rust-native layout).
  */
-typedef struct SVSRuntimeParams {
+typedef struct SVSRuntimeParams_Rust {
     size_t windowSize;       /**< Search window size for graph search */
     size_t bufferCapacity;   /**< Search buffer capacity */
     int searchHistory;       /**< Whether to use search history (0/1) */
     double epsilon;          /**< Approximation factor for range search */
-} SVSRuntimeParams;
+} SVSRuntimeParams_Rust;
 
 /**
- * @brief Query parameters.
+ * @brief Query parameters (Rust-native layout).
+ *
+ * Note: For C++ API compatibility, use VecSimQueryParams_C instead.
  */
-typedef struct VecSimQueryParams {
+typedef struct VecSimQueryParams_Rust {
     HNSWRuntimeParams hnswRuntimeParams;  /**< HNSW-specific parameters */
     SVSRuntimeParams svsRuntimeParams;    /**< SVS-specific parameters */
-    VecSimSearchMode searchMode;          /**< Search mode */
+    VecSimSearchMode_Internal searchMode; /**< Search mode */
     VecSimHybridPolicy hybridPolicy;      /**< Hybrid policy */
     size_t batchSize;                     /**< Batch size for iteration */
     void *timeoutCtx;                     /**< Timeout context (opaque) */
-} VecSimQueryParams;
+} VecSimQueryParams_Rust;
+
+/**
+ * @brief Query parameters (C++ API compatible).
+ *
+ * This typedef provides compatibility with the C++ VecSim API.
+ */
+typedef VecSimQueryParams_C VecSimQueryParams;
 
 /* ============================================================================
  * Index Info Structures
@@ -654,7 +740,7 @@ typedef struct VecSimIndexInfo {
 typedef struct VecSimIndexBasicInfo {
     VecSimAlgo algo;            /**< Algorithm type */
     VecSimMetric metric;        /**< Distance metric */
-    VecSimType type_;           /**< Data type */
+    VecSimType type;            /**< Data type */
     bool isMulti;               /**< Whether multi-value index */
     bool isTiered;              /**< Whether tiered index */
     bool isDisk;                /**< Whether disk-based index */
@@ -678,7 +764,7 @@ typedef struct CommonInfo {
     size_t indexSize;               /**< Current number of vectors */
     size_t indexLabelCount;         /**< Current number of unique labels */
     uint64_t memory;                /**< Memory usage in bytes */
-    VecSimSearchMode lastMode;      /**< Last search mode used */
+    VecSearchMode lastMode;         /**< Last search mode used */
 } CommonInfo;
 
 /**
@@ -710,6 +796,46 @@ typedef struct VecSimIndexDebugInfo {
     hnswInfoStruct hnswInfo;    /**< HNSW-specific info */
     bfInfoStruct bfInfo;        /**< BruteForce-specific info */
 } VecSimIndexDebugInfo;
+
+/* ============================================================================
+ * Debug Info Iterator Types
+ * ========================================================================== */
+
+/**
+ * @brief Opaque handle to a debug info iterator.
+ */
+typedef struct VecSimDebugInfoIterator VecSimDebugInfoIterator;
+
+/**
+ * @brief Field type for debug info fields.
+ */
+typedef enum {
+    INFOFIELD_STRING = 0,   /**< String value */
+    INFOFIELD_INT64 = 1,    /**< Signed 64-bit integer */
+    INFOFIELD_UINT64 = 2,   /**< Unsigned 64-bit integer */
+    INFOFIELD_FLOAT64 = 3,  /**< 64-bit floating point */
+    INFOFIELD_ITERATOR = 4  /**< Nested iterator */
+} VecSim_InfoFieldType;
+
+/**
+ * @brief Union of field values.
+ */
+typedef union {
+    double floatingPointValue;              /**< 64-bit float value */
+    int64_t integerValue;                   /**< Signed 64-bit integer */
+    uint64_t uintegerValue;                 /**< Unsigned 64-bit integer */
+    const char *stringValue;                /**< String value */
+    VecSimDebugInfoIterator *iteratorValue; /**< Nested iterator */
+} FieldValue;
+
+/**
+ * @brief A field in the debug info iterator.
+ */
+typedef struct {
+    const char *fieldName;          /**< Field name */
+    VecSim_InfoFieldType fieldType; /**< Field type */
+    FieldValue fieldValue;          /**< Field value */
+} VecSim_InfoField;
 
 /* ============================================================================
  * Index Lifecycle Functions
@@ -1210,6 +1336,84 @@ VecSimIndexStatsInfo VecSimIndex_StatsInfo(const VecSimIndex *index);
  * @return Debug information.
  */
 VecSimIndexDebugInfo VecSimIndex_DebugInfo(const VecSimIndex *index);
+
+/**
+ * @brief Create a debug info iterator for an index.
+ *
+ * The iterator provides a way to traverse all debug information fields
+ * for an index, including nested information for tiered indices.
+ *
+ * @param index The index handle.
+ * @return A debug info iterator, or NULL on failure.
+ *         Must be freed with VecSimDebugInfoIterator_Free().
+ */
+VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(const VecSimIndex *index);
+
+/**
+ * @brief Returns the number of fields in the info iterator.
+ *
+ * @param infoIterator The info iterator.
+ * @return Number of fields.
+ */
+size_t VecSimDebugInfoIterator_NumberOfFields(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Check if the iterator has more fields.
+ *
+ * @param infoIterator The info iterator.
+ * @return true if more fields are available, false otherwise.
+ */
+bool VecSimDebugInfoIterator_HasNextField(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Get the next field from the iterator.
+ *
+ * The returned pointer is valid until the next call to this function
+ * or until the iterator is freed.
+ *
+ * @param infoIterator The info iterator.
+ * @return Pointer to the next info field, or NULL if no more fields.
+ */
+VecSim_InfoField *VecSimDebugInfoIterator_NextField(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Free a debug info iterator.
+ *
+ * This also frees all nested iterators.
+ *
+ * @param infoIterator The info iterator to free.
+ */
+void VecSimDebugInfoIterator_Free(VecSimDebugInfoIterator *infoIterator);
+
+/**
+ * @brief Dump the neighbors of an element in HNSW index.
+ *
+ * Returns an array with <topLevel+2> entries, where each entry is an array itself.
+ * Every internal array in a position <l> where <0<=l<=topLevel> corresponds to the neighbors
+ * of the element in the graph in level <l>. It contains <n_l+1> entries, where <n_l> is the
+ * number of neighbors in level l. The last entry in the external array is NULL (indicates its length).
+ * The first entry in each internal array contains the number <n_l>, while the next
+ * <n_l> entries are the labels of the elements neighbors in this level.
+ *
+ * Note: currently only HNSW indexes of type single are supported (multi not yet) - tiered included.
+ * For cleanup, VecSimDebug_ReleaseElementNeighborsInHNSWGraph needs to be called with the value
+ * pointed by neighborsData as returned from this call.
+ *
+ * @param index The index in which the element resides.
+ * @param label The label to dump its neighbors in every level in which it exists.
+ * @param neighborsData A pointer to a 2-dim array of integer which is a placeholder for the
+ *                      output of the neighbors' labels that will be allocated and stored.
+ * @return VecSimDebugCommandCode indicating success or failure reason.
+ */
+VecSimDebugCommandCode VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
+                                                                   int ***neighborsData);
+
+/**
+ * @brief Release the neighbors data allocated by VecSimDebug_GetElementNeighborsInHNSWGraph.
+ *
+ * @param neighborsData The 2-dim array returned in the placeholder to be de-allocated.
+ */
+void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData);
 
 /**
  * @brief Determine if ad-hoc brute-force search is preferred over batched search.
