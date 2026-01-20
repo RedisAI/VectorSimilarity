@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "dbpedia_bench"
 harness = false
+
+[[bench]]
+name = "hnsw_bottleneck_bench"
+harness = false

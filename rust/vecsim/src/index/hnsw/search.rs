@@ -9,6 +9,7 @@ use super::graph::ElementGraphData;
 use super::visited::VisitedNodesHandler;
 use crate::distance::DistanceFunction;
 use crate::types::{DistanceType, IdType, VectorElement};
+use crate::utils::prefetch::prefetch_slice;
 use crate::utils::{MaxHeap, MinHeap};
 
 /// Trait for graph access abstraction.
@@ -77,7 +78,25 @@ where
         let mut changed = false;
 
         if let Some(element) = graph.get(current) {
-            for neighbor in element.iter_neighbors(level) {
+            // Collect neighbors to enable prefetching
+            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
+            let neighbor_count = neighbors.len();
+
+            // Prefetch first neighbor's data
+            if neighbor_count > 0 {
+                if let Some(first_data) = data_getter(neighbors[0]) {
+                    prefetch_slice(first_data);
+                }
+            }
+
+            for (i, &neighbor) in neighbors.iter().enumerate() {
+                // Prefetch next neighbor's data while processing current
+                if i + 1 < neighbor_count {
+                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
+                        prefetch_slice(next_data);
+                    }
+                }
+
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
                     if dist < current_dist {
@@ -157,7 +176,25 @@ where
                 continue;
             }
 
-            for neighbor in element.iter_neighbors(level) {
+            // Collect neighbors to enable prefetching
+            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
+            let neighbor_count = neighbors.len();
+
+            // Prefetch first neighbor's data
+            if neighbor_count > 0 {
+                if let Some(first_data) = data_getter(neighbors[0]) {
+                    prefetch_slice(first_data);
+                }
+            }
+
+            for (i, &neighbor) in neighbors.iter().enumerate() {
+                // Prefetch next neighbor's data while processing current
+                if i + 1 < neighbor_count {
+                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
+                        prefetch_slice(next_data);
+                    }
+                }
+
                 if visited.visit(neighbor) {
                     continue; // Already visited
                 }
@@ -290,7 +327,25 @@ where
                 continue;
             }
 
-            for neighbor in element.iter_neighbors(level) {
+            // Collect neighbors to enable prefetching
+            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
+            let neighbor_count = neighbors.len();
+
+            // Prefetch first neighbor's data
+            if neighbor_count > 0 {
+                if let Some(first_data) = data_getter(neighbors[0]) {
+                    prefetch_slice(first_data);
+                }
+            }
+
+            for (i, &neighbor) in neighbors.iter().enumerate() {
+                // Prefetch next neighbor's data while processing current
+                if i + 1 < neighbor_count {
+                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
+                        prefetch_slice(next_data);
+                    }
+                }
+
                 if visited.visit(neighbor) {
                     continue; // Already visited
                 }
