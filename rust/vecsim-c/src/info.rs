@@ -1,7 +1,7 @@
 //! Index information and introspection functions for C FFI.
 
 use crate::index::IndexHandle;
-use crate::types::{VecSimAlgo, VecSimMetric, VecSimType};
+use crate::types::{VecSearchMode, VecSimAlgo, VecSimMetric, VecSimType};
 
 /// Index information struct.
 #[repr(C)]
@@ -45,6 +45,67 @@ pub struct VecSimHnswInfo {
     pub entrypoint: i64,
     /// Epsilon parameter.
     pub epsilon: f64,
+}
+
+/// Index info that is static and immutable.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VecSimIndexBasicInfo {
+    pub algo: VecSimAlgo,
+    pub metric: VecSimMetric,
+    pub type_: VecSimType,
+    pub isMulti: bool,
+    pub isTiered: bool,
+    pub isDisk: bool,
+    pub blockSize: usize,
+    pub dim: usize,
+}
+
+/// Index info for statistics - thin and efficient.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VecSimIndexStatsInfo {
+    pub memory: usize,
+    pub numberOfMarkedDeleted: usize,
+}
+
+/// Common index information.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CommonInfo {
+    pub basicInfo: VecSimIndexBasicInfo,
+    pub indexSize: usize,
+    pub indexLabelCount: usize,
+    pub memory: u64,
+    pub lastMode: VecSearchMode,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct hnswInfoStruct {
+    pub M: usize,
+    pub efConstruction: usize,
+    pub efRuntime: usize,
+    pub epsilon: f64,
+    pub max_level: usize,
+    pub entrypoint: usize,
+    pub visitedNodesPoolSize: usize,
+    pub numberOfMarkedDeletedNodes: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct bfInfoStruct {
+    pub dummy: i8,
+}
+
+/// Debug information for an index.
+#[repr(C)]
+pub struct VecSimIndexDebugInfo {
+    pub commonInfo: CommonInfo,
+    // Union would be here but we'll use a simpler approach
+    pub hnswInfo: hnswInfoStruct,
+    pub bfInfo: bfInfoStruct,
 }
 
 impl Default for VecSimIndexInfo {

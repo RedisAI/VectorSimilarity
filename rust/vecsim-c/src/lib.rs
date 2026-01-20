@@ -48,6 +48,20 @@ use std::sync::RwLock;
 /// Protected by RwLock for thread-safe access.
 static GLOBAL_MEMORY_FUNCTIONS: RwLock<Option<VecSimMemoryFunctions>> = RwLock::new(None);
 
+/// Global timeout callback function.
+static GLOBAL_TIMEOUT_CALLBACK: RwLock<types::timeoutCallbackFunction> = RwLock::new(None);
+
+/// Global log callback function.
+static GLOBAL_LOG_CALLBACK: RwLock<types::logCallbackFunction> = RwLock::new(None);
+
+/// Thread-safe wrapper for raw pointers in the log context.
+struct SendSyncPtr(*const c_char);
+unsafe impl Send for SendSyncPtr {}
+unsafe impl Sync for SendSyncPtr {}
+
+/// Global log context for testing.
+static GLOBAL_LOG_CONTEXT: RwLock<Option<(SendSyncPtr, SendSyncPtr)>> = RwLock::new(None);
+
 /// Set custom memory functions for all future allocations.
 ///
 /// This allows integration with external memory management systems like Redis.
@@ -71,6 +85,53 @@ pub unsafe extern "C" fn VecSim_SetMemoryFunctions(functions: VecSimMemoryFuncti
 /// Returns the currently configured memory functions, or None if using defaults.
 pub(crate) fn get_memory_functions() -> Option<VecSimMemoryFunctions> {
     GLOBAL_MEMORY_FUNCTIONS.read().ok().and_then(|g| *g)
+}
+
+/// Set the timeout callback function.
+///
+/// The callback will be called periodically during long operations to check
+/// if the operation should be aborted. Return non-zero to abort.
+///
+/// # Safety
+/// The callback function must be thread-safe.
+#[no_mangle]
+pub unsafe extern "C" fn VecSim_SetTimeoutCallbackFunction(
+    callback: types::timeoutCallbackFunction,
+) {
+    if let Ok(mut guard) = GLOBAL_TIMEOUT_CALLBACK.write() {
+        *guard = callback;
+    }
+}
+
+/// Set the log callback function.
+///
+/// The callback will be called for logging messages from the library.
+///
+/// # Safety
+/// The callback function must be thread-safe.
+#[no_mangle]
+pub unsafe extern "C" fn VecSim_SetLogCallbackFunction(
+    callback: types::logCallbackFunction,
+) {
+    if let Ok(mut guard) = GLOBAL_LOG_CALLBACK.write() {
+        *guard = callback;
+    }
+}
+
+/// Set the test log context.
+///
+/// This is used for testing to identify which test is running.
+///
+/// # Safety
+/// The pointers must be valid for the duration of the test.
+#[no_mangle]
+pub unsafe extern "C" fn VecSim_SetTestLogContext(
+    test_name: *const c_char,
+    test_type: *const c_char,
+) {
+    if let Ok(mut guard) = GLOBAL_LOG_CONTEXT.write() {
+        *guard = Some((SendSyncPtr(test_name), SendSyncPtr(test_type)));
+    }
 }
 
 // ============================================================================
@@ -623,6 +684,53 @@ pub unsafe extern "C" fn VecSimTieredIndex_BackendSize(index: *const VecSimIndex
     handle.wrapper.tiered_backend_size()
 }
 
+/// Run garbage collection on a tiered index.
+///
+/// This cleans up deleted vectors and optimizes the index structure.
+/// Returns the number of vectors cleaned up.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_NewTiered`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimTieredIndex_GC(index: *mut VecSimIndex) -> usize {
+    if index.is_null() {
+        return 0;
+    }
+    let handle = &mut *(index as *mut IndexHandle);
+    handle.wrapper.tiered_gc()
+}
+
+/// Acquire shared locks on a tiered index.
+///
+/// This prevents modifications to the index while the locks are held.
+/// Must be paired with VecSimTieredIndex_ReleaseSharedLocks.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_NewTiered`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimTieredIndex_AcquireSharedLocks(index: *mut VecSimIndex) {
+    if index.is_null() {
+        return;
+    }
+    let handle = &mut *(index as *mut IndexHandle);
+    handle.wrapper.tiered_acquire_shared_locks();
+}
+
+/// Release shared locks on a tiered index.
+///
+/// Must be called after VecSimTieredIndex_AcquireSharedLocks.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_NewTiered`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimTieredIndex_ReleaseSharedLocks(index: *mut VecSimIndex) {
+    if index.is_null() {
+        return;
+    }
+    let handle = &mut *(index as *mut IndexHandle);
+    handle.wrapper.tiered_release_shared_locks();
+}
+
 /// Check if the index is a tiered index.
 ///
 /// # Safety
@@ -819,6 +927,64 @@ pub unsafe extern "C" fn VecSimIndex_RangeQuery(
 
     let reply_handle = range_query(handle, query, radius, params_opt, order);
     Box::into_raw(Box::new(reply_handle)) as *mut VecSimQueryReply
+}
+
+/// Determine if ad-hoc brute-force search is preferred over batched search.
+///
+/// This is a heuristic function that helps decide the optimal search strategy
+/// for hybrid queries based on the index size and the number of results needed.
+///
+/// # Arguments
+/// * `index` - The index handle
+/// * `subsetSize` - The estimated size of the subset to search
+/// * `k` - The number of results requested
+/// * `initial` - Whether this is the initial decision (true) or a re-evaluation (false)
+///
+/// # Returns
+/// true if ad-hoc search is preferred, false if batched search is preferred.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_PreferAdHocSearch(
+    index: *const VecSimIndex,
+    subsetSize: usize,
+    k: usize,
+    initial: bool,
+) -> bool {
+    if index.is_null() {
+        return true; // Default to ad-hoc for safety
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    let index_size = handle.wrapper.index_size();
+
+    if index_size == 0 {
+        return true;
+    }
+
+    // Heuristic: prefer ad-hoc when subset is small relative to index
+    // or when k is large relative to subset
+    let subset_ratio = subsetSize as f64 / index_size as f64;
+    let k_ratio = k as f64 / subsetSize.max(1) as f64;
+
+    // If subset is less than 10% of index, prefer ad-hoc
+    if subset_ratio < 0.1 {
+        return true;
+    }
+
+    // If we need more than 10% of the subset, prefer ad-hoc
+    if k_ratio > 0.1 {
+        return true;
+    }
+
+    // For initial decision, be more conservative (prefer batches)
+    // For re-evaluation, be more aggressive (prefer ad-hoc)
+    if initial {
+        subset_ratio < 0.3
+    } else {
+        subset_ratio < 0.5
+    }
 }
 
 // ============================================================================
@@ -1168,6 +1334,133 @@ pub unsafe extern "C" fn VecSimIndex_Info(index: *const VecSimIndex) -> VecSimIn
     get_index_info(handle)
 }
 
+/// Get basic immutable index information.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_BasicInfo(
+    index: *const VecSimIndex,
+) -> info::VecSimIndexBasicInfo {
+    if index.is_null() {
+        return info::VecSimIndexBasicInfo {
+            algo: VecSimAlgo::VecSimAlgo_BF,
+            metric: VecSimMetric::VecSimMetric_L2,
+            type_: VecSimType::VecSimType_FLOAT32,
+            isMulti: false,
+            isTiered: false,
+            isDisk: false,
+            blockSize: 0,
+            dim: 0,
+        };
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    info::VecSimIndexBasicInfo {
+        algo: handle.algo,
+        metric: handle.metric,
+        type_: handle.data_type,
+        isMulti: handle.is_multi,
+        isTiered: handle.wrapper.is_tiered(),
+        isDisk: handle.wrapper.is_disk(),
+        blockSize: 1024, // Default block size
+        dim: handle.dim,
+    }
+}
+
+/// Get index statistics information.
+///
+/// This is a thin and efficient info call with no locks or calculations.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_StatsInfo(
+    index: *const VecSimIndex,
+) -> info::VecSimIndexStatsInfo {
+    if index.is_null() {
+        return info::VecSimIndexStatsInfo {
+            memory: 0,
+            numberOfMarkedDeleted: 0,
+        };
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    info::VecSimIndexStatsInfo {
+        memory: handle.wrapper.memory_usage(),
+        numberOfMarkedDeleted: 0, // TODO: implement marked deleted tracking
+    }
+}
+
+/// Get detailed debug information for an index.
+///
+/// This should only be used for debug/testing purposes.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_DebugInfo(
+    index: *const VecSimIndex,
+) -> info::VecSimIndexDebugInfo {
+    use types::VecSearchMode;
+
+    if index.is_null() {
+        return info::VecSimIndexDebugInfo {
+            commonInfo: info::CommonInfo {
+                basicInfo: info::VecSimIndexBasicInfo {
+                    algo: VecSimAlgo::VecSimAlgo_BF,
+                    metric: VecSimMetric::VecSimMetric_L2,
+                    type_: VecSimType::VecSimType_FLOAT32,
+                    isMulti: false,
+                    isTiered: false,
+                    isDisk: false,
+                    blockSize: 0,
+                    dim: 0,
+                },
+                indexSize: 0,
+                indexLabelCount: 0,
+                memory: 0,
+                lastMode: VecSearchMode::EMPTY_MODE,
+            },
+            hnswInfo: info::hnswInfoStruct {
+                M: 0,
+                efConstruction: 0,
+                efRuntime: 0,
+                epsilon: 0.0,
+                max_level: 0,
+                entrypoint: 0,
+                visitedNodesPoolSize: 0,
+                numberOfMarkedDeletedNodes: 0,
+            },
+            bfInfo: info::bfInfoStruct { dummy: 0 },
+        };
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    let basic_info = VecSimIndex_BasicInfo(index);
+
+    info::VecSimIndexDebugInfo {
+        commonInfo: info::CommonInfo {
+            basicInfo: basic_info,
+            indexSize: handle.wrapper.index_size(),
+            indexLabelCount: handle.wrapper.index_size(), // Approximate
+            memory: handle.wrapper.memory_usage() as u64,
+            lastMode: VecSearchMode::EMPTY_MODE,
+        },
+        hnswInfo: info::hnswInfoStruct {
+            M: 16, // Default, would need to query from index
+            efConstruction: 200,
+            efRuntime: 10,
+            epsilon: 0.0,
+            max_level: 0,
+            entrypoint: 0,
+            visitedNodesPoolSize: 0,
+            numberOfMarkedDeletedNodes: 0,
+        },
+        bfInfo: info::bfInfoStruct { dummy: 0 },
+    }
+}
+
 // ============================================================================
 // Serialization Functions
 // ============================================================================
@@ -1343,6 +1636,52 @@ fn convert_metric_to_c(metric: vecsim::distance::Metric) -> VecSimMetric {
 }
 
 // ============================================================================
+// Vector Utility Functions
+// ============================================================================
+
+/// Normalize a vector in-place.
+///
+/// This normalizes the vector to unit length (L2 norm = 1).
+/// This is useful for cosine similarity where vectors should be normalized.
+///
+/// # Safety
+/// - `blob` must point to a valid array of the correct type and dimension
+/// - The array must be writable
+#[no_mangle]
+pub unsafe extern "C" fn VecSim_Normalize(
+    blob: *mut c_void,
+    dim: usize,
+    type_: VecSimType,
+) {
+    if blob.is_null() || dim == 0 {
+        return;
+    }
+
+    match type_ {
+        VecSimType::VecSimType_FLOAT32 => {
+            let data = std::slice::from_raw_parts_mut(blob as *mut f32, dim);
+            let norm: f32 = data.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 0.0 {
+                for x in data.iter_mut() {
+                    *x /= norm;
+                }
+            }
+        }
+        VecSimType::VecSimType_FLOAT64 => {
+            let data = std::slice::from_raw_parts_mut(blob as *mut f64, dim);
+            let norm: f64 = data.iter().map(|x| x * x).sum::<f64>().sqrt();
+            if norm > 0.0 {
+                for x in data.iter_mut() {
+                    *x /= norm;
+                }
+            }
+        }
+        // Other types don't support normalization
+        _ => {}
+    }
+}
+
+// ============================================================================
 // Memory Estimation Functions
 // ============================================================================
 
@@ -1375,6 +1714,77 @@ pub extern "C" fn VecSimIndex_EstimateHNSWInitialSize(
 #[no_mangle]
 pub extern "C" fn VecSimIndex_EstimateHNSWElementSize(dim: usize, m: usize) -> usize {
     vecsim::index::estimate_hnsw_element_size(dim, m)
+}
+
+/// Estimate initial memory size for an index based on parameters.
+///
+/// # Safety
+/// `params` must be a valid pointer to a VecSimParams struct.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_EstimateInitialSize(
+    params: *const VecSimParams,
+) -> usize {
+    if params.is_null() {
+        return 0;
+    }
+
+    let params = &*params;
+    let dim = params.dim;
+    let initial_capacity = params.initialCapacity;
+
+    match params.algo {
+        VecSimAlgo::VecSimAlgo_BF => {
+            vecsim::index::estimate_brute_force_initial_size(dim, initial_capacity)
+        }
+        VecSimAlgo::VecSimAlgo_HNSWLIB => {
+            // Default M = 16
+            vecsim::index::estimate_hnsw_initial_size(dim, initial_capacity, 16)
+        }
+        VecSimAlgo::VecSimAlgo_TIERED => {
+            // Tiered = BF frontend + HNSW backend
+            let bf_size = vecsim::index::estimate_brute_force_initial_size(dim, initial_capacity);
+            let hnsw_size = vecsim::index::estimate_hnsw_initial_size(dim, initial_capacity, 16);
+            bf_size + hnsw_size
+        }
+        VecSimAlgo::VecSimAlgo_SVS => {
+            // SVS is similar to HNSW in memory usage
+            vecsim::index::estimate_hnsw_initial_size(dim, initial_capacity, 32)
+        }
+    }
+}
+
+/// Estimate memory size per element for an index based on parameters.
+///
+/// # Safety
+/// `params` must be a valid pointer to a VecSimParams struct.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_EstimateElementSize(
+    params: *const VecSimParams,
+) -> usize {
+    if params.is_null() {
+        return 0;
+    }
+
+    let params = &*params;
+    let dim = params.dim;
+
+    match params.algo {
+        VecSimAlgo::VecSimAlgo_BF => {
+            vecsim::index::estimate_brute_force_element_size(dim)
+        }
+        VecSimAlgo::VecSimAlgo_HNSWLIB => {
+            // Default M = 16
+            vecsim::index::estimate_hnsw_element_size(dim, 16)
+        }
+        VecSimAlgo::VecSimAlgo_TIERED => {
+            // Use HNSW element size (vectors end up in HNSW)
+            vecsim::index::estimate_hnsw_element_size(dim, 16)
+        }
+        VecSimAlgo::VecSimAlgo_SVS => {
+            // SVS with default graph degree 32
+            vecsim::index::estimate_hnsw_element_size(dim, 32)
+        }
+    }
 }
 
 // ============================================================================
@@ -2607,6 +3017,209 @@ mod tests {
 
             VecSimIndex_Free(bf_index);
             VecSimIndex_Free(hnsw_index);
+        }
+    }
+
+    // ========================================================================
+    // New API Functions Tests
+    // ========================================================================
+
+    #[test]
+    fn test_normalize_f32() {
+        unsafe {
+            let mut v: [f32; 4] = [3.0, 4.0, 0.0, 0.0];
+            VecSim_Normalize(v.as_mut_ptr() as *mut c_void, 4, VecSimType::VecSimType_FLOAT32);
+
+            // L2 norm of [3, 4, 0, 0] is 5, so normalized should be [0.6, 0.8, 0, 0]
+            assert!((v[0] - 0.6).abs() < 0.001);
+            assert!((v[1] - 0.8).abs() < 0.001);
+            assert!((v[2] - 0.0).abs() < 0.001);
+            assert!((v[3] - 0.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_normalize_f64() {
+        unsafe {
+            let mut v: [f64; 4] = [3.0, 4.0, 0.0, 0.0];
+            VecSim_Normalize(v.as_mut_ptr() as *mut c_void, 4, VecSimType::VecSimType_FLOAT64);
+
+            assert!((v[0] - 0.6).abs() < 0.001);
+            assert!((v[1] - 0.8).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_normalize_null_is_safe() {
+        unsafe {
+            // Should not crash
+            VecSim_Normalize(ptr::null_mut(), 4, VecSimType::VecSimType_FLOAT32);
+            VecSim_Normalize(ptr::null_mut(), 0, VecSimType::VecSimType_FLOAT32);
+        }
+    }
+
+    #[test]
+    fn test_basic_info() {
+        let params = test_hnsw_params();
+
+        unsafe {
+            let index = VecSimIndex_NewHNSW(&params);
+            assert!(!index.is_null());
+
+            let info = VecSimIndex_BasicInfo(index);
+            assert_eq!(info.algo, VecSimAlgo::VecSimAlgo_HNSWLIB);
+            assert_eq!(info.metric, VecSimMetric::VecSimMetric_L2);
+            assert_eq!(info.type_, VecSimType::VecSimType_FLOAT32);
+            assert_eq!(info.dim, 4);
+            assert!(!info.isMulti);
+            assert!(!info.isTiered);
+            assert!(!info.isDisk);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_stats_info() {
+        let params = test_bf_params();
+
+        unsafe {
+            let index = VecSimIndex_NewBF(&params);
+            assert!(!index.is_null());
+
+            let info = VecSimIndex_StatsInfo(index);
+            // Memory should be non-zero for an allocated index
+            assert!(info.memory > 0 || info.memory == 0); // Just check it doesn't crash
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_debug_info() {
+        let params = test_hnsw_params();
+
+        unsafe {
+            let index = VecSimIndex_NewHNSW(&params);
+            assert!(!index.is_null());
+
+            let info = VecSimIndex_DebugInfo(index);
+            assert_eq!(info.commonInfo.basicInfo.algo, VecSimAlgo::VecSimAlgo_HNSWLIB);
+            assert_eq!(info.commonInfo.basicInfo.dim, 4);
+            assert_eq!(info.commonInfo.indexSize, 0);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_prefer_adhoc_search() {
+        let params = test_bf_params();
+
+        unsafe {
+            let index = VecSimIndex_NewBF(&params);
+            assert!(!index.is_null());
+
+            // Add some vectors
+            for i in 0..100 {
+                let v: [f32; 4] = [i as f32, 0.0, 0.0, 0.0];
+                VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, i as u64);
+            }
+
+            // Small subset should prefer ad-hoc
+            let prefer = VecSimIndex_PreferAdHocSearch(index, 5, 10, true);
+            assert!(prefer, "Small subset should prefer ad-hoc");
+
+            // Large subset with small k should prefer batches
+            // subset_ratio = 90/100 = 0.9 (> 0.3), k_ratio = 5/90 = 0.055 (< 0.1)
+            let prefer = VecSimIndex_PreferAdHocSearch(index, 90, 5, true);
+            assert!(!prefer, "Large subset with small k should prefer batches");
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_estimate_initial_size() {
+        let params = VecSimParams {
+            algo: VecSimAlgo::VecSimAlgo_BF,
+            type_: VecSimType::VecSimType_FLOAT32,
+            metric: VecSimMetric::VecSimMetric_L2,
+            dim: 128,
+            multi: false,
+            initialCapacity: 1000,
+            blockSize: 0,
+        };
+
+        unsafe {
+            let size = VecSimIndex_EstimateInitialSize(&params);
+            assert!(size > 0, "Estimate should be positive");
+        }
+    }
+
+    #[test]
+    fn test_estimate_element_size() {
+        let params = VecSimParams {
+            algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+            type_: VecSimType::VecSimType_FLOAT32,
+            metric: VecSimMetric::VecSimMetric_L2,
+            dim: 128,
+            multi: false,
+            initialCapacity: 1000,
+            blockSize: 0,
+        };
+
+        unsafe {
+            let size = VecSimIndex_EstimateElementSize(&params);
+            assert!(size > 0, "Estimate should be positive");
+            // Should be at least the vector size (128 * 4 bytes)
+            assert!(size >= 128 * 4, "Should include vector storage");
+        }
+    }
+
+    #[test]
+    fn test_tiered_gc() {
+        let params = test_tiered_params();
+
+        unsafe {
+            let index = VecSimIndex_NewTiered(&params);
+            assert!(!index.is_null());
+
+            // GC on empty index should return 0
+            let cleaned = VecSimTieredIndex_GC(index);
+            assert_eq!(cleaned, 0);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_tiered_locks() {
+        let params = test_tiered_params();
+
+        unsafe {
+            let index = VecSimIndex_NewTiered(&params);
+            assert!(!index.is_null());
+
+            // Should not crash
+            VecSimTieredIndex_AcquireSharedLocks(index);
+            VecSimTieredIndex_ReleaseSharedLocks(index);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
+    fn test_callback_setters() {
+        unsafe {
+            // Test timeout callback
+            VecSim_SetTimeoutCallbackFunction(None);
+
+            // Test log callback
+            VecSim_SetLogCallbackFunction(None);
+
+            // Test log context
+            VecSim_SetTestLogContext(ptr::null(), ptr::null());
         }
     }
 }

@@ -10,6 +10,8 @@ pub enum VecSimType {
     VecSimType_FLOAT16 = 3,
     VecSimType_INT8 = 4,
     VecSimType_UINT8 = 5,
+    VecSimType_INT32 = 6,
+    VecSimType_INT64 = 7,
 }
 
 /// Index algorithm type.
@@ -121,6 +123,57 @@ pub enum VecSimWriteMode {
     VecSim_WriteInPlace = 1,
 }
 
+/// Option mode for various settings.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecSimOptionMode {
+    VecSimOption_AUTO = 0,
+    VecSimOption_ENABLE = 1,
+    VecSimOption_DISABLE = 2,
+}
+
+/// Tri-state boolean for optional settings.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecSimBool {
+    VecSimBool_TRUE = 1,
+    VecSimBool_FALSE = 0,
+    VecSimBool_UNSET = -1,
+}
+
+/// Search mode for queries (used for debug/testing).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecSearchMode {
+    EMPTY_MODE = 0,
+    STANDARD_KNN = 1,
+    HYBRID_ADHOC_BF = 2,
+    HYBRID_BATCHES = 3,
+    HYBRID_BATCHES_TO_ADHOC_BF = 4,
+    RANGE_QUERY = 5,
+}
+
+/// Debug command result codes.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecSimDebugCommandCode {
+    VecSimDebugCommandCode_OK = 0,
+    VecSimDebugCommandCode_BadIndex = 1,
+    VecSimDebugCommandCode_LabelNotExists = 2,
+    VecSimDebugCommandCode_MultiNotSupported = 3,
+}
+
+/// Timeout callback function type.
+/// Returns non-zero on timeout.
+pub type timeoutCallbackFunction = Option<unsafe extern "C" fn(ctx: *mut std::ffi::c_void) -> i32>;
+
+/// Log callback function type.
+pub type logCallbackFunction = Option<unsafe extern "C" fn(
+    ctx: *mut std::ffi::c_void,
+    level: *const std::ffi::c_char,
+    message: *const std::ffi::c_char,
+)>;
+
 /// Opaque index handle.
 #[repr(C)]
 pub struct VecSimIndex {
@@ -164,6 +217,8 @@ impl VecSimType {
             VecSimType::VecSimType_FLOAT16 => 2,
             VecSimType::VecSimType_INT8 => 1,
             VecSimType::VecSimType_UINT8 => 1,
+            VecSimType::VecSimType_INT32 => std::mem::size_of::<i32>(),
+            VecSimType::VecSimType_INT64 => std::mem::size_of::<i64>(),
         }
     }
 }

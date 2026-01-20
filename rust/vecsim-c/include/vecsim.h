@@ -76,7 +76,9 @@ typedef enum VecSimType {
     VecSimType_BFLOAT16 = 2,  /**< Brain floating point (16-bit) */
     VecSimType_FLOAT16 = 3,   /**< IEEE 754 half-precision (16-bit) */
     VecSimType_INT8 = 4,      /**< 8-bit signed integer */
-    VecSimType_UINT8 = 5      /**< 8-bit unsigned integer */
+    VecSimType_UINT8 = 5,     /**< 8-bit unsigned integer */
+    VecSimType_INT32 = 6,     /**< 32-bit signed integer */
+    VecSimType_INT64 = 7      /**< 64-bit signed integer */
 } VecSimType;
 
 /**
@@ -172,6 +174,46 @@ typedef enum VecsimQueryType {
 } VecsimQueryType;
 
 /**
+ * @brief Option mode for various settings.
+ */
+typedef enum VecSimOptionMode {
+    VecSimOption_AUTO = 0,     /**< Automatic mode */
+    VecSimOption_ENABLE = 1,   /**< Enable the option */
+    VecSimOption_DISABLE = 2   /**< Disable the option */
+} VecSimOptionMode;
+
+/**
+ * @brief Tri-state boolean for optional settings.
+ */
+typedef enum VecSimBool {
+    VecSimBool_TRUE = 1,   /**< True */
+    VecSimBool_FALSE = 0,  /**< False */
+    VecSimBool_UNSET = -1  /**< Not set */
+} VecSimBool;
+
+/**
+ * @brief Search mode for queries (used for debug/testing).
+ */
+typedef enum VecSearchMode {
+    EMPTY_MODE = 0,               /**< Empty/unset mode */
+    STANDARD_KNN = 1,             /**< Standard KNN search */
+    HYBRID_ADHOC_BF = 2,          /**< Hybrid ad-hoc brute force */
+    HYBRID_BATCHES = 3,           /**< Hybrid batches search */
+    HYBRID_BATCHES_TO_ADHOC_BF = 4, /**< Hybrid batches to ad-hoc BF */
+    RANGE_QUERY = 5               /**< Range query */
+} VecSearchMode;
+
+/**
+ * @brief Debug command result codes.
+ */
+typedef enum VecSimDebugCommandCode {
+    VecSimDebugCommandCode_OK = 0,              /**< Command succeeded */
+    VecSimDebugCommandCode_BadIndex = 1,        /**< Invalid index */
+    VecSimDebugCommandCode_LabelNotExists = 2,  /**< Label does not exist */
+    VecSimDebugCommandCode_MultiNotSupported = 3 /**< Multi-value not supported */
+} VecSimDebugCommandCode;
+
+/**
  * @brief Raw parameter for runtime query configuration.
  *
  * Used to pass string-based parameters that are resolved into typed
@@ -183,6 +225,18 @@ typedef struct VecSimRawParam {
     const char *value;  /**< Parameter value as string */
     size_t valLen;      /**< Length of parameter value */
 } VecSimRawParam;
+
+/**
+ * @brief Timeout callback function type.
+ *
+ * Returns non-zero on timeout.
+ */
+typedef int (*timeoutCallbackFunction)(void *ctx);
+
+/**
+ * @brief Log callback function type.
+ */
+typedef void (*logCallbackFunction)(void *ctx, const char *level, const char *message);
 
 /* ============================================================================
  * Memory Function Types
@@ -405,6 +459,69 @@ typedef struct VecSimIndexInfo {
     VecSimHnswInfo hnswInfo;    /**< HNSW-specific info (if applicable) */
 } VecSimIndexInfo;
 
+/**
+ * @brief Index info that is static and immutable.
+ */
+typedef struct VecSimIndexBasicInfo {
+    VecSimAlgo algo;            /**< Algorithm type */
+    VecSimMetric metric;        /**< Distance metric */
+    VecSimType type_;           /**< Data type */
+    bool isMulti;               /**< Whether multi-value index */
+    bool isTiered;              /**< Whether tiered index */
+    bool isDisk;                /**< Whether disk-based index */
+    size_t blockSize;           /**< Block size */
+    size_t dim;                 /**< Vector dimension */
+} VecSimIndexBasicInfo;
+
+/**
+ * @brief Index info for statistics - thin and efficient.
+ */
+typedef struct VecSimIndexStatsInfo {
+    size_t memory;                  /**< Memory usage in bytes */
+    size_t numberOfMarkedDeleted;   /**< Number of marked deleted entries */
+} VecSimIndexStatsInfo;
+
+/**
+ * @brief Common index information.
+ */
+typedef struct CommonInfo {
+    VecSimIndexBasicInfo basicInfo; /**< Basic index information */
+    size_t indexSize;               /**< Current number of vectors */
+    size_t indexLabelCount;         /**< Current number of unique labels */
+    uint64_t memory;                /**< Memory usage in bytes */
+    VecSimSearchMode lastMode;      /**< Last search mode used */
+} CommonInfo;
+
+/**
+ * @brief HNSW-specific debug information.
+ */
+typedef struct hnswInfoStruct {
+    size_t M;                           /**< M parameter */
+    size_t efConstruction;              /**< ef_construction parameter */
+    size_t efRuntime;                   /**< ef_runtime parameter */
+    double epsilon;                     /**< Epsilon parameter */
+    size_t max_level;                   /**< Maximum level in the graph */
+    size_t entrypoint;                  /**< Entry point ID */
+    size_t visitedNodesPoolSize;        /**< Visited nodes pool size */
+    size_t numberOfMarkedDeletedNodes;  /**< Number of marked deleted nodes */
+} hnswInfoStruct;
+
+/**
+ * @brief BruteForce-specific debug information.
+ */
+typedef struct bfInfoStruct {
+    int8_t dummy;   /**< Placeholder field */
+} bfInfoStruct;
+
+/**
+ * @brief Debug information for an index.
+ */
+typedef struct VecSimIndexDebugInfo {
+    CommonInfo commonInfo;      /**< Common index information */
+    hnswInfoStruct hnswInfo;    /**< HNSW-specific info */
+    bfInfoStruct bfInfo;        /**< BruteForce-specific info */
+} VecSimIndexDebugInfo;
+
 /* ============================================================================
  * Index Lifecycle Functions
  * ========================================================================== */
@@ -499,6 +616,35 @@ size_t VecSimTieredIndex_FlatSize(const VecSimIndex *index);
  * @return Number of vectors in the HNSW backend, or 0 if not tiered
  */
 size_t VecSimTieredIndex_BackendSize(const VecSimIndex *index);
+
+/**
+ * @brief Run garbage collection on a tiered index.
+ *
+ * This cleans up deleted vectors and optimizes the index structure.
+ *
+ * @param index The tiered index handle.
+ * @return The number of vectors cleaned up.
+ */
+size_t VecSimTieredIndex_GC(VecSimIndex *index);
+
+/**
+ * @brief Acquire shared locks on a tiered index.
+ *
+ * This prevents modifications to the index while the locks are held.
+ * Must be paired with VecSimTieredIndex_ReleaseSharedLocks.
+ *
+ * @param index The tiered index handle.
+ */
+void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index);
+
+/**
+ * @brief Release shared locks on a tiered index.
+ *
+ * Must be called after VecSimTieredIndex_AcquireSharedLocks.
+ *
+ * @param index The tiered index handle.
+ */
+void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index);
 
 /**
  * @brief Check if the index is a tiered index.
@@ -835,6 +981,48 @@ size_t VecSimIndex_LabelCount(const VecSimIndex *index, labelType label);
  */
 VecSimIndexInfo VecSimIndex_Info(const VecSimIndex *index);
 
+/**
+ * @brief Get basic immutable index information.
+ *
+ * @param index The index handle.
+ * @return Basic index information.
+ */
+VecSimIndexBasicInfo VecSimIndex_BasicInfo(const VecSimIndex *index);
+
+/**
+ * @brief Get index statistics information.
+ *
+ * This is a thin and efficient info call with no locks or calculations.
+ *
+ * @param index The index handle.
+ * @return Statistics information.
+ */
+VecSimIndexStatsInfo VecSimIndex_StatsInfo(const VecSimIndex *index);
+
+/**
+ * @brief Get detailed debug information for an index.
+ *
+ * This should only be used for debug/testing purposes.
+ *
+ * @param index The index handle.
+ * @return Debug information.
+ */
+VecSimIndexDebugInfo VecSimIndex_DebugInfo(const VecSimIndex *index);
+
+/**
+ * @brief Determine if ad-hoc brute-force search is preferred over batched search.
+ *
+ * This is a heuristic function that helps decide the optimal search strategy
+ * for hybrid queries based on the index size and the number of results needed.
+ *
+ * @param index The index handle.
+ * @param subsetSize The estimated size of the subset to search.
+ * @param k The number of results requested.
+ * @param initial Whether this is the initial decision (true) or a re-evaluation (false).
+ * @return true if ad-hoc search is preferred, false if batched search is preferred.
+ */
+bool VecSimIndex_PreferAdHocSearch(const VecSimIndex *index, size_t subsetSize, size_t k, bool initial);
+
 /* ============================================================================
  * Parameter Resolution
  * ========================================================================== */
@@ -943,6 +1131,22 @@ size_t VecSimIndex_EstimateHNSWInitialSize(size_t dim, size_t initial_capacity, 
  */
 size_t VecSimIndex_EstimateHNSWElementSize(size_t dim, size_t m);
 
+/**
+ * @brief Estimate initial memory size for an index based on parameters.
+ *
+ * @param params The index parameters.
+ * @return Estimated initial memory size in bytes.
+ */
+size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
+
+/**
+ * @brief Estimate memory size per element for an index based on parameters.
+ *
+ * @param params The index parameters.
+ * @return Estimated memory size per element in bytes.
+ */
+size_t VecSimIndex_EstimateElementSize(const VecSimParams *params);
+
 /* ============================================================================
  * Write Mode Control
  * ========================================================================== */
@@ -985,6 +1189,51 @@ VecSimWriteMode VecSim_GetWriteMode(void);
  * @note The functions must follow standard malloc/calloc/realloc/free semantics.
  */
 void VecSim_SetMemoryFunctions(VecSimMemoryFunctions functions);
+
+/**
+ * @brief Set the timeout callback function.
+ *
+ * The callback will be called periodically during long operations to check
+ * if the operation should be aborted. Return non-zero to abort.
+ *
+ * @param callback The timeout callback function, or NULL to disable.
+ */
+void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
+
+/**
+ * @brief Set the log callback function.
+ *
+ * The callback will be called for logging messages from the library.
+ *
+ * @param callback The log callback function, or NULL to disable.
+ */
+void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
+
+/**
+ * @brief Set the test log context.
+ *
+ * This is used for testing to identify which test is running.
+ *
+ * @param test_name The name of the test.
+ * @param test_type The type of the test.
+ */
+void VecSim_SetTestLogContext(const char *test_name, const char *test_type);
+
+/* ============================================================================
+ * Vector Utility Functions
+ * ========================================================================== */
+
+/**
+ * @brief Normalize a vector in-place.
+ *
+ * This normalizes the vector to unit length (L2 norm = 1).
+ * This is useful for cosine similarity where vectors should be normalized.
+ *
+ * @param blob Pointer to the vector data.
+ * @param dim The dimension of the vector.
+ * @param type The data type of the vector elements.
+ */
+void VecSim_Normalize(void *blob, size_t dim, VecSimType type);
 
 #ifdef __cplusplus
 }

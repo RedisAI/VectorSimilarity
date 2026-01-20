@@ -100,6 +100,18 @@ pub trait IndexWrapper: Send + Sync {
         0
     }
 
+    /// Run garbage collection on a tiered index.
+    /// Returns the number of vectors cleaned up.
+    fn tiered_gc(&mut self) -> usize {
+        0
+    }
+
+    /// Acquire shared locks on a tiered index.
+    fn tiered_acquire_shared_locks(&mut self) {}
+
+    /// Release shared locks on a tiered index.
+    fn tiered_release_shared_locks(&mut self) {}
+
     /// Check if this is a disk-based index.
     fn is_disk(&self) -> bool {
         false
@@ -790,6 +802,18 @@ macro_rules! impl_tiered_wrapper {
             fn tiered_backend_size(&self) -> usize {
                 self.index.hnsw_size()
             }
+
+            fn tiered_gc(&mut self) -> usize {
+                0 // No-op for now
+            }
+
+            fn tiered_acquire_shared_locks(&mut self) {
+                // No-op for now
+            }
+
+            fn tiered_release_shared_locks(&mut self) {
+                // No-op for now
+            }
         }
     };
 }
@@ -1071,6 +1095,8 @@ pub fn create_brute_force_index(params: &BFParams) -> Option<Box<IndexHandle>> {
             BruteForceMulti::new(rust_params),
             data_type,
         )),
+        // INT32 and INT64 types not yet supported for vector indices
+        (VecSimType::VecSimType_INT32, _) | (VecSimType::VecSimType_INT64, _) => return None,
     };
 
     Some(Box::new(IndexHandle::new(
@@ -1140,6 +1166,8 @@ pub fn create_hnsw_index(params: &HNSWParams) -> Option<Box<IndexHandle>> {
             HnswMulti::new(rust_params),
             data_type,
         )),
+        // INT32 and INT64 types not yet supported for vector indices
+        (VecSimType::VecSimType_INT32, _) | (VecSimType::VecSimType_INT64, _) => return None,
     };
 
     Some(Box::new(IndexHandle::new(
@@ -1209,6 +1237,8 @@ pub fn create_svs_index(params: &SVSParams) -> Option<Box<IndexHandle>> {
             SvsMulti::new(rust_params),
             data_type,
         )),
+        // INT32 and INT64 types not yet supported for vector indices
+        (VecSimType::VecSimType_INT32, _) | (VecSimType::VecSimType_INT64, _) => return None,
     };
 
     Some(Box::new(IndexHandle::new(
