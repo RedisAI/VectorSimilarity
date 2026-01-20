@@ -6,7 +6,11 @@
 //! - Cosine similarity/distance
 //!
 //! Each metric has scalar and SIMD-optimized implementations.
+//!
+//! The `batch` submodule provides batch distance computation for improved
+//! cache efficiency and SIMD pipelining.
 
+pub mod batch;
 pub mod cosine;
 pub mod ip;
 pub mod l2;

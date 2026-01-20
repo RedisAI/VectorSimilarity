@@ -412,7 +412,9 @@ pub fn select_neighbors_simple<D: DistanceType>(candidates: &[(IdType, D)], m: u
 
 /// Select neighbors using the heuristic from the HNSW paper.
 ///
-/// This heuristic ensures diversity in the selected neighbors.
+/// This heuristic ensures diversity in the selected neighbors by checking
+/// that each candidate is closer to the target than to any already-selected
+/// neighbor. Uses batch distance computation for better cache efficiency.
 #[allow(clippy::too_many_arguments)]
 pub fn select_neighbors_heuristic<'a, T, D, F>(
     target: IdType,
@@ -429,6 +431,8 @@ where
     D: DistanceType,
     F: Fn(IdType) -> Option<&'a [T]>,
 {
+    use crate::distance::batch::check_candidate_diversity;
+
     if candidates.is_empty() {
         return Vec::new();
     }
@@ -456,20 +460,16 @@ where
             continue;
         }
 
-        // Check if this candidate is closer to target than to any selected neighbor
-        let mut is_good = true;
-
-        if let Some(candidate_data) = data_getter(candidate_id) {
-            for &selected_id in &selected {
-                if let Some(selected_data) = data_getter(selected_id) {
-                    let dist_to_selected = dist_fn.compute(candidate_data, selected_data, dim);
-                    if dist_to_selected < candidate_dist {
-                        is_good = false;
-                        break;
-                    }
-                }
-            }
-        }
+        // Use batch diversity check - this computes distances from candidate
+        // to all selected neighbors and checks if any is closer than candidate_dist
+        let is_good = check_candidate_diversity(
+            candidate_id,
+            candidate_dist,
+            &selected,
+            &data_getter,
+            dist_fn,
+            dim,
+        );
 
         if is_good {
             selected.push(candidate_id);
