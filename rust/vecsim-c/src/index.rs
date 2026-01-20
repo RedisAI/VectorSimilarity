@@ -1,6 +1,6 @@
 //! Index wrapper and lifecycle functions for C FFI.
 
-use crate::params::{BFParams, HNSWParams, SVSParams, VecSimQueryParams};
+use crate::params::{BFParams, DiskParams, HNSWParams, SVSParams, TieredParams, VecSimQueryParams};
 use crate::types::{
     labelType, QueryReplyInternal, QueryResultInternal, VecSimAlgo, VecSimMetric,
     VecSimQueryReply_Order, VecSimType,
@@ -8,8 +8,8 @@ use crate::types::{
 use std::ffi::c_void;
 use std::slice;
 use vecsim::index::{
-    BruteForceMulti, BruteForceSingle, HnswMulti, HnswSingle, SvsMulti, SvsSingle,
-    VecSimIndex as VecSimIndexTrait,
+    disk::DiskIndexSingle, BruteForceMulti, BruteForceSingle, HnswMulti, HnswSingle, SvsMulti,
+    SvsSingle, TieredMulti, TieredSingle, VecSimIndex as VecSimIndexTrait,
 };
 use vecsim::query::QueryReply;
 use vecsim::types::{BFloat16, DistanceType, Float16, Int8, UInt8, VectorElement};
@@ -74,6 +74,42 @@ pub trait IndexWrapper: Send + Sync {
 
     /// Get memory usage.
     fn memory_usage(&self) -> usize;
+
+    /// Save the index to a file.
+    /// Returns true on success, false on failure.
+    fn save_to_file(&self, path: &std::path::Path) -> bool;
+
+    /// Check if this is a tiered index.
+    fn is_tiered(&self) -> bool {
+        false
+    }
+
+    /// Flush the flat buffer to the backend (tiered only).
+    /// Returns the number of vectors flushed.
+    fn tiered_flush(&mut self) -> usize {
+        0
+    }
+
+    /// Get the size of the flat buffer (tiered only).
+    fn tiered_flat_size(&self) -> usize {
+        0
+    }
+
+    /// Get the size of the backend index (tiered only).
+    fn tiered_backend_size(&self) -> usize {
+        0
+    }
+
+    /// Check if this is a disk-based index.
+    fn is_disk(&self) -> bool {
+        false
+    }
+
+    /// Flush changes to disk (disk indices only).
+    /// Returns true on success, false on failure.
+    fn disk_flush(&self) -> bool {
+        false
+    }
 }
 
 /// Trait for type-erased batch iterator operations.
@@ -88,7 +124,7 @@ pub trait BatchIteratorWrapper: Send {
     fn reset(&mut self);
 }
 
-/// Macro to implement IndexWrapper for a specific index type.
+/// Macro to implement IndexWrapper for a specific index type without serialization.
 macro_rules! impl_index_wrapper {
     ($wrapper:ident, $index:ty, $data:ty, $algo:expr, $is_multi:expr) => {
         pub struct $wrapper {
@@ -99,6 +135,11 @@ macro_rules! impl_index_wrapper {
         impl $wrapper {
             pub fn new(index: $index, data_type: VecSimType) -> Self {
                 Self { index, data_type }
+            }
+
+            #[allow(dead_code)]
+            pub fn inner(&self) -> &$index {
+                &self.index
             }
         }
 
@@ -205,12 +246,143 @@ macro_rules! impl_index_wrapper {
             fn memory_usage(&self) -> usize {
                 self.index.info().memory_bytes
             }
+
+            fn save_to_file(&self, _path: &std::path::Path) -> bool {
+                false  // Serialization not supported for this type
+            }
+        }
+    };
+}
+
+/// Macro to implement IndexWrapper for a specific index type WITH serialization support.
+macro_rules! impl_index_wrapper_with_serialization {
+    ($wrapper:ident, $index:ty, $data:ty, $algo:expr, $is_multi:expr) => {
+        pub struct $wrapper {
+            index: $index,
+            data_type: VecSimType,
+        }
+
+        impl $wrapper {
+            pub fn new(index: $index, data_type: VecSimType) -> Self {
+                Self { index, data_type }
+            }
+
+            #[allow(dead_code)]
+            pub fn inner(&self) -> &$index {
+                &self.index
+            }
+        }
+
+        impl IndexWrapper for $wrapper {
+            fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
+                match self.index.add_vector(slice, label) {
+                    Ok(count) => count as i32,
+                    Err(_) => -1,
+                }
+            }
+
+            fn delete_vector(&mut self, label: labelType) -> i32 {
+                match self.index.delete_vector(label) {
+                    Ok(count) => count as i32,
+                    Err(_) => 0,
+                }
+            }
+
+            fn top_k_query(
+                &self,
+                query: *const c_void,
+                k: usize,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+
+                match self.index.top_k_query(slice, k, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn range_query(
+                &self,
+                query: *const c_void,
+                radius: f64,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+                let radius_typed =
+                    <<$data as VectorElement>::DistanceType as DistanceType>::from_f64(radius);
+
+                match self.index.range_query(slice, radius_typed, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
+                f64::INFINITY
+            }
+
+            fn index_size(&self) -> usize {
+                self.index.index_size()
+            }
+
+            fn dimension(&self) -> usize {
+                self.index.dimension()
+            }
+
+            fn contains(&self, label: labelType) -> bool {
+                self.index.contains(label)
+            }
+
+            fn label_count(&self, label: labelType) -> usize {
+                self.index.label_count(label)
+            }
+
+            fn data_type(&self) -> VecSimType {
+                self.data_type
+            }
+
+            fn algo(&self) -> VecSimAlgo {
+                $algo
+            }
+
+            fn metric(&self) -> VecSimMetric {
+                self.index.info().index_type;
+                VecSimMetric::VecSimMetric_L2
+            }
+
+            fn is_multi(&self) -> bool {
+                $is_multi
+            }
+
+            fn create_batch_iterator(
+                &self,
+                _query: *const c_void,
+                _params: Option<&VecSimQueryParams>,
+            ) -> Option<Box<dyn BatchIteratorWrapper>> {
+                None
+            }
+
+            fn memory_usage(&self) -> usize {
+                self.index.info().memory_bytes
+            }
+
+            fn save_to_file(&self, path: &std::path::Path) -> bool {
+                self.index.save_to_file(path).is_ok()
+            }
         }
     };
 }
 
 // Implement wrappers for BruteForce indices
-impl_index_wrapper!(
+// Note: Serialization is only supported for f32 types
+impl_index_wrapper_with_serialization!(
     BruteForceSingleF32Wrapper,
     BruteForceSingle<f32>,
     f32,
@@ -253,7 +425,7 @@ impl_index_wrapper!(
     false
 );
 
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     BruteForceMultiF32Wrapper,
     BruteForceMulti<f32>,
     f32,
@@ -297,42 +469,43 @@ impl_index_wrapper!(
 );
 
 // Implement wrappers for HNSW indices
-impl_index_wrapper!(
+// Note: HNSW has serialization for all VectorElement types
+impl_index_wrapper_with_serialization!(
     HnswSingleF32Wrapper,
     HnswSingle<f32>,
     f32,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     false
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswSingleF64Wrapper,
     HnswSingle<f64>,
     f64,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     false
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswSingleBF16Wrapper,
     HnswSingle<BFloat16>,
     BFloat16,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     false
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswSingleFP16Wrapper,
     HnswSingle<Float16>,
     Float16,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     false
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswSingleI8Wrapper,
     HnswSingle<Int8>,
     Int8,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     false
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswSingleU8Wrapper,
     HnswSingle<UInt8>,
     UInt8,
@@ -340,42 +513,42 @@ impl_index_wrapper!(
     false
 );
 
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswMultiF32Wrapper,
     HnswMulti<f32>,
     f32,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     true
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswMultiF64Wrapper,
     HnswMulti<f64>,
     f64,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     true
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswMultiBF16Wrapper,
     HnswMulti<BFloat16>,
     BFloat16,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     true
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswMultiFP16Wrapper,
     HnswMulti<Float16>,
     Float16,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     true
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswMultiI8Wrapper,
     HnswMulti<Int8>,
     Int8,
     VecSimAlgo::VecSimAlgo_HNSWLIB,
     true
 );
-impl_index_wrapper!(
+impl_index_wrapper_with_serialization!(
     HnswMultiU8Wrapper,
     HnswMulti<UInt8>,
     UInt8,
@@ -384,7 +557,8 @@ impl_index_wrapper!(
 );
 
 // Implement wrappers for SVS indices
-impl_index_wrapper!(
+// Note: SVS serialization is only supported for f32 single
+impl_index_wrapper_with_serialization!(
     SvsSingleF32Wrapper,
     SvsSingle<f32>,
     f32,
@@ -469,6 +643,333 @@ impl_index_wrapper!(
     VecSimAlgo::VecSimAlgo_SVS,
     true
 );
+
+// ============================================================================
+// Tiered Index Wrappers
+// ============================================================================
+
+/// Macro to implement IndexWrapper for Tiered index types.
+macro_rules! impl_tiered_wrapper {
+    ($wrapper:ident, $index:ty, $data:ty, $is_multi:expr) => {
+        pub struct $wrapper {
+            index: $index,
+            data_type: VecSimType,
+        }
+
+        impl $wrapper {
+            pub fn new(index: $index, data_type: VecSimType) -> Self {
+                Self { index, data_type }
+            }
+
+            #[allow(dead_code)]
+            pub fn inner(&self) -> &$index {
+                &self.index
+            }
+
+            #[allow(dead_code)]
+            pub fn inner_mut(&mut self) -> &mut $index {
+                &mut self.index
+            }
+        }
+
+        impl IndexWrapper for $wrapper {
+            fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
+                match self.index.add_vector(slice, label) {
+                    Ok(count) => count as i32,
+                    Err(_) => -1,
+                }
+            }
+
+            fn delete_vector(&mut self, label: labelType) -> i32 {
+                match self.index.delete_vector(label) {
+                    Ok(count) => count as i32,
+                    Err(_) => 0,
+                }
+            }
+
+            fn top_k_query(
+                &self,
+                query: *const c_void,
+                k: usize,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+
+                match self.index.top_k_query(slice, k, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn range_query(
+                &self,
+                query: *const c_void,
+                radius: f64,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+                let radius_typed =
+                    <<$data as VectorElement>::DistanceType as DistanceType>::from_f64(radius);
+
+                match self.index.range_query(slice, radius_typed, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
+                f64::INFINITY
+            }
+
+            fn index_size(&self) -> usize {
+                self.index.index_size()
+            }
+
+            fn dimension(&self) -> usize {
+                self.index.dimension()
+            }
+
+            fn contains(&self, label: labelType) -> bool {
+                self.index.contains(label)
+            }
+
+            fn label_count(&self, label: labelType) -> usize {
+                self.index.label_count(label)
+            }
+
+            fn data_type(&self) -> VecSimType {
+                self.data_type
+            }
+
+            fn algo(&self) -> VecSimAlgo {
+                VecSimAlgo::VecSimAlgo_TIERED
+            }
+
+            fn metric(&self) -> VecSimMetric {
+                VecSimMetric::VecSimMetric_L2
+            }
+
+            fn is_multi(&self) -> bool {
+                $is_multi
+            }
+
+            fn create_batch_iterator(
+                &self,
+                _query: *const c_void,
+                _params: Option<&VecSimQueryParams>,
+            ) -> Option<Box<dyn BatchIteratorWrapper>> {
+                None
+            }
+
+            fn memory_usage(&self) -> usize {
+                self.index.info().memory_bytes
+            }
+
+            fn save_to_file(&self, _path: &std::path::Path) -> bool {
+                false // Tiered serialization not yet exposed via C API
+            }
+
+            fn is_tiered(&self) -> bool {
+                true
+            }
+
+            fn tiered_flush(&mut self) -> usize {
+                self.index.flush().unwrap_or(0)
+            }
+
+            fn tiered_flat_size(&self) -> usize {
+                self.index.flat_size()
+            }
+
+            fn tiered_backend_size(&self) -> usize {
+                self.index.hnsw_size()
+            }
+        }
+    };
+}
+
+// Implement wrappers for Tiered indices (f32 only for now)
+impl_tiered_wrapper!(TieredSingleF32Wrapper, TieredSingle<f32>, f32, false);
+impl_tiered_wrapper!(TieredMultiF32Wrapper, TieredMulti<f32>, f32, true);
+
+// ============================================================================
+// Disk Index Wrappers
+// ============================================================================
+
+/// Macro to implement IndexWrapper for Disk index types.
+macro_rules! impl_disk_wrapper {
+    ($wrapper:ident, $data:ty) => {
+        pub struct $wrapper {
+            index: DiskIndexSingle<$data>,
+            data_type: VecSimType,
+            metric: VecSimMetric,
+        }
+
+        impl $wrapper {
+            pub fn new(
+                index: DiskIndexSingle<$data>,
+                data_type: VecSimType,
+                metric: VecSimMetric,
+            ) -> Self {
+                Self {
+                    index,
+                    data_type,
+                    metric,
+                }
+            }
+        }
+
+        impl IndexWrapper for $wrapper {
+            fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
+                let dim = self.index.dimension();
+                let data = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
+                match self.index.add_vector(data, label) {
+                    Ok(count) => count as i32,
+                    Err(_) => -1,
+                }
+            }
+
+            fn delete_vector(&mut self, label: labelType) -> i32 {
+                match self.index.delete_vector(label) {
+                    Ok(count) => count as i32,
+                    Err(_) => 0,
+                }
+            }
+
+            fn top_k_query(
+                &self,
+                query: *const c_void,
+                k: usize,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let query_data = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+                match self.index.top_k_query(query_data, k, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn range_query(
+                &self,
+                query: *const c_void,
+                radius: f64,
+                params: Option<&VecSimQueryParams>,
+            ) -> QueryReplyInternal {
+                let dim = self.index.dimension();
+                let query_data = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                let rust_params = params.map(|p| p.to_rust_params());
+                let radius_typed =
+                    <<$data as VectorElement>::DistanceType as DistanceType>::from_f64(radius);
+                match self.index.range_query(query_data, radius_typed, rust_params.as_ref()) {
+                    Ok(reply) => convert_query_reply(reply),
+                    Err(_) => QueryReplyInternal::new(),
+                }
+            }
+
+            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
+                // Disk indices don't support get_distance_from directly
+                f64::INFINITY
+            }
+
+            fn index_size(&self) -> usize {
+                self.index.index_size()
+            }
+
+            fn dimension(&self) -> usize {
+                self.index.dimension()
+            }
+
+            fn contains(&self, label: labelType) -> bool {
+                self.index.contains(label)
+            }
+
+            fn label_count(&self, label: labelType) -> usize {
+                self.index.label_count(label)
+            }
+
+            fn data_type(&self) -> VecSimType {
+                self.data_type
+            }
+
+            fn algo(&self) -> VecSimAlgo {
+                // Disk indices use BF or SVS backend, report as BF for now
+                VecSimAlgo::VecSimAlgo_BF
+            }
+
+            fn metric(&self) -> VecSimMetric {
+                self.metric
+            }
+
+            fn is_multi(&self) -> bool {
+                false // DiskIndexSingle is always single-value
+            }
+
+            fn create_batch_iterator(
+                &self,
+                _query: *const c_void,
+                _params: Option<&VecSimQueryParams>,
+            ) -> Option<Box<dyn BatchIteratorWrapper>> {
+                // Batch iteration not yet implemented for disk indices
+                None
+            }
+
+            fn memory_usage(&self) -> usize {
+                // Memory usage is minimal since data is on disk
+                std::mem::size_of::<Self>()
+            }
+
+            fn save_to_file(&self, _path: &std::path::Path) -> bool {
+                // Disk indices are already persisted
+                self.disk_flush()
+            }
+
+            fn is_disk(&self) -> bool {
+                true
+            }
+
+            fn disk_flush(&self) -> bool {
+                self.index.flush().is_ok()
+            }
+        }
+    };
+}
+
+// Implement wrappers for Disk indices (f32 only for now)
+impl_disk_wrapper!(DiskSingleF32Wrapper, f32);
+
+/// Create a new disk-based index.
+pub fn create_disk_index(params: &DiskParams) -> Option<Box<IndexHandle>> {
+    let rust_params = unsafe { params.to_rust_params()? };
+    let data_type = params.base.type_;
+    let metric = params.base.metric;
+    let dim = params.base.dim;
+
+    // Only f32 is supported for now
+    if data_type != VecSimType::VecSimType_FLOAT32 {
+        return None;
+    }
+
+    let index = DiskIndexSingle::<f32>::new(rust_params).ok()?;
+    let wrapper: Box<dyn IndexWrapper> =
+        Box::new(DiskSingleF32Wrapper::new(index, data_type, metric));
+
+    Some(Box::new(IndexHandle::new(
+        wrapper,
+        data_type,
+        VecSimAlgo::VecSimAlgo_BF, // Report as BF for now
+        metric,
+        dim,
+        false, // Disk indices are single-value only
+    )))
+}
 
 /// Convert a Rust QueryReply to QueryReplyInternal.
 fn convert_query_reply<D: DistanceType>(reply: QueryReply<D>) -> QueryReplyInternal {
@@ -714,6 +1215,37 @@ pub fn create_svs_index(params: &SVSParams) -> Option<Box<IndexHandle>> {
         wrapper,
         data_type,
         VecSimAlgo::VecSimAlgo_SVS,
+        metric,
+        dim,
+        is_multi,
+    )))
+}
+
+/// Create a new Tiered index.
+pub fn create_tiered_index(params: &TieredParams) -> Option<Box<IndexHandle>> {
+    let rust_params = params.to_rust_params();
+    let data_type = params.base.type_;
+    let metric = params.base.metric;
+    let dim = params.base.dim;
+    let is_multi = params.base.multi;
+
+    // Tiered index currently only supports f32
+    let wrapper: Box<dyn IndexWrapper> = match (data_type, is_multi) {
+        (VecSimType::VecSimType_FLOAT32, false) => Box::new(TieredSingleF32Wrapper::new(
+            TieredSingle::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_FLOAT32, true) => Box::new(TieredMultiF32Wrapper::new(
+            TieredMulti::new(rust_params),
+            data_type,
+        )),
+        _ => return None, // Tiered only supports f32 currently
+    };
+
+    Some(Box::new(IndexHandle::new(
+        wrapper,
+        data_type,
+        VecSimAlgo::VecSimAlgo_TIERED,
         metric,
         dim,
         is_multi,

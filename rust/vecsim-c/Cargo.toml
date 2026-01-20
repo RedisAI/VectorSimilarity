@@ -15,5 +15,9 @@ vecsim = { path = "../vecsim" }
 half = { workspace = true }
 parking_lot = { workspace = true }
 
+[dev-dependencies]
+libc = "0.2.180"
+tempfile = "3"
+
 [features]
 default = []

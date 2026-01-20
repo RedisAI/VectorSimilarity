@@ -120,12 +120,54 @@ impl Default for SVSParams {
     }
 }
 
+/// Parameters specific to Tiered index.
+///
+/// The tiered index combines a BruteForce frontend (for fast writes) with
+/// an HNSW backend (for efficient queries). Vectors are first added to the
+/// flat buffer, then migrated to HNSW via flush() or when the buffer is full.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TieredParams {
+    /// Common parameters (type, metric, dim, multi, etc.).
+    pub base: VecSimParams,
+    /// HNSW M parameter (max connections per node, default: 16).
+    pub M: usize,
+    /// HNSW ef_construction parameter (default: 200).
+    pub efConstruction: usize,
+    /// HNSW ef_runtime parameter (default: 10).
+    pub efRuntime: usize,
+    /// Maximum size of the flat buffer before forcing in-place writes.
+    /// When flat buffer reaches this limit, new writes go directly to HNSW.
+    /// Default: 10000.
+    pub flatBufferLimit: usize,
+    /// Write mode: 0 = Async (buffer first), 1 = InPlace (direct to HNSW).
+    pub writeMode: u32,
+}
+
+impl Default for TieredParams {
+    fn default() -> Self {
+        Self {
+            base: VecSimParams {
+                algo: VecSimAlgo::VecSimAlgo_TIERED,
+                ..VecSimParams::default()
+            },
+            M: 16,
+            efConstruction: 200,
+            efRuntime: 10,
+            flatBufferLimit: 10000,
+            writeMode: 0, // Async
+        }
+    }
+}
+
 /// Query parameters.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct VecSimQueryParams {
     /// For HNSW: ef_runtime parameter.
     pub hnswRuntimeParams: HNSWRuntimeParams,
+    /// For SVS: runtime parameters.
+    pub svsRuntimeParams: SVSRuntimeParams,
     /// Search mode (batch vs ad-hoc).
     pub searchMode: VecSimSearchMode,
     /// Hybrid policy.
@@ -140,6 +182,7 @@ impl Default for VecSimQueryParams {
     fn default() -> Self {
         Self {
             hnswRuntimeParams: HNSWRuntimeParams::default(),
+            svsRuntimeParams: SVSRuntimeParams::default(),
             searchMode: VecSimSearchMode::STANDARD,
             hybridPolicy: VecSimHybridPolicy::BATCHES,
             batchSize: 0,
@@ -150,7 +193,7 @@ impl Default for VecSimQueryParams {
 
 /// HNSW-specific runtime parameters.
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct HNSWRuntimeParams {
     /// Size of dynamic candidate list during search.
     pub efRuntime: usize,
@@ -158,13 +201,18 @@ pub struct HNSWRuntimeParams {
     pub epsilon: f64,
 }
 
-impl Default for HNSWRuntimeParams {
-    fn default() -> Self {
-        Self {
-            efRuntime: 10,
-            epsilon: 0.0,
-        }
-    }
+/// SVS-specific runtime parameters.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SVSRuntimeParams {
+    /// Search window size for SVS graph search.
+    pub windowSize: usize,
+    /// Search buffer capacity.
+    pub bufferCapacity: usize,
+    /// Whether to use search history.
+    pub searchHistory: i32,
+    /// Epsilon parameter for range search.
+    pub epsilon: f64,
 }
 
 /// Search mode.
@@ -228,6 +276,25 @@ impl SVSParams {
     }
 }
 
+/// Convert TieredParams to Rust TieredParams.
+impl TieredParams {
+    pub fn to_rust_params(&self) -> vecsim::index::TieredParams {
+        let write_mode = if self.writeMode == 0 {
+            vecsim::index::tiered::WriteMode::Async
+        } else {
+            vecsim::index::tiered::WriteMode::InPlace
+        };
+
+        vecsim::index::TieredParams::new(self.base.dim, self.base.metric.to_rust_metric())
+            .with_m(self.M)
+            .with_ef_construction(self.efConstruction)
+            .with_ef_runtime(self.efRuntime)
+            .with_flat_buffer_limit(self.flatBufferLimit)
+            .with_write_mode(write_mode)
+            .with_initial_capacity(self.base.initialCapacity)
+    }
+}
+
 /// Convert VecSimQueryParams to Rust QueryParams.
 impl VecSimQueryParams {
     pub fn to_rust_params(&self) -> vecsim::query::QueryParams {
@@ -239,5 +306,98 @@ impl VecSimQueryParams {
             params = params.with_batch_size(self.batchSize);
         }
         params
+    }
+}
+
+/// Backend type for disk-based indices.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskBackend {
+    /// Linear scan (exact results).
+    DiskBackend_BruteForce = 0,
+    /// Vamana graph (approximate, fast).
+    DiskBackend_Vamana = 1,
+}
+
+impl Default for DiskBackend {
+    fn default() -> Self {
+        DiskBackend::DiskBackend_BruteForce
+    }
+}
+
+impl DiskBackend {
+    pub fn to_rust_backend(&self) -> vecsim::index::disk::DiskBackend {
+        match self {
+            DiskBackend::DiskBackend_BruteForce => vecsim::index::disk::DiskBackend::BruteForce,
+            DiskBackend::DiskBackend_Vamana => vecsim::index::disk::DiskBackend::Vamana,
+        }
+    }
+}
+
+/// Parameters for disk-based index.
+///
+/// Disk indices store vectors in memory-mapped files for persistence.
+/// They support two backends:
+/// - BruteForce: Linear scan (exact results, O(n))
+/// - Vamana: Graph-based approximate search (fast, O(log n))
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct DiskParams {
+    /// Common parameters (type, metric, dim, etc.).
+    pub base: VecSimParams,
+    /// Path to the data file (null-terminated C string).
+    pub dataPath: *const std::ffi::c_char,
+    /// Backend algorithm (BruteForce or Vamana).
+    pub backend: DiskBackend,
+    /// Graph max degree (for Vamana backend, default: 32).
+    pub graphMaxDegree: usize,
+    /// Alpha parameter for Vamana (default: 1.2).
+    pub alpha: f32,
+    /// Construction window size for Vamana (default: 200).
+    pub constructionL: usize,
+    /// Search window size for Vamana (default: 100).
+    pub searchL: usize,
+}
+
+impl Default for DiskParams {
+    fn default() -> Self {
+        Self {
+            base: VecSimParams::default(),
+            dataPath: std::ptr::null(),
+            backend: DiskBackend::default(),
+            graphMaxDegree: 32,
+            alpha: 1.2,
+            constructionL: 200,
+            searchL: 100,
+        }
+    }
+}
+
+impl DiskParams {
+    /// Convert to Rust DiskIndexParams.
+    ///
+    /// # Safety
+    /// The dataPath must be a valid null-terminated C string.
+    pub unsafe fn to_rust_params(&self) -> Option<vecsim::index::disk::DiskIndexParams> {
+        if self.dataPath.is_null() {
+            return None;
+        }
+
+        let path_cstr = std::ffi::CStr::from_ptr(self.dataPath);
+        let path_str = path_cstr.to_str().ok()?;
+
+        let params = vecsim::index::disk::DiskIndexParams::new(
+            self.base.dim,
+            self.base.metric.to_rust_metric(),
+            path_str,
+        )
+        .with_backend(self.backend.to_rust_backend())
+        .with_capacity(self.base.initialCapacity)
+        .with_graph_degree(self.graphMaxDegree)
+        .with_alpha(self.alpha)
+        .with_construction_l(self.constructionL)
+        .with_search_l(self.searchL);
+
+        Some(params)
     }
 }

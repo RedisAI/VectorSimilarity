@@ -85,7 +85,8 @@ typedef enum VecSimType {
 typedef enum VecSimAlgo {
     VecSimAlgo_BF = 0,      /**< Brute Force (exact, linear scan) */
     VecSimAlgo_HNSWLIB = 1, /**< HNSW (approximate, logarithmic) */
-    VecSimAlgo_SVS = 2      /**< SVS/Vamana (approximate, single-layer graph) */
+    VecSimAlgo_TIERED = 2,  /**< Tiered (BruteForce frontend + HNSW backend) */
+    VecSimAlgo_SVS = 3      /**< SVS/Vamana (approximate, single-layer graph) */
 } VecSimAlgo;
 
 /**
@@ -129,6 +130,96 @@ typedef enum VecSimResolveCode {
     VecSim_Resolve_OK = 0,   /**< Operation successful */
     VecSim_Resolve_ERR = 1   /**< Operation failed */
 } VecSimResolveCode;
+
+/**
+ * @brief Write mode for tiered index operations.
+ *
+ * Controls whether vector additions/deletions go through the async
+ * buffering path or directly to the backend index.
+ */
+typedef enum VecSimWriteMode {
+    VecSim_WriteAsync = 0,    /**< Async: vectors go to flat buffer, migrated via background jobs */
+    VecSim_WriteInPlace = 1   /**< InPlace: vectors go directly to the backend index */
+} VecSimWriteMode;
+
+/**
+ * @brief Parameter resolution error codes.
+ *
+ * Returned by VecSimIndex_ResolveParams to indicate the result of parsing
+ * runtime query parameters.
+ */
+typedef enum VecSimParamResolveCode {
+    VecSimParamResolver_OK = 0,                         /**< Resolution succeeded */
+    VecSimParamResolverErr_NullParam = 1,               /**< Null parameter pointer */
+    VecSimParamResolverErr_AlreadySet = 2,              /**< Parameter already set */
+    VecSimParamResolverErr_UnknownParam = 3,            /**< Unknown parameter name */
+    VecSimParamResolverErr_BadValue = 4,                /**< Invalid parameter value */
+    VecSimParamResolverErr_InvalidPolicy_NExits = 5,    /**< Policy does not exist */
+    VecSimParamResolverErr_InvalidPolicy_NHybrid = 6,   /**< Not a hybrid query */
+    VecSimParamResolverErr_InvalidPolicy_NRange = 7,    /**< Not a range query */
+    VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize = 8, /**< AdHoc with batch size */
+    VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime = 9  /**< AdHoc with ef_runtime */
+} VecSimParamResolveCode;
+
+/**
+ * @brief Query type for parameter resolution.
+ */
+typedef enum VecsimQueryType {
+    QUERY_TYPE_NONE = 0,   /**< No specific query type */
+    QUERY_TYPE_KNN = 1,    /**< Standard KNN query */
+    QUERY_TYPE_HYBRID = 2, /**< Hybrid query (vector + filters) */
+    QUERY_TYPE_RANGE = 3   /**< Range query */
+} VecsimQueryType;
+
+/**
+ * @brief Raw parameter for runtime query configuration.
+ *
+ * Used to pass string-based parameters that are resolved into typed
+ * VecSimQueryParams by VecSimIndex_ResolveParams.
+ */
+typedef struct VecSimRawParam {
+    const char *name;   /**< Parameter name */
+    size_t nameLen;     /**< Length of parameter name */
+    const char *value;  /**< Parameter value as string */
+    size_t valLen;      /**< Length of parameter value */
+} VecSimRawParam;
+
+/* ============================================================================
+ * Memory Function Types
+ * ========================================================================== */
+
+/**
+ * @brief Function pointer type for malloc-style allocation.
+ */
+typedef void *(*allocFn)(size_t n);
+
+/**
+ * @brief Function pointer type for calloc-style allocation.
+ */
+typedef void *(*callocFn)(size_t nelem, size_t elemsz);
+
+/**
+ * @brief Function pointer type for realloc-style reallocation.
+ */
+typedef void *(*reallocFn)(void *p, size_t n);
+
+/**
+ * @brief Function pointer type for free-style deallocation.
+ */
+typedef void (*freeFn)(void *p);
+
+/**
+ * @brief Memory functions struct for custom memory management.
+ *
+ * This allows integration with external memory management systems like Redis.
+ * Pass this struct to VecSim_SetMemoryFunctions to use custom allocators.
+ */
+typedef struct VecSimMemoryFunctions {
+    allocFn allocFunction;     /**< Malloc-like allocation function */
+    callocFn callocFunction;   /**< Calloc-like allocation function */
+    reallocFn reallocFunction; /**< Realloc-like reallocation function */
+    freeFn freeFunction;       /**< Free function */
+} VecSimMemoryFunctions;
 
 /* ============================================================================
  * Opaque Handle Types
@@ -210,6 +301,49 @@ typedef struct SVSParams {
 } SVSParams;
 
 /**
+ * @brief Parameters for Tiered index creation.
+ *
+ * The tiered index combines a BruteForce frontend (for fast writes) with
+ * an HNSW backend (for efficient queries). Vectors are first added to the
+ * flat buffer, then migrated to HNSW via VecSimTieredIndex_Flush() or
+ * automatically when the buffer is full.
+ */
+typedef struct TieredParams {
+    VecSimParams base;           /**< Common parameters */
+    size_t M;                    /**< HNSW M parameter (default: 16) */
+    size_t efConstruction;       /**< HNSW ef_construction (default: 200) */
+    size_t efRuntime;            /**< HNSW ef_runtime (default: 10) */
+    size_t flatBufferLimit;      /**< Max flat buffer size before in-place writes (default: 10000) */
+    uint32_t writeMode;          /**< 0 = Async (buffer first), 1 = InPlace (direct to HNSW) */
+} TieredParams;
+
+/**
+ * @brief Backend type for disk-based indices.
+ */
+typedef enum DiskBackend {
+    DiskBackend_BruteForce = 0,  /**< Linear scan (exact results) */
+    DiskBackend_Vamana = 1       /**< Vamana graph (approximate, fast) */
+} DiskBackend;
+
+/**
+ * @brief Parameters for disk-based index creation.
+ *
+ * Disk indices store vectors in memory-mapped files for persistence.
+ * They support two backends:
+ * - BruteForce: Linear scan (exact results, O(n))
+ * - Vamana: Graph-based approximate search (fast, O(log n))
+ */
+typedef struct DiskParams {
+    VecSimParams base;           /**< Common parameters */
+    const char *dataPath;        /**< Path to the data file (null-terminated) */
+    DiskBackend backend;         /**< Backend algorithm (default: BruteForce) */
+    size_t graphMaxDegree;       /**< Graph max degree for Vamana (default: 32) */
+    float alpha;                 /**< Alpha parameter for Vamana (default: 1.2) */
+    size_t constructionL;        /**< Construction window size for Vamana (default: 200) */
+    size_t searchL;              /**< Search window size for Vamana (default: 100) */
+} DiskParams;
+
+/**
  * @brief HNSW-specific runtime parameters.
  */
 typedef struct HNSWRuntimeParams {
@@ -218,10 +352,21 @@ typedef struct HNSWRuntimeParams {
 } HNSWRuntimeParams;
 
 /**
+ * @brief SVS-specific runtime parameters.
+ */
+typedef struct SVSRuntimeParams {
+    size_t windowSize;       /**< Search window size for graph search */
+    size_t bufferCapacity;   /**< Search buffer capacity */
+    int searchHistory;       /**< Whether to use search history (0/1) */
+    double epsilon;          /**< Approximation factor for range search */
+} SVSRuntimeParams;
+
+/**
  * @brief Query parameters.
  */
 typedef struct VecSimQueryParams {
     HNSWRuntimeParams hnswRuntimeParams;  /**< HNSW-specific parameters */
+    SVSRuntimeParams svsRuntimeParams;    /**< SVS-specific parameters */
     VecSimSearchMode searchMode;          /**< Search mode */
     VecSimHybridPolicy hybridPolicy;      /**< Hybrid policy */
     size_t batchSize;                     /**< Batch size for iteration */
@@ -304,11 +449,97 @@ VecSimIndex *VecSimIndex_NewHNSW(const HNSWParams *params);
 VecSimIndex *VecSimIndex_NewSVS(const SVSParams *params);
 
 /**
+ * @brief Create a new Tiered index.
+ *
+ * The tiered index combines a BruteForce frontend (for fast writes) with
+ * an HNSW backend (for efficient queries). Vectors are first added to the
+ * flat buffer, then migrated to HNSW via VecSimTieredIndex_Flush() or
+ * automatically when the buffer is full.
+ *
+ * Currently only supports f32 vectors.
+ *
+ * @param params Pointer to Tiered-specific parameters
+ * @return Pointer to the created index, or NULL on failure
+ */
+VecSimIndex *VecSimIndex_NewTiered(const TieredParams *params);
+
+/**
  * @brief Free a vector similarity index.
  *
  * @param index Pointer to the index to free (may be NULL)
  */
 void VecSimIndex_Free(VecSimIndex *index);
+
+/* ============================================================================
+ * Tiered Index Operations
+ * ========================================================================== */
+
+/**
+ * @brief Flush the flat buffer to the HNSW backend.
+ *
+ * This migrates all vectors from the flat buffer to the HNSW index.
+ *
+ * @param index Pointer to a tiered index
+ * @return Number of vectors flushed, or 0 if the index is not tiered
+ */
+size_t VecSimTieredIndex_Flush(VecSimIndex *index);
+
+/**
+ * @brief Get the number of vectors in the flat buffer.
+ *
+ * @param index Pointer to a tiered index
+ * @return Number of vectors in the flat buffer, or 0 if not tiered
+ */
+size_t VecSimTieredIndex_FlatSize(const VecSimIndex *index);
+
+/**
+ * @brief Get the number of vectors in the HNSW backend.
+ *
+ * @param index Pointer to a tiered index
+ * @return Number of vectors in the HNSW backend, or 0 if not tiered
+ */
+size_t VecSimTieredIndex_BackendSize(const VecSimIndex *index);
+
+/**
+ * @brief Check if the index is a tiered index.
+ *
+ * @param index Pointer to an index
+ * @return true if the index is tiered, false otherwise
+ */
+bool VecSimIndex_IsTiered(const VecSimIndex *index);
+
+/**
+ * @brief Create a new disk-based index.
+ *
+ * Disk indices store vectors in memory-mapped files for persistence.
+ * They support two backends:
+ * - BruteForce: Linear scan (exact results, O(n))
+ * - Vamana: Graph-based approximate search (fast, O(log n))
+ *
+ * Currently only supports f32 vectors.
+ *
+ * @param params Pointer to Disk-specific parameters
+ * @return Pointer to the created index, or NULL on failure
+ */
+VecSimIndex *VecSimIndex_NewDisk(const DiskParams *params);
+
+/**
+ * @brief Check if the index is a disk-based index.
+ *
+ * @param index Pointer to an index
+ * @return true if the index is disk-based, false otherwise
+ */
+bool VecSimIndex_IsDisk(const VecSimIndex *index);
+
+/**
+ * @brief Flush changes to disk for a disk-based index.
+ *
+ * This ensures all pending changes are written to the underlying file.
+ *
+ * @param index Pointer to a disk-based index
+ * @return true if flush succeeded, false otherwise
+ */
+bool VecSimDiskIndex_Flush(const VecSimIndex *index);
 
 /* ============================================================================
  * Vector Operations
@@ -605,6 +836,38 @@ size_t VecSimIndex_LabelCount(const VecSimIndex *index, labelType label);
 VecSimIndexInfo VecSimIndex_Info(const VecSimIndex *index);
 
 /* ============================================================================
+ * Parameter Resolution
+ * ========================================================================== */
+
+/**
+ * @brief Resolve runtime query parameters from raw string parameters.
+ *
+ * Parses an array of VecSimRawParam structures and populates a VecSimQueryParams
+ * structure with the resolved typed values.
+ *
+ * @param index Pointer to the index (used to determine algorithm-specific parameters)
+ * @param rparams Array of raw parameters to resolve
+ * @param paramNum Number of parameters in the array
+ * @param qparams Pointer to VecSimQueryParams structure to populate
+ * @param query_type Type of query (KNN, HYBRID, or RANGE)
+ * @return VecSimParamResolver_OK on success, error code on failure
+ *
+ * Supported parameters:
+ * - EF_RUNTIME: HNSW ef_runtime (positive integer, not for range queries)
+ * - EPSILON: Approximation factor (positive float, range queries only, HNSW/SVS)
+ * - BATCH_SIZE: Batch size for hybrid queries (positive integer)
+ * - HYBRID_POLICY: "batches" or "adhoc_bf" (hybrid queries only)
+ * - SEARCH_WINDOW_SIZE: SVS search window size (positive integer)
+ * - SEARCH_BUFFER_CAPACITY: SVS search buffer capacity (positive integer)
+ * - USE_SEARCH_HISTORY: SVS search history flag ("true"/"false"/"1"/"0")
+ */
+VecSimParamResolveCode VecSimIndex_ResolveParams(VecSimIndex *index,
+                                                  VecSimRawParam *rparams,
+                                                  int paramNum,
+                                                  VecSimQueryParams *qparams,
+                                                  VecsimQueryType query_type);
+
+/* ============================================================================
  * Serialization Functions
  * ========================================================================== */
 
@@ -612,20 +875,31 @@ VecSimIndexInfo VecSimIndex_Info(const VecSimIndex *index);
  * @brief Save an index to a file.
  *
  * @param index Pointer to the index
- * @param path File path to save to
+ * @param path File path to save to (null-terminated C string)
+ * @return true on success, false on failure
  *
- * @note Currently not implemented (stub).
+ * @note Serialization is supported for:
+ *       - BruteForce (f32 only)
+ *       - HNSW (all data types)
+ *       - SVS Single (f32 only)
  */
-void VecSimIndex_SaveIndex(const VecSimIndex *index, const char *path);
+bool VecSimIndex_SaveIndex(const VecSimIndex *index, const char *path);
 
 /**
  * @brief Load an index from a file.
  *
- * @param path File path to load from
- * @param params Optional parameters to override (may be NULL)
+ * Reads the file header to determine the index type and data type,
+ * then loads the appropriate index. The caller is responsible for
+ * freeing the returned index with VecSimIndex_Free.
+ *
+ * @param path File path to load from (null-terminated C string)
+ * @param params Optional parameters to override (may be NULL, currently unused)
  * @return Pointer to loaded index, or NULL on failure
  *
- * @note Currently not implemented (stub).
+ * @note Supported index types for loading:
+ *       - BruteForceSingle/Multi (f32)
+ *       - HnswSingle/Multi (f32)
+ *       - SvsSingle (f32)
  */
 VecSimIndex *VecSimIndex_LoadIndex(const char *path, const VecSimParams *params);
 
@@ -668,6 +942,49 @@ size_t VecSimIndex_EstimateHNSWInitialSize(size_t dim, size_t initial_capacity, 
  * @return Estimated memory per element in bytes
  */
 size_t VecSimIndex_EstimateHNSWElementSize(size_t dim, size_t m);
+
+/* ============================================================================
+ * Write Mode Control
+ * ========================================================================== */
+
+/**
+ * @brief Set the global write mode for tiered index operations.
+ *
+ * This controls whether vector additions/deletions in tiered indices go through
+ * the async buffering path (VecSim_WriteAsync) or directly to the backend index
+ * (VecSim_WriteInPlace).
+ *
+ * @param mode The write mode to set.
+ *
+ * @note In a tiered index scenario, this should be called from the main thread only
+ *       (that is, the thread that is calling add/delete vector functions).
+ */
+void VecSim_SetWriteMode(VecSimWriteMode mode);
+
+/**
+ * @brief Get the current global write mode.
+ *
+ * @return The currently active write mode for tiered index operations.
+ */
+VecSimWriteMode VecSim_GetWriteMode(void);
+
+/* ============================================================================
+ * Memory Management Functions
+ * ========================================================================== */
+
+/**
+ * @brief Set custom memory functions for all future allocations.
+ *
+ * This allows integration with external memory management systems like Redis.
+ * The functions will be used for all memory allocations in the library.
+ *
+ * @param functions The memory functions struct containing custom allocators.
+ *
+ * @note This should be called once at initialization, before creating any indices.
+ * @note The provided function pointers must be valid and thread-safe.
+ * @note The functions must follow standard malloc/calloc/realloc/free semantics.
+ */
+void VecSim_SetMemoryFunctions(VecSimMemoryFunctions functions);
 
 #ifdef __cplusplus
 }

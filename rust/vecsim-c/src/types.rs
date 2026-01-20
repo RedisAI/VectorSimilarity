@@ -18,7 +18,8 @@ pub enum VecSimType {
 pub enum VecSimAlgo {
     VecSimAlgo_BF = 0,
     VecSimAlgo_HNSWLIB = 1,
-    VecSimAlgo_SVS = 2,
+    VecSimAlgo_TIERED = 2,
+    VecSimAlgo_SVS = 3,
 }
 
 /// Distance metric type.
@@ -44,6 +45,80 @@ pub enum VecSimQueryReply_Order {
 pub enum VecSimResolveCode {
     VecSim_Resolve_OK = 0,
     VecSim_Resolve_ERR = 1,
+}
+
+/// Parameter resolution error codes.
+///
+/// These codes are returned by VecSimIndex_ResolveParams to indicate
+/// the result of parsing runtime query parameters.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecSimParamResolveCode {
+    /// Parameter resolution succeeded.
+    VecSimParamResolver_OK = 0,
+    /// Null parameter pointer was passed.
+    VecSimParamResolverErr_NullParam = 1,
+    /// Parameter was already set (duplicate parameter).
+    VecSimParamResolverErr_AlreadySet = 2,
+    /// Unknown parameter name.
+    VecSimParamResolverErr_UnknownParam = 3,
+    /// Invalid parameter value.
+    VecSimParamResolverErr_BadValue = 4,
+    /// Invalid policy: policy does not exist.
+    VecSimParamResolverErr_InvalidPolicy_NExits = 5,
+    /// Invalid policy: not a hybrid query.
+    VecSimParamResolverErr_InvalidPolicy_NHybrid = 6,
+    /// Invalid policy: not a range query.
+    VecSimParamResolverErr_InvalidPolicy_NRange = 7,
+    /// Invalid policy: ad-hoc policy with batch size.
+    VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize = 8,
+    /// Invalid policy: ad-hoc policy with ef_runtime.
+    VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime = 9,
+}
+
+/// Query type for parameter resolution.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecsimQueryType {
+    /// No specific query type.
+    QUERY_TYPE_NONE = 0,
+    /// Standard KNN query.
+    QUERY_TYPE_KNN = 1,
+    /// Hybrid query (combining vector similarity with filters).
+    QUERY_TYPE_HYBRID = 2,
+    /// Range query.
+    QUERY_TYPE_RANGE = 3,
+}
+
+/// Raw parameter for runtime query configuration.
+///
+/// Used to pass string-based parameters that are resolved into typed
+/// VecSimQueryParams by VecSimIndex_ResolveParams.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VecSimRawParam {
+    /// Parameter name.
+    pub name: *const std::ffi::c_char,
+    /// Length of the parameter name.
+    pub nameLen: usize,
+    /// Parameter value as a string.
+    pub value: *const std::ffi::c_char,
+    /// Length of the parameter value.
+    pub valLen: usize,
+}
+
+/// Write mode for tiered index operations.
+///
+/// Controls whether vector additions/deletions go through the async
+/// buffering path or directly to the backend index.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VecSimWriteMode {
+    /// Async mode: vectors go to flat buffer, migrated to backend via background jobs.
+    #[default]
+    VecSim_WriteAsync = 0,
+    /// InPlace mode: vectors go directly to the backend index.
+    VecSim_WriteInPlace = 1,
 }
 
 /// Opaque index handle.
@@ -186,5 +261,48 @@ impl<'a> QueryReplyIteratorInternal<'a> {
 
     pub fn reset(&mut self) {
         self.position = 0;
+    }
+}
+
+// ============================================================================
+// Memory Function Types
+// ============================================================================
+
+/// Function pointer type for malloc-style allocation.
+pub type allocFn = Option<unsafe extern "C" fn(n: usize) -> *mut std::ffi::c_void>;
+
+/// Function pointer type for calloc-style allocation.
+pub type callocFn = Option<unsafe extern "C" fn(nelem: usize, elemsz: usize) -> *mut std::ffi::c_void>;
+
+/// Function pointer type for realloc-style reallocation.
+pub type reallocFn = Option<unsafe extern "C" fn(p: *mut std::ffi::c_void, n: usize) -> *mut std::ffi::c_void>;
+
+/// Function pointer type for free-style deallocation.
+pub type freeFn = Option<unsafe extern "C" fn(p: *mut std::ffi::c_void)>;
+
+/// Memory functions struct for custom memory management.
+///
+/// This allows integration with external memory management systems like Redis.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VecSimMemoryFunctions {
+    /// Malloc-like allocation function.
+    pub allocFunction: allocFn,
+    /// Calloc-like allocation function.
+    pub callocFunction: callocFn,
+    /// Realloc-like reallocation function.
+    pub reallocFunction: reallocFn,
+    /// Free function.
+    pub freeFunction: freeFn,
+}
+
+impl Default for VecSimMemoryFunctions {
+    fn default() -> Self {
+        Self {
+            allocFunction: None,
+            callocFunction: None,
+            reallocFunction: None,
+            freeFunction: None,
+        }
     }
 }
