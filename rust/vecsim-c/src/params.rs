@@ -160,20 +160,50 @@ impl Default for TieredParams {
     }
 }
 
-/// Query parameters.
+/// Runtime parameters union (C++-compatible layout).
+/// This union overlays HNSW and SVS runtime parameters in the same memory.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union RuntimeParamsUnion {
+    pub hnswRuntimeParams: HNSWRuntimeParams,
+    pub svsRuntimeParams: SVSRuntimeParams,
+}
+
+impl Default for RuntimeParamsUnion {
+    fn default() -> Self {
+        Self {
+            hnswRuntimeParams: HNSWRuntimeParams::default(),
+        }
+    }
+}
+
+impl std::fmt::Debug for RuntimeParamsUnion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Safety: We can always read hnswRuntimeParams since it's the smaller type
+        unsafe {
+            f.debug_struct("RuntimeParamsUnion")
+                .field("hnswRuntimeParams", &self.hnswRuntimeParams)
+                .finish()
+        }
+    }
+}
+
+/// Query parameters (C++-compatible layout).
+///
+/// This struct matches the C++ VecSimQueryParams layout exactly:
+/// - Union of HNSW and SVS runtime params
+/// - batchSize
+/// - searchMode (VecSearchMode enum)
+/// - timeoutCtx
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct VecSimQueryParams {
-    /// For HNSW: ef_runtime parameter.
-    pub hnswRuntimeParams: HNSWRuntimeParams,
-    /// For SVS: runtime parameters.
-    pub svsRuntimeParams: SVSRuntimeParams,
-    /// Search mode (batch vs ad-hoc).
-    pub searchMode: VecSimSearchMode,
-    /// Hybrid policy.
-    pub hybridPolicy: VecSimHybridPolicy,
+    /// Runtime parameters (union of HNSW and SVS params).
+    pub runtimeParams: RuntimeParamsUnion,
     /// Batch size for batched iteration.
     pub batchSize: usize,
+    /// Search mode (VecSearchMode enum from C++).
+    pub searchMode: i32,  // VecSearchMode is an enum, use i32 for C compatibility
     /// Timeout callback (opaque pointer).
     pub timeoutCtx: *mut std::ffi::c_void,
 }
@@ -181,13 +211,37 @@ pub struct VecSimQueryParams {
 impl Default for VecSimQueryParams {
     fn default() -> Self {
         Self {
-            hnswRuntimeParams: HNSWRuntimeParams::default(),
-            svsRuntimeParams: SVSRuntimeParams::default(),
-            searchMode: VecSimSearchMode::STANDARD,
-            hybridPolicy: VecSimHybridPolicy::BATCHES,
+            runtimeParams: RuntimeParamsUnion::default(),
             batchSize: 0,
+            searchMode: 0,  // EMPTY_MODE
             timeoutCtx: std::ptr::null_mut(),
         }
+    }
+}
+
+impl VecSimQueryParams {
+    /// Get HNSW runtime parameters.
+    pub fn hnsw_params(&self) -> &HNSWRuntimeParams {
+        // Safety: Reading from union is safe as long as we interpret correctly
+        unsafe { &self.runtimeParams.hnswRuntimeParams }
+    }
+
+    /// Get mutable HNSW runtime parameters.
+    pub fn hnsw_params_mut(&mut self) -> &mut HNSWRuntimeParams {
+        // Safety: Writing to union is safe
+        unsafe { &mut self.runtimeParams.hnswRuntimeParams }
+    }
+
+    /// Get SVS runtime parameters.
+    pub fn svs_params(&self) -> &SVSRuntimeParams {
+        // Safety: Reading from union is safe as long as we interpret correctly
+        unsafe { &self.runtimeParams.svsRuntimeParams }
+    }
+
+    /// Get mutable SVS runtime parameters.
+    pub fn svs_params_mut(&mut self) -> &mut SVSRuntimeParams {
+        // Safety: Writing to union is safe
+        unsafe { &mut self.runtimeParams.svsRuntimeParams }
     }
 }
 
@@ -299,8 +353,10 @@ impl TieredParams {
 impl VecSimQueryParams {
     pub fn to_rust_params(&self) -> vecsim::query::QueryParams {
         let mut params = vecsim::query::QueryParams::new();
-        if self.hnswRuntimeParams.efRuntime > 0 {
-            params = params.with_ef_runtime(self.hnswRuntimeParams.efRuntime);
+        // Safety: Reading from union - we check efRuntime which is valid for both HNSW and SVS
+        let hnsw_params = self.hnsw_params();
+        if hnsw_params.efRuntime > 0 {
+            params = params.with_ef_runtime(hnsw_params.efRuntime);
         }
         if self.batchSize > 0 {
             params = params.with_batch_size(self.batchSize);
