@@ -145,6 +145,30 @@ TYPED_TEST(SVSTest, svs_vector_add_test) {
 
     VecSimIndex_Free(index);
 }
+TYPED_TEST(SVSTest, svs_miltiple_indexes) {
+
+    size_t dim = 4;
+
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_IP,
+        /* SVS-Vamana specifics */
+        .alpha = 1.2,
+        .graph_max_degree = 64,
+        .construction_window_size = 20,
+        .max_candidate_pool_size = 1024,
+        .prune_to = 60,
+        .use_search_history = VecSimOption_ENABLE,
+    };
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+    VecSimIndex *index2 = this->CreateNewIndex(params);
+    ASSERT_INDEX(index2);
+
+    VecSimIndex_Free(index);
+    VecSimIndex_Free(index2);
+}
 
 TYPED_TEST(SVSTest, svs_vector_update_test) {
     size_t dim = 4;

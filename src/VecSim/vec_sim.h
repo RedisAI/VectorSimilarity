@@ -259,6 +259,12 @@ void VecSim_SetTestLogContext(const char *test_name, const char *test_type);
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
 
+/**
+ * num_threads: new threads
+ * TODO: is 0 allowed
+ */
+void VecSim_SetNumThreads(size_t new_num_threads);
+
 #ifdef __cplusplus
 }
 #endif
