@@ -73,8 +73,14 @@ if(VECSIM_BUILD_TESTS)
 	endif()
 endif()
 
-add_subdirectory(src/VecSim)
+# Include the Rust vecsim-c library
+add_subdirectory(rust/vecsim-c)
+
+# Create alias targets to match expected names
+add_library(VectorSimilarity ALIAS vecsim_c_static)
+add_library(VectorSimilaritySpaces ALIAS vecsim_c_interface)
 
 # Needed for build as ExternalProject (like RediSearch does)
-install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
+# Note: The actual libraries are built by the Rust build system
+#install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
+#install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
