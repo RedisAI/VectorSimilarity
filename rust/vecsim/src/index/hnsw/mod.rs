@@ -724,6 +724,10 @@ impl<T: VectorElement> HnswCore<T> {
 
     /// Mark an element as deleted (concurrent version).
     pub fn mark_deleted_concurrent(&self, id: IdType) {
+        // Update the flags array first (O(1) atomic operation for fast deleted checks)
+        self.graph.mark_deleted(id);
+
+        // Also update the element's metadata for consistency
         if let Some(element) = self.graph.get(id) {
             // ElementMetaData.deleted is not atomic, but this is a best-effort
             // tombstone - reads may see stale state briefly, which is acceptable

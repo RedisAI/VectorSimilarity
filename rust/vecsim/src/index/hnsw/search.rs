@@ -50,6 +50,13 @@ impl GraphAccess for ConcurrentGraph {
     fn get(&self, id: IdType) -> Option<&ElementGraphData> {
         ConcurrentGraph::get(self, id)
     }
+
+    /// O(1) deleted check using separate flags array.
+    /// This avoids acquiring a segment read lock for every neighbor check.
+    #[inline]
+    fn is_deleted(&self, id: IdType) -> bool {
+        self.is_marked_deleted(id)
+    }
 }
 
 /// Result of a layer search: (id, distance) pairs.
@@ -402,10 +409,7 @@ where
                     }
 
                     // Only update label tracking if not deleted
-                    let is_deleted = graph
-                        .get(neighbor)
-                        .is_some_and(|e| e.meta.deleted);
-                    if !is_deleted {
+                    if !graph.is_deleted(neighbor) {
                         if let Some(&label) = id_to_label.get(&neighbor) {
                             let passes = filter.is_none_or(|f| f(label));
                             if passes {
@@ -576,15 +580,10 @@ where
                         candidates.push(neighbor, dist);
 
                         // Only add to results if not deleted, within radius, and passes filter
-                        if dist_f64 <= radius.to_f64() {
-                            let is_deleted = graph
-                                .get(neighbor)
-                                .is_some_and(|e| e.meta.deleted);
-                            if !is_deleted {
-                                let passes = filter.is_none_or(|f| f(neighbor));
-                                if passes {
-                                    results.push((neighbor, dist));
-                                }
+                        if dist_f64 <= radius.to_f64() && !graph.is_deleted(neighbor) {
+                            let passes = filter.is_none_or(|f| f(neighbor));
+                            if passes {
+                                results.push((neighbor, dist));
                             }
                         }
                     }
