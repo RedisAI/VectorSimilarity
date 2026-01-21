@@ -872,17 +872,15 @@ fn test_e2e_scaling_to_10k_vectors() {
     assert!(results.results[0].distance < 0.001, "Self-query distance {} too large", results.results[0].distance);
 
     // Test range query - use a reasonable radius for 128-dim L2 space
-    // Random vectors in [-1,1] have typical distances around sqrt(128 * 0.5) ≈ 8
-    // Use a larger radius (50) to ensure we find some results
-    // The query vector itself has distance 0, so it should always be found
-    // Use default epsilon (0.1 = 10%) to ensure we explore enough of the graph
-    // The epsilon-neighborhood algorithm terminates when the next candidate's distance
-    // is outside the boundary (dynamic_range * (1 + epsilon)). With a small epsilon,
-    // the algorithm might terminate before finding all vectors within the radius.
-    let range_params = QueryParams::new().with_ef_runtime(200);
-    let range_results = index.range_query(query, 50.0, Some(&range_params)).unwrap();
+    // Random vectors in [-1,1] have squared distances around 128 * 2/3 ≈ 85
+    // The nearest neighbor (other than self) is typically at distance ~57
+    // Use radius=60 (larger than typical nearest neighbor) so we find some results
+    // Use epsilon=0.2 (20%) to explore beyond the radius boundary
+    // With radius=60 and epsilon=0.2, boundary = 72 which allows exploration
+    let range_params = QueryParams::new().with_ef_runtime(200).with_epsilon(0.2);
+    let range_results = index.range_query(query, 60.0, Some(&range_params)).unwrap();
 
-    // The self-query should be within radius 50.0 (distance is 0)
+    // The self-query should be within radius 60.0 (distance is 0)
     assert!(!range_results.results.is_empty(), "Range query should find at least the query vector itself (distance=0)");
     // Verify the query vector is in the results
     assert!(range_results.results.iter().any(|r| r.label == 5000 && r.distance < 0.001),
