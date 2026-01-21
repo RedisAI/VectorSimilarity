@@ -840,6 +840,40 @@ fn test_e2e_memory_usage_tracking() {
 // Large Scale E2E Tests
 // =============================================================================
 
+/// Profiling test - run with `cargo test --release --features profile test_profile_insertion -- --nocapture`
+#[test]
+fn test_profile_insertion() {
+    use crate::index::hnsw::HnswCore;
+
+    let dim = 128;
+    let num_vectors = 10_000;
+    let params = HnswParams::new(dim, Metric::L2)
+        .with_m(16)
+        .with_ef_construction(200)
+        .with_seed(12345);
+    let mut index = HnswSingle::<f32>::new(params);
+
+    // Insert with profiling
+    let vectors = generate_random_vectors(num_vectors, dim, 88888);
+    let start = std::time::Instant::now();
+    for (i, v) in vectors.iter().enumerate() {
+        index.add_vector(v, i as u64).unwrap();
+    }
+    let elapsed = start.elapsed();
+    println!("\nInserted {} vectors in {:?} ({:.0} ops/s)",
+             num_vectors, elapsed, num_vectors as f64 / elapsed.as_secs_f64());
+
+    // Print profile stats if profiling is enabled
+    #[cfg(feature = "profile")]
+    {
+        crate::index::hnsw::PROFILE_STATS.with(|s| s.borrow_mut().print_and_reset());
+    }
+    #[cfg(not(feature = "profile"))]
+    {
+        println!("Profiling not enabled. Run with: cargo test --release --features profile");
+    }
+}
+
 #[test]
 fn test_e2e_scaling_to_10k_vectors() {
     // Test with larger dataset using random vectors (not clustered)

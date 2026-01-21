@@ -47,6 +47,9 @@ impl VisitedNodesHandler {
     }
 
     /// Mark a node as visited. Returns true if it was already visited.
+    ///
+    /// Uses Relaxed ordering since the tags array is only used within a single
+    /// search operation that starts with reset().
     #[inline]
     pub fn visit(&self, id: IdType) -> bool {
         let idx = id as usize;
@@ -54,7 +57,11 @@ impl VisitedNodesHandler {
             return false;
         }
 
-        let old = self.tags[idx].swap(self.current_tag, Ordering::AcqRel);
+        // Use Relaxed ordering - this is safe because:
+        // 1. The tags array is reset at the start of each search
+        // 2. Only the current search thread modifies tags during the search
+        // 3. We don't need synchronization with other threads
+        let old = self.tags[idx].swap(self.current_tag, Ordering::Relaxed);
         old == self.current_tag
     }
 
@@ -65,7 +72,18 @@ impl VisitedNodesHandler {
         if idx >= self.capacity {
             return false;
         }
-        self.tags[idx].load(Ordering::Acquire) == self.current_tag
+        self.tags[idx].load(Ordering::Relaxed) == self.current_tag
+    }
+
+    /// Prefetch the visited tag for a node.
+    ///
+    /// Call this before visit() to hide memory latency.
+    #[inline]
+    pub fn prefetch(&self, id: IdType) {
+        let idx = id as usize;
+        if idx < self.capacity {
+            crate::utils::prefetch::prefetch_read(self.tags[idx].as_ptr());
+        }
     }
 
     /// Get the capacity.

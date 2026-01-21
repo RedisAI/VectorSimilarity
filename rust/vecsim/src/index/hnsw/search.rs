@@ -190,9 +190,10 @@ where
             // Get neighbor count without allocation
             let neighbor_count = element.neighbor_count(level);
 
-            // Prefetch first neighbor's data
+            // Prefetch first neighbor's data and visited tag
             if neighbor_count > 0 {
                 if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    visited.prefetch(first_neighbor);
                     if let Some(first_data) = data_getter(first_neighbor) {
                         prefetch_slice(first_data);
                     }
@@ -207,9 +208,10 @@ where
                     None => continue,
                 };
 
-                // Prefetch next neighbor's data while processing current
+                // Prefetch next neighbor's data and visited tag while processing current
                 if i + 1 < neighbor_count {
                     if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        visited.prefetch(next_neighbor);
                         if let Some(next_data) = data_getter(next_neighbor) {
                             prefetch_slice(next_data);
                         }
@@ -351,9 +353,10 @@ where
             // Get neighbor count without allocation
             let neighbor_count = element.neighbor_count(level);
 
-            // Prefetch first neighbor's data
+            // Prefetch first neighbor's data and visited tag
             if neighbor_count > 0 {
                 if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    visited.prefetch(first_neighbor);
                     if let Some(first_data) = data_getter(first_neighbor) {
                         prefetch_slice(first_data);
                     }
@@ -367,9 +370,10 @@ where
                     None => continue,
                 };
 
-                // Prefetch next neighbor's data while processing current
+                // Prefetch next neighbor's data and visited tag while processing current
                 if i + 1 < neighbor_count {
                     if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        visited.prefetch(next_neighbor);
                         if let Some(next_data) = data_getter(next_neighbor) {
                             prefetch_slice(next_data);
                         }
@@ -533,9 +537,10 @@ where
             // Get neighbor count without allocation
             let neighbor_count = element.neighbor_count(level);
 
-            // Prefetch first neighbor's data
+            // Prefetch first neighbor's data and visited tag
             if neighbor_count > 0 {
                 if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    visited.prefetch(first_neighbor);
                     if let Some(first_data) = data_getter(first_neighbor) {
                         prefetch_slice(first_data);
                     }
@@ -549,9 +554,10 @@ where
                     None => continue,
                 };
 
-                // Prefetch next neighbor's data while processing current
+                // Prefetch next neighbor's data and visited tag while processing current
                 if i + 1 < neighbor_count {
                     if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        visited.prefetch(next_neighbor);
                         if let Some(next_data) = data_getter(next_neighbor) {
                             prefetch_slice(next_data);
                         }
