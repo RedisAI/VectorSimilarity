@@ -24,7 +24,6 @@ pub use graph::{ElementGraphData, DEFAULT_M, DEFAULT_M_MAX, DEFAULT_M_MAX_0};
 pub use multi::HnswMulti;
 pub use single::{HnswSingle, HnswStats};
 pub use visited::{VisitedNodesHandler, VisitedNodesHandlerPool};
-pub use search::{RANGE_SEARCH_ITERATIONS, RANGE_SEARCH_CALLS};
 
 use crate::containers::DataBlocks;
 use crate::distance::{create_distance_function, DistanceFunction, Metric};

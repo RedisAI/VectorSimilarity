@@ -7,8 +7,7 @@
 ///
 /// This is a hint to the processor that the data at the given pointer
 /// will be needed soon. On x86_64, this uses the `_mm_prefetch` intrinsic.
-/// On other architectures (including aarch64), this is currently a no-op
-/// as the aarch64 prefetch intrinsics are not yet stable in Rust.
+/// On aarch64, this uses inline assembly with the `prfm pldl1keep` instruction.
 #[inline]
 pub fn prefetch_read<T>(ptr: *const T) {
     #[cfg(target_arch = "x86_64")]
@@ -21,17 +20,24 @@ pub fn prefetch_read<T>(ptr: *const T) {
         }
     }
 
-    // Note: aarch64 prefetch intrinsics (_prefetch) are unstable as of Rust 1.75+.
-    // When they become stable, we can add:
-    // #[cfg(target_arch = "aarch64")]
-    // unsafe {
-    //     use std::arch::aarch64::*;
-    //     _prefetch(ptr as *const i8, _PREFETCH_READ, _PREFETCH_LOCALITY3);
-    // }
-
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(target_arch = "aarch64")]
     {
-        let _ = ptr; // Suppress unused warning
+        // Use inline assembly for aarch64 prefetch (prfm pldl1keep)
+        // PLDL1KEEP = Prefetch for Load, L1 cache, temporal (keep in cache)
+        // Safety: prfm is a hint instruction that is safe to call with any pointer.
+        // If the pointer is invalid or unmapped, the prefetch is silently ignored.
+        unsafe {
+            std::arch::asm!(
+                "prfm pldl1keep, [{ptr}]",
+                ptr = in(reg) ptr,
+                options(nostack, preserves_flags)
+            );
+        }
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        let _ = ptr; // Suppress unused warning on other architectures
     }
 }
 

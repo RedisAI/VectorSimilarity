@@ -4150,24 +4150,4 @@ mod tests {
 }
 
 // ============================================================================
-// Debug Functions
-// ============================================================================
 
-/// Get the total number of iterations in range search (for debugging).
-#[no_mangle]
-pub extern "C" fn VecSim_GetRangeSearchIterations() -> usize {
-    vecsim::index::hnsw::RANGE_SEARCH_ITERATIONS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Get the total number of range search calls (for debugging).
-#[no_mangle]
-pub extern "C" fn VecSim_GetRangeSearchCalls() -> usize {
-    vecsim::index::hnsw::RANGE_SEARCH_CALLS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Reset the range search counters (for debugging).
-#[no_mangle]
-pub extern "C" fn VecSim_ResetRangeSearchCounters() {
-    vecsim::index::hnsw::RANGE_SEARCH_ITERATIONS.store(0, std::sync::atomic::Ordering::Relaxed);
-    vecsim::index::hnsw::RANGE_SEARCH_CALLS.store(0, std::sync::atomic::Ordering::Relaxed);
-}

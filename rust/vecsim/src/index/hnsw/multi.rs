@@ -439,13 +439,11 @@ impl<T: VectorElement> VecSimIndex for HnswMulti<T> {
             });
         }
 
-        // Get epsilon from params or use default (1.0 = 100% expansion)
-        // Note: C++ uses 0.01 (1%) but the Rust HNSW graph structure may require
-        // a larger epsilon to ensure reliable range search results. With 100%
-        // expansion, the algorithm explores candidates up to 2x the dynamic range.
+        // Get epsilon from params or use default (0.01 = 1% expansion)
+        // This matches the C++ HNSW_DEFAULT_EPSILON value for consistent behavior.
         let epsilon = params
             .and_then(|p| p.epsilon)
-            .unwrap_or(1.0);
+            .unwrap_or(0.01);
 
         // Build filter if needed
         let filter_fn: Option<Box<dyn Fn(IdType) -> bool + '_>> = if let Some(p) = params {
@@ -1479,5 +1477,51 @@ mod tests {
 
         // Should have all 10 results
         assert_eq!(all_results.len(), 10);
+    }
+
+    #[test]
+    fn test_hnsw_multi_range_query_with_custom_epsilon() {
+        use crate::query::QueryParams;
+
+        let params = HnswParams::new(4, Metric::L2).with_m(8).with_ef_construction(50);
+        let mut index = HnswMulti::<f32>::new(params);
+
+        // Add vectors at increasing distances
+        for i in 0..50 {
+            index.add_vector(&vec![i as f32, 0.0, 0.0, 0.0], i as u64).unwrap();
+        }
+
+        let query = vec![0.0, 0.0, 0.0, 0.0];
+        let radius = 25.0; // Should include labels 0-5 (distances 0, 1, 4, 9, 16, 25)
+
+        // Test with default epsilon (0.01)
+        let results_default = index.range_query(&query, radius, None).unwrap();
+        let expected_labels: Vec<u64> = (0..=5).collect();
+        assert_eq!(results_default.len(), expected_labels.len());
+
+        // Test with custom epsilon (0.01 - same as default)
+        let query_params = QueryParams::new().with_epsilon(0.01);
+        let results_eps_001 = index.range_query(&query, radius, Some(&query_params)).unwrap();
+        assert_eq!(results_eps_001.len(), expected_labels.len());
+
+        // Test with larger epsilon (1.0 = 100% expansion)
+        let query_params_large = QueryParams::new().with_epsilon(1.0);
+        let results_eps_100 = index.range_query(&query, radius, Some(&query_params_large)).unwrap();
+        assert_eq!(results_eps_100.len(), expected_labels.len());
+    }
+
+    #[test]
+    fn test_hnsw_multi_range_query_empty_result() {
+        let params = HnswParams::new(4, Metric::L2).with_m(4).with_ef_construction(20);
+        let mut index = HnswMulti::<f32>::new(params);
+
+        // Add vectors far from origin
+        index.add_vector(&vec![100.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![200.0, 0.0, 0.0, 0.0], 2).unwrap();
+
+        let query = vec![0.0, 0.0, 0.0, 0.0];
+        // Very small radius should return no results
+        let results = index.range_query(&query, 1.0, None).unwrap();
+        assert_eq!(results.len(), 0);
     }
 }

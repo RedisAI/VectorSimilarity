@@ -11,11 +11,6 @@ use crate::distance::DistanceFunction;
 use crate::types::{DistanceType, IdType, VectorElement};
 use crate::utils::prefetch::prefetch_slice;
 use crate::utils::{MaxHeap, MinHeap};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-// Global counters for debugging
-pub static RANGE_SEARCH_ITERATIONS: AtomicUsize = AtomicUsize::new(0);
-pub static RANGE_SEARCH_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 /// Trait for graph access abstraction.
 ///
@@ -486,11 +481,8 @@ where
     // Explore candidates
     // Compute initial boundary (matching C++ behavior: boundary is computed BEFORE shrinking)
     let mut current_boundary = compute_boundary(dynamic_range);
-    let mut iterations = 0usize;
 
     while let Some(candidate) = candidates.pop() {
-        iterations += 1;
-
         // Early termination: stop if best candidate is outside the dynamic search boundary
         if candidate.distance.to_f64() > current_boundary {
             break;
@@ -510,7 +502,25 @@ where
                 continue;
             }
 
-            for neighbor in element.iter_neighbors(level) {
+            // Collect neighbors to enable prefetching (matching C++ behavior)
+            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
+            let neighbor_count = neighbors.len();
+
+            // Prefetch first neighbor's data
+            if neighbor_count > 0 {
+                if let Some(first_data) = data_getter(neighbors[0]) {
+                    prefetch_slice(first_data);
+                }
+            }
+
+            for (i, &neighbor) in neighbors.iter().enumerate() {
+                // Prefetch next neighbor's data while processing current
+                if i + 1 < neighbor_count {
+                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
+                        prefetch_slice(next_data);
+                    }
+                }
+
                 if visited.visit(neighbor) {
                     continue; // Already visited
                 }
@@ -543,10 +553,6 @@ where
             }
         }
     }
-
-    // Update global counters
-    RANGE_SEARCH_ITERATIONS.fetch_add(iterations, Ordering::Relaxed);
-    RANGE_SEARCH_CALLS.fetch_add(1, Ordering::Relaxed);
 
     // Sort results by distance
     results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
