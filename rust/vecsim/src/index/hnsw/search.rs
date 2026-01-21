@@ -19,6 +19,13 @@ use crate::utils::{MaxHeap, MinHeap};
 pub trait GraphAccess {
     /// Get an element by ID.
     fn get(&self, id: IdType) -> Option<&ElementGraphData>;
+
+    /// Check if an element is marked as deleted.
+    /// Default implementation uses get(), but can be overridden for efficiency.
+    #[inline]
+    fn is_deleted(&self, id: IdType) -> bool {
+        self.get(id).is_some_and(|e| e.meta.deleted)
+    }
 }
 
 /// Implementation for slice-based graphs (used in tests).
@@ -236,10 +243,7 @@ where
                         candidates.push(neighbor, dist);
 
                         // Only add to results if not deleted and passes filter
-                        let is_deleted = graph
-                            .get(neighbor)
-                            .is_some_and(|e| e.meta.deleted);
-                        if !is_deleted {
+                        if !graph.is_deleted(neighbor) {
                             let passes = filter.is_none_or(|f| f(neighbor));
                             if passes {
                                 results.try_insert(neighbor, dist);
@@ -251,12 +255,8 @@ where
         }
     }
 
-    // Convert results to vector
-    results
-        .into_sorted_vec()
-        .into_iter()
-        .map(|e| (e.id, e.distance))
-        .collect()
+    // Convert results to vector (optimized to minimize allocations)
+    results.into_sorted_pairs()
 }
 
 use crate::types::LabelType;

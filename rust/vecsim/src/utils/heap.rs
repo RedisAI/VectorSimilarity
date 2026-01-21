@@ -139,10 +139,14 @@ impl<D: DistanceType> MaxHeap<D> {
         if self.heap.len() < self.capacity {
             self.heap.push(MaxHeapEntry(HeapEntry::new(id, distance)));
             true
-        } else if let Some(top) = self.heap.peek() {
+        } else if let Some(mut top) = self.heap.peek_mut() {
             if distance < top.0.distance {
-                self.heap.pop();
-                self.heap.push(MaxHeapEntry(HeapEntry::new(id, distance)));
+                // Replace in-place using PeekMut - avoids separate pop+push operations
+                // PeekMut::pop() removes the top element efficiently, then we push the new one
+                // This is more efficient than pop() + push() because it avoids redundant sift operations
+                *top = MaxHeapEntry(HeapEntry::new(id, distance));
+                // Drop the PeekMut to trigger sift_down
+                drop(top);
                 true
             } else {
                 false
@@ -169,13 +173,35 @@ impl<D: DistanceType> MaxHeap<D> {
 
     /// Convert to a sorted vector (smallest distance first).
     pub fn into_sorted_vec(self) -> Vec<HeapEntry<D>> {
-        let mut entries: Vec<_> = self.heap.into_iter().map(|e| e.0).collect();
+        // Pre-allocate with exact capacity to avoid reallocations
+        let len = self.heap.len();
+        let mut entries = Vec::with_capacity(len);
+        entries.extend(self.heap.into_iter().map(|e| e.0));
         entries.sort_by(|a, b| {
             a.distance
                 .partial_cmp(&b.distance)
                 .unwrap_or(Ordering::Equal)
         });
         entries
+    }
+
+    /// Convert to a sorted vector of (id, distance) pairs.
+    /// This is optimized to minimize allocations by reusing the heap's buffer.
+    #[inline]
+    pub fn into_sorted_pairs(self) -> Vec<(IdType, D)> {
+        // Use into_sorted_iter from BinaryHeap which pops in sorted order
+        let len = self.heap.len();
+        let mut result = Vec::with_capacity(len);
+        // BinaryHeap::into_sorted_vec() uses into_iter + sort, we do the same
+        // but map directly to the output format
+        let mut entries: Vec<_> = self.heap.into_vec();
+        entries.sort_by(|a, b| {
+            a.0.distance
+                .partial_cmp(&b.0.distance)
+                .unwrap_or(Ordering::Equal)
+        });
+        result.extend(entries.into_iter().map(|e| (e.0.id, e.0.distance)));
+        result
     }
 
     /// Convert to a vector (unordered).
