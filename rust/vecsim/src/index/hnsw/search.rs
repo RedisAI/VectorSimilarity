@@ -222,14 +222,8 @@ where
                     continue; // Already visited
                 }
 
-                // Check if neighbor is valid
-                if let Some(neighbor_element) = graph.get(neighbor) {
-                    if neighbor_element.meta.deleted {
-                        continue;
-                    }
-                }
-
-                // Compute distance to neighbor
+                // Compute distance to neighbor (don't check deleted here - we check at result insertion)
+                // This matches C++ behavior: deleted nodes are still explored for graph connectivity
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
 
@@ -238,13 +232,19 @@ where
                         && dist >= results.top_distance().unwrap();
 
                     if !dominated {
-                        // Add to results if it passes filter
-                        let passes = filter.is_none_or(|f| f(neighbor));
-                        if passes {
-                            results.try_insert(neighbor, dist);
-                        }
-                        // Add to candidates for exploration
+                        // Add to candidates for exploration (even for deleted nodes)
                         candidates.push(neighbor, dist);
+
+                        // Only add to results if not deleted and passes filter
+                        let is_deleted = graph
+                            .get(neighbor)
+                            .is_some_and(|e| e.meta.deleted);
+                        if !is_deleted {
+                            let passes = filter.is_none_or(|f| f(neighbor));
+                            if passes {
+                                results.try_insert(neighbor, dist);
+                            }
+                        }
                     }
                 }
             }
@@ -384,14 +384,7 @@ where
                     continue; // Already visited
                 }
 
-                // Check if neighbor is valid
-                if let Some(neighbor_element) = graph.get(neighbor) {
-                    if neighbor_element.meta.deleted {
-                        continue;
-                    }
-                }
-
-                // Compute distance to neighbor
+                // Compute distance to neighbor (don't check deleted here - we check at result insertion)
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
 
@@ -408,18 +401,23 @@ where
                         candidates.push(neighbor, dist);
                     }
 
-                    // Always update label tracking regardless of pruning
-                    if let Some(&label) = id_to_label.get(&neighbor) {
-                        let passes = filter.is_none_or(|f| f(label));
-                        if passes {
-                            label_best
-                                .entry(label)
-                                .and_modify(|best| {
-                                    if dist < *best {
-                                        *best = dist;
-                                    }
-                                })
-                                .or_insert(dist);
+                    // Only update label tracking if not deleted
+                    let is_deleted = graph
+                        .get(neighbor)
+                        .is_some_and(|e| e.meta.deleted);
+                    if !is_deleted {
+                        if let Some(&label) = id_to_label.get(&neighbor) {
+                            let passes = filter.is_none_or(|f| f(label));
+                            if passes {
+                                label_best
+                                    .entry(label)
+                                    .and_modify(|best| {
+                                        if dist < *best {
+                                            *best = dist;
+                                        }
+                                    })
+                                    .or_insert(dist);
+                            }
                         }
                     }
                 }
@@ -568,27 +566,25 @@ where
                     continue; // Already visited
                 }
 
-                // Check if neighbor is valid
-                if let Some(neighbor_element) = graph.get(neighbor) {
-                    if neighbor_element.meta.deleted {
-                        continue;
-                    }
-                }
-
-                // Compute distance to neighbor
+                // Compute distance to neighbor (don't check deleted here - we check at result insertion)
                 if let Some(data) = data_getter(neighbor) {
                     let dist = dist_fn.compute(data, query, dim);
                     let dist_f64 = dist.to_f64();
 
-                    // Add to candidates if within dynamic search boundary
+                    // Add to candidates if within dynamic search boundary (even for deleted nodes)
                     if dist_f64 < current_boundary {
                         candidates.push(neighbor, dist);
 
-                        // Add to results if within radius and passes filter
+                        // Only add to results if not deleted, within radius, and passes filter
                         if dist_f64 <= radius.to_f64() {
-                            let passes = filter.is_none_or(|f| f(neighbor));
-                            if passes {
-                                results.push((neighbor, dist));
+                            let is_deleted = graph
+                                .get(neighbor)
+                                .is_some_and(|e| e.meta.deleted);
+                            if !is_deleted {
+                                let passes = filter.is_none_or(|f| f(neighbor));
+                                if passes {
+                                    results.push((neighbor, dist));
+                                }
                             }
                         }
                     }
