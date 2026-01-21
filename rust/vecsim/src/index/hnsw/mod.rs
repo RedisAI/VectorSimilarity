@@ -521,34 +521,27 @@ impl<T: VectorElement> HnswCore<T> {
             };
 
             // Check if new node can still add neighbors (may have changed between iterations)
-            let new_node_neighbors = new_element.get_neighbors(level);
-            if new_node_neighbors.len() >= max_m {
+            // Use neighbor_count to avoid Vec allocation
+            if new_element.neighbor_count(level) >= max_m {
                 // New node is full, skip remaining neighbors
                 break;
             }
 
-            // Check if connection already exists
-            if new_node_neighbors.contains(&neighbor_id) {
+            // Check if connection already exists (no allocation)
+            if new_element.has_neighbor(level, neighbor_id) {
                 continue;
             }
 
-            // Check if neighbor has space for the new node
-            let neighbor_neighbors = neighbor_element.get_neighbors(level);
-            if neighbor_neighbors.len() < max_m {
+            // Check if neighbor has space for the new node (no allocation)
+            if neighbor_element.neighbor_count(level) < max_m {
                 // Fast path: neighbor has space, make bidirectional connection
-                let mut new_neighbors = new_node_neighbors;
-                new_neighbors.push(neighbor_id);
-                new_element.set_neighbors(level, &new_neighbors);
-
-                let mut updated_neighbor_neighbors = neighbor_neighbors;
-                updated_neighbor_neighbors.push(new_node_id);
-                neighbor_element.set_neighbors(level, &updated_neighbor_neighbors);
+                // Use try_add_neighbor for O(1) append instead of get→push→set
+                new_element.try_add_neighbor(level, neighbor_id);
+                neighbor_element.try_add_neighbor(level, new_node_id);
             } else {
                 // Slow path: neighbor is full, need to revisit its connections
                 // First add new_node -> neighbor (new node has space, we checked above)
-                let mut new_neighbors = new_node_neighbors;
-                new_neighbors.push(neighbor_id);
-                new_element.set_neighbors(level, &new_neighbors);
+                new_element.try_add_neighbor(level, neighbor_id);
 
                 // Now revisit neighbor's connections to possibly include new_node
                 self.revisit_neighbor_connections_locked(

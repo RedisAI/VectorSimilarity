@@ -128,6 +128,18 @@ impl LevelLinks {
         }
     }
 
+    /// Check if a neighbor exists in the list.
+    #[inline]
+    pub fn has_neighbor(&self, neighbor: IdType) -> bool {
+        let count = self.len();
+        for i in 0..count {
+            if self.neighbors[i].load(Ordering::Acquire) == neighbor {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Add a neighbor if there's space.
     /// Returns true if added, false if full.
     pub fn try_add(&self, neighbor: IdType) -> bool {
@@ -287,6 +299,27 @@ impl ElementGraphData {
             self.levels[level].get_neighbor_at(index)
         } else {
             None
+        }
+    }
+
+    /// Check if a neighbor exists at a specific level.
+    #[inline]
+    pub fn has_neighbor(&self, level: usize, neighbor: IdType) -> bool {
+        if level < self.levels.len() {
+            self.levels[level].has_neighbor(neighbor)
+        } else {
+            false
+        }
+    }
+
+    /// Try to add a neighbor at a specific level.
+    /// Returns true if added, false if the level is full.
+    #[inline]
+    pub fn try_add_neighbor(&self, level: usize, neighbor: IdType) -> bool {
+        if level < self.levels.len() {
+            self.levels[level].try_add(neighbor)
+        } else {
+            false
         }
     }
 
