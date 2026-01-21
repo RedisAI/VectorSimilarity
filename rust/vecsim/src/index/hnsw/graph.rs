@@ -113,6 +113,21 @@ impl LevelLinks {
         })
     }
 
+    /// Get neighbor at a specific index (0-based).
+    /// Returns None if index is out of bounds or if the slot contains INVALID_ID.
+    #[inline]
+    pub fn get_neighbor_at(&self, index: usize) -> Option<IdType> {
+        if index >= self.len() {
+            return None;
+        }
+        let id = self.neighbors[index].load(Ordering::Acquire);
+        if id != INVALID_ID {
+            Some(id)
+        } else {
+            None
+        }
+    }
+
     /// Add a neighbor if there's space.
     /// Returns true if added, false if full.
     pub fn try_add(&self, neighbor: IdType) -> bool {
@@ -253,6 +268,26 @@ impl ElementGraphData {
                 None
             }
         })
+    }
+
+    /// Get the number of neighbors at a specific level.
+    #[inline]
+    pub fn neighbor_count(&self, level: usize) -> usize {
+        if level < self.levels.len() {
+            self.levels[level].len()
+        } else {
+            0
+        }
+    }
+
+    /// Get neighbor at a specific index within a level.
+    #[inline]
+    pub fn get_neighbor_at(&self, level: usize, index: usize) -> Option<IdType> {
+        if level < self.levels.len() {
+            self.levels[level].get_neighbor_at(index)
+        } else {
+            None
+        }
     }
 
     /// Set neighbors at a specific level.

@@ -406,20 +406,27 @@ pub fn cosine_distance_f64(a: &[f64], b: &[f64], dim: usize) -> f64 {
 
 /// NEON L2 squared distance for f32 vectors.
 ///
+/// Uses 4 accumulators for better instruction-level parallelism (ILP),
+/// processing 16 elements per iteration to match C++ performance.
+///
 /// # Safety
 /// - Pointers `a` and `b` must be valid for reads of `dim` f32 elements.
 /// - Must only be called on aarch64 platforms with NEON support.
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn l2_squared_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f32 {
+    // Use 4 accumulators for better ILP (matches C++ implementation)
     let mut sum0 = vdupq_n_f32(0.0);
     let mut sum1 = vdupq_n_f32(0.0);
-    let chunks = dim / 8;
-    let remainder = dim % 8;
+    let mut sum2 = vdupq_n_f32(0.0);
+    let mut sum3 = vdupq_n_f32(0.0);
 
-    // Process 8 elements at a time (two 4-element vectors)
+    let chunks = dim / 16;
+    let remainder = dim % 16;
+
+    // Process 16 elements at a time (four 4-element vectors)
     for i in 0..chunks {
-        let offset = i * 8;
+        let offset = i * 16;
 
         let va0 = vld1q_f32(a.add(offset));
         let vb0 = vld1q_f32(b.add(offset));
@@ -430,16 +437,56 @@ pub unsafe fn l2_squared_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f
         let vb1 = vld1q_f32(b.add(offset + 4));
         let diff1 = vsubq_f32(va1, vb1);
         sum1 = vfmaq_f32(sum1, diff1, diff1);
+
+        let va2 = vld1q_f32(a.add(offset + 8));
+        let vb2 = vld1q_f32(b.add(offset + 8));
+        let diff2 = vsubq_f32(va2, vb2);
+        sum2 = vfmaq_f32(sum2, diff2, diff2);
+
+        let va3 = vld1q_f32(a.add(offset + 12));
+        let vb3 = vld1q_f32(b.add(offset + 12));
+        let diff3 = vsubq_f32(va3, vb3);
+        sum3 = vfmaq_f32(sum3, diff3, diff3);
     }
 
-    // Combine and reduce
-    let sum = vaddq_f32(sum0, sum1);
-    let mut result = vaddvq_f32(sum);
+    // Handle remaining complete 4-element blocks (0-3 blocks)
+    let base = chunks * 16;
+    let remaining_chunks = remainder / 4;
 
-    // Handle remainder
-    let base = chunks * 8;
-    for i in 0..remainder {
-        let diff = *a.add(base + i) - *b.add(base + i);
+    if remaining_chunks >= 1 {
+        let va = vld1q_f32(a.add(base));
+        let vb = vld1q_f32(b.add(base));
+        let diff = vsubq_f32(va, vb);
+        sum0 = vfmaq_f32(sum0, diff, diff);
+    }
+    if remaining_chunks >= 2 {
+        let va = vld1q_f32(a.add(base + 4));
+        let vb = vld1q_f32(b.add(base + 4));
+        let diff = vsubq_f32(va, vb);
+        sum1 = vfmaq_f32(sum1, diff, diff);
+    }
+    if remaining_chunks >= 3 {
+        let va = vld1q_f32(a.add(base + 8));
+        let vb = vld1q_f32(b.add(base + 8));
+        let diff = vsubq_f32(va, vb);
+        sum2 = vfmaq_f32(sum2, diff, diff);
+    }
+
+    // Combine all four accumulators
+    let sum01 = vaddq_f32(sum0, sum1);
+    let sum23 = vaddq_f32(sum2, sum3);
+    let sum = vaddq_f32(sum01, sum23);
+
+    // Horizontal reduction using pairwise adds (matches C++ pattern)
+    let sum_halves = vadd_f32(vget_low_f32(sum), vget_high_f32(sum));
+    let summed = vpadd_f32(sum_halves, sum_halves);
+    let mut result = vget_lane_f32::<0>(summed);
+
+    // Handle final remainder (0-3 elements)
+    let final_base = base + remaining_chunks * 4;
+    let final_remainder = remainder % 4;
+    for i in 0..final_remainder {
+        let diff = *a.add(final_base + i) - *b.add(final_base + i);
         result += diff * diff;
     }
 
@@ -448,20 +495,27 @@ pub unsafe fn l2_squared_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f
 
 /// NEON inner product for f32 vectors.
 ///
+/// Uses 4 accumulators for better instruction-level parallelism (ILP),
+/// processing 16 elements per iteration to match C++ performance.
+///
 /// # Safety
 /// - Pointers `a` and `b` must be valid for reads of `dim` f32 elements.
 /// - Must only be called on aarch64 platforms with NEON support.
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn inner_product_f32_neon(a: *const f32, b: *const f32, dim: usize) -> f32 {
+    // Use 4 accumulators for better ILP
     let mut sum0 = vdupq_n_f32(0.0);
     let mut sum1 = vdupq_n_f32(0.0);
-    let chunks = dim / 8;
-    let remainder = dim % 8;
+    let mut sum2 = vdupq_n_f32(0.0);
+    let mut sum3 = vdupq_n_f32(0.0);
 
-    // Process 8 elements at a time
+    let chunks = dim / 16;
+    let remainder = dim % 16;
+
+    // Process 16 elements at a time (four 4-element vectors)
     for i in 0..chunks {
-        let offset = i * 8;
+        let offset = i * 16;
 
         let va0 = vld1q_f32(a.add(offset));
         let vb0 = vld1q_f32(b.add(offset));
@@ -470,16 +524,51 @@ pub unsafe fn inner_product_f32_neon(a: *const f32, b: *const f32, dim: usize) -
         let va1 = vld1q_f32(a.add(offset + 4));
         let vb1 = vld1q_f32(b.add(offset + 4));
         sum1 = vfmaq_f32(sum1, va1, vb1);
+
+        let va2 = vld1q_f32(a.add(offset + 8));
+        let vb2 = vld1q_f32(b.add(offset + 8));
+        sum2 = vfmaq_f32(sum2, va2, vb2);
+
+        let va3 = vld1q_f32(a.add(offset + 12));
+        let vb3 = vld1q_f32(b.add(offset + 12));
+        sum3 = vfmaq_f32(sum3, va3, vb3);
     }
 
-    // Combine and reduce
-    let sum = vaddq_f32(sum0, sum1);
-    let mut result = vaddvq_f32(sum);
+    // Handle remaining complete 4-element blocks
+    let base = chunks * 16;
+    let remaining_chunks = remainder / 4;
 
-    // Handle remainder
-    let base = chunks * 8;
-    for i in 0..remainder {
-        result += *a.add(base + i) * *b.add(base + i);
+    if remaining_chunks >= 1 {
+        let va = vld1q_f32(a.add(base));
+        let vb = vld1q_f32(b.add(base));
+        sum0 = vfmaq_f32(sum0, va, vb);
+    }
+    if remaining_chunks >= 2 {
+        let va = vld1q_f32(a.add(base + 4));
+        let vb = vld1q_f32(b.add(base + 4));
+        sum1 = vfmaq_f32(sum1, va, vb);
+    }
+    if remaining_chunks >= 3 {
+        let va = vld1q_f32(a.add(base + 8));
+        let vb = vld1q_f32(b.add(base + 8));
+        sum2 = vfmaq_f32(sum2, va, vb);
+    }
+
+    // Combine all four accumulators
+    let sum01 = vaddq_f32(sum0, sum1);
+    let sum23 = vaddq_f32(sum2, sum3);
+    let sum = vaddq_f32(sum01, sum23);
+
+    // Horizontal reduction using pairwise adds
+    let sum_halves = vadd_f32(vget_low_f32(sum), vget_high_f32(sum));
+    let summed = vpadd_f32(sum_halves, sum_halves);
+    let mut result = vget_lane_f32::<0>(summed);
+
+    // Handle final remainder (0-3 elements)
+    let final_base = base + remaining_chunks * 4;
+    let final_remainder = remainder % 4;
+    for i in 0..final_remainder {
+        result += *a.add(final_base + i) * *b.add(final_base + i);
     }
 
     result

@@ -80,22 +80,31 @@ where
         let mut changed = false;
 
         if let Some(element) = graph.get(current) {
-            // Collect neighbors to enable prefetching
-            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
-            let neighbor_count = neighbors.len();
+            // Get neighbor count without allocation
+            let neighbor_count = element.neighbor_count(level);
 
             // Prefetch first neighbor's data
             if neighbor_count > 0 {
-                if let Some(first_data) = data_getter(neighbors[0]) {
-                    prefetch_slice(first_data);
+                if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    if let Some(first_data) = data_getter(first_neighbor) {
+                        prefetch_slice(first_data);
+                    }
                 }
             }
 
-            for (i, &neighbor) in neighbors.iter().enumerate() {
+            // Iterate using indexed access to avoid Vec allocation
+            for i in 0..neighbor_count {
+                let neighbor = match element.get_neighbor_at(level, i) {
+                    Some(n) => n,
+                    None => continue,
+                };
+
                 // Prefetch next neighbor's data while processing current
                 if i + 1 < neighbor_count {
-                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
-                        prefetch_slice(next_data);
+                    if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        if let Some(next_data) = data_getter(next_neighbor) {
+                            prefetch_slice(next_data);
+                        }
                     }
                 }
 
@@ -178,22 +187,32 @@ where
                 continue;
             }
 
-            // Collect neighbors to enable prefetching
-            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
-            let neighbor_count = neighbors.len();
+            // Get neighbor count without allocation
+            let neighbor_count = element.neighbor_count(level);
 
             // Prefetch first neighbor's data
             if neighbor_count > 0 {
-                if let Some(first_data) = data_getter(neighbors[0]) {
-                    prefetch_slice(first_data);
+                if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    if let Some(first_data) = data_getter(first_neighbor) {
+                        prefetch_slice(first_data);
+                    }
                 }
             }
 
-            for (i, &neighbor) in neighbors.iter().enumerate() {
+            // Iterate using indexed access to avoid Vec allocation
+            for i in 0..neighbor_count {
+                // Get current neighbor
+                let neighbor = match element.get_neighbor_at(level, i) {
+                    Some(n) => n,
+                    None => continue,
+                };
+
                 // Prefetch next neighbor's data while processing current
                 if i + 1 < neighbor_count {
-                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
-                        prefetch_slice(next_data);
+                    if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        if let Some(next_data) = data_getter(next_neighbor) {
+                            prefetch_slice(next_data);
+                        }
                     }
                 }
 
@@ -329,22 +348,31 @@ where
                 continue;
             }
 
-            // Collect neighbors to enable prefetching
-            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
-            let neighbor_count = neighbors.len();
+            // Get neighbor count without allocation
+            let neighbor_count = element.neighbor_count(level);
 
             // Prefetch first neighbor's data
             if neighbor_count > 0 {
-                if let Some(first_data) = data_getter(neighbors[0]) {
-                    prefetch_slice(first_data);
+                if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    if let Some(first_data) = data_getter(first_neighbor) {
+                        prefetch_slice(first_data);
+                    }
                 }
             }
 
-            for (i, &neighbor) in neighbors.iter().enumerate() {
+            // Iterate using indexed access to avoid Vec allocation
+            for i in 0..neighbor_count {
+                let neighbor = match element.get_neighbor_at(level, i) {
+                    Some(n) => n,
+                    None => continue,
+                };
+
                 // Prefetch next neighbor's data while processing current
                 if i + 1 < neighbor_count {
-                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
-                        prefetch_slice(next_data);
+                    if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        if let Some(next_data) = data_getter(next_neighbor) {
+                            prefetch_slice(next_data);
+                        }
                     }
                 }
 
@@ -502,22 +530,31 @@ where
                 continue;
             }
 
-            // Collect neighbors to enable prefetching (matching C++ behavior)
-            let neighbors: Vec<IdType> = element.iter_neighbors(level).collect();
-            let neighbor_count = neighbors.len();
+            // Get neighbor count without allocation
+            let neighbor_count = element.neighbor_count(level);
 
             // Prefetch first neighbor's data
             if neighbor_count > 0 {
-                if let Some(first_data) = data_getter(neighbors[0]) {
-                    prefetch_slice(first_data);
+                if let Some(first_neighbor) = element.get_neighbor_at(level, 0) {
+                    if let Some(first_data) = data_getter(first_neighbor) {
+                        prefetch_slice(first_data);
+                    }
                 }
             }
 
-            for (i, &neighbor) in neighbors.iter().enumerate() {
+            // Iterate using indexed access to avoid Vec allocation
+            for i in 0..neighbor_count {
+                let neighbor = match element.get_neighbor_at(level, i) {
+                    Some(n) => n,
+                    None => continue,
+                };
+
                 // Prefetch next neighbor's data while processing current
                 if i + 1 < neighbor_count {
-                    if let Some(next_data) = data_getter(neighbors[i + 1]) {
-                        prefetch_slice(next_data);
+                    if let Some(next_neighbor) = element.get_neighbor_at(level, i + 1) {
+                        if let Some(next_data) = data_getter(next_neighbor) {
+                            prefetch_slice(next_data);
+                        }
                     }
                 }
 
