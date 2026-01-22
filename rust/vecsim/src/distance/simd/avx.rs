@@ -8,7 +8,7 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use crate::types::VectorElement;
+use crate::types::{DistanceType, VectorElement};
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
