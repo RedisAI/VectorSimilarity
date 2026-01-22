@@ -283,6 +283,9 @@ public:
         };
         return info;
     }
+
+    IndexCalculatorInterface<DistType>* getIndexCalculator() const { return indexCalculator; }
+
 #ifdef BUILD_TESTS
     void replacePPContainer(PreprocessorsContainerAbstract *newPPContainer) {
         delete this->preprocessors;
