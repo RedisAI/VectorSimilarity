@@ -285,7 +285,6 @@ public:
         };
         return info;
     }
-
 #ifdef BUILD_TESTS
     void replacePPContainer(PreprocessorsContainerAbstract *newPPContainer) {
         delete this->preprocessors;
