@@ -111,6 +111,8 @@ protected:
         return info;
     }
 
+    IndexCalculatorInterface<DistType> *getIndexCalculator() const { return indexCalculator; }
+
 public:
     /**
      * @brief Construct a new Vec Sim Index object
