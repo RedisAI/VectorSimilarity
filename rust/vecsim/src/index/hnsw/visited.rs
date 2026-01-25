@@ -123,7 +123,7 @@ impl VisitedNodesHandlerPool {
     }
 
     /// Get a handler from the pool, creating one if necessary.
-    pub fn get(&self) -> PooledHandler {
+    pub fn get(&self) -> PooledHandler<'_> {
         let cap = self.default_capacity.load(std::sync::atomic::Ordering::Acquire);
         let handler = self.handlers.lock().pop().unwrap_or_else(|| {
             VisitedNodesHandler::new(cap)

@@ -6,7 +6,7 @@
 use super::{ElementGraphData, HnswCore, HnswParams};
 use crate::index::traits::{BatchIterator, IndexError, IndexInfo, QueryError, VecSimIndex};
 use crate::query::{QueryParams, QueryReply, QueryResult};
-use crate::types::{DistanceType, IdType, LabelType, VectorElement};
+use crate::types::{IdType, LabelType, VectorElement};
 use dashmap::DashMap;
 
 /// Statistics about an HNSW index.

@@ -33,7 +33,7 @@ impl QueryReplyHandle {
         }
     }
 
-    pub fn get_iterator(&self) -> QueryReplyIteratorHandle {
+    pub fn get_iterator(&self) -> QueryReplyIteratorHandle<'_> {
         QueryReplyIteratorHandle::new(&self.reply.results)
     }
 

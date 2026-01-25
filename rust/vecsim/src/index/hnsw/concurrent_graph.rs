@@ -12,7 +12,16 @@ use super::ElementGraphData;
 use crate::types::IdType;
 use parking_lot::RwLock;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+
+/// Flags for element status (matches C++ Flags enum).
+#[allow(dead_code)]
+mod flags {
+    /// Element is logically deleted but still exists in the graph.
+    pub const DELETE_MARK: u8 = 0x1;
+    /// Element is being inserted into the graph.
+    pub const IN_PROCESS: u8 = 0x2;
+}
 
 /// Default segment size (number of elements per segment).
 const SEGMENT_SIZE: usize = 4096;
@@ -90,6 +99,10 @@ pub struct ConcurrentGraph {
     segment_size: usize,
     /// Total number of initialized elements (approximate, may be slightly stale).
     len: AtomicUsize,
+    /// Atomic flags for each element (DELETE_MARK, IN_PROCESS).
+    /// Stored separately for O(1) access without acquiring segment lock.
+    /// This matches the C++ idToMetaData approach.
+    element_flags: RwLock<Vec<AtomicU8>>,
 }
 
 impl ConcurrentGraph {
@@ -102,10 +115,16 @@ impl ConcurrentGraph {
             .map(|_| GraphSegment::new(segment_size))
             .collect();
 
+        // Pre-allocate flags array for initial capacity
+        let flags: Vec<AtomicU8> = (0..initial_capacity)
+            .map(|_| AtomicU8::new(0))
+            .collect();
+
         Self {
             segments: RwLock::new(segments),
             segment_size,
             len: AtomicUsize::new(0),
+            element_flags: RwLock::new(flags),
         }
     }
 
@@ -197,6 +216,56 @@ impl ConcurrentGraph {
         }
     }
 
+    /// Ensure the flags array has capacity for the given ID.
+    fn ensure_flags_capacity(&self, id: IdType) {
+        let id_usize = id as usize;
+
+        // Fast path - check with read lock
+        {
+            let flags = self.element_flags.read();
+            if id_usize < flags.len() {
+                return;
+            }
+        }
+
+        // Slow path - need to grow
+        let mut flags = self.element_flags.write();
+        // Double-check after acquiring write lock
+        let needed = id_usize + 1;
+        let current_len = flags.len();
+        if needed > current_len {
+            // Grow by at least one segment worth
+            let new_capacity = needed.max(current_len + self.segment_size);
+            let additional = new_capacity - current_len;
+            flags.reserve(additional);
+            for _ in 0..additional {
+                flags.push(AtomicU8::new(0));
+            }
+        }
+    }
+
+    /// Check if an element is marked as deleted (O(1) lock-free after initial read lock).
+    #[inline]
+    pub fn is_marked_deleted(&self, id: IdType) -> bool {
+        let id_usize = id as usize;
+        let flags = self.element_flags.read();
+        if id_usize < flags.len() {
+            flags[id_usize].load(Ordering::Acquire) & flags::DELETE_MARK != 0
+        } else {
+            false
+        }
+    }
+
+    /// Mark an element as deleted atomically.
+    pub fn mark_deleted(&self, id: IdType) {
+        self.ensure_flags_capacity(id);
+        let flags = self.element_flags.read();
+        let id_usize = id as usize;
+        if id_usize < flags.len() {
+            flags[id_usize].fetch_or(flags::DELETE_MARK, Ordering::Release);
+        }
+    }
+
     /// Get the approximate number of elements.
     #[inline]
     pub fn len(&self) -> usize {
@@ -260,9 +329,35 @@ impl ConcurrentGraph {
         }
         drop(segments);
 
-        // Set new elements
+        // Reset flags array (clear all flags)
+        {
+            let mut flags = self.element_flags.write();
+            // Clear existing flags
+            for flag in flags.iter() {
+                flag.store(0, Ordering::Release);
+            }
+            // Resize if needed
+            let needed = new_elements.len();
+            let current_len = flags.len();
+            if needed > current_len {
+                let additional = needed - current_len;
+                flags.reserve(additional);
+                for _ in 0..additional {
+                    flags.push(AtomicU8::new(0));
+                }
+            }
+        }
+
+        // Set new elements and update flags for deleted elements
         for (id, element) in new_elements.into_iter().enumerate() {
             if let Some(data) = element {
+                // If the element is marked as deleted in metadata, update flags
+                if data.meta.deleted {
+                    let flags = self.element_flags.read();
+                    if id < flags.len() {
+                        flags[id].fetch_or(flags::DELETE_MARK, Ordering::Release);
+                    }
+                }
                 self.set(id as IdType, data);
             }
         }
