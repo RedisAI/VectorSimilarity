@@ -262,4 +262,16 @@ public:
     inline static void setWriteMode(VecSimWriteMode mode) {
         VecSimIndexInterface::asyncWriteMode = mode;
     }
+#ifdef BUILD_TESTS
+    /**
+     * @brief get the capacity of the meta data containers.
+     *
+     * @return The capacity of the meta data containers in number of elements.
+     * The value returned from this function may differ from the indexCapacity() function. For
+     * example, in HNSW, the capacity of the meta data containers is the capacity of the labels
+     * lookup table, while the capacity of the data containers is the capacity of the vectors
+     * container.
+     */
+    virtual size_t indexMetaDataCapacity() const = 0;
+#endif
 };
