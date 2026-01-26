@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
@@ -93,6 +93,22 @@ struct Config {
     /// Number of non-neighbors to sample per query for validation (default: 1000).
     #[arg(long = "validate-non-neighbors", value_name = "NUMBER", default_value_t = 1000)]
     validate_non_neighbors: usize,
+
+    /// Enable extend mode: extend existing groundtruth with new vectors.
+    #[arg(long = "extend")]
+    extend: bool,
+
+    /// Path to existing groundtruth .ibin file (required with --extend).
+    #[arg(long = "existing-groundtruth", value_name = "PATH")]
+    existing_groundtruth_path: Option<PathBuf>,
+
+    /// Path to combined base vectors .fbin file (required with --extend).
+    #[arg(long = "combined-base", value_name = "PATH")]
+    combined_base_path: Option<PathBuf>,
+
+    /// Number of vectors in the original base set (required with --extend).
+    #[arg(long = "original-base-count", value_name = "NUMBER")]
+    original_base_count: Option<usize>,
 
     /// Increase verbosity (currently a placeholder, reserved for future use).
     #[arg(long = "verbose", short = 'v', action = ArgAction::Count)]
@@ -249,12 +265,44 @@ fn run(start: Instant) -> Result<()> {
         return Ok(());
     }
 
+    // Handle --extend mode
+    if config.extend {
+        let query_path = config.query_path.as_ref().ok_or(
+            "--extend requires --queries to be specified"
+        )?;
+        let existing_groundtruth_path = config.existing_groundtruth_path.as_ref().ok_or(
+            "--extend requires --existing-groundtruth to be specified"
+        )?;
+        let combined_base_path = config.combined_base_path.as_ref().ok_or(
+            "--extend requires --combined-base to be specified"
+        )?;
+        let original_base_count = config.original_base_count.ok_or(
+            "--extend requires --original-base-count to be specified"
+        )?;
+        let results_dir = config.results_dir.as_ref().ok_or(
+            "--extend requires --output to be specified"
+        )?;
+
+        return run_extend(
+            start,
+            query_path,
+            existing_groundtruth_path,
+            combined_base_path,
+            original_base_count,
+            results_dir,
+            config.k,
+            config.num_workers,
+            config.progress_interval,
+            config.merge_output.as_ref(),
+        );
+    }
+
     // Normal mode: require query, base, and output paths
     let query_path = config.query_path.as_ref().ok_or(
-        "--queries is required (unless using --merge-only or --validate)"
+        "--queries is required (unless using --merge-only, --validate, or --extend)"
     )?;
     let base_path = config.base_path.as_ref().ok_or(
-        "--base is required (unless using --merge-only or --validate)"
+        "--base is required (unless using --merge-only, --validate, or --extend)"
     )?;
     let results_dir = config.results_dir.as_ref().ok_or(
         "--output is required (unless using --validate)"
@@ -400,6 +448,8 @@ fn run(start: Instant) -> Result<()> {
                     &base_norms,
                     k,
                     &results_dir_clone,
+                    None,  // normal mode: no initial neighbors
+                    0,     // normal mode: no index offset
                 ) {
                     log_error_with_times(
                         start_for_thread,
@@ -619,6 +669,254 @@ fn run_validate(
     Ok(())
 }
 
+/// Run extend mode: extend existing groundtruth with new vectors.
+fn run_extend(
+    start: Instant,
+    query_path: &Path,
+    existing_groundtruth_path: &Path,
+    combined_base_path: &Path,
+    original_base_count: usize,
+    results_dir: &Path,
+    k: usize,
+    num_workers: Option<usize>,
+    progress_interval: usize,
+    merge_output: Option<&PathBuf>,
+) -> Result<()> {
+    log_with_times(start, "Running in extend mode...");
+
+    // Step 1: Load query vectors
+    log_with_times(
+        start,
+        &format!("Loading query vectors from {:?}...", query_path),
+    );
+    let queries = load_fbin_vectors(query_path)?;
+    log_with_times(start, &format!("Loaded {} query vectors", queries.len()));
+
+    // Step 2: Pre-compute query norms
+    log_with_times(start, "Precomputing query norms...");
+    let query_norms = Arc::new(compute_norms(&queries));
+
+    // Step 3: Load existing groundtruth with distances
+    log_with_times(
+        start,
+        &format!(
+            "Loading existing groundtruth from {:?} and computing distances...",
+            existing_groundtruth_path
+        ),
+    );
+    let existing_neighbors = Arc::new(load_groundtruth_with_distances(
+        existing_groundtruth_path,
+        combined_base_path,
+        &queries,
+        &query_norms,
+    )?);
+    log_with_times(
+        start,
+        &format!(
+            "Loaded groundtruth for {} queries with {} neighbors each",
+            existing_neighbors.len(),
+            existing_neighbors.first().map(|n| n.len()).unwrap_or(0)
+        ),
+    );
+
+    // Step 4: Load new vectors
+    log_with_times(
+        start,
+        &format!(
+            "Loading new vectors from {:?} (starting at index {})...",
+            combined_base_path, original_base_count
+        ),
+    );
+    let new_base = Arc::new(load_new_vectors(combined_base_path, original_base_count)?);
+    log_with_times(start, &format!("Loaded {} new vectors", new_base.len()));
+
+    if new_base.is_empty() {
+        log_with_times(start, "No new vectors to process. Copying existing groundtruth.");
+        if let Some(merge_path) = merge_output {
+            fs::copy(existing_groundtruth_path, merge_path)?;
+            log_with_times(
+                start,
+                &format!("Copied existing groundtruth to {:?}", merge_path),
+            );
+        }
+        return Ok(());
+    }
+
+    // Step 5: Pre-compute norms for new vectors
+    log_with_times(start, "Precomputing norms for new vectors...");
+    let new_base_norms = Arc::new(compute_norms(&new_base));
+
+    // Step 6: Detect already-completed queries
+    log_with_times(
+        start,
+        &format!(
+            "Scanning results directory {:?} for completed queries...",
+            results_dir
+        ),
+    );
+    let completed = detect_completed_queries(results_dir)?;
+    let total_queries = queries.len();
+    let already_completed = completed.len();
+    log_with_times(
+        start,
+        &format!(
+            "{} / {} queries already have result files",
+            already_completed, total_queries
+        ),
+    );
+
+    // Build the list of pending query IDs
+    let pending_ids: Vec<usize> = (0..total_queries)
+        .filter(|qid| !completed.contains(qid))
+        .collect();
+
+    if pending_ids.is_empty() {
+        log_with_times(start, "All queries have been processed.");
+    } else {
+        log_with_times(start, &format!("Pending queries: {}", pending_ids.len()));
+
+        // Determine number of workers
+        let num_workers = num_workers
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(1)
+            })
+            .min(queries.len().max(1))
+            .max(1);
+        log_with_times(start, &format!("Using {} worker threads", num_workers));
+
+        // Choose progress interval
+        let desired_updates: usize = 20;
+        let auto_interval = (total_queries / desired_updates).max(1);
+        let progress_interval_effective = if progress_interval == 0 {
+            auto_interval
+        } else {
+            progress_interval
+        };
+
+        fs::create_dir_all(results_dir)?;
+
+        // Shared data across worker threads
+        let queries = Arc::new(queries);
+        let pending = Arc::new(pending_ids);
+        let completed_counter = Arc::new(AtomicUsize::new(already_completed));
+        let next_index = Arc::new(AtomicUsize::new(0));
+
+        let mut handles = Vec::with_capacity(num_workers);
+
+        for _worker_id in 0..num_workers {
+            let queries = Arc::clone(&queries);
+            let query_norms = Arc::clone(&query_norms);
+            let new_base = Arc::clone(&new_base);
+            let new_base_norms = Arc::clone(&new_base_norms);
+            let existing_neighbors = Arc::clone(&existing_neighbors);
+            let pending = Arc::clone(&pending);
+            let next_index = Arc::clone(&next_index);
+            let completed_counter = Arc::clone(&completed_counter);
+            let results_dir_clone = results_dir.to_path_buf();
+            let k = k;
+            let original_base_count = original_base_count;
+            let progress_interval = progress_interval_effective;
+            let start_for_thread = start;
+            let total_queries_for_progress = total_queries;
+
+            let handle = thread::spawn(move || {
+                loop {
+                    let idx = next_index.fetch_add(1, AtomicOrdering::SeqCst);
+                    if idx >= pending.len() {
+                        break;
+                    }
+
+                    let qid = pending[idx];
+                    if let Err(e) = process_query(
+                        qid,
+                        &queries,
+                        &query_norms,
+                        &new_base,
+                        &new_base_norms,
+                        k,
+                        &results_dir_clone,
+                        Some(&existing_neighbors[qid]),
+                        original_base_count,
+                    ) {
+                        log_error_with_times(
+                            start_for_thread,
+                            &format!("Worker error while processing query {qid}: {e}"),
+                        );
+                        continue;
+                    }
+
+                    let done = completed_counter.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                    if done % progress_interval == 0 || done == total_queries_for_progress {
+                        let percent = (done as f64) * 100.0 / (total_queries_for_progress as f64);
+                        log_with_times(
+                            start_for_thread,
+                            &format!(
+                                "Progress: {}/{} ({percent:.2}%)",
+                                done, total_queries_for_progress
+                            ),
+                        );
+                    }
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            if let Err(e) = handle.join() {
+                log_error_with_times(start, &format!("A worker thread panicked: {:?}", e));
+            }
+        }
+
+        log_with_times(start, "All pending queries processed.");
+    }
+
+    // Step 7: Merge results if requested
+    if let Some(merge_path) = merge_output {
+        log_with_times(
+            start,
+            &format!("Merging per-query results into {:?}...", merge_path),
+        );
+        merge_results(results_dir, merge_path, total_queries, k)?;
+        log_with_times(
+            start,
+            &format!("Merged groundtruth written to {:?}", merge_path),
+        );
+
+        // Step 8: Automatic post-extension validation
+        // Note: We save the output first, then validate. If validation fails,
+        // we report the error but do NOT delete the output file.
+        log_with_times(start, "Running automatic post-extension validation...");
+        match run_validate(
+            start,
+            merge_path,
+            query_path,
+            combined_base_path,
+            10,   // num_samples: validate 10 queries
+            1000, // num_non_neighbors: check 1000 random non-neighbors per query
+        ) {
+            Ok(()) => {
+                log_with_times(start, "Post-extension validation PASSED.");
+            }
+            Err(e) => {
+                log_error_with_times(
+                    start,
+                    &format!(
+                        "Post-extension validation FAILED: {}. Output file {:?} has been preserved for investigation.",
+                        e, merge_path
+                    ),
+                );
+                // Return error but don't delete the output file
+                return Err(format!("Validation failed: {}", e).into());
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Load a groundtruth .ibin file. Returns (num_queries, k, data).
 fn load_groundtruth(path: &Path) -> Result<(usize, usize, Vec<Vec<i32>>)> {
     let mut file = File::open(path)?;
@@ -700,6 +998,183 @@ fn load_fbin_vectors(path: &Path) -> Result<Vec<[f32; DIM]>> {
     Ok(vectors)
 }
 
+/// Load specific vectors from an fbin file by their indices.
+/// Uses seeking to avoid loading the entire file.
+fn load_vectors_by_indices(
+    fbin_path: &Path,
+    indices: &HashSet<u32>,
+) -> Result<HashMap<u32, [f32; DIM]>> {
+    let mut file = File::open(fbin_path)?;
+
+    // Read header
+    let mut header = [0u8; 8];
+    file.read_exact(&mut header)?;
+
+    let nvecs = i32::from_le_bytes(header[0..4].try_into()?) as usize;
+    let dim_in_file = i32::from_le_bytes(header[4..8].try_into()?) as usize;
+
+    if dim_in_file != DIM {
+        return Err(format!(
+            "Unexpected dimension in {:?}: got {}, expected {}",
+            fbin_path, dim_in_file, DIM
+        )
+        .into());
+    }
+
+    // Sort indices for sequential I/O optimization
+    let mut sorted_indices: Vec<u32> = indices.iter().cloned().collect();
+    sorted_indices.sort();
+
+    let mut result = HashMap::with_capacity(indices.len());
+    let bytes_per_vector = DIM * std::mem::size_of::<f32>();
+    let mut vec_buf = [0u8; DIM * 4];
+
+    for &idx in &sorted_indices {
+        if idx as usize >= nvecs {
+            return Err(format!(
+                "Index {} out of bounds (file has {} vectors)",
+                idx, nvecs
+            )
+            .into());
+        }
+
+        // Seek to the vector's position: header (8 bytes) + index * bytes_per_vector
+        let offset = 8 + (idx as u64) * (bytes_per_vector as u64);
+        file.seek(SeekFrom::Start(offset))?;
+
+        // Read the vector
+        file.read_exact(&mut vec_buf)?;
+
+        let mut v = [0f32; DIM];
+        for (i, chunk) in vec_buf.chunks_exact(4).enumerate() {
+            v[i] = f32::from_le_bytes(chunk.try_into()?);
+        }
+        result.insert(idx, v);
+    }
+
+    Ok(result)
+}
+
+/// Load existing groundtruth and compute distances for each neighbor.
+///
+/// Returns: Vec of Vec<Neighbor> (one per query), each with dist2 populated.
+fn load_groundtruth_with_distances(
+    groundtruth_path: &Path,
+    combined_base_path: &Path,
+    queries: &[[f32; DIM]],
+    query_norms: &[f32],
+) -> Result<Vec<Vec<Neighbor>>> {
+    // Step 1: Load groundtruth indices
+    let (gt_num_queries, _gt_k, groundtruth) = load_groundtruth(groundtruth_path)?;
+
+    if gt_num_queries != queries.len() {
+        return Err(format!(
+            "Query count mismatch: groundtruth has {} queries, but query file has {}",
+            gt_num_queries, queries.len()
+        )
+        .into());
+    }
+
+    // Step 2: Collect all unique neighbor indices across all queries
+    let mut unique_indices: HashSet<u32> = HashSet::new();
+    for row in &groundtruth {
+        for &idx in row {
+            unique_indices.insert(idx as u32);
+        }
+    }
+
+    // Step 3: Load only those vectors from the combined base file
+    let neighbor_vectors = load_vectors_by_indices(combined_base_path, &unique_indices)?;
+
+    // Step 4: Compute norms for the loaded vectors
+    let neighbor_norms: HashMap<u32, f32> = neighbor_vectors
+        .iter()
+        .map(|(&idx, v)| (idx, v.iter().map(|x| x * x).sum()))
+        .collect();
+
+    // Step 5: For each query, compute distances and create Vec<Neighbor>
+    let mut result = Vec::with_capacity(gt_num_queries);
+    for (qid, row) in groundtruth.iter().enumerate() {
+        let q_vec = &queries[qid];
+        let q_norm = query_norms[qid];
+
+        let neighbors: Vec<Neighbor> = row
+            .iter()
+            .map(|&idx| {
+                let idx_u32 = idx as u32;
+                let b_vec = &neighbor_vectors[&idx_u32];
+                let b_norm = neighbor_norms[&idx_u32];
+                let dist2 = squared_l2_distance(q_vec, q_norm, b_vec, b_norm);
+                Neighbor {
+                    dist2,
+                    index: idx_u32,
+                }
+            })
+            .collect();
+
+        result.push(neighbors);
+    }
+
+    Ok(result)
+}
+
+/// Load only the new vectors (index >= original_base_count) from combined base file.
+fn load_new_vectors(
+    combined_base_path: &Path,
+    original_base_count: usize,
+) -> Result<Vec<[f32; DIM]>> {
+    let mut file = File::open(combined_base_path)?;
+
+    // Read header
+    let mut header = [0u8; 8];
+    file.read_exact(&mut header)?;
+
+    let nvecs = i32::from_le_bytes(header[0..4].try_into()?) as usize;
+    let dim_in_file = i32::from_le_bytes(header[4..8].try_into()?) as usize;
+
+    if dim_in_file != DIM {
+        return Err(format!(
+            "Unexpected dimension in {:?}: got {}, expected {}",
+            combined_base_path, dim_in_file, DIM
+        )
+        .into());
+    }
+
+    if original_base_count > nvecs {
+        return Err(format!(
+            "original_base_count ({}) exceeds total vectors in file ({})",
+            original_base_count, nvecs
+        )
+        .into());
+    }
+
+    let new_vector_count = nvecs - original_base_count;
+    if new_vector_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Seek to the start of new vectors
+    let bytes_per_vector = DIM * std::mem::size_of::<f32>();
+    let offset = 8 + (original_base_count as u64) * (bytes_per_vector as u64);
+    file.seek(SeekFrom::Start(offset))?;
+
+    // Read new vectors sequentially
+    let mut vectors = Vec::with_capacity(new_vector_count);
+    let mut vec_buf = [0u8; DIM * 4];
+
+    for _ in 0..new_vector_count {
+        file.read_exact(&mut vec_buf)?;
+
+        let mut v = [0f32; DIM];
+        for (i, chunk) in vec_buf.chunks_exact(4).enumerate() {
+            v[i] = f32::from_le_bytes(chunk.try_into()?);
+        }
+        vectors.push(v);
+    }
+
+    Ok(vectors)
+}
+
 /// Compute squared L2 norms for a set of vectors.
 fn compute_norms(vectors: &[[f32; DIM]]) -> Vec<f32> {
     vectors
@@ -722,6 +1197,9 @@ fn squared_l2_distance(
 
 /// Process a single query: compute its top-k nearest neighbors and write
 /// results to an .ibin file.
+///
+/// In normal mode: initial_neighbors=None, index_offset=0
+/// In extend mode: initial_neighbors=Some(existing top-k), index_offset=original_base_count
 fn process_query(
     qid: usize,
     queries: &[[f32; DIM]],
@@ -730,27 +1208,39 @@ fn process_query(
     base_norms: &[f32],
     k: usize,
     results_dir: &Path,
+    initial_neighbors: Option<&[Neighbor]>,
+    index_offset: usize,
 ) -> Result<()> {
     let q_vec = &queries[qid];
     let q_norm = query_norms[qid];
 
     let mut heap: BinaryHeap<Neighbor> = BinaryHeap::with_capacity(k + 1);
 
+    // Pre-seed the heap with initial neighbors if provided (extend mode)
+    if let Some(neighbors) = initial_neighbors {
+        for n in neighbors {
+            heap.push(n.clone());
+        }
+    }
+
     for (idx, b_vec) in base.iter().enumerate() {
         let b_norm = base_norms[idx];
         let dist2 = squared_l2_distance(q_vec, q_norm, b_vec, b_norm);
 
+        // Apply index_offset to get global index
+        let global_idx = (index_offset + idx) as u32;
+
         if heap.len() < k {
             heap.push(Neighbor {
                 dist2,
-                index: idx as u32,
+                index: global_idx,
             });
         } else if let Some(worst) = heap.peek() {
             if dist2 < worst.dist2 {
                 heap.pop();
                 heap.push(Neighbor {
                     dist2,
-                    index: idx as u32,
+                    index: global_idx,
                 });
             }
         }
@@ -833,6 +1323,20 @@ fn write_query_result(results_dir: &Path, qid: usize, neighbors: &[i32]) -> Resu
     Ok(())
 }
 
+/// Rename an existing file to have a `.old` suffix.
+/// If the `.old` file already exists, it will be overwritten.
+fn rename_to_old(path: &Path) -> Result<()> {
+    if path.exists() {
+        let old_path = path.with_extension(
+            path.extension()
+                .map(|ext| format!("{}.old", ext.to_string_lossy()))
+                .unwrap_or_else(|| "old".to_string()),
+        );
+        fs::rename(path, &old_path)?;
+    }
+    Ok(())
+}
+
 /// Merge per-query result files from `results_dir` into a single groundtruth
 /// .ibin file at `merge_path` with shape (n_queries, k).
 fn merge_results(
@@ -841,6 +1345,9 @@ fn merge_results(
     num_queries: usize,
     k: usize,
 ) -> Result<()> {
+    // Rename existing output file to .old if it exists
+    rename_to_old(merge_path)?;
+
     // Prepare output file.
     let mut out = File::create(merge_path)?;
 
@@ -887,7 +1394,7 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
     use std::fs;
-    use std::io::Write as _;
+
     use tempfile::tempdir;
 
     #[test]
@@ -975,6 +1482,163 @@ mod tests {
     }
 
     #[test]
+    fn load_vectors_by_indices_seeks_correctly() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("test.fbin");
+
+        // Create an fbin file with 10 vectors
+        let mut file = File::create(&path).unwrap();
+        let nvecs: i32 = 10;
+        let dim: i32 = DIM as i32;
+        file.write_all(&nvecs.to_le_bytes()).unwrap();
+        file.write_all(&dim.to_le_bytes()).unwrap();
+
+        // Each vector v[i] has value (i * 10) in dimension 0, zeros elsewhere
+        for i in 0..10 {
+            let mut v = [0.0f32; DIM];
+            v[0] = (i * 10) as f32;
+            for &x in &v {
+                file.write_all(&x.to_le_bytes()).unwrap();
+            }
+        }
+        drop(file);
+
+        // Load only indices {2, 5, 8}
+        let indices: HashSet<u32> = [2, 5, 8].iter().cloned().collect();
+        let loaded = load_vectors_by_indices(&path, &indices).unwrap();
+
+        assert_eq!(loaded.len(), 3);
+        assert!((loaded[&2][0] - 20.0).abs() < 1e-6);
+        assert!((loaded[&5][0] - 50.0).abs() < 1e-6);
+        assert!((loaded[&8][0] - 80.0).abs() < 1e-6);
+
+        // Verify other dimensions are zero
+        assert!((loaded[&2][1] - 0.0).abs() < 1e-6);
+        assert!((loaded[&5][1] - 0.0).abs() < 1e-6);
+        assert!((loaded[&8][1] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn load_groundtruth_with_distances_computes_correctly() {
+        use std::io::Write as _;
+
+        let tmp = tempdir().unwrap();
+        let gt_path = tmp.path().join("groundtruth.ibin");
+        let base_path = tmp.path().join("base.fbin");
+
+        // Create a small base file with 5 vectors
+        // v[i] has value (i+1) in dimension 0, zeros elsewhere
+        // So distances from origin are: 1, 4, 9, 16, 25
+        {
+            let mut file = File::create(&base_path).unwrap();
+            let nvecs: i32 = 5;
+            let dim: i32 = DIM as i32;
+            file.write_all(&nvecs.to_le_bytes()).unwrap();
+            file.write_all(&dim.to_le_bytes()).unwrap();
+
+            for i in 0..5 {
+                let mut v = [0.0f32; DIM];
+                v[0] = (i + 1) as f32;
+                for &x in &v {
+                    file.write_all(&x.to_le_bytes()).unwrap();
+                }
+            }
+        }
+
+        // Create a groundtruth file with 2 queries, k=3
+        // Query 0: neighbors [0, 1, 2] (distances 1, 4, 9)
+        // Query 1: neighbors [2, 3, 4] (distances 9, 16, 25)
+        {
+            let mut file = File::create(&gt_path).unwrap();
+            let num_queries: i32 = 2;
+            let k: i32 = 3;
+            file.write_all(&num_queries.to_le_bytes()).unwrap();
+            file.write_all(&k.to_le_bytes()).unwrap();
+
+            // Query 0 neighbors
+            for idx in [0i32, 1, 2] {
+                file.write_all(&idx.to_le_bytes()).unwrap();
+            }
+            // Query 1 neighbors
+            for idx in [2i32, 3, 4] {
+                file.write_all(&idx.to_le_bytes()).unwrap();
+            }
+        }
+
+        // Create query vectors (all zeros)
+        let queries = vec![[0.0f32; DIM], [0.0f32; DIM]];
+        let query_norms = compute_norms(&queries);
+
+        // Load groundtruth with distances
+        let result = load_groundtruth_with_distances(
+            &gt_path,
+            &base_path,
+            &queries,
+            &query_norms,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        // Query 0: neighbors [0, 1, 2] with distances [1, 4, 9]
+        assert_eq!(result[0].len(), 3);
+        assert_eq!(result[0][0].index, 0);
+        assert!((result[0][0].dist2 - 1.0).abs() < 1e-6);
+        assert_eq!(result[0][1].index, 1);
+        assert!((result[0][1].dist2 - 4.0).abs() < 1e-6);
+        assert_eq!(result[0][2].index, 2);
+        assert!((result[0][2].dist2 - 9.0).abs() < 1e-6);
+
+        // Query 1: neighbors [2, 3, 4] with distances [9, 16, 25]
+        assert_eq!(result[1].len(), 3);
+        assert_eq!(result[1][0].index, 2);
+        assert!((result[1][0].dist2 - 9.0).abs() < 1e-6);
+        assert_eq!(result[1][1].index, 3);
+        assert!((result[1][1].dist2 - 16.0).abs() < 1e-6);
+        assert_eq!(result[1][2].index, 4);
+        assert!((result[1][2].dist2 - 25.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn load_new_vectors_skips_original() {
+        use std::io::Write as _;
+
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("combined.fbin");
+
+        // Create an fbin file with 10 vectors
+        // v[i] has value (i * 10) in dimension 0, zeros elsewhere
+        {
+            let mut file = File::create(&path).unwrap();
+            let nvecs: i32 = 10;
+            let dim: i32 = DIM as i32;
+            file.write_all(&nvecs.to_le_bytes()).unwrap();
+            file.write_all(&dim.to_le_bytes()).unwrap();
+
+            for i in 0..10 {
+                let mut v = [0.0f32; DIM];
+                v[0] = (i * 10) as f32;
+                for &x in &v {
+                    file.write_all(&x.to_le_bytes()).unwrap();
+                }
+            }
+        }
+
+        // Load only vectors 6-9 (original_base_count=6)
+        let new_vectors = load_new_vectors(&path, 6).unwrap();
+
+        assert_eq!(new_vectors.len(), 4);
+        assert!((new_vectors[0][0] - 60.0).abs() < 1e-6); // index 6
+        assert!((new_vectors[1][0] - 70.0).abs() < 1e-6); // index 7
+        assert!((new_vectors[2][0] - 80.0).abs() < 1e-6); // index 8
+        assert!((new_vectors[3][0] - 90.0).abs() < 1e-6); // index 9
+
+        // Verify other dimensions are zero
+        assert!((new_vectors[0][1] - 0.0).abs() < 1e-6);
+        assert!((new_vectors[3][1] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
     fn write_query_result_and_detect_completed_queries() {
         let tmp = tempdir().unwrap();
         let results_dir = tmp.path();
@@ -991,6 +1655,190 @@ mod tests {
         assert!(completed.contains(&0));
         assert!(completed.contains(&5));
         assert_eq!(completed.len(), 2);
+    }
+
+    #[test]
+    fn process_query_returns_correct_topk() {
+        // Create 10 base vectors with known distances to a query vector.
+        // Query vector: all zeros
+        // Base vectors: v[i] has value (i+1) in dimension 0, zeros elsewhere
+        // So squared distances are: 1, 4, 9, 16, 25, 36, 49, 64, 81, 100
+        let tmp = tempdir().unwrap();
+        let results_dir = tmp.path();
+
+        let query = [0.0f32; DIM];
+        let queries = vec![query];
+        let query_norms = compute_norms(&queries);
+
+        let mut base_vectors: Vec<[f32; DIM]> = Vec::new();
+        for i in 0..10 {
+            let mut v = [0.0f32; DIM];
+            v[0] = (i + 1) as f32; // distances will be 1, 4, 9, 16, 25, 36, 49, 64, 81, 100
+            base_vectors.push(v);
+        }
+        let base_norms = compute_norms(&base_vectors);
+
+        // Process query with k=3 (should return indices 0, 1, 2 with distances 1, 4, 9)
+        process_query(
+            0,
+            &queries,
+            &query_norms,
+            &base_vectors,
+            &base_norms,
+            3,
+            results_dir,
+            None,  // normal mode: no initial neighbors
+            0,     // normal mode: no index offset
+        )
+        .unwrap();
+
+        // Read back the result file
+        let result_path = results_dir.join("query_00000.ibin");
+        assert!(result_path.exists(), "Result file should exist");
+
+        let mut file = File::open(&result_path).unwrap();
+        let mut header = [0u8; 8];
+        file.read_exact(&mut header).unwrap();
+
+        let nvecs = i32::from_le_bytes(header[0..4].try_into().unwrap());
+        let k = i32::from_le_bytes(header[4..8].try_into().unwrap());
+        assert_eq!(nvecs, 1);
+        assert_eq!(k, 3);
+
+        let mut buf = vec![0u8; 3 * 4];
+        file.read_exact(&mut buf).unwrap();
+        let indices: Vec<i32> = buf
+            .chunks_exact(4)
+            .map(|chunk| i32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+
+        // Should be sorted by distance (closest first): indices 0, 1, 2
+        assert_eq!(indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn process_query_with_initial_neighbors_merges_correctly() {
+        // Test that initial_neighbors are properly merged with new vectors.
+        // Scenario: 5 "old" vectors (indices 0-4) and 5 "new" vectors (indices 5-9)
+        // Query: all zeros
+        // Old vectors: distances 1, 4, 9, 16, 25 (indices 0-4)
+        // New vectors: distances 0.5, 2, 6, 12, 20 (indices 5-9)
+        // With k=3, final top-3 should be: index 5 (dist 0.5), index 0 (dist 1), index 6 (dist 2)
+        let tmp = tempdir().unwrap();
+        let results_dir = tmp.path();
+
+        let query = [0.0f32; DIM];
+        let queries = vec![query];
+        let query_norms = compute_norms(&queries);
+
+        // Create "old" base vectors (indices 0-4) with distances 1, 4, 9, 16, 25
+        let mut old_vectors: Vec<[f32; DIM]> = Vec::new();
+        for i in 0..5 {
+            let mut v = [0.0f32; DIM];
+            v[0] = (i + 1) as f32; // distances: 1, 4, 9, 16, 25
+            old_vectors.push(v);
+        }
+        let _old_norms = compute_norms(&old_vectors);
+
+        // Compute initial_neighbors for old vectors (simulating existing groundtruth)
+        // Top-3 from old vectors: indices 0, 1, 2 with distances 1, 4, 9
+        let initial_neighbors: Vec<Neighbor> = vec![
+            Neighbor { dist2: 1.0, index: 0 },
+            Neighbor { dist2: 4.0, index: 1 },
+            Neighbor { dist2: 9.0, index: 2 },
+        ];
+
+        // Create "new" base vectors (will be indices 5-9 after offset)
+        // Distances: 0.5, 2, 6, 12, 20
+        let mut new_vectors: Vec<[f32; DIM]> = Vec::new();
+        let new_distances = [0.5f32, 2.0, 6.0, 12.0, 20.0];
+        for &d in &new_distances {
+            let mut v = [0.0f32; DIM];
+            v[0] = d.sqrt(); // squared distance = d
+            new_vectors.push(v);
+        }
+        let new_norms = compute_norms(&new_vectors);
+
+        // Process query with initial_neighbors and index_offset=5
+        process_query(
+            0,
+            &queries,
+            &query_norms,
+            &new_vectors,
+            &new_norms,
+            3,
+            results_dir,
+            Some(&initial_neighbors),
+            5, // index_offset: new vectors start at index 5
+        )
+        .unwrap();
+
+        // Read back the result file
+        let result_path = results_dir.join("query_00000.ibin");
+        let mut file = File::open(&result_path).unwrap();
+        let mut header = [0u8; 8];
+        file.read_exact(&mut header).unwrap();
+
+        let mut buf = vec![0u8; 3 * 4];
+        file.read_exact(&mut buf).unwrap();
+        let indices: Vec<i32> = buf
+            .chunks_exact(4)
+            .map(|chunk| i32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+
+        // Expected top-3 sorted by distance:
+        // index 5 (dist 0.5), index 0 (dist 1), index 6 (dist 2)
+        assert_eq!(indices, vec![5, 0, 6]);
+    }
+
+    #[test]
+    fn process_query_with_index_offset_produces_correct_indices() {
+        // Test that index_offset is correctly applied to all indices.
+        let tmp = tempdir().unwrap();
+        let results_dir = tmp.path();
+
+        let query = [0.0f32; DIM];
+        let queries = vec![query];
+        let query_norms = compute_norms(&queries);
+
+        // Create 5 base vectors with distances 1, 4, 9, 16, 25
+        let mut base_vectors: Vec<[f32; DIM]> = Vec::new();
+        for i in 0..5 {
+            let mut v = [0.0f32; DIM];
+            v[0] = (i + 1) as f32;
+            base_vectors.push(v);
+        }
+        let base_norms = compute_norms(&base_vectors);
+
+        // Process with index_offset=1000
+        process_query(
+            0,
+            &queries,
+            &query_norms,
+            &base_vectors,
+            &base_norms,
+            3,
+            results_dir,
+            None,
+            1000, // index_offset
+        )
+        .unwrap();
+
+        // Read back the result file
+        let result_path = results_dir.join("query_00000.ibin");
+        let mut file = File::open(&result_path).unwrap();
+        let mut header = [0u8; 8];
+        file.read_exact(&mut header).unwrap();
+
+        let mut buf = vec![0u8; 3 * 4];
+        file.read_exact(&mut buf).unwrap();
+        let indices: Vec<i32> = buf
+            .chunks_exact(4)
+            .map(|chunk| i32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+
+        // Indices should be offset by 1000: 1000, 1001, 1002
+        assert_eq!(indices, vec![1000, 1001, 1002]);
     }
 
     #[test]
