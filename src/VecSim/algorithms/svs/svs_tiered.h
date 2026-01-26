@@ -459,6 +459,12 @@ public:
     backend_index_t *GetBackendIndex() { return this->backendIndex; }
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
+    size_t indexMetaDataCapacity() const override {
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+        return this->frontendIndex->indexMetaDataCapacity() +
+               this->backendIndex->indexMetaDataCapacity();
+    }
 #endif
 
 private:
