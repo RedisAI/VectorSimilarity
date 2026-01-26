@@ -316,6 +316,15 @@ pub unsafe extern "C" fn VecSimIndex_ResolveParams(
     VecSimParamResolver_OK
 }
 
+/// Check if the index type supports HNSW parameters.
+/// This includes both pure HNSW indices and Tiered indices (which use HNSW as backend).
+fn supports_hnsw_params(index_type: VecSimAlgo) -> bool {
+    matches!(
+        index_type,
+        VecSimAlgo::VecSimAlgo_HNSWLIB | VecSimAlgo::VecSimAlgo_TIERED
+    )
+}
+
 fn resolve_ef_runtime(
     index_type: VecSimAlgo,
     value: &str,
@@ -324,8 +333,8 @@ fn resolve_ef_runtime(
 ) -> VecSimParamResolveCode {
     use VecSimParamResolveCode::*;
 
-    // EF_RUNTIME is valid only for HNSW
-    if index_type != VecSimAlgo::VecSimAlgo_HNSWLIB {
+    // EF_RUNTIME is valid only for HNSW and Tiered (which uses HNSW backend)
+    if !supports_hnsw_params(index_type) {
         return VecSimParamResolverErr_UnknownParam;
     }
     // EF_RUNTIME is invalid for range query
@@ -354,8 +363,8 @@ fn resolve_epsilon(
 ) -> VecSimParamResolveCode {
     use VecSimParamResolveCode::*;
 
-    // EPSILON is valid only for HNSW or SVS
-    if index_type != VecSimAlgo::VecSimAlgo_HNSWLIB && index_type != VecSimAlgo::VecSimAlgo_SVS {
+    // EPSILON is valid only for HNSW, Tiered (HNSW backend), or SVS
+    if !supports_hnsw_params(index_type) && index_type != VecSimAlgo::VecSimAlgo_SVS {
         return VecSimParamResolverErr_UnknownParam;
     }
     // EPSILON is valid only for range queries
@@ -363,7 +372,8 @@ fn resolve_epsilon(
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
     // Check if already set (based on index type)
-    let current_epsilon = if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
+    // For HNSW and Tiered (HNSW backend), use HNSW params; for SVS, use SVS params
+    let current_epsilon = if supports_hnsw_params(index_type) {
         qparams.hnsw_params().epsilon
     } else {
         qparams.svs_params().epsilon
@@ -374,7 +384,7 @@ fn resolve_epsilon(
     // Parse value
     match parse_positive_double(value) {
         Some(v) => {
-            if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
+            if supports_hnsw_params(index_type) {
                 qparams.hnsw_params_mut().epsilon = v;
             } else {
                 qparams.svs_params_mut().epsilon = v;
@@ -4150,4 +4160,3 @@ mod tests {
 }
 
 // ============================================================================
-

@@ -245,6 +245,10 @@ macro_rules! impl_index_wrapper {
         impl IndexWrapper for $wrapper {
             fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
                 let dim = self.index.dimension();
+                // Safety check: dimension must be > 0 and vector must be non-null
+                if dim == 0 || vector.is_null() {
+                    return -1;
+                }
                 let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
                 match self.index.add_vector(slice, label) {
                     Ok(count) => count as i32,
@@ -383,6 +387,10 @@ macro_rules! impl_index_wrapper_with_serialization {
         impl IndexWrapper for $wrapper {
             fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
                 let dim = self.index.dimension();
+                // Safety check: dimension must be > 0 and vector must be non-null
+                if dim == 0 || vector.is_null() {
+                    return -1;
+                }
                 let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
                 match self.index.add_vector(slice, label) {
                     Ok(count) => count as i32,
@@ -605,6 +613,10 @@ macro_rules! impl_hnsw_single_wrapper {
         impl IndexWrapper for $wrapper {
             fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
                 let dim = self.index.dimension();
+                // Safety check: dimension must be > 0 and vector must be non-null
+                if dim == 0 || vector.is_null() {
+                    return -1;
+                }
                 let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
                 match self.index.add_vector(slice, label) {
                     Ok(count) => count as i32,
@@ -798,6 +810,10 @@ macro_rules! impl_svs_wrapper {
         impl IndexWrapper for $wrapper {
             fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
                 let dim = self.index.dimension();
+                // Safety check: dimension must be > 0 and vector must be non-null
+                if dim == 0 || vector.is_null() {
+                    return -1;
+                }
                 let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
                 match self.index.add_vector(slice, label) {
                     Ok(count) => count as i32,
@@ -956,6 +972,10 @@ macro_rules! impl_tiered_wrapper {
         impl IndexWrapper for $wrapper {
             fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
                 let dim = self.index.dimension();
+                // Safety check: dimension must be > 0 and vector must be non-null
+                if dim == 0 || vector.is_null() {
+                    return -1;
+                }
                 let slice = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
                 match self.index.add_vector(slice, label) {
                     Ok(count) => count as i32,
@@ -1133,6 +1153,10 @@ macro_rules! impl_disk_wrapper {
         impl IndexWrapper for $wrapper {
             fn add_vector(&mut self, vector: *const c_void, label: labelType) -> i32 {
                 let dim = self.index.dimension();
+                // Safety check: dimension must be > 0 and vector must be non-null
+                if dim == 0 || vector.is_null() {
+                    return -1;
+                }
                 let data = unsafe { slice::from_raw_parts(vector as *const $data, dim) };
                 match self.index.add_vector(data, label) {
                     Ok(count) => count as i32,

@@ -57,14 +57,19 @@ pub use disk::{
 /// Estimate the initial memory size for a BruteForce index.
 ///
 /// This estimates the memory needed before any vectors are added.
+/// Uses saturating arithmetic to avoid overflow when initial_capacity is SIZE_MAX.
 pub fn estimate_brute_force_initial_size(dim: usize, initial_capacity: usize) -> usize {
     // Base struct overhead
     let base = std::mem::size_of::<BruteForceSingle<f32>>();
-    // Data storage
-    let data = dim * std::mem::size_of::<f32>() * initial_capacity;
+    // Data storage (use saturating arithmetic to avoid overflow)
+    let data = dim
+        .saturating_mul(std::mem::size_of::<f32>())
+        .saturating_mul(initial_capacity);
     // Label maps
-    let maps = initial_capacity * std::mem::size_of::<(u64, u32)>() * 2;
-    base + data + maps
+    let maps = initial_capacity
+        .saturating_mul(std::mem::size_of::<(u64, u32)>())
+        .saturating_mul(2);
+    base.saturating_add(data).saturating_add(maps)
 }
 
 /// Estimate the memory size per element for a BruteForce index.
@@ -79,18 +84,28 @@ pub fn estimate_brute_force_element_size(dim: usize) -> usize {
 /// Estimate the initial memory size for an HNSW index.
 ///
 /// This estimates the memory needed before any vectors are added.
+/// Uses saturating arithmetic to avoid overflow when initial_capacity is SIZE_MAX.
 pub fn estimate_hnsw_initial_size(dim: usize, initial_capacity: usize, m: usize) -> usize {
     // Base struct overhead
     let base = std::mem::size_of::<HnswSingle<f32>>();
-    // Data storage
-    let data = dim * std::mem::size_of::<f32>() * initial_capacity;
+    // Data storage (use saturating arithmetic to avoid overflow)
+    let data = dim
+        .saturating_mul(std::mem::size_of::<f32>())
+        .saturating_mul(initial_capacity);
     // Graph overhead per node (rough estimate: neighbors at level 0 + higher levels)
-    let graph = initial_capacity * (m * 2 + m) * std::mem::size_of::<u32>();
+    let graph = initial_capacity
+        .saturating_mul(m.saturating_mul(2).saturating_add(m))
+        .saturating_mul(std::mem::size_of::<u32>());
     // Label maps
-    let maps = initial_capacity * std::mem::size_of::<(u64, u32)>() * 2;
+    let maps = initial_capacity
+        .saturating_mul(std::mem::size_of::<(u64, u32)>())
+        .saturating_mul(2);
     // Visited pool
-    let visited = initial_capacity * std::mem::size_of::<u32>();
-    base + data + graph + maps + visited
+    let visited = initial_capacity.saturating_mul(std::mem::size_of::<u32>());
+    base.saturating_add(data)
+        .saturating_add(graph)
+        .saturating_add(maps)
+        .saturating_add(visited)
 }
 
 /// Estimate the memory size per element for an HNSW index.
