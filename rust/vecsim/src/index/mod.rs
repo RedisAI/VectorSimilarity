@@ -1,0 +1,123 @@
+//! Vector similarity index implementations.
+//!
+//! This module provides different index types for vector similarity search:
+//! - `brute_force`: Linear scan over all vectors (exact results)
+//! - `hnsw`: Hierarchical Navigable Small World graphs (approximate, fast)
+//! - `tiered`: Two-tier index combining BruteForce frontend with HNSW backend
+//! - `svs`: Single-layer Vamana graph (alternative to HNSW)
+//! - `tiered_svs`: Two-tier index combining BruteForce frontend with SVS backend
+//! - `disk`: Disk-based index with memory-mapped storage
+//! - `debug`: Debug and introspection API
+
+pub mod brute_force;
+pub mod debug;
+pub mod disk;
+pub mod hnsw;
+pub mod svs;
+pub mod tiered;
+pub mod tiered_svs;
+pub mod traits;
+
+// Re-export traits
+pub use traits::{
+    AsyncIndex, BatchIterator, BlockSizeConfigurable, GarbageCollectable, IndexError, IndexInfo,
+    IndexType, MemoryFittable, MultiValue, QueryError, VecSimIndex, DEFAULT_BLOCK_SIZE,
+};
+
+// Re-export BruteForce types
+pub use brute_force::{
+    BruteForceParams, BruteForceSingle, BruteForceMulti, BruteForceBatchIterator, BruteForceStats,
+};
+
+// Re-export HNSW types
+pub use hnsw::{
+    HnswParams, HnswSingle, HnswMulti, HnswBatchIterator, HnswStats,
+};
+
+// Re-export Tiered types
+pub use tiered::{
+    TieredParams, TieredSingle, TieredMulti, TieredBatchIterator, WriteMode,
+};
+
+// Re-export SVS types
+pub use svs::{
+    SvsParams, SvsSingle, SvsMulti, SvsStats,
+};
+
+// Re-export Tiered SVS types
+pub use tiered_svs::{
+    TieredSvsParams, TieredSvsSingle, TieredSvsMulti, TieredSvsBatchIterator, SvsWriteMode,
+};
+
+// Re-export Disk index types
+pub use disk::{
+    DiskIndexParams, DiskIndexSingle, DiskBackend,
+};
+
+/// Estimate the initial memory size for a BruteForce index.
+///
+/// This estimates the memory needed before any vectors are added.
+/// Uses saturating arithmetic to avoid overflow when initial_capacity is SIZE_MAX.
+pub fn estimate_brute_force_initial_size(dim: usize, initial_capacity: usize) -> usize {
+    // Base struct overhead
+    let base = std::mem::size_of::<BruteForceSingle<f32>>();
+    // Data storage (use saturating arithmetic to avoid overflow)
+    let data = dim
+        .saturating_mul(std::mem::size_of::<f32>())
+        .saturating_mul(initial_capacity);
+    // Label maps
+    let maps = initial_capacity
+        .saturating_mul(std::mem::size_of::<(u64, u32)>())
+        .saturating_mul(2);
+    base.saturating_add(data).saturating_add(maps)
+}
+
+/// Estimate the memory size per element for a BruteForce index.
+pub fn estimate_brute_force_element_size(dim: usize) -> usize {
+    // Vector data
+    let vector = dim * std::mem::size_of::<f32>();
+    // Label entry overhead
+    let label_overhead = std::mem::size_of::<(u64, u32)>() + std::mem::size_of::<(u64, bool)>();
+    vector + label_overhead
+}
+
+/// Estimate the initial memory size for an HNSW index.
+///
+/// This estimates the memory needed before any vectors are added.
+/// Uses saturating arithmetic to avoid overflow when initial_capacity is SIZE_MAX.
+pub fn estimate_hnsw_initial_size(dim: usize, initial_capacity: usize, m: usize) -> usize {
+    // Base struct overhead
+    let base = std::mem::size_of::<HnswSingle<f32>>();
+    // Data storage (use saturating arithmetic to avoid overflow)
+    let data = dim
+        .saturating_mul(std::mem::size_of::<f32>())
+        .saturating_mul(initial_capacity);
+    // Graph overhead per node (rough estimate: neighbors at level 0 + higher levels)
+    let graph = initial_capacity
+        .saturating_mul(m.saturating_mul(2).saturating_add(m))
+        .saturating_mul(std::mem::size_of::<u32>());
+    // Label maps
+    let maps = initial_capacity
+        .saturating_mul(std::mem::size_of::<(u64, u32)>())
+        .saturating_mul(2);
+    // Visited pool
+    let visited = initial_capacity.saturating_mul(std::mem::size_of::<u32>());
+    base.saturating_add(data)
+        .saturating_add(graph)
+        .saturating_add(maps)
+        .saturating_add(visited)
+}
+
+/// Estimate the memory size per element for an HNSW index.
+pub fn estimate_hnsw_element_size(dim: usize, m: usize) -> usize {
+    // Vector data
+    let vector = dim * std::mem::size_of::<f32>();
+    // Graph connections (average across levels)
+    // Level 0 has 2*M neighbors, higher levels have M each
+    // Average number of levels is ~1.3 for typical M values
+    let avg_levels = 1.3f64;
+    let graph = ((m * 2) as f64 + (avg_levels * m as f64)) as usize * std::mem::size_of::<u32>();
+    // Label entry overhead
+    let label_overhead = std::mem::size_of::<(u64, u32)>() * 2;
+    vector + graph + label_overhead
+}

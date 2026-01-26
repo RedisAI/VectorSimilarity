@@ -1,0 +1,54 @@
+[package]
+name = "vecsim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "High-performance vector similarity search library with BruteForce and HNSW indices"
+
+[dependencies]
+rayon = { workspace = true }
+parking_lot = { workspace = true }
+half = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+memmap2 = { workspace = true }
+dashmap = "5.5"
+
+[features]
+default = []
+nightly = []  # Enable nightly-only SIMD intrinsics
+profile = []  # Enable profiling instrumentation
+
+[dev-dependencies]
+criterion = "0.5"
+rand = { workspace = true }
+
+[[bench]]
+name = "brute_force_bench"
+harness = false
+
+[[bench]]
+name = "hnsw_bench"
+harness = false
+
+[[bench]]
+name = "tiered_bench"
+harness = false
+
+[[bench]]
+name = "comparison_bench"
+harness = false
+
+[[bench]]
+name = "svs_bench"
+harness = false
+
+[[bench]]
+name = "dbpedia_bench"
+harness = false
+
+[[bench]]
+name = "hnsw_bottleneck_bench"
+harness = false

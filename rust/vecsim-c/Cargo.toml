@@ -1,0 +1,23 @@
+[package]
+name = "vecsim-c"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C-compatible FFI bindings for the VecSim vector similarity search library"
+
+[lib]
+name = "vecsim_c"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+vecsim = { path = "../vecsim" }
+half = { workspace = true }
+parking_lot = { workspace = true }
+libc = "0.2.180"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []

@@ -3,6 +3,7 @@
 /.tox/
 /bin/
 /build/
+/build_python/
 /dist/
 /venv/
 /1/

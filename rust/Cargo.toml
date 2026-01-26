@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["vecsim", "vecsim-python", "vecsim-c"]
+default-members = ["vecsim", "vecsim-c"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause"
+repository = "https://github.com/RedisAI/VectorSimilarity"
+
+[workspace.dependencies]
+rayon = "1.10"
+parking_lot = "0.12"
+half = { version = "2.4", features = ["num-traits"] }
+num-traits = "0.2"
+thiserror = "1.0"
+rand = "0.8"
+memmap2 = "0.9"

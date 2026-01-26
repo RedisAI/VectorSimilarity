@@ -39,6 +39,10 @@ endif()
 # Spaces benchmarks								                                          #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+# Simple HNSW benchmark (self-contained, no external data needed)
+add_executable(simple_hnsw_bench simple_hnsw_bench.cpp)
+target_link_libraries(simple_hnsw_bench VectorSimilarity)
+
 set(DATA_TYPE fp32 fp64 bf16 fp16 int8 uint8 sq8_fp32 sq8_sq8)
 foreach(data_type IN LISTS DATA_TYPE)
 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)

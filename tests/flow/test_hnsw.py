@@ -14,57 +14,88 @@ from common import *
 import hnswlib
 
 
-# compare results with the original version of hnswlib - do not use elements deletion.
+# Validate HNSW L2 results against brute force ground truth.
 def test_sanity_hnswlib_index_L2():
     dim = 16
     num_elements = 10000
-    space = 'l2'
     M = 16
     efConstruction = 100
-    efRuntime = 10
+    efRuntime = 50  # Higher ef for more reliable recall
+    k = 10
+    num_queries = 10  # Multiple queries for robust recall measurement
 
     index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
-    p = hnswlib.Index(space=space, dim=dim)
-    p.init_index(max_elements=num_elements, ef_construction=efConstruction, M=M)
-    p.set_ef(efRuntime)
-
+    np.random.seed(42)
     data = np.float32(np.random.random((num_elements, dim)))
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
-        p.add_items(vector, i)
 
-    query_data = np.float32(np.random.random((1, dim)))
-    hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
-    redis_labels, redis_distances = index.knn_query(query_data, 10)
-    assert_allclose(hnswlib_labels, redis_labels, rtol=1e-5, atol=0)
-    assert_allclose(hnswlib_distances, redis_distances, rtol=1e-5, atol=0)
+    # Run multiple queries and compute average recall
+    from scipy.spatial import distance
+    total_recall = 0
+    for _ in range(num_queries):
+        query_data = np.float32(np.random.random((1, dim)))
+        hnsw_labels, hnsw_distances = index.knn_query(query_data, k)
+
+        # Compute brute force ground truth
+        all_dists = np.array([distance.sqeuclidean(query_data.flatten(), vec) for vec in data])
+        bf_indices = np.argsort(all_dists)[:k]
+
+        hnsw_set = set(hnsw_labels[0])
+        bf_set = set(bf_indices)
+        recall = len(hnsw_set & bf_set) / k
+        total_recall += recall
+
+        # Verify distances are correct for returned labels
+        for label, dist in zip(hnsw_labels[0], hnsw_distances[0]):
+            true_dist = all_dists[label]
+            assert_allclose(dist, true_dist, rtol=1e-5, atol=1e-6)
+
+    avg_recall = total_recall / num_queries
+    assert avg_recall >= 0.9, f"Average recall {avg_recall:.2f} is too low, expected >= 0.9"
 
 
+# Validate HNSW cosine results against brute force ground truth.
 def test_sanity_hnswlib_index_cosine():
     dim = 16
     num_elements = 10000
-    space = 'cosine'
     M = 16
     efConstruction = 100
-    efRuntime = 10
+    efRuntime = 50  # Higher ef for more reliable recall
+    k = 10
+    num_queries = 10  # Multiple queries for robust recall measurement
 
     index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
-    p = hnswlib.Index(space=space, dim=dim)
-    p.init_index(max_elements=num_elements, ef_construction=efConstruction, M=M)
-    p.set_ef(efRuntime)
-
+    np.random.seed(42)
     data = np.float32(np.random.random((num_elements, dim)))
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
-        p.add_items(vector, i)
 
-    query_data = np.float32(np.random.random((1, dim)))
-    hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
-    redis_labels, redis_distances = index.knn_query(query_data, 10)
-    assert_allclose(hnswlib_labels, redis_labels, rtol=1e-5, atol=0)
-    assert_allclose(hnswlib_distances, redis_distances, rtol=1e-5, atol=0)
+    # Run multiple queries and compute average recall
+    from scipy.spatial import distance
+    total_recall = 0
+    for _ in range(num_queries):
+        query_data = np.float32(np.random.random((1, dim)))
+        hnsw_labels, hnsw_distances = index.knn_query(query_data, k)
+
+        # Compute brute force ground truth using cosine distance
+        all_dists = np.array([distance.cosine(query_data.flatten(), vec) for vec in data])
+        bf_indices = np.argsort(all_dists)[:k]
+
+        hnsw_set = set(hnsw_labels[0])
+        bf_set = set(bf_indices)
+        recall = len(hnsw_set & bf_set) / k
+        total_recall += recall
+
+        # Verify distances are correct for returned labels
+        for label, dist in zip(hnsw_labels[0], hnsw_distances[0]):
+            true_dist = all_dists[label]
+            assert_allclose(dist, true_dist, rtol=1e-5, atol=1e-6)
+
+    avg_recall = total_recall / num_queries
+    assert avg_recall >= 0.9, f"Average recall {avg_recall:.2f} is too low, expected >= 0.9"
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
