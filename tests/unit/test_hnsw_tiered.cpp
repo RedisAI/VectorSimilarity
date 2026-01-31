@@ -2761,6 +2761,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
     EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
+    // Verify new tiered-specific stats
+    EXPECT_EQ(stats.flatBufferSize, 0);
+    EXPECT_EQ(stats.directHNSWInsertions, 0);
 
     // Validate that Static info returns the right restricted info as well.
     VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
@@ -2787,6 +2790,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    // Vector is in flat buffer, no direct insertions yet
+    EXPECT_EQ(stats.flatBufferSize, 1);
+    EXPECT_EQ(stats.directHNSWInsertions, 0);
 
     mock_thread_pool.thread_iteration();
     info = tiered_index->debugInfo();
@@ -2803,6 +2809,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    // Vector moved from flat buffer to HNSW by background thread
+    EXPECT_EQ(stats.flatBufferSize, 0);
+    EXPECT_EQ(stats.directHNSWInsertions, 0);
 
     if (TypeParam::isMulti()) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
@@ -2837,6 +2846,50 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+}
+
+TYPED_TEST(HNSWTieredIndexTest, testDirectHNSWInsertionsStats) {
+    // Test that directHNSWInsertions counter is incremented when flat buffer is full.
+    size_t dim = 4;
+    size_t buffer_limit = 5;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Create index with small buffer limit
+    auto *tiered_index =
+        this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1, buffer_limit);
+
+    // Fill the flat buffer
+    for (size_t i = 0; i < buffer_limit; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    VecSimIndexStatsInfo stats = tiered_index->statisticInfo();
+    EXPECT_EQ(stats.flatBufferSize, buffer_limit);
+    EXPECT_EQ(stats.directHNSWInsertions, 0);
+
+    // Add more vectors - these should go directly to HNSW
+    size_t extra_vectors = 3;
+    for (size_t i = buffer_limit; i < buffer_limit + extra_vectors; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    stats = tiered_index->statisticInfo();
+    EXPECT_EQ(stats.flatBufferSize, buffer_limit);
+    EXPECT_EQ(stats.directHNSWInsertions, extra_vectors);
+
+    // Drain the flat buffer by starting threads and waiting for them to finish
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    stats = tiered_index->statisticInfo();
+    EXPECT_EQ(stats.flatBufferSize, 0);
+    // Direct insertions counter should be preserved
+    EXPECT_EQ(stats.directHNSWInsertions, extra_vectors);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {

@@ -198,6 +198,8 @@ public:
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
             .numberOfMarkedDeleted = 0,
+            .directHNSWInsertions = 0,
+            .flatBufferSize = 0,
         };
     }
 
