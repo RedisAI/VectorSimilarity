@@ -320,6 +320,8 @@ VecSimIndexStatsInfo VecSimTieredIndex<DataType, DistType>::statisticInfo() cons
     auto stats = VecSimIndexStatsInfo{
         .memory = this->getAllocationSize(),
         .numberOfMarkedDeleted = this->getNumMarkedDeleted(),
+        .directHNSWInsertions = 0, // Base tiered index returns 0; TieredHNSWIndex overrides
+        .flatBufferSize = this->frontendIndex->indexSize(),
     };
 
     return stats;

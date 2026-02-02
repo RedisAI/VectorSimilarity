@@ -343,6 +343,9 @@ typedef struct {
     size_t memory;
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
+    size_t directHNSWInsertions;  // Count of vectors inserted directly into HNSW by main thread
+                                  // (bypassing flat buffer). Tiered HNSW only.
+    size_t flatBufferSize;        // Current flat buffer size. Tiered indexes only.
 } VecSimIndexStatsInfo;
 
 typedef struct {
