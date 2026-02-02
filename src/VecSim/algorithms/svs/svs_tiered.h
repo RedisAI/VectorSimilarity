@@ -672,12 +672,28 @@ private:
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
         { // lock backend index for writing and add vectors there
-            std::lock_guard lock(this->mainIndexGuard);
+            std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
-            svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
-            svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
-                                  labels_to_move.size());
+            if (this->backendIndex->indexSize() == 0) {
+                // If backend index is empty, we need to initialize it first.
+                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
+                                                  labels_to_move.size());
+
+                // Upgrade to unique lock to set the new impl
+                main_shared_lock.unlock();
+                std::lock_guard lock(this->mainIndexGuard);
+                svs_index->setImpl(std::move(impl));
+            } else {
+                // Backend index is initialized - just add the vectors.
+                main_shared_lock.unlock();
+                std::lock_guard lock(this->mainIndexGuard);
+                // Upgrade to unique lock to add vectors
+                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
+                                      labels_to_move.size());
+            }
         }
         executeTracingCallback("UpdateJob::after_add_to_svs");
         // clean-up frontend index
