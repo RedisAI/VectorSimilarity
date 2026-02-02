@@ -2890,6 +2890,30 @@ TYPED_TEST(HNSWTieredIndexTest, testDirectHNSWInsertionsStats) {
     EXPECT_EQ(stats.flatBufferSize, 0);
     // Direct insertions counter should be preserved
     EXPECT_EQ(stats.directHNSWInsertions, extra_vectors);
+
+    // Test write-in-place mode: vectors should go directly to HNSW even when buffer is not full
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    size_t write_in_place_vectors = 4;
+    size_t label_offset = buffer_limit + extra_vectors;
+    for (size_t i = 0; i < write_in_place_vectors; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label_offset + i, label_offset + i);
+    }
+
+    stats = tiered_index->statisticInfo();
+    // Flat buffer should still be empty (vectors went directly to HNSW)
+    EXPECT_EQ(stats.flatBufferSize, 0);
+    // Direct insertions counter should include the write-in-place vectors
+    EXPECT_EQ(stats.directHNSWInsertions, extra_vectors + write_in_place_vectors);
+
+    // Verify all vectors are in the backend index
+    VecSimIndexDebugInfo info = tiered_index->debugInfo();
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize,
+              buffer_limit + extra_vectors + write_in_place_vectors);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+
+    // Reset to async mode
+    VecSim_SetWriteMode(VecSim_WriteAsync);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
