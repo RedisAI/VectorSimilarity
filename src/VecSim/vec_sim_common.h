@@ -250,6 +250,7 @@ typedef struct {
     void *storage; // Opaque pointer to disk storage
     const char *indexName;
     size_t indexNameLen;
+    bool rerank; // Whether to enable reranking for disk-based HNSW
 } VecSimDiskContext;
 
 typedef struct {
@@ -342,6 +343,9 @@ typedef struct {
     size_t memory;
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
+    size_t directHNSWInsertions;  // Count of vectors inserted directly into HNSW by main thread
+                                  // (bypassing flat buffer). Tiered HNSW only.
+    size_t flatBufferSize;        // Current flat buffer size. Tiered indexes only.
 } VecSimIndexStatsInfo;
 
 typedef struct {

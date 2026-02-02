@@ -94,6 +94,11 @@ private:
     // associated swap jobs.
     std::mutex idToRepairJobsGuard;
 
+    // Counter for vectors inserted directly into HNSW by the main thread (bypassing flat buffer).
+    // This happens in WriteInPlace mode or when the flat buffer is full.
+    // Not atomic since it's only accessed from the main thread.
+    size_t directHNSWInsertions{0};
+
     void executeInsertJob(HNSWInsertJob *job);
     void executeRepairJob(HNSWRepairJob *job);
 
@@ -211,6 +216,7 @@ public:
     // needed.
     VecSimIndexDebugInfo debugInfo() const override;
     VecSimIndexBasicInfo basicInfo() const override;
+    VecSimIndexStatsInfo statisticInfo() const override;
     VecSimDebugInfoIterator *debugInfoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
@@ -729,6 +735,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         this->lockMainIndexGuard();
         hnsw_index->addVector(storage_blob.get(), label);
         this->unlockMainIndexGuard();
+        // Track direct insertion to HNSW (bypassing flat buffer)
+        ++this->directHNSWInsertions;
         return ret;
     }
     if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
@@ -746,6 +754,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // index.
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
             this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
+            // Track direct insertion to HNSW (flat buffer was full)
+            ++this->directHNSWInsertions;
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer
@@ -1149,6 +1159,13 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrel
     }
     // Update number of results (pop the tail)
     results.resize(cur_end - results.begin());
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexStatsInfo TieredHNSWIndex<DataType, DistType>::statisticInfo() const {
+    auto stats = VecSimTieredIndex<DataType, DistType>::statisticInfo();
+    stats.directHNSWInsertions = this->directHNSWInsertions;
+    return stats;
 }
 
 template <typename DataType, typename DistType>

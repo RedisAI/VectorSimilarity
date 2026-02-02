@@ -111,6 +111,8 @@ protected:
         return info;
     }
 
+    IndexCalculatorInterface<DistType> *getIndexCalculator() const { return indexCalculator; }
+
 public:
     /**
      * @brief Construct a new Vec Sim Index object
@@ -196,6 +198,8 @@ public:
         return VecSimIndexStatsInfo{
             .memory = this->getAllocationSize(),
             .numberOfMarkedDeleted = 0,
+            .directHNSWInsertions = 0,
+            .flatBufferSize = 0,
         };
     }
 
