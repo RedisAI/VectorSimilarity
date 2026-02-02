@@ -439,6 +439,7 @@ typedef struct {
     void *storage;
     const char *indexName;
     size_t indexNameLen;
+    bool rerank; // Whether to enable reranking for disk-based HNSW
 } VecSimDiskContext_C;
 
 /**
