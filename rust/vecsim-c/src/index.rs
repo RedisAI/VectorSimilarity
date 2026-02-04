@@ -431,9 +431,13 @@ macro_rules! impl_index_wrapper_with_serialization {
                 }
             }
 
-            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
-                // SVS indices don't support compute_distance
-                f64::NAN
+            fn get_distance_from(&self, label: labelType, query: *const c_void) -> f64 {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                match self.index.compute_distance(label, slice) {
+                    Some(dist) => dist.to_f64(),
+                    None => f64::NAN, // Label not found
+                }
             }
 
             fn index_size(&self) -> usize {
@@ -1004,9 +1008,13 @@ macro_rules! impl_tiered_wrapper {
                 }
             }
 
-            fn get_distance_from(&self, _label: labelType, _query: *const c_void) -> f64 {
-                // Tiered indices don't support compute_distance directly
-                f64::NAN
+            fn get_distance_from(&self, label: labelType, query: *const c_void) -> f64 {
+                let dim = self.index.dimension();
+                let slice = unsafe { slice::from_raw_parts(query as *const $data, dim) };
+                match self.index.compute_distance(label, slice) {
+                    Some(dist) => <<$data as VectorElement>::DistanceType as DistanceType>::to_f64(dist),
+                    None => f64::NAN,
+                }
             }
 
             fn index_size(&self) -> usize {

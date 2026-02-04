@@ -4858,6 +4858,46 @@ mod tests {
             VecSimIndex_Free(index);
         }
     }
+
+    #[test]
+    fn test_get_distance_from_bf() {
+        let params = test_bf_params();
+
+        unsafe {
+            let index = VecSimIndex_NewBF(&params);
+            assert!(!index.is_null());
+
+            // Add vectors
+            let v1: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+            let v2: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+            let v3: [f32; 4] = [2.0, 0.0, 0.0, 0.0];
+
+            VecSimIndex_AddVector(index, v1.as_ptr() as *const c_void, 1);
+            VecSimIndex_AddVector(index, v2.as_ptr() as *const c_void, 2);
+            VecSimIndex_AddVector(index, v3.as_ptr() as *const c_void, 3);
+
+            // Test get_distance_from
+            let query: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+
+            let d1 = VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query.as_ptr() as *const c_void);
+            let d2 = VecSimIndex_GetDistanceFrom_Unsafe(index, 2, query.as_ptr() as *const c_void);
+            let d3 = VecSimIndex_GetDistanceFrom_Unsafe(index, 3, query.as_ptr() as *const c_void);
+            let d999 =
+                VecSimIndex_GetDistanceFrom_Unsafe(index, 999, query.as_ptr() as *const c_void);
+
+            println!("d1 (should be 0.0): {}", d1);
+            println!("d2 (should be 1.0): {}", d2);
+            println!("d3 (should be 4.0): {}", d3);
+            println!("d999 (should be NaN): {}", d999);
+
+            assert!((d1 - 0.0).abs() < 0.001);
+            assert!((d2 - 1.0).abs() < 0.001);
+            assert!((d3 - 4.0).abs() < 0.001);
+            assert!(d999.is_nan());
+
+            VecSimIndex_Free(index);
+        }
+    }
 }
 
 // ============================================================================

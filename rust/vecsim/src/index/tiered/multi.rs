@@ -97,6 +97,30 @@ impl<T: VectorElement> TieredMulti<T> {
         *self.hnsw_label_counts.read().get(&label).unwrap_or(&0)
     }
 
+    /// Compute the distance between a stored vector and a query vector.
+    ///
+    /// For multi-value indexes, returns the minimum distance among all vectors
+    /// with the given label. Looks up in both flat buffer and HNSW backend.
+    /// Returns `None` if the label doesn't exist in either tier.
+    pub fn compute_distance(&self, label: LabelType, query: &[T]) -> Option<T::DistanceType> {
+        let flat_dist = if self.flat_label_counts.read().get(&label).copied().unwrap_or(0) > 0 {
+            self.flat.read().compute_distance(label, query)
+        } else {
+            None
+        };
+        let hnsw_dist = if self.hnsw_label_counts.read().get(&label).copied().unwrap_or(0) > 0 {
+            self.hnsw.read().compute_distance(label, query)
+        } else {
+            None
+        };
+        match (flat_dist, hnsw_dist) {
+            (Some(f), Some(h)) => Some(if f < h { f } else { h }),
+            (Some(f), None) => Some(f),
+            (None, Some(h)) => Some(h),
+            (None, None) => None,
+        }
+    }
+
     /// Flush all vectors from flat buffer to HNSW.
     ///
     /// # Returns

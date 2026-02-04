@@ -146,6 +146,22 @@ impl<T: VectorElement> TieredSingle<T> {
         self.hnsw_labels.read().contains(&label)
     }
 
+    /// Compute the distance between a stored vector and a query vector.
+    ///
+    /// Looks up the label in both the flat buffer and HNSW backend.
+    /// Returns `None` if the label doesn't exist in either tier.
+    pub fn compute_distance(&self, label: LabelType, query: &[T]) -> Option<T::DistanceType> {
+        // Check flat buffer first (more likely to contain recent insertions)
+        if self.flat_labels.read().contains(&label) {
+            return self.flat.read().compute_distance(label, query);
+        }
+        // Check HNSW backend
+        if self.hnsw_labels.read().contains(&label) {
+            return self.hnsw.read().compute_distance(label, query);
+        }
+        None
+    }
+
     /// Flush all vectors from flat buffer to HNSW.
     ///
     /// This migrates all vectors from the flat buffer to the HNSW backend,

@@ -887,3 +887,34 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod compute_distance_tests {
+    use super::*;
+    use crate::distance::Metric;
+
+    #[test]
+    fn test_brute_force_single_compute_distance() {
+        let params = BruteForceParams::new(4, Metric::L2);
+        let mut index = BruteForceSingle::<f32>::new(params);
+
+        // Add vectors with labels 1, 2, 3
+        index.add_vector(&vec![0.0, 0.0, 0.0, 0.0], 1).unwrap();
+        index.add_vector(&vec![1.0, 0.0, 0.0, 0.0], 2).unwrap();
+        index.add_vector(&vec![2.0, 0.0, 0.0, 0.0], 3).unwrap();
+
+        // Query from origin
+        let query = vec![0.0, 0.0, 0.0, 0.0];
+
+        // Test compute_distance for each label
+        let d1 = index.compute_distance(1, &query);
+        let d2 = index.compute_distance(2, &query);
+        let d3 = index.compute_distance(3, &query);
+        let d999 = index.compute_distance(999, &query); // Non-existent label
+
+        assert_eq!(d1, Some(0.0));
+        assert_eq!(d2, Some(1.0));
+        assert_eq!(d3, Some(4.0));
+        assert_eq!(d999, None);
+    }
+}
