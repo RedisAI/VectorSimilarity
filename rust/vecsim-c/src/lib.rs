@@ -19,11 +19,24 @@ use index::{
     create_brute_force_index, create_disk_index, create_hnsw_index, create_svs_index,
     create_tiered_index, IndexHandle, IndexWrapper,
     BruteForceSingleF32Wrapper, BruteForceSingleF64Wrapper,
+    BruteForceSingleBF16Wrapper, BruteForceSingleFP16Wrapper,
+    BruteForceSingleI8Wrapper, BruteForceSingleU8Wrapper,
     BruteForceMultiF32Wrapper, BruteForceMultiF64Wrapper,
+    BruteForceMultiBF16Wrapper, BruteForceMultiFP16Wrapper,
+    BruteForceMultiI8Wrapper, BruteForceMultiU8Wrapper,
     HnswSingleF32Wrapper, HnswSingleF64Wrapper,
+    HnswSingleBF16Wrapper, HnswSingleFP16Wrapper,
+    HnswSingleI8Wrapper, HnswSingleU8Wrapper,
     HnswMultiF32Wrapper, HnswMultiF64Wrapper,
+    HnswMultiBF16Wrapper, HnswMultiFP16Wrapper,
+    HnswMultiI8Wrapper, HnswMultiU8Wrapper,
     SvsSingleF32Wrapper, SvsSingleF64Wrapper,
     TieredSingleF32Wrapper, TieredMultiF32Wrapper,
+    TieredSingleF64Wrapper, TieredMultiF64Wrapper,
+    TieredSingleBF16Wrapper, TieredMultiBF16Wrapper,
+    TieredSingleFP16Wrapper, TieredMultiFP16Wrapper,
+    TieredSingleI8Wrapper, TieredMultiI8Wrapper,
+    TieredSingleU8Wrapper, TieredMultiU8Wrapper,
 };
 use info::{get_index_info, VecSimIndexInfo};
 use params::{
@@ -923,9 +936,91 @@ unsafe fn create_bf_index_raw(
                 type_,
             ))
         }
-        _ => return ptr::null_mut(),
+        (VecSimType::VecSimType_BFLOAT16, false) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceSingleBF16Wrapper::new(
+                vecsim::index::BruteForceSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_BFLOAT16, true) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceMultiBF16Wrapper::new(
+                vecsim::index::BruteForceMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT16, false) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceSingleFP16Wrapper::new(
+                vecsim::index::BruteForceSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT16, true) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceMultiFP16Wrapper::new(
+                vecsim::index::BruteForceMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_INT8, false) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceSingleI8Wrapper::new(
+                vecsim::index::BruteForceSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_INT8, true) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceMultiI8Wrapper::new(
+                vecsim::index::BruteForceMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_UINT8, false) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceSingleU8Wrapper::new(
+                vecsim::index::BruteForceSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_UINT8, true) => {
+            let params = vecsim::index::BruteForceParams::new(dim, rust_metric)
+                .with_capacity(capacity)
+                .with_block_size(block);
+            Box::new(BruteForceMultiU8Wrapper::new(
+                vecsim::index::BruteForceMulti::new(params),
+                type_,
+            ))
+        }
+        _ => {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/vecsim_debug.log") {
+                use std::io::Write;
+                let _ = writeln!(f, "[VECSIM DEBUG] create_bf_index_raw: unsupported type {:?} multi={}", type_, multi);
+            }
+            return ptr::null_mut();
+        }
     };
 
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/vecsim_debug.log") {
+        use std::io::Write;
+        let _ = writeln!(f, "[VECSIM DEBUG] create_bf_index_raw: success, creating IndexHandle");
+    }
     Box::into_raw(Box::new(IndexHandle::new(
         wrapper,
         type_,
@@ -992,6 +1087,94 @@ unsafe fn create_hnsw_index_raw(
                 .with_ef_runtime(ef_runtime)
                 .with_capacity(capacity);
             Box::new(HnswMultiF64Wrapper::new(
+                vecsim::index::HnswMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_BFLOAT16, false) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswSingleBF16Wrapper::new(
+                vecsim::index::HnswSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_BFLOAT16, true) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswMultiBF16Wrapper::new(
+                vecsim::index::HnswMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT16, false) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswSingleFP16Wrapper::new(
+                vecsim::index::HnswSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT16, true) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswMultiFP16Wrapper::new(
+                vecsim::index::HnswMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_INT8, false) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswSingleI8Wrapper::new(
+                vecsim::index::HnswSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_INT8, true) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswMultiI8Wrapper::new(
+                vecsim::index::HnswMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_UINT8, false) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswSingleU8Wrapper::new(
+                vecsim::index::HnswSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_UINT8, true) => {
+            let params = vecsim::index::HnswParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_capacity(capacity);
+            Box::new(HnswMultiU8Wrapper::new(
                 vecsim::index::HnswMulti::new(params),
                 type_,
             ))
@@ -1064,7 +1247,6 @@ unsafe fn create_svs_index_raw(
 }
 
 // Helper function to create tiered index
-// Note: Tiered only supports f32 currently
 unsafe fn create_tiered_index_raw(
     type_: VecSimType,
     metric: VecSimMetric,
@@ -1075,33 +1257,143 @@ unsafe fn create_tiered_index_raw(
     ef_runtime: usize,
     flat_buffer_limit: usize,
 ) -> *mut VecSimIndex {
-    // Tiered only supports f32 currently
-    if type_ != VecSimType::VecSimType_FLOAT32 {
-        return ptr::null_mut();
-    }
-
     let rust_metric = metric.to_rust_metric();
 
-    let wrapper: Box<dyn IndexWrapper> = if multi {
-        let params = vecsim::index::TieredParams::new(dim, rust_metric)
-            .with_m(m)
-            .with_ef_construction(ef_construction)
-            .with_ef_runtime(ef_runtime)
-            .with_flat_buffer_limit(flat_buffer_limit);
-        Box::new(TieredMultiF32Wrapper::new(
-            vecsim::index::TieredMulti::new(params),
-            type_,
-        ))
-    } else {
-        let params = vecsim::index::TieredParams::new(dim, rust_metric)
-            .with_m(m)
-            .with_ef_construction(ef_construction)
-            .with_ef_runtime(ef_runtime)
-            .with_flat_buffer_limit(flat_buffer_limit);
-        Box::new(TieredSingleF32Wrapper::new(
-            vecsim::index::TieredSingle::new(params),
-            type_,
-        ))
+    let wrapper: Box<dyn IndexWrapper> = match (type_, multi) {
+        (VecSimType::VecSimType_FLOAT32, false) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredSingleF32Wrapper::new(
+                vecsim::index::TieredSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT32, true) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredMultiF32Wrapper::new(
+                vecsim::index::TieredMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT64, false) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredSingleF64Wrapper::new(
+                vecsim::index::TieredSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT64, true) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredMultiF64Wrapper::new(
+                vecsim::index::TieredMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_BFLOAT16, false) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredSingleBF16Wrapper::new(
+                vecsim::index::TieredSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_BFLOAT16, true) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredMultiBF16Wrapper::new(
+                vecsim::index::TieredMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT16, false) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredSingleFP16Wrapper::new(
+                vecsim::index::TieredSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_FLOAT16, true) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredMultiFP16Wrapper::new(
+                vecsim::index::TieredMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_INT8, false) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredSingleI8Wrapper::new(
+                vecsim::index::TieredSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_INT8, true) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredMultiI8Wrapper::new(
+                vecsim::index::TieredMulti::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_UINT8, false) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredSingleU8Wrapper::new(
+                vecsim::index::TieredSingle::new(params),
+                type_,
+            ))
+        }
+        (VecSimType::VecSimType_UINT8, true) => {
+            let params = vecsim::index::TieredParams::new(dim, rust_metric)
+                .with_m(m)
+                .with_ef_construction(ef_construction)
+                .with_ef_runtime(ef_runtime)
+                .with_flat_buffer_limit(flat_buffer_limit);
+            Box::new(TieredMultiU8Wrapper::new(
+                vecsim::index::TieredMulti::new(params),
+                type_,
+            ))
+        }
+        // INT32 and INT64 not supported for tiered indexes
+        _ => return ptr::null_mut(),
     };
 
     Box::into_raw(Box::new(IndexHandle::new(
@@ -1960,13 +2252,75 @@ fn create_tiered_debug_iterator(
     iter.add_string_field("BACKGROUND_INDEXING", "false");
     iter.add_uint64_field("TIERED_BUFFER_LIMIT", 0);
 
-    // Create frontend (flat) iterator
-    let frontend_iter = create_bf_debug_iterator(handle, basic_info);
+    // Create frontend (flat) iterator with actual flat buffer size
+    let frontend_iter = create_tiered_frontend_debug_iterator(handle, basic_info);
     iter.add_iterator_field("FRONTEND_INDEX", frontend_iter);
 
-    // Create backend (hnsw) iterator
-    let backend_iter = create_hnsw_debug_iterator(handle, basic_info);
+    // Create backend (hnsw) iterator with actual backend size
+    let backend_iter = create_tiered_backend_debug_iterator(handle, basic_info);
     iter.add_iterator_field("BACKEND_INDEX", backend_iter);
+
+    iter
+}
+
+/// Create a debug iterator for tiered index's frontend (flat buffer).
+fn create_tiered_frontend_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(10);
+
+    let flat_size = handle.wrapper.tiered_flat_size();
+
+    iter.add_string_field("ALGORITHM", "FLAT");
+    iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
+    iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
+    iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
+    iter.add_string_field(
+        "IS_MULTI_VALUE",
+        if basic_info.isMulti { "true" } else { "false" },
+    );
+    iter.add_string_field("IS_DISK", "false");
+    iter.add_uint64_field("INDEX_SIZE", flat_size as u64);
+    iter.add_uint64_field("INDEX_LABEL_COUNT", flat_size as u64);
+    iter.add_uint64_field("MEMORY", 0);
+    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
+
+    iter
+}
+
+/// Create a debug iterator for tiered index's backend (HNSW).
+fn create_tiered_backend_debug_iterator(
+    handle: &IndexHandle,
+    basic_info: &info::VecSimIndexBasicInfo,
+) -> info::VecSimDebugInfoIterator {
+    let mut iter = info::VecSimDebugInfoIterator::new(17);
+
+    let backend_size = handle.wrapper.tiered_backend_size();
+
+    iter.add_string_field("ALGORITHM", "HNSW");
+    iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
+    iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
+    iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
+    iter.add_string_field(
+        "IS_MULTI_VALUE",
+        if basic_info.isMulti { "true" } else { "false" },
+    );
+    iter.add_string_field("IS_DISK", "false");
+    iter.add_uint64_field("INDEX_SIZE", backend_size as u64);
+    iter.add_uint64_field("INDEX_LABEL_COUNT", backend_size as u64);
+    iter.add_uint64_field("MEMORY", 0);
+    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+
+    // HNSW-specific fields with placeholder values
+    iter.add_uint64_field("M", 16);
+    iter.add_uint64_field("EF_CONSTRUCTION", 200);
+    iter.add_uint64_field("EF_RUNTIME", 10);
+    iter.add_float64_field("EPSILON", 0.01);
+    iter.add_uint64_field("MAX_LEVEL", 0);
+    iter.add_uint64_field("ENTRYPOINT", 0);
+    iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
 
     iter
 }
@@ -4039,6 +4393,38 @@ mod tests {
     }
 
     #[test]
+    fn test_vecsim_index_new_bf_bfloat16() {
+        use crate::compat::{AlgoParams_C, BFParams_C, VecSimParams_C};
+
+        unsafe {
+            let bf_params = BFParams_C {
+                type_: VecSimType::VecSimType_BFLOAT16,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_BF,
+                algoParams: AlgoParams_C { bfParams: bf_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null(), "VecSimIndex_New should create BF BFLOAT16 index");
+
+            // Verify it works - add a vector using raw bytes (2 bytes per element for BF16)
+            let v: [u16; 4] = [0x3f80, 0, 0, 0]; // 1.0 in bfloat16 format
+            VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, 1);
+            assert_eq!(VecSimIndex_IndexSize(index), 1);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    #[test]
     fn test_vecsim_index_new_tiered() {
         use crate::compat::{
             AlgoParams_C, HNSWParams_C, TieredHNSWParams_C, TieredIndexParams_C,
@@ -4145,6 +4531,331 @@ mod tests {
             // Should not crash with null, returns OK
             let code = VecSimQueryReply_GetCode(ptr::null());
             assert_eq!(code, types::VecSimQueryReply_Code::VecSim_QueryReply_OK);
+        }
+    }
+
+    /// Test that verifies tiered buffer limit behavior via VecSimIndex_New API.
+    /// When more vectors are added than the flatBufferLimit, new vectors should
+    /// go directly to the backend HNSW index (InPlace mode).
+    #[test]
+    fn test_tiered_buffer_limit_via_vecsim_index_new() {
+        use crate::compat::{
+            AlgoParams_C, HNSWParams_C, TieredHNSWParams_C, TieredIndexParams_C,
+            TieredSpecificParams_C, VecSimParams_C,
+        };
+        use std::mem::ManuallyDrop;
+
+        unsafe {
+            // Create HNSW params for backend
+            let hnsw_params = HNSWParams_C {
+                type_: VecSimType::VecSimType_FLOAT32,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+                M: 16,
+                efConstruction: 200,
+                efRuntime: 10,
+                epsilon: 0.0,
+            };
+
+            let mut primary_params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+                algoParams: AlgoParams_C { hnswParams: hnsw_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            // Set flatBufferLimit to 10 for testing
+            let buffer_limit = 10usize;
+            let tiered_params = TieredIndexParams_C {
+                jobQueue: ptr::null_mut(),
+                jobQueueCtx: ptr::null_mut(),
+                submitCb: None,
+                flatBufferLimit: buffer_limit,
+                primaryIndexParams: &mut primary_params,
+                specificParams: TieredSpecificParams_C {
+                    tieredHnswParams: TieredHNSWParams_C { swapJobThreshold: 0 },
+                },
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_TIERED,
+                algoParams: AlgoParams_C {
+                    tieredParams: ManuallyDrop::new(tiered_params),
+                },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null(), "VecSimIndex_New should create tiered index");
+
+            // Add 20 vectors (more than buffer_limit of 10)
+            for i in 0..20u64 {
+                let v: [f32; 4] = [i as f32, 0.0, 0.0, 0.0];
+                VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, i);
+            }
+
+            // Check sizes
+            let flat_size = VecSimTieredIndex_FlatSize(index);
+            let backend_size = VecSimTieredIndex_BackendSize(index);
+            let total_size = VecSimIndex_IndexSize(index);
+
+            println!(
+                "buffer_limit={}, flat_size={}, backend_size={}, total_size={}",
+                buffer_limit, flat_size, backend_size, total_size
+            );
+
+            // After adding 20 vectors with buffer_limit=10:
+            // - First 10 vectors should go to flat buffer
+            // - Next 10 vectors should go directly to HNSW backend (InPlace mode)
+            assert_eq!(
+                flat_size, buffer_limit,
+                "Flat buffer should have exactly buffer_limit vectors"
+            );
+            assert_eq!(backend_size, 10, "Backend should have the overflow vectors");
+            assert_eq!(total_size, 20, "Total should be 20");
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    /// Test that prints the debug iterator output for tiered index.
+    #[test]
+    fn test_tiered_debug_iterator_prints_output() {
+        use crate::compat::{
+            AlgoParams_C, HNSWParams_C, TieredHNSWParams_C, TieredIndexParams_C,
+            TieredSpecificParams_C, VecSimParams_C,
+        };
+        use std::ffi::CStr;
+        use std::mem::ManuallyDrop;
+
+        unsafe fn print_fields(iter: *mut info::VecSimDebugInfoIterator, indent: usize) {
+            while VecSimDebugInfoIterator_HasNextField(iter) {
+                let field = VecSimDebugInfoIterator_NextField(iter);
+                if field.is_null() {
+                    continue;
+                }
+                let name = CStr::from_ptr((*field).fieldName).to_string_lossy();
+                let prefix = "  ".repeat(indent);
+                match (*field).fieldType {
+                    info::VecSim_InfoFieldType::INFOFIELD_STRING => {
+                        let val = CStr::from_ptr((*field).fieldValue.stringValue).to_string_lossy();
+                        println!("{}{}: {}", prefix, name, val);
+                    }
+                    info::VecSim_InfoFieldType::INFOFIELD_UINT64 => {
+                        println!("{}{}: {}", prefix, name, (*field).fieldValue.uintegerValue);
+                    }
+                    info::VecSim_InfoFieldType::INFOFIELD_FLOAT64 => {
+                        println!("{}{}: {:.4}", prefix, name, (*field).fieldValue.floatingPointValue);
+                    }
+                    info::VecSim_InfoFieldType::INFOFIELD_INT64 => {
+                        println!("{}{}: {}", prefix, name, (*field).fieldValue.integerValue);
+                    }
+                    info::VecSim_InfoFieldType::INFOFIELD_ITERATOR => {
+                        println!("{}{}:", prefix, name);
+                        print_fields((*field).fieldValue.iteratorValue, indent + 1);
+                    }
+                }
+            }
+        }
+
+        unsafe {
+            let hnsw_params = HNSWParams_C {
+                type_: VecSimType::VecSimType_FLOAT32,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+                M: 16,
+                efConstruction: 200,
+                efRuntime: 10,
+                epsilon: 0.0,
+            };
+
+            let mut primary_params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+                algoParams: AlgoParams_C { hnswParams: hnsw_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            let buffer_limit = 5usize;
+            let tiered_params = TieredIndexParams_C {
+                jobQueue: ptr::null_mut(),
+                jobQueueCtx: ptr::null_mut(),
+                submitCb: None,
+                flatBufferLimit: buffer_limit,
+                primaryIndexParams: &mut primary_params,
+                specificParams: TieredSpecificParams_C {
+                    tieredHnswParams: TieredHNSWParams_C { swapJobThreshold: 0 },
+                },
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_TIERED,
+                algoParams: AlgoParams_C {
+                    tieredParams: ManuallyDrop::new(tiered_params),
+                },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null());
+
+            // Add 10 vectors (buffer_limit=5, so 5 go to flat, 5 go to backend)
+            for i in 0..10u64 {
+                let v: [f32; 4] = [i as f32, 0.0, 0.0, 0.0];
+                VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, i);
+            }
+
+            println!("=== Direct size queries ===");
+            println!("flat_size = {}", VecSimTieredIndex_FlatSize(index));
+            println!("backend_size = {}", VecSimTieredIndex_BackendSize(index));
+            println!("total_size = {}", VecSimIndex_IndexSize(index));
+
+            println!("\n=== Debug iterator output ===");
+            let debug_iter = VecSimIndex_DebugInfoIterator(index);
+            print_fields(debug_iter, 0);
+            VecSimDebugInfoIterator_Free(debug_iter);
+
+            VecSimIndex_Free(index);
+        }
+    }
+
+    /// Test that the debug iterator reports correct FRONTEND_INDEX and BACKEND_INDEX sizes
+    /// for tiered indices.
+    #[test]
+    fn test_tiered_debug_iterator_reports_correct_sizes() {
+        use crate::compat::{
+            AlgoParams_C, HNSWParams_C, TieredHNSWParams_C, TieredIndexParams_C,
+            TieredSpecificParams_C, VecSimParams_C,
+        };
+        use std::mem::ManuallyDrop;
+
+        unsafe {
+            let hnsw_params = HNSWParams_C {
+                type_: VecSimType::VecSimType_FLOAT32,
+                dim: 4,
+                metric: VecSimMetric::VecSimMetric_L2,
+                multi: false,
+                initialCapacity: 100,
+                blockSize: 0,
+                M: 16,
+                efConstruction: 200,
+                efRuntime: 10,
+                epsilon: 0.0,
+            };
+
+            let mut primary_params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_HNSWLIB,
+                algoParams: AlgoParams_C { hnswParams: hnsw_params },
+                logCtx: ptr::null_mut(),
+            };
+
+            let buffer_limit = 5usize;
+            let tiered_params = TieredIndexParams_C {
+                jobQueue: ptr::null_mut(),
+                jobQueueCtx: ptr::null_mut(),
+                submitCb: None,
+                flatBufferLimit: buffer_limit,
+                primaryIndexParams: &mut primary_params,
+                specificParams: TieredSpecificParams_C {
+                    tieredHnswParams: TieredHNSWParams_C { swapJobThreshold: 0 },
+                },
+            };
+
+            let params = VecSimParams_C {
+                algo: VecSimAlgo::VecSimAlgo_TIERED,
+                algoParams: AlgoParams_C {
+                    tieredParams: ManuallyDrop::new(tiered_params),
+                },
+                logCtx: ptr::null_mut(),
+            };
+
+            let index = VecSimIndex_New(&params);
+            assert!(!index.is_null());
+
+            // Add 10 vectors (buffer_limit=5, so 5 go to flat, 5 go to backend)
+            for i in 0..10u64 {
+                let v: [f32; 4] = [i as f32, 0.0, 0.0, 0.0];
+                VecSimIndex_AddVector(index, v.as_ptr() as *const c_void, i);
+            }
+
+            // Verify via flat/backend size APIs
+            assert_eq!(VecSimTieredIndex_FlatSize(index), 5);
+            assert_eq!(VecSimTieredIndex_BackendSize(index), 5);
+
+            // Get debug iterator
+            let debug_iter = VecSimIndex_DebugInfoIterator(index);
+            assert!(!debug_iter.is_null());
+
+            // Helper to find a field by name
+            fn find_field(
+                iter: *mut info::VecSimDebugInfoIterator,
+                name: &str,
+            ) -> Option<*mut info::VecSim_InfoField> {
+                unsafe {
+                    while VecSimDebugInfoIterator_HasNextField(iter) {
+                        let field = VecSimDebugInfoIterator_NextField(iter);
+                        if !field.is_null() {
+                            let field_name =
+                                std::ffi::CStr::from_ptr((*field).fieldName).to_string_lossy();
+                            if field_name == name {
+                                return Some(field);
+                            }
+                        }
+                    }
+                    None
+                }
+            }
+
+            // Find FRONTEND_INDEX and check its INDEX_SIZE
+            let frontend_field = find_field(debug_iter, "FRONTEND_INDEX");
+            assert!(frontend_field.is_some(), "Should have FRONTEND_INDEX field");
+            let frontend_field = frontend_field.unwrap();
+            assert_eq!(
+                (*frontend_field).fieldType,
+                info::VecSim_InfoFieldType::INFOFIELD_ITERATOR
+            );
+            let frontend_iter = (*frontend_field).fieldValue.iteratorValue;
+            assert!(!frontend_iter.is_null());
+
+            let frontend_size_field = find_field(frontend_iter, "INDEX_SIZE");
+            assert!(
+                frontend_size_field.is_some(),
+                "FRONTEND_INDEX should have INDEX_SIZE"
+            );
+            let frontend_size = (*frontend_size_field.unwrap()).fieldValue.uintegerValue;
+            assert_eq!(
+                frontend_size, 5,
+                "FRONTEND_INDEX INDEX_SIZE should be 5 (flat buffer)"
+            );
+
+            // Find BACKEND_INDEX and check its INDEX_SIZE
+            let backend_field = find_field(debug_iter, "BACKEND_INDEX");
+            assert!(backend_field.is_some(), "Should have BACKEND_INDEX field");
+            let backend_field = backend_field.unwrap();
+            assert_eq!(
+                (*backend_field).fieldType,
+                info::VecSim_InfoFieldType::INFOFIELD_ITERATOR
+            );
+            let backend_iter = (*backend_field).fieldValue.iteratorValue;
+            assert!(!backend_iter.is_null());
+
+            let backend_size_field = find_field(backend_iter, "INDEX_SIZE");
+            assert!(
+                backend_size_field.is_some(),
+                "BACKEND_INDEX should have INDEX_SIZE"
+            );
+            let backend_size = (*backend_size_field.unwrap()).fieldValue.uintegerValue;
+            assert_eq!(
+                backend_size, 5,
+                "BACKEND_INDEX INDEX_SIZE should be 5 (HNSW backend)"
+            );
+
+            VecSimDebugInfoIterator_Free(debug_iter);
+            VecSimIndex_Free(index);
         }
     }
 }

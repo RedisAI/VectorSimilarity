@@ -1081,7 +1081,10 @@ macro_rules! impl_tiered_wrapper {
             }
 
             fn tiered_gc(&mut self) {
-                // No-op for now
+                // Flush vectors from flat buffer to HNSW backend.
+                // This simulates the C++ behavior where GC processes pending
+                // swap jobs that move vectors from flat to HNSW.
+                let _ = self.index.flush();
             }
 
             fn tiered_acquire_shared_locks(&mut self) {
@@ -1099,9 +1102,19 @@ macro_rules! impl_tiered_wrapper {
     };
 }
 
-// Implement wrappers for Tiered indices (f32 only for now)
+// Implement wrappers for Tiered indices
 impl_tiered_wrapper!(TieredSingleF32Wrapper, TieredSingle<f32>, f32, false);
 impl_tiered_wrapper!(TieredMultiF32Wrapper, TieredMulti<f32>, f32, true);
+impl_tiered_wrapper!(TieredSingleF64Wrapper, TieredSingle<f64>, f64, false);
+impl_tiered_wrapper!(TieredMultiF64Wrapper, TieredMulti<f64>, f64, true);
+impl_tiered_wrapper!(TieredSingleBF16Wrapper, TieredSingle<BFloat16>, BFloat16, false);
+impl_tiered_wrapper!(TieredMultiBF16Wrapper, TieredMulti<BFloat16>, BFloat16, true);
+impl_tiered_wrapper!(TieredSingleFP16Wrapper, TieredSingle<Float16>, Float16, false);
+impl_tiered_wrapper!(TieredMultiFP16Wrapper, TieredMulti<Float16>, Float16, true);
+impl_tiered_wrapper!(TieredSingleI8Wrapper, TieredSingle<Int8>, Int8, false);
+impl_tiered_wrapper!(TieredMultiI8Wrapper, TieredMulti<Int8>, Int8, true);
+impl_tiered_wrapper!(TieredSingleU8Wrapper, TieredSingle<UInt8>, UInt8, false);
+impl_tiered_wrapper!(TieredMultiU8Wrapper, TieredMulti<UInt8>, UInt8, true);
 
 // ============================================================================
 // Disk Index Wrappers
