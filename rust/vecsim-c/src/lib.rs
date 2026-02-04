@@ -3368,11 +3368,11 @@ mod tests {
     #[test]
     fn test_tiered_unsupported_type_returns_null() {
         let mut params = test_tiered_params();
-        params.base.type_ = VecSimType::VecSimType_FLOAT64; // Not supported
+        params.base.type_ = VecSimType::VecSimType_INT32; // Not supported
 
         unsafe {
             let index = VecSimIndex_NewTiered(&params);
-            assert!(index.is_null(), "Tiered should fail for f64");
+            assert!(index.is_null(), "Tiered should fail for INT32");
         }
     }
 

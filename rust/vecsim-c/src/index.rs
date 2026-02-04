@@ -1099,9 +1099,20 @@ macro_rules! impl_tiered_wrapper {
     };
 }
 
-// Implement wrappers for Tiered indices (f32 only for now)
+// Implement wrappers for Tiered indices
 impl_tiered_wrapper!(TieredSingleF32Wrapper, TieredSingle<f32>, f32, false);
+impl_tiered_wrapper!(TieredSingleF64Wrapper, TieredSingle<f64>, f64, false);
+impl_tiered_wrapper!(TieredSingleBF16Wrapper, TieredSingle<BFloat16>, BFloat16, false);
+impl_tiered_wrapper!(TieredSingleFP16Wrapper, TieredSingle<Float16>, Float16, false);
+impl_tiered_wrapper!(TieredSingleI8Wrapper, TieredSingle<Int8>, Int8, false);
+impl_tiered_wrapper!(TieredSingleU8Wrapper, TieredSingle<UInt8>, UInt8, false);
+
 impl_tiered_wrapper!(TieredMultiF32Wrapper, TieredMulti<f32>, f32, true);
+impl_tiered_wrapper!(TieredMultiF64Wrapper, TieredMulti<f64>, f64, true);
+impl_tiered_wrapper!(TieredMultiBF16Wrapper, TieredMulti<BFloat16>, BFloat16, true);
+impl_tiered_wrapper!(TieredMultiFP16Wrapper, TieredMulti<Float16>, Float16, true);
+impl_tiered_wrapper!(TieredMultiI8Wrapper, TieredMulti<Int8>, Int8, true);
+impl_tiered_wrapper!(TieredMultiU8Wrapper, TieredMulti<UInt8>, UInt8, true);
 
 // ============================================================================
 // Disk Index Wrappers
@@ -1540,9 +1551,28 @@ pub fn create_tiered_index(params: &TieredParams) -> Option<Box<IndexHandle>> {
     let dim = params.base.dim;
     let is_multi = params.base.multi;
 
-    // Tiered index currently only supports f32
     let wrapper: Box<dyn IndexWrapper> = match (data_type, is_multi) {
         (VecSimType::VecSimType_FLOAT32, false) => Box::new(TieredSingleF32Wrapper::new(
+            TieredSingle::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_FLOAT64, false) => Box::new(TieredSingleF64Wrapper::new(
+            TieredSingle::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_BFLOAT16, false) => Box::new(TieredSingleBF16Wrapper::new(
+            TieredSingle::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_FLOAT16, false) => Box::new(TieredSingleFP16Wrapper::new(
+            TieredSingle::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_INT8, false) => Box::new(TieredSingleI8Wrapper::new(
+            TieredSingle::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_UINT8, false) => Box::new(TieredSingleU8Wrapper::new(
             TieredSingle::new(rust_params),
             data_type,
         )),
@@ -1550,7 +1580,28 @@ pub fn create_tiered_index(params: &TieredParams) -> Option<Box<IndexHandle>> {
             TieredMulti::new(rust_params),
             data_type,
         )),
-        _ => return None, // Tiered only supports f32 currently
+        (VecSimType::VecSimType_FLOAT64, true) => Box::new(TieredMultiF64Wrapper::new(
+            TieredMulti::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_BFLOAT16, true) => Box::new(TieredMultiBF16Wrapper::new(
+            TieredMulti::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_FLOAT16, true) => Box::new(TieredMultiFP16Wrapper::new(
+            TieredMulti::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_INT8, true) => Box::new(TieredMultiI8Wrapper::new(
+            TieredMulti::new(rust_params),
+            data_type,
+        )),
+        (VecSimType::VecSimType_UINT8, true) => Box::new(TieredMultiU8Wrapper::new(
+            TieredMulti::new(rust_params),
+            data_type,
+        )),
+        // INT32 and INT64 types not yet supported for vector indices
+        (VecSimType::VecSimType_INT32, _) | (VecSimType::VecSimType_INT64, _) => return None,
     };
 
     Some(Box::new(IndexHandle::new(
