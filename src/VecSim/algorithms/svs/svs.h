@@ -39,6 +39,7 @@ struct SVSIndexBase
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
     virtual size_t getNumThreads() const = 0;
     virtual void setNumThreads(size_t numThreads) = 0;
@@ -239,15 +240,15 @@ protected:
     }
 
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
-        assert(handler);
+        assert(handler && "SVSIndex::setImpl called with null handler");
         assert(impl_ == nullptr); // Should be called only on empty impl_
         if (impl_ != nullptr) {
-            throw ANNEXCEPTION("SVSIndex::setImpl called on non-empty impl_");
+            throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
         }
 
         SVSImplHandler *svs_handler = dynamic_cast<SVSImplHandler *>(handler.get());
         if (!svs_handler) {
-            throw ANNEXCEPTION("Failed to cast to SVSImplHandler");
+            throw std::logic_error("Failed to cast to SVSImplHandler");
         }
         this->impl_ = std::move(svs_handler->impl);
     }
@@ -536,6 +537,10 @@ public:
 
     int deleteVectors(const labelType *labels, size_t n) override {
         return deleteVectorsImpl(labels, n);
+    }
+
+    bool isLabelExists(labelType label) const override {
+        return impl_ ? impl_->has_id(label) : false;
     }
 
     size_t getNumThreads() const override { return threadpool_.size(); }
