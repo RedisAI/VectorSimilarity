@@ -240,14 +240,14 @@ pub unsafe extern "C" fn VecSimIndex_ResolveParams(
         return VecSimParamResolverErr_NullParam;
     }
 
-    // Zero out qparams
+    // Zero out qparams (matching C++ behavior with bzero)
     let qparams = &mut *qparams;
     *qparams = VecSimQueryParams::default();
     qparams.hnsw_params_mut().efRuntime = 0; // Reset to 0 for checking duplicates
     qparams.hnsw_params_mut().epsilon = 0.0;
     *qparams.svs_params_mut() = params::SVSRuntimeParams::default();
     qparams.batchSize = 0;
-    qparams.searchMode = 1; // STANDARD_KNN
+    qparams.searchMode = 0; // Not explicitly set - use heuristics for hybrid queries
 
     if paramNum == 0 {
         return VecSimParamResolver_OK;
@@ -337,8 +337,8 @@ fn resolve_ef_runtime(
 ) -> VecSimParamResolveCode {
     use VecSimParamResolveCode::*;
 
-    // EF_RUNTIME is valid only for HNSW
-    if index_type != VecSimAlgo::VecSimAlgo_HNSWLIB {
+    // EF_RUNTIME is valid only for HNSW or TIERED (which uses HNSW backend)
+    if index_type != VecSimAlgo::VecSimAlgo_HNSWLIB && index_type != VecSimAlgo::VecSimAlgo_TIERED {
         return VecSimParamResolverErr_UnknownParam;
     }
     // EF_RUNTIME is invalid for range query
@@ -367,8 +367,11 @@ fn resolve_epsilon(
 ) -> VecSimParamResolveCode {
     use VecSimParamResolveCode::*;
 
-    // EPSILON is valid only for HNSW or SVS
-    if index_type != VecSimAlgo::VecSimAlgo_HNSWLIB && index_type != VecSimAlgo::VecSimAlgo_SVS {
+    // EPSILON is valid only for HNSW, TIERED (which uses HNSW backend), or SVS
+    if index_type != VecSimAlgo::VecSimAlgo_HNSWLIB
+        && index_type != VecSimAlgo::VecSimAlgo_TIERED
+        && index_type != VecSimAlgo::VecSimAlgo_SVS
+    {
         return VecSimParamResolverErr_UnknownParam;
     }
     // EPSILON is valid only for range queries
@@ -376,18 +379,24 @@ fn resolve_epsilon(
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
     // Check if already set (based on index type)
-    let current_epsilon = if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
-        qparams.hnsw_params().epsilon
-    } else {
-        qparams.svs_params().epsilon
-    };
+    // TIERED indexes use HNSW params for epsilon
+    let current_epsilon =
+        if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB || index_type == VecSimAlgo::VecSimAlgo_TIERED
+        {
+            qparams.hnsw_params().epsilon
+        } else {
+            qparams.svs_params().epsilon
+        };
     if current_epsilon != 0.0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value
     match parse_positive_double(value) {
         Some(v) => {
-            if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB {
+            // TIERED indexes use HNSW params for epsilon
+            if index_type == VecSimAlgo::VecSimAlgo_HNSWLIB
+                || index_type == VecSimAlgo::VecSimAlgo_TIERED
+            {
                 qparams.hnsw_params_mut().epsilon = v;
             } else {
                 qparams.svs_params_mut().epsilon = v;
@@ -434,9 +443,9 @@ fn resolve_hybrid_policy(
     if query_type != VecsimQueryType::QUERY_TYPE_HYBRID {
         return VecSimParamResolverErr_InvalidPolicy_NHybrid;
     }
-    // Check if already set (searchMode != STANDARD_KNN indicates it was set)
+    // Check if already set (searchMode != 0 indicates it was explicitly set)
     // VecSearchMode values: EMPTY_MODE=0, STANDARD_KNN=1, HYBRID_ADHOC_BF=2, HYBRID_BATCHES=3
-    if qparams.searchMode != 1 {
+    if qparams.searchMode != 0 {
         return VecSimParamResolverErr_AlreadySet;
     }
     // Parse value (case-insensitive)
