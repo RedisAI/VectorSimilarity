@@ -817,8 +817,15 @@ public:
                 }
             }
             // Remove vector from the backend index if it exists in case of non-MULTI.
-            std::lock_guard lock(this->mainIndexGuard);
-            ret -= svs_index->deleteVectors(&label, 1);
+            auto label_exists = [&]() {
+                std::shared_lock lock(this->mainIndexGuard);
+                return svs_index->isLabelExists(label);
+            }();
+
+            if (label_exists) {
+                std::lock_guard lock(this->mainIndexGuard);
+                ret -= svs_index->deleteVectors(&label, 1);
+            }
         }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
@@ -903,7 +910,13 @@ public:
             std::lock_guard lock(this->flatIndexGuard);
             ret = this->deleteAndRecordSwaps_Unsafe(label);
         }
-        {
+
+        label_exists = [&]() {
+            std::shared_lock lock(this->mainIndexGuard);
+            return svs_index->isLabelExists(label);
+        }();
+
+        if (label_exists) {
             std::lock_guard lock(this->mainIndexGuard);
             ret += svs_index->deleteVectors(&label, 1);
         }
