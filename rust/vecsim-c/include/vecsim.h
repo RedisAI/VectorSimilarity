@@ -1430,6 +1430,18 @@ void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData);
  */
 bool VecSimIndex_PreferAdHocSearch(const VecSimIndex *index, size_t subsetSize, size_t k, bool initial);
 
+/**
+ * @brief Set the last search mode on an index.
+ *
+ * This is called by RediSearch's HybridIterator after it determines which
+ * hybrid search mode to use (ADHOC_BF or BATCHES), so that the mode can be
+ * reported via FT.DEBUG VECSIM_INFO.
+ *
+ * @param index The index to set the search mode on.
+ * @param mode The search mode to set (VecSearchMode enum value).
+ */
+void VecSimIndex_SetLastSearchMode(VecSimIndex *index, int mode);
+
 /* ============================================================================
  * Parameter Resolution
  * ========================================================================== */

@@ -212,6 +212,18 @@ bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t
                                    bool initial_check);
 
 /**
+ * @brief Set the last search mode on an index.
+ *
+ * This is called by RediSearch's HybridIterator after it determines which
+ * hybrid search mode to use (ADHOC_BF or BATCHES), so that the mode can be
+ * reported via FT.DEBUG VECSIM_INFO.
+ *
+ * @param index the index to set the search mode on.
+ * @param mode the search mode to set (VecSearchMode enum value).
+ */
+void VecSimIndex_SetLastSearchMode(VecSimIndex *index, int mode);
+
+/**
  * @brief Acquire/Release the required locks of the tiered index externally before executing an
  * an unsafe *READ* operation (as the locks are acquired for shared ownership).
  * @param index the tiered index to protect (no nothing for non-tiered indexes).

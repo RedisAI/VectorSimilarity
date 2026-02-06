@@ -1318,6 +1318,10 @@ pub struct IndexHandle {
     pub metric: VecSimMetric,
     pub dim: usize,
     pub is_multi: bool,
+    /// Last search mode used (stored as atomic for thread safety).
+    /// Values: 0=EMPTY_MODE, 1=STANDARD_KNN, 2=HYBRID_ADHOC_BF, 3=HYBRID_BATCHES,
+    ///         4=HYBRID_BATCHES_TO_ADHOC_BF, 5=RANGE_QUERY
+    last_search_mode: std::sync::atomic::AtomicU8,
 }
 
 impl IndexHandle {
@@ -1336,6 +1340,32 @@ impl IndexHandle {
             metric,
             dim,
             is_multi,
+            last_search_mode: std::sync::atomic::AtomicU8::new(0), // EMPTY_MODE
+        }
+    }
+
+    /// Set the last search mode.
+    pub fn set_last_search_mode(&self, mode: u8) {
+        self.last_search_mode
+            .store(mode, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Get the last search mode.
+    pub fn get_last_search_mode(&self) -> u8 {
+        self.last_search_mode
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Get the last search mode as a string.
+    pub fn last_search_mode_str(&self) -> &'static str {
+        match self.get_last_search_mode() {
+            0 => "EMPTY_MODE",
+            1 => "STANDARD_KNN",
+            2 => "HYBRID_ADHOC_BF",
+            3 => "HYBRID_BATCHES",
+            4 => "HYBRID_BATCHES_TO_ADHOC_BF",
+            5 => "RANGE_QUERY",
+            _ => "EMPTY_MODE",
         }
     }
 }

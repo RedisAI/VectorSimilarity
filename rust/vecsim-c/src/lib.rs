@@ -326,6 +326,11 @@ pub unsafe extern "C" fn VecSimIndex_ResolveParams(
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
     }
 
+    // Set the last search mode on the index (matching C++ behavior)
+    if qparams.searchMode != 0 {
+        handle.set_last_search_mode(qparams.searchMode as u8);
+    }
+
     VecSimParamResolver_OK
 }
 
@@ -1628,6 +1633,24 @@ pub unsafe extern "C" fn VecSimIndex_PreferAdHocSearch(
     }
 }
 
+/// Set the last search mode on an index.
+///
+/// This is called by RediSearch's HybridIterator after it determines which
+/// hybrid search mode to use (ADHOC_BF or BATCHES), so that the mode can be
+/// reported via FT.DEBUG VECSIM_INFO.
+///
+/// # Safety
+/// `index` must be a valid pointer returned by `VecSimIndex_New`.
+#[no_mangle]
+pub unsafe extern "C" fn VecSimIndex_SetLastSearchMode(index: *mut VecSimIndex, mode: i32) {
+    if index.is_null() {
+        return;
+    }
+
+    let handle = &*(index as *const IndexHandle);
+    handle.set_last_search_mode(mode as u8);
+}
+
 // ============================================================================
 // Query Reply Functions
 // ============================================================================
@@ -2176,7 +2199,7 @@ fn add_common_fields(
     iter.add_uint64_field("INDEX_SIZE", handle.wrapper.index_size() as u64);
     iter.add_uint64_field("INDEX_LABEL_COUNT", handle.wrapper.index_size() as u64);
     iter.add_uint64_field("MEMORY", handle.wrapper.memory_usage() as u64);
-    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+    iter.add_string_field("LAST_SEARCH_MODE", handle.last_search_mode_str());
 }
 
 /// Create a debug iterator for BruteForce index.
@@ -2293,7 +2316,7 @@ fn create_tiered_frontend_debug_iterator(
     iter.add_uint64_field("INDEX_SIZE", flat_size as u64);
     iter.add_uint64_field("INDEX_LABEL_COUNT", flat_size as u64);
     iter.add_uint64_field("MEMORY", 0);
-    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+    iter.add_string_field("LAST_SEARCH_MODE", handle.last_search_mode_str());
     iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
 
     iter
@@ -2320,7 +2343,7 @@ fn create_tiered_backend_debug_iterator(
     iter.add_uint64_field("INDEX_SIZE", backend_size as u64);
     iter.add_uint64_field("INDEX_LABEL_COUNT", backend_size as u64);
     iter.add_uint64_field("MEMORY", 0);
-    iter.add_string_field("LAST_SEARCH_MODE", "EMPTY_MODE");
+    iter.add_string_field("LAST_SEARCH_MODE", handle.last_search_mode_str());
 
     // HNSW-specific fields with placeholder values
     iter.add_uint64_field("M", 16);

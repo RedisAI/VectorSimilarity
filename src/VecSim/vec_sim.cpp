@@ -352,3 +352,7 @@ extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetS
                                               bool initial_check) {
     return index->preferAdHocSearch(subsetSize, k, initial_check);
 }
+
+extern "C" void VecSimIndex_SetLastSearchMode(VecSimIndex *index, int mode) {
+    index->setLastSearchMode(static_cast<VecSearchMode>(mode));
+}
