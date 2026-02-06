@@ -2188,14 +2188,9 @@ fn add_common_fields(
     iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
     iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
     iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
-    iter.add_string_field(
-        "IS_MULTI_VALUE",
-        if basic_info.isMulti { "true" } else { "false" },
-    );
-    iter.add_string_field(
-        "IS_DISK",
-        if basic_info.isDisk { "true" } else { "false" },
-    );
+    // Use uint64 for boolean fields to match C++ implementation
+    iter.add_uint64_field("IS_MULTI_VALUE", if basic_info.isMulti { 1 } else { 0 });
+    iter.add_uint64_field("IS_DISK", if basic_info.isDisk { 1 } else { 0 });
     iter.add_uint64_field("INDEX_SIZE", handle.wrapper.index_size() as u64);
     iter.add_uint64_field("INDEX_LABEL_COUNT", handle.wrapper.index_size() as u64);
     iter.add_uint64_field("MEMORY", handle.wrapper.memory_usage() as u64);
@@ -2231,9 +2226,20 @@ fn create_hnsw_debug_iterator(
     iter.add_uint64_field("M", 16);
     iter.add_uint64_field("EF_CONSTRUCTION", 200);
     iter.add_uint64_field("EF_RUNTIME", 10);
-    iter.add_float64_field("EPSILON", 0.01);
-    iter.add_uint64_field("MAX_LEVEL", 0);
-    iter.add_uint64_field("ENTRYPOINT", 0);
+    // For empty indexes, use u64::MAX which becomes -1 when cast to long long by Redis
+    let max_level = if handle.wrapper.index_size() == 0 {
+        u64::MAX // HNSW_INVALID_LEVEL = SIZE_MAX
+    } else {
+        0 // TODO: get actual max level from index
+    };
+    let entrypoint = if handle.wrapper.index_size() == 0 {
+        u64::MAX // INVALID_LABEL = SIZE_MAX
+    } else {
+        0 // TODO: get actual entrypoint from index
+    };
+    iter.add_uint64_field("MAX_LEVEL", max_level);
+    iter.add_uint64_field("ENTRYPOINT", entrypoint);
+    iter.add_string_field("EPSILON", "0.01");
     iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
 
     iter
@@ -2274,15 +2280,18 @@ fn create_tiered_debug_iterator(
     handle: &IndexHandle,
     basic_info: &info::VecSimIndexBasicInfo,
 ) -> info::VecSimDebugInfoIterator {
-    let mut iter = info::VecSimDebugInfoIterator::new(15);
+    let mut iter = info::VecSimDebugInfoIterator::new(16);
 
     iter.add_string_field("ALGORITHM", "TIERED");
     add_common_fields(&mut iter, handle, basic_info);
 
     // Tiered-specific fields
     iter.add_uint64_field("MANAGEMENT_LAYER_MEMORY", 0);
-    iter.add_string_field("BACKGROUND_INDEXING", "false");
-    iter.add_uint64_field("TIERED_BUFFER_LIMIT", 0);
+    // BACKGROUND_INDEXING uses INT64 to match C++ (VecSimBool can be -1, 0, 1)
+    // For now, always 0 (false) since we don't track background indexing state
+    iter.add_int64_field("BACKGROUND_INDEXING", 0);
+    // Get actual buffer limit from the tiered index
+    iter.add_uint64_field("TIERED_BUFFER_LIMIT", handle.wrapper.tiered_buffer_limit() as u64);
 
     // Create frontend (flat) iterator with actual flat buffer size
     let frontend_iter = create_tiered_frontend_debug_iterator(handle, basic_info);
@@ -2292,6 +2301,9 @@ fn create_tiered_debug_iterator(
     let backend_iter = create_tiered_backend_debug_iterator(handle, basic_info);
     iter.add_iterator_field("BACKEND_INDEX", backend_iter);
 
+    // Tiered HNSW-specific field
+    iter.add_uint64_field("TIERED_HNSW_SWAP_JOBS_THRESHOLD", 1024);
+
     iter
 }
 
@@ -2300,7 +2312,7 @@ fn create_tiered_frontend_debug_iterator(
     handle: &IndexHandle,
     basic_info: &info::VecSimIndexBasicInfo,
 ) -> info::VecSimDebugInfoIterator {
-    let mut iter = info::VecSimDebugInfoIterator::new(10);
+    let mut iter = info::VecSimDebugInfoIterator::new(11);
 
     let flat_size = handle.wrapper.tiered_flat_size();
 
@@ -2308,11 +2320,9 @@ fn create_tiered_frontend_debug_iterator(
     iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
     iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
     iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
-    iter.add_string_field(
-        "IS_MULTI_VALUE",
-        if basic_info.isMulti { "true" } else { "false" },
-    );
-    iter.add_string_field("IS_DISK", "false");
+    // Use uint64 for boolean fields to match C++ implementation
+    iter.add_uint64_field("IS_MULTI_VALUE", if basic_info.isMulti { 1 } else { 0 });
+    iter.add_uint64_field("IS_DISK", 0);
     iter.add_uint64_field("INDEX_SIZE", flat_size as u64);
     iter.add_uint64_field("INDEX_LABEL_COUNT", flat_size as u64);
     iter.add_uint64_field("MEMORY", 0);
@@ -2327,7 +2337,7 @@ fn create_tiered_backend_debug_iterator(
     handle: &IndexHandle,
     basic_info: &info::VecSimIndexBasicInfo,
 ) -> info::VecSimDebugInfoIterator {
-    let mut iter = info::VecSimDebugInfoIterator::new(17);
+    let mut iter = info::VecSimDebugInfoIterator::new(18);
 
     let backend_size = handle.wrapper.tiered_backend_size();
 
@@ -2335,23 +2345,33 @@ fn create_tiered_backend_debug_iterator(
     iter.add_string_field("TYPE", info::type_to_string(basic_info.type_));
     iter.add_uint64_field("DIMENSION", basic_info.dim as u64);
     iter.add_string_field("METRIC", info::metric_to_string(basic_info.metric));
-    iter.add_string_field(
-        "IS_MULTI_VALUE",
-        if basic_info.isMulti { "true" } else { "false" },
-    );
-    iter.add_string_field("IS_DISK", "false");
+    // Use uint64 for boolean fields to match C++ implementation
+    iter.add_uint64_field("IS_MULTI_VALUE", if basic_info.isMulti { 1 } else { 0 });
+    iter.add_uint64_field("IS_DISK", 0);
     iter.add_uint64_field("INDEX_SIZE", backend_size as u64);
     iter.add_uint64_field("INDEX_LABEL_COUNT", backend_size as u64);
     iter.add_uint64_field("MEMORY", 0);
     iter.add_string_field("LAST_SEARCH_MODE", handle.last_search_mode_str());
+    iter.add_uint64_field("BLOCK_SIZE", basic_info.blockSize as u64);
 
-    // HNSW-specific fields with placeholder values
+    // HNSW-specific fields
     iter.add_uint64_field("M", 16);
     iter.add_uint64_field("EF_CONSTRUCTION", 200);
     iter.add_uint64_field("EF_RUNTIME", 10);
-    iter.add_float64_field("EPSILON", 0.01);
-    iter.add_uint64_field("MAX_LEVEL", 0);
-    iter.add_uint64_field("ENTRYPOINT", 0);
+    // For empty HNSW backend, use u64::MAX which becomes -1 when cast to long long by Redis
+    let max_level = if backend_size == 0 {
+        u64::MAX // HNSW_INVALID_LEVEL = SIZE_MAX
+    } else {
+        0 // TODO: get actual max level from backend
+    };
+    let entrypoint = if backend_size == 0 {
+        u64::MAX // INVALID_LABEL = SIZE_MAX
+    } else {
+        0 // TODO: get actual entrypoint from backend
+    };
+    iter.add_uint64_field("MAX_LEVEL", max_level);
+    iter.add_uint64_field("ENTRYPOINT", entrypoint);
+    iter.add_string_field("EPSILON", "0.01");
     iter.add_uint64_field("NUMBER_OF_MARKED_DELETED", 0);
 
     iter

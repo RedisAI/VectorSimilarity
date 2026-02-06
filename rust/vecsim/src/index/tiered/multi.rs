@@ -87,6 +87,11 @@ impl<T: VectorElement> TieredMulti<T> {
         self.flat.read().memory_usage() + self.hnsw.read().memory_usage()
     }
 
+    /// Get the flat buffer limit.
+    pub fn flat_buffer_limit(&self) -> usize {
+        self.params.flat_buffer_limit
+    }
+
     /// Get the count of vectors for a label in the flat buffer.
     pub fn flat_label_count(&self, label: LabelType) -> usize {
         *self.flat_label_counts.read().get(&label).unwrap_or(&0)

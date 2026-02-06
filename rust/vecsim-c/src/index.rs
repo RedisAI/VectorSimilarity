@@ -104,6 +104,11 @@ pub trait IndexWrapper: Send + Sync {
     /// Run garbage collection on a tiered index.
     fn tiered_gc(&mut self) {}
 
+    /// Get the buffer limit for tiered indexes.
+    fn tiered_buffer_limit(&self) -> usize {
+        0
+    }
+
     /// Acquire shared locks on a tiered index.
     fn tiered_acquire_shared_locks(&mut self) {}
 
@@ -1093,6 +1098,10 @@ macro_rules! impl_tiered_wrapper {
                 // This simulates the C++ behavior where GC processes pending
                 // swap jobs that move vectors from flat to HNSW.
                 let _ = self.index.flush();
+            }
+
+            fn tiered_buffer_limit(&self) -> usize {
+                self.index.flat_buffer_limit()
             }
 
             fn tiered_acquire_shared_locks(&mut self) {

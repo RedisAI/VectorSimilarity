@@ -136,6 +136,11 @@ impl<T: VectorElement> TieredSingle<T> {
         self.flat.read().memory_usage() + self.hnsw.read().memory_usage()
     }
 
+    /// Get the flat buffer limit.
+    pub fn flat_buffer_limit(&self) -> usize {
+        self.params.flat_buffer_limit
+    }
+
     /// Check if a label exists in the flat buffer.
     pub fn is_in_flat(&self, label: LabelType) -> bool {
         self.flat_labels.read().contains(&label)
