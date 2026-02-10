@@ -2264,7 +2264,7 @@ fn load_index_from_file(path: &std::path::Path) -> Option<Box<IndexHandle>> {
                 true,
             )))
         }
-        // HNSW Single
+        // HNSW Single - f32
         (IndexTypeId::HnswSingle, DataTypeId::F32) => {
             use vecsim::index::HnswSingle;
             let index = HnswSingle::<f32>::load_from_file(path).ok()?;
@@ -2281,7 +2281,96 @@ fn load_index_from_file(path: &std::path::Path) -> Option<Box<IndexHandle>> {
                 false,
             )))
         }
-        // HNSW Multi
+        // HNSW Single - f64
+        (IndexTypeId::HnswSingle, DataTypeId::F64) => {
+            use vecsim::index::HnswSingle;
+            let index = HnswSingle::<f64>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswSingleF64Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_FLOAT64,
+                )),
+                VecSimType::VecSimType_FLOAT64,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                false,
+            )))
+        }
+        // HNSW Single - BFloat16
+        (IndexTypeId::HnswSingle, DataTypeId::BFloat16) => {
+            use vecsim::index::HnswSingle;
+            use vecsim::types::BFloat16;
+            let index = HnswSingle::<BFloat16>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswSingleBF16Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_BFLOAT16,
+                )),
+                VecSimType::VecSimType_BFLOAT16,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                false,
+            )))
+        }
+        // HNSW Single - Float16
+        (IndexTypeId::HnswSingle, DataTypeId::Float16) => {
+            use vecsim::index::HnswSingle;
+            use vecsim::types::Float16;
+            let index = HnswSingle::<Float16>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswSingleFP16Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_FLOAT16,
+                )),
+                VecSimType::VecSimType_FLOAT16,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                false,
+            )))
+        }
+        // HNSW Single - Int8
+        (IndexTypeId::HnswSingle, DataTypeId::Int8) => {
+            use vecsim::index::HnswSingle;
+            use vecsim::types::Int8;
+            let index = HnswSingle::<Int8>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswSingleI8Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_INT8,
+                )),
+                VecSimType::VecSimType_INT8,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                false,
+            )))
+        }
+        // HNSW Single - UInt8
+        (IndexTypeId::HnswSingle, DataTypeId::UInt8) => {
+            use vecsim::index::HnswSingle;
+            use vecsim::types::UInt8;
+            let index = HnswSingle::<UInt8>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswSingleU8Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_UINT8,
+                )),
+                VecSimType::VecSimType_UINT8,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                false,
+            )))
+        }
+        // HNSW Multi - f32
         (IndexTypeId::HnswMulti, DataTypeId::F32) => {
             use vecsim::index::HnswMulti;
             let index = HnswMulti::<f32>::load_from_file(path).ok()?;
@@ -2292,6 +2381,95 @@ fn load_index_from_file(path: &std::path::Path) -> Option<Box<IndexHandle>> {
                     VecSimType::VecSimType_FLOAT32,
                 )),
                 VecSimType::VecSimType_FLOAT32,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                true,
+            )))
+        }
+        // HNSW Multi - f64
+        (IndexTypeId::HnswMulti, DataTypeId::F64) => {
+            use vecsim::index::HnswMulti;
+            let index = HnswMulti::<f64>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswMultiF64Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_FLOAT64,
+                )),
+                VecSimType::VecSimType_FLOAT64,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                true,
+            )))
+        }
+        // HNSW Multi - BFloat16
+        (IndexTypeId::HnswMulti, DataTypeId::BFloat16) => {
+            use vecsim::index::HnswMulti;
+            use vecsim::types::BFloat16;
+            let index = HnswMulti::<BFloat16>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswMultiBF16Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_BFLOAT16,
+                )),
+                VecSimType::VecSimType_BFLOAT16,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                true,
+            )))
+        }
+        // HNSW Multi - Float16
+        (IndexTypeId::HnswMulti, DataTypeId::Float16) => {
+            use vecsim::index::HnswMulti;
+            use vecsim::types::Float16;
+            let index = HnswMulti::<Float16>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswMultiFP16Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_FLOAT16,
+                )),
+                VecSimType::VecSimType_FLOAT16,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                true,
+            )))
+        }
+        // HNSW Multi - Int8
+        (IndexTypeId::HnswMulti, DataTypeId::Int8) => {
+            use vecsim::index::HnswMulti;
+            use vecsim::types::Int8;
+            let index = HnswMulti::<Int8>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswMultiI8Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_INT8,
+                )),
+                VecSimType::VecSimType_INT8,
+                VecSimAlgo::VecSimAlgo_HNSWLIB,
+                metric,
+                header.dimension,
+                true,
+            )))
+        }
+        // HNSW Multi - UInt8
+        (IndexTypeId::HnswMulti, DataTypeId::UInt8) => {
+            use vecsim::index::HnswMulti;
+            use vecsim::types::UInt8;
+            let index = HnswMulti::<UInt8>::load_from_file(path).ok()?;
+            let metric = convert_metric_to_c(header.metric);
+            Some(Box::new(IndexHandle::new(
+                Box::new(index::HnswMultiU8Wrapper::new(
+                    index,
+                    VecSimType::VecSimType_UINT8,
+                )),
+                VecSimType::VecSimType_UINT8,
                 VecSimAlgo::VecSimAlgo_HNSWLIB,
                 metric,
                 header.dimension,
