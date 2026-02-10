@@ -3641,13 +3641,13 @@ mod tests {
     #[test]
     fn test_disk_unsupported_type_returns_null() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("test_disk_f64.bin");
+        let path = dir.path().join("test_disk_int32.bin");
         let path_cstr = CString::new(path.to_str().unwrap()).unwrap();
 
         let params = DiskParams {
             base: VecSimParams {
                 algo: VecSimAlgo::VecSimAlgo_BF,
-                type_: VecSimType::VecSimType_FLOAT64, // Not supported
+                type_: VecSimType::VecSimType_INT32, // Not supported
                 dim: 4,
                 metric: VecSimMetric::VecSimMetric_L2,
                 multi: false,
@@ -3664,7 +3664,7 @@ mod tests {
 
         unsafe {
             let index = VecSimIndex_NewDisk(&params);
-            assert!(index.is_null(), "Disk index should fail for f64");
+            assert!(index.is_null(), "Disk index should fail for INT32");
         }
     }
 

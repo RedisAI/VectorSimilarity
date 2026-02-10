@@ -1258,8 +1258,13 @@ macro_rules! impl_disk_wrapper {
     };
 }
 
-// Implement wrappers for Disk indices (f32 only for now)
+// Implement wrappers for Disk indices
 impl_disk_wrapper!(DiskSingleF32Wrapper, f32);
+impl_disk_wrapper!(DiskSingleF64Wrapper, f64);
+impl_disk_wrapper!(DiskSingleBF16Wrapper, BFloat16);
+impl_disk_wrapper!(DiskSingleFP16Wrapper, Float16);
+impl_disk_wrapper!(DiskSingleI8Wrapper, Int8);
+impl_disk_wrapper!(DiskSingleU8Wrapper, UInt8);
 
 /// Create a new disk-based index.
 pub fn create_disk_index(params: &DiskParams) -> Option<Box<IndexHandle>> {
@@ -1268,14 +1273,34 @@ pub fn create_disk_index(params: &DiskParams) -> Option<Box<IndexHandle>> {
     let metric = params.base.metric;
     let dim = params.base.dim;
 
-    // Only f32 is supported for now
-    if data_type != VecSimType::VecSimType_FLOAT32 {
-        return None;
-    }
-
-    let index = DiskIndexSingle::<f32>::new(rust_params).ok()?;
-    let wrapper: Box<dyn IndexWrapper> =
-        Box::new(DiskSingleF32Wrapper::new(index, data_type, metric));
+    let wrapper: Box<dyn IndexWrapper> = match data_type {
+        VecSimType::VecSimType_FLOAT32 => {
+            let index = DiskIndexSingle::<f32>::new(rust_params).ok()?;
+            Box::new(DiskSingleF32Wrapper::new(index, data_type, metric))
+        }
+        VecSimType::VecSimType_FLOAT64 => {
+            let index = DiskIndexSingle::<f64>::new(rust_params).ok()?;
+            Box::new(DiskSingleF64Wrapper::new(index, data_type, metric))
+        }
+        VecSimType::VecSimType_BFLOAT16 => {
+            let index = DiskIndexSingle::<BFloat16>::new(rust_params).ok()?;
+            Box::new(DiskSingleBF16Wrapper::new(index, data_type, metric))
+        }
+        VecSimType::VecSimType_FLOAT16 => {
+            let index = DiskIndexSingle::<Float16>::new(rust_params).ok()?;
+            Box::new(DiskSingleFP16Wrapper::new(index, data_type, metric))
+        }
+        VecSimType::VecSimType_INT8 => {
+            let index = DiskIndexSingle::<Int8>::new(rust_params).ok()?;
+            Box::new(DiskSingleI8Wrapper::new(index, data_type, metric))
+        }
+        VecSimType::VecSimType_UINT8 => {
+            let index = DiskIndexSingle::<UInt8>::new(rust_params).ok()?;
+            Box::new(DiskSingleU8Wrapper::new(index, data_type, metric))
+        }
+        // INT32 and INT64 types not supported for disk indices
+        VecSimType::VecSimType_INT32 | VecSimType::VecSimType_INT64 => return None,
+    };
 
     Some(Box::new(IndexHandle::new(
         wrapper,
