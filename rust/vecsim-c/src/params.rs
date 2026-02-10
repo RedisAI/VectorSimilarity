@@ -1,6 +1,6 @@
 //! C-compatible parameter structs for index creation.
 
-use crate::types::{VecSimAlgo, VecSimMetric, VecSimType};
+use crate::types::{VecSimAlgo, VecSimMetric, VecSimSvsQuantBits, VecSimType};
 
 /// Common base parameters for all index types.
 #[repr(C)]
@@ -102,6 +102,8 @@ pub struct SVSParams {
     pub searchWindowSize: usize,
     /// Enable two-pass construction for better recall (default: true).
     pub twoPassConstruction: bool,
+    /// Quantization mode for memory-efficient storage.
+    pub quantBits: VecSimSvsQuantBits,
 }
 
 impl Default for SVSParams {
@@ -116,6 +118,7 @@ impl Default for SVSParams {
             constructionWindowSize: 200,
             searchWindowSize: 100,
             twoPassConstruction: true,
+            quantBits: VecSimSvsQuantBits::VecSimSvsQuant_NONE,
         }
     }
 }
@@ -327,6 +330,23 @@ impl SVSParams {
             .with_search_l(self.searchWindowSize)
             .with_capacity(self.base.initialCapacity)
             .with_two_pass(self.twoPassConstruction)
+            .with_quantization(self.quantBits.to_rust_quantization())
+    }
+}
+
+impl VecSimSvsQuantBits {
+    /// Convert C FFI quantization enum to Rust quantization enum.
+    pub fn to_rust_quantization(&self) -> vecsim::index::SvsQuantization {
+        match self {
+            VecSimSvsQuantBits::VecSimSvsQuant_NONE => vecsim::index::SvsQuantization::None,
+            VecSimSvsQuantBits::VecSimSvsQuant_Scalar => vecsim::index::SvsQuantization::Scalar,
+            VecSimSvsQuantBits::VecSimSvsQuant_4 => vecsim::index::SvsQuantization::Lvq4,
+            VecSimSvsQuantBits::VecSimSvsQuant_8 => vecsim::index::SvsQuantization::Lvq8,
+            VecSimSvsQuantBits::VecSimSvsQuant_4x4 => vecsim::index::SvsQuantization::Lvq4x4,
+            VecSimSvsQuantBits::VecSimSvsQuant_4x8 => vecsim::index::SvsQuantization::Lvq4x8,
+            VecSimSvsQuantBits::VecSimSvsQuant_4x8_LeanVec => vecsim::index::SvsQuantization::LeanVec4x8,
+            VecSimSvsQuantBits::VecSimSvsQuant_8x8_LeanVec => vecsim::index::SvsQuantization::LeanVec8x8,
+        }
     }
 }
 

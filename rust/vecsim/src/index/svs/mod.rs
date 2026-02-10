@@ -43,10 +43,12 @@ pub mod graph;
 pub mod search;
 pub mod single;
 pub mod multi;
+pub mod sq8;
 
 pub use graph::{VamanaGraph, VamanaGraphData};
 pub use single::{SvsSingle, SvsStats, SvsSingleBatchIterator};
 pub use multi::{SvsMulti, SvsMultiBatchIterator};
+pub use sq8::SvsSq8Core;
 
 use crate::containers::DataBlocks;
 use crate::distance::{create_distance_function, DistanceFunction, Metric};
@@ -65,6 +67,32 @@ pub const DEFAULT_CONSTRUCTION_L: usize = 200;
 
 /// Default search window size.
 pub const DEFAULT_SEARCH_L: usize = 100;
+
+/// Quantization mode for SVS index.
+///
+/// Quantization reduces memory usage by storing compressed vectors.
+/// The tradeoff is slightly reduced recall accuracy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SvsQuantization {
+    /// No quantization - full precision vectors.
+    #[default]
+    None,
+    /// Scalar 8-bit quantization (SQ8).
+    /// Each dimension is quantized to 8-bit unsigned integer with per-vector scaling.
+    Scalar,
+    /// 4-bit LVQ quantization.
+    Lvq4,
+    /// 8-bit LVQ quantization.
+    Lvq8,
+    /// 4-bit primary + 4-bit residual LVQ (two-level).
+    Lvq4x4,
+    /// 4-bit primary + 8-bit residual LVQ (two-level).
+    Lvq4x8,
+    /// LeanVec with 4-bit primary + 8-bit residual (dimension reduction + quantization).
+    LeanVec4x8,
+    /// LeanVec with 8-bit primary + 8-bit residual (dimension reduction + quantization).
+    LeanVec8x8,
+}
 
 /// Parameters for creating an SVS (Vamana) index.
 #[derive(Debug, Clone)]
@@ -85,6 +113,8 @@ pub struct SvsParams {
     pub initial_capacity: usize,
     /// Use two-pass construction (recommended for better recall).
     pub two_pass_construction: bool,
+    /// Quantization mode for memory-efficient storage.
+    pub quantization: SvsQuantization,
 }
 
 impl SvsParams {
@@ -99,6 +129,7 @@ impl SvsParams {
             search_window_size: DEFAULT_SEARCH_L,
             initial_capacity: 1024,
             two_pass_construction: true,
+            quantization: SvsQuantization::None,
         }
     }
 
@@ -129,6 +160,12 @@ impl SvsParams {
     /// Set initial capacity.
     pub fn with_capacity(mut self, capacity: usize) -> Self {
         self.initial_capacity = capacity;
+        self
+    }
+
+    /// Set quantization mode.
+    pub fn with_quantization(mut self, quantization: SvsQuantization) -> Self {
+        self.quantization = quantization;
         self
     }
 

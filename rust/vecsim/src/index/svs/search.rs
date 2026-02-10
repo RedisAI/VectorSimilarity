@@ -249,6 +249,134 @@ fn select_closest<D: DistanceType>(candidates: &[(IdType, D)], max_degree: usize
     sorted.into_iter().take(max_degree).map(|(id, _)| id).collect()
 }
 
+// ============================================================================
+// SQ8 Asymmetric Distance Search
+// ============================================================================
+
+use crate::containers::Sq8DataBlocks;
+use crate::distance::Metric;
+use crate::quantization::sq8::{sq8_asymmetric_cosine, sq8_asymmetric_inner_product, sq8_asymmetric_l2_squared};
+
+/// Result of an SQ8 search with f32 distances.
+pub struct Sq8SearchResult {
+    pub results: Vec<Sq8SearchResultEntry>,
+}
+
+/// Single SQ8 search result entry.
+pub struct Sq8SearchResultEntry {
+    pub id: IdType,
+    pub distance: f32,
+}
+
+/// Greedy beam search using SQ8 asymmetric distance.
+///
+/// Query vector is in f32, stored vectors are in SQ8 format.
+#[allow(clippy::too_many_arguments)]
+pub fn greedy_beam_search_sq8<P>(
+    entry_point: IdType,
+    query: &[f32],
+    beam_width: usize,
+    graph: &VamanaGraph,
+    data: &Sq8DataBlocks,
+    metric: Metric,
+    dim: usize,
+    visited: &VisitedNodesHandler,
+    filter: Option<&P>,
+) -> Sq8SearchResult
+where
+    P: Fn(IdType) -> bool + ?Sized,
+{
+    // Compute asymmetric distance
+    let compute_dist = |id: IdType| -> Option<f32> {
+        let (quantized, meta) = data.get(id)?;
+        Some(match metric {
+            Metric::L2 => sq8_asymmetric_l2_squared(query, quantized, meta, dim),
+            Metric::InnerProduct => sq8_asymmetric_inner_product(query, quantized, meta, dim),
+            Metric::Cosine => sq8_asymmetric_cosine(query, quantized, meta, dim),
+        })
+    };
+
+    // Candidates to explore (min-heap: closest first)
+    let mut candidates = MinHeap::<f32>::with_capacity(beam_width * 2);
+
+    // Results (max-heap: keeps L closest, largest at top)
+    let mut results = MaxHeap::<f32>::new(beam_width);
+
+    // Initialize with entry point
+    visited.visit(entry_point);
+
+    if let Some(dist) = compute_dist(entry_point) {
+        candidates.push(entry_point, dist);
+
+        if !graph.is_deleted(entry_point) {
+            let passes = filter.is_none_or(|f| f(entry_point));
+            if passes {
+                results.insert(entry_point, dist);
+            }
+        }
+    }
+
+    // Explore candidates
+    while let Some(candidate) = candidates.pop() {
+        // Check if we can stop early
+        if results.is_full() {
+            if let Some(worst_dist) = results.top_distance() {
+                if (candidate.distance as f64) > worst_dist.to_f64() {
+                    break;
+                }
+            }
+        }
+
+        // Skip deleted nodes
+        if graph.is_deleted(candidate.id) {
+            continue;
+        }
+
+        // Explore neighbors
+        for neighbor in graph.get_neighbors(candidate.id) {
+            if visited.visit(neighbor) {
+                continue; // Already visited
+            }
+
+            // Skip deleted neighbors
+            if graph.is_deleted(neighbor) {
+                continue;
+            }
+
+            // Compute distance
+            if let Some(dist) = compute_dist(neighbor) {
+                // Check filter
+                let passes = filter.is_none_or(|f| f(neighbor));
+
+                // Add to results if it passes filter and is close enough
+                if passes
+                    && (!results.is_full()
+                        || (dist as f64) < results.top_distance().unwrap().to_f64())
+                {
+                    results.try_insert(neighbor, dist);
+                }
+
+                // Add to candidates for exploration if close enough
+                if !results.is_full() || (dist as f64) < results.top_distance().unwrap().to_f64() {
+                    candidates.push(neighbor, dist);
+                }
+            }
+        }
+    }
+
+    // Convert to sorted vector
+    Sq8SearchResult {
+        results: results
+            .into_sorted_vec()
+            .into_iter()
+            .map(|e| Sq8SearchResultEntry {
+                id: e.id,
+                distance: e.distance,
+            })
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

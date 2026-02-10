@@ -646,6 +646,7 @@ impl SvsSingle<f32> {
             search_window_size,
             initial_capacity: header.count.max(1024),
             two_pass_construction,
+            quantization: super::SvsQuantization::None, // Loaded indices use no quantization
         };
 
         // Create the index

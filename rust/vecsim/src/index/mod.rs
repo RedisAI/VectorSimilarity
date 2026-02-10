@@ -41,7 +41,7 @@ pub use tiered::{
 
 // Re-export SVS types
 pub use svs::{
-    SvsParams, SvsSingle, SvsMulti, SvsStats,
+    SvsParams, SvsSingle, SvsMulti, SvsStats, SvsQuantization,
 };
 
 // Re-export Tiered SVS types

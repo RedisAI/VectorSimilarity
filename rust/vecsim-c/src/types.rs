@@ -181,6 +181,32 @@ pub enum VecSearchMode {
     RANGE_QUERY = 5,
 }
 
+/// SVS quantization bits configuration.
+///
+/// Matches C++ VecSimSvsQuantBits enum for compatibility.
+/// The values are encoded as: primary_bits | (residual_bits << 8) | (is_leanvec << 16)
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VecSimSvsQuantBits {
+    /// No quantization (full precision).
+    #[default]
+    VecSimSvsQuant_NONE = 0,
+    /// 8-bit scalar quantization (SQ8).
+    VecSimSvsQuant_Scalar = 1,
+    /// 4-bit LVQ quantization.
+    VecSimSvsQuant_4 = 4,
+    /// 8-bit LVQ quantization.
+    VecSimSvsQuant_8 = 8,
+    /// 4-bit primary + 4-bit residual LVQ.
+    VecSimSvsQuant_4x4 = 0x0404, // 4 | (4 << 8)
+    /// 4-bit primary + 8-bit residual LVQ.
+    VecSimSvsQuant_4x8 = 0x0804, // 4 | (8 << 8)
+    /// LeanVec with 4-bit primary + 8-bit residual.
+    VecSimSvsQuant_4x8_LeanVec = 0x010804, // 4 | (8 << 8) | (1 << 16)
+    /// LeanVec with 8-bit primary + 8-bit residual.
+    VecSimSvsQuant_8x8_LeanVec = 0x010808, // 8 | (8 << 8) | (1 << 16)
+}
+
 /// Timeout callback function type.
 /// Returns non-zero on timeout.
 pub type timeoutCallbackFunction = Option<unsafe extern "C" fn(ctx: *mut std::ffi::c_void) -> i32>;

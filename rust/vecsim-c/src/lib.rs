@@ -588,6 +588,16 @@ pub unsafe extern "C" fn VecSimIndex_NewHNSW(params: *const HNSWParams_C) -> *mu
     }
 }
 
+/// Convert compat VecSimSvsQuantBits to types VecSimSvsQuantBits.
+fn convert_compat_quant_bits(quant: compat::VecSimSvsQuantBits) -> types::VecSimSvsQuantBits {
+    match quant {
+        compat::VecSimSvsQuantBits::VecSimSvsQuant_NONE => types::VecSimSvsQuantBits::VecSimSvsQuant_NONE,
+        compat::VecSimSvsQuantBits::VecSimSvsQuant_Scalar => types::VecSimSvsQuantBits::VecSimSvsQuant_Scalar,
+        compat::VecSimSvsQuantBits::VecSimSvsQuant_4 => types::VecSimSvsQuantBits::VecSimSvsQuant_4,
+        compat::VecSimSvsQuantBits::VecSimSvsQuant_8 => types::VecSimSvsQuantBits::VecSimSvsQuant_8,
+    }
+}
+
 /// Create a new SVS (Vamana) index with specific parameters.
 ///
 /// # Safety
@@ -616,6 +626,7 @@ pub unsafe extern "C" fn VecSimIndex_NewSVS(params: *const SVSParams_C) -> *mut 
         constructionWindowSize: c_params.construction_window_size,
         searchWindowSize: c_params.search_window_size,
         twoPassConstruction: true, // Default value
+        quantBits: convert_compat_quant_bits(c_params.quantBits),
     };
     match create_svs_index(&rust_params) {
         Some(boxed) => Box::into_raw(boxed) as *mut VecSimIndex,
