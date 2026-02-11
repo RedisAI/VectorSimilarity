@@ -4,6 +4,7 @@
 #include <cassert>
 #include <algorithm>
 #include <mutex>
+#include <shared_mutex>
 #include "VecSim/utils/vec_utils.h"
 
 template <typename DistType>
@@ -86,7 +87,7 @@ struct ElementLevelData {
 
 struct ElementGraphData {
     size_t toplevel;
-    std::mutex neighborsGuard;
+    std::shared_mutex neighborsGuard;
     ElementLevelData *others;
     ElementLevelData level0;
 
