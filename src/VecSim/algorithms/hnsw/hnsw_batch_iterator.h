@@ -115,7 +115,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
         auto *node_graph_data = this->index->getGraphDataByInternalId(curr_node_id);
-        this->index->lockNodeLinksShared(node_graph_data);
+        auto guard = this->index->nodeLinksSharedGuard(node_graph_data);
         ElementLevelData &node_level_data = this->index->getElementLevelData(node_graph_data, 0);
         if (node_level_data.numLinks > 0) {
 
@@ -156,7 +156,6 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
                 candidates.emplace(candidate_dist, candidate_id);
             }
         }
-        this->index->unlockNodeLinksShared(curr_node_id);
     }
     return VecSim_QueryReply_OK;
 }
