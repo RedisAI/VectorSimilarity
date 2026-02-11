@@ -279,7 +279,7 @@ typedef struct {
 typedef struct {
     size_t efRuntime;         // EF parameter for HNSW graph accuracy/latency for search.
     double epsilon;           // Epsilon parameter for HNSW graph accuracy/latency for range search.
-    VecSimBool should_rerank; // Whether to enable reranking for disk-based HNSW (True/False/Unset).
+    VecSimBool shouldRerank;  // Whether to enable reranking for disk-based HNSW (True/False/Unset).
 } HNSWDiskRuntimeParams;
 
 typedef struct {
