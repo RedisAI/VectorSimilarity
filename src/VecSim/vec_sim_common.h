@@ -209,8 +209,8 @@ typedef struct {
 
 // A struct that contains HNSW Disk tiered index specific params.
 typedef struct {
-    ThrottleCB enableThrottleCB;   // call to enable postponing of Redis commands
-    ThrottleCB disableThrottleCB;  // call to disable postponing of Redis commands
+    ThrottleCB enableThrottleCB;  // call to enable postponing of Redis commands
+    ThrottleCB disableThrottleCB; // call to disable postponing of Redis commands
 } TieredHNSWDiskParams;
 
 // A struct that contains SVS tiered index specific params.
