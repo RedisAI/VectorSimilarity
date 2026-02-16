@@ -136,6 +136,11 @@ typedef int (*SubmitCB)(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCa
                         size_t jobs_len);
 
 /**
+ * Callback signature for throttle control in disk tiered index.
+ */
+typedef void (*ThrottleCB)(void);
+
+/**
  * @brief Index initialization parameters.
  *
  */
@@ -203,9 +208,9 @@ typedef struct {
 } TieredHNSWParams;
 
 // A struct that contains HNSW Disk tiered index specific params.
-// Consider removing and use TieredHNSWParams instead if they both share swapJobThreshold
 typedef struct {
-    char _placeholder; // Reserved for future fields and avoid compiler errors
+    ThrottleCB enableThrottleCB;  // call to enable postponing of Redis commands
+    ThrottleCB disableThrottleCB; // call to disable postponing of Redis commands
 } TieredHNSWDiskParams;
 
 // A struct that contains SVS tiered index specific params.
