@@ -240,8 +240,6 @@ protected:
     }
 
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
-        assert(handler && "SVSIndex::setImpl called with null handler");
-        assert(impl_ == nullptr); // Should be called only on empty impl_
         if (impl_ != nullptr) {
             throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
         }
