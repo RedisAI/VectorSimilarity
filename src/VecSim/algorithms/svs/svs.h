@@ -288,6 +288,17 @@ protected:
         return n - deleted_num;
     }
 
+    int deleteVectorImpl(const labelType label) {
+        if (indexLabelCount() == 0 || !impl_->has_id(label)) {
+            return 0;
+        }
+
+        const auto deleted_num = impl_->delete_entries(std::span{&label, 1});
+
+        this->markIndexUpdate(deleted_num);
+        return deleted_num;
+    }
+
     int deleteVectorsImpl(const labelType *labels, size_t n) {
         if (indexLabelCount() == 0) {
             return 0;
@@ -306,18 +317,7 @@ protected:
             return 0;
         }
 
-        // If entries_to_delete.size() == 1, we should ensure single-threading
-        const size_t current_num_threads = getNumThreads();
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(1);
-        }
-
         const auto deleted_num = impl_->delete_entries(entries_to_delete);
-
-        // Restore multi-threading if needed
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(current_num_threads);
-        }
 
         this->markIndexUpdate(deleted_num);
         return deleted_num;
@@ -533,7 +533,7 @@ public:
         return addVectorsImpl(vectors_data, labels, n);
     }
 
-    int deleteVector(labelType label) override { return deleteVectorsImpl(&label, 1); }
+    int deleteVector(labelType label) override { return deleteVectorImpl(label); }
 
     int deleteVectors(const labelType *labels, size_t n) override {
         return deleteVectorsImpl(labels, n);

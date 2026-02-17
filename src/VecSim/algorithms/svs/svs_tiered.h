@@ -824,7 +824,7 @@ public:
 
             if (label_exists) {
                 std::lock_guard lock(this->mainIndexGuard);
-                ret -= svs_index->deleteVectors(&label, 1);
+                ret -= this->backendIndex->deleteVector(label);
             }
         }
         { // Add vector to the frontend index.
@@ -918,7 +918,7 @@ public:
 
         if (label_exists) {
             std::lock_guard lock(this->mainIndexGuard);
-            ret += svs_index->deleteVectors(&label, 1);
+            ret += this->backendIndex->deleteVector(label);
         }
         return ret;
     }
