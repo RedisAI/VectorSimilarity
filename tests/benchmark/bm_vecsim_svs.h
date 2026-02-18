@@ -47,6 +47,10 @@ public:
     // index.
     void TriggerUpdateTiered(benchmark::State &st);
 
+    // Add vectors to reach training threshold in tiered index, and then add more vectors in
+    // parallel to backend training job. Measure time to add new vectors in this scenario.
+    void AddVectorsDuringTraining(benchmark::State &st);
+
     // Deletes an amount of labels from the index that triggers inplace consolidation.
     void RunGC(benchmark::State &st);
 
@@ -401,6 +405,44 @@ void BM_VecSimSVS<index_type_t>::TriggerUpdateTiered(benchmark::State &st) {
                       (std::ostringstream()
                        << "added the update_threshold'th (" << update_threshold << ") vector")
                           .str());
+}
+
+template <typename index_type_t>
+inline void BM_VecSimSVS<index_type_t>::AddVectorsDuringTraining(benchmark::State &st) {
+    // ensure mode is async
+    ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
+
+    auto training_threshold = st.range(0);
+    int unsigned num_threads = st.range(1);
+
+    if (num_threads > std::thread::hardware_concurrency()) {
+        GTEST_SKIP() << "Not enough threads available, skipping test...";
+    }
+
+    // Ensure we have enough vectors to train.
+    ASSERT_GE(N_QUERIES, training_threshold + 1000); // need extra vectors to add during training
+
+    // In each iteration create a new index
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
+    auto *tiered_index = CreateTieredSVSIndex(
+        mock_thread_pool, training_threshold,
+        1 << 30); // set very high update threshold to avoid updates during this test
+
+    // Add vectors to reach training threshold and trigger training.
+    for (size_t i = 0; i < training_threshold; ++i) {
+        VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i);
+    }
+    mock_thread_pool.init_threads();
+    size_t label = training_threshold;
+
+    for (auto _ : st) {
+        // While the backend is training, keep adding vectors in parallel to the training job.
+        for (size_t i = 0; i < 1000 && label < N_QUERIES; i++, label++) {
+            VecSimIndex_AddVector(tiered_index, test_vectors[label].data(), label);
+        }
+    }
+    mock_thread_pool.thread_pool_join();
 }
 
 template <typename index_type_t>

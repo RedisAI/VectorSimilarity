@@ -40,3 +40,17 @@ BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_TriggerUpdateTiered))
                    {2, 4, 8}})
     ->ArgNames({"update_threshold", "thread_count"})
     ->MeasureProcessCPUTime();
+
+// Add vectors to reach training threshold in tiered index, and then add more vectors in parallel to
+// backend training job. Measure time to add new vectors in this scenario.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_FUNC_NAME(BM_AddVectorsDuringTraining),
+                            DATA_TYPE_INDEX_T)
+(benchmark::State &st) { AddVectorsDuringTraining(st); }
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_AddVectorsDuringTraining))
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations(1)
+    ->ArgsProduct({{static_cast<long int>(BM_VecSimGeneral::block_size), 5000,
+                    static_cast<long int>(10 * BM_VecSimGeneral::block_size)},
+                   {2, 4}})
+    ->ArgNames({"training_threshold", "thread_count"})
+    ->UseRealTime();
