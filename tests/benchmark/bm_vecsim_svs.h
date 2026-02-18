@@ -420,7 +420,7 @@ inline void BM_VecSimSVS<index_type_t>::AddVectorsDuringTraining(benchmark::Stat
     }
 
     // Ensure we have enough vectors to train.
-    ASSERT_GE(N_QUERIES, training_threshold);
+    ASSERT_GE(N_QUERIES, training_threshold + 1000); // need extra vectors to add during training
 
     // In each iteration create a new index
     auto mock_thread_pool = tieredIndexMock(num_threads);
@@ -438,7 +438,7 @@ inline void BM_VecSimSVS<index_type_t>::AddVectorsDuringTraining(benchmark::Stat
 
     for (auto _ : st) {
         // While the backend is training, keep adding vectors in parallel to the training job.
-        for (size_t i = 0; i < 1000; i++, label++) {
+        for (size_t i = 0; i < 1000 && label < N_QUERIES; i++, label++) {
             VecSimIndex_AddVector(tiered_index, test_vectors[label].data(), label);
         }
     }
