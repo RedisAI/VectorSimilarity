@@ -218,6 +218,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     using swap_record = std::tuple<labelType, idType, idType>;
     constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
     std::vector<swap_record> swaps_journal;
+    // deleted_labels_journal is used by updateSVSIndex() to track vectors that were deleted from
+    // Flat index during SVS index updating. The journal contains the deleted labels. These labels
+    // are used to delete the same vectors from the SVS index at the end of the update.
+    std::vector<labelType> deleted_labels_journal;
 
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
@@ -668,6 +672,7 @@ private:
             }
             // reset journal to the current frontend index state
             swaps_journal.clear();
+            deleted_labels_journal.clear();
         } // release frontend index
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
@@ -699,6 +704,18 @@ private:
         // clean-up frontend index
         { // lock frontend index for writing and delete moved vectors
             std::lock_guard lock(this->flatIndexGuard);
+
+            // delete vectors from backend index that were deleted from the frontend index during
+            // the update process.
+            std::sort(deleted_labels_journal.begin(), deleted_labels_journal.end());
+            auto it = std::unique(deleted_labels_journal.begin(), deleted_labels_journal.end());
+            deleted_labels_journal.erase(it, deleted_labels_journal.end());
+            {
+                std::lock_guard main_lock(this->mainIndexGuard);
+                auto svs_index = GetSVSIndex();
+                svs_index->deleteVectors(deleted_labels_journal.data(),
+                                         deleted_labels_journal.size());
+            }
 
             // Apply swaps from journal to labels_to_move to reflect changes made in meanwhile.
             applySwapsToLabelsArray(labels_to_move, this->swaps_journal);
@@ -837,6 +854,7 @@ public:
                 for (auto id : this->frontendIndex->getElementIds(label)) {
                     this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
                 }
+                deleted_labels_journal.push_back(label);
             }
             ret = std::max(ret + ft_ret, 0);
             // Check frontend index size to determine if an update job schedule is needed.
@@ -891,6 +909,7 @@ public:
                 this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
             }
         }
+        deleted_labels_journal.push_back(label);
 
         return deleting_ids.size();
     }
