@@ -655,6 +655,7 @@ private:
     void updateSVSIndex(size_t availableThreads) {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
+        std::vector<labelType> deleted_labels_during_update;
 
         { // lock frontendIndex from modifications
             std::shared_lock flat_lock{this->flatIndexGuard};
@@ -705,17 +706,9 @@ private:
         { // lock frontend index for writing and delete moved vectors
             std::lock_guard lock(this->flatIndexGuard);
 
-            // delete vectors from backend index that were deleted from the frontend index during
-            // the update process.
-            std::sort(deleted_labels_journal.begin(), deleted_labels_journal.end());
-            auto it = std::unique(deleted_labels_journal.begin(), deleted_labels_journal.end());
-            deleted_labels_journal.erase(it, deleted_labels_journal.end());
-            {
-                std::lock_guard main_lock(this->mainIndexGuard);
-                auto svs_index = GetSVSIndex();
-                svs_index->deleteVectors(deleted_labels_journal.data(),
-                                         deleted_labels_journal.size());
-            }
+            // swap deleted labels journal with the local variable to track deleted labels during
+            // update
+            std::swap(deleted_labels_during_update, deleted_labels_journal);
 
             // Apply swaps from journal to labels_to_move to reflect changes made in meanwhile.
             applySwapsToLabelsArray(labels_to_move, this->swaps_journal);
@@ -735,6 +728,19 @@ private:
             assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
                                             [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
+        }
+        // delete vectors from backend index that were deleted from the frontend index during
+        // the update process.
+        {
+            std::lock_guard main_lock(this->mainIndexGuard);
+
+            std::sort(deleted_labels_during_update.begin(), deleted_labels_during_update.end());
+            auto it = std::unique(deleted_labels_during_update.begin(),
+                                  deleted_labels_during_update.end());
+            deleted_labels_during_update.erase(it, deleted_labels_during_update.end());
+            auto svs_index = GetSVSIndex();
+            svs_index->deleteVectors(deleted_labels_during_update.data(),
+                                     deleted_labels_during_update.size());
         }
     }
 
