@@ -3616,6 +3616,212 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalMulti) {
     ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(n + 1, expected_vector), 0, abs_err);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalSingle) {
+    // Create TieredSVS index instance with a mock queue.
+    const size_t dim = 4;
+    const size_t n = 15;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n, n * 100);
+    ASSERT_INDEX(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    // Add n vectors to the index.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i);
+        tiered_index->addVector(vector, i);
+    }
+
+    // Pause the update job before svs index update
+    std::mutex mtx;
+    bool adding_to_svs = false;
+    bool continue_job = false;
+    std::condition_variable cv;
+
+    auto tracing_callback = [&]() {
+        {
+            std::unique_lock lock(mtx);
+            adding_to_svs = true; // Indicate that we are waiting for the update job to start.
+        }
+        cv.notify_one(); // Notify that the update job has started.
+        {
+            std::unique_lock lock(mtx);
+            cv.wait(lock, [&] { return continue_job; }); // Wait until we continue.
+        }
+    };
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", tracing_callback);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    {
+        // IMPORTANT!: Do not use ASSERT here, as it will not release the mutex and will cause a
+        // deadlock. Use EXPECT instead, so we can continue the test even if the condition is not
+        // met.
+
+        // Wait for the update job to start.
+        std::unique_lock lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(100), [&] { return adding_to_svs; }));
+
+        // update job paused, we have vectors 0-(n-1) in the index, let's do index modifications
+
+        // Remove vector label=0.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1);
+        // Update vector label=1.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 10), 0);
+        // Update vector label=2.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 20), 0);
+        // Remove vector label=2.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 2), 1);
+        // Remove the last vector
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 1);
+        // Add a new vector - in flat only
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n, n), 1);
+        // Remove vector label=n - in flat only
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n), 1);
+
+        continue_job = true; // Indicate that we can continue the update job.
+    }
+
+    // continue the update job
+    cv.notify_all(); // Notify that we can continue.
+
+    mock_thread_pool.thread_pool_join();
+
+    // Verify that vectors labels: {0, 1, 2, n-1} are marked as deleted in the SVS index.
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 4);
+
+    // Verify that the deleted vectors are not accessible.
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    auto svs_index = tiered_index->GetSVSIndex();
+    auto backend_index = tiered_index->GetBackendIndex();
+    auto flat_index = tiered_index->GetFlatIndex();
+
+    // labels 0, 2, n-1, n - deleted everywhere
+    for (size_t label : {size_t{0}, size_t{2}, n - 1, n}) {
+        ASSERT_FALSE(flat_index->isLabelExists(label));
+        ASSERT_FALSE(svs_index->isLabelExists(label));
+        GenerateVector<TEST_DATA_T>(expected_vector, dim);
+        ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(label, expected_vector)));
+    }
+
+    // label 1 - updated to 10 but deleted in the SVS index
+    ASSERT_TRUE(flat_index->isLabelExists(1));
+    ASSERT_FALSE(svs_index->isLabelExists(1));
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalMulti) {
+    // Create TieredSVS index instance with a mock queue.
+    const size_t dim = 4;
+    const size_t n = 15;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n, n * 100);
+    ASSERT_INDEX(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    // Add n vectors to the index.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i);
+        tiered_index->addVector(vector, i);
+    }
+
+    // Pause the update job before svs index update
+    std::mutex mtx;
+    bool adding_to_svs = false;
+    bool continue_job = false;
+    std::condition_variable cv;
+
+    auto tracing_callback = [&]() {
+        {
+            std::unique_lock lock(mtx);
+            adding_to_svs = true; // Indicate that we are waiting for the update job to start.
+        }
+        cv.notify_one(); // Notify that the update job has started.
+        {
+            std::unique_lock lock(mtx);
+            cv.wait(lock, [&] { return continue_job; }); // Wait until we continue.
+        }
+    };
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", tracing_callback);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    mock_thread_pool.init_threads();
+
+    {
+        // IMPORTANT!: Do not use ASSERT here, as it will not release the mutex and will cause a
+        // deadlock. Use EXPECT instead, so we can continue the test even if the condition is not
+        // met.
+
+        // Wait for the update job to start.
+        std::unique_lock lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(100), [&] { return adding_to_svs; }));
+
+        // update job paused, we have vectors 0-(n-1) in the index, let's do index modifications
+
+        // Remove vector label=0.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1);
+        // Remove the last vector
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 1);
+        // Update vector label=2.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 20), 1);
+        // Remove vector label=2.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 2), 2);
+        // Update vector label=1.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 10), 1);
+        // Add a new vector - in flat only
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n, n), 1);
+        // Remove vector label=n - in flat only
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n), 1);
+
+        continue_job = true; // Indicate that we can continue the update job.
+    }
+
+    // continue the update job
+    cv.notify_all(); // Notify that we can continue.
+
+    mock_thread_pool.thread_pool_join();
+
+    // Verify that vectors labels: {0, 2, n-1} are marked as deleted in the SVS index.
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 3);
+
+    // Verify that the deleted vectors are not accessible.
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    auto svs_index = tiered_index->GetSVSIndex();
+    auto backend_index = tiered_index->GetBackendIndex();
+    auto flat_index = tiered_index->GetFlatIndex();
+
+    // labels 0, 2, n-1, n - deleted everywhere
+    for (size_t label : {size_t{0}, size_t{2}, n - 1, n}) {
+        ASSERT_FALSE(flat_index->isLabelExists(label));
+        ASSERT_FALSE(svs_index->isLabelExists(label));
+        GenerateVector<TEST_DATA_T>(expected_vector, dim);
+        ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(label, expected_vector)));
+    }
+
+    // label 1 - multi-value 1 (in SVS) and 10 (in flat)
+    ASSERT_TRUE(flat_index->isLabelExists(1));
+    ASSERT_TRUE(svs_index->isLabelExists(1));
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 1);
+    ASSERT_NEAR(backend_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
+    ASSERT_NEAR(flat_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+}
+
 TEST(SVSTieredIndexTest, testThreadPool) {
     // Test VecSimSVSThreadPool
     const size_t num_threads = 4;
