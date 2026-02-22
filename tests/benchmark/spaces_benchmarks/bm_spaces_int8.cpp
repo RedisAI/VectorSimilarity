@@ -49,8 +49,8 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE2, 32, 
 #endif
 #ifdef OPT_SVE
 bool sve_supported = opt.sve; // Check for SVE support
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve2_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve2_supported);
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_Integers_INT8, INT8, SVE, 32, sve_supported);
 #endif
 #ifdef OPT_NEON_DOTPROD
 bool neon_dotprod_supported = opt.asimddp;
