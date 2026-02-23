@@ -39,12 +39,23 @@ struct SVSIndexBase
     virtual ~SVSIndexBase() = default;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
     virtual size_t getNumThreads() const = 0;
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
     size_t getNumMarkedDeleted() const { return num_marked_deleted; }
+
+    // Abstract handler to manage SVS implementation instance
+    // declared to avoid unsafe unique_ptr<void> usage
+    // Derived SVSIndex class should implement it
+    struct ImplHandler {
+        virtual ~ImplHandler() = default;
+    };
+    virtual std::unique_ptr<ImplHandler> createImpl(const void *vectors_data,
+                                                    const labelType *labels, size_t n) = 0;
+    virtual void setImpl(std::unique_ptr<ImplHandler> impl) = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -144,7 +155,8 @@ protected:
     // Create SVS index instance with initial data
     // Data should not be empty
     template <svs::data::ImmutableMemoryDataset Dataset>
-    void initImpl(const Dataset &points, std::span<const labelType> ids) {
+    std::unique_ptr<impl_type> initImpl(const Dataset &points,
+                                        std::span<const labelType> ids) const {
         svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
 
         // Construct SVS index initial storage with compression if needed
@@ -160,25 +172,26 @@ protected:
 
         // Construct initial Vamana Graph
         auto graph =
-            graph_builder_t::build_graph(parameters, data, distance, threadpool_, entry_point,
+            graph_builder_t::build_graph(parameters, data, distance, threadpool_handle, entry_point,
                                          this->blockSize, this->getAllocator(), logger_);
 
         // Create SVS MutableIndex instance
-        impl_ = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
-                                            std::move(distance), ids, threadpool_, logger_);
+        auto impl = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
+                                                std::move(distance), ids, threadpool_, logger_);
 
         // Set SVS MutableIndex build parameters to be used in future updates
-        impl_->set_construction_window_size(parameters.window_size);
-        impl_->set_max_candidates(parameters.max_candidate_pool_size);
-        impl_->set_prune_to(parameters.prune_to);
-        impl_->set_alpha(parameters.alpha);
-        impl_->set_full_search_history(parameters.use_full_search_history);
+        impl->set_construction_window_size(parameters.window_size);
+        impl->set_max_candidates(parameters.max_candidate_pool_size);
+        impl->set_prune_to(parameters.prune_to);
+        impl->set_alpha(parameters.alpha);
+        impl->set_full_search_history(parameters.use_full_search_history);
 
         // Configure default search parameters
-        auto sp = impl_->get_search_parameters();
+        auto sp = impl->get_search_parameters();
         sp.buffer_config({this->search_window_size, this->search_buffer_capacity});
-        impl_->set_search_parameters(sp);
-        impl_->reset_performance_parameters();
+        impl->set_search_parameters(sp);
+        impl->reset_performance_parameters();
+        return impl;
     }
 
     // Preprocess batch of vectors
@@ -202,6 +215,40 @@ protected:
                                            i * this->dim);
         }
         return processed_blob;
+    }
+
+    // Handler to manage SVS implementation instance
+    struct SVSImplHandler : public SVSIndexBase::ImplHandler {
+        std::unique_ptr<impl_type> impl;
+        SVSImplHandler(std::unique_ptr<impl_type> impl) : impl{std::move(impl)} {}
+    };
+
+    std::unique_ptr<ImplHandler> createImpl(const void *vectors_data, const labelType *labels,
+                                            size_t n) override {
+        // If no data provided, return empty handler
+        if (n == 0) {
+            return std::make_unique<SVSImplHandler>(nullptr);
+        }
+
+        std::span<const labelType> ids(labels, n);
+        auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
+        auto typed_vectors_data = static_cast<DataType *>(processed_blob.get());
+        // Wrap data into SVS SimpleDataView for SVS API
+        auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
+
+        return std::make_unique<SVSImplHandler>(initImpl(points, ids));
+    }
+
+    void setImpl(std::unique_ptr<ImplHandler> handler) override {
+        if (impl_ != nullptr) {
+            throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
+        }
+
+        SVSImplHandler *svs_handler = dynamic_cast<SVSImplHandler *>(handler.get());
+        if (!svs_handler) {
+            throw std::logic_error("Failed to cast to SVSImplHandler");
+        }
+        this->impl_ = std::move(svs_handler->impl);
     }
 
     // Assuming numThreads was updated to reflect the number of available threads before this
@@ -230,13 +277,24 @@ protected:
 
         if (!impl_) {
             // SVS index instance cannot be empty, so we have to construct it at first rows
-            initImpl(points, ids);
+            impl_ = initImpl(points, ids);
         } else {
             // Add new points to existing SVS index
             impl_->add_points(points, ids);
         }
 
         return n - deleted_num;
+    }
+
+    int deleteVectorImpl(const labelType label) {
+        if (indexLabelCount() == 0 || !impl_->has_id(label)) {
+            return 0;
+        }
+
+        const auto deleted_num = impl_->delete_entries(std::span{&label, 1});
+
+        this->markIndexUpdate(deleted_num);
+        return deleted_num;
     }
 
     int deleteVectorsImpl(const labelType *labels, size_t n) {
@@ -257,18 +315,7 @@ protected:
             return 0;
         }
 
-        // If entries_to_delete.size() == 1, we should ensure single-threading
-        const size_t current_num_threads = getNumThreads();
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(1);
-        }
-
         const auto deleted_num = impl_->delete_entries(entries_to_delete);
-
-        // Restore multi-threading if needed
-        if (n == 1 && current_num_threads > 1) {
-            setNumThreads(current_num_threads);
-        }
 
         this->markIndexUpdate(deleted_num);
         return deleted_num;
@@ -484,10 +531,14 @@ public:
         return addVectorsImpl(vectors_data, labels, n);
     }
 
-    int deleteVector(labelType label) override { return deleteVectorsImpl(&label, 1); }
+    int deleteVector(labelType label) override { return deleteVectorImpl(label); }
 
     int deleteVectors(const labelType *labels, size_t n) override {
         return deleteVectorsImpl(labels, n);
+    }
+
+    bool isLabelExists(labelType label) const override {
+        return impl_ ? impl_->has_id(label) : false;
     }
 
     size_t getNumThreads() const override { return threadpool_.size(); }
