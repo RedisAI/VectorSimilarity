@@ -218,6 +218,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     using swap_record = std::tuple<labelType, idType, idType>;
     constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
     std::vector<swap_record> swaps_journal;
+    // deleted_labels_journal is used by updateSVSIndex() to track vectors that were deleted from
+    // Flat index during SVS index updating. The journal contains the deleted labels. These labels
+    // are used to delete the same vectors from the SVS index at the end of the update.
+    std::vector<labelType> deleted_labels_journal;
 
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
@@ -651,6 +655,7 @@ private:
     void updateSVSIndex(size_t availableThreads) {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
+        std::vector<labelType> deleted_labels_during_update;
 
         { // lock frontendIndex from modifications
             std::shared_lock flat_lock{this->flatIndexGuard};
@@ -668,21 +673,42 @@ private:
             }
             // reset journal to the current frontend index state
             swaps_journal.clear();
+            deleted_labels_journal.clear();
         } // release frontend index
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
         { // lock backend index for writing and add vectors there
-            std::lock_guard lock(this->mainIndexGuard);
+            std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
-            svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
-            svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
-                                  labels_to_move.size());
+            if (this->backendIndex->indexSize() == 0) {
+                // If backend index is empty, we need to initialize it first.
+                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
+                                                  labels_to_move.size());
+
+                // Upgrade to unique lock to set the new impl
+                main_shared_lock.unlock();
+                std::lock_guard lock(this->mainIndexGuard);
+                svs_index->setImpl(std::move(impl));
+            } else {
+                // Backend index is initialized - just add the vectors.
+                main_shared_lock.unlock();
+                std::lock_guard lock(this->mainIndexGuard);
+                // Upgrade to unique lock to add vectors
+                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
+                                      labels_to_move.size());
+            }
         }
         executeTracingCallback("UpdateJob::after_add_to_svs");
         // clean-up frontend index
         { // lock frontend index for writing and delete moved vectors
             std::lock_guard lock(this->flatIndexGuard);
+
+            // swap deleted labels journal with the local variable to track deleted labels during
+            // update
+            std::swap(deleted_labels_during_update, deleted_labels_journal);
 
             // Apply swaps from journal to labels_to_move to reflect changes made in meanwhile.
             applySwapsToLabelsArray(labels_to_move, this->swaps_journal);
@@ -702,6 +728,19 @@ private:
             assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
                                             [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
+        }
+        // delete vectors from backend index that were deleted from the frontend index during
+        // the update process.
+        {
+            std::lock_guard main_lock(this->mainIndexGuard);
+
+            std::sort(deleted_labels_during_update.begin(), deleted_labels_during_update.end());
+            auto it = std::unique(deleted_labels_during_update.begin(),
+                                  deleted_labels_during_update.end());
+            deleted_labels_during_update.erase(it, deleted_labels_during_update.end());
+            auto svs_index = GetSVSIndex();
+            svs_index->deleteVectors(deleted_labels_during_update.data(),
+                                     deleted_labels_during_update.size());
         }
     }
 
@@ -801,8 +840,15 @@ public:
                 }
             }
             // Remove vector from the backend index if it exists in case of non-MULTI.
-            std::lock_guard lock(this->mainIndexGuard);
-            ret -= svs_index->deleteVectors(&label, 1);
+            auto label_exists = [&]() {
+                std::shared_lock lock(this->mainIndexGuard);
+                return svs_index->isLabelExists(label);
+            }();
+
+            if (label_exists) {
+                std::lock_guard lock(this->mainIndexGuard);
+                ret -= this->backendIndex->deleteVector(label);
+            }
         }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
@@ -814,6 +860,7 @@ public:
                 for (auto id : this->frontendIndex->getElementIds(label)) {
                     this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
                 }
+                deleted_labels_journal.push_back(label);
             }
             ret = std::max(ret + ft_ret, 0);
             // Check frontend index size to determine if an update job schedule is needed.
@@ -868,6 +915,7 @@ public:
                 this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
             }
         }
+        deleted_labels_journal.push_back(label);
 
         return deleting_ids.size();
     }
@@ -887,9 +935,15 @@ public:
             std::lock_guard lock(this->flatIndexGuard);
             ret = this->deleteAndRecordSwaps_Unsafe(label);
         }
-        {
+
+        label_exists = [&]() {
+            std::shared_lock lock(this->mainIndexGuard);
+            return svs_index->isLabelExists(label);
+        }();
+
+        if (label_exists) {
             std::lock_guard lock(this->mainIndexGuard);
-            ret += svs_index->deleteVectors(&label, 1);
+            ret += this->backendIndex->deleteVector(label);
         }
         return ret;
     }

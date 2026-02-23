@@ -277,6 +277,78 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(SVSTest, two_stage_initialization_test) {
+    size_t n = 256;
+    size_t k = 11;
+    const size_t dim = 4;
+
+    SVSParams params = {
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        /* SVS-Vamana specifics */
+        .alpha = 1.2,
+        .graph_max_degree = 64,
+        .construction_window_size = 20,
+        .max_candidate_pool_size = 1024,
+        .prune_to = 60,
+        .use_search_history = VecSimOption_ENABLE,
+    };
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    auto svs_index = this->CastToSVS(index);
+
+    std::vector<std::array<TEST_DATA_T, dim>> v(n);
+    for (size_t i = 0; i < n; i++) {
+        GenerateVector<TEST_DATA_T>(v[i].data(), dim, i);
+    }
+
+    std::vector<size_t> ids(n);
+    std::iota(ids.begin(), ids.end(), 0);
+
+    // 2-stage initialization
+    // initialization with null should fail
+    EXPECT_THROW(svs_index->setImpl(nullptr), std::logic_error);
+
+    // initialization with data should succeed
+    auto impl = svs_index->createImpl(v.data(), ids.data(), n);
+    svs_index->setImpl(std::move(impl));
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    TEST_DATA_T query[] = {50, 50, 50, 50};
+    auto verify_res = [&](size_t id, double score, size_t index) { EXPECT_EQ(id, (index + 45)); };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    // Try to re-initialize with the same data.
+    impl = svs_index->createImpl(v.data(), ids.data(), n);
+    // Should fail because the index is not empty.
+    EXPECT_THROW(svs_index->setImpl(std::move(impl)), std::logic_error);
+
+    // Index should remain unchanged.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    // Delete almost all vectors
+    const size_t keep_num = 1;
+    ASSERT_EQ(svs_index->deleteVectors(ids.data(), n - keep_num), n - keep_num);
+    // setImpl() should fail again because the index is not empty.
+    impl = svs_index->createImpl(v.data(), ids.data(), n);
+    EXPECT_THROW(svs_index->setImpl(std::move(impl)), std::logic_error);
+
+    // Delete rest of the vectors - index should be empty now and setImpl() should succeed.
+    ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Re-initialization should succeed.
+    impl = svs_index->createImpl(v.data(), ids.data(), n);
+    svs_index->setImpl(std::move(impl));
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(SVSTest, svs_get_distance) {
     // Scalar quantization accuracy is insufficient for this test.
     if (this->isFallbackToSQ()) {
