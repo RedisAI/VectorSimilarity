@@ -51,7 +51,9 @@ if (TARGET svs::svs)
     endif()
 endif()
 
-if(VECSIM_BUILD_TESTS)
+# Build serializer library if test helpers OR tests are enabled.
+# The serializer is needed when BUILD_TESTS macro is defined (which happens for both options).
+if(VECSIM_BUILD_TEST_HELPERS OR VECSIM_BUILD_TESTS)
     add_library(VectorSimilaritySerializer
         algorithms/hnsw/hnsw_serializer.cpp
         algorithms/svs/svs_serializer.cpp

@@ -191,7 +191,7 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NewIndexImpl(params, is_normalized);
 }
 
-#if BUILD_TESTS
+#ifdef BUILD_TESTS
 VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
     auto index = NewIndexImpl(params, is_normalized);
     // Side-cast to SVSIndexBase to call loadIndex
@@ -241,7 +241,7 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
 #else // HAVE_SVS
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) { return NULL; }
-#if BUILD_TESTS
+#ifdef BUILD_TESTS
 VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params, bool is_normalized) {
     return NULL;
 }

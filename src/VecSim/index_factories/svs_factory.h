@@ -17,7 +17,7 @@
 
 namespace SVSFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
-#if BUILD_TESTS
+#ifdef BUILD_TESTS
 VecSimIndex *NewIndex(const std::string &location, const VecSimParams *params,
                       bool is_normalized = false);
 #endif
