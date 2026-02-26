@@ -40,6 +40,9 @@ IF(USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
 
+message(STATUS "CXXFLAGS:         ${CMAKE_CXX_FLAGS}")
+message(STATUS "LDFLAGS:          ${CMAKE_SHARED_LINKER_FLAGS}")
+
 include(cmake/svs.cmake)
 
 include_directories(src)
