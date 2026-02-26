@@ -40,9 +40,6 @@ IF(USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
 
-message(STATUS "CXXFLAGS:         ${CMAKE_CXX_FLAGS}")
-message(STATUS "LDFLAGS:          ${CMAKE_SHARED_LINKER_FLAGS}")
-
 include(cmake/svs.cmake)
 
 include_directories(src)
@@ -95,3 +92,9 @@ add_subdirectory(src/VecSim)
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+# Print compiler flags (similar to RediSearch)
+get_directory_property(COMPILE_DEFS COMPILE_DEFINITIONS)
+message(STATUS "CXXFLAGS:         ${CMAKE_CXX_FLAGS}")
+message(STATUS "COMPILE_DEFS:     ${COMPILE_DEFS}")
+message(STATUS "LDFLAGS:          ${CMAKE_SHARED_LINKER_FLAGS}")
