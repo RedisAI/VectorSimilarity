@@ -4,13 +4,11 @@ cmake_policy(SET CMP0077 NEW)
 set(CMAKE_CXX_STANDARD 20)
 
 # VECSIM_BUILD_TEST_HELPERS: Enables test helper methods (fitMemory, serialization, etc.)
-# in VectorSimilarity classes. This defines the BUILD_TESTS macro for compilation but does
-# NOT build test executables or fetch test frameworks. Enable this when downstream code
-# (like vecsim_disk) needs to call test helper methods.
+# in VectorSimilarity classes without building test executables.
 option(VECSIM_BUILD_TEST_HELPERS "Build test helper methods (fitMemory, serialization)" ON)
 
 # VECSIM_BUILD_TESTS: Builds VectorSimilarity test executables (unit tests, benchmarks).
-# Implies VECSIM_BUILD_TEST_HELPERS. Fetches googletest and google_benchmark.
+# When ON, test helpers are also built even if VECSIM_BUILD_TEST_HELPERS is OFF.
 option(VECSIM_BUILD_TESTS "Build VectorSimilarity test executables" ON)
 
 get_filename_component(root ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
