@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 # VECSIM_BUILD_TEST_HELPERS: Enables test helper methods (fitMemory, serialization, etc.)
 # in VectorSimilarity classes without building test executables.
-option(VECSIM_BUILD_TEST_HELPERS "Build test helper methods (fitMemory, serialization)" ON)
+option(VECSIM_BUILD_TEST_HELPERS "Build test helper methods (fitMemory, serialization)" OFF)
 
 # VECSIM_BUILD_TESTS: Builds VectorSimilarity test executables (unit tests, benchmarks).
 # When ON, test helpers are also built even if VECSIM_BUILD_TEST_HELPERS is OFF.
