@@ -2,7 +2,16 @@ cmake_minimum_required(VERSION 3.10)
 cmake_policy(SET CMP0077 NEW)
 
 set(CMAKE_CXX_STANDARD 20)
-option(VECSIM_BUILD_TESTS "Build tests" ON)
+
+# VECSIM_BUILD_TEST_HELPERS: Enables test helper methods (fitMemory, serialization, etc.)
+# in VectorSimilarity classes. This defines the BUILD_TESTS macro for compilation but does
+# NOT build test executables or fetch test frameworks. Enable this when downstream code
+# (like vecsim_disk) needs to call test helper methods.
+option(VECSIM_BUILD_TEST_HELPERS "Build test helper methods (fitMemory, serialization)" ON)
+
+# VECSIM_BUILD_TESTS: Builds VectorSimilarity test executables (unit tests, benchmarks).
+# Implies VECSIM_BUILD_TEST_HELPERS. Fetches googletest and google_benchmark.
+option(VECSIM_BUILD_TESTS "Build VectorSimilarity test executables" ON)
 
 get_filename_component(root ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
@@ -37,8 +46,15 @@ include(cmake/svs.cmake)
 
 include_directories(src)
 
-if(VECSIM_BUILD_TESTS)
+# Define BUILD_TESTS macro if test helpers OR tests are requested.
+# This enables test helper methods (fitMemory, serialization, etc.) in class definitions.
+if(VECSIM_BUILD_TEST_HELPERS OR VECSIM_BUILD_TESTS)
 	ADD_DEFINITIONS(-DBUILD_TESTS)
+endif()
+
+# Build test executables only if explicitly requested (VECSIM_BUILD_TESTS=ON).
+# This fetches googletest/google_benchmark and builds test targets.
+if(VECSIM_BUILD_TESTS)
 	include(FetchContent)
 	enable_testing()
 
