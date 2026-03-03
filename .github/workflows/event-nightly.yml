@@ -71,6 +71,6 @@ jobs:
       - name: Notify on failure
         uses: slackapi/slack-github-action@v1
         with:
-          payload: '{ "failed_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }'
+          payload: '{ "failed_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "repository": "${{github.repository}}" }'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_NIGHTLY_FAILURE }}
