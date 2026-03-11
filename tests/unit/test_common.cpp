@@ -839,7 +839,11 @@ protected:
     template <typename algo_params>
     void test_initial_size_estimation();
 
-    virtual void TearDown() { VecSimIndex_Free(index); }
+    virtual void TearDown() {
+        if (index) {
+            VecSimIndex_Free(index);
+        }
+    }
 
     VecSimIndex *index;
 };
