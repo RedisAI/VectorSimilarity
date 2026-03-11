@@ -888,6 +888,9 @@ TEST_P(CommonTypeMetricTests, TestInitialSizeEstimationHNSW) {
 }
 
 TEST_P(CommonTypeMetricTests, TestGetQueryBlobSize) {
+    // We don't need to create an index for this test, set to nullptr to avoid cleanup issues
+    this->index = nullptr;
+
     size_t dim = 4;
     VecSimType type = std::get<0>(GetParam());
     VecSimMetric metric = std::get<1>(GetParam());
@@ -902,8 +905,7 @@ TEST_P(CommonTypeMetricTests, TestGetQueryBlobSize) {
     }
 
     ASSERT_EQ(actual, expected);
-    // We don't need to create an index for this test, set to nullptr to avoid cleanup issues
-    this->index = nullptr;
+
 }
 
 class CommonTypeMetricTieredTests : public CommonTypeMetricTests {
