@@ -883,6 +883,25 @@ TEST_P(CommonTypeMetricTests, TestInitialSizeEstimationHNSW) {
     this->test_initial_size_estimation<HNSWParams>();
 }
 
+TEST_P(CommonTypeMetricTests, TestGetQueryBlobSize) {
+    size_t dim = 4;
+    VecSimType type = std::get<0>(GetParam());
+    VecSimMetric metric = std::get<1>(GetParam());
+
+    // Call the API function
+    size_t actual = VecSimParams_GetQueryBlobSize(type, dim, metric);
+
+    // Calculate expected blob size
+    size_t expected = dim * VecSimType_sizeof(type);
+    if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
+        expected += sizeof(float); // For the norm
+    }
+
+    ASSERT_EQ(actual, expected);
+    // We don't need to create an index for this test, set to nullptr to avoid cleanup issues
+    this->index = nullptr;
+}
+
 class CommonTypeMetricTieredTests : public CommonTypeMetricTests {
 protected:
     virtual void TearDown() override {}
