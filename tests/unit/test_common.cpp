@@ -905,7 +905,6 @@ TEST_P(CommonTypeMetricTests, TestGetQueryBlobSize) {
     }
 
     ASSERT_EQ(actual, expected);
-
 }
 
 class CommonTypeMetricTieredTests : public CommonTypeMetricTests {
