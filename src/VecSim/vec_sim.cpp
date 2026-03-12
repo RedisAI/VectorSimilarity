@@ -207,6 +207,18 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     }
 }
 
+extern "C" size_t VecSimParams_GetQueryBlobSize(VecSimType type, size_t dim, VecSimMetric metric) {
+    // Assert all supported types are covered
+    assert(type == VecSimType_FLOAT32 || type == VecSimType_FLOAT64 ||
+           type == VecSimType_BFLOAT16 || type == VecSimType_FLOAT16 || type == VecSimType_INT8 ||
+           type == VecSimType_UINT8);
+    size_t blobSize = VecSimType_sizeof(type) * dim;
+    if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
+        blobSize += sizeof(float); // For the norm
+    }
+    return blobSize;
+}
+
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
