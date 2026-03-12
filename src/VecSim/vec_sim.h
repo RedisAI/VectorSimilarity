@@ -99,6 +99,19 @@ double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, cons
 void VecSim_Normalize(void *blob, size_t dim, VecSimType type);
 
 /**
+ * @brief Returns the required blob size for a query vector that will be normalized.
+ *
+ * For INT8/UINT8 vectors with Cosine metric, VecSim_Normalize appends the norm (a float)
+ * at the end of the blob, so the required size is larger than just dim * sizeof(type).
+ *
+ * @param type vector element type.
+ * @param dim vector dimension.
+ * @param metric distance metric.
+ * @return required blob size in bytes.
+ */
+size_t VecSimParams_GetQueryBlobSize(VecSimType type, size_t dim, VecSimMetric metric);
+
+/**
  * @brief Return the number of vectors in the index.
  * @param index the index whose size is requested.
  * @return index size.
