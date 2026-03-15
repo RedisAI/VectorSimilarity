@@ -18,6 +18,12 @@
 #include <cassert>
 #include "memory.h"
 
+// Ensure labelType is compatible with size_t for C API boundary.
+// The C API functions (VecSimIndex_AddVector, VecSimIndex_DeleteVector, etc.)
+// use size_t for labels, which are passed directly to C++ methods expecting labelType.
+static_assert(std::is_same_v<labelType, size_t>,
+              "labelType must be size_t for C API compatibility");
+
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
     VecSimIndex::setTimeoutCallbackFunction(callback);
 }
