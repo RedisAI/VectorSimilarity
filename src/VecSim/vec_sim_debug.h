@@ -56,10 +56,11 @@ void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData);
  *                              of incoming edges per level.
  */
 int VecSimDebug_GetElementIncomingEdgesInHNSWGraph(VecSimIndex *index, size_t label,
-                                                    int **incomingEdgesCounts);
+                                                   int **incomingEdgesCounts);
 
 /**
- * @brief: Release the incoming edges data allocated by VecSimDebug_GetElementIncomingEdgesInHNSWGraph.
+ * @brief: Release the incoming edges data allocated by
+ * VecSimDebug_GetElementIncomingEdgesInHNSWGraph.
  * @param incomingEdgesCounts - the array returned in the placeholder to be de-allocated.
  */
 void VecSimDebug_ReleaseElementIncomingEdgesInHNSWGraph(int *incomingEdgesCounts);

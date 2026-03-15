@@ -82,7 +82,7 @@ extern "C" void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsDa
 }
 
 extern "C" int VecSimDebug_GetElementIncomingEdgesInHNSWGraph(VecSimIndex *index, size_t label,
-                                                               int **incomingEdgesCounts) {
+                                                              int **incomingEdgesCounts) {
     // Set as if we return an error, and upon success we will set the pointers appropriately.
     *incomingEdgesCounts = nullptr;
     VecSimIndexBasicInfo info = index->basicInfo();
@@ -107,11 +107,11 @@ extern "C" int VecSimDebug_GetElementIncomingEdgesInHNSWGraph(VecSimIndex *index
         }
     } else {
         if (info.type == VecSimType_FLOAT32) {
-            return dynamic_cast<TieredHNSWIndex<float, float> *>(index)->getHNSWElementIncomingEdges(
-                label, incomingEdgesCounts);
+            return dynamic_cast<TieredHNSWIndex<float, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
         } else if (info.type == VecSimType_FLOAT64) {
-            return dynamic_cast<TieredHNSWIndex<double, double> *>(index)->getHNSWElementIncomingEdges(
-                label, incomingEdgesCounts);
+            return dynamic_cast<TieredHNSWIndex<double, double> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
         } else if (info.type == VecSimType_BFLOAT16) {
             return dynamic_cast<TieredHNSWIndex<vecsim_types::bfloat16, float> *>(index)
                 ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
