@@ -215,6 +215,12 @@ public:
     inline static void setWriteMode(VecSimWriteMode mode) {
         VecSimIndexInterface::asyncWriteMode = mode;
     }
+
+    inline static void setNumThreads(size_t new_num_threads) {
+
+        // iterate all registered thpools and update their num_threads
+        VecSimThreadPool::setNumThreads(new_num_threads);
+    }
 #ifdef BUILD_TESTS
     virtual void fitMemory() = 0;
     /**
