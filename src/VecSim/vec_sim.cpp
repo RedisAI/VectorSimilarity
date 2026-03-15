@@ -13,6 +13,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/index_factories/index_factory.h"
 #include "VecSim/vec_sim_index.h"
+#include "VecSim/vec_sim_adhoc_bf_ctx.h"
 #include "VecSim/types/bfloat16.h"
 #include <cassert>
 #include "memory.h"
@@ -363,4 +364,23 @@ extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions)
 extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
                                               bool initial_check) {
     return index->preferAdHocSearch(subsetSize, k, initial_check);
+}
+
+// Ad-hoc Brute Force Context API - delegates to virtual methods on the index/context
+extern "C" VecSimAdhocBfCtx *VecSimIndex_AdhocBfCtx_New(VecSimIndex *index, const void *queryBlob) {
+    return index->newAdhocBfCtx(queryBlob);
+}
+
+extern "C" void VecSimIndex_AdhocBfCtx_Free(VecSimAdhocBfCtx *ctx) {
+    delete ctx; // Virtual destructor handles derived class cleanup
+}
+
+extern "C" double VecSimIndex_AdhocBfCtx_GetDistanceFrom(VecSimAdhocBfCtx *ctx, size_t label) {
+    return ctx->getDistanceFrom(label);
+}
+
+extern "C" void VecSimIndex_AdhocBfCtx_GetExactDistances(VecSimAdhocBfCtx *ctx,
+                                                         const size_t *labels,
+                                                         double *distances_out, size_t count) {
+    ctx->getExactDistances(labels, distances_out, count);
 }
