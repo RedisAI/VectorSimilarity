@@ -287,6 +287,7 @@ public:
     }
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id) const;
     VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
+    VecSimDebugCommandCode getHNSWElementIncomingEdges(size_t label, int **incomingEdgesCounts);
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
     void removeVectorInPlace(idType id);
@@ -2345,6 +2346,32 @@ HNSWIndex<DataType, DistType>::getHNSWElementNeighbors(size_t label, int ***neig
         }
     }
     (*neighborsData)[graph_data->toplevel + 1] = nullptr;
+    unlockNodeLinks(graph_data);
+    return VecSimDebugCommandCode_OK;
+}
+
+template <typename DataType, typename DistType>
+VecSimDebugCommandCode
+HNSWIndex<DataType, DistType>::getHNSWElementIncomingEdges(size_t label, int **incomingEdgesCounts) {
+    std::shared_lock<std::shared_mutex> lock(indexDataGuard);
+    // Assume single value index. TODO: support for multi as well.
+    if (this->isMultiValue()) {
+        return VecSimDebugCommandCode_MultiNotSupported;
+    }
+    auto ids = this->getElementIds(label);
+    if (ids.empty()) {
+        return VecSimDebugCommandCode_LabelNotExists;
+    }
+    idType id = ids[0];
+    auto graph_data = this->getGraphDataByInternalId(id);
+    lockNodeLinks(graph_data);
+    // Allocate array: one entry per level + sentinel (-1)
+    *incomingEdgesCounts = new int[graph_data->toplevel + 2];
+    for (size_t level = 0; level <= graph_data->toplevel; level++) {
+        auto &level_data = this->getElementLevelData(graph_data, level);
+        (*incomingEdgesCounts)[level] = (int)level_data.getIncomingEdges().size();
+    }
+    (*incomingEdgesCounts)[graph_data->toplevel + 1] = -1; // sentinel
     unlockNodeLinks(graph_data);
     return VecSimDebugCommandCode_OK;
 }
