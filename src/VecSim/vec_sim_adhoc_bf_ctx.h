@@ -9,6 +9,7 @@
 #pragma once
 
 #include "vec_sim_common.h"
+#include "memory/vecsim_base.h"
 
 /**
  * @brief Base class for ad-hoc brute force context.
@@ -16,15 +17,21 @@
  * Provides the interface for distance lookups during hybrid queries.
  * Derived classes implement index-specific logic (e.g., disk SQ8 vs RAM FP32).
  *
+ * Inherits from VecsimBaseObject to support allocator-aware memory management,
+ * allowing derived classes to use placement new with VecSimAllocator.
+ *
  * Usage:
  * 1. Create context with VecSimIndex_AdhocBfCtx_New() - preprocesses query once
  * 2. Call getDistanceFrom() for each candidate label during ad-hoc BF
  * 3. Optionally call getExactDistances() for batch reranking with exact FP32 distances
  * 4. Free context with VecSimIndex_AdhocBfCtx_Free()
  */
-class VecSimAdhocBfCtx {
+class VecSimAdhocBfCtx : public VecsimBaseObject {
 public:
-    virtual ~VecSimAdhocBfCtx() = default;
+    explicit VecSimAdhocBfCtx(std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(std::move(allocator)) {}
+
+    ~VecSimAdhocBfCtx() override = default;
 
     /**
      * @brief Get distance from preprocessed query to a single label.
