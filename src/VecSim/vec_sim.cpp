@@ -378,7 +378,9 @@ extern "C" VecSimAdhocBfCtx *VecSimIndex_AdhocBfCtx_New(VecSimIndex *index, cons
 }
 
 extern "C" void VecSimIndex_AdhocBfCtx_Free(VecSimAdhocBfCtx *ctx) {
-    delete ctx; // Virtual destructor handles derived class cleanup
+    std::shared_ptr<VecSimAllocator> allocator =
+        ctx->getAllocator(); // Save allocator so it will not deallocate itself
+    delete ctx;              // Virtual destructor handles derived class cleanup
 }
 
 extern "C" double VecSimIndex_AdhocBfCtx_GetDistanceFrom(VecSimAdhocBfCtx *ctx, size_t label) {
