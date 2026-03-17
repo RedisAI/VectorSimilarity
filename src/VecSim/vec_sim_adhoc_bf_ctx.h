@@ -26,8 +26,7 @@
  * 3. Optionally call getExactDistances() for batch reranking with exact FP32 distances
  * 4. Free context with VecSimIndex_AdhocBfCtx_Free()
  */
-class VecSimAdhocBfCtx : public VecsimBaseObject {
-public:
+struct VecSimAdhocBfCtx : public VecsimBaseObject {
     explicit VecSimAdhocBfCtx(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(std::move(allocator)) {}
 
