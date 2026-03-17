@@ -9,6 +9,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_adhoc_bf_ctx.h"
 #include "VecSim/vec_sim_debug.h"
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/updatable_heap.h"
@@ -43,12 +44,60 @@
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
+namespace {
+
+struct MockAdhocBfCtx : public VecSimAdhocBfCtx {
+    explicit MockAdhocBfCtx(std::shared_ptr<VecSimAllocator> allocator)
+        : VecSimAdhocBfCtx(allocator) {}
+
+    double getDistanceFrom(labelType label) const override {
+        return static_cast<double>(label) + 0.5;
+    }
+
+    void getExactDistances(const labelType *labels, double *distances_out,
+                           size_t count) const override {
+        for (size_t i = 0; i < count; ++i) {
+            distances_out[i] = getDistanceFrom(labels[i]);
+        }
+    }
+};
+
+} // namespace
+
 template <typename index_type_t>
 class CommonIndexTest : public ::testing::Test {};
 
 // DataTypeSet are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
+
+TEST(CommonApiTest, AdhocBfCtxWrappers) {
+    BFParams params = {.dim = 4, .metric = VecSimMetric_L2};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
+
+    float query[4] = {0, 0, 0, 0};
+    EXPECT_EQ(VecSimIndex_AdhocBfCtx_New(index, query), nullptr);
+    VecSimIndex_AdhocBfCtx_Free(nullptr);
+    VecSimIndex_Free(index);
+
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto allocator_weak_ref = std::weak_ptr<VecSimAllocator>(allocator);
+    auto *ctx = new (allocator) MockAdhocBfCtx(allocator);
+
+    EXPECT_DOUBLE_EQ(VecSimIndex_AdhocBfCtx_GetDistanceFrom(ctx, 7), 7.5);
+
+    constexpr size_t n_labels = 3;
+    const labelType labels[n_labels] = {1, 3, 5};
+    double distances[n_labels] = {0, 0, 0};
+    VecSimIndex_AdhocBfCtx_GetExactDistances(ctx, labels, distances, n_labels);
+    EXPECT_DOUBLE_EQ(distances[0], 1.5);
+    EXPECT_DOUBLE_EQ(distances[1], 3.5);
+    EXPECT_DOUBLE_EQ(distances[2], 5.5);
+
+    allocator.reset();
+    VecSimIndex_AdhocBfCtx_Free(ctx);
+    EXPECT_TRUE(allocator_weak_ref.expired());
+}
 
 TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     size_t dim = 4;
