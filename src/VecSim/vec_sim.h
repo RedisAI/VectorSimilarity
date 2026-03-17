@@ -248,7 +248,7 @@ typedef struct VecSimAdhocBfCtx VecSimAdhocBfCtx;
 VecSimAdhocBfCtx *VecSimIndex_AdhocBfCtx_New(VecSimIndex *index, const void *queryBlob);
 
 /**
- * @brief Free an ad-hoc brute force context (no-op if ctx is NULL).
+ * @brief Free an ad-hoc brute force context.
  * @param ctx the context to free.
  */
 void VecSimIndex_AdhocBfCtx_Free(VecSimAdhocBfCtx *ctx);
