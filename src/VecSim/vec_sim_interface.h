@@ -11,6 +11,7 @@
 #include "query_results.h"
 #include "VecSim/memory/vecsim_base.h"
 #include "info_iterator_struct.h"
+#include "vec_sim_adhoc_bf_ctx.h"
 
 #include <stddef.h>
 #include <stdexcept>
@@ -189,6 +190,17 @@ public:
      * @brief Release the locks for shared ownership in tiered async index.
      */
     virtual void releaseSharedLocks() = 0;
+
+    /**
+     * @brief Create an ad-hoc brute force context for this index.
+     *
+     * The context preprocesses the query once and provides efficient
+     * distance lookups for ad-hoc BF during hybrid queries.
+     *
+     * @param queryBlob The query vector blob.
+     * @return Context pointer, or nullptr if not supported by this index type.
+     */
+    virtual VecSimAdhocBfCtx *newAdhocBfCtx(const void *queryBlob) const { return nullptr; }
 
     /**
      * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.

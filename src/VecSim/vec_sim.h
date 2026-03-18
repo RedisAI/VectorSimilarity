@@ -234,6 +234,46 @@ void VecSimTieredIndex_AcquireSharedLocks(VecSimIndex *index);
 void VecSimTieredIndex_ReleaseSharedLocks(VecSimIndex *index);
 
 /**
+ * @brief Ad-hoc Brute Force Context - opaque handle.
+ * Currently implemented for disk indexes only; RAM indexes return NULL from _New.
+ */
+typedef struct VecSimAdhocBfCtx VecSimAdhocBfCtx;
+
+/**
+ * @brief Create an ad-hoc brute force context - preprocesses query once.
+ * @param index the index to create the context for.
+ * @param queryBlob binary representation of the query vector.
+ * @return A new context, or NULL for index types that don't support this API (e.g., RAM indexes).
+ */
+VecSimAdhocBfCtx *VecSimIndex_AdhocBfCtx_New(VecSimIndex *index, const void *queryBlob);
+
+/**
+ * @brief Free an ad-hoc brute force context.
+ * @param ctx the context to free.
+ */
+void VecSimIndex_AdhocBfCtx_Free(VecSimAdhocBfCtx *ctx);
+
+/**
+ * @brief Get distance from preprocessed query to a label.
+ * For disk indexes: tries flat buffer first (exact), then SQ8 backend (approximate).
+ * @param ctx the ad-hoc brute force context.
+ * @param label the label to compute distance to.
+ * @return The distance, or NAN if the label is not found.
+ */
+double VecSimIndex_AdhocBfCtx_GetDistanceFrom(VecSimAdhocBfCtx *ctx, size_t label);
+
+/**
+ * @brief Get exact distances for a batch of labels.
+ * For disk indexes: fetches FP32 vectors from disk, computes exact distances.
+ * @param ctx the ad-hoc brute force context.
+ * @param labels input array of labels.
+ * @param distances_out output array, filled with exact distances (NAN if not found).
+ * @param count number of labels in the input array.
+ */
+void VecSimIndex_AdhocBfCtx_GetExactDistances(VecSimAdhocBfCtx *ctx, const size_t *labels,
+                                              double *distances_out, size_t count);
+
+/**
  * @brief Allow 3rd party memory functions to be used for memory management.
  *
  * @param memoryfunctions VecSimMemoryFunctions struct.
