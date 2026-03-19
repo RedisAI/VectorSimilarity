@@ -423,6 +423,10 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.bufferLimit}}});
 
+    // Acquire shared locks to safely access the sub-indexes' debug info during background indexing.
+    std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+    std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::FRONTEND_INDEX_STRING,
         .fieldType = INFOFIELD_ITERATOR,
