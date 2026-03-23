@@ -147,6 +147,10 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
+        // Hold locks to safely access both indexes - backend's preferAdHocSearch may call
+        // indexLabelCount() which requires synchronization with concurrent modifications.
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
         return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
                    ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
                    : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
