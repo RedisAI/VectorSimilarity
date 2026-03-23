@@ -1,0 +1,324 @@
+mkdir -p /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release
+cd /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -Wno-deprecated -DCMAKE_WARN_DEPRECATED=OFF -Wno-dev --no-warn-unused-cli    /home/ubuntu/RediSearch/deps/VectorSimilarity
+# VectorSimilarity root: /home/ubuntu/RediSearch/deps/VectorSimilarityNot searching for unused variables given on the command line.
+
+# VectorSimilarity binroot: /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release
+-- SVS support enabled
+SVS LVQ implementation found
+-- Failed to find LLVM FileCheck
+-- git version: v0.2.13-290-g3dd2dc25-dirty normalized to 0.2.13.290
+-- Version: 0.2.13.290
+-- Performing Test HAVE_STD_REGEX -- success
+-- Performing Test HAVE_GNU_POSIX_REGEX -- failed to compile
+-- Performing Test HAVE_POSIX_REGEX -- success
+-- Performing Test HAVE_STEADY_CLOCK -- success
+-- Performing Test HAVE_PTHREAD_AFFINITY -- success
+# VectorSimilarity/tests/unit root: /home/ubuntu/RediSearch/deps/VectorSimilarity
+# VectorSimilarity/tests/unit binroot: /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release
+-- Detected binutils version: 2.38
+# VectorSimilarity_ModuleTest root:/home/ubuntu/RediSearch/deps/VectorSimilarity
+# VectorSimilarity_ModuleTest binroot:/home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release
+# VectorSimilarity_Benchmark root: /home/ubuntu/RediSearch/deps/VectorSimilarity
+# VectorSimilarity_Benchmark binroot: /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release
+-- Detected binutils version: 2.38
+-- Detected binutils version: 2.38
+Building with AVX512BF16 and AVX512VL
+Building with AVX512FP16 and AVX512VL
+Building with AVX512BW and AVX512VBMI2
+Building with AVX512F
+Building with AVX512F, AVX512BW, AVX512VL and AVX512VNNI
+Building with AVX2
+Building with AVX2 and FMA
+Building with CXX_F16C
+Building with AVX
+Building with SSE3
+Building with SSE4
+Building with SSE
+-- CXXFLAGS:          -fexceptions -fPIC    -Wno-unused-parameter -fexceptions -fPIC   
+-- COMPILE_DEFS:     HAVE_SVS=1;VectorSimilarity;PUBLIC;HAVE_SVS_LVQ=1;PUBLIC;SVS_LVQ_HEADER="svs/extensions/vamana/lvq.h";PUBLIC;SVS_LEANVEC_HEADER="svs/extensions/vamana/leanvec.h";BUILD_TESTS
+-- LDFLAGS:           
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release
+[  1%] Built target utils
+[  2%] Built target string_view
+[  3%] Built target VectorSimilaritySpaces_no_optimization
+[  4%] Built target gtest
+[  5%] Built target unix_based_hardware_detection
+[  6%] Built target VectorSimilaritySerializer
+[  7%] Built target filesystem_for_testing
+[ 11%] Built target cpu_features
+[ 11%] Built target gtest_main
+[ 12%] Built target gmock
+[ 12%] Built target stack_line_reader
+[ 18%] Built target benchmark
+[ 19%] Built target hwcaps_for_testing
+[ 20%] Built target stack_line_reader_for_test
+[ 20%] Built target gmock_main
+[ 21%] Built target benchmark_main
+[ 22%] Built target all_libraries
+[ 23%] Built target string_view_test
+[ 28%] Built target VectorSimilaritySpaces
+[ 28%] Built target bit_utils_test
+[ 28%] Built target stack_line_reader_test
+[ 30%] Built target cpuinfo_x86_test
+[ 35%] Built target VectorSimilarity
+[ 36%] Built target test_types
+[ 37%] Built target test_spaces
+[ 39%] Built target test_components
+[ 41%] Built target test_hnsw_parallel
+[ 42%] Built target test_allocator
+[ 44%] Built target test_bruteforce
+[ 45%] Built target test_common
+[ 46%] Built target test_fp16
+[ 48%] Built target test_bf16
+[ 50%] Built target test_int8
+[ 52%] Built target test_hnsw
+[ 54%] Built target test_uint8
+[ 55%] Built target test_index_test_utils
+[ 56%] Built target memory_test
+[ 57%] Built target bm_basics_single_fp32
+[ 58%] Built target bm_basics_single_int8
+[ 60%] Built target bm_basics_single_fp64
+[ 61%] Built target bm_basics_single_fp16
+[ 62%] Built target bm_basics_single_uint8
+[ 63%] Built target bm_basics_multi_fp32
+[ 65%] Built target test_svs
+[ 66%] Built target bm_basics_single_bf16
+[ 67%] Built target bm_basics_multi_int8
+[ 69%] Built target bm_basics_multi_bf16
+[ 70%] Built target bm_basics_multi_fp64
+[ 71%] Built target bm_batch_iterator_single_fp32
+[ 73%] Built target bm_basics_multi_uint8
+[ 74%] Built target bm_basics_multi_fp16
+[ 75%] Built target bm_batch_iterator_single_bf16
+[ 77%] Built target bm_batch_iterator_single_fp64
+[ 78%] Built target bm_batch_iterator_single_int8
+[ 79%] Built target bm_batch_iterator_single_fp16
+[ 80%] Built target bm_batch_iterator_multi_fp64
+[ 81%] Built target bm_batch_iterator_multi_fp32
+[ 82%] Built target bm_batch_iterator_multi_fp16
+[ 83%] Built target bm_batch_iterator_single_uint8
+[ 85%] Built target bm_batch_iterator_multi_bf16
+[ 86%] Built target bm_batch_iterator_multi_int8
+[ 88%] Built target bm_batch_iterator_multi_uint8
+[ 89%] Built target bm_spaces_fp32
+[ 90%] Built target bm_svs_training_fp32
+[ 92%] Built target bm_updated_index_single_fp32
+[ 93%] Built target bm_index_internals_incoming_edges_fp32
+[ 94%] Built target bm_svs_training_fp16
+[ 95%] Built target bm_spaces_fp64
+[ 96%] Built target bm_spaces_bf16
+[ 98%] Built target bm_basics_svs_single_fp32
+[ 98%] Built target bm_basics_svs_single_fp32_LVQ8
+[ 98%] Built target bm_spaces_fp16
+[ 98%] Built target bm_spaces_int8
+[ 99%] Built target bm_spaces_uint8
+[100%] Built target bm_spaces_sq8_fp32
+[100%] Built target bm_spaces_sq8_sq8
+/home/ubuntu/RediSearch/deps/VectorSimilarity/tests/benchmark/benchmarks.sh bm-index-internals-incoming-edges | xargs -I {} bash -lc \
+	"/home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release/benchmark/bm_{} --benchmark_out_format=json --benchmark_out={}_results.json || exit 255"
+2026-03-23T17:17:12+00:00
+Running /home/ubuntu/RediSearch/deps/VectorSimilarity/bin/Linux-x86_64-release/benchmark/bm_index_internals_incoming_edges_fp32
+Run on (8 X 3738.5 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x4)
+  L1 Instruction 32 KiB (x4)
+  L2 Unified 2048 KiB (x4)
+  L3 Unified 107520 KiB (x1)
+Load Average: 0.82, 1.25, 1.05
+
+--- Async iteration 0: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 14827
+  Wasted bytes: 5542296  (used=275260, alloc=5817556)
+  Size  - mean: 1.61557  p50: 0  p90: 6  p99: 14  max: 34
+  Cap   - mean: 34.1446  p50: 0  p90: 8  p99: 32  max: 65536
+  Top-10 by size: [34, 30, 30, 30, 30, 28, 28, 27, 27, 27]
+  Top-10 by cap:  [65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536]
+
+--- Async iteration 0: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 14827
+  Wasted bytes: 0  (used=275260, alloc=275260)
+  Size  - mean: 1.61557  p50: 0  p90: 6  p99: 14  max: 34
+  Cap   - mean: 1.61557  p50: 0  p90: 6  p99: 14  max: 34
+  Top-10 by size: [34, 30, 30, 30, 30, 28, 28, 27, 27, 27]
+  Top-10 by cap:  [34, 30, 30, 30, 30, 28, 28, 27, 27, 27]
+
+--- Async iteration 1: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15046
+  Wasted bytes: 5096892  (used=279544, alloc=5376436)
+  Size  - mean: 1.64071  p50: 0  p90: 6  p99: 14  max: 34
+  Cap   - mean: 31.5556  p50: 0  p90: 6  p99: 16  max: 90112
+  Top-10 by size: [34, 30, 30, 30, 30, 28, 28, 27, 27, 27]
+  Top-10 by cap:  [90112, 90112, 90112, 90112, 77824, 73728, 69632, 69632, 69632, 65536]
+
+--- Async iteration 1: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15046
+  Wasted bytes: 0  (used=279544, alloc=279544)
+  Size  - mean: 1.64071  p50: 0  p90: 6  p99: 14  max: 34
+  Cap   - mean: 1.64071  p50: 0  p90: 6  p99: 14  max: 34
+  Top-10 by size: [34, 30, 30, 30, 30, 28, 28, 27, 27, 27]
+  Top-10 by cap:  [34, 30, 30, 30, 30, 28, 28, 27, 27, 27]
+
+--- Async iteration 2: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15333
+  Wasted bytes: 4562240  (used=290244, alloc=4852484)
+  Size  - mean: 1.70351  p50: 0  p90: 6  p99: 15  max: 50
+  Cap   - mean: 28.4804  p50: 0  p90: 7  p99: 18  max: 61440
+  Top-10 by size: [50, 49, 46, 45, 45, 45, 44, 43, 43, 42]
+  Top-10 by cap:  [61440, 57344, 57344, 53248, 53248, 45056, 45056, 45056, 45056, 38912]
+
+--- Async iteration 2: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15333
+  Wasted bytes: 0  (used=290244, alloc=290244)
+  Size  - mean: 1.70351  p50: 0  p90: 6  p99: 15  max: 50
+  Cap   - mean: 1.70351  p50: 0  p90: 6  p99: 15  max: 50
+  Top-10 by size: [50, 49, 46, 45, 45, 45, 44, 43, 43, 42]
+  Top-10 by cap:  [50, 49, 46, 45, 45, 45, 44, 43, 43, 42]
+---------------------------------------------------------------------------------------------------------------------
+Benchmark                                                           Time             CPU   Iterations UserCounters...
+---------------------------------------------------------------------------------------------------------------------
+BM_IncomingEdgesBase/DeleteZeroVectorsAsync/iterations:3         3265 ms         3027 ms            3 index_memory=35.5534M
+
+--- Insert iteration 0: After insertion ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 90000  Level entries: 95863  Non-empty: 14759
+  Wasted bytes: 2172532  (used=3660300, alloc=5832832)
+  Size  - mean: 9.54565  p50: 0  p90: 2  p99: 12  max: 39093
+  Cap   - mean: 15.2114  p50: 0  p90: 4  p99: 16  max: 65536
+  Top-10 by size: [39093, 39090, 39090, 39089, 39087, 39086, 39085, 39085, 39084, 39084]
+  Top-10 by cap:  [65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536]
+
+--- Insert iteration 0: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 14846
+  Wasted bytes: 5565088  (used=274640, alloc=5839728)
+  Size  - mean: 1.61193  p50: 0  p90: 6  p99: 14  max: 39
+  Cap   - mean: 34.2747  p50: 0  p90: 8  p99: 32  max: 65536
+  Top-10 by size: [39, 32, 32, 32, 32, 30, 29, 29, 28, 26]
+  Top-10 by cap:  [65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536]
+
+--- Insert iteration 0: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 14846
+  Wasted bytes: 0  (used=274640, alloc=274640)
+  Size  - mean: 1.61193  p50: 0  p90: 6  p99: 14  max: 39
+  Cap   - mean: 1.61193  p50: 0  p90: 6  p99: 14  max: 39
+  Top-10 by size: [39, 32, 32, 32, 32, 30, 29, 29, 28, 26]
+  Top-10 by cap:  [39, 32, 32, 32, 32, 30, 29, 29, 28, 26]
+
+--- Insert iteration 1: After insertion ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 90000  Level entries: 95970  Non-empty: 14988
+  Wasted bytes: 1755284  (used=3676872, alloc=5432156)
+  Size  - mean: 9.57818  p50: 0  p90: 3  p99: 12  max: 46833
+  Cap   - mean: 14.1507  p50: 0  p90: 3  p99: 12  max: 90112
+  Top-10 by size: [46833, 46830, 46830, 46828, 46826, 46824, 46824, 46824, 46823, 46823]
+  Top-10 by cap:  [90112, 90112, 86016, 81920, 81920, 81920, 81920, 73728, 73728, 69632]
+
+--- Insert iteration 1: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15012
+  Wasted bytes: 5156004  (used=278356, alloc=5434360)
+  Size  - mean: 1.63374  p50: 0  p90: 6  p99: 14  max: 39
+  Cap   - mean: 31.8955  p50: 0  p90: 6  p99: 16  max: 90112
+  Top-10 by size: [39, 32, 32, 32, 31, 30, 29, 29, 28, 28]
+  Top-10 by cap:  [90112, 90112, 86016, 81920, 81920, 81920, 81920, 73728, 73728, 69632]
+
+--- Insert iteration 1: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15012
+  Wasted bytes: 0  (used=278356, alloc=278356)
+  Size  - mean: 1.63374  p50: 0  p90: 6  p99: 14  max: 39
+  Cap   - mean: 1.63374  p50: 0  p90: 6  p99: 14  max: 39
+  Top-10 by size: [39, 32, 32, 32, 31, 30, 29, 29, 28, 28]
+  Top-10 by cap:  [39, 32, 32, 32, 31, 30, 29, 29, 28, 28]
+
+--- Insert iteration 2: After insertion ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 90000  Level entries: 95931  Non-empty: 15259
+  Wasted bytes: 1321384  (used=3672244, alloc=4993628)
+  Size  - mean: 9.57001  p50: 0  p90: 3  p99: 12  max: 32034
+  Cap   - mean: 13.0136  p50: 0  p90: 3  p99: 14  max: 57344
+  Top-10 by size: [32034, 32031, 32031, 32029, 32027, 32025, 32024, 32024, 32024, 32022]
+  Top-10 by cap:  [57344, 57344, 53248, 51200, 49152, 45056, 45056, 40960, 40960, 40960]
+
+--- Insert iteration 2: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15316
+  Wasted bytes: 4715128  (used=289556, alloc=5004684)
+  Size  - mean: 1.69947  p50: 0  p90: 6  p99: 15  max: 39
+  Cap   - mean: 29.3737  p50: 0  p90: 7  p99: 18  max: 57344
+  Top-10 by size: [39, 32, 32, 31, 30, 30, 30, 29, 29, 29]
+  Top-10 by cap:  [57344, 57344, 53248, 51200, 49152, 45056, 45056, 40960, 40960, 40960]
+
+--- Insert iteration 2: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15316
+  Wasted bytes: 0  (used=289556, alloc=289556)
+  Size  - mean: 1.69947  p50: 0  p90: 6  p99: 15  max: 39
+  Cap   - mean: 1.69947  p50: 0  p90: 6  p99: 15  max: 39
+  Top-10 by size: [39, 32, 32, 31, 30, 30, 30, 29, 29, 29]
+  Top-10 by cap:  [39, 32, 32, 31, 30, 30, 30, 29, 29, 29]
+BM_IncomingEdgesBase/InsertZeroVectorsTimed/iterations:3         3042 ms         98.7 ms            3 index_memory=35.5526M
+
+--- InPlace iteration 0: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 14829
+  Wasted bytes: 5534808  (used=275104, alloc=5809912)
+  Size  - mean: 1.61465  p50: 0  p90: 6  p99: 14  max: 32
+  Cap   - mean: 34.0997  p50: 0  p90: 8  p99: 32  max: 65536
+  Top-10 by size: [32, 31, 31, 30, 29, 29, 29, 29, 28, 28]
+  Top-10 by cap:  [65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536]
+
+--- InPlace iteration 0: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=0) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 14829
+  Wasted bytes: 0  (used=275104, alloc=275104)
+  Size  - mean: 1.61465  p50: 0  p90: 6  p99: 14  max: 32
+  Cap   - mean: 1.61465  p50: 0  p90: 6  p99: 14  max: 32
+  Top-10 by size: [32, 31, 31, 30, 29, 29, 29, 29, 28, 28]
+  Top-10 by cap:  [32, 31, 31, 30, 29, 29, 29, 29, 28, 28]
+
+--- InPlace iteration 1: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15179
+  Wasted bytes: 4705136  (used=283164, alloc=4988300)
+  Size  - mean: 1.66196  p50: 0  p90: 6  p99: 14  max: 47
+  Cap   - mean: 29.2775  p50: 0  p90: 6  p99: 16  max: 81920
+  Top-10 by size: [47, 47, 41, 32, 32, 31, 30, 29, 29, 29]
+  Top-10 by cap:  [81920, 81920, 81920, 77824, 77824, 69632, 69632, 65536, 63488, 59392]
+
+--- InPlace iteration 1: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=1) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15179
+  Wasted bytes: 0  (used=283164, alloc=283164)
+  Size  - mean: 1.66196  p50: 0  p90: 6  p99: 14  max: 47
+  Cap   - mean: 1.66196  p50: 0  p90: 6  p99: 14  max: 47
+  Top-10 by size: [47, 47, 41, 32, 32, 31, 30, 29, 29, 29]
+  Top-10 by cap:  [47, 47, 41, 32, 32, 31, 30, 29, 29, 29]
+
+--- InPlace iteration 2: After deletion (before shrink) ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15445
+  Wasted bytes: 4399164  (used=291936, alloc=4691100)
+  Size  - mean: 1.71344  p50: 0  p90: 6  p99: 15  max: 43
+  Cap   - mean: 27.5332  p50: 0  p90: 6  p99: 17  max: 57344
+  Top-10 by size: [43, 42, 35, 34, 32, 32, 31, 30, 30, 30]
+  Top-10 by cap:  [57344, 53248, 51200, 51200, 47104, 43008, 43008, 40960, 40960, 40960]
+
+--- InPlace iteration 2: After shrink (baseline) ---
+=== Incoming Edges Stats (iter=2) ===
+  Nodes: 40000  Level entries: 42595  Non-empty: 15445
+  Wasted bytes: 0  (used=291936, alloc=291936)
+  Size  - mean: 1.71344  p50: 0  p90: 6  p99: 15  max: 43
+  Cap   - mean: 1.71344  p50: 0  p90: 6  p99: 15  max: 43
+  Top-10 by size: [43, 42, 35, 34, 32, 32, 31, 30, 30, 30]
+  Top-10 by cap:  [43, 42, 35, 34, 32, 32, 31, 30, 30, 30]
+BM_IncomingEdgesBase/DeleteZeroVectorsInPlace/iterations:3       4809 ms         4809 ms            3 index_memory=35.556M
