@@ -7,9 +7,8 @@
 #include "VecSim/utils/vec_utils.h"
 
 // Amortized shrink thresholds for incoming edges vectors.
-// Shrink is triggered when: capacity > SHRINK_RATIO * size && size >= MIN_SIZE_TO_SHRINK
-constexpr size_t INCOMING_EDGES_SHRINK_RATIO = 1;
-constexpr size_t INCOMING_EDGES_MIN_SIZE_TO_SHRINK = 0;
+// Shrink is triggered when: capacity > SHRINK_RATIO * size
+constexpr size_t INCOMING_EDGES_SHRINK_RATIO = 2;
 
 template <typename DistType>
 using candidatesList = vecsim_stl::vector<std::pair<DistType, idType>>;
@@ -82,8 +81,7 @@ struct ElementLevelData {
 
         if (result) {
             auto &vec = *this->incomingUnidirectionalEdges;
-            if (vec.capacity() > INCOMING_EDGES_SHRINK_RATIO * vec.size() &&
-                vec.size() >= INCOMING_EDGES_MIN_SIZE_TO_SHRINK) {
+            if (vec.capacity() > INCOMING_EDGES_SHRINK_RATIO * vec.size()) {
                 vec.shrink_to_fit();
             }
         }
