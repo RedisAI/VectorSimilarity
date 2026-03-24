@@ -6,6 +6,11 @@
 #include <mutex>
 #include "VecSim/utils/vec_utils.h"
 
+// Amortized shrink thresholds for incoming edges vectors.
+// Shrink is triggered when: capacity > SHRINK_RATIO * size && size >= MIN_SIZE_TO_SHRINK
+constexpr size_t INCOMING_EDGES_SHRINK_RATIO = 1;
+constexpr size_t INCOMING_EDGES_MIN_SIZE_TO_SHRINK = 0;
+
 template <typename DistType>
 using candidatesList = vecsim_stl::vector<std::pair<DistType, idType>>;
 
@@ -73,7 +78,17 @@ struct ElementLevelData {
         this->incomingUnidirectionalEdges->push_back(node_id);
     }
     bool removeIncomingUnidirectionalEdgeIfExists(idType node_id) {
-        return this->incomingUnidirectionalEdges->remove(node_id);
+        bool result = this->incomingUnidirectionalEdges->remove(node_id);
+
+        // Amortized conditional shrink: only shrink when capacity is
+        // significantly larger than size to avoid thrashing.
+        auto &vec = *this->incomingUnidirectionalEdges;
+        if (vec.capacity() > INCOMING_EDGES_SHRINK_RATIO * vec.size() &&
+            vec.size() >= INCOMING_EDGES_MIN_SIZE_TO_SHRINK) {
+            vec.shrink_to_fit();
+        }
+
+        return result;
     }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
         auto it = std::find(this->incomingUnidirectionalEdges->begin(),

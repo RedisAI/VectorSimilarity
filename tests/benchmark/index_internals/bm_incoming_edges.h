@@ -28,10 +28,10 @@
 // Constants for the stress scenario (MOD-13761 reproduction)
 // =============================================================================
 static constexpr size_t BM_DIM = 128;
-static constexpr size_t BM_N_BASELINE = 40000;  // Random baseline vectors
-static constexpr size_t BM_N_ZERO = 50000;      // Zero vectors (stress case)
-static constexpr size_t BM_M = 16;              // HNSW M parameter
-static constexpr size_t BM_EF_C = 200;          // HNSW efConstruction
+static constexpr size_t BM_N_BASELINE = 40000; // Random baseline vectors
+static constexpr size_t BM_N_ZERO = 50000;     // Zero vectors (stress case)
+static constexpr size_t BM_M = 16;             // HNSW M parameter
+static constexpr size_t BM_EF_C = 200;         // HNSW efConstruction
 static constexpr size_t BM_INITIAL_CAP = BM_N_BASELINE + BM_N_ZERO;
 
 // =============================================================================
@@ -140,7 +140,8 @@ protected:
 
                 all_sizes.push_back(sz);
                 all_caps.push_back(cap);
-                if (sz > 0) non_empty_count++;
+                if (sz > 0)
+                    non_empty_count++;
             }
         }
 
@@ -148,12 +149,14 @@ protected:
         size_t total_vectors = all_sizes.size();
 
         // Compute mean
-        double mean_size = total_vectors > 0
-            ? static_cast<double>(total_used_bytes / sizeof(idType)) / total_vectors
-            : 0.0;
-        double mean_cap = total_vectors > 0
-            ? static_cast<double>(total_alloc_bytes / sizeof(idType)) / total_vectors
-            : 0.0;
+        double mean_size =
+            total_vectors > 0
+                ? static_cast<double>(total_used_bytes / sizeof(idType)) / total_vectors
+                : 0.0;
+        double mean_cap =
+            total_vectors > 0
+                ? static_cast<double>(total_alloc_bytes / sizeof(idType)) / total_vectors
+                : 0.0;
 
         // Sort for percentiles and top-10
         std::vector<size_t> sorted_sizes(all_sizes);
@@ -163,9 +166,11 @@ protected:
 
         // Percentile helper (nearest-rank method)
         auto percentile = [](const std::vector<size_t> &sorted, double p) -> size_t {
-            if (sorted.empty()) return 0;
+            if (sorted.empty())
+                return 0;
             size_t idx = static_cast<size_t>(p / 100.0 * sorted.size());
-            if (idx >= sorted.size()) idx = sorted.size() - 1;
+            if (idx >= sorted.size())
+                idx = sorted.size() - 1;
             return sorted[idx];
         };
 
@@ -186,28 +191,22 @@ protected:
         std::cout << "\n=== Incoming Edges Stats"
                   << (iteration >= 0 ? " (iter=" + std::to_string(iteration) + ")" : "")
                   << " ===" << std::endl;
-        std::cout << "  Nodes: " << num_elements
-                  << "  Level entries: " << total_vectors
+        std::cout << "  Nodes: " << num_elements << "  Level entries: " << total_vectors
                   << "  Non-empty: " << non_empty_count << std::endl;
-        std::cout << "  Wasted bytes: " << wasted_bytes
-                  << "  (used=" << total_used_bytes
+        std::cout << "  Wasted bytes: " << wasted_bytes << "  (used=" << total_used_bytes
                   << ", alloc=" << total_alloc_bytes << ")" << std::endl;
-        std::cout << "  Size  - mean: " << mean_size
-                  << "  p50: " << p50_size
-                  << "  p90: " << p90_size
-                  << "  p99: " << p99_size
-                  << "  max: " << max_size << std::endl;
-        std::cout << "  Cap   - mean: " << mean_cap
-                  << "  p50: " << p50_cap
-                  << "  p90: " << p90_cap
-                  << "  p99: " << p99_cap
-                  << "  max: " << max_cap << std::endl;
+        std::cout << "  Size  - mean: " << mean_size << "  p50: " << p50_size
+                  << "  p90: " << p90_size << "  p99: " << p99_size << "  max: " << max_size
+                  << std::endl;
+        std::cout << "  Cap   - mean: " << mean_cap << "  p50: " << p50_cap << "  p90: " << p90_cap
+                  << "  p99: " << p99_cap << "  max: " << max_cap << std::endl;
 
         // Print top-10 by size (descending)
         std::cout << "  Top-10 by size: [";
         size_t top_n = std::min<size_t>(10, sorted_sizes.size());
         for (size_t i = 0; i < top_n; i++) {
-            if (i > 0) std::cout << ", ";
+            if (i > 0)
+                std::cout << ", ";
             std::cout << sorted_sizes[sorted_sizes.size() - 1 - i];
         }
         std::cout << "]" << std::endl;
@@ -216,7 +215,8 @@ protected:
         std::cout << "  Top-10 by cap:  [";
         top_n = std::min<size_t>(10, sorted_caps.size());
         for (size_t i = 0; i < top_n; i++) {
-            if (i > 0) std::cout << ", ";
+            if (i > 0)
+                std::cout << ", ";
             std::cout << sorted_caps[sorted_caps.size() - 1 - i];
         }
         std::cout << "]" << std::endl;
@@ -292,8 +292,7 @@ public:
             shrink_all_incoming_edges();
 
             // Measure ghost memory after shrink (should be near-zero)
-            std::cout << "\n--- Async iteration " << iteration
-                      << ": After shrink (baseline) ---";
+            std::cout << "\n--- Async iteration " << iteration << ": After shrink (baseline) ---";
             measure_ghost_memory(state, iteration);
 
             // Re-insert zero vectors for the next iteration
@@ -318,8 +317,7 @@ public:
             state.PauseTiming();
 
             // Measure state after insertion (90K nodes)
-            std::cout << "\n--- Insert iteration " << iteration
-                      << ": After insertion ---";
+            std::cout << "\n--- Insert iteration " << iteration << ": After insertion ---";
             measure_ghost_memory(state, iteration);
 
             // Delete zero vectors
@@ -338,8 +336,7 @@ public:
             shrink_all_incoming_edges();
 
             // Measure after shrink (should be near-zero)
-            std::cout << "\n--- Insert iteration " << iteration
-                      << ": After shrink (baseline) ---";
+            std::cout << "\n--- Insert iteration " << iteration << ": After shrink (baseline) ---";
             measure_ghost_memory(state, iteration);
 
             iteration++;
@@ -378,8 +375,7 @@ public:
             shrink_all_incoming_edges();
 
             // Measure ghost memory after shrink (should be near-zero)
-            std::cout << "\n--- InPlace iteration " << iteration
-                      << ": After shrink (baseline) ---";
+            std::cout << "\n--- InPlace iteration " << iteration << ": After shrink (baseline) ---";
             measure_ghost_memory(state, iteration);
 
             // Re-insert zero vectors using async mode for next iteration
