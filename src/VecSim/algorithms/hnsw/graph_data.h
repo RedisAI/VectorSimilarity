@@ -80,12 +80,12 @@ struct ElementLevelData {
     bool removeIncomingUnidirectionalEdgeIfExists(idType node_id) {
         bool result = this->incomingUnidirectionalEdges->remove(node_id);
 
-        // Amortized conditional shrink: only shrink when capacity is
-        // significantly larger than size to avoid thrashing.
-        auto &vec = *this->incomingUnidirectionalEdges;
-        if (vec.capacity() > INCOMING_EDGES_SHRINK_RATIO * vec.size() &&
-            vec.size() >= INCOMING_EDGES_MIN_SIZE_TO_SHRINK) {
-            vec.shrink_to_fit();
+        if (result) {
+            auto &vec = *this->incomingUnidirectionalEdges;
+            if (vec.capacity() > INCOMING_EDGES_SHRINK_RATIO * vec.size() &&
+                vec.size() >= INCOMING_EDGES_MIN_SIZE_TO_SHRINK) {
+                vec.shrink_to_fit();
+            }
         }
 
         return result;
