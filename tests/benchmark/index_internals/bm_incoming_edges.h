@@ -33,6 +33,7 @@ static constexpr size_t BM_N_ZERO = 50000;     // Zero vectors (stress case)
 static constexpr size_t BM_M = 16;             // HNSW M parameter
 static constexpr size_t BM_EF_C = 200;         // HNSW efConstruction
 static constexpr size_t BM_INITIAL_CAP = BM_N_BASELINE + BM_N_ZERO;
+static constexpr unsigned int BM_NUM_THREADS = 1; // Single bg thread for deterministic timing
 
 // =============================================================================
 // Base fixture class for incoming edges benchmarks (MOD-13761)
@@ -53,7 +54,7 @@ protected:
     // swapJobThreshold=0 so swap jobs accumulate and we control when they run.
     // flatBufferLimit=SIZE_MAX so vectors go directly to HNSW via addVector.
     void create_tiered_index() {
-        mock_tp_ = new tieredIndexMock(); // 8 bg threads by default
+        mock_tp_ = new tieredIndexMock(BM_NUM_THREADS);
         HNSWParams hnsw_params = {
             .type = VecSimType_FLOAT32,
             .dim = BM_DIM,
