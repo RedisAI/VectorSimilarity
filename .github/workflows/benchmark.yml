@@ -45,6 +45,7 @@ on:
           - bm-svs-train-fp16
           - bm-basics-svs-fp32-single
           - bm-spaces
+          - bm-hnsw-internals-incoming-edges
         description: 'Benchmarks set to run'
         default: benchmarks-all
       architecture:
