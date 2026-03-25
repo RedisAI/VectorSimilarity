@@ -376,8 +376,6 @@ public:
         return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 0;
     }
 
-    // WARNING: Not thread-safe. When used within a tiered index, the caller MUST hold
-    // mainIndexGuard to avoid crashes caused by concurrent index modifications.
     size_t indexLabelCount() const override {
         if constexpr (isMulti) {
             return impl_ ? impl_->labelcount() : 0;
