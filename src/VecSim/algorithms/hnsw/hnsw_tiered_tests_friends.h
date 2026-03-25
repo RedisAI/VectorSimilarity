@@ -74,3 +74,5 @@ friend class CommonTypeMetricTieredTests_TestDataSizeTieredHNSW_Test;
 
 INDEX_TEST_FRIEND_CLASS(BM_VecSimBasics)
 INDEX_TEST_FRIEND_CLASS(BM_VecSimCommon)
+
+friend class BM_IncomingEdgesBase;
