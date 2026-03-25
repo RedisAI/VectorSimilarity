@@ -117,7 +117,8 @@ protected:
     // incomingUnidirectionalEdges vector across all nodes and all levels.
     // Reports scalar stats via benchmark state counters and prints distribution
     // details (top-10, percentiles) to stdout.
-    void measure_ghost_memory(benchmark::State &state, int iteration = -1) {
+    void measure_ghost_memory(benchmark::State &state, int iteration = -1,
+                              bool report_counters = false) {
         size_t total_used_bytes = 0;
         size_t total_alloc_bytes = 0;
 
@@ -149,46 +150,19 @@ protected:
         size_t wasted_bytes = total_alloc_bytes - total_used_bytes;
         size_t total_vectors = all_sizes.size();
 
-        // Compute mean
-        double mean_size =
-            total_vectors > 0
-                ? static_cast<double>(total_used_bytes / sizeof(idType)) / total_vectors
-                : 0.0;
-        double mean_cap =
-            total_vectors > 0
-                ? static_cast<double>(total_alloc_bytes / sizeof(idType)) / total_vectors
-                : 0.0;
-
-        // Sort for percentiles and top-10
+        // Sort for top-10
         std::vector<size_t> sorted_sizes(all_sizes);
         std::vector<size_t> sorted_caps(all_caps);
         std::sort(sorted_sizes.begin(), sorted_sizes.end());
         std::sort(sorted_caps.begin(), sorted_caps.end());
 
-        // Percentile helper (nearest-rank method)
-        auto percentile = [](const std::vector<size_t> &sorted, double p) -> size_t {
-            if (sorted.empty())
-                return 0;
-            size_t idx = static_cast<size_t>(p / 100.0 * sorted.size());
-            if (idx >= sorted.size())
-                idx = sorted.size() - 1;
-            return sorted[idx];
-        };
+        // --- Report metrics via benchmark counters (only for the "before shrink" call) ---
+        if (report_counters) {
+            state.counters["index_memory"] = hnsw_->getAllocationSize();
+            state.counters["wasted_bytes"] = static_cast<double>(wasted_bytes);
+        }
 
-        size_t p50_size = percentile(sorted_sizes, 50);
-        size_t p90_size = percentile(sorted_sizes, 90);
-        size_t p99_size = percentile(sorted_sizes, 99);
-        size_t max_size = sorted_sizes.empty() ? 0 : sorted_sizes.back();
-
-        size_t p50_cap = percentile(sorted_caps, 50);
-        size_t p90_cap = percentile(sorted_caps, 90);
-        size_t p99_cap = percentile(sorted_caps, 99);
-        size_t max_cap = sorted_caps.empty() ? 0 : sorted_caps.back();
-
-        // --- Report index memory via benchmark counter ---
-        state.counters["index_memory"] = hnsw_->getAllocationSize();
-
-        // --- Print detailed distribution to stdout ---
+        // --- Print diagnostic summary to stdout ---
         std::cout << "\n=== Incoming Edges Stats"
                   << (iteration >= 0 ? " (iter=" + std::to_string(iteration) + ")" : "")
                   << " ===" << std::endl;
@@ -196,11 +170,6 @@ protected:
                   << "  Non-empty: " << non_empty_count << std::endl;
         std::cout << "  Wasted bytes: " << wasted_bytes << "  (used=" << total_used_bytes
                   << ", alloc=" << total_alloc_bytes << ")" << std::endl;
-        std::cout << "  Size  - mean: " << mean_size << "  p50: " << p50_size
-                  << "  p90: " << p90_size << "  p99: " << p99_size << "  max: " << max_size
-                  << std::endl;
-        std::cout << "  Cap   - mean: " << mean_cap << "  p50: " << p50_cap << "  p90: " << p90_cap
-                  << "  p99: " << p99_cap << "  max: " << max_cap << std::endl;
 
         // Print top-10 by size (descending)
         std::cout << "  Top-10 by size: [";
@@ -287,7 +256,7 @@ public:
             // Measure ghost memory after deletion, before shrink (the "problem" state)
             std::cout << "\n--- Async iteration " << iteration
                       << ": After deletion (before shrink) ---";
-            measure_ghost_memory(state, iteration);
+            measure_ghost_memory(state, iteration, true);
 
             // Shrink all incoming edges to reclaim ghost memory
             shrink_all_incoming_edges();
@@ -331,7 +300,7 @@ public:
             // Measure ghost memory after deletion, before shrink
             std::cout << "\n--- Insert iteration " << iteration
                       << ": After deletion (before shrink) ---";
-            measure_ghost_memory(state, iteration);
+            measure_ghost_memory(state, iteration, true);
 
             // Shrink to reclaim ghost memory
             shrink_all_incoming_edges();
@@ -370,7 +339,7 @@ public:
             // Measure ghost memory after deletion, before shrink (the "problem" state)
             std::cout << "\n--- InPlace iteration " << iteration
                       << ": After deletion (before shrink) ---";
-            measure_ghost_memory(state, iteration);
+            measure_ghost_memory(state, iteration, true);
 
             // Shrink all incoming edges to reclaim ghost memory
             shrink_all_incoming_edges();

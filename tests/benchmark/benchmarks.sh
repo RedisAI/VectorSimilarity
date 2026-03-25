@@ -92,8 +92,8 @@ elif [ "$BM_TYPE" = "bm-batch-iter-uint8-multi" ] ; then
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
     echo updated_index_single_fp32
 
-# Index internals benchmarks
-elif [ "$BM_TYPE" = "bm-index-internals-incoming-edges" ] ; then
+# hnsw internals benchmarks
+elif [ "$BM_TYPE" = "bm-hnsw-internals-incoming-edges" ] ; then
     echo index_internals_incoming_edges_fp32
 
 # SVS benchmarks
