@@ -95,6 +95,14 @@ struct ElementLevelData {
         assert(it != this->incomingUnidirectionalEdges->end());
         *it = id_after;
     }
+    // Shrink the incoming edges vector to fit its size, reclaiming unused capacity.
+    // Returns the memory saved (capacity_before - capacity_after) * sizeof(idType).
+    size_t shrinkIncomingEdges() {
+        size_t capacity_before = this->incomingUnidirectionalEdges->capacity();
+        this->incomingUnidirectionalEdges->shrink_to_fit();
+        size_t capacity_after = this->incomingUnidirectionalEdges->capacity();
+        return (capacity_before - capacity_after) * sizeof(idType);
+    }
 };
 
 struct ElementGraphData {

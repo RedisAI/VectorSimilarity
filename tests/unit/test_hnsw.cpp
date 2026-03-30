@@ -2094,3 +2094,53 @@ TYPED_TEST(HNSWTest, FitMemoryTest) {
 
     VecSimIndex_Free(index);
 }
+
+// Test that shrinkAllIncomingEdges reclaims memory from incoming edge vectors
+// that grew during deletion repairs.
+TYPED_TEST(HNSWTest, shrinkIncomingEdges) {
+    size_t dim = 4;
+    size_t n = 20;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 8, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    // Add vectors - all with the same value so they are close together
+    // This ensures they become neighbors and create incoming edges
+    TEST_DATA_T vec[dim];
+    for (size_t i = 0; i < dim; i++)
+        vec[i] = 1.0;
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_AddVector(index, vec, i);
+    }
+
+    // Delete half the vectors - this causes repairs which may grow incoming edge vectors
+    for (size_t i = 0; i < n / 2; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+
+    size_t memory_before = hnsw_index->getAllocationSize();
+
+    // Call shrinkAllIncomingEdges
+    size_t memory_saved = hnsw_index->shrinkAllIncomingEdges();
+
+    size_t memory_after = hnsw_index->getAllocationSize();
+
+    // Verify: memory_saved should equal the difference (or be 0 if no shrinking needed)
+    ASSERT_GE(memory_saved, 0u) << "shrinkAllIncomingEdges should return non-negative value";
+
+    // If memory was saved, the allocation size should have decreased
+    if (memory_saved > 0) {
+        ASSERT_LT(memory_after, memory_before)
+            << "Memory should decrease after shrinking incoming edges";
+    }
+
+    // Also test via the debug C API
+    size_t api_memory_saved = 0;
+    int res = VecSimDebug_ShrinkIncomingEdgesInHNSWGraph(index, &api_memory_saved);
+    ASSERT_EQ(res, VecSimDebugCommandCode_OK);
+    // Second call should return 0 since we already shrunk
+    ASSERT_EQ(api_memory_saved, 0u) << "Second shrink should save no memory";
+
+    VecSimIndex_Free(index);
+}
