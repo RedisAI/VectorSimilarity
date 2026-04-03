@@ -37,6 +37,14 @@ struct SVSIndexBase
 {
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
+
+    // Singleton accessor for the shared SVS thread pool.
+    // Returns a reference to the static shared_ptr, which is initially null.
+    // Created lazily on first VecSim_UpdateThreadPoolSize(n > 0) call.
+    static std::shared_ptr<VecSimSVSThreadPoolImpl> &getSharedThreadPool() {
+        static std::shared_ptr<VecSimSVSThreadPoolImpl> shared_pool;
+        return shared_pool;
+    }
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual bool isLabelExists(labelType label) const = 0;

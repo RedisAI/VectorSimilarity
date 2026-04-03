@@ -15,6 +15,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/vec_sim_adhoc_bf_ctx.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/algorithms/svs/svs.h"
 #include <cassert>
 #include "memory.h"
 
@@ -33,6 +34,16 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
 }
 
 extern "C" void VecSim_SetWriteMode(VecSimWriteMode mode) { VecSimIndex::setWriteMode(mode); }
+
+extern "C" void VecSim_UpdateThreadPoolSize(size_t new_size) {
+    if (new_size == 0) {
+        VecSimIndex::setWriteMode(VecSim_WriteInPlace);
+    } else {
+        VecSimIndex::setWriteMode(VecSim_WriteAsync);
+    }
+    // TODO Step 3: Create/resize the shared SVS thread pool singleton via
+    // SVSIndexBase::getSharedThreadPool()
+}
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams,
