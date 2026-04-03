@@ -27,6 +27,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
     index_factories/svs_factory.cpp
+    index_factories/tq_factory.cpp
     index_factories/index_factory.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp

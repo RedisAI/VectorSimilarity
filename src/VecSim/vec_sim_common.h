@@ -69,7 +69,13 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
+typedef enum {
+    VecSimAlgo_BF,
+    VecSimAlgo_HNSWLIB,
+    VecSimAlgo_TIERED,
+    VecSimAlgo_SVS,
+    VecSimAlgo_TQ
+} VecSimAlgo;
 
 typedef enum {
     VecSimOption_AUTO = 0,
@@ -167,6 +173,17 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+typedef struct {
+    VecSimType type;        // Input datatype for vectors and queries.
+    size_t dim;             // Vector's dimension.
+    VecSimMetric metric;    // Distance metric to use in the index.
+    bool multi;             // Multi-value indexing is not currently supported.
+    size_t initialCapacity; // Deprecated.
+    size_t blockSize;
+    size_t seed;            // Seed for the randomized sign pattern used before FWHT.
+    bool useRotation;       // Apply randomized Hadamard rotation before quantization.
+} TQFlatParams;
+
 typedef enum {
     VecSimSvsQuant_NONE = 0,           // No quantization.
     VecSimSvsQuant_Scalar = 1,         // 8-bit scalar quantization
@@ -245,6 +262,7 @@ typedef union {
     BFParams bfParams;
     TieredIndexParams tieredParams;
     SVSParams svsParams;
+    TQFlatParams tqFlatParams;
 } AlgoParams;
 
 struct VecSimParams {

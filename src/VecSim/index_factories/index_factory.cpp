@@ -12,6 +12,7 @@
 #include "brute_force_factory.h"
 #include "tiered_factory.h"
 #include "svs_factory.h"
+#include "tq_factory.h"
 
 namespace VecSimFactory {
 VecSimIndex *NewIndex(const VecSimParams *params) {
@@ -36,6 +37,10 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             index = SVSFactory::NewIndex(params);
             break;
         }
+        case VecSimAlgo_TQ: {
+            index = TQFactory::NewIndex(params);
+            break;
+        }
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
@@ -53,6 +58,8 @@ size_t EstimateInitialSize(const VecSimParams *params) {
         return TieredFactory::EstimateInitialSize(&params->algoParams.tieredParams);
     case VecSimAlgo_SVS:; // empty statement if svs not available
         return SVSFactory::EstimateInitialSize(&params->algoParams.svsParams);
+    case VecSimAlgo_TQ:
+        return TQFactory::EstimateInitialSize(&params->algoParams.tqFlatParams);
     }
     return -1;
 }
@@ -67,6 +74,8 @@ size_t EstimateElementSize(const VecSimParams *params) {
         return TieredFactory::EstimateElementSize(&params->algoParams.tieredParams);
     case VecSimAlgo_SVS:; // empty statement if svs not available
         return SVSFactory::EstimateElementSize(&params->algoParams.svsParams);
+    case VecSimAlgo_TQ:
+        return TQFactory::EstimateElementSize(&params->algoParams.tqFlatParams);
     }
     return -1;
 }
