@@ -9,8 +9,13 @@
 
 #include "gtest/gtest.h"
 
+#include "VecSim/algorithms/tq/tq_flat.h"
 #include "VecSim/vec_sim.h"
+#include "tq_golden_fixture.h"
 
+#include <cmath>
+#include <memory>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -56,6 +61,47 @@ std::vector<std::pair<size_t, double>> Range(VecSimIndex *index, const float *qu
     VecSimQueryReply_IteratorFree(it);
     VecSimQueryReply_Free(reply);
     return results;
+}
+
+struct OracleComparison {
+    float inner_product_estimate;
+    float l2_distance_estimate;
+    float code_norm_sq;
+};
+
+inline float AllowedError(float expected, float abs_tolerance, float rel_tolerance) {
+    return std::max(abs_tolerance, std::abs(expected) * rel_tolerance);
+}
+
+template <VecSimMetric Metric>
+OracleComparison CompareAgainstOracle(const tq_golden_fixture::OracleCase &oracle_case) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto state = std::make_shared<TQFlatDetails::TQModelState>(
+        oracle_case.dim, oracle_case.bits, oracle_case.projections, oracle_case.seed, true);
+    TQFlatDetails::TQPreprocessor<Metric> preprocessor(allocator, state);
+
+    void *storage_blob = nullptr;
+    size_t storage_blob_size = oracle_case.dim * sizeof(float);
+    preprocessor.preprocessForStorage(oracle_case.vector.data(), storage_blob, storage_blob_size);
+
+    void *query_blob = nullptr;
+    size_t query_blob_size = oracle_case.dim * sizeof(float);
+    preprocessor.preprocessQuery(oracle_case.query.data(), query_blob, query_blob_size, 0);
+
+    const auto storage_view = state->storageView(storage_blob);
+    const auto query_view = state->queryView(query_blob);
+    const float ip_estimate = state->estimateInnerProduct(storage_view, query_view);
+    const float l2_estimate =
+        std::max(query_view.query_norm_sq + storage_view.code_norm_sq - 2.0f * ip_estimate, 0.0f);
+
+    allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
+
+    return {
+        .inner_product_estimate = ip_estimate,
+        .l2_distance_estimate = l2_estimate,
+        .code_norm_sq = storage_view.code_norm_sq,
+    };
 }
 
 } // namespace
@@ -149,4 +195,42 @@ TEST(TQFlatTest, rejects_odd_dimensions) {
     VecSimParams params = CreateTQParams(15, VecSimMetric_Cosine, 7, true, 8, 4);
     VecSimIndex *index = VecSimIndex_New(&params);
     EXPECT_EQ(index, nullptr);
+}
+
+TEST(TQFlatTest, oracle_parity_matches_rust_scores_within_tolerance) {
+    for (const auto &oracle_case : tq_golden_fixture::kCases) {
+        OracleComparison comparison =
+            std::string_view(oracle_case.metric) == "cosine"
+                ? CompareAgainstOracle<VecSimMetric_Cosine>(oracle_case)
+                : CompareAgainstOracle<VecSimMetric_IP>(oracle_case);
+
+        SCOPED_TRACE(oracle_case.name);
+
+        EXPECT_NEAR(
+            comparison.code_norm_sq, oracle_case.code_norm_sq,
+            AllowedError(oracle_case.code_norm_sq, 1e-4f, 1e-4f));
+
+        const float oracle_ip_error =
+            std::abs(oracle_case.inner_product_estimate - oracle_case.exact_inner_product);
+        const float comparison_ip_error =
+            std::abs(comparison.inner_product_estimate - oracle_case.exact_inner_product);
+        EXPECT_LE(
+            comparison_ip_error,
+            std::max(1.25f, oracle_ip_error * 2.0f + 0.5f));
+
+        const float oracle_l2_error =
+            std::abs(oracle_case.l2_distance_estimate - oracle_case.exact_l2_distance);
+        const float comparison_l2_error =
+            std::abs(comparison.l2_distance_estimate - oracle_case.exact_l2_distance);
+        EXPECT_LE(
+            comparison_l2_error,
+            std::max(2.5f, oracle_l2_error * 2.0f + 0.75f));
+
+        EXPECT_NEAR(
+            comparison.inner_product_estimate, oracle_case.inner_product_estimate,
+            AllowedError(oracle_case.inner_product_estimate, 5.0f, 0.75f));
+        EXPECT_NEAR(
+            comparison.l2_distance_estimate, oracle_case.l2_distance_estimate,
+            AllowedError(oracle_case.l2_distance_estimate, 10.0f, 0.35f));
+    }
 }
