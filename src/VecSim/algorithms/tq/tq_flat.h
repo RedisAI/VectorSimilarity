@@ -12,35 +12,300 @@
 #include "VecSim/spaces/computer/calculator.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
-#include "VecSim/spaces/IP_space.h"
-#include "VecSim/spaces/L2_space.h"
-#include "VecSim/types/sq8.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/utils/vecsim_stl.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <vector>
 
 namespace TQFlatDetails {
 
-inline bool IsPowerOfTwo(size_t value) { return value != 0 && (value & (value - 1)) == 0; }
+inline constexpr float kPi = 3.14159265358979323846f;
+inline constexpr uint64_t kQjlSeedOffset = 0xCAFEBABE00000001ULL;
+
+inline bool IsEven(size_t value) { return value != 0 && value % 2 == 0; }
+inline size_t PairCount(size_t dim) { return dim / 2; }
+
+struct QueryView {
+    const float *rotated_query;
+    const float *qjl_query_dots;
+    float query_norm_sq;
+};
+
+struct StorageView {
+    const float *radii;
+    float code_norm_sq;
+    const uint16_t *angle_indices;
+    const int8_t *residual_signs;
+};
+
+class TQModelState {
+public:
+    TQModelState(size_t dim, size_t total_bits, size_t projections, size_t seed, bool use_rotation)
+        : dim(dim), pairs(PairCount(dim)), total_bits(total_bits), polar_bits(total_bits - 1),
+          projections(projections), seed(seed), use_rotation(use_rotation),
+          levels(size_t{1} << polar_bits), rotation_columns(dim * dim, 0.0f),
+          qjl_projection_rows(projections * dim, 0.0f), cos_lut(levels), sin_lut(levels) {
+        if (!IsEven(dim)) {
+            throw std::invalid_argument("TQ-FLAT requires even dimensions");
+        }
+        if (total_bits < 2 || total_bits > 16) {
+            throw std::invalid_argument("TQ-FLAT bits must be between 2 and 16");
+        }
+        if (projections == 0) {
+            throw std::invalid_argument("TQ-FLAT requires at least one projection");
+        }
+
+        initializeRotation();
+        initializeQjlProjectionRows();
+        initializeTrigLut();
+    }
+
+    size_t storageBlobSize() const {
+        return pairs * sizeof(float) + sizeof(float) + pairs * sizeof(uint16_t) +
+               projections * sizeof(int8_t);
+    }
+
+    size_t queryBlobSize() const {
+        return (dim + projections + 1) * sizeof(float);
+    }
+
+    StorageView storageView(const void *blob) const {
+        const auto *bytes = static_cast<const uint8_t *>(blob);
+        const auto *radii = reinterpret_cast<const float *>(bytes);
+        bytes += pairs * sizeof(float);
+        const auto *code_norm_sq = reinterpret_cast<const float *>(bytes);
+        bytes += sizeof(float);
+        const auto *angles = reinterpret_cast<const uint16_t *>(bytes);
+        bytes += pairs * sizeof(uint16_t);
+        const auto *signs = reinterpret_cast<const int8_t *>(bytes);
+        return {.radii = radii,
+                .code_norm_sq = *code_norm_sq,
+                .angle_indices = angles,
+                .residual_signs = signs};
+    }
+
+    QueryView queryView(const void *blob) const {
+        const auto *bytes = static_cast<const float *>(blob);
+        const auto *rotated_query = bytes;
+        const auto *qjl_query_dots = bytes + dim;
+        const float query_norm_sq = *(bytes + dim + projections);
+        return {.rotated_query = rotated_query,
+                .qjl_query_dots = qjl_query_dots,
+                .query_norm_sq = query_norm_sq};
+    }
+
+    void applyRotation(const float *input, float *output) const {
+        if (!use_rotation) {
+            std::memcpy(output, input, dim * sizeof(float));
+            return;
+        }
+        for (size_t row = 0; row < dim; ++row) {
+            float sum = 0.0f;
+            for (size_t col = 0; col < dim; ++col) {
+                sum += rotation_columns[col * dim + row] * input[col];
+            }
+            output[row] = sum;
+        }
+    }
+
+    void applyInverseRotation(const float *input, float *output) const {
+        if (!use_rotation) {
+            std::memcpy(output, input, dim * sizeof(float));
+            return;
+        }
+        for (size_t col = 0; col < dim; ++col) {
+            float sum = 0.0f;
+            for (size_t row = 0; row < dim; ++row) {
+                sum += rotation_columns[col * dim + row] * input[row];
+            }
+            output[col] = sum;
+        }
+    }
+
+    void encodePolar(const float *rotated, float *radii, uint16_t *angles) const {
+        for (size_t i = 0; i < pairs; ++i) {
+            const float a = rotated[2 * i];
+            const float b = rotated[2 * i + 1];
+            const float radius = std::sqrt(a * a + b * b);
+            const float theta = std::atan2(b, a);
+            const float normalized = (theta + kPi) / (2.0f * kPi);
+            const auto index =
+                static_cast<uint16_t>(static_cast<uint32_t>(std::floor(normalized * levels)) %
+                                      levels);
+            radii[i] = radius;
+            angles[i] = index;
+        }
+    }
+
+    void reconstructRotated(const float *radii, const uint16_t *angles, float *rotated) const {
+        for (size_t i = 0; i < pairs; ++i) {
+            const uint16_t angle_index = angles[i];
+            const float radius = radii[i];
+            rotated[2 * i] = radius * cos_lut[angle_index];
+            rotated[2 * i + 1] = radius * sin_lut[angle_index];
+        }
+    }
+
+    void projectQjl(const float *input, float *output) const {
+        for (size_t row = 0; row < projections; ++row) {
+            float sum = 0.0f;
+            const float *projection_row = qjl_projection_rows.data() + row * dim;
+            for (size_t col = 0; col < dim; ++col) {
+                sum += projection_row[col] * input[col];
+            }
+            output[row] = sum;
+        }
+    }
+
+    void sketchResidual(const float *residual, int8_t *signs) const {
+        std::vector<float> dots(projections);
+        projectQjl(residual, dots.data());
+        for (size_t i = 0; i < projections; ++i) {
+            signs[i] = dots[i] >= 0.0f ? int8_t{1} : int8_t{-1};
+        }
+    }
+
+    float estimateInnerProduct(const StorageView &storage, const QueryView &query) const {
+        float polar_estimate = 0.0f;
+        for (size_t i = 0; i < pairs; ++i) {
+            const uint16_t angle_index = storage.angle_indices[i];
+            const float q_a = query.rotated_query[2 * i];
+            const float q_b = query.rotated_query[2 * i + 1];
+            polar_estimate +=
+                storage.radii[i] * (q_a * cos_lut[angle_index] + q_b * sin_lut[angle_index]);
+        }
+
+        const float qjl_scale = kPi / (2.0f * static_cast<float>(projections));
+        float qjl_estimate = 0.0f;
+        for (size_t i = 0; i < projections; ++i) {
+            qjl_estimate +=
+                static_cast<float>(storage.residual_signs[i]) * query.qjl_query_dots[i];
+        }
+
+        return polar_estimate + qjl_scale * qjl_estimate;
+    }
+
+    size_t dim;
+    size_t pairs;
+    size_t total_bits;
+    size_t polar_bits;
+    size_t projections;
+    size_t seed;
+    bool use_rotation;
+    size_t levels;
+
+private:
+    void initializeRotation() {
+        if (!use_rotation) {
+            return;
+        }
+
+        std::mt19937_64 rng(seed);
+        std::normal_distribution<float> normal(0.0f, 1.0f);
+
+        std::vector<float> candidate(dim);
+        for (size_t col = 0; col < dim; ++col) {
+            bool accepted = false;
+            for (size_t attempt = 0; attempt < 16 && !accepted; ++attempt) {
+                for (size_t row = 0; row < dim; ++row) {
+                    candidate[row] = normal(rng);
+                }
+
+                for (size_t prev = 0; prev < col; ++prev) {
+                    const float *prev_col = rotation_columns.data() + prev * dim;
+                    float dot = 0.0f;
+                    for (size_t row = 0; row < dim; ++row) {
+                        dot += candidate[row] * prev_col[row];
+                    }
+                    for (size_t row = 0; row < dim; ++row) {
+                        candidate[row] -= dot * prev_col[row];
+                    }
+                }
+
+                float norm_sq = 0.0f;
+                for (float value : candidate) {
+                    norm_sq += value * value;
+                }
+
+                if (norm_sq > 1e-12f) {
+                    float inv_norm = 1.0f / std::sqrt(norm_sq);
+                    if (candidate[col] < 0.0f) {
+                        inv_norm = -inv_norm;
+                    }
+                    float *dst_col = rotation_columns.data() + col * dim;
+                    for (size_t row = 0; row < dim; ++row) {
+                        dst_col[row] = candidate[row] * inv_norm;
+                    }
+                    accepted = true;
+                }
+            }
+
+            if (!accepted) {
+                throw std::runtime_error("Failed to construct TQ rotation");
+            }
+        }
+    }
+
+    void initializeQjlProjectionRows() {
+        std::mt19937_64 rng(seed + kQjlSeedOffset);
+        std::normal_distribution<float> normal(0.0f, 1.0f);
+        for (float &value : qjl_projection_rows) {
+            value = normal(rng);
+        }
+    }
+
+    void initializeTrigLut() {
+        for (size_t i = 0; i < levels; ++i) {
+            const float theta = (static_cast<float>(i) / static_cast<float>(levels)) *
+                                    (2.0f * kPi) -
+                                kPi;
+            cos_lut[i] = std::cos(theta);
+            sin_lut[i] = std::sin(theta);
+        }
+    }
+
+    std::vector<float> rotation_columns;
+    std::vector<float> qjl_projection_rows;
+    std::vector<float> cos_lut;
+    std::vector<float> sin_lut;
+};
+
+template <VecSimMetric Metric>
+class TQDistanceCalculator : public IndexCalculatorInterface<float> {
+public:
+    TQDistanceCalculator(std::shared_ptr<VecSimAllocator> allocator,
+                         std::shared_ptr<TQModelState> state)
+        : IndexCalculatorInterface<float>(allocator), state(std::move(state)) {}
+
+    float calcDistance(const void *v1, const void *v2, size_t dim) const override {
+        UNUSED(dim);
+        const auto storage = state->storageView(v1);
+        const auto query = state->queryView(v2);
+        const float estimate = state->estimateInnerProduct(storage, query);
+
+        if constexpr (Metric == VecSimMetric_L2) {
+            return std::max(query.query_norm_sq + storage.code_norm_sq - 2.0f * estimate, 0.0f);
+        }
+
+        return 1.0f - estimate;
+    }
+
+private:
+    std::shared_ptr<TQModelState> state;
+};
 
 template <VecSimMetric Metric>
 class TQPreprocessor : public PreprocessorInterface {
 public:
-    TQPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim, size_t seed,
-                   bool use_rotation)
+    TQPreprocessor(std::shared_ptr<VecSimAllocator> allocator, std::shared_ptr<TQModelState> state)
         : PreprocessorInterface(allocator), normalize_func(spaces::GetNormalizeFunc<float>()),
-          dim(dim), seed(seed), use_rotation(use_rotation),
-          quantizer(allocator, dim), signs(allocator) {
-        if (this->use_rotation && !IsPowerOfTwo(dim)) {
-            throw std::invalid_argument("TQ-FLAT rotation requires power-of-two dimensions");
-        }
-        initializeSigns();
-    }
+          state(std::move(state)), working_dim(this->state->dim) {}
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
@@ -60,117 +325,110 @@ public:
 
     void preprocessForStorage(const void *original_blob, void *&storage_blob,
                               size_t &input_blob_size) const override {
-        auto transformed = transformInput(original_blob);
-        size_t transformed_size = dim * sizeof(float);
-        quantizer.preprocessForStorage(transformed.data(), storage_blob, transformed_size);
-        input_blob_size = transformed_size;
+        if (!storage_blob) {
+            storage_blob = this->allocator->allocate(state->storageBlobSize());
+        }
+
+        const auto *typed_blob = static_cast<const float *>(original_blob);
+        std::vector<float> normalized(typed_blob, typed_blob + working_dim);
+        normalizeIfNeeded(normalized.data());
+
+        std::vector<float> rotated(working_dim);
+        std::vector<float> reconstructed_rotated(working_dim);
+        std::vector<float> reconstructed(working_dim);
+        std::vector<float> residual(working_dim);
+
+        state->applyRotation(normalized.data(), rotated.data());
+
+        auto *bytes = static_cast<uint8_t *>(storage_blob);
+        auto *radii = reinterpret_cast<float *>(bytes);
+        bytes += state->pairs * sizeof(float);
+        auto *code_norm_sq = reinterpret_cast<float *>(bytes);
+        bytes += sizeof(float);
+        auto *angles = reinterpret_cast<uint16_t *>(bytes);
+        bytes += state->pairs * sizeof(uint16_t);
+        auto *signs = reinterpret_cast<int8_t *>(bytes);
+
+        state->encodePolar(rotated.data(), radii, angles);
+        *code_norm_sq = 0.0f;
+        for (size_t i = 0; i < state->pairs; ++i) {
+            *code_norm_sq += radii[i] * radii[i];
+        }
+
+        state->reconstructRotated(radii, angles, reconstructed_rotated.data());
+        state->applyInverseRotation(reconstructed_rotated.data(), reconstructed.data());
+        for (size_t i = 0; i < working_dim; ++i) {
+            residual[i] = normalized[i] - reconstructed[i];
+        }
+        state->sketchResidual(residual.data(), signs);
+
+        input_blob_size = state->storageBlobSize();
     }
 
     void preprocessQuery(const void *original_blob, void *&query_blob, size_t &input_blob_size,
                          unsigned char alignment) const override {
-        auto transformed = transformInput(original_blob);
-        size_t transformed_size = dim * sizeof(float);
-        quantizer.preprocessQuery(transformed.data(), query_blob, transformed_size, alignment);
-        input_blob_size = transformed_size;
+        if (!query_blob) {
+            query_blob = this->allocator->allocate_aligned(state->queryBlobSize(), alignment);
+        }
+
+        const auto *typed_blob = static_cast<const float *>(original_blob);
+        std::vector<float> normalized(typed_blob, typed_blob + working_dim);
+        normalizeIfNeeded(normalized.data());
+
+        auto *query_words = static_cast<float *>(query_blob);
+        auto *rotated_query = query_words;
+        auto *qjl_query_dots = query_words + working_dim;
+        auto *query_norm_sq = query_words + working_dim + state->projections;
+
+        state->applyRotation(normalized.data(), rotated_query);
+        state->projectQjl(normalized.data(), qjl_query_dots);
+        *query_norm_sq = 0.0f;
+        for (float value : normalized) {
+            *query_norm_sq += value * value;
+        }
+
+        input_blob_size = state->queryBlobSize();
     }
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
-        auto *typed_blob = static_cast<float *>(original_blob);
-        if constexpr (Metric == VecSimMetric_Cosine) {
-            normalize_func(typed_blob, dim);
-        }
-        applyRotation(typed_blob);
-        quantizer.preprocessStorageInPlace(original_blob, input_blob_size);
+        assert(original_blob);
+        assert(input_blob_size >= state->storageBlobSize());
+        std::vector<uint8_t> encoded(state->storageBlobSize());
+        void *encoded_blob = encoded.data();
+        size_t storage_blob_size = input_blob_size;
+        preprocessForStorage(original_blob, encoded_blob, storage_blob_size);
+        std::memcpy(original_blob, encoded.data(), state->storageBlobSize());
     }
 
 private:
-    std::vector<float> transformInput(const void *original_blob) const {
-        const auto *typed_blob = static_cast<const float *>(original_blob);
-        std::vector<float> transformed(typed_blob, typed_blob + dim);
+    void normalizeIfNeeded(float *values) const {
         if constexpr (Metric == VecSimMetric_Cosine) {
-            normalize_func(transformed.data(), dim);
-        }
-        applyRotation(transformed.data());
-        return transformed;
-    }
-
-    void applyRotation(float *values) const {
-        if (!use_rotation) {
-            return;
-        }
-        for (size_t i = 0; i < dim; ++i) {
-            values[i] *= signs[i];
-        }
-
-        for (size_t block = 1; block < dim; block <<= 1) {
-            const size_t step = block << 1;
-            for (size_t start = 0; start < dim; start += step) {
-                for (size_t offset = 0; offset < block; ++offset) {
-                    const size_t left = start + offset;
-                    const size_t right = left + block;
-                    const float a = values[left];
-                    const float b = values[right];
-                    values[left] = a + b;
-                    values[right] = a - b;
-                }
-            }
-        }
-
-        const float scale = 1.0f / std::sqrt(static_cast<float>(dim));
-        for (size_t i = 0; i < dim; ++i) {
-            values[i] *= scale;
-        }
-    }
-
-    void initializeSigns() {
-        signs.resize(dim);
-        std::mt19937_64 rng(seed);
-        for (size_t i = 0; i < dim; ++i) {
-            signs[i] = (rng() & 1ULL) ? 1.0f : -1.0f;
+            normalize_func(values, working_dim);
         }
     }
 
     spaces::normalizeVector_f<float> normalize_func;
-    const size_t dim;
-    const size_t seed;
-    const bool use_rotation;
-    QuantPreprocessor<float, Metric> quantizer;
-    vecsim_stl::vector<float> signs;
+    std::shared_ptr<TQModelState> state;
+    size_t working_dim;
 };
 
 template <VecSimMetric Metric>
-inline spaces::dist_func_t<float> GetTQDistFunc(size_t dim, unsigned char *alignment) {
-    if constexpr (Metric == VecSimMetric_L2) {
-        return spaces::L2_SQ8_FP32_GetDistFunc(dim, alignment);
-    }
-    if constexpr (Metric == VecSimMetric_IP) {
-        return spaces::IP_SQ8_FP32_GetDistFunc(dim, alignment);
-    }
-    return spaces::Cosine_SQ8_FP32_GetDistFunc(dim, alignment);
-}
-
-template <VecSimMetric Metric>
-inline size_t GetStorageDataSize(size_t dim) {
-    return dim * sizeof(vecsim_types::sq8::value_type) +
-           vecsim_types::sq8::storage_metadata_count<Metric>() * sizeof(float);
-}
-
-template <VecSimMetric Metric>
-inline size_t GetQueryDataSize(size_t dim) {
-    return (dim + vecsim_types::sq8::query_metadata_count<Metric>()) * sizeof(float);
+inline size_t GetStorageDataSize(const TQFlatParams *params) {
+    return TQModelState(params->dim, params->bits, params->projections, params->seed,
+                        params->useRotation)
+        .storageBlobSize();
 }
 
 template <VecSimMetric Metric>
 inline IndexComponents<float, float>
-CreateTQComponents(std::shared_ptr<VecSimAllocator> allocator, size_t dim, size_t seed,
-                   bool use_rotation) {
-    unsigned char alignment = 0;
-    auto dist_func = GetTQDistFunc<Metric>(dim, &alignment);
-    auto *index_calculator = new (allocator) DistanceCalculatorCommon<float>(allocator, dist_func);
+CreateTQComponents(std::shared_ptr<VecSimAllocator> allocator, const TQFlatParams *params) {
+    auto state = std::make_shared<TQModelState>(params->dim, params->bits, params->projections,
+                                                params->seed, params->useRotation);
+    auto *index_calculator =
+        new (allocator) TQDistanceCalculator<Metric>(allocator, state);
     auto *preprocessors =
-        new (allocator) MultiPreprocessorsContainer<float, 1>(allocator, alignment);
-    auto *tq_preprocessor =
-        new (allocator) TQPreprocessor<Metric>(allocator, dim, seed, use_rotation);
+        new (allocator) MultiPreprocessorsContainer<float, 1>(allocator, alignof(float));
+    auto *tq_preprocessor = new (allocator) TQPreprocessor<Metric>(allocator, state);
     int rc = preprocessors->addPreprocessor(tq_preprocessor);
     UNUSED(rc);
     assert(rc != -1 && "TQ preprocessor was not added correctly");

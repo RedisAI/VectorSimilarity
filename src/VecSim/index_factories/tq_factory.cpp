@@ -32,10 +32,8 @@ template <VecSimMetric Metric>
 VecSimIndex *NewIndexImpl(const VecSimParams *params) {
     const auto &tq_params = params->algoParams.tqFlatParams;
     auto allocator = VecSimAllocator::newVecsimAllocator();
-    auto components = TQFlatDetails::CreateTQComponents<Metric>(allocator, tq_params.dim,
-                                                                tq_params.seed,
-                                                                tq_params.useRotation);
-    auto stored_data_size = TQFlatDetails::GetStorageDataSize<Metric>(tq_params.dim);
+    auto components = TQFlatDetails::CreateTQComponents<Metric>(allocator, &tq_params);
+    auto stored_data_size = TQFlatDetails::GetStorageDataSize<Metric>(&tq_params);
     auto abstract_init_params =
         NewAbstractInitParams(&tq_params, params->logCtx, allocator, stored_data_size);
     BFParams bf_params = {.type = tq_params.type,
@@ -54,16 +52,18 @@ size_t EstimateInitialSizeImpl(const TQFlatParams *params) {
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
     est += sizeof(TQFlatDetails::TQFlatIndex);
     est += sizeof(DataBlocksContainer) + allocations_overhead;
-    est += allocations_overhead + sizeof(DistanceCalculatorCommon<float>);
+    est += allocations_overhead + sizeof(TQFlatDetails::TQDistanceCalculator<Metric>);
     est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
     est += allocations_overhead + sizeof(TQFlatDetails::TQPreprocessor<Metric>);
-    est += allocations_overhead + params->dim * sizeof(float);
+    est += params->dim * params->dim * sizeof(float);
+    est += params->projections * params->dim * sizeof(float);
+    est += (size_t{1} << (params->bits - 1)) * 2 * sizeof(float);
     return est;
 }
 
 template <VecSimMetric Metric>
 size_t EstimateElementSizeImpl(const TQFlatParams *params) {
-    return TQFlatDetails::GetStorageDataSize<Metric>(params->dim) + sizeof(labelType) +
+    return TQFlatDetails::GetStorageDataSize<Metric>(params) + sizeof(labelType) +
            sizeof(void *);
 }
 
