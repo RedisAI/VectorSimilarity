@@ -49,7 +49,29 @@ if(USE_SVS)
     cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         if (GLIBC_2_28_FOUND)
-            if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "20.0")
+            if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "21.0")
+                # SVS binaries must match the system's libstdc++ ABI version (determined by GCC version).
+                execute_process(
+                    COMMAND gcc -dumpversion
+                    OUTPUT_VARIABLE _GCC_VERSION_OUTPUT
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    RESULT_VARIABLE _GCC_VERSION_RESULT
+                )
+                if(_GCC_VERSION_RESULT EQUAL 0)
+                    string(REGEX MATCH "^[0-9]+" _GCC_MAJOR "${_GCC_VERSION_OUTPUT}")
+                else()
+                    set(_GCC_MAJOR "11")
+                    message(STATUS "Could not detect GCC version, defaulting to gcc${_GCC_MAJOR}")
+                endif()
+                
+                if(_GCC_MAJOR STREQUAL "13")
+                    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/nightly/svs-shared-library-nightly-reduced-clang21-gcc13-2026-03-31-1147.tar.gz" CACHE STRING "SVS URL")
+                elseif(_GCC_MAJOR STREQUAL "12")
+                    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/nightly/svs-shared-library-nightly-reduced-clang21-gcc12-2026-03-31-1147.tar.gz" CACHE STRING "SVS URL")
+                else()
+                    set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/nightly/svs-shared-library-nightly-reduced-clang21-gcc11-2026-03-31-1147.tar.gz" CACHE STRING "SVS URL")
+                endif()
+            elseif(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "20.0")
                 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced-clang20.tar.gz" CACHE STRING "SVS URL")
             else()
                 set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced-clang.tar.gz" CACHE STRING "SVS URL")
