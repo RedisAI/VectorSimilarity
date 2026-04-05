@@ -1,4 +1,6 @@
-BM_TYPE=$1
+set -euo pipefail
+
+BM_TYPE=${1:-}
 alg="hnsw"
 
 S3_BUCKET="dev.cto.redis"
