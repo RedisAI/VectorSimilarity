@@ -405,8 +405,8 @@ class VecSimSVSThreadPoolImpl {
 public:
     // Create a pool with `num_threads` total parallelism (including the calling thread).
     // Spawns `num_threads - 1` worker OS threads. num_threads must be >= 1.
-    // When no threads are needed (write-in-place mode), the pool should not be created
-    // at all — the singleton should remain nullptr.
+    // In write-in-place mode, the pool is created with num_threads == 1 (0 worker threads,
+    // only the calling thread participates).
     explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1) {
         assert(num_threads && "VecSimSVSThreadPoolImpl should not be created with 0 threads");
         slots_.reserve(num_threads - 1);
@@ -561,21 +561,50 @@ private:
     std::vector<std::shared_ptr<ThreadSlot>> slots_;
 };
 
-// Copy-movable wrapper for VecSimSVSThreadPoolImpl
+// Per-index wrapper around the shared VecSimSVSThreadPoolImpl singleton.
+// Lightweight, copyable (SVS stores a copy via ThreadPoolHandle). Both the original
+// and SVS's copy share the same pool_ and parallelism_ via shared_ptr, so state
+// changes propagate automatically.
+// Satisfies the svs::threads::ThreadPool concept (size() + parallel_for).
+// The pool is always valid — in write-in-place mode it has size 1 (0 worker threads).
 class VecSimSVSThreadPool {
 private:
-    std::shared_ptr<VecSimSVSThreadPoolImpl> pool_;
+    std::shared_ptr<VecSimSVSThreadPoolImpl> pool_;    // shared across all indexes
+    std::shared_ptr<std::atomic<size_t>> parallelism_; // per-index, shared across copies
 
 public:
-    explicit VecSimSVSThreadPool(size_t num_threads = 1)
-        : pool_{std::make_shared<VecSimSVSThreadPoolImpl>(num_threads)} {}
-
-    size_t capacity() const { return pool_->capacity(); }
-    size_t size() const { return pool_->size(); }
-
-    void parallel_for(std::function<void(size_t)> f, size_t n) {
-        pool_->parallel_for(std::move(f), n);
+    // Construct with reference to the shared pool singleton.
+    // parallelism_ starts at 0 — caller must call setParallelism() before parallel_for().
+    explicit VecSimSVSThreadPool(std::shared_ptr<VecSimSVSThreadPoolImpl> pool)
+        : pool_(std::move(pool)), parallelism_(std::make_shared<std::atomic<size_t>>(0)) {
+        assert(pool_ && "Pool must not be null");
     }
 
-    void resize(size_t new_size) { pool_->resize(new_size); }
+    // Set the degree of parallelism for this index's next operation.
+    // n must be the number of threads actually reserved by the caller (i.e., the
+    // RediSearch workers that checked in via ReserveThreadJob). This is what allows
+    // us to assert n <= pool size: reserved workers are occupied RediSearch threads,
+    // so the pool cannot shrink while they are held, and n cannot exceed the pool size.
+    void setParallelism(size_t n) {
+        assert(n >= 1 && "Parallelism must be at least 1 (the calling thread)");
+        assert(n <= pool_->size() && "Parallelism exceeds shared pool size");
+        parallelism_->store(n);
+    }
+    size_t getParallelism() const { return parallelism_->load(); }
+
+    // Returns per-index parallelism. SVS uses this for task partitioning (ThreadPool concept).
+    size_t size() const { return parallelism_->load(); }
+
+    // Shared pool size — used by scheduling to decide how many reserve jobs to submit.
+    size_t poolSize() const { return pool_->size(); }
+
+    // Delegates to the shared pool's parallel_for.
+    // n may be less than parallelism_ when the problem size is smaller than the
+    // thread count (SVS computes n = min(arg.size(), pool.size())).
+    // n must not exceed parallelism_ — we only have that many threads reserved.
+    void parallel_for(std::function<void(size_t)> f, size_t n) {
+        assert(parallelism_->load() > 0 && "setParallelism must be called before parallel_for");
+        assert(n <= parallelism_->load() && "n exceeds reserved thread count (parallelism)");
+        pool_->parallel_for(std::move(f), n);
+    }
 };

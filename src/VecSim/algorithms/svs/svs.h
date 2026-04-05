@@ -39,10 +39,10 @@ struct SVSIndexBase
     virtual ~SVSIndexBase() = default;
 
     // Singleton accessor for the shared SVS thread pool.
-    // Returns a reference to the static shared_ptr, which is initially null.
-    // Created lazily on first VecSim_UpdateThreadPoolSize(n > 0) call.
+    // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
+    // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
     static std::shared_ptr<VecSimSVSThreadPoolImpl> &getSharedThreadPool() {
-        static std::shared_ptr<VecSimSVSThreadPoolImpl> shared_pool;
+        static auto shared_pool = std::make_shared<VecSimSVSThreadPoolImpl>(1);
         return shared_pool;
     }
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
@@ -369,8 +369,7 @@ public:
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
-          impl_{nullptr} {
+          threadpool_{SVSIndexBase::getSharedThreadPool()}, impl_{nullptr} {
         logger_ = makeLogger();
     }
 
@@ -549,10 +548,10 @@ public:
         return impl_ ? impl_->has_id(label) : false;
     }
 
-    size_t getParallelism() const override { return threadpool_.size(); }
-    void setParallelism(size_t parallelism) override { threadpool_.resize(parallelism); }
+    size_t getParallelism() const override { return threadpool_.getParallelism(); }
+    void setParallelism(size_t parallelism) override { threadpool_.setParallelism(parallelism); }
 
-    size_t getPoolSize() const override { return threadpool_.capacity(); }
+    size_t getPoolSize() const override { return threadpool_.poolSize(); }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
 

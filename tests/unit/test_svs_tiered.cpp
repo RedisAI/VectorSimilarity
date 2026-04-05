@@ -3823,46 +3823,76 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalMulti) {
 }
 
 TEST(SVSTieredIndexTest, testThreadPool) {
-    // Test VecSimSVSThreadPool
+    // Test VecSimSVSThreadPool with shared pool
     const size_t num_threads = 4;
-    auto pool = VecSimSVSThreadPool(num_threads);
-    ASSERT_EQ(pool.capacity(), num_threads);
+    auto shared_pool = std::make_shared<VecSimSVSThreadPoolImpl>(num_threads);
+    auto pool = VecSimSVSThreadPool(shared_pool);
+    ASSERT_EQ(pool.poolSize(), num_threads);
+    ASSERT_EQ(pool.size(), 0); // parallelism starts at 0
+    ASSERT_EQ(pool.getParallelism(), 0);
+
+    // Must call setParallelism before parallel_for
+    pool.setParallelism(num_threads);
     ASSERT_EQ(pool.size(), num_threads);
+    ASSERT_EQ(pool.getParallelism(), num_threads);
 
     std::atomic_int counter(0);
     auto task = [&counter](size_t i) { counter += i + 1; };
 
-    // exeed the number of threads
-    ASSERT_THROW(pool.parallel_for(task, 10), svs::threads::ThreadingException);
+    // n > parallelism is a bug — asserts in debug mode
+#if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
+    ASSERT_DEATH(pool.parallel_for(task, 10), "n exceeds reserved thread count");
+#endif
 
     counter = 0;
-    pool.parallel_for(task, 4);
+    pool.parallel_for(task, num_threads);
     ASSERT_EQ(counter, 10); // 1+2+3+4 = 10
 
-    pool.resize(1);
-    ASSERT_EQ(pool.capacity(), 4);
-    ASSERT_EQ(pool.size(), 1);
-    // exeed the new pool size
-    ASSERT_THROW(pool.parallel_for(task, 4), svs::threads::ThreadingException);
+    // n < parallelism is valid (SVS may partition into fewer tasks for small problems)
+    counter = 0;
+    pool.parallel_for(task, 2);
+    ASSERT_EQ(counter, 3); // 1+2 = 3
+
+    // setParallelism changes per-index parallelism, not the shared pool
+    pool.setParallelism(1);
+    ASSERT_EQ(pool.poolSize(), num_threads); // shared pool unchanged
+    ASSERT_EQ(pool.size(), 1);               // per-index parallelism
+    ASSERT_EQ(pool.getParallelism(), 1);
 
     counter = 0;
     pool.parallel_for(task, 1);
     ASSERT_EQ(counter, 1); // 0+1 = 1
 
-    pool.resize(0);
-    ASSERT_EQ(pool.capacity(), 4);
-    ASSERT_EQ(pool.size(), 1);
+    // setParallelism boundary checks — asserts in debug mode
+#if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
+    ASSERT_DEATH(pool.setParallelism(0), "Parallelism must be at least 1");
+    ASSERT_DEATH(pool.setParallelism(10), "Parallelism exceeds shared pool size");
+#endif
 
-    pool.resize(5);
-    ASSERT_EQ(pool.capacity(), 4);
-    ASSERT_EQ(pool.size(), 4);
+    // Test write-in-place mode (pool with size 1)
+    auto inplace_shared = std::make_shared<VecSimSVSThreadPoolImpl>(1);
+    auto inplace_pool = VecSimSVSThreadPool(inplace_shared);
+    inplace_pool.setParallelism(1);
+    ASSERT_EQ(inplace_pool.size(), 1);
+    ASSERT_EQ(inplace_pool.poolSize(), 1);
+    counter = 0;
+    inplace_pool.parallel_for(task, 1);
+    ASSERT_EQ(counter, 1);
 
-    // Test VecSimSVSThreadPool for exception handling
+    // parallel_for without setParallelism asserts in debug mode
+#if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
+    auto unset_pool = VecSimSVSThreadPool(shared_pool);
+    ASSERT_DEATH(unset_pool.parallel_for(task, 1),
+                 "setParallelism must be called before parallel_for");
+#endif
+
+    // Test exception handling
     auto err_task = [](size_t) { throw std::runtime_error("Test exception"); };
-
-    ASSERT_NO_THROW(pool.parallel_for(err_task, 0)); // no task - no err
+    // n=0 is a no-op (no tasks to run, no error)
+    ASSERT_NO_THROW(pool.parallel_for(err_task, 0));
+    pool.setParallelism(num_threads);
     ASSERT_THROW(pool.parallel_for(err_task, 1), svs::threads::ThreadingException);
-    ASSERT_THROW(pool.parallel_for(err_task, 4), svs::threads::ThreadingException);
+    ASSERT_THROW(pool.parallel_for(err_task, num_threads), svs::threads::ThreadingException);
 }
 
 #else // HAVE_SVS
