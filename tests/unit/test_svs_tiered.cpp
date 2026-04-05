@@ -92,8 +92,8 @@ protected:
 
     void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
                           size_t expected_capcity) {
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getNumThreads(), expected_num_threads);
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), expected_num_threads);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), expected_capcity);
     }
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
                                                  tieredIndexMock &mock_thread_pool,
@@ -104,11 +104,11 @@ protected:
         // Set the created tiered index in the index external context (it will take ownership over
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-        // Set numThreads to 1 by default to allow direct calls to SVS addVector() API,
+        // Set parallelism to 1 by default to allow direct calls to SVS addVector() API,
         // which requires exactly 1 thread. When using tiered index addVector API,
-        // the thread count is managed internally according to the operation and threadpool
-        // capacity, so testing parallelism remains intact.
-        tiered_index->GetSVSIndex()->setNumThreads(num_available_threads);
+        // the parallelism is managed internally according to the operation and pool
+        // size, so testing parallelism remains intact.
+        tiered_index->GetSVSIndex()->setParallelism(num_available_threads);
         size_t params_threadpool_size =
             tiered_params.primaryIndexParams->algoParams.svsParams.num_threads;
         size_t expected_capacity =

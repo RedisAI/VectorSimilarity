@@ -587,7 +587,7 @@ private:
             // No need to run GC on an empty index.
             return;
         }
-        svs_index->setNumThreads(std::min(availableThreads, index->backendIndex->indexSize()));
+        svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
     }
@@ -601,7 +601,7 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
+        auto total_threads = this->GetSVSIndex()->getPoolSize();
         auto jobs = SVSMultiThreadJob::createJobs(
             this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
@@ -614,7 +614,7 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
+        auto total_threads = this->GetSVSIndex()->getPoolSize();
         auto jobs = SVSMultiThreadJob::createJobs(
             this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
@@ -683,7 +683,7 @@ private:
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index is empty, we need to initialize it first.
-                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
                                                   labels_to_move.size());
 
@@ -696,7 +696,7 @@ private:
                 main_shared_lock.unlock();
                 std::lock_guard lock(this->mainIndexGuard);
                 // Upgrade to unique lock to add vectors
-                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
             }
@@ -821,9 +821,9 @@ public:
                 std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
                 // Set available thread count to 1 for single vector write-in-place operation.
                 // This maintains the contract that single vector operations use exactly one thread.
-                // TODO: Replace this setNumThreads(1) call with an assertion once we establish
-                // a contract that write-in-place mode guarantees numThreads == 1.
-                svs_index->setNumThreads(1);
+                // TODO: Replace this setParallelism(1) call with an assertion once we establish
+                // a contract that write-in-place mode guarantees parallelism == 1.
+                svs_index->setParallelism(1);
                 return this->backendIndex->addVector(storage_blob.get(), label);
             }
         }
@@ -1077,7 +1077,7 @@ public:
                 return;
             }
             // Force single thread for write-in-place mode.
-            this->GetSVSIndex()->setNumThreads(1);
+            this->GetSVSIndex()->setParallelism(1);
             // VecSimIndexAbstract::runGC() is protected
             static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
             return;

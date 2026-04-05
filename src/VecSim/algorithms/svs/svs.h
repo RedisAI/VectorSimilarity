@@ -37,13 +37,21 @@ struct SVSIndexBase
 {
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
+
+    // Singleton accessor for the shared SVS thread pool.
+    // Returns a reference to the static shared_ptr, which is initially null.
+    // Created lazily on first VecSim_UpdateThreadPoolSize(n > 0) call.
+    static std::shared_ptr<VecSimSVSThreadPoolImpl> &getSharedThreadPool() {
+        static std::shared_ptr<VecSimSVSThreadPoolImpl> shared_pool;
+        return shared_pool;
+    }
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
-    virtual size_t getNumThreads() const = 0;
-    virtual void setNumThreads(size_t numThreads) = 0;
-    virtual size_t getThreadPoolCapacity() const = 0;
+    virtual size_t getParallelism() const = 0;
+    virtual void setParallelism(size_t parallelism) = 0;
+    virtual size_t getPoolSize() const = 0;
     virtual bool isCompressed() const = 0;
     size_t getNumMarkedDeleted() const { return num_marked_deleted; }
 
@@ -66,9 +74,9 @@ protected:
 };
 
 /** Thread Management Strategy:
- * - addVector(): Requires numThreads == 1
- * - addVectors(): Allows any numThreads value, but prohibits n=1 with numThreads>1
- * - Callers are responsible for setting appropriate thread counts
+ * - addVector(): Requires parallelism == 1
+ * - addVectors(): Allows any parallelism value, but prohibits n=1 with parallelism>1
+ * - Callers are responsible for setting appropriate parallelism
  **/
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
           size_t ResidualBits, bool IsLeanVec>
@@ -251,12 +259,12 @@ protected:
         this->impl_ = std::move(svs_handler->impl);
     }
 
-    // Assuming numThreads was updated to reflect the number of available threads before this
+    // Assuming parallelism was updated to reflect the number of available threads before this
     // function was called.
-    // This function assumes that the caller has already set numThreads to the appropriate value
+    // This function assumes that the caller has already set parallelism to the appropriate value
     // for the operation.
-    // Important NOTE: For single vector operations (n=1), numThreads should be 1.
-    // For bulk operations (n>1), numThreads should reflect the number of available threads.
+    // Important NOTE: For single vector operations (n=1), parallelism should be 1.
+    // For bulk operations (n>1), parallelism should reflect the number of available threads.
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
             return 0;
@@ -412,8 +420,8 @@ public:
                           .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
                           .pruneTo = this->buildParams.prune_to,
                           .useSearchHistory = this->buildParams.use_full_search_history,
-                          .numThreads = this->getThreadPoolCapacity(),
-                          .lastReservedThreads = this->getNumThreads(),
+                          .numThreads = this->getPoolSize(),
+                          .lastReservedThreads = this->getParallelism(),
                           .numberOfMarkedDeletedNodes = this->num_marked_deleted,
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
@@ -517,16 +525,16 @@ public:
 
     int addVector(const void *vector_data, labelType label) override {
         // Enforce single-threaded execution for single vector operations to ensure optimal
-        // performance and consistent behavior. Callers must set numThreads=1 before calling this
+        // performance and consistent behavior. Callers must set parallelism=1 before calling this
         // method.
-        assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
+        assert(getParallelism() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
     }
 
     int addVectors(const void *vectors_data, const labelType *labels, size_t n) override {
         // Prevent misuse: single vector operations should use addVector(), not addVectors() with
         // n=1 This ensures proper thread management and API contract enforcement.
-        assert(!(n == 1 && getNumThreads() > 1) &&
+        assert(!(n == 1 && getParallelism() > 1) &&
                "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vectors_data, labels, n);
     }
@@ -541,10 +549,10 @@ public:
         return impl_ ? impl_->has_id(label) : false;
     }
 
-    size_t getNumThreads() const override { return threadpool_.size(); }
-    void setNumThreads(size_t numThreads) override { threadpool_.resize(numThreads); }
+    size_t getParallelism() const override { return threadpool_.size(); }
+    void setParallelism(size_t parallelism) override { threadpool_.resize(parallelism); }
 
-    size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
+    size_t getPoolSize() const override { return threadpool_.capacity(); }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
 
