@@ -318,8 +318,7 @@ void VecSim_SetWriteMode(VecSimWriteMode mode);
  * If new_size > 0, sets write mode to async and resizes the shared thread pool.
  * @note Should be called from the main thread only.
  *
- * @param new_size the number of worker threads (0 = in-place mode, >0 = async mode).
- * The total SVS pool parallelism will be new_size + 1 (workers + calling thread).
+ * @param new_size the new thread pool size (0 = in-place mode, >0 = async mode).
  */
 void VecSim_UpdateThreadPoolSize(size_t new_size);
 

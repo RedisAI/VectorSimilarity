@@ -1676,8 +1676,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .constructionWindowSize = 100,
           .maxCandidatePoolSize = 500,
           .pruneTo = 55,
-          .useSearchHistory = false, // VecSimOption_DISABLE
-          .numThreads = 4,
+          .useSearchHistory = false,                    // VecSimOption_DISABLE
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS, // Deprecated, expect default to be used
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = 20,
           .searchBufferCapacity = 40,

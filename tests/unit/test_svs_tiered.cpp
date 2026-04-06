@@ -76,9 +76,6 @@ protected:
         trainingThreshold = training_threshold;
         updateThreshold = update_threshold;
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
-        if (svs_params.algoParams.svsParams.num_threads == 0) {
-            svs_params.algoParams.svsParams.num_threads = mock_thread_pool.thread_pool_size;
-        }
         return TieredIndexParams{
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
@@ -90,14 +87,16 @@ protected:
                                                    .updateJobWaitTime = update_job_wait_time}}};
     }
 
-    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
-                          size_t expected_capcity) {
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), expected_num_threads);
+    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_capcity) {
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), 1);
         ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), expected_capcity);
     }
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
-                                                 tieredIndexMock &mock_thread_pool,
-                                                 size_t num_available_threads = 1) {
+                                                 tieredIndexMock &mock_thread_pool) {
+        // Resize the shared SVS thread pool singleton to match the mock thread pool size,
+        // simulating what RediSearch does via VecSim_UpdateThreadPoolSize during module init.
+        VecSim_UpdateThreadPoolSize(mock_thread_pool.thread_pool_size);
+
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
 
@@ -108,12 +107,8 @@ protected:
         // which requires exactly 1 thread. When using tiered index addVector API,
         // the parallelism is managed internally according to the operation and pool
         // size, so testing parallelism remains intact.
-        tiered_index->GetSVSIndex()->setParallelism(num_available_threads);
-        size_t params_threadpool_size =
-            tiered_params.primaryIndexParams->algoParams.svsParams.num_threads;
-        size_t expected_capacity =
-            params_threadpool_size ? params_threadpool_size : mock_thread_pool.thread_pool_size;
-        verifyNumThreads(tiered_index, num_available_threads, expected_capacity);
+        // tiered_index->GetSVSIndex()->setParallelism(num_available_threads);
+        verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size);
 
         return tiered_index;
     }
@@ -122,18 +117,17 @@ protected:
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                          size_t training_threshold = TestsDefaultTrainingThreshold,
                          size_t update_threshold = TestsDefaultUpdateThreshold,
-                         size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME,
-                         size_t num_available_threads = 1) {
+                         size_t update_job_wait_time = SVS_DEFAULT_UPDATE_JOB_WAIT_TIME) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params =
             CreateTieredSVSParams(svs_params, mock_thread_pool, training_threshold,
                                   update_threshold, update_job_wait_time);
-        return CreateTieredSVSIndex(tiered_params, mock_thread_pool, num_available_threads);
+        return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
 
     void SetUp() override {
         // Restore the write mode to default.
-        VecSim_SetWriteMode(VecSim_WriteAsync);
+        VecSim_UpdateThreadPoolSize(0);
         // Limit VecSim log level to avoid printing too much information
         VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
     }
@@ -199,11 +193,10 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     }
 
     std::chrono::milliseconds timeout{1000}; // long enough to reserve all threads
-    SVSParams params = {
-        .type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2, .num_threads = 1};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-    mock_thread_pool.thread_pool_size = num_threads;
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
 
     // Create TieredSVS index instance with a mock queue.
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
@@ -281,24 +274,21 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     constexpr size_t update_threshold = 10;
     constexpr size_t update_job_wait_time = 10000;
     constexpr size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .num_threads = num_threads};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-    mock_thread_pool.thread_pool_size = num_threads;
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
 
     // Create TieredSVS index instance with a mock queue.
-    auto *tiered_index =
-        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold,
-                                   update_threshold, update_job_wait_time, num_threads);
+    auto *tiered_index = this->CreateTieredSVSIndex(
+        svs_params, mock_thread_pool, training_threshold, update_threshold, update_job_wait_time);
     ASSERT_INDEX(tiered_index);
 
-    // Verify initial state: both fields should equal configured thread count
+    // Verify initial state: numThreads reflects the shared pool size,
+    // lastReservedThreads starts at 1 (parallelism_ is initialized to 1).
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
-    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
 
@@ -332,7 +322,9 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     while (tiered_index->GetBackendIndex()->indexSize() != training_threshold) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    // Verify: numThreads unchanged, lastReservedThreads reflects actual availability
+    // Verify: numThreads (pool size) unchanged, lastReservedThreads (parallelism) reflects
+    // reduced availability — one thread was occupied, so at most num_threads - 1 could reserve.
+    // Use LE because OS timing may cause fewer threads to check in before the reservation timeout.
     backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
     ASSERT_LE(backendIndexInfo.svsInfo.lastReservedThreads, num_threads - 1);
@@ -346,7 +338,9 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     }
     mock_thread_pool.thread_pool_join();
 
-    // Verify: numThreads unchanged, lastReservedThreads reflects we used all configured threads
+    // Verify: numThreads (pool size) unchanged, lastReservedThreads (parallelism) reflects
+    // that all configured threads were available for this operation.
+    // Use LE because OS timing may cause fewer threads to check in before the reservation timeout.
     backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
     ASSERT_LE(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
@@ -354,8 +348,8 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
 
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
     // Test that write-in-place mode correctly reports thread usage in debug info.
-    // Even when the index is configured with multiple threads, write-in-place operations
-    // should use only 1 thread and lastReservedThreads should reflect this.
+    // Even when the shared pool has multiple threads, write-in-place operations
+    // should use only 1 thread and lastReservedThreads (parallelism) should reflect this.
 
     // Set thread_pool_size to 4 or actual number of available CPUs
     const auto num_threads = std::min(4U, getAvailableCPUs());
@@ -364,31 +358,28 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
         GTEST_SKIP() << "No threads available";
     }
 
-    // Test svs when mode is write in place, but the index is configured with multiple threads.
+    // Test svs when mode is write in place, but the shared pool has multiple threads.
     constexpr size_t training_threshold = 10;
     constexpr size_t update_threshold = 10;
     constexpr size_t update_job_wait_time = 10000;
     constexpr size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .num_threads = num_threads};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-    mock_thread_pool.thread_pool_size = num_threads;
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
 
     // Create TieredSVS index instance with a mock queue.
-    auto *tiered_index =
-        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold,
-                                   update_threshold, update_job_wait_time, num_threads);
+    auto *tiered_index = this->CreateTieredSVSIndex(
+        svs_params, mock_thread_pool, training_threshold, update_threshold, update_job_wait_time);
     ASSERT_INDEX(tiered_index);
 
-    // Set to mode to write in place even though the index is configured with multiple threads.
+    // Set mode to write in place even though the shared pool has multiple threads.
     VecSim_SetWriteMode(VecSim_WriteInPlace);
-    // Verify initial state: both fields should equal configured thread count
+    // Verify initial state: numThreads reflects the shared pool size,
+    // lastReservedThreads starts at 1 (parallelism_ is initialized to 1).
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
-    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, num_threads);
+    ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
 
@@ -403,8 +394,8 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
     while (tiered_index->GetBackendIndex()->indexSize() != training_threshold) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    // Verify: numThreads unchanged, lastReservedThreads reflects we only used one thread (main
-    // thread)
+    // Verify: numThreads (pool size) unchanged, lastReservedThreads (parallelism) reflects
+    // we only used one thread (write-in-place calls updateSVSIndexWrapper with availableThreads=1).
     backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
     ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
@@ -413,7 +404,7 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
     size_t num_vectors = 10;
     for (size_t i = 0; i < num_vectors; ++i) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, training_threshold + i);
-        // Verify: numThreads unchanged, lastReservedThreads reflects we used only one thread
+        // Verify: numThreads (pool size) unchanged, lastReservedThreads (parallelism) = 1
         backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
         ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
         ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
@@ -1035,10 +1026,9 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     SVSParams params = {.type = TypeParam::get_index_type(),
                         .dim = dim,
                         .metric = VecSimMetric_L2,
-                        .multi = TypeParam::isMulti(),
-                        .num_threads = 1};
+                        .multi = TypeParam::isMulti()};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock(1);
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
@@ -1101,12 +1091,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     size_t dim = 4;
     constexpr size_t n = 10;
     constexpr size_t transfer_trigger = n;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .num_threads = 1};
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock(1);
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, transfer_trigger,
                                                     transfer_trigger);
@@ -1180,13 +1167,10 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
 TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .multi = true,
-                        .num_threads = 1};
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock(1);
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     auto allocator = tiered_index->getAllocator();
@@ -2604,13 +2588,10 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
     size_t n = 1000;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .multi = false,
-                        .num_threads = 1};
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock(1);
 
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
@@ -3828,16 +3809,15 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     auto shared_pool = std::make_shared<VecSimSVSThreadPoolImpl>(num_threads);
     auto pool = VecSimSVSThreadPool(shared_pool);
     ASSERT_EQ(pool.poolSize(), num_threads);
-    ASSERT_EQ(pool.size(), 0); // parallelism starts at 0
-    ASSERT_EQ(pool.getParallelism(), 0);
-
-    // Must call setParallelism before parallel_for
-    pool.setParallelism(num_threads);
-    ASSERT_EQ(pool.size(), num_threads);
-    ASSERT_EQ(pool.getParallelism(), num_threads);
+    ASSERT_EQ(pool.size(), 1); // parallelism starts at 1 (calling thread)
+    ASSERT_EQ(pool.getParallelism(), 1);
 
     std::atomic_int counter(0);
     auto task = [&counter](size_t i) { counter += i + 1; };
+
+    // Can use parallel_for immediately with parallelism 1
+    pool.parallel_for(task, 1);
+    ASSERT_EQ(counter, 1); // 0+1 = 1
 
     // n > parallelism is a bug — asserts in debug mode
 #if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
@@ -3845,6 +3825,7 @@ TEST(SVSTieredIndexTest, testThreadPool) {
 #endif
 
     counter = 0;
+    pool.setParallelism(4);
     pool.parallel_for(task, num_threads);
     ASSERT_EQ(counter, 10); // 1+2+3+4 = 10
 
@@ -3854,14 +3835,14 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     ASSERT_EQ(counter, 3); // 1+2 = 3
 
     // setParallelism changes per-index parallelism, not the shared pool
-    pool.setParallelism(1);
+    pool.setParallelism(2);
     ASSERT_EQ(pool.poolSize(), num_threads); // shared pool unchanged
-    ASSERT_EQ(pool.size(), 1);               // per-index parallelism
-    ASSERT_EQ(pool.getParallelism(), 1);
+    ASSERT_EQ(pool.size(), 2);               // per-index parallelism
+    ASSERT_EQ(pool.getParallelism(), 2);
 
     counter = 0;
-    pool.parallel_for(task, 1);
-    ASSERT_EQ(counter, 1); // 0+1 = 1
+    pool.parallel_for(task, 2);
+    ASSERT_EQ(counter, 3); // 0+1+2 = 1
 
     // setParallelism boundary checks — asserts in debug mode
 #if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
@@ -3879,12 +3860,11 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     inplace_pool.parallel_for(task, 1);
     ASSERT_EQ(counter, 1);
 
-    // parallel_for without setParallelism asserts in debug mode
-#if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
-    auto unset_pool = VecSimSVSThreadPool(shared_pool);
-    ASSERT_DEATH(unset_pool.parallel_for(task, 1),
-                 "setParallelism must be called before parallel_for");
-#endif
+    // parallel_for works immediately with default parallelism 1
+    auto default_pool = VecSimSVSThreadPool(shared_pool);
+    counter = 0;
+    default_pool.parallel_for(task, 1);
+    ASSERT_EQ(counter, 1); // 0+1 = 1
 
     // Test exception handling
     auto err_task = [](size_t) { throw std::runtime_error("Test exception"); };

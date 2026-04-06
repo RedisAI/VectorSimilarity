@@ -677,7 +677,8 @@ private:
         } // release frontend index
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
-        { // lock backend index for writing and add vectors there
+        if (!labels_to_move.empty()) {
+            // lock backend index for writing and add vectors there
             std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
@@ -821,8 +822,6 @@ public:
                 std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
                 // Defensive: ensure single-threaded operation for write-in-place mode.
                 // parallelism_ defaults to 1, so this is a no-op in the normal case.
-                assert(svs_index->getParallelism() == 1 &&
-                       "Parallelism should be 1 for write-in-place mode, but it is not");
                 svs_index->setParallelism(1);
                 return this->backendIndex->addVector(storage_blob.get(), label);
             }
