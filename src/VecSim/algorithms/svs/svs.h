@@ -41,7 +41,7 @@ struct SVSIndexBase
     // Singleton accessor for the shared SVS thread pool.
     // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
     // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
-    static std::shared_ptr<VecSimSVSThreadPoolImpl> &getSharedThreadPool() {
+    static std::shared_ptr<VecSimSVSThreadPoolImpl> getSharedThreadPool() {
         static auto shared_pool = std::make_shared<VecSimSVSThreadPoolImpl>(1);
         return shared_pool;
     }
@@ -369,7 +369,7 @@ public:
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{SVSIndexBase::getSharedThreadPool()}, impl_{nullptr} {
+          threadpool_{SVSIndexBase::getSharedThreadPool(), this->logCallbackCtx}, impl_{nullptr} {
         logger_ = makeLogger();
     }
 

@@ -9,6 +9,7 @@
 
 #pragma once
 #include "VecSim/query_results.h"
+#include "VecSim/vec_sim_interface.h"
 #include "VecSim/types/float16.h"
 
 #include "svs/core/distance.h"
@@ -421,10 +422,6 @@ public:
         return slots_.size() + 1;
     }
 
-    // Alias for size(). Capacity and size are always equal since resize is physical.
-    // TODO: is it needed? can we remove one of them?
-    size_t capacity() const { return size(); }
-
     // Physically resize the pool. Creates new OS threads on grow, shuts down idle threads
     // on shrink. new_size is total parallelism including the calling thread (minimum 1).
     // Occupied threads (held by renters) survive shrink via shared_ptr — their OS thread
@@ -455,7 +452,7 @@ public:
     // The SVS pool is sized to match the RediSearch thread pool, and RediSearch controls
     // scheduling via reserve jobs, so all requested slots should always be available.
     // Getting fewer threads than requested indicates a bug in the scheduling logic.
-    RentedThreads rent(size_t count) {
+    RentedThreads rent(size_t count, void *log_ctx = nullptr) {
         RentedThreads rented;
         if (count == 0) {
             return rented;
@@ -473,9 +470,13 @@ public:
         }
 
         if (rented.count() < count) {
-            svs::logging::warn("SVS thread pool: rented {} threads out of {} requested "
-                               "(pool has {} slots). This should not happen.",
-                               rented.count(), count, slots_.size());
+            auto msg = fmt::format("SVS thread pool: rented {} threads out of {} requested "
+                                   "(pool has {} slots). This should not happen.",
+                                   rented.count(), count, slots_.size());
+            if (VecSimIndexInterface::logCallback) {
+                assert(log_ctx && "Log context must be provided when logging is available");
+                VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
+            }
             assert(false && "Failed to rent the expected number of SVS threads");
         }
         return rented;
@@ -484,7 +485,7 @@ public:
     // Execute `f` in parallel with `n` partitions. The calling thread runs partition 0,
     // and up to `n-1` worker threads are rented for partitions 1..n-1.
     // Same signature as the SVS ThreadPool concept.
-    void parallel_for(std::function<void(size_t)> f, size_t n) {
+    void parallel_for(std::function<void(size_t)> f, size_t n, void *log_ctx = nullptr) {
         if (n == 0) {
             return;
         }
@@ -501,9 +502,8 @@ public:
         }
 
         // Rent n-1 worker threads
-        auto rented = rent(n - 1);
-        assert(rented.count() == n - 1);
-        size_t num_workers = n - 1;
+        auto rented = rent(n - 1, log_ctx);
+        size_t num_workers = rented.count();
 
         // Assign work to rented workers (partitions 1..n-1)
         for (size_t i = 0; i < num_workers; ++i) {
@@ -571,12 +571,15 @@ class VecSimSVSThreadPool {
 private:
     std::shared_ptr<VecSimSVSThreadPoolImpl> pool_;    // shared across all indexes
     std::shared_ptr<std::atomic<size_t>> parallelism_; // per-index, shared across copies
+    void *log_ctx_ = nullptr;                          // per-index log context
 
 public:
     // Construct with reference to the shared pool singleton.
     // parallelism_ starts at 0 — caller must call setParallelism() before parallel_for().
-    explicit VecSimSVSThreadPool(std::shared_ptr<VecSimSVSThreadPoolImpl> pool)
-        : pool_(std::move(pool)), parallelism_(std::make_shared<std::atomic<size_t>>(0)) {
+    explicit VecSimSVSThreadPool(std::shared_ptr<VecSimSVSThreadPoolImpl> pool,
+                                 void *log_ctx = nullptr)
+        : pool_(std::move(pool)), parallelism_(std::make_shared<std::atomic<size_t>>(0)),
+          log_ctx_(log_ctx) {
         assert(pool_ && "Pool must not be null");
     }
 
@@ -598,13 +601,13 @@ public:
     // Shared pool size — used by scheduling to decide how many reserve jobs to submit.
     size_t poolSize() const { return pool_->size(); }
 
-    // Delegates to the shared pool's parallel_for.
+    // Delegates to the shared pool's parallel_for, passing the per-index log context.
     // n may be less than parallelism_ when the problem size is smaller than the
     // thread count (SVS computes n = min(arg.size(), pool.size())).
     // n must not exceed parallelism_ — we only have that many threads reserved.
     void parallel_for(std::function<void(size_t)> f, size_t n) {
         assert(parallelism_->load() > 0 && "setParallelism must be called before parallel_for");
         assert(n <= parallelism_->load() && "n exceeds reserved thread count (parallelism)");
-        pool_->parallel_for(std::move(f), n);
+        pool_->parallel_for(std::move(f), n, log_ctx_);
     }
 };
