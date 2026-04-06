@@ -575,10 +575,12 @@ private:
 
 public:
     // Construct with reference to the shared pool singleton.
-    // parallelism_ starts at 0 — caller must call setParallelism() before parallel_for().
+    // parallelism_ starts at 1 (the calling thread always participates), matching the
+    // pool's minimum size. Safe for immediate use in write-in-place mode without an
+    // explicit setParallelism() call.
     explicit VecSimSVSThreadPool(std::shared_ptr<VecSimSVSThreadPoolImpl> pool,
                                  void *log_ctx = nullptr)
-        : pool_(std::move(pool)), parallelism_(std::make_shared<std::atomic<size_t>>(0)),
+        : pool_(std::move(pool)), parallelism_(std::make_shared<std::atomic<size_t>>(1)),
           log_ctx_(log_ctx) {
         assert(pool_ && "Pool must not be null");
     }
@@ -606,7 +608,6 @@ public:
     // thread count (SVS computes n = min(arg.size(), pool.size())).
     // n must not exceed parallelism_ — we only have that many threads reserved.
     void parallel_for(std::function<void(size_t)> f, size_t n) {
-        assert(parallelism_->load() > 0 && "setParallelism must be called before parallel_for");
         assert(n <= parallelism_->load() && "n exceeds reserved thread count (parallelism)");
         pool_->parallel_for(std::move(f), n, log_ctx_);
     }
