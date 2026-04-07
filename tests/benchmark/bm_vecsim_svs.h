@@ -160,9 +160,7 @@ private:
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
         size_t num_threads = mock_thread_pool.thread_pool_size;
         VecSim_UpdateThreadPoolSize(num_threads);
-        tiered_index->GetSVSIndex()->setParallelism(std::max(num_threads, size_t{1}));
-        test_utils::verifyNumThreads(tiered_index, std::max(num_threads, size_t{1}),
-                                     std::max(num_threads, size_t{1}),
+        test_utils::verifyNumThreads(tiered_index, 1, std::max(num_threads, size_t{1}),
                                      std::string("CreateTieredSVSIndexFromFile"));
 
         return tiered_index;

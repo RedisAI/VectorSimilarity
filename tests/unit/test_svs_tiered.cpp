@@ -3837,7 +3837,7 @@ TEST(SVSTieredIndexTest, testThreadPool) {
 
     counter = 0;
     pool.parallel_for(task, 2);
-    ASSERT_EQ(counter, 3); // 0+1+2 = 1
+    ASSERT_EQ(counter, 3); // 1+2 = 3
 
     // setParallelism boundary checks — asserts in debug mode
 #if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
