@@ -371,6 +371,11 @@ public:
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
           threadpool_{SVSIndexBase::getSharedThreadPool(), this->logCallbackCtx}, impl_{nullptr} {
         logger_ = makeLogger();
+        if (params.num_threads != 0) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                      "SVSParams.num_threads is deprecated and ignored. "
+                      "Thread pool size is controlled globally via VecSim_UpdateThreadPoolSize().");
+        }
     }
 
     ~SVSIndex() = default;
