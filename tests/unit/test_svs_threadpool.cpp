@@ -146,6 +146,11 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
     hold.count_down();
     t.join();
     ASSERT_EQ(resultA, 3);
+
+    // After the renter's RentedThreads guard is destroyed, the old slots'
+    // shared_ptrs drop to refcount 0 and the threads are destroyed.
+    // Pool size remains at the shrunk value.
+    ASSERT_EQ(pool->size(), 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +208,9 @@ TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     hold.count_down();
     t.join();
     ASSERT_EQ(resultA, 3);
+
+    // Pool size remains at the grown value after renter releases.
+    ASSERT_EQ(pool->size(), 5);
 
     // After all threads are free, verify the full pool is usable at new size.
     wrapperA.setParallelism(5);
