@@ -103,11 +103,6 @@ protected:
         // Set the created tiered index in the index external context (it will take ownership over
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
-        // Set parallelism to 1 by default to allow direct calls to SVS addVector() API,
-        // which requires exactly 1 thread. When using tiered index addVector API,
-        // the parallelism is managed internally according to the operation and pool
-        // size, so testing parallelism remains intact.
-        // tiered_index->GetSVSIndex()->setParallelism(num_available_threads);
         verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size);
 
         return tiered_index;

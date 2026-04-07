@@ -447,41 +447,6 @@ public:
         }
     }
 
-    // Rent up to `count` worker threads from the pool. Returns an RAII guard that
-    // automatically releases the threads when destroyed.
-    // The SVS pool is sized to match the RediSearch thread pool, and RediSearch controls
-    // scheduling via reserve jobs, so all requested slots should always be available.
-    // Getting fewer threads than requested indicates a bug in the scheduling logic.
-    RentedThreads rent(size_t count, void *log_ctx = nullptr) {
-        RentedThreads rented;
-        if (count == 0) {
-            return rented;
-        }
-
-        std::lock_guard lock{pool_mutex_};
-        for (auto &slot : slots_) {
-            if (rented.count() >= count) {
-                break;
-            }
-            bool expected = false;
-            if (slot->occupied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-                rented.add(slot);
-            }
-        }
-
-        if (rented.count() < count) {
-            auto msg = fmt::format("SVS thread pool: rented {} threads out of {} requested "
-                                   "(pool has {} slots). This should not happen.",
-                                   rented.count(), count, slots_.size());
-            if (VecSimIndexInterface::logCallback) {
-                assert(log_ctx && "Log context must be provided when logging is available");
-                VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
-            }
-            assert(false && "Failed to rent the expected number of SVS threads");
-        }
-        return rented;
-    }
-
     // Execute `f` in parallel with `n` partitions. The calling thread runs partition 0,
     // and up to `n-1` worker threads are rented for partitions 1..n-1.
     // Same signature as the SVS ThreadPool concept.
@@ -524,6 +489,41 @@ public:
     }
 
 private:
+    // Rent up to `count` worker threads from the pool. Returns an RAII guard that
+    // automatically releases the threads when destroyed.
+    // The SVS pool is sized to match the RediSearch thread pool, and RediSearch controls
+    // scheduling via reserve jobs, so all requested slots should always be available.
+    // Getting fewer threads than requested indicates a bug in the scheduling logic.
+    RentedThreads rent(size_t count, void *log_ctx = nullptr) {
+        RentedThreads rented;
+        if (count == 0) {
+            return rented;
+        }
+
+        std::lock_guard lock{pool_mutex_};
+        for (auto &slot : slots_) {
+            if (rented.count() >= count) {
+                break;
+            }
+            bool expected = false;
+            if (slot->occupied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                rented.add(slot);
+            }
+        }
+
+        if (rented.count() < count) {
+            auto msg = fmt::format("SVS thread pool: rented {} threads out of {} requested "
+                                   "(pool has {} slots). This should not happen.",
+                                   rented.count(), count, slots_.size());
+            if (VecSimIndexInterface::logCallback) {
+                assert(log_ctx && "Log context must be provided when logging is available");
+                VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
+            }
+            assert(false && "Failed to rent the expected number of SVS threads");
+        }
+        return rented;
+    }
+
     // Wait for all rented workers to finish. If any worker (or the main thread) threw,
     // restart crashed workers and throw a combined exception.
     void manage_workers_after_run(const std::string &main_thread_error, RentedThreads &rented,

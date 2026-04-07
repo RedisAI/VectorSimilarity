@@ -2237,18 +2237,16 @@ protected:
                                    TieredSVSParams{.trainingTriggerThreshold = training_threshold,
                                                    .updateTriggerThreshold = update_threshold}}};
     }
-    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
-                          size_t expected_capcity) {
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), expected_num_threads);
+    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_capcity) {
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), 1);
         ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), expected_capcity);
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
-                                                 tieredIndexMock &mock_thread_pool,
-                                                 size_t num_available_threads = 1) {
+                                                 tieredIndexMock &mock_thread_pool) {
         // Resize the shared SVS thread pool singleton to match the mock thread pool size,
         // simulating what RediSearch does via VecSim_UpdateThreadPoolSize during module init.
-        SVSIndexBase::getSharedThreadPool()->resize(mock_thread_pool.thread_pool_size);
+        VecSim_UpdateThreadPoolSize(mock_thread_pool.thread_pool_size);
 
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
@@ -2257,19 +2255,18 @@ protected:
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
 
-        verifyNumThreads(tiered_index, num_available_threads, mock_thread_pool.thread_pool_size);
+        verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size);
         return tiered_index;
     }
 
     TieredSVSIndex<data_t> *
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                          size_t training_threshold = SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD,
-                         size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD,
-                         size_t num_available_threads = 1) {
+                         size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params = CreateTieredSVSParams(
             svs_params, mock_thread_pool, training_threshold, update_threshold);
-        return CreateTieredSVSIndex(tiered_params, mock_thread_pool, num_available_threads);
+        return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
 
     void SetUp() override {
