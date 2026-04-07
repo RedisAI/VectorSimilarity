@@ -569,9 +569,17 @@ private:
 // The pool is always valid — in write-in-place mode it has size 1 (0 worker threads).
 class VecSimSVSThreadPool {
 private:
-    std::shared_ptr<VecSimSVSThreadPoolImpl> pool_;    // shared across all indexes
-    std::shared_ptr<std::atomic<size_t>> parallelism_; // per-index, shared across copies
-    void *log_ctx_ = nullptr;                          // per-index log context
+    std::shared_ptr<VecSimSVSThreadPoolImpl> pool_; // shared across all indexes
+    // Per-index parallelism, shared across copies (SVS stores a copy of VecSimSVSThreadPool).
+    // SVS reads this value via size() during parallel_for to decide how many threads to use
+    // for task partitioning. Because SVS reads size() internally — not under our control —
+    // the caller must ensure that parallelism_ is stable for the entire duration of any SVS
+    // operation (search, build, consolidate, add, etc.). In practice this means:
+    //   setParallelism(n) and the subsequent SVS call must be protected by the same lock,
+    //   and no other code path may call setParallelism() on the same index concurrently.
+    // Currently, mainIndexGuard (exclusive) or updateJobMutex fulfills this role.
+    std::shared_ptr<std::atomic<size_t>> parallelism_;
+    void *log_ctx_ = nullptr; // per-index log context
 
 public:
     // Construct with reference to the shared pool singleton.
@@ -590,6 +598,12 @@ public:
     // RediSearch workers that checked in via ReserveThreadJob). This is what allows
     // us to assert n <= pool size: reserved workers are occupied RediSearch threads,
     // so the pool cannot shrink while they are held, and n cannot exceed the pool size.
+    //
+    // IMPORTANT: The caller must hold a lock that prevents any concurrent SVS operation
+    // on this index from reading size() between setParallelism() and the operation that
+    // depends on it. SVS internally calls pool.size() (which returns parallelism_) during
+    // parallel_for — if another thread calls setParallelism() concurrently, the operation
+    // may see an inconsistent value.
     void setParallelism(size_t n) {
         assert(n >= 1 && "Parallelism must be at least 1 (the calling thread)");
         assert(n <= pool_->size() && "Parallelism exceeds shared pool size");
