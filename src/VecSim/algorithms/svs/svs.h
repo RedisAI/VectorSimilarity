@@ -38,13 +38,6 @@ struct SVSIndexBase
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
 
-    // Singleton accessor for the shared SVS thread pool.
-    // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
-    // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
-    static std::shared_ptr<VecSimSVSThreadPoolImpl> getSharedThreadPool() {
-        static auto shared_pool = std::make_shared<VecSimSVSThreadPoolImpl>(1);
-        return shared_pool;
-    }
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
@@ -368,8 +361,8 @@ public:
           leanvec_dim{
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
-          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{SVSIndexBase::getSharedThreadPool(), this->logCallbackCtx}, impl_{nullptr} {
+          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)}, threadpool_{this->logCallbackCtx},
+          impl_{nullptr} {
         logger_ = makeLogger();
         if (params.num_threads != 0) {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,

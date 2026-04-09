@@ -3801,8 +3801,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalMulti) {
 TEST(SVSTieredIndexTest, testThreadPool) {
     // Test VecSimSVSThreadPool with shared pool
     const size_t num_threads = 4;
-    auto shared_pool = std::make_shared<VecSimSVSThreadPoolImpl>(num_threads);
-    auto pool = VecSimSVSThreadPool(shared_pool);
+    VecSimSVSThreadPool::resize(num_threads);
+    VecSimSVSThreadPool pool;
     ASSERT_EQ(pool.poolSize(), num_threads);
     ASSERT_EQ(pool.size(), 1); // parallelism starts at 1 (calling thread)
     ASSERT_EQ(pool.getParallelism(), 1);
@@ -3846,8 +3846,8 @@ TEST(SVSTieredIndexTest, testThreadPool) {
 #endif
 
     // Test write-in-place mode (pool with size 1)
-    auto inplace_shared = std::make_shared<VecSimSVSThreadPoolImpl>(1);
-    auto inplace_pool = VecSimSVSThreadPool(inplace_shared);
+    VecSimSVSThreadPool::resize(1);
+    VecSimSVSThreadPool inplace_pool;
     inplace_pool.setParallelism(1);
     ASSERT_EQ(inplace_pool.size(), 1);
     ASSERT_EQ(inplace_pool.poolSize(), 1);
@@ -3856,7 +3856,8 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     ASSERT_EQ(counter, 1);
 
     // parallel_for works immediately with default parallelism 1
-    auto default_pool = VecSimSVSThreadPool(shared_pool);
+    VecSimSVSThreadPool::resize(num_threads);
+    VecSimSVSThreadPool default_pool;
     counter = 0;
     default_pool.parallel_for(task, 1);
     ASSERT_EQ(counter, 1); // 0+1 = 1
@@ -3868,6 +3869,9 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     pool.setParallelism(num_threads);
     ASSERT_THROW(pool.parallel_for(err_task, 1), svs::threads::ThreadingException);
     ASSERT_THROW(pool.parallel_for(err_task, num_threads), svs::threads::ThreadingException);
+
+    // Restore pool to default size so we don't leak state to other tests.
+    VecSimSVSThreadPool::resize(1);
 }
 
 #else // HAVE_SVS

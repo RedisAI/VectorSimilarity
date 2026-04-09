@@ -3305,9 +3305,8 @@ TEST(SVSTest, compute_distance) {
 // ---------------------------------------------------------------------------
 TEST(SVSTest, NumThreadsParamIgnored) {
     // Resize the shared singleton pool to a known size.
-    auto pool = SVSIndexBase::getSharedThreadPool();
-    pool->resize(2);
-    ASSERT_EQ(pool->size(), 2);
+    VecSimSVSThreadPool::resize(2);
+    ASSERT_EQ(VecSimSVSThreadPoolImpl::instance()->size(), 2);
 
     // Capture warning logs emitted by VecSim.
     std::string captured_log;
@@ -3330,7 +3329,7 @@ TEST(SVSTest, NumThreadsParamIgnored) {
     ASSERT_NE(index, nullptr);
 
     // The shared pool size must remain at 2 — num_threads was ignored.
-    ASSERT_EQ(pool->size(), 2);
+    ASSERT_EQ(VecSimSVSThreadPoolImpl::instance()->size(), 2);
 
     // The index reports the shared pool size, not the deprecated param value.
     VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
@@ -3359,7 +3358,7 @@ TEST(SVSTest, NumThreadsParamIgnored) {
     VecSimIndex_Free(index2);
 
     // Restore pool to default size and clear log callback.
-    pool->resize(1);
+    VecSimSVSThreadPool::resize(1);
     VecSimIndexInterface::logCallback = nullptr;
 }
 

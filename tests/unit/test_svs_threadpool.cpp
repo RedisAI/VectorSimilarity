@@ -45,7 +45,11 @@ protected:
         saved_callback_ = VecSimIndexInterface::logCallback;
         VecSimIndexInterface::logCallback = nullptr;
     }
-    void TearDown() override { VecSimIndexInterface::logCallback = saved_callback_; }
+    void TearDown() override {
+        // Reset the shared singleton pool to size 1 so tests don't leak state.
+        VecSimSVSThreadPool::resize(1);
+        VecSimIndexInterface::logCallback = saved_callback_;
+    }
 
 private:
     logCallbackFunction saved_callback_ = nullptr;
@@ -55,7 +59,7 @@ private:
 // Test 1: VecSimSVSThreadPoolImpl::resize — grow and shrink
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ResizeGrowAndShrink) {
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(1);
+    auto pool = VecSimSVSThreadPoolImpl::instance();
     ASSERT_EQ(pool->size(), 1);
 
     // Grow 1 → 4
@@ -91,11 +95,12 @@ TEST_F(SVSThreadPoolTest, ResizeGrowAndShrink) {
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
     // Pool size 5: 4 worker slots [s0, s1, s2, s3].
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(5);
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    pool->resize(5);
     ASSERT_EQ(pool->size(), 5);
 
     // Wrapper A uses parallelism 3 → rents 2 workers (s0, s1).
-    VecSimSVSThreadPool wrapperA(pool);
+    VecSimSVSThreadPool wrapperA;
     wrapperA.setParallelism(3);
 
     std::latch hold(1);          // blocks rented workers
@@ -133,7 +138,7 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
 
     // While wrapperA's threads are still alive (blocked on latch), run
     // parallel_for on the shrunk pool with a second wrapper using a free slot.
-    VecSimSVSThreadPool wrapperB(pool);
+    VecSimSVSThreadPool wrapperB;
     // Parallelism 2 = 1 rented worker + calling thread. The pool has 3 slots
     // [s0, s1, s2] after shrink; s0 and s1 are occupied by wrapperA, so the
     // single rented worker will get s2 (the only free slot).
@@ -158,11 +163,12 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     // Pool size 3: 2 worker slots [s0, s1].
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(3);
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    pool->resize(3);
     ASSERT_EQ(pool->size(), 3);
 
     // Wrapper A uses parallelism 3 → rents 2 workers (s0, s1).
-    VecSimSVSThreadPool wrapperA(pool);
+    VecSimSVSThreadPool wrapperA;
     wrapperA.setParallelism(3);
 
     std::latch hold(1);          // blocks rented workers
@@ -198,7 +204,7 @@ TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     // Wrapper B uses parallelism 3 → rents 2 workers. s0, s1 are occupied by
     // wrapperA, so it gets the 2 newly created slots s2, s3... but we only
     // need 2 of the 3 free slots (s2, s3 are free, only need 2).
-    VecSimSVSThreadPool wrapperB(pool);
+    VecSimSVSThreadPool wrapperB;
     wrapperB.setParallelism(3);
     std::atomic_int resultB{0};
     wrapperB.parallel_for([&](size_t) { resultB++; }, 3);
@@ -227,9 +233,9 @@ TEST_F(SVSThreadPoolTest, GrowWhileRented) {
 // the original is visible to SVS's copy when it calls size().
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ParallelismPropagationAcrossCopies) {
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(8);
+    VecSimSVSThreadPool::resize(8);
 
-    VecSimSVSThreadPool original(pool);
+    VecSimSVSThreadPool original;
     original.setParallelism(2);
     ASSERT_EQ(original.size(), 2);
 
@@ -259,10 +265,10 @@ TEST_F(SVSThreadPoolTest, ParallelismPropagationAcrossCopies) {
 // sequentially using disjoint thread budgets.
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, TwoIndexesIndependentParallelism) {
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(8);
+    VecSimSVSThreadPool::resize(8);
 
-    VecSimSVSThreadPool wrapperA(pool);
-    VecSimSVSThreadPool wrapperB(pool);
+    VecSimSVSThreadPool wrapperA;
+    VecSimSVSThreadPool wrapperB;
 
     wrapperA.setParallelism(2);
     wrapperB.setParallelism(5);
@@ -306,7 +312,7 @@ TEST_F(SVSThreadPoolTest, TwoIndexesIndependentParallelism) {
 // The C API sets write mode and resizes the shared singleton pool.
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, UpdateThreadPoolSizeModeTransitions) {
-    auto pool = SVSIndexBase::getSharedThreadPool();
+    auto pool = VecSimSVSThreadPoolImpl::instance();
 
     // 0 → 4: switch to async mode, pool resizes to 4.
     VecSim_UpdateThreadPoolSize(4);
@@ -345,11 +351,11 @@ TEST_F(SVSThreadPoolTest, UpdateThreadPoolSizeModeTransitions) {
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ConcurrentRentalFromTwoIndexes) {
     // Pool size 8: wrappers A (4) and B (4) sum to exactly 8.
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(8);
+    VecSimSVSThreadPool::resize(8);
 
-    VecSimSVSThreadPool wrapperA(pool);
+    VecSimSVSThreadPool wrapperA;
     wrapperA.setParallelism(4);
-    VecSimSVSThreadPool wrapperB(pool);
+    VecSimSVSThreadPool wrapperB;
     wrapperB.setParallelism(4);
 
     std::atomic_int resultA{0};
@@ -398,7 +404,7 @@ TEST_F(SVSThreadPoolTest, ConcurrentRentalFromTwoIndexes) {
         << "Timed out waiting for concurrent parallel_for calls. "
            "resultA="
         << resultA << ", resultB=" << resultB << ", idsA.size=" << idsA.size()
-        << ", idsB.size=" << idsB.size() << ", pool_size=" << pool->size();
+        << ", idsB.size=" << idsB.size() << ", pool_size=" << wrapperA.poolSize();
 
     ASSERT_EQ(resultA, 4);
     ASSERT_EQ(resultB, 4);
@@ -424,9 +430,9 @@ TEST_F(SVSThreadPoolTest, ConcurrentRentalFromTwoIndexes) {
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
     // Pool size 4 (3 worker slots). Wrapper A rents all 3.
-    auto pool = std::make_shared<VecSimSVSThreadPoolImpl>(4);
+    VecSimSVSThreadPool::resize(4);
 
-    VecSimSVSThreadPool wrapperA(pool);
+    VecSimSVSThreadPool wrapperA;
     wrapperA.setParallelism(4);
 
     std::latch hold(1);
@@ -449,10 +455,10 @@ TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
     ASSERT_TRUE(wait_with_timeout(workers_ready, kTestTimeout))
         << "Timed out waiting for wrapper A's 3 workers to start. "
            "resultA="
-        << resultA << ", pool_size=" << pool->size();
+        << resultA << ", pool_size=" << wrapperA.poolSize();
 
     // All 3 worker slots are occupied. Wrapper B tries to rent 1 worker.
-    VecSimSVSThreadPool wrapperB(pool);
+    VecSimSVSThreadPool wrapperB;
     wrapperB.setParallelism(2);
 
 #ifdef NDEBUG

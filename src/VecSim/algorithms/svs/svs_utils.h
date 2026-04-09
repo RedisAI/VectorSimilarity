@@ -403,17 +403,27 @@ private:
 // * Multiple callers can rent disjoint subsets of threads concurrently
 // * Shrinking while threads are rented is safe (shared_ptr lifecycle)
 class VecSimSVSThreadPoolImpl {
-public:
     // Create a pool with `num_threads` total parallelism (including the calling thread).
     // Spawns `num_threads - 1` worker OS threads. num_threads must be >= 1.
     // In write-in-place mode, the pool is created with num_threads == 1 (0 worker threads,
     // only the calling thread participates).
+    // Private — use instance() to access the shared singleton.
     explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1) {
         assert(num_threads && "VecSimSVSThreadPoolImpl should not be created with 0 threads");
         slots_.reserve(num_threads - 1);
         for (size_t i = 0; i < num_threads - 1; ++i) {
             slots_.push_back(std::make_shared<ThreadSlot>());
         }
+    }
+
+public:
+    // Singleton accessor for the shared SVS thread pool.
+    // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
+    // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
+    static std::shared_ptr<VecSimSVSThreadPoolImpl> instance() {
+        static auto shared_pool =
+            std::shared_ptr<VecSimSVSThreadPoolImpl>(new VecSimSVSThreadPoolImpl(1));
+        return shared_pool;
     }
 
     // Total parallelism: worker slots + 1 (the calling thread always participates).
@@ -468,10 +478,9 @@ public:
 
         // Rent n-1 worker threads
         auto rented = rent(n - 1, log_ctx);
-        size_t num_workers = rented.count();
 
         // Assign work to rented workers (partitions 1..n-1)
-        for (size_t i = 0; i < num_workers; ++i) {
+        for (size_t i = 0; i < rented.count(); ++i) {
             rented[i].assign({&f, i + 1});
         }
 
@@ -485,7 +494,7 @@ public:
 
         // Wait for all rented workers and collect errors.
         // RentedThreads destructor will release the slots after this block.
-        manage_workers_after_run(main_thread_error, rented, num_workers);
+        manage_workers_after_run(main_thread_error, rented);
     }
 
 private:
@@ -526,8 +535,7 @@ private:
 
     // Wait for all rented workers to finish. If any worker (or the main thread) threw,
     // restart crashed workers and throw a combined exception.
-    void manage_workers_after_run(const std::string &main_thread_error, RentedThreads &rented,
-                                  size_t rented_count) {
+    void manage_workers_after_run(const std::string &main_thread_error, RentedThreads &rented) {
         auto message = std::string{};
         auto inserter = std::back_inserter(message);
         bool has_error = !main_thread_error.empty();
@@ -536,7 +544,7 @@ private:
             fmt::format_to(inserter, "Thread 0: {}\n", main_thread_error);
         }
 
-        for (size_t i = 0; i < rented_count; ++i) {
+        for (size_t i = 0; i < rented.count(); ++i) {
             auto &thread = rented[i];
             thread.wait();
             if (!thread.is_okay()) {
@@ -582,16 +590,16 @@ private:
     void *log_ctx_ = nullptr; // per-index log context
 
 public:
-    // Construct with reference to the shared pool singleton.
+    // Construct using the shared pool singleton.
     // parallelism_ starts at 1 (the calling thread always participates), matching the
     // pool's minimum size. Safe for immediate use in write-in-place mode without an
     // explicit setParallelism() call.
-    explicit VecSimSVSThreadPool(std::shared_ptr<VecSimSVSThreadPoolImpl> pool,
-                                 void *log_ctx = nullptr)
-        : pool_(std::move(pool)), parallelism_(std::make_shared<std::atomic<size_t>>(1)),
-          log_ctx_(log_ctx) {
-        assert(pool_ && "Pool must not be null");
-    }
+    explicit VecSimSVSThreadPool(void *log_ctx = nullptr)
+        : pool_(VecSimSVSThreadPoolImpl::instance()),
+          parallelism_(std::make_shared<std::atomic<size_t>>(1)), log_ctx_(log_ctx) {}
+
+    // Resize the shared pool singleton. Delegates to VecSimSVSThreadPoolImpl::instance().
+    static void resize(size_t new_size) { VecSimSVSThreadPoolImpl::instance()->resize(new_size); }
 
     // Set the degree of parallelism for this index's next operation.
     // n must be the number of threads actually reserved by the caller (i.e., the
