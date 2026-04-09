@@ -37,35 +37,54 @@ if(USE_SVS)
     include(CheckSymbolExists)
     check_symbol_exists(__GLIBC__ "features.h" GLIBC_FOUND)
     if(GLIBC_FOUND)
-        include(CheckCXXSourceRuns)
-        check_cxx_source_runs("#include <features.h>
-            int main(){ return __GLIBC__ == 2 && __GLIBC_MINOR__ >= 28 ?0:1; }"
-            GLIBC_2_28_FOUND)
-        check_cxx_source_runs("#include <features.h>
-            int main(){ return __GLIBC__ == 2 && __GLIBC_MINOR__ >= 26 ?0:1; }"
-            GLIBC_2_26_FOUND)
+        # Detect glibc version via __GLIBC__.
+        file(WRITE "${CMAKE_BINARY_DIR}/detect_glibc.cpp"
+            "#include <cstdio>\n#include <features.h>\nint main(){ printf(\"%d.%d\", __GLIBC__, __GLIBC_MINOR__); return 0; }\n")
+        try_run(_glibc_run_result _glibc_compiled
+            "${CMAKE_BINARY_DIR}" "${CMAKE_BINARY_DIR}/detect_glibc.cpp"
+            RUN_OUTPUT_VARIABLE GLIBC_VERSION)
+        if(NOT _glibc_compiled OR NOT _glibc_run_result EQUAL 0)
+            set(GLIBC_VERSION "0")
+        endif()
+        message(STATUS "Detected GLIBC version: ${GLIBC_VERSION}")
+
+        # Detect libstdc++ version via _GLIBCXX_RELEASE (GCC major version of the headers).
+        file(WRITE "${CMAKE_BINARY_DIR}/detect_glibcxx.cpp"
+            "#include <stdio.h>\n#include <string>\nint main(){ printf(\"%d\", _GLIBCXX_RELEASE); return 0; }\n")
+        try_run(_glibcxx_run_result _glibcxx_compiled
+            "${CMAKE_BINARY_DIR}" "${CMAKE_BINARY_DIR}/detect_glibcxx.cpp"
+            RUN_OUTPUT_VARIABLE GLIBCXX_VERSION)
+        if(NOT _glibcxx_compiled OR NOT _glibcxx_run_result EQUAL 0)
+            set(GLIBCXX_VERSION 0)
+        endif()
+        message(STATUS "Detected GLIBCXX_RELEASE (GCC major): ${GLIBCXX_VERSION}")
     endif()
 
     cmake_dependent_option(SVS_SHARED_LIB "Use SVS pre-compiled shared library" ON "USE_SVS AND GLIBC_FOUND AND SVS_LVQ_SUPPORTED" OFF)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        if (GLIBC_2_28_FOUND)
-            if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "20.0")
-                set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced-clang20.tar.gz" CACHE STRING "SVS URL")
+        if(GLIBC_VERSION VERSION_GREATER_EQUAL "2.29")
+            if(GLIBCXX_VERSION VERSION_GREATER_EQUAL "13")
+                set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/nightly/svs-shared-library-nightly-reduced-clang21-gcc13-2026-03-31-1147.tar.gz" CACHE STRING "SVS URL")
+            elseif(GLIBCXX_VERSION VERSION_GREATER_EQUAL "12")
+                set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/nightly/svs-shared-library-nightly-reduced-clang21-gcc12-2026-03-31-1147.tar.gz" CACHE STRING "SVS URL")
+            elseif(GLIBCXX_VERSION VERSION_GREATER_EQUAL "11")
+                set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/nightly/svs-shared-library-nightly-reduced-clang21-gcc11-2026-03-31-1147.tar.gz" CACHE STRING "SVS URL")
             else()
-                set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced-clang.tar.gz" CACHE STRING "SVS URL")
+                message(STATUS "libstdc++ >= GCC 11 is required for Clang SVS binaries - disabling SVS_SHARED_LIB")
+                set(SVS_SHARED_LIB OFF)
             endif()
         else()
-            message(STATUS "GLIBC>=2.28 is required for Clang build - disabling SVS_SHARED_LIB")
+            message(STATUS "GLIBC >= 2.29 is required for Clang SVS binaries - disabling SVS_SHARED_LIB")
             set(SVS_SHARED_LIB OFF)
         endif()
     else()
-        if (GLIBC_2_28_FOUND)
+        if(GLIBC_VERSION VERSION_GREATER_EQUAL "2.28")
             if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "14.0")
                     set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced-gcc14.tar.gz" CACHE STRING "SVS URL")
                 else()
                     set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced.tar.gz" CACHE STRING "SVS URL")
             endif()
-        elseif(GLIBC_2_26_FOUND)
+        elseif(GLIBC_VERSION VERSION_GREATER_EQUAL "2.26")
             set(SVS_URL "https://github.com/intel/ScalableVectorSearch/releases/download/v0.3.0/svs-shared-library-0.3.0-reduced-glibc2_26.tar.gz" CACHE STRING "SVS URL")
         else()
             message(STATUS "GLIBC>=2.26 is required for SVS shared library - disabling SVS_SHARED_LIB")
