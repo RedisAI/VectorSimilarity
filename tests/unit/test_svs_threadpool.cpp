@@ -56,37 +56,36 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Test 1: VecSimSVSThreadPoolImpl::resize — grow and shrink
+// Test 1: VecSimSVSThreadPool::resize — grow and shrink
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ResizeGrowAndShrink) {
-    auto pool = VecSimSVSThreadPoolImpl::instance();
-    ASSERT_EQ(pool->size(), 1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
 
     // Grow 1 → 4
-    pool->resize(4);
-    ASSERT_EQ(pool->size(), 4);
+    VecSimSVSThreadPool::resize(4);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
 
     // Shrink 4 → 2
-    pool->resize(2);
-    ASSERT_EQ(pool->size(), 2);
+    VecSimSVSThreadPool::resize(2);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
 
     // No-op 2 → 2
-    pool->resize(2);
-    ASSERT_EQ(pool->size(), 2);
+    VecSimSVSThreadPool::resize(2);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
 
     // Shrink to minimum 2 → 1
-    pool->resize(1);
-    ASSERT_EQ(pool->size(), 1);
+    VecSimSVSThreadPool::resize(1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
 
     // resize(0) clamps to 1
-    pool->resize(0);
-    ASSERT_EQ(pool->size(), 1);
+    VecSimSVSThreadPool::resize(0);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
 
     // Grow from 1 → 8 and verify parallel_for works at new size
-    pool->resize(8);
-    ASSERT_EQ(pool->size(), 8);
+    VecSimSVSThreadPool::resize(8);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 8);
     std::atomic_int counter{0};
-    pool->parallel_for([&counter](size_t) { counter++; }, 8);
+    VecSimSVSThreadPoolImpl::instance()->parallel_for([&counter](size_t) { counter++; }, 8);
     ASSERT_EQ(counter, 8);
 }
 
@@ -95,9 +94,8 @@ TEST_F(SVSThreadPoolTest, ResizeGrowAndShrink) {
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
     // Pool size 5: 4 worker slots [s0, s1, s2, s3].
-    auto pool = VecSimSVSThreadPoolImpl::instance();
-    pool->resize(5);
-    ASSERT_EQ(pool->size(), 5);
+    VecSimSVSThreadPool::resize(5);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 5);
 
     // Wrapper A uses parallelism 3 → rents 2 workers (s0, s1).
     VecSimSVSThreadPool wrapperA;
@@ -128,13 +126,13 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
     ASSERT_TRUE(wait_with_timeout(workers_ready, kTestTimeout))
         << "Timed out waiting for wrapper A's 2 workers to start. "
            "resultA="
-        << resultA << ", pool_size=" << pool->size();
+        << resultA << ", pool_size=" << VecSimSVSThreadPool::poolSize();
 
     // Shrink pool from 5 → 4 (slots become [s0, s1, s2]). s3 is free and
     // gets destroyed. s0, s1 are occupied by wrapperA but remain in the vector.
     // s2 is free and available for rental.
-    pool->resize(4);
-    ASSERT_EQ(pool->size(), 4);
+    VecSimSVSThreadPool::resize(4);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
 
     // While wrapperA's threads are still alive (blocked on latch), run
     // parallel_for on the shrunk pool with a second wrapper using a free slot.
@@ -155,7 +153,7 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
     // After the renter's RentedThreads guard is destroyed, the old slots'
     // shared_ptrs drop to refcount 0 and the threads are destroyed.
     // Pool size remains at the shrunk value.
-    ASSERT_EQ(pool->size(), 4);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -163,9 +161,8 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     // Pool size 3: 2 worker slots [s0, s1].
-    auto pool = VecSimSVSThreadPoolImpl::instance();
-    pool->resize(3);
-    ASSERT_EQ(pool->size(), 3);
+    VecSimSVSThreadPool::resize(3);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 3);
 
     // Wrapper A uses parallelism 3 → rents 2 workers (s0, s1).
     VecSimSVSThreadPool wrapperA;
@@ -193,13 +190,13 @@ TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     ASSERT_TRUE(wait_with_timeout(workers_ready, kTestTimeout))
         << "Timed out waiting for wrapper A's 2 workers to start. "
            "resultA="
-        << resultA << ", pool_size=" << pool->size();
+        << resultA << ", pool_size=" << VecSimSVSThreadPool::poolSize();
 
     // Grow pool from 3 → 5 while s0, s1 are occupied. New slots [s2, s3] are
     // appended. The in-flight parallel_for is unaffected — it holds independent
     // shared_ptr refs to s0, s1.
-    pool->resize(5);
-    ASSERT_EQ(pool->size(), 5);
+    VecSimSVSThreadPool::resize(5);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 5);
 
     // Wrapper B uses parallelism 3 → rents 2 workers. s0, s1 are occupied by
     // wrapperA, so it gets the 2 newly created slots s2, s3... but we only
@@ -216,7 +213,7 @@ TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     ASSERT_EQ(resultA, 3);
 
     // Pool size remains at the grown value after renter releases.
-    ASSERT_EQ(pool->size(), 5);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 5);
 
     // After all threads are free, verify the full pool is usable at new size.
     wrapperA.setParallelism(5);
@@ -312,32 +309,30 @@ TEST_F(SVSThreadPoolTest, TwoIndexesIndependentParallelism) {
 // The C API sets write mode and resizes the shared singleton pool.
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, UpdateThreadPoolSizeModeTransitions) {
-    auto pool = VecSimSVSThreadPoolImpl::instance();
-
     // 0 → 4: switch to async mode, pool resizes to 4.
     VecSim_UpdateThreadPoolSize(4);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteAsync);
-    ASSERT_EQ(pool->size(), 4);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
 
     // 4 → 8: stay in async mode (N→M, both > 0), pool resizes to 8.
     VecSim_UpdateThreadPoolSize(8);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteAsync);
-    ASSERT_EQ(pool->size(), 8);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 8);
 
     // 8 → 0: switch to in-place mode, pool resizes to 1.
     VecSim_UpdateThreadPoolSize(0);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteInPlace);
-    ASSERT_EQ(pool->size(), 1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
 
     // 0 → 0: idempotent, stays in-place, no crash.
     VecSim_UpdateThreadPoolSize(0);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteInPlace);
-    ASSERT_EQ(pool->size(), 1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
 
     // 0 → 2: back to async mode.
     VecSim_UpdateThreadPoolSize(2);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteAsync);
-    ASSERT_EQ(pool->size(), 2);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
 
     // Restore to in-place mode so we don't leak state to other tests.
     VecSim_UpdateThreadPoolSize(0);

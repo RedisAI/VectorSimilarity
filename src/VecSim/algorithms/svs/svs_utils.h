@@ -623,7 +623,7 @@ public:
     size_t size() const { return parallelism_->load(); }
 
     // Shared pool size — used by scheduling to decide how many reserve jobs to submit.
-    size_t poolSize() const { return pool_->size(); }
+    static size_t poolSize() { return VecSimSVSThreadPoolImpl::instance()->size(); }
 
     // Delegates to the shared pool's parallel_for, passing the per-index log context.
     // n may be less than parallelism_ when the problem size is smaller than the
