@@ -421,8 +421,8 @@ public:
     // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
     // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
     static std::shared_ptr<VecSimSVSThreadPoolImpl> instance() {
-        static auto shared_pool =
-            std::shared_ptr<VecSimSVSThreadPoolImpl>(new VecSimSVSThreadPoolImpl(1));
+        static auto shared_pool = std::shared_ptr<VecSimSVSThreadPoolImpl>(
+            new VecSimSVSThreadPoolImpl(1), [](VecSimSVSThreadPoolImpl *) { /* leak at exit */ });
         return shared_pool;
     }
 
