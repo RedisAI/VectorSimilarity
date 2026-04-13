@@ -384,7 +384,10 @@ class VecSimSVSThreadPoolImpl {
 
         size_t count() const { return slots_.size(); }
 
-        svs::threads::Thread &operator[](size_t i) { return slots_[i]->thread; }
+        svs::threads::Thread &operator[](size_t i) {
+            assert(i < slots_.size());
+            return slots_[i]->thread;
+        }
 
     private:
         void release() {
@@ -504,13 +507,14 @@ private:
         }
 
         std::lock_guard lock{pool_mutex_};
+        size_t rented_count = 0;
         for (auto &slot : slots_) {
-            if (rented.count() >= count) {
-                break;
-            }
             bool expected = false;
             if (slot->occupied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                 rented.add(slot);
+                if (++rented_count >= count) {
+                    break;
+                }
             }
         }
 
