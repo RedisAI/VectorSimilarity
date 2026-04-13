@@ -360,42 +360,6 @@ struct ThreadSlot {
     ThreadSlot &operator=(ThreadSlot &&) = delete;
 };
 
-// RAII guard for threads rented from the shared pool. On destruction, marks all
-// rented slots as unoccupied (lock-free atomic stores). Holds shared_ptr references
-// to keep slots alive even if the pool shrinks while the rental is active.
-class RentedThreads {
-public:
-    RentedThreads() = default;
-
-    // Move-only
-    RentedThreads(RentedThreads &&other) noexcept : slots_(std::move(other.slots_)) {}
-    RentedThreads &operator=(RentedThreads &&other) noexcept {
-        release();
-        slots_ = std::move(other.slots_);
-        return *this;
-    }
-    RentedThreads(const RentedThreads &) = delete;
-    RentedThreads &operator=(const RentedThreads &) = delete;
-
-    ~RentedThreads() { release(); }
-
-    void add(std::shared_ptr<ThreadSlot> slot) { slots_.push_back(std::move(slot)); }
-
-    size_t count() const { return slots_.size(); }
-
-    svs::threads::Thread &operator[](size_t i) { return slots_[i]->thread; }
-
-private:
-    void release() {
-        for (auto &slot : slots_) {
-            slot->occupied.store(false, std::memory_order_release);
-        }
-        slots_.clear();
-    }
-
-    std::vector<std::shared_ptr<ThreadSlot>> slots_;
-};
-
 // Shared thread pool for SVS indexes with rental model.
 // Based on svs::threads::NativeThreadPoolBase with changes:
 // * Pool is physically resizable (creates/destroys OS threads)
@@ -403,6 +367,36 @@ private:
 // * Multiple callers can rent disjoint subsets of threads concurrently
 // * Shrinking while threads are rented is safe (shared_ptr lifecycle)
 class VecSimSVSThreadPoolImpl {
+    // RAII guard for threads rented from the shared pool. On destruction, marks all
+    // rented slots as unoccupied (lock-free atomic stores). Holds shared_ptr references
+    // to keep slots alive even if the pool shrinks while the rental is active.
+    class RentedThreads {
+    public:
+        RentedThreads() = default;
+
+        // Move-only
+        RentedThreads(RentedThreads &&other) noexcept : slots_(std::move(other.slots_)) {}
+        RentedThreads(const RentedThreads &) = delete;
+
+        ~RentedThreads() { release(); }
+
+        void add(std::shared_ptr<ThreadSlot> slot) { slots_.push_back(std::move(slot)); }
+
+        size_t count() const { return slots_.size(); }
+
+        svs::threads::Thread &operator[](size_t i) { return slots_[i]->thread; }
+
+    private:
+        void release() {
+            for (auto &slot : slots_) {
+                slot->occupied.store(false, std::memory_order_release);
+            }
+            slots_.clear();
+        }
+
+        std::vector<std::shared_ptr<ThreadSlot>> slots_;
+    };
+
     // Create a pool with `num_threads` total parallelism (including the calling thread).
     // Spawns `num_threads - 1` worker OS threads. num_threads must be >= 1.
     // In write-in-place mode, the pool is created with num_threads == 1 (0 worker threads,
