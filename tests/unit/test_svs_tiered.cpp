@@ -488,6 +488,8 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
+    // Regression for the original crash: shrink after the update job reserved threads,
+    // but before the SVS update uses them. The update must still complete safely.
     const auto num_threads = std::min(4U, getAvailableCPUs());
     if (num_threads < 2) {
         GTEST_SKIP() << "No threads available";
@@ -526,6 +528,90 @@ TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
     ASSERT_TRUE(shrink_callback_ran);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), 1);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, ScheduledJobsRegistryCleanupAppliesDeferredResize) {
+    // Covers the simplified cleanup path: scheduled jobs are created but never run.
+    // Destroying the registry must delete the jobs and release the deferred shrink.
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        GTEST_SKIP() << "No threads available";
+    }
+
+    constexpr size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, num_threads + 10,
+                                                    num_threads + 20);
+    ASSERT_INDEX(tiered_index);
+
+    auto allocator = tiered_index->getAllocator();
+    std::atomic_bool callback_ran{false};
+
+    {
+        SVSMultiThreadJob::JobsRegistry registry(allocator);
+        auto jobs = SVSMultiThreadJob::createScheduledJobs(
+            allocator, SVS_BATCH_UPDATE_JOB,
+            [&callback_ran](VecSimIndex * /*unused*/, size_t /*unused*/) { callback_ran = true; },
+            tiered_index, std::chrono::microseconds(SVS_DEFAULT_UPDATE_JOB_WAIT_TIME), &registry);
+
+        ASSERT_EQ(jobs.size(), num_threads);
+
+        VecSimSVSThreadPool::resize(1);
+        ASSERT_EQ(VecSimSVSThreadPool::poolSize(), num_threads);
+    }
+
+    ASSERT_FALSE(callback_ran);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledGCIsDeferred) {
+    // Mirror of the update regression for GC: shrink after reservation but before runGC().
+    // The GC job must still finish, and the deferred shrink should apply afterward.
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        GTEST_SKIP() << "No threads available";
+    }
+
+    constexpr size_t dim = 4;
+    const size_t n = num_threads * 2;
+    const size_t num_deleted = num_threads;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n + 10, n + 20);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i + 1);
+        VecSimIndex_AddVector(tiered_index->GetBackendIndex(), vector, i);
+    }
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+
+    for (size_t i = 0; i < num_deleted; i++) {
+        tiered_index->deleteVector(i);
+    }
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), num_deleted);
+
+    std::atomic_bool shrink_callback_ran{false};
+    tiered_index->registerTracingCallback("GCJob::before_run_gc", [&]() {
+        VecSimSVSThreadPool::resize(1);
+        shrink_callback_ran = true;
+    });
+
+    VecSimTieredIndex_GC(tiered_index);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads);
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(shrink_callback_ran);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - num_deleted);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), n - num_deleted);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), 1);
 }
 

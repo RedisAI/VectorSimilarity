@@ -90,7 +90,25 @@ TEST_F(SVSThreadPoolTest, ResizeGrowAndShrink) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: Shrink while threads are rented
+// Test 2: Scheduled jobs defer shrink until they end
+// ---------------------------------------------------------------------------
+TEST_F(SVSThreadPoolTest, ScheduledJobDefersShrinkUntilEnd) {
+    VecSimSVSThreadPool::resize(4);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
+
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    size_t snapshot = pool->beginScheduledJob();
+    ASSERT_EQ(snapshot, 4);
+
+    VecSimSVSThreadPool::resize(1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
+
+    pool->endScheduledJob();
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Test 3: Shrink while threads are rented
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
     // Pool size 5: 4 worker slots [s0, s1, s2, s3].
@@ -157,7 +175,7 @@ TEST_F(SVSThreadPoolTest, ShrinkWhileRented) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: Grow while threads are rented
+// Test 4: Grow while threads are rented
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, GrowWhileRented) {
     // Pool size 3: 2 worker slots [s0, s1].

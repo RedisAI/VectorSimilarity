@@ -606,6 +606,7 @@ private:
             // No need to run GC on an empty index.
             return;
         }
+        index->executeTracingCallback("GCJob::before_run_gc");
         svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();

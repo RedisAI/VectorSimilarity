@@ -436,13 +436,27 @@ public:
     // is joined when the last shared_ptr reference is dropped (in ~RentedThreads).
     //
     // If jobs are in flight (pending_jobs_ > 0), shrink is deferred — the target size is
-    // stored and applied when the last job completes (see releaseJob()). Grow is always
-    // applied immediately so new jobs can use the extra threads right away.
+    // stored and applied when the last job completes (see endScheduledJob()). Grow is
+    // always applied immediately so new jobs can use the extra threads right away.
     void resize(size_t new_size) {
         new_size = std::max(new_size, size_t{1});
         std::lock_guard lock{pool_mutex_};
         resize_locked(new_size);
     }
+
+    // Deferred-resize protocol
+    // ========================
+    // When a job is created via createScheduledJobs(), the pool size is snapshotted
+    // to determine how many reserve jobs to submit to the RediSearch worker pool.
+    // If resize() shrinks the SVS pool between that snapshot and when the job
+    // actually executes, the RediSearch workers would have checked in (reserved
+    // threads exist) but the SVS pool slots they need to rent from would have been
+    // destroyed — causing a failure.
+    //
+    // To prevent this, beginScheduledJob() increments pending_jobs_, and any shrink
+    // while pending_jobs_ > 0 is deferred (stored in deferred_size_) until the last
+    // in-flight job completes and its destructor calls endScheduledJob(). Grows are
+    // always applied immediately since extra threads don't break anything.
 
     // Atomically mark a logical job as pending and snapshot the current shared pool size.
     size_t beginScheduledJob() {
@@ -660,7 +674,6 @@ public:
     // Delegates to the shared pool's parallel_for, passing the per-index log context.
     // n may be less than parallelism_ when the problem size is smaller than the
     // thread count (SVS computes n = min(arg.size(), pool.size())).
-    // n must not exceed parallelism_ — we only have that many threads reserved.
     void parallel_for(std::function<void(size_t)> f, size_t n) {
         pool_->parallel_for(std::move(f), n, log_ctx_);
     }
