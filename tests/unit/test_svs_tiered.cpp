@@ -3857,10 +3857,8 @@ TEST(SVSTieredIndexTest, testThreadPool) {
     pool.parallel_for(task, 1);
     ASSERT_EQ(counter, 1); // 0+1 = 1
 
-    // n > parallelism is a bug — asserts in debug mode
-#if !defined(RUNNING_ON_VALGRIND) && !defined(NDEBUG)
-    ASSERT_DEATH(pool.parallel_for(task, 10), "n exceeds reserved thread count");
-#endif
+    // n > parallelism is allowed — the pool will use as many threads as available.
+    // (The old assert was removed to support deferred resize scenarios.)
 
     counter = 0;
     pool.setParallelism(4);

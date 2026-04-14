@@ -415,36 +415,6 @@ class VecSimSVSThreadPoolImpl {
     }
 
 public:
-    class ScheduledJobToken {
-        bool active_ = false;
-        size_t pool_size_snapshot_ = 1;
-
-    public:
-        ScheduledJobToken() = default;
-        ScheduledJobToken(const ScheduledJobToken &) = delete;
-        ScheduledJobToken &operator=(const ScheduledJobToken &) = delete;
-
-        ScheduledJobToken(ScheduledJobToken &&other) noexcept
-            : active_(std::exchange(other.active_, false)),
-              pool_size_snapshot_(other.pool_size_snapshot_) {}
-
-        ~ScheduledJobToken() { release(); }
-
-        size_t getPoolSizeSnapshot() const { return pool_size_snapshot_; }
-
-    private:
-        void release() {
-            if (active_) {
-                VecSimSVSThreadPoolImpl::instance()->releaseFromJob();
-                active_ = false;
-            }
-        }
-
-        friend class VecSimSVSThreadPoolImpl;
-        explicit ScheduledJobToken(size_t pool_size_snapshot)
-            : active_(true), pool_size_snapshot_(pool_size_snapshot) {}
-    };
-
     // Singleton accessor for the shared SVS thread pool.
     // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
     // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
@@ -475,24 +445,22 @@ public:
     }
 
     // Atomically mark a logical job as pending and snapshot the current shared pool size.
-    ScheduledJobToken beginScheduledJob() {
+    size_t beginScheduledJob() {
         std::lock_guard lock{pool_mutex_};
         ++pending_jobs_;
-        return ScheduledJobToken{slots_.size() + 1};
+        return slots_.size() + 1;
     }
 
-private:
     // Decrement the pending-jobs counter. When it reaches zero, apply any deferred resize.
-    void releaseFromJob() {
+    void endScheduledJob() {
         std::lock_guard lock{pool_mutex_};
-        assert(pending_jobs_ > 0 && "releaseFromJob called without matching beginScheduledJob");
+        assert(pending_jobs_ > 0 && "endScheduledJob called without matching beginScheduledJob");
         if (--pending_jobs_ == 0 && deferred_size_.has_value()) {
             resize_locked(deferred_size_.value());
             deferred_size_.reset();
         }
     }
 
-public:
     // Execute `f` in parallel with `n` partitions. The calling thread runs partition 0,
     // and up to `n-1` worker threads are rented for partitions 1..n-1.
     // Same signature as the SVS ThreadPool concept.
