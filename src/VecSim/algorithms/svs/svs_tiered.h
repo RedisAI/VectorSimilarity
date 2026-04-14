@@ -832,9 +832,19 @@ public:
             .updateJobWaitTime = this->updateJobWaitTime,
         };
         {
-            std::lock_guard<std::mutex> lock(this->updateJobMutex);
-            svsTieredInfo.indexUpdateScheduled =
-                this->indexUpdateScheduled.test() == VecSimBool_TRUE;
+            // Use try_lock to avoid blocking the main thread during long-running
+            // training operations. updateSVSIndexWrapper holds updateJobMutex for
+            // the entire training duration (which can take 40-85s on slow machines).
+            // If the mutex is held, training is actively running, so we report
+            // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
+            std::unique_lock<std::mutex> lock(this->updateJobMutex, std::try_to_lock);
+            if (lock.owns_lock()) {
+                svsTieredInfo.indexUpdateScheduled =
+                    this->indexUpdateScheduled.test() == VecSimBool_TRUE;
+            } else {
+                // Mutex is held by updateSVSIndexWrapper — training is in progress.
+                svsTieredInfo.indexUpdateScheduled = true;
+            }
         }
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
         info.tieredInfo.backgroundIndexing =
