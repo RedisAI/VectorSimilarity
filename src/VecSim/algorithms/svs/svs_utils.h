@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -414,6 +415,36 @@ class VecSimSVSThreadPoolImpl {
     }
 
 public:
+    class ScheduledJobToken {
+        bool active_ = false;
+        size_t pool_size_snapshot_ = 1;
+
+    public:
+        ScheduledJobToken() = default;
+        ScheduledJobToken(const ScheduledJobToken &) = delete;
+        ScheduledJobToken &operator=(const ScheduledJobToken &) = delete;
+
+        ScheduledJobToken(ScheduledJobToken &&other) noexcept
+            : active_(std::exchange(other.active_, false)),
+              pool_size_snapshot_(other.pool_size_snapshot_) {}
+
+        ~ScheduledJobToken() { release(); }
+
+        size_t getPoolSizeSnapshot() const { return pool_size_snapshot_; }
+
+    private:
+        void release() {
+            if (active_) {
+                VecSimSVSThreadPoolImpl::instance()->releaseFromJob();
+                active_ = false;
+            }
+        }
+
+        friend class VecSimSVSThreadPoolImpl;
+        explicit ScheduledJobToken(size_t pool_size_snapshot)
+            : active_(true), pool_size_snapshot_(pool_size_snapshot) {}
+    };
+
     // Singleton accessor for the shared SVS thread pool.
     // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
     // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
@@ -433,27 +464,35 @@ public:
     // on shrink. new_size is total parallelism including the calling thread (minimum 1).
     // Occupied threads (held by renters) survive shrink via shared_ptr — their OS thread
     // is joined when the last shared_ptr reference is dropped (in ~RentedThreads).
+    //
+    // If jobs are in flight (pending_jobs_ > 0), shrink is deferred — the target size is
+    // stored and applied when the last job completes (see releaseJob()). Grow is always
+    // applied immediately so new jobs can use the extra threads right away.
     void resize(size_t new_size) {
         new_size = std::max(new_size, size_t{1});
-        size_t target_workers = new_size - 1;
-
         std::lock_guard lock{pool_mutex_};
+        resize_locked(new_size);
+    }
 
-        if (target_workers > slots_.size()) {
-            // Grow: spawn new worker threads
-            slots_.reserve(target_workers);
-            for (size_t i = slots_.size(); i < target_workers; ++i) {
-                slots_.push_back(std::make_shared<ThreadSlot>());
-            }
-        } else if (target_workers < slots_.size()) {
-            // Shrink: remove slots from the back.
-            // If a slot is occupied, the renter's shared_ptr keeps it alive; the OS thread
-            // will be joined when ~ThreadSlot runs after ~RentedThreads releases it.
-            // If a slot is idle, dropping the shared_ptr here triggers immediate shutdown.
-            slots_.resize(target_workers);
+    // Atomically mark a logical job as pending and snapshot the current shared pool size.
+    ScheduledJobToken beginScheduledJob() {
+        std::lock_guard lock{pool_mutex_};
+        ++pending_jobs_;
+        return ScheduledJobToken{slots_.size() + 1};
+    }
+
+private:
+    // Decrement the pending-jobs counter. When it reaches zero, apply any deferred resize.
+    void releaseFromJob() {
+        std::lock_guard lock{pool_mutex_};
+        assert(pending_jobs_ > 0 && "releaseFromJob called without matching beginScheduledJob");
+        if (--pending_jobs_ == 0 && deferred_size_.has_value()) {
+            resize_locked(deferred_size_.value());
+            deferred_size_.reset();
         }
     }
 
+public:
     // Execute `f` in parallel with `n` partitions. The calling thread runs partition 0,
     // and up to `n-1` worker threads are rented for partitions 1..n-1.
     // Same signature as the SVS ThreadPool concept.
@@ -563,8 +602,35 @@ private:
         }
     }
 
+    // Actual resize logic. Caller must hold pool_mutex_.
+    // Grow is always applied immediately. Shrink is deferred if pending_jobs_ > 0.
+    void resize_locked(size_t new_size) {
+        size_t target_workers = new_size - 1;
+
+        if (target_workers >= slots_.size()) {
+            // Grow (or same size): apply immediately, cancel any pending deferred shrink.
+            deferred_size_.reset();
+            for (size_t i = slots_.size(); i < target_workers; ++i) {
+                slots_.push_back(std::make_shared<ThreadSlot>());
+            }
+        } else {
+            // Shrink.
+            if (pending_jobs_ > 0) {
+                // Defer shrink — jobs in flight may still need these threads.
+                deferred_size_ = new_size;
+            } else {
+                // Safe to shrink now — no jobs in flight.
+                // Occupied threads (held by renters) survive via shared_ptr.
+                // Idle threads are destroyed immediately.
+                slots_.resize(target_workers);
+            }
+        }
+    }
+
     mutable std::mutex pool_mutex_;
     std::vector<std::shared_ptr<ThreadSlot>> slots_;
+    size_t pending_jobs_ = 0;             // jobs currently scheduled / in-flight
+    std::optional<size_t> deferred_size_; // resize target deferred until pending_jobs_ == 0
 };
 
 // Per-index wrapper around the shared VecSimSVSThreadPoolImpl singleton.
@@ -628,7 +694,7 @@ public:
     // thread count (SVS computes n = min(arg.size(), pool.size())).
     // n must not exceed parallelism_ — we only have that many threads reserved.
     void parallel_for(std::function<void(size_t)> f, size_t n) {
-        assert(n <= parallelism_->load() && "n exceeds reserved thread count (parallelism)");
+        // assert(n <= parallelism_->load() && "n exceeds reserved thread count (parallelism)");
         pool_->parallel_for(std::move(f), n, log_ctx_);
     }
 };

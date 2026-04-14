@@ -1,5 +1,6 @@
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/vec_sim_debug.h"
+#include <atomic>
 #include <string>
 #include <array>
 
@@ -484,6 +485,48 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, vector), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        GTEST_SKIP() << "No threads available";
+    }
+
+    const size_t dim = 4;
+    const size_t n = num_threads;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+
+    // Keep automatic training/update disabled so the test controls the scheduling point.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n + 10, n + 20);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim, i);
+        tiered_index->addVector(vector, i);
+    }
+
+    std::atomic_bool shrink_callback_ran{false};
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        // This is the real production entrypoint: the job has already reserved its threads,
+        // but updateSVSIndex() has not yet called setParallelism() / createImpl().
+        VecSimSVSThreadPool::resize(1);
+        shrink_callback_ran = true;
+    });
+
+    tiered_index->scheduleSVSIndexUpdate();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads);
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(shrink_callback_ran);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), 1);
 }
 
 TYPED_TEST(SVSTieredIndexTest, addVector) {

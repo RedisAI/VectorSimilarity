@@ -144,6 +144,7 @@ private:
     task_type task;
     std::shared_ptr<ControlBlock> controlBlock;
     JobsRegistry *jobsRegistry;
+    VecSimSVSThreadPoolImpl::ScheduledJobToken scheduledJobToken;
 
     static void ExecuteMultiThreadJobImpl(AsyncJob *job) {
         auto *jobPtr = static_cast<SVSMultiThreadJob *>(job);
@@ -162,26 +163,52 @@ private:
 
     SVSMultiThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
                       task_type callback, VecSimIndex *index,
-                      std::shared_ptr<ControlBlock> controlBlock, JobsRegistry *registry)
+                      std::shared_ptr<ControlBlock> controlBlock, JobsRegistry *registry,
+                      VecSimSVSThreadPoolImpl::ScheduledJobToken scheduled_job_token = {})
         : AsyncJob(std::move(allocator), jobType, ExecuteMultiThreadJobImpl, index),
-          task(std::move(callback)), controlBlock(std::move(controlBlock)), jobsRegistry(registry) {
-    }
+          task(std::move(callback)), controlBlock(std::move(controlBlock)), jobsRegistry(registry),
+          scheduledJobToken(std::move(scheduled_job_token)) {}
 
 public:
+    template <typename Rep, typename Period>
+    static vecsim_stl::vector<AsyncJob *>
+    createScheduledJobs(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
+                        std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
+                        std::chrono::duration<Rep, Period> threads_wait_timeout,
+                        JobsRegistry *registry) {
+        auto scheduled_job = VecSimSVSThreadPoolImpl::instance()->beginScheduledJob();
+        return createJobsImpl(allocator, jobType, callback, index,
+                              scheduled_job.getPoolSizeSnapshot(), threads_wait_timeout, registry,
+                              std::move(scheduled_job));
+    }
+
     template <typename Rep, typename Period>
     static vecsim_stl::vector<AsyncJob *>
     createJobs(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
                std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
                size_t num_threads, std::chrono::duration<Rep, Period> threads_wait_timeout,
                JobsRegistry *registry) {
+        return createJobsImpl(allocator, jobType, callback, index, num_threads,
+                              threads_wait_timeout, registry, {});
+    }
+
+private:
+    template <typename Rep, typename Period>
+    static vecsim_stl::vector<AsyncJob *>
+    createJobsImpl(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
+                   std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
+                   size_t num_threads, std::chrono::duration<Rep, Period> threads_wait_timeout,
+                   JobsRegistry *registry,
+                   VecSimSVSThreadPoolImpl::ScheduledJobToken scheduled_job_token) {
         assert(num_threads > 0);
         std::shared_ptr<ControlBlock> controlBlock =
             num_threads == 1 ? nullptr
                              : std::make_shared<ControlBlock>(num_threads, threads_wait_timeout);
 
         vecsim_stl::vector<AsyncJob *> jobs(num_threads, allocator);
-        jobs[0] = new (allocator)
-            SVSMultiThreadJob(allocator, jobType, callback, index, controlBlock, registry);
+        jobs[0] =
+            new (allocator) SVSMultiThreadJob(allocator, jobType, callback, index, controlBlock,
+                                              registry, std::move(scheduled_job_token));
         for (size_t i = 1; i < num_threads; ++i) {
             jobs[i] =
                 new (allocator) ReserveThreadJob(allocator, jobType, index, controlBlock, registry);
@@ -601,9 +628,8 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getPoolSize();
-        auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this, total_threads,
+        auto jobs = SVSMultiThreadJob::createScheduledJobs(
+            this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
@@ -614,9 +640,8 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getPoolSize();
-        auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this, total_threads,
+        auto jobs = SVSMultiThreadJob::createScheduledJobs(
+            this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
