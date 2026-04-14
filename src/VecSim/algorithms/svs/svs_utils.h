@@ -662,7 +662,6 @@ public:
     // thread count (SVS computes n = min(arg.size(), pool.size())).
     // n must not exceed parallelism_ — we only have that many threads reserved.
     void parallel_for(std::function<void(size_t)> f, size_t n) {
-        // assert(n <= parallelism_->load() && "n exceeds reserved thread count (parallelism)");
         pool_->parallel_for(std::move(f), n, log_ctx_);
     }
 };
