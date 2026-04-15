@@ -1676,8 +1676,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .constructionWindowSize = 100,
           .maxCandidatePoolSize = 500,
           .pruneTo = 55,
-          .useSearchHistory = false, // VecSimOption_DISABLE
-          .numThreads = 4,
+          .useSearchHistory = false,                    // VecSimOption_DISABLE
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS, // Deprecated, expect default to be used
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = 20,
           .searchBufferCapacity = 40,
@@ -3298,6 +3298,69 @@ TEST(SVSTest, compute_distance) {
     munmap(raw_b, 2 * page_size);
 }
 #endif // defined(__linux__) && defined(__x86_64__)
+
+// ---------------------------------------------------------------------------
+// SVSParams::num_threads is deprecated and ignored — pool size comes from
+// the shared singleton. Setting it should log a warning but not affect the pool.
+// ---------------------------------------------------------------------------
+TEST(SVSTest, NumThreadsParamIgnored) {
+    // Resize the shared singleton pool to a known size.
+    VecSimSVSThreadPool::resize(2);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
+
+    // Capture warning logs emitted by VecSim.
+    std::string captured_log;
+    VecSimIndexInterface::logCallback = [](void *ctx, const char *level, const char *msg) {
+        auto *out = static_cast<std::string *>(ctx);
+        *out += std::string(level) + ": " + msg + "\n";
+    };
+
+    // Create an SVS index with an explicit (deprecated) num_threads value.
+    SVSParams svs_params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 4,
+        .metric = VecSimMetric_L2,
+        .num_threads = 16, // should be ignored
+    };
+    VecSimParams params{.algo = VecSimAlgo_SVS,
+                        .algoParams = {.svsParams = svs_params},
+                        .logCtx = static_cast<void *>(&captured_log)};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_NE(index, nullptr);
+
+    // The shared pool size must remain at 2 — num_threads was ignored.
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
+
+    // The index reports the shared pool size, not the deprecated param value.
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    ASSERT_EQ(info.svsInfo.numThreads, 2);
+
+    // A deprecation warning should have been logged.
+    EXPECT_NE(captured_log.find("deprecated"), std::string::npos)
+        << "Expected deprecation warning in log, got: " << captured_log;
+
+    VecSimIndex_Free(index);
+
+    // Verify: creating an index without setting num_threads produces no warning.
+    captured_log.clear();
+    SVSParams svs_params_default = {
+        .type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2,
+        // num_threads left as 0 (default / unset)
+    };
+    VecSimParams params_default{.algo = VecSimAlgo_SVS,
+                                .algoParams = {.svsParams = svs_params_default},
+                                .logCtx = static_cast<void *>(&captured_log)};
+    VecSimIndex *index2 = VecSimIndex_New(&params_default);
+    ASSERT_NE(index2, nullptr);
+    EXPECT_EQ(captured_log.find("deprecated"), std::string::npos)
+        << "No deprecation warning expected when num_threads is not set, got: " << captured_log;
+
+    VecSimIndex_Free(index2);
+
+    // Restore pool to default size and clear log callback.
+    VecSimSVSThreadPool::resize(1);
+    VecSimIndexInterface::logCallback = nullptr;
+}
 
 #else // HAVE_SVS
 

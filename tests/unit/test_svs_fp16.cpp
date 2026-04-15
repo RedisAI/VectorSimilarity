@@ -2228,9 +2228,6 @@ protected:
                           size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
         // trainingThreshold = training_threshold;
         // updateThreshold = update_threshold;
-        if (svs_params.algoParams.svsParams.num_threads == 0) {
-            svs_params.algoParams.svsParams.num_threads = mock_thread_pool.thread_pool_size;
-        }
         return TieredIndexParams{
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
@@ -2240,15 +2237,17 @@ protected:
                                    TieredSVSParams{.trainingTriggerThreshold = training_threshold,
                                                    .updateTriggerThreshold = update_threshold}}};
     }
-    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
-                          size_t expected_capcity) {
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getNumThreads(), expected_num_threads);
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity);
+    void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_capcity) {
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), 1);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), expected_capcity);
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
-                                                 tieredIndexMock &mock_thread_pool,
-                                                 size_t num_available_threads = 1) {
+                                                 tieredIndexMock &mock_thread_pool) {
+        // Resize the shared SVS thread pool singleton to match the mock thread pool size,
+        // simulating what RediSearch does via VecSim_UpdateThreadPoolSize during module init.
+        VecSim_UpdateThreadPoolSize(mock_thread_pool.thread_pool_size);
+
         auto *tiered_index =
             reinterpret_cast<TieredSVSIndex<data_t> *>(TieredFactory::NewIndex(&tiered_params));
 
@@ -2256,26 +2255,18 @@ protected:
         // the index, and we'll need to release the ctx at the end of the test.
         mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
 
-        // Set number of available threads to 1 unless specified otherwise,
-        // so we can insert one vector at a time directly to svs.
-        tiered_index->GetSVSIndex()->setNumThreads(num_available_threads);
-        size_t params_threadpool_size =
-            tiered_params.primaryIndexParams->algoParams.svsParams.num_threads;
-        size_t expected_capacity =
-            params_threadpool_size ? params_threadpool_size : mock_thread_pool.thread_pool_size;
-        verifyNumThreads(tiered_index, num_available_threads, expected_capacity);
+        verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size);
         return tiered_index;
     }
 
     TieredSVSIndex<data_t> *
     CreateTieredSVSIndex(VecSimParams &svs_params, tieredIndexMock &mock_thread_pool,
                          size_t training_threshold = SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD,
-                         size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD,
-                         size_t num_available_threads = 1) {
+                         size_t update_threshold = SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD) {
         svs_params.algoParams.svsParams.quantBits = index_type_t::get_quant_bits();
         TieredIndexParams tiered_params = CreateTieredSVSParams(
             svs_params, mock_thread_pool, training_threshold, update_threshold);
-        return CreateTieredSVSIndex(tiered_params, mock_thread_pool, num_available_threads);
+        return CreateTieredSVSIndex(tiered_params, mock_thread_pool);
     }
 
     void SetUp() override {
@@ -2812,10 +2803,10 @@ TYPED_TEST(FP16SVSTieredIndexTest, KNNSearch) {
 TYPED_TEST(FP16SVSTieredIndexTest, deleteVector) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
-    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .num_threads = 1};
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
     this->SetTypeParams(params);
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock(1);
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_NO_FATAL_FAILURE(this->verify_index(tiered_index));
 
@@ -2876,10 +2867,10 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVector) {
 TYPED_TEST(FP16SVSTieredIndexTest, deleteVectorMulti) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
-    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .multi = true, .num_threads = 1};
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .multi = true};
     this->SetTypeParams(params);
     VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
+    auto mock_thread_pool = tieredIndexMock(1);
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_NO_FATAL_FAILURE(this->verify_index(tiered_index));
 

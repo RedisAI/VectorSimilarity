@@ -312,6 +312,16 @@ void VecSim_SetTestLogContext(const char *test_name, const char *test_type);
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
 
+/**
+ * @brief Update the shared SVS thread pool size and set the write mode accordingly.
+ * If new_size == 0, sets write mode to in-place (no background threads).
+ * If new_size > 0, sets write mode to async and resizes the shared thread pool.
+ * @note Should be called from the main thread only.
+ *
+ * @param new_size the new thread pool size (0 = in-place mode, >0 = async mode).
+ */
+void VecSim_UpdateThreadPoolSize(size_t new_size);
+
 #ifdef __cplusplus
 }
 #endif
