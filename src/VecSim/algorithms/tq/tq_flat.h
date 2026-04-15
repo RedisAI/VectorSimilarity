@@ -109,10 +109,12 @@ public:
         : dim(dim), pairs(PairCount(dim)), total_bits(total_bits),
           polar_bits(PolarBits(total_bits)), projections(projections), seed(seed),
           use_rotation(use_rotation), levels(size_t{1} << polar_bits),
-          packed_qjl_bytes((projections + 7) / 8), nibble_angle_codes(levels <= 16),
-          compact_angle_codes(levels <= 256), use_polar_lookup(levels <= 256),
-          qjl_scale(QjlScale(projections)), rotation_columns(dim * dim, 0.0f),
-          qjl_projection_rows(projections * dim, 0.0f), cos_lut(levels), sin_lut(levels) {
+          angle_delta_mask(levels - 1), packed_qjl_bytes((projections + 7) / 8),
+          nibble_angle_codes(levels <= 16), compact_angle_codes(levels <= 256),
+          use_polar_lookup(levels <= 256), qjl_scale(QjlScale(projections)),
+          rotation_columns(dim * dim, 0.0f),
+          qjl_projection_rows(projections * dim, 0.0f), cos_lut(levels), sin_lut(levels),
+          delta_cos_lut(levels) {
         if (!IsEven(dim)) {
             throw std::invalid_argument("TQ-FLAT requires even dimensions");
         }
@@ -366,9 +368,10 @@ public:
         for (size_t i = 0; i < pairs; ++i) {
             const uint16_t lhs_angle = angleCodeAt(lhs, i);
             const uint16_t rhs_angle = angleCodeAt(rhs, i);
-            polar_estimate +=
-                lhs.radii[i] * rhs.radii[i] *
-                (cos_lut[lhs_angle] * cos_lut[rhs_angle] + sin_lut[lhs_angle] * sin_lut[rhs_angle]);
+            const size_t delta = (static_cast<size_t>(lhs_angle) -
+                                  static_cast<size_t>(rhs_angle)) &
+                                 angle_delta_mask;
+            polar_estimate += lhs.radii[i] * rhs.radii[i] * delta_cos_lut[delta];
         }
 
         const int sign_dot =
@@ -385,6 +388,7 @@ public:
     size_t seed;
     bool use_rotation;
     size_t levels;
+    size_t angle_delta_mask;
     size_t packed_qjl_bytes;
     bool nibble_angle_codes;
     bool compact_angle_codes;
@@ -457,6 +461,8 @@ private:
                 (static_cast<float>(i) / static_cast<float>(levels)) * (2.0f * kPi) - kPi;
             cos_lut[i] = std::cos(theta);
             sin_lut[i] = std::sin(theta);
+            delta_cos_lut[i] =
+                std::cos((static_cast<float>(i) / static_cast<float>(levels)) * (2.0f * kPi));
         }
     }
 
@@ -464,6 +470,7 @@ private:
     std::vector<float> qjl_projection_rows;
     std::vector<float> cos_lut;
     std::vector<float> sin_lut;
+    std::vector<float> delta_cos_lut;
 };
 
 template <VecSimMetric Metric>
