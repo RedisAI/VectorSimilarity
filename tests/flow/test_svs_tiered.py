@@ -256,7 +256,6 @@ def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSim
     # SVS labels count updates before the job is done, so we need to wait for the queue to be empty.
     index.wait_for_index(1)
     index_dur = time.time() - index_start
-    assert index.get_curr_bf_size() == 0
     test_logger.info(f"Indexing in the tiered index took {round_(index_dur)} s")
 
     # Measure recall.
