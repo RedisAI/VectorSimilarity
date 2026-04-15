@@ -382,6 +382,8 @@ class VecSimSVSThreadPoolImpl {
         // Move-only
         RentedThreads(RentedThreads &&other) noexcept : slots_(std::move(other.slots_)) {}
         RentedThreads(const RentedThreads &) = delete;
+        RentedThreads &operator=(const RentedThreads &) = delete;
+        RentedThreads &operator=(RentedThreads &&) = delete;
 
         ~RentedThreads() { release(); }
 
@@ -436,8 +438,8 @@ public:
 
     // Physically resize the pool. Creates new OS threads on grow, shuts down idle threads
     // on shrink. new_size is total parallelism including the calling thread (minimum 1).
-    // Occupied threads (held by renters) survive shrink via shared_ptr — their OS thread
-    // is joined when the last shared_ptr reference is dropped (in ~RentedThreads).
+    // Occupied threads (held by renters) survive shrink via the deferred-resize protocol —
+    // the pool defers shrink while jobs are in flight, so slots cannot be destroyed while rented.
     //
     // If jobs are in flight (pending_jobs_ > 0), shrink is deferred — the target size is
     // stored and applied when the last job completes (see endScheduledJob()). Grow is
