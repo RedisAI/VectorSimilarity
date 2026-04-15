@@ -52,7 +52,7 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
                                                   VecsimQueryType query_type) {
     long long num_val;
     // EF_RUNTIME is a valid parameter only in HNSW algorithm.
-    if (index_type != VecSimAlgo_HNSWLIB) {
+    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_TQ_HNSW) {
         return VecSimParamResolverErr_UnknownParam;
     }
     // EF_RUNTIME is invalid for range query
@@ -145,14 +145,17 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
                                                 VecsimQueryType query_type) {
     double num_val;
     // EPSILON is a valid parameter only in HNSW or SVS algorithms.
-    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_SVS) {
+    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_TQ_HNSW &&
+        index_type != VecSimAlgo_SVS) {
         return VecSimParamResolverErr_UnknownParam;
     }
     if (query_type != QUERY_TYPE_RANGE) {
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
-    auto &epsilon_ref = index_type == VecSimAlgo_HNSWLIB ? qparams->hnswRuntimeParams.epsilon
-                                                         : qparams->svsRuntimeParams.epsilon;
+    auto &epsilon_ref =
+        (index_type == VecSimAlgo_HNSWLIB || index_type == VecSimAlgo_TQ_HNSW)
+            ? qparams->hnswRuntimeParams.epsilon
+            : qparams->svsRuntimeParams.epsilon;
     if (epsilon_ref != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
@@ -332,7 +335,8 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     }
     // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
     // graph.
-    if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
+    if (qparams->searchMode == HYBRID_ADHOC_BF &&
+        (index_type == VecSimAlgo_HNSWLIB || index_type == VecSimAlgo_TQ_HNSW) &&
         qparams->hnswRuntimeParams.efRuntime > 0) {
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
     }

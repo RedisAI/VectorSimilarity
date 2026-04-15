@@ -41,6 +41,10 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             index = TQFactory::NewIndex(params);
             break;
         }
+        case VecSimAlgo_TQ_HNSW: {
+            index = HNSWFactory::NewIndex(params);
+            break;
+        }
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
@@ -60,6 +64,8 @@ size_t EstimateInitialSize(const VecSimParams *params) {
         return SVSFactory::EstimateInitialSize(&params->algoParams.svsParams);
     case VecSimAlgo_TQ:
         return TQFactory::EstimateInitialSize(&params->algoParams.tqFlatParams);
+    case VecSimAlgo_TQ_HNSW:
+        return HNSWFactory::EstimateInitialSize(&params->algoParams.tqHnswParams);
     }
     return -1;
 }
@@ -76,6 +82,8 @@ size_t EstimateElementSize(const VecSimParams *params) {
         return SVSFactory::EstimateElementSize(&params->algoParams.svsParams);
     case VecSimAlgo_TQ:
         return TQFactory::EstimateElementSize(&params->algoParams.tqFlatParams);
+    case VecSimAlgo_TQ_HNSW:
+        return HNSWFactory::EstimateElementSize(&params->algoParams.tqHnswParams);
     }
     return -1;
 }

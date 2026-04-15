@@ -373,6 +373,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
 
     switch (backendInfo.commonInfo.basicInfo.algo) {
     case VecSimAlgo_HNSWLIB:
+    case VecSimAlgo_TQ_HNSW:
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
         break;
     case VecSimAlgo_SVS:

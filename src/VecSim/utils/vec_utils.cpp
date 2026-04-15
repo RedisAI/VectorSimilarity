@@ -25,6 +25,7 @@ const char *VecSimCommonStrings::HNSW_STRING = "HNSW";
 const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 const char *VecSimCommonStrings::SVS_STRING = "SVS";
 const char *VecSimCommonStrings::TQ_STRING = "TQ-FLAT";
+const char *VecSimCommonStrings::TQ_HNSW_STRING = "TQ-HNSW";
 
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
 const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
@@ -197,6 +198,8 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::SVS_STRING;
     case VecSimAlgo_TQ:
         return VecSimCommonStrings::TQ_STRING;
+    case VecSimAlgo_TQ_HNSW:
+        return VecSimCommonStrings::TQ_HNSW_STRING;
     }
     return NULL;
 }

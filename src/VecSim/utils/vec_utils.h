@@ -25,6 +25,7 @@ public:
     static const char *TIERED_STRING;
     static const char *SVS_STRING;
     static const char *TQ_STRING;
+    static const char *TQ_HNSW_STRING;
 
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;
