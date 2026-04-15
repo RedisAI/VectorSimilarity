@@ -32,16 +32,17 @@ inline bool IsEven(size_t value) { return value != 0 && value % 2 == 0; }
 inline size_t PairCount(size_t dim) { return dim / 2; }
 
 struct QueryView {
+    const float *polar_lookup;
     const float *rotated_query;
-    const float *qjl_query_dots;
+    const float *qjl_byte_lut;
     float query_norm_sq;
 };
 
 struct StorageView {
     const float *radii;
     float code_norm_sq;
-    const uint16_t *angle_indices;
-    const int8_t *residual_signs;
+    const void *angle_indices;
+    const uint8_t *residual_signs;
 };
 
 class TQModelState {
@@ -49,7 +50,9 @@ public:
     TQModelState(size_t dim, size_t total_bits, size_t projections, size_t seed, bool use_rotation)
         : dim(dim), pairs(PairCount(dim)), total_bits(total_bits), polar_bits(total_bits - 1),
           projections(projections), seed(seed), use_rotation(use_rotation),
-          levels(size_t{1} << polar_bits), rotation_columns(dim * dim, 0.0f),
+          levels(size_t{1} << polar_bits), packed_qjl_bytes((projections + 7) / 8),
+          compact_angle_codes(levels <= 256), use_polar_lookup(levels <= 256),
+          qjl_scale(kPi / (2.0f * static_cast<float>(projections))), rotation_columns(dim * dim, 0.0f),
           qjl_projection_rows(projections * dim, 0.0f), cos_lut(levels), sin_lut(levels) {
         if (!IsEven(dim)) {
             throw std::invalid_argument("TQ-FLAT requires even dimensions");
@@ -67,12 +70,11 @@ public:
     }
 
     size_t storageBlobSize() const {
-        return pairs * sizeof(float) + sizeof(float) + pairs * sizeof(uint16_t) +
-               projections * sizeof(int8_t);
+        return pairs * sizeof(float) + sizeof(float) + angleCodeBytes() + packedQjlBytes();
     }
 
     size_t queryBlobSize() const {
-        return (dim + projections + 1) * sizeof(float);
+        return (polarQueryWordCount() + packedQjlBytes() * 256 + 1) * sizeof(float);
     }
 
     StorageView storageView(const void *blob) const {
@@ -81,9 +83,9 @@ public:
         bytes += pairs * sizeof(float);
         const auto *code_norm_sq = reinterpret_cast<const float *>(bytes);
         bytes += sizeof(float);
-        const auto *angles = reinterpret_cast<const uint16_t *>(bytes);
-        bytes += pairs * sizeof(uint16_t);
-        const auto *signs = reinterpret_cast<const int8_t *>(bytes);
+        const void *angles = bytes;
+        bytes += angleCodeBytes();
+        const auto *signs = reinterpret_cast<const uint8_t *>(bytes);
         return {.radii = radii,
                 .code_norm_sq = *code_norm_sq,
                 .angle_indices = angles,
@@ -92,13 +94,25 @@ public:
 
     QueryView queryView(const void *blob) const {
         const auto *bytes = static_cast<const float *>(blob);
-        const auto *rotated_query = bytes;
-        const auto *qjl_query_dots = bytes + dim;
-        const float query_norm_sq = *(bytes + dim + projections);
-        return {.rotated_query = rotated_query,
-                .qjl_query_dots = qjl_query_dots,
+        const auto *polar_lookup = usePolarLut() ? bytes : nullptr;
+        const auto *rotated_query = usePolarLut() ? nullptr : bytes;
+        bytes += polarQueryWordCount();
+        const auto *qjl_byte_lut = bytes;
+        bytes += packedQjlBytes() * 256;
+        const float query_norm_sq = *bytes;
+        return {.polar_lookup = polar_lookup,
+                .rotated_query = rotated_query,
+                .qjl_byte_lut = qjl_byte_lut,
                 .query_norm_sq = query_norm_sq};
     }
+
+    size_t packedQjlBytes() const { return packed_qjl_bytes; }
+    bool usePolarLut() const { return use_polar_lookup; }
+    bool compactAngles() const { return compact_angle_codes; }
+    size_t angleCodeBytes() const {
+        return pairs * (compactAngles() ? sizeof(uint8_t) : sizeof(uint16_t));
+    }
+    size_t polarQueryWordCount() const { return usePolarLut() ? pairs * levels : dim; }
 
     void applyRotation(const float *input, float *output) const {
         if (!use_rotation) {
@@ -171,21 +185,85 @@ public:
         }
     }
 
+    void packResidualSigns(const float *residual, uint8_t *packed_signs) const {
+        std::memset(packed_signs, 0, packedQjlBytes());
+        std::vector<float> dots(projections);
+        projectQjl(residual, dots.data());
+        for (size_t i = 0; i < projections; ++i) {
+            if (dots[i] >= 0.0f) {
+                packed_signs[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
+            }
+        }
+    }
+
+    void writeAngleCodes(const uint16_t *source_angles, void *destination) const {
+        if (compactAngles()) {
+            auto *encoded = static_cast<uint8_t *>(destination);
+            for (size_t i = 0; i < pairs; ++i) {
+                encoded[i] = static_cast<uint8_t>(source_angles[i]);
+            }
+            return;
+        }
+        std::memcpy(destination, source_angles, pairs * sizeof(uint16_t));
+    }
+
+    uint16_t angleCodeAt(const StorageView &storage, size_t idx) const {
+        if (compactAngles()) {
+            return static_cast<const uint8_t *>(storage.angle_indices)[idx];
+        }
+        return static_cast<const uint16_t *>(storage.angle_indices)[idx];
+    }
+
+    void buildPolarLookup(const float *rotated_query, float *polar_lookup) const {
+        for (size_t pair_idx = 0; pair_idx < pairs; ++pair_idx) {
+            const float q_a = rotated_query[2 * pair_idx];
+            const float q_b = rotated_query[2 * pair_idx + 1];
+            float *pair_lookup = polar_lookup + pair_idx * levels;
+            for (size_t angle_idx = 0; angle_idx < levels; ++angle_idx) {
+                pair_lookup[angle_idx] = q_a * cos_lut[angle_idx] + q_b * sin_lut[angle_idx];
+            }
+        }
+    }
+
+    void buildQjlByteLookup(const float *qjl_query_dots, float *qjl_byte_lut) const {
+        for (size_t byte_idx = 0; byte_idx < packedQjlBytes(); ++byte_idx) {
+            const size_t base_projection = byte_idx * 8;
+            const size_t valid_bits = std::min<size_t>(8, projections - base_projection);
+            float *byte_lookup = qjl_byte_lut + byte_idx * 256;
+            for (size_t pattern = 0; pattern < 256; ++pattern) {
+                float sum = 0.0f;
+                for (size_t bit_idx = 0; bit_idx < valid_bits; ++bit_idx) {
+                    const bool positive = (pattern & (size_t{1} << bit_idx)) != 0;
+                    const float sign = positive ? 1.0f : -1.0f;
+                    sum += sign * qjl_query_dots[base_projection + bit_idx];
+                }
+                byte_lookup[pattern] = sum;
+            }
+        }
+    }
+
     float estimateInnerProduct(const StorageView &storage, const QueryView &query) const {
         float polar_estimate = 0.0f;
-        for (size_t i = 0; i < pairs; ++i) {
-            const uint16_t angle_index = storage.angle_indices[i];
-            const float q_a = query.rotated_query[2 * i];
-            const float q_b = query.rotated_query[2 * i + 1];
-            polar_estimate +=
-                storage.radii[i] * (q_a * cos_lut[angle_index] + q_b * sin_lut[angle_index]);
+        if (usePolarLut()) {
+            for (size_t i = 0; i < pairs; ++i) {
+                const uint16_t angle_index = angleCodeAt(storage, i);
+                polar_estimate +=
+                    storage.radii[i] * query.polar_lookup[i * levels + angle_index];
+            }
+        } else {
+            for (size_t i = 0; i < pairs; ++i) {
+                const uint16_t angle_index = angleCodeAt(storage, i);
+                const float q_a = query.rotated_query[2 * i];
+                const float q_b = query.rotated_query[2 * i + 1];
+                polar_estimate +=
+                    storage.radii[i] * (q_a * cos_lut[angle_index] + q_b * sin_lut[angle_index]);
+            }
         }
 
-        const float qjl_scale = kPi / (2.0f * static_cast<float>(projections));
         float qjl_estimate = 0.0f;
-        for (size_t i = 0; i < projections; ++i) {
+        for (size_t i = 0; i < packedQjlBytes(); ++i) {
             qjl_estimate +=
-                static_cast<float>(storage.residual_signs[i]) * query.qjl_query_dots[i];
+                query.qjl_byte_lut[i * 256 + storage.residual_signs[i]];
         }
 
         return polar_estimate + qjl_scale * qjl_estimate;
@@ -199,6 +277,10 @@ public:
     size_t seed;
     bool use_rotation;
     size_t levels;
+    size_t packed_qjl_bytes;
+    bool compact_angle_codes;
+    bool use_polar_lookup;
+    float qjl_scale;
 
 private:
     void initializeRotation() {
@@ -334,6 +416,7 @@ public:
         normalizeIfNeeded(normalized.data());
 
         std::vector<float> rotated(working_dim);
+        std::vector<uint16_t> angles(state->pairs);
         std::vector<float> reconstructed_rotated(working_dim);
         std::vector<float> reconstructed(working_dim);
         std::vector<float> residual(working_dim);
@@ -345,22 +428,23 @@ public:
         bytes += state->pairs * sizeof(float);
         auto *code_norm_sq = reinterpret_cast<float *>(bytes);
         bytes += sizeof(float);
-        auto *angles = reinterpret_cast<uint16_t *>(bytes);
-        bytes += state->pairs * sizeof(uint16_t);
-        auto *signs = reinterpret_cast<int8_t *>(bytes);
+        void *encoded_angles = bytes;
+        bytes += state->angleCodeBytes();
+        auto *signs = reinterpret_cast<uint8_t *>(bytes);
 
-        state->encodePolar(rotated.data(), radii, angles);
+        state->encodePolar(rotated.data(), radii, angles.data());
+        state->writeAngleCodes(angles.data(), encoded_angles);
         *code_norm_sq = 0.0f;
         for (size_t i = 0; i < state->pairs; ++i) {
             *code_norm_sq += radii[i] * radii[i];
         }
 
-        state->reconstructRotated(radii, angles, reconstructed_rotated.data());
+        state->reconstructRotated(radii, angles.data(), reconstructed_rotated.data());
         state->applyInverseRotation(reconstructed_rotated.data(), reconstructed.data());
         for (size_t i = 0; i < working_dim; ++i) {
             residual[i] = normalized[i] - reconstructed[i];
         }
-        state->sketchResidual(residual.data(), signs);
+        state->packResidualSigns(residual.data(), signs);
 
         input_blob_size = state->storageBlobSize();
     }
@@ -376,12 +460,22 @@ public:
         normalizeIfNeeded(normalized.data());
 
         auto *query_words = static_cast<float *>(query_blob);
-        auto *rotated_query = query_words;
-        auto *qjl_query_dots = query_words + working_dim;
-        auto *query_norm_sq = query_words + working_dim + state->projections;
+        auto *polar_query_data = query_words;
+        query_words += state->polarQueryWordCount();
+        auto *qjl_byte_lut = query_words;
+        auto *query_norm_sq = qjl_byte_lut + state->packedQjlBytes() * 256;
 
-        state->applyRotation(normalized.data(), rotated_query);
-        state->projectQjl(normalized.data(), qjl_query_dots);
+        std::vector<float> rotated_query(working_dim);
+        std::vector<float> qjl_query_dots(state->projections);
+
+        state->applyRotation(normalized.data(), rotated_query.data());
+        if (state->usePolarLut()) {
+            state->buildPolarLookup(rotated_query.data(), polar_query_data);
+        } else {
+            std::memcpy(polar_query_data, rotated_query.data(), working_dim * sizeof(float));
+        }
+        state->projectQjl(normalized.data(), qjl_query_dots.data());
+        state->buildQjlByteLookup(qjl_query_dots.data(), qjl_byte_lut);
         *query_norm_sq = 0.0f;
         for (float value : normalized) {
             *query_norm_sq += value * value;
