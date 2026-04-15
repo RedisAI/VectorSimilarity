@@ -15,6 +15,9 @@
 #include "VecSim/utils/vec_utils.h"
 
 #include <algorithm>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -43,6 +46,46 @@ inline float QjlScale(size_t projections) {
         throw std::invalid_argument("TQ-FLAT requires at least one projection");
     }
     return kPi / (2.0f * static_cast<float>(projections));
+}
+
+inline int PackedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs, size_t projections) {
+    const size_t full_bytes = projections / 8;
+    const size_t tail_bits = projections % 8;
+    int sign_dot = 0;
+
+#if defined(__ARM_NEON)
+    size_t idx = 0;
+    uint32_t diff_count_total = 0;
+    for (; idx + 16 <= full_bytes; idx += 16) {
+        const uint8x16_t diff = veorq_u8(vld1q_u8(lhs + idx), vld1q_u8(rhs + idx));
+        const uint8x16_t bit_counts = vcntq_u8(diff);
+        const uint16x8_t partial16 = vpaddlq_u8(bit_counts);
+        const uint32x4_t partial32 = vpaddlq_u16(partial16);
+        diff_count_total += vaddvq_u32(partial32);
+    }
+    sign_dot += static_cast<int>(idx * 8) - 2 * static_cast<int>(diff_count_total);
+    for (; idx < full_bytes; ++idx) {
+        const int diff_count =
+            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
+        sign_dot += 8 - (2 * diff_count);
+    }
+#else
+    for (size_t idx = 0; idx < full_bytes; ++idx) {
+        const int diff_count =
+            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
+        sign_dot += 8 - (2 * diff_count);
+    }
+#endif
+
+    if (tail_bits != 0) {
+        const uint8_t valid_mask = static_cast<uint8_t>((uint16_t{1} << tail_bits) - 1u);
+        const uint8_t diff_bits = static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) &
+                                                       valid_mask);
+        const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
+        sign_dot += static_cast<int>(tail_bits) - (2 * diff_count);
+    }
+
+    return sign_dot;
 }
 
 struct QueryView {
@@ -254,9 +297,25 @@ public:
             const float q_a = rotated_query[2 * pair_idx];
             const float q_b = rotated_query[2 * pair_idx + 1];
             float *pair_lookup = polar_lookup + pair_idx * levels;
+#if defined(__ARM_NEON)
+            const float32x4_t q_a_vec = vdupq_n_f32(q_a);
+            const float32x4_t q_b_vec = vdupq_n_f32(q_b);
+            size_t angle_idx = 0;
+            for (; angle_idx + 4 <= levels; angle_idx += 4) {
+                const float32x4_t cos_vec = vld1q_f32(cos_lut.data() + angle_idx);
+                const float32x4_t sin_vec = vld1q_f32(sin_lut.data() + angle_idx);
+                const float32x4_t estimate =
+                    vmlaq_f32(vmulq_f32(q_a_vec, cos_vec), q_b_vec, sin_vec);
+                vst1q_f32(pair_lookup + angle_idx, estimate);
+            }
+            for (; angle_idx < levels; ++angle_idx) {
+                pair_lookup[angle_idx] = q_a * cos_lut[angle_idx] + q_b * sin_lut[angle_idx];
+            }
+#else
             for (size_t angle_idx = 0; angle_idx < levels; ++angle_idx) {
                 pair_lookup[angle_idx] = q_a * cos_lut[angle_idx] + q_b * sin_lut[angle_idx];
             }
+#endif
         }
     }
 
@@ -312,18 +371,8 @@ public:
                 (cos_lut[lhs_angle] * cos_lut[rhs_angle] + sin_lut[lhs_angle] * sin_lut[rhs_angle]);
         }
 
-        int sign_dot = 0;
-        for (size_t byte_idx = 0; byte_idx < packedQjlBytes(); ++byte_idx) {
-            const size_t base_projection = byte_idx * 8;
-            const size_t valid_bits = std::min<size_t>(8, projections - base_projection);
-            const uint8_t valid_mask = valid_bits == 8
-                                           ? static_cast<uint8_t>(0xFFu)
-                                           : static_cast<uint8_t>((uint16_t{1} << valid_bits) - 1u);
-            const uint8_t diff_bits = static_cast<uint8_t>(
-                (lhs.residual_signs[byte_idx] ^ rhs.residual_signs[byte_idx]) & valid_mask);
-            const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
-            sign_dot += static_cast<int>(valid_bits) - (2 * diff_count);
-        }
+        const int sign_dot =
+            PackedResidualSignDot(lhs.residual_signs, rhs.residual_signs, projections);
 
         return polar_estimate + qjl_scale * static_cast<float>(sign_dot);
     }
