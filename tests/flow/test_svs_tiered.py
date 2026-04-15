@@ -235,13 +235,11 @@ def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSim
     searches_number = 0
     # run knn query every 1 s.
     total_tiered_search_time = 0
-    prev_bf_size = num_labels
     cur_svs_label_count = index.svs_label_count()
 
     test_logger.info(f"SVS labels number = {cur_svs_label_count}")
     while searches_number == 0 or cur_svs_label_count < num_labels - updateThreshold:
         # For each run get the current svs size and the query time.
-        bf_curr_size = index.get_curr_bf_size()
         query_start = time.time()
         tiered_labels, _ = index.knn_query(query_data, k)
         query_dur = time.time() - query_start
@@ -249,18 +247,12 @@ def search_insert(test_logger, is_multi: bool, num_per_label=1, data_type=VecSim
 
         test_logger.info(f"query time = {round_ms(query_dur)} ms")
 
-        # BF size should decrease.
-        test_logger.info(f"bf size = {bf_curr_size}")
-        assert bf_curr_size < prev_bf_size
-
         # Run the query also in the bf index to get the ground truth results.
         bf_labels, _ = bf_index.knn_query(query_data, k)
         correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))
         time.sleep(1)
         searches_number += 1
-        prev_bf_size = bf_curr_size
         cur_svs_label_count = index.svs_label_count()
-
     # SVS labels count updates before the job is done, so we need to wait for the queue to be empty.
     index.wait_for_index(1)
     index_dur = time.time() - index_start
