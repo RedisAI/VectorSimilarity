@@ -86,7 +86,7 @@ VecSimIndex *NewTQIndexImpl(const VecSimParams *params) {
     const auto &tq_params = params->algoParams.tqHnswParams;
     auto allocator = VecSimAllocator::newVecsimAllocator();
     const auto *tq_core_params = reinterpret_cast<const TQFlatParams *>(&tq_params);
-    auto components = TQFlatDetails::CreateTQComponents<Metric>(allocator, tq_core_params);
+    auto components = TQFlatDetails::CreateTQHNSWComponents<Metric>(allocator, tq_core_params);
     auto stored_data_size = TQFlatDetails::GetStorageDataSize<Metric>(tq_core_params);
     auto abstract_init_params =
         NewTQAbstractInitParams(&tq_params, params->logCtx, allocator, stored_data_size);

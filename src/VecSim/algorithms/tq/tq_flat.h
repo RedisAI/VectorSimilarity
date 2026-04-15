@@ -302,6 +302,33 @@ public:
         return polar_estimate + qjl_scale * qjl_estimate;
     }
 
+    float estimateInnerProductSymmetric(const StorageView &lhs, const StorageView &rhs) const {
+        float polar_estimate = 0.0f;
+        for (size_t i = 0; i < pairs; ++i) {
+            const uint16_t lhs_angle = angleCodeAt(lhs, i);
+            const uint16_t rhs_angle = angleCodeAt(rhs, i);
+            polar_estimate += lhs.radii[i] * rhs.radii[i] *
+                              (cos_lut[lhs_angle] * cos_lut[rhs_angle] +
+                               sin_lut[lhs_angle] * sin_lut[rhs_angle]);
+        }
+
+        int sign_dot = 0;
+        for (size_t byte_idx = 0; byte_idx < packedQjlBytes(); ++byte_idx) {
+            const size_t base_projection = byte_idx * 8;
+            const size_t valid_bits = std::min<size_t>(8, projections - base_projection);
+            const uint8_t valid_mask =
+                valid_bits == 8 ? static_cast<uint8_t>(0xFFu)
+                                : static_cast<uint8_t>((uint16_t{1} << valid_bits) - 1u);
+            const uint8_t diff_bits =
+                static_cast<uint8_t>((lhs.residual_signs[byte_idx] ^ rhs.residual_signs[byte_idx]) &
+                                     valid_mask);
+            const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
+            sign_dot += static_cast<int>(valid_bits) - (2 * diff_count);
+        }
+
+        return polar_estimate + qjl_scale * static_cast<float>(sign_dot);
+    }
+
     size_t dim;
     size_t pairs;
     size_t total_bits;
@@ -437,6 +464,30 @@ private:
 };
 
 template <VecSimMetric Metric>
+class TQSymmetricDistanceCalculator : public IndexCalculatorInterface<float> {
+public:
+    TQSymmetricDistanceCalculator(std::shared_ptr<VecSimAllocator> allocator,
+                                  std::shared_ptr<TQModelState> state)
+        : IndexCalculatorInterface<float>(allocator), state(std::move(state)) {}
+
+    float calcDistance(const void *v1, const void *v2, size_t dim) const override {
+        UNUSED(dim);
+        const auto lhs = state->storageView(v1);
+        const auto rhs = state->storageView(v2);
+        const float estimate = state->estimateInnerProductSymmetric(lhs, rhs);
+
+        if constexpr (Metric == VecSimMetric_L2) {
+            return std::max(lhs.code_norm_sq + rhs.code_norm_sq - 2.0f * estimate, 0.0f);
+        }
+
+        return 1.0f - estimate;
+    }
+
+private:
+    std::shared_ptr<TQModelState> state;
+};
+
+template <VecSimMetric Metric>
 class TQPreprocessor : public PreprocessorInterface {
 public:
     TQPreprocessor(std::shared_ptr<VecSimAllocator> allocator, std::shared_ptr<TQModelState> state)
@@ -562,6 +613,49 @@ private:
 };
 
 template <VecSimMetric Metric>
+class TQSymmetricPreprocessor : public PreprocessorInterface {
+public:
+    TQSymmetricPreprocessor(std::shared_ptr<VecSimAllocator> allocator,
+                            std::shared_ptr<TQModelState> state)
+        : PreprocessorInterface(allocator), delegate(allocator, std::move(state)) {}
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &input_blob_size, unsigned char alignment) const override {
+        size_t storage_blob_size = input_blob_size;
+        size_t query_blob_size = input_blob_size;
+        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, query_blob_size,
+                   alignment);
+        input_blob_size = storage_blob_size;
+    }
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char alignment) const override {
+        UNUSED(alignment);
+        delegate.preprocessForStorage(original_blob, storage_blob, storage_blob_size);
+        delegate.preprocessForStorage(original_blob, query_blob, query_blob_size);
+    }
+
+    void preprocessForStorage(const void *original_blob, void *&storage_blob,
+                              size_t &input_blob_size) const override {
+        delegate.preprocessForStorage(original_blob, storage_blob, input_blob_size);
+    }
+
+    void preprocessQuery(const void *original_blob, void *&query_blob, size_t &input_blob_size,
+                         unsigned char alignment) const override {
+        UNUSED(alignment);
+        delegate.preprocessForStorage(original_blob, query_blob, input_blob_size);
+    }
+
+    void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
+        delegate.preprocessStorageInPlace(original_blob, input_blob_size);
+    }
+
+private:
+    TQPreprocessor<Metric> delegate;
+};
+
+template <VecSimMetric Metric>
 inline size_t GetStorageDataSize(const TQFlatParams *params) {
     return TQModelState(params->dim, params->bits, params->projections, params->seed,
                         params->useRotation)
@@ -580,6 +674,22 @@ inline IndexComponents<float, float> CreateTQComponents(std::shared_ptr<VecSimAl
     int rc = preprocessors->addPreprocessor(tq_preprocessor);
     UNUSED(rc);
     assert(rc != -1 && "TQ preprocessor was not added correctly");
+    return {index_calculator, preprocessors};
+}
+
+template <VecSimMetric Metric>
+inline IndexComponents<float, float>
+CreateTQHNSWComponents(std::shared_ptr<VecSimAllocator> allocator, const TQFlatParams *params) {
+    auto state = std::make_shared<TQModelState>(params->dim, params->bits, params->projections,
+                                                params->seed, params->useRotation);
+    auto *index_calculator =
+        new (allocator) TQSymmetricDistanceCalculator<Metric>(allocator, state);
+    auto *preprocessors =
+        new (allocator) MultiPreprocessorsContainer<float, 1>(allocator, alignof(float));
+    auto *tq_preprocessor = new (allocator) TQSymmetricPreprocessor<Metric>(allocator, state);
+    int rc = preprocessors->addPreprocessor(tq_preprocessor);
+    UNUSED(rc);
+    assert(rc != -1 && "TQ symmetric preprocessor was not added correctly");
     return {index_calculator, preprocessors};
 }
 
