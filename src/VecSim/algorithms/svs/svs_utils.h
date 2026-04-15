@@ -346,8 +346,9 @@ struct SVSGraphBuilder {
 };
 
 // A slot in the shared SVS thread pool. Wraps an SVS Thread with an occupancy flag
-// used by the rental mechanism. Stored via shared_ptr so that a renter's reference
-// keeps the slot (and its OS thread) alive even if the pool shrinks mid-rental.
+// used by the rental mechanism. Stored as shared_ptr in the pool so that deferred
+// resize can safely shrink. Renters hold raw pointers (safe because the deferred-resize
+// protocol prevents slot destruction while jobs are in flight).
 struct ThreadSlot {
     svs::threads::Thread thread;
     std::atomic<bool> occupied{false};
@@ -369,8 +370,11 @@ struct ThreadSlot {
 // * Shrinking while threads are rented is safe (shared_ptr lifecycle)
 class VecSimSVSThreadPoolImpl {
     // RAII guard for threads rented from the shared pool. On destruction, marks all
-    // rented slots as unoccupied (lock-free atomic stores). Holds shared_ptr references
-    // to keep slots alive even if the pool shrinks while the rental is active.
+    // rented slots as unoccupied (lock-free atomic stores). Uses raw pointers to
+    // avoid shared_ptr ref-counting overhead on the hot path.
+    // Safety: raw pointers are safe because the deferred-resize protocol ensures the
+    // pool cannot shrink (destroy slots) while scheduled jobs are in flight, and all
+    // multi-threaded SVS operations run within scheduled jobs.
     class RentedThreads {
     public:
         RentedThreads() = default;
@@ -381,7 +385,7 @@ class VecSimSVSThreadPoolImpl {
 
         ~RentedThreads() { release(); }
 
-        void add(std::shared_ptr<ThreadSlot> slot) { slots_.push_back(std::move(slot)); }
+        void add(ThreadSlot *slot) { slots_.push_back(slot); }
 
         size_t count() const { return slots_.size(); }
 
@@ -392,13 +396,13 @@ class VecSimSVSThreadPoolImpl {
 
     private:
         void release() {
-            for (auto &slot : slots_) {
+            for (auto *slot : slots_) {
                 slot->occupied.store(false, std::memory_order_release);
             }
             slots_.clear();
         }
 
-        std::vector<std::shared_ptr<ThreadSlot>> slots_;
+        std::vector<ThreadSlot *> slots_;
     };
 
     // Create a pool with `num_threads` total parallelism (including the calling thread).
@@ -532,7 +536,7 @@ private:
         for (auto &slot : slots_) {
             bool expected = false;
             if (slot->occupied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-                rented.add(slot);
+                rented.add(slot.get());
                 if (++rented_count >= count) {
                     break;
                 }
