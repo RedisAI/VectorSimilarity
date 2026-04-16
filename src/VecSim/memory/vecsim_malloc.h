@@ -113,6 +113,10 @@ inline void vecsim_free(void *p) { VecSimAllocator::memFunctions.freeFunction(p)
 template <typename T>
 struct VecsimSTLAllocator {
     using value_type = T;
+    // Tiered indexes use separate allocators for frontend/backend/management layers.
+    // Swapping containers across these layers is safe (same underlying alloc functions),
+    // so we must tell std::vector::swap to swap the allocator along with the data.
+    using propagate_on_container_swap = std::true_type;
 
 private:
     VecsimSTLAllocator() {}
