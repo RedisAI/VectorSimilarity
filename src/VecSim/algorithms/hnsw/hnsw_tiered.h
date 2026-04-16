@@ -1201,7 +1201,6 @@ template <typename DataType, typename DistType>
 VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
     VecSimIndexBasicInfo info = this->backendIndex->getBasicInfo();
     info.isTiered = true;
-    info.algo = VecSimAlgo_HNSWLIB;
     return info;
 }
 
