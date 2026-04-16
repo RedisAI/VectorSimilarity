@@ -365,11 +365,50 @@ public:
 
     float estimateInnerProductSymmetric(const StorageView &lhs, const StorageView &rhs) const {
         float polar_estimate = 0.0f;
+#if defined(__ARM_NEON)
+        if (compactAngles() && !nibble_angle_codes) {
+            const auto *lhs_angles = static_cast<const uint8_t *>(lhs.angle_indices);
+            const auto *rhs_angles = static_cast<const uint8_t *>(rhs.angle_indices);
+            const uint8x8_t mask_vec = vdup_n_u8(static_cast<uint8_t>(angle_delta_mask));
+            float32x4_t acc0 = vdupq_n_f32(0.0f);
+            float32x4_t acc1 = vdupq_n_f32(0.0f);
+            alignas(16) uint8_t deltas[8];
+            alignas(16) float delta_cos_values[8];
+            size_t i = 0;
+            for (; i + 8 <= pairs; i += 8) {
+                const uint8x8_t lhs_vec = vld1_u8(lhs_angles + i);
+                const uint8x8_t rhs_vec = vld1_u8(rhs_angles + i);
+                const uint8x8_t delta_vec = vand_u8(vsub_u8(lhs_vec, rhs_vec), mask_vec);
+                vst1_u8(deltas, delta_vec);
+                for (size_t lane = 0; lane < 8; ++lane) {
+                    delta_cos_values[lane] = delta_cos_lut[deltas[lane]];
+                }
+
+                const float32x4_t lhs_radii_0 = vld1q_f32(lhs.radii + i);
+                const float32x4_t rhs_radii_0 = vld1q_f32(rhs.radii + i);
+                const float32x4_t delta_cos_0 = vld1q_f32(delta_cos_values);
+                acc0 = vmlaq_f32(acc0, vmulq_f32(lhs_radii_0, rhs_radii_0), delta_cos_0);
+
+                const float32x4_t lhs_radii_1 = vld1q_f32(lhs.radii + i + 4);
+                const float32x4_t rhs_radii_1 = vld1q_f32(rhs.radii + i + 4);
+                const float32x4_t delta_cos_1 = vld1q_f32(delta_cos_values + 4);
+                acc1 = vmlaq_f32(acc1, vmulq_f32(lhs_radii_1, rhs_radii_1), delta_cos_1);
+            }
+
+            polar_estimate = vaddvq_f32(acc0) + vaddvq_f32(acc1);
+            for (; i < pairs; ++i) {
+                const size_t delta =
+                    (static_cast<size_t>(lhs_angles[i]) - static_cast<size_t>(rhs_angles[i])) &
+                    angle_delta_mask;
+                polar_estimate += lhs.radii[i] * rhs.radii[i] * delta_cos_lut[delta];
+            }
+        } else
+#endif
         for (size_t i = 0; i < pairs; ++i) {
             const uint16_t lhs_angle = angleCodeAt(lhs, i);
             const uint16_t rhs_angle = angleCodeAt(rhs, i);
             const size_t delta = (static_cast<size_t>(lhs_angle) -
-                                  static_cast<size_t>(rhs_angle)) &
+                                 static_cast<size_t>(rhs_angle)) &
                                  angle_delta_mask;
             polar_estimate += lhs.radii[i] * rhs.radii[i] * delta_cos_lut[delta];
         }

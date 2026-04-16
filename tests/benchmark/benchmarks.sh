@@ -10,6 +10,7 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     done
     echo updated_index_single_fp32
     echo index_internals_incoming_edges_fp32
+    echo tq_symmetric_fp32
     echo svs_training_fp32
     echo svs_training_fp16
     echo basics_svs_single_fp32
@@ -97,6 +98,8 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
 # hnsw internals benchmarks
 elif [ "$BM_TYPE" = "bm-hnsw-internals-incoming-edges" ] ; then
     echo index_internals_incoming_edges_fp32
+elif [ "$BM_TYPE" = "bm-tq-symmetric-fp32" ] ; then
+    echo tq_symmetric_fp32
 
 # SVS benchmarks
 elif [ "$BM_TYPE" = "bm-svs-train-fp32" ] ; then
