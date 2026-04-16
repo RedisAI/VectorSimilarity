@@ -113,6 +113,10 @@ inline void vecsim_free(void *p) { VecSimAllocator::memFunctions.freeFunction(p)
 template <typename T>
 struct VecsimSTLAllocator {
     using value_type = T;
+    // Tiered indexes use separate allocators for frontend/backend/management layers.
+    // Swapping containers across these layers is safe (same underlying alloc functions),
+    // so we must tell std::vector::swap to swap the allocator along with the data.
+    using propagate_on_container_swap = std::true_type;
 
 private:
     VecsimSTLAllocator() {}
@@ -148,3 +152,9 @@ template <class T, class U>
 bool operator!=(const VecsimSTLAllocator<T> &a, const VecsimSTLAllocator<U> &b) {
     return a.vecsim_allocator != b.vecsim_allocator;
 }
+
+// Guard against regressions of the allocator swap-propagation trait. Tiered indexes swap
+// std::vectors whose allocators reference different VecSimAllocator instances, which is UB
+// unless the allocator is swapped along with the buffer (see hnsw_tiered.h getNextResults).
+static_assert(std::allocator_traits<VecsimSTLAllocator<char>>::propagate_on_container_swap::value,
+              "VecsimSTLAllocator must propagate on container swap.");
