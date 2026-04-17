@@ -43,7 +43,11 @@ public:
     size_t indexCapacity() const override;
     std::unique_ptr<RawDataContainer::Iterator> getVectorsIterator() const;
     const DataType *getDataByInternalId(idType id) const {
-        return reinterpret_cast<const DataType *>(this->vectors->getElement(id));
+        // `this->vectors` is always a DataBlocksContainer; skip the virtual dispatch
+        // through the RawDataContainer base.
+        return reinterpret_cast<const DataType *>(
+            static_cast<const DataBlocksContainer *>(this->vectors)
+                ->DataBlocksContainer::getElement(id));
     }
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
