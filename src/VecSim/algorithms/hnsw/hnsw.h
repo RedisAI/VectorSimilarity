@@ -385,7 +385,12 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
 
 template <typename DataType, typename DistType>
 const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return this->vectors->getElement(internal_id);
+    // `this->vectors` is always a DataBlocksContainer (created in VecSimIndexAbstract's
+    // constructor and never reassigned). Call the concrete method directly to skip the
+    // virtual dispatch through the RawDataContainer base; this is invoked on every
+    // visited neighbor during HNSW search.
+    return static_cast<const DataBlocksContainer *>(this->vectors)
+        ->DataBlocksContainer::getElement(internal_id);
 }
 
 template <typename DataType, typename DistType>

@@ -84,6 +84,9 @@ protected:
     RawDataContainer *vectors;      // The raw vectors data container.
 private:
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
+    // Cached distance function pointer, pulled from indexCalculator at construction time.
+    // Used on the hot path (calcDistance) to skip the virtual dispatch through indexCalculator.
+    spaces::dist_func_t<DistType> cachedDistFunc;
     PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
 
     size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
@@ -120,7 +123,9 @@ public:
           metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
           isMulti(params.multi), logCallbackCtx(params.logCtx),
-          indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
+          indexCalculator(components.indexCalculator),
+          cachedDistFunc(components.indexCalculator->getDistFunc()),
+          preprocessors(components.preprocessors),
           inputBlobSize(params.inputBlobSize), storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
         assert(storedDataSize);
@@ -142,10 +147,14 @@ public:
     /**
      * @brief Calculate the distance between two vectors based on index parameters.
      *
+     * Calls the cached distance function pointer directly instead of going through the
+     * indexCalculator virtual dispatch; this matters on the HNSW hot path, where every
+     * visited candidate invokes this function at least once.
+     *
      * @return the distance between the vectors.
      */
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
-        return indexCalculator->calcDistance(vector_data1, vector_data2, this->dim);
+        return cachedDistFunc(vector_data1, vector_data2, this->dim);
     }
 
     /**

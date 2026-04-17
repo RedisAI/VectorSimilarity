@@ -23,6 +23,10 @@ public:
     virtual ~IndexCalculatorInterface() = default;
 
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
+
+    // Expose the underlying distance function so the index can cache it and
+    // avoid a virtual dispatch on every per-candidate distance call.
+    virtual spaces::dist_func_t<DistType> getDistFunc() const = 0;
 };
 
 /**
@@ -56,4 +60,6 @@ public:
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         return this->dist_func(v1, v2, dim);
     }
+
+    spaces::dist_func_t<DistType> getDistFunc() const override { return this->dist_func; }
 };
