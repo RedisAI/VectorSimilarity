@@ -40,7 +40,13 @@ public:
 
     Status addElement(const void *element, size_t id) override;
 
-    const char *getElement(size_t id) const override;
+    // Defined inline so the hot HNSW/BF search path (via getDataByInternalId) sees the
+    // full pointer arithmetic and can optimize it; matches the v2.10.21 baseline which
+    // had this fully inlined. Uses unchecked operator[] like the baseline.
+    const char *getElement(size_t id) const override {
+        assert(id < element_count);
+        return blocks[id / block_size].getElement(id % block_size);
+    }
 
     Status removeElement(size_t id) override;
 

@@ -31,6 +31,10 @@ public:
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const {
         return this->dist_func(7);
     }
+
+    // Required by IndexCalculatorInterface; the dummy uses a non-standard dist func
+    // signature so it cannot expose it through the standard dist_func_t slot.
+    spaces::dist_func_t<DistType> getDistFunc() const override { return nullptr; }
 };
 
 } // namespace dummyCalcultor
