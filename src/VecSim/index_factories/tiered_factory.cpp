@@ -58,6 +58,11 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&bf_params, params->primaryIndexParams->logCtx, false);
     assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
+    // TQ-HNSW stores a quantized blob whose size differs from the BF frontend's
+    // raw float storage, so the stored-size assertion only applies to vanilla HNSW.
+    if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
+        assert(hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
+    }
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 

@@ -204,6 +204,13 @@ typedef struct {
     double epsilon;
 } TQHNSWParams;
 
+#ifdef __cplusplus
+static_assert(sizeof(TQFlatParams) == offsetof(TQHNSWParams, M),
+              "TQHNSWParams must preserve TQFlatParams as an exact prefix");
+static_assert(alignof(TQHNSWParams) >= alignof(TQFlatParams),
+              "TQHNSWParams alignment must be compatible with TQFlatParams");
+#endif
+
 typedef enum {
     VecSimSvsQuant_NONE = 0,           // No quantization.
     VecSimSvsQuant_Scalar = 1,         // 8-bit scalar quantization

@@ -1199,7 +1199,9 @@ VecSimDebugInfoIterator *TieredHNSWIndex<DataType, DistType>::debugInfoIterator(
 
 template <typename DataType, typename DistType>
 VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
-    VecSimIndexBasicInfo info = this->backendIndex->getBasicInfo();
+    // Virtual-dispatch into the backend so callers observe the correct algo
+    // (VecSimAlgo_HNSWLIB for tiered-HNSW, VecSimAlgo_TQ_HNSW for tiered-TQ).
+    VecSimIndexBasicInfo info = this->backendIndex->basicInfo();
     info.isTiered = true;
     return info;
 }

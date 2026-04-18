@@ -66,6 +66,10 @@ inline HNSWParams AsHNSWParams(const TQHNSWParams &params) {
     };
 }
 
+inline const TQFlatParams *AsTQFlatParamsPrefix(const TQHNSWParams *params) {
+    return reinterpret_cast<const TQFlatParams *>(params);
+}
+
 inline AbstractIndexInitParams NewTQAbstractInitParams(const TQHNSWParams *params, void *logCtx,
                                                        std::shared_ptr<VecSimAllocator> allocator,
                                                        size_t stored_data_size) {
@@ -85,7 +89,7 @@ template <VecSimMetric Metric>
 VecSimIndex *NewTQIndexImpl(const VecSimParams *params) {
     const auto &tq_params = params->algoParams.tqHnswParams;
     auto allocator = VecSimAllocator::newVecsimAllocator();
-    const auto *tq_core_params = reinterpret_cast<const TQFlatParams *>(&tq_params);
+    const auto *tq_core_params = AsTQFlatParamsPrefix(&tq_params);
     auto components = TQFlatDetails::CreateTQHNSWComponents<Metric>(allocator, tq_core_params);
     auto stored_data_size = TQFlatDetails::GetStorageDataSize<Metric>(tq_core_params);
     auto abstract_init_params =
@@ -101,13 +105,17 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
         if (tq_params.type != VecSimType_FLOAT32) {
             throw std::invalid_argument("TQ-HNSW currently supports FLOAT32 input only");
         }
+        if (tq_params.metric == VecSimMetric_L2) {
+            throw std::invalid_argument(
+                "TQ-HNSW currently rejects L2 until the TQ storage layout has a persisted migration");
+        }
         switch (tq_params.metric) {
-        case VecSimMetric_L2:
-            return NewTQIndexImpl<VecSimMetric_L2>(params);
         case VecSimMetric_IP:
             return NewTQIndexImpl<VecSimMetric_IP>(params);
         case VecSimMetric_Cosine:
             return NewTQIndexImpl<VecSimMetric_Cosine>(params);
+        case VecSimMetric_L2:
+            break;
         }
         return nullptr;
     }
@@ -262,8 +270,7 @@ size_t EstimateElementSize(const TQHNSWParams *params) {
     size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
     size_t size_total_data_per_element =
         elementGraphDataSize +
-        TQFlatDetails::GetStorageDataSize<VecSimMetric_Cosine>(
-            reinterpret_cast<const TQFlatParams *>(params));
+        TQFlatDetails::GetStorageDataSize<VecSimMetric_Cosine>(AsTQFlatParamsPrefix(params));
     size_t size_label_lookup_entry = sizeof(void *);
     size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) + size_label_lookup_entry;
     return size_meta_data + size_total_data_per_element;
@@ -311,6 +318,12 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
 
     VecSimAlgo algo = VecSimAlgo_BF;
     Serializer::readBinaryPOD(input, algo);
+    if (algo == VecSimAlgo_TQ_HNSW) {
+        input.close();
+        throw std::runtime_error(
+            "Cannot load index: TQ-HNSW serialization is not supported yet because the "
+            "persisted storage layout is still unstable");
+    }
     if (algo != VecSimAlgo_HNSWLIB) {
         input.close();
         auto bad_name = VecSimAlgo_ToString(algo);
