@@ -42,12 +42,16 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with AVX512F")
 		set_source_files_properties(functions/AVX512F.cpp PROPERTIES COMPILE_FLAGS "-mavx512f")
 		list(APPEND OPTIMIZATIONS functions/AVX512F.cpp)
+		set_source_files_properties(functions/TQ_FP32_AVX512F.cpp PROPERTIES COMPILE_FLAGS "-mavx512f")
+		list(APPEND OPTIMIZATIONS functions/TQ_FP32_AVX512F.cpp)
 	endif()
 
 	if(CXX_AVX512F AND CXX_AVX512BW AND CXX_AVX512VL AND CXX_AVX512VNNI)
 		message("Building with AVX512F, AVX512BW, AVX512VL and AVX512VNNI")
 		set_source_files_properties(functions/AVX512F_BW_VL_VNNI.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512bw -mavx512vl -mavx512vnni")
 		list(APPEND OPTIMIZATIONS functions/AVX512F_BW_VL_VNNI.cpp)
+		set_source_files_properties(functions/TQ_POLAR_AVX512F_BW_VL_VNNI.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512bw -mavx512vl -mavx512vnni")
+		list(APPEND OPTIMIZATIONS functions/TQ_POLAR_AVX512F_BW_VL_VNNI.cpp)
 	endif()
 
 	# F16C is VEX-encoded and requires AVX state, so it is only meaningful when the toolchain
@@ -64,6 +68,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with AVX2")
 		set_source_files_properties(functions/AVX2.cpp PROPERTIES COMPILE_FLAGS -mavx2)
 		list(APPEND OPTIMIZATIONS functions/AVX2.cpp)
+		set_source_files_properties(functions/TQ_POLAR_AVX2.cpp PROPERTIES COMPILE_FLAGS -mavx2)
+		list(APPEND OPTIMIZATIONS functions/TQ_POLAR_AVX2.cpp)
 	endif()
 
 	if(CXX_AVX2 AND _has_full_f16c)
@@ -94,6 +100,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with AVX")
 		set_source_files_properties(functions/AVX.cpp PROPERTIES COMPILE_FLAGS -mavx)
 		list(APPEND OPTIMIZATIONS functions/AVX.cpp)
+		set_source_files_properties(functions/TQ_FP32_AVX.cpp PROPERTIES COMPILE_FLAGS -mavx)
+		list(APPEND OPTIMIZATIONS functions/TQ_FP32_AVX.cpp)
 	endif()
 
 	if(CXX_SSE3)
@@ -106,6 +114,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with SSE4")
 		set_source_files_properties(functions/SSE4.cpp PROPERTIES COMPILE_FLAGS -msse4.1)
 		list(APPEND OPTIMIZATIONS functions/SSE4.cpp)
+		set_source_files_properties(functions/TQ_POLAR_SSE4.cpp PROPERTIES COMPILE_FLAGS -msse4.1)
+		list(APPEND OPTIMIZATIONS functions/TQ_POLAR_SSE4.cpp)
 	endif()
 
 	# SSE4 SQ8↔FP16 kernels need F16C, which is VEX-encoded → require -mavx alongside -mf16c
@@ -120,6 +130,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with SSE")
 		set_source_files_properties(functions/SSE.cpp PROPERTIES COMPILE_FLAGS -msse)
 		list(APPEND OPTIMIZATIONS functions/SSE.cpp)
+		set_source_files_properties(functions/TQ_FP32_SSE.cpp PROPERTIES COMPILE_FLAGS -msse)
+		list(APPEND OPTIMIZATIONS functions/TQ_FP32_SSE.cpp)
 	endif()
 endif()
 
@@ -136,6 +148,10 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with ARMV8A")
 		set_source_files_properties(functions/NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
 		list(APPEND OPTIMIZATIONS functions/NEON.cpp)
+		set_source_files_properties(functions/TQ_FP32_NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
+		list(APPEND OPTIMIZATIONS functions/TQ_FP32_NEON.cpp)
+		set_source_files_properties(functions/TQ_POLAR_NEON.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a")
+		list(APPEND OPTIMIZATIONS functions/TQ_POLAR_NEON.cpp)
 	endif()
 
 	# NEON half-precision support
@@ -157,6 +173,8 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with SVE")
 		set_source_files_properties(functions/SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 		list(APPEND OPTIMIZATIONS functions/SVE.cpp)
+		set_source_files_properties(functions/TQ_FP32_SVE.cpp PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+		list(APPEND OPTIMIZATIONS functions/TQ_FP32_SVE.cpp)
 	endif()
 
 	# SVE with BF16 support
@@ -171,6 +189,8 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 		message("Building with ARMV9A and SVE2")
 		set_source_files_properties(functions/SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
 		list(APPEND OPTIMIZATIONS functions/SVE2.cpp)
+		set_source_files_properties(functions/TQ_FP32_SVE2.cpp PROPERTIES COMPILE_FLAGS "-march=armv9-a+sve2")
+		list(APPEND OPTIMIZATIONS functions/TQ_FP32_SVE2.cpp)
 	endif()
 endif()
 
@@ -179,6 +199,7 @@ add_library(VectorSimilaritySpaces
 	L2_space.cpp
 	IP_space.cpp
 	spaces.cpp
+	functions/TQ.cpp
 	${OPTIMIZATIONS}
 	computer/preprocessor_container.cpp
 )

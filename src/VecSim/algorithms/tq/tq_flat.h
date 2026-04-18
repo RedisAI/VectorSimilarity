@@ -12,12 +12,10 @@
 #include "VecSim/spaces/computer/calculator.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
+#include "VecSim/spaces/functions/TQ.h"
 #include "VecSim/utils/vec_utils.h"
 
 #include <algorithm>
-#if defined(__ARM_NEON)
-#include <arm_neon.h>
-#endif
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -48,34 +46,33 @@ inline float QjlScale(size_t projections) {
     return kPi / (2.0f * static_cast<float>(projections));
 }
 
-inline int PackedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs, size_t projections) {
+inline float DotProductFallback(const float *lhs, const float *rhs, size_t dim) {
+    float sum = 0.0f;
+    for (size_t idx = 0; idx < dim; ++idx) {
+        sum += lhs[idx] * rhs[idx];
+    }
+    return sum;
+}
+
+inline float SumSquaresFallback(const float *values, size_t dim) {
+    float sum = 0.0f;
+    for (size_t idx = 0; idx < dim; ++idx) {
+        sum += values[idx] * values[idx];
+    }
+    return sum;
+}
+
+inline int PackedResidualSignDotFallback(const uint8_t *lhs, const uint8_t *rhs,
+                                         size_t projections) {
     const size_t full_bytes = projections / 8;
     const size_t tail_bits = projections % 8;
     int sign_dot = 0;
 
-#if defined(__ARM_NEON)
-    size_t idx = 0;
-    uint32_t diff_count_total = 0;
-    for (; idx + 16 <= full_bytes; idx += 16) {
-        const uint8x16_t diff = veorq_u8(vld1q_u8(lhs + idx), vld1q_u8(rhs + idx));
-        const uint8x16_t bit_counts = vcntq_u8(diff);
-        const uint16x8_t partial16 = vpaddlq_u8(bit_counts);
-        const uint32x4_t partial32 = vpaddlq_u16(partial16);
-        diff_count_total += vaddvq_u32(partial32);
-    }
-    sign_dot += static_cast<int>(idx * 8) - 2 * static_cast<int>(diff_count_total);
-    for (; idx < full_bytes; ++idx) {
-        const int diff_count =
-            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
-        sign_dot += 8 - (2 * diff_count);
-    }
-#else
     for (size_t idx = 0; idx < full_bytes; ++idx) {
         const int diff_count =
             __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
         sign_dot += 8 - (2 * diff_count);
     }
-#endif
 
     if (tail_bits != 0) {
         const uint8_t valid_mask = static_cast<uint8_t>((uint16_t{1} << tail_bits) - 1u);
@@ -112,9 +109,11 @@ public:
           angle_delta_mask(levels - 1), packed_qjl_bytes((projections + 7) / 8),
           nibble_angle_codes(levels <= 16), compact_angle_codes(levels <= 256),
           use_polar_lookup(levels <= 256), qjl_scale(QjlScale(projections)),
-          rotation_columns(dim * dim, 0.0f),
+          rotation_columns(dim * dim, 0.0f), rotation_rows(dim * dim, 0.0f),
           qjl_projection_rows(projections * dim, 0.0f), cos_lut(levels), sin_lut(levels),
-          delta_cos_lut(levels) {
+          delta_cos_lut(levels), dot_product_func(nullptr), sum_squares_func(nullptr),
+          pair_sum_squares_func(nullptr), packed_sign_dot_func(nullptr),
+          symmetric_polar_func(nullptr) {
         if (!IsEven(dim)) {
             throw std::invalid_argument("TQ-FLAT requires even dimensions");
         }
@@ -122,6 +121,14 @@ public:
         initializeRotation();
         initializeQjlProjectionRows();
         initializeTrigLut();
+        dot_product_func = spaces::Choose_FP32_InnerProduct_implementation_TQ(dim);
+        sum_squares_func = spaces::Choose_FP32_SumSquares_implementation_TQ(dim);
+        pair_sum_squares_func = spaces::Choose_FP32_SumSquares_implementation_TQ(pairs);
+        packed_sign_dot_func =
+            spaces::Choose_TQ_PackedResidualSignDot_implementation(projections);
+        if (compactAngles()) {
+            symmetric_polar_func = spaces::Choose_TQ_SymmetricPolar_implementation(pairs);
+        }
     }
 
     size_t storageBlobSize() const {
@@ -181,11 +188,7 @@ public:
             return;
         }
         for (size_t row = 0; row < dim; ++row) {
-            float sum = 0.0f;
-            for (size_t col = 0; col < dim; ++col) {
-                sum += rotation_columns[col * dim + row] * input[col];
-            }
-            output[row] = sum;
+            output[row] = dotProduct(rotation_rows.data() + row * dim, input, dim);
         }
     }
 
@@ -195,11 +198,7 @@ public:
             return;
         }
         for (size_t col = 0; col < dim; ++col) {
-            float sum = 0.0f;
-            for (size_t row = 0; row < dim; ++row) {
-                sum += rotation_columns[col * dim + row] * input[row];
-            }
-            output[col] = sum;
+            output[col] = dotProduct(rotation_columns.data() + col * dim, input, dim);
         }
     }
 
@@ -228,12 +227,8 @@ public:
 
     void projectQjl(const float *input, float *output) const {
         for (size_t row = 0; row < projections; ++row) {
-            float sum = 0.0f;
             const float *projection_row = qjl_projection_rows.data() + row * dim;
-            for (size_t col = 0; col < dim; ++col) {
-                sum += projection_row[col] * input[col];
-            }
-            output[row] = sum;
+            output[row] = dotProduct(projection_row, input, dim);
         }
     }
 
@@ -338,6 +333,39 @@ public:
         }
     }
 
+    float dotProduct(const float *lhs, const float *rhs, size_t dimension) const {
+        if (dot_product_func) {
+            return dot_product_func(lhs, rhs, dimension);
+        }
+        return DotProductFallback(lhs, rhs, dimension);
+    }
+
+    float sumSquares(const float *values, size_t dimension) const {
+        if (dimension == dim && sum_squares_func) {
+            return sum_squares_func(values, dimension);
+        }
+        if (dimension == pairs && pair_sum_squares_func) {
+            return pair_sum_squares_func(values, dimension);
+        }
+        return SumSquaresFallback(values, dimension);
+    }
+
+    int packedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs) const {
+        if (packed_sign_dot_func) {
+            return packed_sign_dot_func(lhs, rhs, projections);
+        }
+        return PackedResidualSignDotFallback(lhs, rhs, projections);
+    }
+
+    void unpackNibbleAngles(const void *encoded_angles, uint8_t *decoded_angles) const {
+        const auto *encoded = static_cast<const uint8_t *>(encoded_angles);
+        for (size_t idx = 0; idx < pairs; ++idx) {
+            const uint8_t packed = encoded[idx / 2];
+            decoded_angles[idx] = (idx % 2 == 0) ? static_cast<uint8_t>(packed & 0x0F)
+                                                 : static_cast<uint8_t>((packed >> 4) & 0x0F);
+        }
+    }
+
     float estimateInnerProduct(const StorageView &storage, const QueryView &query) const {
         float polar_estimate = 0.0f;
         if (usePolarLut()) {
@@ -365,56 +393,36 @@ public:
 
     float estimateInnerProductSymmetric(const StorageView &lhs, const StorageView &rhs) const {
         float polar_estimate = 0.0f;
-#if defined(__ARM_NEON)
-        if (compactAngles() && !nibble_angle_codes) {
-            const auto *lhs_angles = static_cast<const uint8_t *>(lhs.angle_indices);
-            const auto *rhs_angles = static_cast<const uint8_t *>(rhs.angle_indices);
-            const uint8x8_t mask_vec = vdup_n_u8(static_cast<uint8_t>(angle_delta_mask));
-            float32x4_t acc0 = vdupq_n_f32(0.0f);
-            float32x4_t acc1 = vdupq_n_f32(0.0f);
-            alignas(16) uint8_t deltas[8];
-            alignas(16) float delta_cos_values[8];
-            size_t i = 0;
-            for (; i + 8 <= pairs; i += 8) {
-                const uint8x8_t lhs_vec = vld1_u8(lhs_angles + i);
-                const uint8x8_t rhs_vec = vld1_u8(rhs_angles + i);
-                const uint8x8_t delta_vec = vand_u8(vsub_u8(lhs_vec, rhs_vec), mask_vec);
-                vst1_u8(deltas, delta_vec);
-                for (size_t lane = 0; lane < 8; ++lane) {
-                    delta_cos_values[lane] = delta_cos_lut[deltas[lane]];
-                }
+        if (symmetric_polar_func && compactAngles()) {
+            std::vector<uint8_t> lhs_unpacked;
+            std::vector<uint8_t> rhs_unpacked;
+            const uint8_t *lhs_angles = static_cast<const uint8_t *>(lhs.angle_indices);
+            const uint8_t *rhs_angles = static_cast<const uint8_t *>(rhs.angle_indices);
 
-                const float32x4_t lhs_radii_0 = vld1q_f32(lhs.radii + i);
-                const float32x4_t rhs_radii_0 = vld1q_f32(rhs.radii + i);
-                const float32x4_t delta_cos_0 = vld1q_f32(delta_cos_values);
-                acc0 = vmlaq_f32(acc0, vmulq_f32(lhs_radii_0, rhs_radii_0), delta_cos_0);
-
-                const float32x4_t lhs_radii_1 = vld1q_f32(lhs.radii + i + 4);
-                const float32x4_t rhs_radii_1 = vld1q_f32(rhs.radii + i + 4);
-                const float32x4_t delta_cos_1 = vld1q_f32(delta_cos_values + 4);
-                acc1 = vmlaq_f32(acc1, vmulq_f32(lhs_radii_1, rhs_radii_1), delta_cos_1);
+            if (nibble_angle_codes) {
+                lhs_unpacked.resize(pairs);
+                rhs_unpacked.resize(pairs);
+                unpackNibbleAngles(lhs.angle_indices, lhs_unpacked.data());
+                unpackNibbleAngles(rhs.angle_indices, rhs_unpacked.data());
+                lhs_angles = lhs_unpacked.data();
+                rhs_angles = rhs_unpacked.data();
             }
 
-            polar_estimate = vaddvq_f32(acc0) + vaddvq_f32(acc1);
-            for (; i < pairs; ++i) {
-                const size_t delta =
-                    (static_cast<size_t>(lhs_angles[i]) - static_cast<size_t>(rhs_angles[i])) &
-                    angle_delta_mask;
+            polar_estimate = symmetric_polar_func(lhs.radii, lhs_angles, rhs.radii, rhs_angles,
+                                                  delta_cos_lut.data(),
+                                                  static_cast<uint8_t>(angle_delta_mask), pairs);
+        } else {
+            for (size_t i = 0; i < pairs; ++i) {
+                const uint16_t lhs_angle = angleCodeAt(lhs, i);
+                const uint16_t rhs_angle = angleCodeAt(rhs, i);
+                const size_t delta = (static_cast<size_t>(lhs_angle) -
+                                     static_cast<size_t>(rhs_angle)) &
+                                     angle_delta_mask;
                 polar_estimate += lhs.radii[i] * rhs.radii[i] * delta_cos_lut[delta];
             }
-        } else
-#endif
-        for (size_t i = 0; i < pairs; ++i) {
-            const uint16_t lhs_angle = angleCodeAt(lhs, i);
-            const uint16_t rhs_angle = angleCodeAt(rhs, i);
-            const size_t delta = (static_cast<size_t>(lhs_angle) -
-                                 static_cast<size_t>(rhs_angle)) &
-                                 angle_delta_mask;
-            polar_estimate += lhs.radii[i] * rhs.radii[i] * delta_cos_lut[delta];
         }
 
-        const int sign_dot =
-            PackedResidualSignDot(lhs.residual_signs, rhs.residual_signs, projections);
+        const int sign_dot = packedResidualSignDot(lhs.residual_signs, rhs.residual_signs);
 
         return polar_estimate + qjl_scale * static_cast<float>(sign_dot);
     }
@@ -484,6 +492,12 @@ private:
                 throw std::runtime_error("Failed to construct TQ rotation");
             }
         }
+        for (size_t row = 0; row < dim; ++row) {
+            float *dst_row = rotation_rows.data() + row * dim;
+            for (size_t col = 0; col < dim; ++col) {
+                dst_row[col] = rotation_columns[col * dim + row];
+            }
+        }
     }
 
     void initializeQjlProjectionRows() {
@@ -506,10 +520,16 @@ private:
     }
 
     std::vector<float> rotation_columns;
+    std::vector<float> rotation_rows;
     std::vector<float> qjl_projection_rows;
     std::vector<float> cos_lut;
     std::vector<float> sin_lut;
     std::vector<float> delta_cos_lut;
+    spaces::tq_inner_product_func_t dot_product_func;
+    spaces::tq_sum_squares_func_t sum_squares_func;
+    spaces::tq_sum_squares_func_t pair_sum_squares_func;
+    spaces::tq_packed_residual_sign_dot_func_t packed_sign_dot_func;
+    spaces::tq_symmetric_polar_func_t symmetric_polar_func;
 };
 
 template <VecSimMetric Metric>
@@ -646,14 +666,8 @@ public:
 
         state->encodePolar(rotated.data(), radii, angles.data());
         state->writeAngleCodes(angles.data(), encoded_angles);
-        *full_vector_norm_sq = 0.0f;
-        for (float value : normalized) {
-            *full_vector_norm_sq += value * value;
-        }
-        *code_norm_sq = 0.0f;
-        for (size_t i = 0; i < state->pairs; ++i) {
-            *code_norm_sq += radii[i] * radii[i];
-        }
+        *full_vector_norm_sq = state->sumSquares(normalized.data(), working_dim);
+        *code_norm_sq = state->sumSquares(radii, state->pairs);
 
         state->reconstructRotated(radii, angles.data(), reconstructed_rotated.data());
         state->applyInverseRotation(reconstructed_rotated.data(), reconstructed.data());
@@ -692,10 +706,7 @@ public:
         }
         state->projectQjl(normalized.data(), qjl_query_dots.data());
         state->buildQjlByteLookup(qjl_query_dots.data(), qjl_byte_lut);
-        *query_norm_sq = 0.0f;
-        for (float value : normalized) {
-            *query_norm_sq += value * value;
-        }
+        *query_norm_sq = state->sumSquares(normalized.data(), working_dim);
 
         input_blob_size = state->queryBlobSize();
     }
