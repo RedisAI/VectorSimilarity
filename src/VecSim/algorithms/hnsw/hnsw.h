@@ -384,7 +384,9 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
 
 template <typename DataType, typename DistType>
 const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return this->vectors->getElement(internal_id);
+    // `vectors` is always a DataBlocksContainer; skip the RawDataContainer vtable on the hot path.
+    return static_cast<const DataBlocksContainer *>(this->vectors)
+        ->DataBlocksContainer::getElement(internal_id);
 }
 
 template <typename DataType, typename DistType>
