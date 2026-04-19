@@ -33,6 +33,9 @@ public:
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const {
         return this->dist_func(7);
     }
+
+    // Dummy uses a non-standard dist func signature, so the standard slot is unavailable.
+    spaces::dist_func_t<DistType> getDistFunc() const override { return nullptr; }
 };
 
 } // namespace dummyCalcultor
