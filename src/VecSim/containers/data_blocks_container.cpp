@@ -38,11 +38,6 @@ RawDataContainer::Status DataBlocksContainer::addElement(const void *element, si
     return Status::OK;
 }
 
-const char *DataBlocksContainer::getElement(size_t id) const {
-    assert(id < element_count);
-    return blocks.at(id / this->block_size).getElement(id % this->block_size);
-}
-
 RawDataContainer::Status DataBlocksContainer::removeElement(size_t id) {
     assert(id == element_count - 1); // only the last element can be removed
     blocks.back().popLastElement();
