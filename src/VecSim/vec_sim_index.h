@@ -84,6 +84,7 @@ protected:
     RawDataContainer *vectors;      // The raw vectors data container.
 private:
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
+    spaces::dist_func_t<DistType> cachedDistFunc;        // Cached dist func, used on the hot path.
     PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
 
     size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
@@ -120,8 +121,11 @@ public:
           metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
           isMulti(params.multi), logCallbackCtx(params.logCtx),
-          indexCalculator(components.indexCalculator), preprocessors(components.preprocessors),
-          inputBlobSize(params.inputBlobSize), storedDataSize(params.storedDataSize) {
+          indexCalculator(components.indexCalculator),
+          cachedDistFunc(components.indexCalculator ? components.indexCalculator->getDistFunc()
+                                                    : nullptr),
+          preprocessors(components.preprocessors), inputBlobSize(params.inputBlobSize),
+          storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
         assert(storedDataSize);
         assert(inputBlobSize);
@@ -142,10 +146,16 @@ public:
     /**
      * @brief Calculate the distance between two vectors based on index parameters.
      *
+     * Uses the cached dist func to avoid the indexCalculator vtable on the hot path.
+     *
+     * @note Precondition: @c cachedDistFunc must be non-null. Subclasses that construct
+     *       this index with a null @c indexCalculator (e.g. SVS, which uses its own
+     *       internal distance kernels) must not call this method.
+     *
      * @return the distance between the vectors.
      */
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
-        return indexCalculator->calcDistance(vector_data1, vector_data2, this->dim);
+        return cachedDistFunc(vector_data1, vector_data2, this->dim);
     }
 
     /**

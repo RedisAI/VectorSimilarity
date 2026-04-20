@@ -23,6 +23,9 @@ public:
     virtual ~IndexCalculatorInterface() = default;
 
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const = 0;
+
+    // Raw distance function; cached by the index to skip the vtable on the hot path.
+    virtual spaces::dist_func_t<DistType> getDistFunc() const = 0;
 };
 
 /**
@@ -56,4 +59,6 @@ public:
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
         return this->dist_func(v1, v2, dim);
     }
+
+    spaces::dist_func_t<DistType> getDistFunc() const override { return this->dist_func; }
 };

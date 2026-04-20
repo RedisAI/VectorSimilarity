@@ -40,7 +40,11 @@ public:
 
     Status addElement(const void *element, size_t id) override;
 
-    const char *getElement(size_t id) const override;
+    // Inlined so the hot search path (via getDataByInternalId) can fold the indexing arithmetic.
+    const char *getElement(size_t id) const override {
+        assert(id < element_count);
+        return blocks[id / block_size].getElement(id % block_size);
+    }
 
     Status removeElement(size_t id) override;
 
