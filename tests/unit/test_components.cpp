@@ -13,6 +13,8 @@
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/L2_space.h"
 #include "unit_test_utils.h"
 #include "tests_utils.h"
 
@@ -1802,3 +1804,423 @@ INSTANTIATE_TEST_SUITE_P(QuantPreprocessorFP16WithNormTests,
                          [](const testing::TestParamInfo<VecSimMetric> &info) {
                              return VecSimMetric_ToString(info.param);
                          });
+
+// Helper: build storage blob from original vector x and mean.
+static void buildStorageBlob(const std::shared_ptr<VecSimAllocator> &allocator, const float *x,
+                             const float *mean, size_t dim, VecSimMetric metric,
+                             void *&storage_blob) {
+    vecsim_stl::vector<float> mean_vec(allocator);
+    for (size_t i = 0; i < dim; ++i)
+        mean_vec.push_back(mean[i]);
+
+    storage_blob = nullptr;
+    size_t sz = dim * sizeof(float);
+    if (metric == VecSimMetric_IP) {
+        auto *pp = new (allocator)
+            QuantPreprocessor<float, VecSimMetric_IP, true>(allocator, dim, mean_vec);
+        pp->preprocessForStorage(x, storage_blob, sz, 0);
+        delete pp;
+    } else {
+        auto *pp = new (allocator)
+            QuantPreprocessor<float, VecSimMetric_L2, true>(allocator, dim, mean_vec);
+        pp->preprocessForStorage(x, storage_blob, sz, 0);
+        delete pp;
+    }
+}
+
+// Helper: build query blob from original vector y and mean.
+static void buildQueryBlob(const std::shared_ptr<VecSimAllocator> &allocator, const float *y,
+                           const float *mean, size_t dim, VecSimMetric metric, void *&query_blob) {
+    vecsim_stl::vector<float> mean_vec(allocator);
+    for (size_t i = 0; i < dim; ++i)
+        mean_vec.push_back(mean[i]);
+
+    query_blob = nullptr;
+    size_t sz = dim * sizeof(float);
+    if (metric == VecSimMetric_IP) {
+        auto *pp = new (allocator)
+            QuantPreprocessor<float, VecSimMetric_IP, true>(allocator, dim, mean_vec);
+        pp->preprocessQuery(y, query_blob, sz, 0);
+        delete pp;
+    } else {
+        auto *pp = new (allocator)
+            QuantPreprocessor<float, VecSimMetric_L2, true>(allocator, dim, mean_vec);
+        pp->preprocessQuery(y, query_blob, sz, 0);
+        delete pp;
+    }
+}
+
+// Brute-force IP distance on original (unshifted) float vectors: 1 - dot(x, y).
+static float bruteForceIPDist(const float *x, const float *y, size_t dim) {
+    float dot = 0.0f;
+    for (size_t i = 0; i < dim; ++i)
+        dot += x[i] * y[i];
+    return 1.0f - dot;
+}
+
+// Brute-force L2 squared distance on original float vectors: sum((x_i - y_i)^2).
+static float bruteForceL2Dist(const float *x, const float *y, size_t dim) {
+    float sum = 0.0f;
+    for (size_t i = 0; i < dim; ++i) {
+        float d = x[i] - y[i];
+        sum += d * d;
+    }
+    return sum;
+}
+
+// Compute mean_sum_squares = sum(mean_i^2).
+static float computeMeanSumSquares(const float *mean, size_t dim) {
+    float s = 0.0f;
+    for (size_t i = 0; i < dim; ++i)
+        s += mean[i] * mean[i];
+    return s;
+}
+
+TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_IP_FP32) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f};
+    float y[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+    float mean[dim] = {0.5f, 1.0f, 1.5f, 2.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    buildStorageBlob(allocator, x, mean, dim, VecSimMetric_IP, storage_blob);
+    buildQueryBlob(allocator, y, mean, dim, VecSimMetric_IP, query_blob);
+
+    auto asym_func = spaces::IP_SQ8_FP32_GetDistFunc(dim);
+    auto sym_func = spaces::IP_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_IP>(
+        allocator, asym_func, sym_func, mean_sum_sq);
+
+    float got = calc->calcDistanceForQuery(storage_blob, query_blob, dim);
+    float expected = bruteForceIPDist(x, y, dim);
+
+    // Allow quantization error
+    EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric IP distance mismatch";
+
+    allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_L2_FP32) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f};
+    float y[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+    float mean[dim] = {0.5f, 1.0f, 1.5f, 2.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    buildStorageBlob(allocator, x, mean, dim, VecSimMetric_L2, storage_blob);
+    buildQueryBlob(allocator, y, mean, dim, VecSimMetric_L2, query_blob);
+
+    auto asym_func = spaces::L2_SQ8_FP32_GetDistFunc(dim);
+    auto sym_func = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>(
+        allocator, asym_func, sym_func, mean_sum_sq);
+
+    float got = calc->calcDistanceForQuery(storage_blob, query_blob, dim);
+    float expected = bruteForceL2Dist(x, y, dim);
+
+    EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric L2 distance mismatch";
+
+    allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, CalcDistance_IP_Symmetric) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f};
+    float y[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+    float mean[dim] = {0.5f, 1.0f, 1.5f, 2.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    void *x_blob = nullptr;
+    void *y_blob = nullptr;
+    buildStorageBlob(allocator, x, mean, dim, VecSimMetric_IP, x_blob);
+    buildStorageBlob(allocator, y, mean, dim, VecSimMetric_IP, y_blob);
+
+    auto asym_func = spaces::IP_SQ8_FP32_GetDistFunc(dim);
+    auto sym_func = spaces::IP_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_IP>(
+        allocator, asym_func, sym_func, mean_sum_sq);
+
+    float got = calc->calcDistance(x_blob, y_blob, dim);
+    float expected = bruteForceIPDist(x, y, dim);
+
+    EXPECT_NEAR(got, expected, 0.05f) << "Symmetric IP distance mismatch";
+
+    allocator->free_allocation(x_blob);
+    allocator->free_allocation(y_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, CalcDistance_L2_Symmetric) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f};
+    float y[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+    float mean[dim] = {0.5f, 1.0f, 1.5f, 2.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    void *x_blob = nullptr;
+    void *y_blob = nullptr;
+    buildStorageBlob(allocator, x, mean, dim, VecSimMetric_L2, x_blob);
+    buildStorageBlob(allocator, y, mean, dim, VecSimMetric_L2, y_blob);
+
+    auto asym_func = spaces::L2_SQ8_FP32_GetDistFunc(dim);
+    auto sym_func = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>(
+        allocator, asym_func, sym_func, mean_sum_sq);
+
+    float got = calc->calcDistance(x_blob, y_blob, dim);
+    float expected = bruteForceL2Dist(x, y, dim);
+
+    EXPECT_NEAR(got, expected, 0.05f) << "Symmetric L2 distance mismatch";
+
+    allocator->free_allocation(x_blob);
+    allocator->free_allocation(y_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_FP16) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x_fp32[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f};
+    float y_fp32[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+    float mean[dim] = {0.5f, 1.0f, 1.5f, 2.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+
+    using DataType = vecsim_types::float16;
+
+    DataType x[dim], y[dim];
+    for (size_t i = 0; i < dim; ++i) {
+        x[i] = vecsim_types::FP32_to_FP16(x_fp32[i]);
+        y[i] = vecsim_types::FP32_to_FP16(y_fp32[i]);
+    }
+
+    vecsim_stl::vector<float> mean_vec(allocator);
+    for (size_t i = 0; i < dim; ++i)
+        mean_vec.push_back(mean[i]);
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    // Build storage blob from FP16 x
+    void *storage_blob = nullptr;
+    size_t sz = dim * sizeof(DataType);
+    auto *pp_ip = new (allocator)
+        QuantPreprocessor<DataType, VecSimMetric_IP, true>(allocator, dim, mean_vec);
+    pp_ip->preprocessForStorage(x, storage_blob, sz, 0);
+    delete pp_ip;
+
+    // Build query blob from FP16 y
+    void *query_blob = nullptr;
+    sz = dim * sizeof(DataType);
+    auto *pp_qr = new (allocator)
+        QuantPreprocessor<DataType, VecSimMetric_IP, true>(allocator, dim, mean_vec);
+    pp_qr->preprocessQuery(y, query_blob, sz, 0);
+    delete pp_qr;
+
+    auto asym_func = spaces::IP_SQ8_FP16_GetDistFunc(dim);
+    auto sym_func = spaces::IP_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, VecSimMetric_IP>(
+        allocator, asym_func, sym_func, mean_sum_sq);
+
+    float got = calc->calcDistanceForQuery(storage_blob, query_blob, dim);
+    float expected = bruteForceIPDist(x_fp32, y_fp32, dim);
+
+    EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric IP FP16 distance mismatch";
+
+    allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, ZeroMean_MatchesBaseSQ8) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+    float y[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f};
+    vecsim_stl::vector<float> zero_mean(dim, 0.0f, allocator);
+
+    // Build WithNorm storage and query blobs using zero mean
+    auto *pp_ip =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_IP, true>(allocator, dim, zero_mean);
+    void *x_norm_blob = nullptr, *y_norm_query = nullptr;
+    size_t sx = dim * sizeof(float), sq = dim * sizeof(float);
+    pp_ip->preprocessForStorage(x, x_norm_blob, sx, 0);
+    pp_ip->preprocessQuery(y, y_norm_query, sq, 0);
+    delete pp_ip;
+
+    auto asym_func = spaces::IP_SQ8_FP32_GetDistFunc(dim);
+    auto sym_func = spaces::IP_SQ8_SQ8_GetDistFunc(dim);
+
+    auto *norm_calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_IP>(
+        allocator, asym_func, sym_func, 0.0f);
+
+    // With zero mean, correction is 0: result equals raw base function call.
+    // asym_func expects (storage, query) order.
+    float norm_asym = norm_calc->calcDistanceForQuery(x_norm_blob, y_norm_query, dim);
+    float base_asym = asym_func(x_norm_blob, y_norm_query, dim);
+    EXPECT_FLOAT_EQ(norm_asym, base_asym)
+        << "WithNorm(zero mean) asymmetric IP should match raw base dist function";
+
+    // Build a second storage blob for y to test symmetric distance
+    void *y_norm_blob = nullptr;
+    sx = dim * sizeof(float);
+    auto *pp_ip2 =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_IP, true>(allocator, dim, zero_mean);
+    pp_ip2->preprocessForStorage(y, y_norm_blob, sx, 0);
+    delete pp_ip2;
+
+    float norm_sym = norm_calc->calcDistance(x_norm_blob, y_norm_blob, dim);
+    float base_sym = sym_func(x_norm_blob, y_norm_blob, dim);
+    EXPECT_FLOAT_EQ(norm_sym, base_sym)
+        << "WithNorm(zero mean) symmetric IP should match raw base dist function";
+
+    allocator->free_allocation(x_norm_blob);
+    allocator->free_allocation(y_norm_query);
+    allocator->free_allocation(y_norm_blob);
+    delete norm_calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, SymmetricVsAsymmetric_Sanity) {
+    // For the same two stored vectors, calcDistance (symmetric) and calcDistanceForQuery
+    // (asymmetric) must agree to within quantization error.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    float x[dim] = {3.0f, 1.0f, 4.0f, 1.0f, 5.0f, 3.0f, 2.0f, 6.0f};
+    float y[dim] = {2.0f, 7.0f, 1.0f, 4.0f, 2.0f, 5.0f, 1.0f, 2.0f};
+    float mean[dim] = {1.0f, 2.0f, 1.0f, 2.0f, 1.0f, 2.0f, 1.0f, 2.0f};
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    // IP
+    {
+        void *x_blob = nullptr, *y_blob = nullptr, *y_query = nullptr;
+        buildStorageBlob(allocator, x, mean, dim, VecSimMetric_IP, x_blob);
+        buildStorageBlob(allocator, y, mean, dim, VecSimMetric_IP, y_blob);
+        buildQueryBlob(allocator, y, mean, dim, VecSimMetric_IP, y_query);
+
+        auto asym_func = spaces::IP_SQ8_FP32_GetDistFunc(dim);
+        auto sym_func = spaces::IP_SQ8_SQ8_GetDistFunc(dim);
+        auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_IP>(
+            allocator, asym_func, sym_func, mean_sum_sq);
+
+        float sym_dist = calc->calcDistance(x_blob, y_blob, dim);
+        float asym_dist = calc->calcDistanceForQuery(x_blob, y_query, dim);
+        // Both should be close to the brute-force answer; use relative tolerance
+        // since the IP magnitude (~157) amplifies absolute quantization error.
+        float bf = bruteForceIPDist(x, y, dim);
+        EXPECT_NEAR(sym_dist, bf, 0.05f) << "Symmetric IP vs brute-force";
+        EXPECT_NEAR(asym_dist, bf, 0.05f) << "Asymmetric IP vs brute-force";
+
+        allocator->free_allocation(x_blob);
+        allocator->free_allocation(y_blob);
+        allocator->free_allocation(y_query);
+        delete calc;
+    }
+
+    // L2
+    {
+        void *x_blob = nullptr, *y_blob = nullptr, *y_query = nullptr;
+        buildStorageBlob(allocator, x, mean, dim, VecSimMetric_L2, x_blob);
+        buildStorageBlob(allocator, y, mean, dim, VecSimMetric_L2, y_blob);
+        buildQueryBlob(allocator, y, mean, dim, VecSimMetric_L2, y_query);
+
+        auto asym_func = spaces::L2_SQ8_FP32_GetDistFunc(dim);
+        auto sym_func = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
+        auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>(
+            allocator, asym_func, sym_func, mean_sum_sq);
+
+        float sym_dist = calc->calcDistance(x_blob, y_blob, dim);
+        float asym_dist = calc->calcDistanceForQuery(x_blob, y_query, dim);
+        float bf = bruteForceL2Dist(x, y, dim);
+        EXPECT_NEAR(sym_dist, bf, 0.05f) << "Symmetric L2 vs brute-force";
+        EXPECT_NEAR(asym_dist, bf, 0.05f) << "Asymmetric L2 vs brute-force";
+
+        allocator->free_allocation(x_blob);
+        allocator->free_allocation(y_blob);
+        allocator->free_allocation(y_query);
+        delete calc;
+    }
+}
+
+TEST(DistanceCalculatorWithNormTest, RandomVectors) {
+    // Generate random vector pairs, compute WithNorm distances and verify against brute-force.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 16;
+    std::mt19937 rng(12345);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+
+    float mean[dim];
+    for (size_t i = 0; i < dim; ++i)
+        mean[i] = dist(rng) * 0.5f;
+    float mean_sum_sq = computeMeanSumSquares(mean, dim);
+
+    auto asym_ip = spaces::IP_SQ8_FP32_GetDistFunc(dim);
+    auto sym_ip = spaces::IP_SQ8_SQ8_GetDistFunc(dim);
+    auto asym_l2 = spaces::L2_SQ8_FP32_GetDistFunc(dim);
+    auto sym_l2 = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
+
+    auto *calc_ip = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_IP>(
+        allocator, asym_ip, sym_ip, mean_sum_sq);
+    auto *calc_l2 = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>(
+        allocator, asym_l2, sym_l2, mean_sum_sq);
+
+    int failures = 0;
+    for (int trial = 0; trial < 100; ++trial) {
+        float x[dim], y[dim];
+        for (size_t i = 0; i < dim; ++i) {
+            x[i] = dist(rng);
+            y[i] = dist(rng);
+        }
+
+        void *x_blob = nullptr, *y_blob = nullptr;
+        void *y_query_ip = nullptr, *y_query_l2 = nullptr;
+        buildStorageBlob(allocator, x, mean, dim, VecSimMetric_IP, x_blob);
+        buildStorageBlob(allocator, y, mean, dim, VecSimMetric_IP, y_blob);
+        buildQueryBlob(allocator, y, mean, dim, VecSimMetric_IP, y_query_ip);
+
+        void *x_blob_l2 = nullptr, *y_blob_l2 = nullptr;
+        buildStorageBlob(allocator, x, mean, dim, VecSimMetric_L2, x_blob_l2);
+        buildStorageBlob(allocator, y, mean, dim, VecSimMetric_L2, y_blob_l2);
+        buildQueryBlob(allocator, y, mean, dim, VecSimMetric_L2, y_query_l2);
+
+        float bf_ip = bruteForceIPDist(x, y, dim);
+        float bf_l2 = bruteForceL2Dist(x, y, dim);
+
+        float got_ip_asym = calc_ip->calcDistanceForQuery(x_blob, y_query_ip, dim);
+        float got_ip_sym = calc_ip->calcDistance(x_blob, y_blob, dim);
+        float got_l2_asym = calc_l2->calcDistanceForQuery(x_blob_l2, y_query_l2, dim);
+        float got_l2_sym = calc_l2->calcDistance(x_blob_l2, y_blob_l2, dim);
+
+        if (std::abs(got_ip_asym - bf_ip) > 0.1f)
+            ++failures;
+        if (std::abs(got_ip_sym - bf_ip) > 0.1f)
+            ++failures;
+        if (std::abs(got_l2_asym - bf_l2) > 0.1f)
+            ++failures;
+        if (std::abs(got_l2_sym - bf_l2) > 0.1f)
+            ++failures;
+
+        allocator->free_allocation(x_blob);
+        allocator->free_allocation(y_blob);
+        allocator->free_allocation(y_query_ip);
+        allocator->free_allocation(x_blob_l2);
+        allocator->free_allocation(y_blob_l2);
+        allocator->free_allocation(y_query_l2);
+    }
+
+    EXPECT_EQ(failures, 0) << failures << " distance computations exceeded tolerance";
+
+    delete calc_ip;
+    delete calc_l2;
+}

@@ -11,6 +11,7 @@
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/types/sq8.h"
 
 enum class DistanceMode {
     StoredToStored,
@@ -118,5 +119,127 @@ public:
     DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const override {
         auto func = mode == DistanceMode::StoredToStored ? this->dist_func : this->query_dist_func;
         return DistanceDispatch<DistType>::stateless(func);
+    }
+};
+
+/**
+ * Distance calculator for mean-normalized SQ8 indices.
+ *
+ * Stored vectors are SQ8-quantized from x' = x - mean. This calculator applies analytical
+ * correction terms derived from the per-vector x_mean_ip / y_mean_ip metadata stored in
+ * the blobs by QuantPreprocessor WithNorm=True to recover correct distances between the
+ * original (un-shifted) vectors x and y.
+ *
+ * Correction formulas (expressed in terms of distance semantics):
+ *
+ * Asymmetric (query y as FP32/FP16, stored vector x as SQ8 of x'):
+ *   IP distance:  dist(x,y) = asym_func(x_blob, y_blob) - y_mean_ip
+ *   L2 distance:  dist(x,y) = asym_func(x_blob, y_blob) + 2*(x_mean_ip - y_mean_ip)
+ *                              - mean_sum_squares
+ *
+ * Symmetric (both x and y as SQ8 blobs):
+ *   IP distance:  dist(x,y) = sym_func(x_blob, y_blob) - x_mean_ip - y_mean_ip
+ *                              + mean_sum_squares
+ *   L2 distance:  dist(x,y) = sym_func(x_blob, y_blob)   (mean terms cancel exactly)
+ *
+ * Note: IP dist functions return 1 - IP(x',y'), not raw inner product. L2 dist functions
+ * return ||x'-y'||² directly.
+ *
+ * DataType is float or float16
+ * DistType is float
+ */
+template <typename DataType, typename DistType, VecSimMetric Metric>
+class DistanceCalculatorWithNorm
+    : public DistanceCalculatorInterface<DistType, spaces::dist_func_t<DistType>> {
+    static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP,
+                  "DistanceCalculatorWithNorm only supports L2 and IP metrics");
+
+private:
+    using sq8 = vecsim_types::sq8;
+
+    struct WithNormDistanceContext {
+        spaces::dist_func_t<DistType> stored_func;
+        spaces::dist_func_t<DistType> query_func;
+        float mean_sum_squares;
+    };
+
+    const WithNormDistanceContext context_;
+
+    static DistType calcStoredWithContext(const void *opaque_context, const void *v1,
+                                          const void *v2, size_t dim) {
+        const auto *context = static_cast<const WithNormDistanceContext *>(opaque_context);
+        DistType base = context->stored_func(v1, v2, dim);
+        if constexpr (Metric == VecSimMetric_IP) {
+            // base = 1 - IP(x', y'). We want 1 - IP(x, y).
+            // IP(x, y) = IP(x', y') + x_mean_ip + y_mean_ip - mean_sum_squares
+            // => 1 - IP(x, y) = base - x_mean_ip - y_mean_ip + mean_sum_squares
+            const float *meta1 =
+                reinterpret_cast<const float *>(static_cast<const uint8_t *>(v1) + dim);
+            const float *meta2 =
+                reinterpret_cast<const float *>(static_cast<const uint8_t *>(v2) + dim);
+            float x_mean_ip = meta1[sq8::template mean_ip_index<Metric>()];
+            float y_mean_ip = meta2[sq8::template mean_ip_index<Metric>()];
+            return base - x_mean_ip - y_mean_ip + context->mean_sum_squares;
+        } else { // L2: ||x - y||² = ||x' - y'||² (mean terms cancel exactly)
+            return base;
+        }
+    }
+
+    static DistType calcQueryWithContext(const void *opaque_context, const void *candidate,
+                                         const void *query, size_t dim) {
+        const auto *context = static_cast<const WithNormDistanceContext *>(opaque_context);
+        DistType base = context->query_func(candidate, query, dim);
+        const float *query_meta =
+            reinterpret_cast<const float *>(static_cast<const DataType *>(query) + dim);
+        if constexpr (Metric == VecSimMetric_IP) {
+            // base = 1 - IP(x', y). We want 1 - IP(x, y).
+            // IP(x, y) = IP(x', y) + y_mean_ip
+            // => 1 - IP(x, y) = base - y_mean_ip
+            float y_mean_ip = query_meta[sq8::template query_mean_ip_index<Metric>()];
+            return base - y_mean_ip;
+        } else { // L2
+            // base = ||x' - y||². We want ||x - y||².
+            // ||x - y||² = ||x' - y||² + 2*(x_mean_ip - y_mean_ip) - mean_sum_squares
+            const float *storage_meta =
+                reinterpret_cast<const float *>(static_cast<const uint8_t *>(candidate) + dim);
+            float x_mean_ip = storage_meta[sq8::template mean_ip_index<Metric>()];
+            float y_mean_ip = query_meta[sq8::template query_mean_ip_index<Metric>()];
+            return base + 2.0f * (x_mean_ip - y_mean_ip) - context->mean_sum_squares;
+        }
+    }
+
+public:
+    DistanceCalculatorWithNorm(std::shared_ptr<VecSimAllocator> allocator,
+                               spaces::dist_func_t<DistType> asym_func,
+                               spaces::dist_func_t<DistType> sym_func, float mean_sum_squares)
+        : DistanceCalculatorInterface<DistType, spaces::dist_func_t<DistType>>(allocator, sym_func,
+                                                                               asym_func),
+          context_{
+              .stored_func = sym_func,
+              .query_func = asym_func,
+              .mean_sum_squares = mean_sum_squares,
+          } {}
+
+    // Symmetric: both v1 and v2 are stored SQ8-of-x' blobs.
+    DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
+        return calcStoredWithContext(&context_, v1, v2, dim);
+    }
+
+    // Asymmetric: query is raw FP32/FP16 blob, candidate is stored SQ8-of-x' blob.
+    // Note: query_dist_func expects (storage, query) argument order.
+    DistType calcDistanceForQuery(const void *candidate, const void *query,
+                                  size_t dim) const override {
+        return calcQueryWithContext(&context_, candidate, query, dim);
+    }
+
+    DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const override {
+        if (mode == DistanceMode::StoredToStored) {
+            if constexpr (Metric == VecSimMetric_L2) {
+                // The mean terms cancel for stored-to-stored L2, so retain the stateless fast path.
+                return DistanceDispatch<DistType>::stateless(this->dist_func);
+            }
+            return DistanceDispatch<DistType>::stateful(&context_, calcStoredWithContext);
+        }
+        return DistanceDispatch<DistType>::stateful(&context_, calcQueryWithContext);
     }
 };
