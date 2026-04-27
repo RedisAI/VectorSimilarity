@@ -1313,11 +1313,15 @@ TEST_P(QuantPreprocessorMetricTest, QuantizationBlobSizeAndMetadata) {
     case VecSimMetric_Cosine:
         runQuantizationTest<VecSimMetric_Cosine>();
         break;
+    case VecSimMetric_CosineSimilarity:
+        runQuantizationTest<VecSimMetric_CosineSimilarity>();
+        break;
     }
 }
 
 INSTANTIATE_TEST_SUITE_P(QuantPreprocessorTests, QuantPreprocessorMetricTest,
-                         testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine),
+                         testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine,
+                                         VecSimMetric_CosineSimilarity),
                          [](const testing::TestParamInfo<VecSimMetric> &info) {
                              return VecSimMetric_ToString(info.param);
                          });
@@ -1477,11 +1481,15 @@ TEST_P(QuantPreprocessorFP16MetricTest, QuantizationBlobSizeAndMetadata) {
     case VecSimMetric_Cosine:
         runQuantizationTest<VecSimMetric_Cosine>();
         break;
+    case VecSimMetric_CosineSimilarity:
+        runQuantizationTest<VecSimMetric_CosineSimilarity>();
+        break;
     }
 }
 
 INSTANTIATE_TEST_SUITE_P(QuantPreprocessorFP16Tests, QuantPreprocessorFP16MetricTest,
-                         testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine),
+                         testing::Values(VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine,
+                                         VecSimMetric_CosineSimilarity),
                          [](const testing::TestParamInfo<VecSimMetric> &info) {
                              return VecSimMetric_ToString(info.param);
                          });

@@ -679,6 +679,7 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimMetric_L2", VecSimMetric_L2)
         .value("VecSimMetric_IP", VecSimMetric_IP)
         .value("VecSimMetric_Cosine", VecSimMetric_Cosine)
+        .value("VecSimMetric_CosineSimilarity", VecSimMetric_CosineSimilarity)
         .export_values();
 
     py::enum_<VecSimOptionMode>(m, "VecSimOptionMode")
