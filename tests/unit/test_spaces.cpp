@@ -450,9 +450,7 @@ TEST_F(SpacesTest, SQ8_FP16_l2sqr_odd_dim_unaligned_metadata_test) {
         storage[i] = static_cast<uint8_t>(i + 1);
     }
 
-    auto store_float = [](uint8_t *dst, float value) {
-        std::memcpy(dst, &value, sizeof(value));
-    };
+    auto store_float = [](uint8_t *dst, float value) { std::memcpy(dst, &value, sizeof(value)); };
 
     constexpr float min_val = 0.0f;
     constexpr float delta = 1.0f;
@@ -474,10 +472,8 @@ TEST_F(SpacesTest, SQ8_FP16_l2sqr_odd_dim_unaligned_metadata_test) {
     store_float(query_meta + sq8::SUM_QUERY * sizeof(float), query_sum);
     store_float(query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float), query_sum_squares);
 
-    const auto *storage_sum_squares_addr =
-        storage_meta + sq8::SUM_SQUARES * sizeof(float);
-    const auto *query_sum_squares_addr =
-        query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float);
+    const auto *storage_sum_squares_addr = storage_meta + sq8::SUM_SQUARES * sizeof(float);
+    const auto *query_sum_squares_addr = query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float);
     ASSERT_NE(reinterpret_cast<std::uintptr_t>(storage_sum_squares_addr) % alignof(float), 0u);
     ASSERT_NE(reinterpret_cast<std::uintptr_t>(query_sum_squares_addr) % alignof(float), 0u);
 

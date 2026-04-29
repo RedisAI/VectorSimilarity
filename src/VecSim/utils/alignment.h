@@ -18,7 +18,8 @@
 // unaligned access; on strict-alignment targets it expands to a safe byte copy.
 template <typename T>
 static inline T load_unaligned(const void *ptr) {
-    static_assert(std::is_trivially_copyable_v<T>, "load_unaligned requires a trivially-copyable T");
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "load_unaligned requires a trivially-copyable T");
     T value;
     std::memcpy(&value, ptr, sizeof(T));
     return value;
