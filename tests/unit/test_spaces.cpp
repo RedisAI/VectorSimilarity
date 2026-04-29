@@ -2981,8 +2981,8 @@ TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
     test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, false,
                                                         1234);
 
-    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(
-        v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_nonzero_quantized.data(),
+                                                                       v_zero_query.data(), dim);
     float ip = SQ8_FP16_InnerProduct(v_nonzero_quantized.data(), v_zero_query.data(), dim);
     ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16_InnerProduct mismatch";
     ASSERT_NEAR(ip, 1.0f, 0.01f) << "Zero-query IP must equal 1.0 (1 - 0)";
@@ -3041,8 +3041,8 @@ TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
     std::vector<uint8_t> v_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false, 9876);
 
-    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_quantized.data(),
-                                                                       v_query.data(), dim);
+    float ip_baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_quantized.data(), v_query.data(), dim);
     float ip = SQ8_FP16_InnerProduct(v_quantized.data(), v_query.data(), dim);
     ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16_InnerProduct mismatch";
 

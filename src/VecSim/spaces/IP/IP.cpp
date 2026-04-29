@@ -124,8 +124,7 @@ float SQ8_FP16_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_
     const float delta = params[sq8::DELTA];
 
     // Get precomputed y_sum from query blob (FP32 metadata stored after the dim float16 values)
-    const float *query_meta =
-        reinterpret_cast<const float *>(pVect2 + dimension);
+    const float *query_meta = reinterpret_cast<const float *>(pVect2 + dimension);
     const float y_sum = query_meta[sq8::SUM_QUERY];
 
     // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)

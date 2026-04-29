@@ -266,7 +266,7 @@ static float SQ8_FP32_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
 static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
                                                 size_t dimension) {
 
-    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);            // SQ8 storage
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);               // SQ8 storage
     const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v); // FP16 query
 
     const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
