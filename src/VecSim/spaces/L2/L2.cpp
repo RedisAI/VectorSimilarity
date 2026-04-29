@@ -63,10 +63,14 @@ float SQ8_FP16_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
     const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
     const float x_sum_sq = params[sq8::SUM_SQUARES];
 
-    // Get precomputed sum of squares from query blob (FP32 metadata after dim float16 values)
+    // Get precomputed sum of squares from query blob (FP32 metadata after dim float16 values).
+    // For odd `dimension` the byte offset 2*dimension is not 4-byte aligned, so use memcpy
+    // to avoid undefined behavior / faults from misaligned float loads.
     const auto *pVect2 = static_cast<const float16 *>(pVect2v);
-    const float *query_meta = reinterpret_cast<const float *>(pVect2 + dimension);
-    const float y_sum_sq = query_meta[sq8::SUM_SQUARES_QUERY];
+    const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
+    float y_sum_sq;
+    std::memcpy(&y_sum_sq, query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float),
+                sizeof(float));
 
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return x_sum_sq + y_sum_sq - 2.0f * ip;

@@ -123,9 +123,12 @@ float SQ8_FP16_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_
     const float min_val = params[sq8::MIN_VAL];
     const float delta = params[sq8::DELTA];
 
-    // Get precomputed y_sum from query blob (FP32 metadata stored after the dim float16 values)
-    const float *query_meta = reinterpret_cast<const float *>(pVect2 + dimension);
-    const float y_sum = query_meta[sq8::SUM_QUERY];
+    // Get precomputed y_sum from query blob (FP32 metadata stored after the dim float16 values).
+    // For odd `dimension` the byte offset 2*dimension is not 4-byte aligned, so use memcpy
+    // to avoid undefined behavior / faults from misaligned float loads.
+    const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
+    float y_sum;
+    std::memcpy(&y_sum, query_meta_bytes + sq8::SUM_QUERY * sizeof(float), sizeof(float));
 
     // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

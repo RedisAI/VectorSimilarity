@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <cstring>
 #include <random>
 #include <vector>
 #include "VecSim/spaces/normalize/compute_norm.h"
@@ -306,8 +307,12 @@ static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
     const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
     const float *storage_meta = reinterpret_cast<const float *>(pVect1 + dimension);
     const float x_sum_sq = storage_meta[sq8::SUM_SQUARES];
-    const float *query_meta = reinterpret_cast<const float *>(pVect2 + dimension);
-    const float y_sum_sq = query_meta[sq8::SUM_SQUARES_QUERY];
+    // FP32 metadata after the dim float16 values is only 2-byte aligned for odd dim, so use
+    // memcpy to avoid undefined behavior / faults from misaligned float loads.
+    const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
+    float y_sum_sq;
+    std::memcpy(&y_sum_sq, query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float),
+                sizeof(float));
 
     float ip = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
@@ -333,9 +338,12 @@ static void preprocess_sq8_fp16_query(void *buf, size_t dim) {
         sum += widened;
         sum_squares += widened * widened;
     }
-    auto *metadata = reinterpret_cast<float *>(values + dim);
-    metadata[sq8::SUM_QUERY] = sum;
-    metadata[sq8::SUM_SQUARES_QUERY] = sum_squares;
+    // FP32 metadata after the dim float16 values is only 2-byte aligned for odd dim, so use
+    // memcpy to avoid undefined behavior / faults from misaligned float stores.
+    auto *metadata_bytes = reinterpret_cast<uint8_t *>(values + dim);
+    std::memcpy(metadata_bytes + sq8::SUM_QUERY * sizeof(float), &sum, sizeof(float));
+    std::memcpy(metadata_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float), &sum_squares,
+                sizeof(float));
 }
 
 // Populate an FP16 query buffer for SQ8 IP/Cosine/L2 space.
