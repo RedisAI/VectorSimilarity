@@ -10,7 +10,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
-#include <cstring>
+#include "VecSim/utils/alignment.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -118,17 +118,14 @@ float SQ8_FP16_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_
     // Combine accumulators
     float quantized_dot = (sum0 + sum1) + (sum2 + sum3);
 
-    // Get quantization parameters from stored vector (pVect1 is SQ8)
-    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float min_val = params[sq8::MIN_VAL];
-    const float delta = params[sq8::DELTA];
-
-    // Get precomputed y_sum from query blob (FP32 metadata stored after the dim float16 values).
-    // For odd `dimension` the byte offset 2*dimension is not 4-byte aligned, so use memcpy
-    // to avoid undefined behavior / faults from misaligned float loads.
+    // Get quantization parameters from stored vector (pVect1 is SQ8) and the precomputed
+    // y_sum from the query blob. The metadata sits at byte offsets that are not guaranteed
+    // 4-byte aligned for odd `dimension`, so use load_unaligned to avoid alignment UB.
+    const auto *params_bytes = pVect1 + dimension;
+    const float min_val = load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
     const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
-    float y_sum;
-    std::memcpy(&y_sum, query_meta_bytes + sq8::SUM_QUERY * sizeof(float), sizeof(float));
+    const float y_sum = load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
 
     // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
     return min_val * y_sum + delta * quantized_dot;

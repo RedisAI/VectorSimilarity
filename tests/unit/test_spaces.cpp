@@ -7,6 +7,9 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <utility>
 #include <random>
 #include <cmath>
@@ -430,6 +433,57 @@ TEST_F(SpacesTest, SQ8_FP16_l2sqr_no_optimization_func_test) {
         SQ8_FP16_L2Sqr((const void *)v2_compressed.data(), (const void *)v1_query.data(), dim);
 
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_L2Sqr failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_l2sqr_odd_dim_unaligned_metadata_test) {
+    constexpr size_t dim = 5;
+    constexpr size_t storage_bytes =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    static_assert(sizeof(float) % sizeof(float16) == 0);
+    constexpr size_t query_values_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float) / sizeof(float16);
+
+    alignas(float) std::array<uint8_t, storage_bytes> storage{};
+    alignas(float) std::array<float16, query_values_count> query{};
+
+    for (size_t i = 0; i < dim; i++) {
+        storage[i] = static_cast<uint8_t>(i + 1);
+    }
+
+    auto store_float = [](uint8_t *dst, float value) {
+        std::memcpy(dst, &value, sizeof(value));
+    };
+
+    constexpr float min_val = 0.0f;
+    constexpr float delta = 1.0f;
+    constexpr float storage_sum = 15.0f;
+    constexpr float storage_sum_squares = 55.0f;
+    uint8_t *storage_meta = storage.data() + dim;
+    store_float(storage_meta + sq8::MIN_VAL * sizeof(float), min_val);
+    store_float(storage_meta + sq8::DELTA * sizeof(float), delta);
+    store_float(storage_meta + sq8::SUM * sizeof(float), storage_sum);
+    store_float(storage_meta + sq8::SUM_SQUARES * sizeof(float), storage_sum_squares);
+
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = vecsim_types::FP32_to_FP16(static_cast<float>(i + 2));
+    }
+
+    constexpr float query_sum = 20.0f;
+    constexpr float query_sum_squares = 90.0f;
+    uint8_t *query_meta = reinterpret_cast<uint8_t *>(query.data() + dim);
+    store_float(query_meta + sq8::SUM_QUERY * sizeof(float), query_sum);
+    store_float(query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float), query_sum_squares);
+
+    const auto *storage_sum_squares_addr =
+        storage_meta + sq8::SUM_SQUARES * sizeof(float);
+    const auto *query_sum_squares_addr =
+        query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float);
+    ASSERT_NE(reinterpret_cast<std::uintptr_t>(storage_sum_squares_addr) % alignof(float), 0u);
+    ASSERT_NE(reinterpret_cast<std::uintptr_t>(query_sum_squares_addr) % alignof(float), 0u);
+
+    const float dist = SQ8_FP16_L2Sqr(storage.data(), query.data(), dim);
+
+    ASSERT_FLOAT_EQ(dist, 5.0f);
 }
 
 /* ======================== Test Getters ======================== */

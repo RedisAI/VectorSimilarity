@@ -15,6 +15,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/utils/alignment.h"
 
 using sq8 = vecsim_types::sq8;
 
@@ -270,8 +271,10 @@ static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void 
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);               // SQ8 storage
     const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v); // FP16 query
 
-    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    // Storage metadata sits at byte offset `dimension` into the uint8 buffer and is not
+    // guaranteed 4-byte aligned for odd `dimension`; use load_unaligned to avoid alignment UB.
+    const float min_val = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
 
     float res = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
@@ -303,16 +306,15 @@ static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v);
 
-    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
-    const float *storage_meta = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float x_sum_sq = storage_meta[sq8::SUM_SQUARES];
-    // FP32 metadata after the dim float16 values is only 2-byte aligned for odd dim, so use
-    // memcpy to avoid undefined behavior / faults from misaligned float loads.
+    // Storage and query metadata sit at byte offsets that are not guaranteed 4-byte aligned
+    // for odd `dimension`; use load_unaligned to avoid alignment UB.
+    const float min_val = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
     const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
-    float y_sum_sq;
-    std::memcpy(&y_sum_sq, query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float),
-                sizeof(float));
+    const float y_sum_sq =
+        load_unaligned<float>(query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float));
 
     float ip = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
