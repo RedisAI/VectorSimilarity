@@ -268,8 +268,10 @@ static float SQ8_FP32_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
 static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
                                                 size_t dimension) {
 
-    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);               // SQ8 storage
-    const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v); // FP16 query
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    // FP16 query buffer may be only 1-byte aligned (e.g. backed by std::vector<uint8_t>),
+    // so access float16 values via memcpy on uint16_t to avoid alignment UB.
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v); // FP16 query
 
     // Storage metadata sits at byte offset `dimension` into the uint8 buffer and is not
     // guaranteed 4-byte aligned for odd `dimension`; use load_unaligned to avoid alignment UB.
@@ -278,7 +280,10 @@ static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void 
 
     float res = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
-        res += (pVect1[i] * delta + min_val) * vecsim_types::FP16_to_FP32(pVect2[i]);
+        uint16_t raw;
+        std::memcpy(&raw, pVect2 + i * sizeof(vecsim_types::float16), sizeof(raw));
+        res += (pVect1[i] * delta + min_val) *
+               vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
     }
     return 1.0f - res;
 }
@@ -304,7 +309,9 @@ static float SQ8_FP16_NotOptimized_Cosine(const void *pVect1v, const void *pVect
 static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
                                          size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v);
+    // FP16 query buffer may be only 1-byte aligned; access float16 values via memcpy on
+    // uint16_t to avoid alignment UB on strict-alignment targets.
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     // Storage and query metadata sit at byte offsets that are not guaranteed 4-byte aligned
     // for odd `dimension`; use load_unaligned to avoid alignment UB.
@@ -312,14 +319,16 @@ static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
     const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
     const float x_sum_sq =
         load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
-    const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
+    const auto *query_meta_bytes = pVect2 + dimension * sizeof(vecsim_types::float16);
     const float y_sum_sq =
         load_unaligned<float>(query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float));
 
     float ip = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
+        uint16_t raw;
+        std::memcpy(&raw, pVect2 + i * sizeof(vecsim_types::float16), sizeof(raw));
         const float dequantized = pVect1[i] * delta + min_val;
-        ip += dequantized * vecsim_types::FP16_to_FP32(pVect2[i]);
+        ip += dequantized * vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
     }
     return x_sum_sq + y_sum_sq - 2.0f * ip;
 }
@@ -331,18 +340,21 @@ static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
 // bytes (defaults to L2 layout, sufficient for IP/Cosine).
 // The metadata is computed from the FP16 values widened back to FP32, so it matches
 // what the SQ8-FP16 distance kernels will accumulate.
+// `buf` may be only 1-byte aligned (callers commonly back it with std::vector<uint8_t>),
+// so FP16 values and FP32 metadata are accessed via memcpy to avoid alignment UB on
+// strict-alignment targets.
 static void preprocess_sq8_fp16_query(void *buf, size_t dim) {
-    auto *values = static_cast<vecsim_types::float16 *>(buf);
+    auto *bytes = static_cast<uint8_t *>(buf);
     float sum = 0.0f;
     float sum_squares = 0.0f;
     for (size_t i = 0; i < dim; i++) {
-        const float widened = vecsim_types::FP16_to_FP32(values[i]);
+        uint16_t raw;
+        std::memcpy(&raw, bytes + i * sizeof(vecsim_types::float16), sizeof(raw));
+        const float widened = vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
         sum += widened;
         sum_squares += widened * widened;
     }
-    // FP32 metadata after the dim float16 values is only 2-byte aligned for odd dim, so use
-    // memcpy to avoid undefined behavior / faults from misaligned float stores.
-    auto *metadata_bytes = reinterpret_cast<uint8_t *>(values + dim);
+    auto *metadata_bytes = bytes + dim * sizeof(vecsim_types::float16);
     std::memcpy(metadata_bytes + sq8::SUM_QUERY * sizeof(float), &sum, sizeof(float));
     std::memcpy(metadata_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float), &sum_squares,
                 sizeof(float));
@@ -353,6 +365,8 @@ static void preprocess_sq8_fp16_query(void *buf, size_t dim) {
 //   dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float)
 // bytes. Generates float values, optionally normalizes them in FP32 (matching the
 // FP32 query helper), converts to FP16, then computes FP32 metadata.
+// `buf` may be only 1-byte aligned; FP16 stores go through memcpy on uint16_t to avoid
+// alignment UB on strict-alignment targets.
 static void populate_sq8_fp16_query(void *buf, size_t dim, bool should_normalize = false,
                                     int seed = 1234, float min = -1.0f, float max = 1.0f) {
     std::vector<float> tmp(dim);
@@ -360,9 +374,10 @@ static void populate_sq8_fp16_query(void *buf, size_t dim, bool should_normalize
     if (should_normalize) {
         spaces::GetNormalizeFunc<float>()(tmp.data(), dim);
     }
-    auto *values = static_cast<vecsim_types::float16 *>(buf);
+    auto *bytes = static_cast<uint8_t *>(buf);
     for (size_t i = 0; i < dim; i++) {
-        values[i] = vecsim_types::FP32_to_FP16(tmp[i]);
+        const uint16_t raw = vecsim_types::FP32_to_FP16(tmp[i]).val;
+        std::memcpy(bytes + i * sizeof(vecsim_types::float16), &raw, sizeof(raw));
     }
     preprocess_sq8_fp16_query(buf, dim);
 }

@@ -37,14 +37,16 @@ public:
             dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
         v1 = new uint8_t[quantized_size];
         test_utils::populate_float_vec_to_sq8_with_metadata(v1, dim, true, 1234);
-        size_t query_bytes =
-            dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-        v2 = reinterpret_cast<float16 *>(new uint8_t[query_bytes]);
+        // Allocate as float16[] so v2 is alignof(float16)-aligned for the SQ8_FP16 kernel's
+        // typed loads. Add extra float16 slots to cover the trailing FP32 metadata bytes.
+        size_t query_count =
+            dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+        v2 = new float16[query_count];
         test_utils::populate_sq8_fp16_query(v2, dim, true, 123);
     }
     void TearDown(const ::benchmark::State &state) {
         delete[] v1;
-        delete[] reinterpret_cast<uint8_t *>(v2);
+        delete[] v2;
     }
 };
 

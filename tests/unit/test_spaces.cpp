@@ -371,9 +371,12 @@ TEST_F(SpacesTest, SQ8_FP16_ip_no_optimization_norm_func_test) {
 
     // Create V1 fp16 query with precomputed sum and sum_squares
     // Query layout: [float16 values (dim)] [sum (float)] [sum_squares (float)]
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v1_query(query_bytes);
+    // Allocate as std::vector<float16> so v1_query.data() is alignof(float16)-aligned, as
+    // required by the SQ8_FP16 production kernels' typed float16* loads. Add extra float16
+    // slots to cover the trailing FP32 metadata bytes.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
     test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
 
     // Create V2 as SQ8 quantized vector with different seed
@@ -394,9 +397,9 @@ TEST_F(SpacesTest, SQ8_FP16_ip_no_optimization_norm_func_test) {
 TEST_F(SpacesTest, SQ8_FP16_cosine_no_optimization_norm_func_test) {
     size_t dim = 5;
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v1_query(query_bytes);
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
     test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
 
     size_t quantized_size =
@@ -416,9 +419,9 @@ TEST_F(SpacesTest, SQ8_FP16_cosine_no_optimization_norm_func_test) {
 TEST_F(SpacesTest, SQ8_FP16_l2sqr_no_optimization_func_test) {
     size_t dim = 5;
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v1_query(query_bytes);
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
     test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
 
     size_t quantized_size =
@@ -2950,9 +2953,9 @@ class SQ8_FP16_NoOptimizationSpacesTest : public testing::TestWithParam<size_t> 
 TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_L2SqrTest) {
     size_t dim = GetParam();
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v1_query(query_bytes);
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
     test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
 
     size_t quantized_size =
@@ -2970,9 +2973,9 @@ TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_L2SqrTest) {
 TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_InnerProductTest) {
     size_t dim = GetParam();
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v1_query(query_bytes);
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
     test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
 
     size_t quantized_size =
@@ -2990,9 +2993,9 @@ TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_InnerProductTest) {
 TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_CosineTest) {
     size_t dim = GetParam();
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v1_query(query_bytes);
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
     test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
 
     size_t quantized_size =
@@ -3020,10 +3023,10 @@ INSTANTIATE_TEST_SUITE_P(SQ8_FP16_NoOpt, SQ8_FP16_NoOptimizationSpacesTest,
 TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
     size_t dim = 64;
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v_zero_query(query_bytes, 0);
-    // Metadata is already zero (sum = 0, sum_squares = 0); FP16 zero is bit-pattern 0.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_zero_query(query_count, float16{0});
+    // Metadata bits are zero (sum = 0, sum_squares = 0); FP16 zero is bit-pattern 0.
 
     size_t quantized_size =
         dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
@@ -3048,9 +3051,9 @@ TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
 TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
     size_t dim = 64;
 
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v_query(query_bytes);
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_query(query_count);
     test_utils::populate_sq8_fp16_query(v_query.data(), dim, false, 4321);
 
     size_t quantized_size =
@@ -3077,12 +3080,13 @@ TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
     size_t dim = 64;
 
     // Build an alternating +0.75 / -0.75 FP16 query manually so we don't depend on RNG sign mix.
-    size_t query_bytes =
-        dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float);
-    std::vector<uint8_t> v_query(query_bytes);
-    auto *fp16_values = reinterpret_cast<float16 *>(v_query.data());
+    // Allocated as std::vector<float16> so v_query.data() is alignof(float16)-aligned for
+    // the SQ8_FP16 production kernel.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_query(query_count);
     for (size_t i = 0; i < dim; i++) {
-        fp16_values[i] = vecsim_types::FP32_to_FP16((i % 2 == 0) ? 0.75f : -0.75f);
+        v_query[i] = vecsim_types::FP32_to_FP16((i % 2 == 0) ? 0.75f : -0.75f);
     }
     test_utils::preprocess_sq8_fp16_query(v_query.data(), dim);
 
