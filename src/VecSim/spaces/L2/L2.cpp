@@ -44,6 +44,34 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
     return x_sum_sq + y_sum_sq - 2.0f * ip;
 }
 
+/*
+ * Optimized asymmetric SQ8-FP16 L2 squared distance using algebraic identity:
+ *   ||x - y||² = Σx_i² - 2*IP(x, y) + Σy_i²
+ *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
+ *   where IP(x, y) = min * y_sum + delta * Σ(q_i * y_i) and FP16 query values are widened
+ *   to FP32 inside SQ8_FP16_InnerProduct_Impl.
+ *
+ * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
+ * pVect2 is query (FP16):  [float16 values (dim)] [y_sum] [y_sum_squares]
+ */
+float SQ8_FP16_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // Get the raw inner product using the common implementation
+    const float ip = SQ8_FP16_InnerProduct_Impl(pVect1v, pVect2v, dimension);
+
+    // Get precomputed sum of squares from storage blob (pVect1 is SQ8)
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
+    const float x_sum_sq = params[sq8::SUM_SQUARES];
+
+    // Get precomputed sum of squares from query blob (FP32 metadata after dim float16 values)
+    const auto *pVect2 = static_cast<const float16 *>(pVect2v);
+    const float *query_meta = reinterpret_cast<const float *>(pVect2 + dimension);
+    const float y_sum_sq = query_meta[sq8::SUM_SQUARES_QUERY];
+
+    // L2² = ||x||² + ||y||² - 2*IP(x, y)
+    return x_sum_sq + y_sum_sq - 2.0f * ip;
+}
+
 float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *vec1 = (float *)pVect1v;
     float *vec2 = (float *)pVect2v;

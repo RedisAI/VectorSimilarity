@@ -256,6 +256,107 @@ static float SQ8_FP32_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
     }
     return res;
 }
+/*
+ * SQ8-FP16 inner product distance reference implementation without algebraic optimizations.
+ * Uses element-wise dequantization of the SQ8 storage and widens FP16 query values to FP32:
+ * IP = Σ((min + delta * q_i) * FP16_to_FP32(y_i))
+ * pVect1 = SQ8 storage (quantized values + metadata)
+ * pVect2 = FP16 query (float16 values + FP32 metadata)
+ */
+static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
+                                                size_t dimension) {
+
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);            // SQ8 storage
+    const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v); // FP16 query
+
+    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+
+    float res = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        res += (pVect1[i] * delta + min_val) * vecsim_types::FP16_to_FP32(pVect2[i]);
+    }
+    return 1.0f - res;
+}
+
+/*
+ * SQ8-FP16 cosine reference. For normalized vectors, cosine equals inner product distance.
+ */
+static float SQ8_FP16_NotOptimized_Cosine(const void *pVect1v, const void *pVect2v,
+                                          size_t dimension) {
+    return SQ8_FP16_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
+}
+
+/*
+ * SQ8-FP16 L2 squared reference implementation without algebraic optimizations.
+ * Mirrors the algebraic identity used by the optimized kernel:
+ *   L2² = ||x_orig||² + ||y||² - 2 * Σ(dequant(x_i) * FP16_to_FP32(y_i))
+ * where ||x_orig||² is the SUM_SQUARES precomputed from the *original* (pre-quantization)
+ * floats and stored in the SQ8 metadata, and ||y||² is the SUM_SQUARES_QUERY computed
+ * from the FP16-widened-to-FP32 query values. This intentionally differs from a pure
+ * Σ(y - dequant(x))² by a quantization-error term that grows with dim, since the
+ * production storage stores the pre-quantization norm.
+ */
+static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const vecsim_types::float16 *>(pVect2v);
+
+    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
+    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float *storage_meta = reinterpret_cast<const float *>(pVect1 + dimension);
+    const float x_sum_sq = storage_meta[sq8::SUM_SQUARES];
+    const float *query_meta = reinterpret_cast<const float *>(pVect2 + dimension);
+    const float y_sum_sq = query_meta[sq8::SUM_SQUARES_QUERY];
+
+    float ip = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        const float dequantized = pVect1[i] * delta + min_val;
+        ip += dequantized * vecsim_types::FP16_to_FP32(pVect2[i]);
+    }
+    return x_sum_sq + y_sum_sq - 2.0f * ip;
+}
+
+// Preprocess FP16 query for SQ8 IP/Cosine/L2 space.
+// Query layout: [float16 values (dim)] [sum (float)] [sum_squares (float)]
+// `buf` must be at least
+//   dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float)
+// bytes (defaults to L2 layout, sufficient for IP/Cosine).
+// The metadata is computed from the FP16 values widened back to FP32, so it matches
+// what the SQ8-FP16 distance kernels will accumulate.
+static void preprocess_sq8_fp16_query(void *buf, size_t dim) {
+    auto *values = static_cast<vecsim_types::float16 *>(buf);
+    float sum = 0.0f;
+    float sum_squares = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        const float widened = vecsim_types::FP16_to_FP32(values[i]);
+        sum += widened;
+        sum_squares += widened * widened;
+    }
+    auto *metadata = reinterpret_cast<float *>(values + dim);
+    metadata[sq8::SUM_QUERY] = sum;
+    metadata[sq8::SUM_SQUARES_QUERY] = sum_squares;
+}
+
+// Populate an FP16 query buffer for SQ8 IP/Cosine/L2 space.
+// `buf` must be at least
+//   dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float)
+// bytes. Generates float values, optionally normalizes them in FP32 (matching the
+// FP32 query helper), converts to FP16, then computes FP32 metadata.
+static void populate_sq8_fp16_query(void *buf, size_t dim, bool should_normalize = false,
+                                    int seed = 1234, float min = -1.0f, float max = 1.0f) {
+    std::vector<float> tmp(dim);
+    populate_float_vec(tmp.data(), dim, seed, min, max);
+    if (should_normalize) {
+        spaces::GetNormalizeFunc<float>()(tmp.data(), dim);
+    }
+    auto *values = static_cast<vecsim_types::float16 *>(buf);
+    for (size_t i = 0; i < dim; i++) {
+        values[i] = vecsim_types::FP32_to_FP16(tmp[i]);
+    }
+    preprocess_sq8_fp16_query(buf, dim);
+}
+
 /**
  * Populate a float vector and quantize to SQ8 with precomputed sum and sum_squares.
  * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares
