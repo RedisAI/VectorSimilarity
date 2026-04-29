@@ -282,8 +282,8 @@ static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void 
     for (size_t i = 0; i < dimension; i++) {
         uint16_t raw;
         std::memcpy(&raw, pVect2 + i * sizeof(vecsim_types::float16), sizeof(raw));
-        res += (pVect1[i] * delta + min_val) *
-               vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
+        res +=
+            (pVect1[i] * delta + min_val) * vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
     }
     return 1.0f - res;
 }
