@@ -279,10 +279,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         // Quantize the values
         for (; i < dim_round_down; i += 4) {
             // Load once (widened to FP32 if DataType is FP16).
-            const float x0 = to_fp32<DataType>(input[i + 0]);
-            const float x1 = to_fp32<DataType>(input[i + 1]);
-            const float x2 = to_fp32<DataType>(input[i + 2]);
-            const float x3 = to_fp32<DataType>(input[i + 3]);
+            const auto x0 = to_fp32<DataType>(input[i + 0]);
+            const auto x1 = to_fp32<DataType>(input[i + 1]);
+            const auto x2 = to_fp32<DataType>(input[i + 2]);
+            const auto x3 = to_fp32<DataType>(input[i + 3]);
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
@@ -312,7 +312,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         MetadataType sum_squares = (q0 + q1) + (q2 + q3);
 
         for (; i < this->dim; ++i) {
-            const float x = to_fp32<DataType>(input[i]);
+            const auto x = to_fp32<DataType>(input[i]);
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x - min_val) * inv_delta));
             sum += x;
             if constexpr (Metric == VecSimMetric_L2) {
@@ -342,10 +342,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         size_t dim_round_down = this->dim & ~size_t(3);
 
         for (; i < dim_round_down; i += 4) {
-            const float y0 = to_fp32<DataType>(input[i + 0]);
-            const float y1 = to_fp32<DataType>(input[i + 1]);
-            const float y2 = to_fp32<DataType>(input[i + 2]);
-            const float y3 = to_fp32<DataType>(input[i + 3]);
+            const auto y0 = to_fp32<DataType>(input[i + 0]);
+            const auto y1 = to_fp32<DataType>(input[i + 1]);
+            const auto y2 = to_fp32<DataType>(input[i + 2]);
+            const auto y3 = to_fp32<DataType>(input[i + 3]);
 
             s0 += y0;
             s1 += y1;
@@ -366,7 +366,7 @@ class QuantPreprocessor : public PreprocessorInterface {
 
         // Tail: handle remaining elements
         for (; i < this->dim; ++i) {
-            const float y = to_fp32<DataType>(input[i]);
+            const auto y = to_fp32<DataType>(input[i]);
             sum += y;
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += y * y;
