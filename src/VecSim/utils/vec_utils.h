@@ -54,6 +54,7 @@ public:
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
     static const char *NUM_MARKED_DELETED;
+    static const char *HNSW_RERANK_STRING;
     // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *SVS_SEARCH_WS_STRING;
@@ -106,6 +107,8 @@ VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long 
 VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
 
 VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOptionMode *val);
+
+VecSimResolveCode validate_vecsim_tristate_bool_param(VecSimRawParam rawParam, VecSimBool *val);
 
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 

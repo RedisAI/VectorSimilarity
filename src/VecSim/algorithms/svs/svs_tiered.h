@@ -1016,8 +1016,7 @@ public:
             // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
             std::unique_lock<std::mutex> lock(this->updateJobMutex, std::try_to_lock);
             if (lock.owns_lock()) {
-                svsTieredInfo.indexUpdateScheduled =
-                    this->indexUpdateScheduled.test() == VecSimBool_TRUE;
+                svsTieredInfo.indexUpdateScheduled = this->indexUpdateScheduled.test();
             } else {
                 // Mutex is held by updateSVSIndexWrapper — training is in progress.
                 svsTieredInfo.indexUpdateScheduled = true;

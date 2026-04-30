@@ -307,6 +307,10 @@ public:
         return {.indexCalculator = this->indexCalculator, .preprocessors = this->preprocessors};
     }
 
+    // Test-only: override the disk flag to exercise disk-specific param resolution
+    // without requiring an actual disk-based index implementation.
+    void setIsDiskForTesting(bool v) { this->isDisk = v; }
+
     /**
      * @brief Used for testing - get only the vector elements associated with a given label.
      * This function copies only the vector(s) elements into the output vector,
