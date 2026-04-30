@@ -173,8 +173,7 @@ static void _InitQueryParams(VecSimQueryParams *qparams, VecSimAlgo index_type, 
 }
 
 static VecSimResolveCode _ResolveParams_Rerank(VecSimAlgo index_type, bool is_disk,
-                                               VecSimRawParam rparam,
-                                               VecSimQueryParams *qparams) {
+                                               VecSimRawParam rparam, VecSimQueryParams *qparams) {
     // RERANK is valid only for disk-based HNSW indexes.
     if (index_type != VecSimAlgo_HNSWLIB || !is_disk) {
         return VecSimParamResolverErr_UnknownParam;

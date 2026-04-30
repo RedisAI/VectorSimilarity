@@ -1256,10 +1256,8 @@ TYPED_TEST(HNSWTest, hnsw_resolve_rerank_rejected_on_ram_hnsw) {
 
     VecSimQueryParams qparams;
     std::vector<VecSimRawParam> rparams;
-    rparams.push_back((VecSimRawParam){.name = "RERANK",
-                                       .nameLen = strlen("RERANK"),
-                                       .value = "TRUE",
-                                       .valLen = strlen("TRUE")});
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
 
     // RERANK is only valid for disk-based HNSW; reject on RAM HNSW for every query type.
     for (VecsimQueryType query_type : test_utils::query_types) {
@@ -1294,10 +1292,8 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
     }
 
     // --- RERANK: TRUE accepted on KNN/HYBRID/RANGE/NONE ---
-    rparams.push_back((VecSimRawParam){.name = "RERANK",
-                                       .nameLen = strlen("RERANK"),
-                                       .value = "TRUE",
-                                       .valLen = strlen("TRUE")});
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(
             VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
@@ -1306,10 +1302,8 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
     }
 
     // --- RERANK: FALSE (case-insensitive) ---
-    rparams[0] = (VecSimRawParam){.name = "rerank",
-                                  .nameLen = strlen("rerank"),
-                                  .value = "false",
-                                  .valLen = strlen("false")};
+    rparams[0] = (VecSimRawParam){
+        .name = "rerank", .nameLen = strlen("rerank"), .value = "false", .valLen = strlen("false")};
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSim_OK);
@@ -1332,10 +1326,8 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
               VecSimParamResolverErr_UnknownParam);
 
     // --- combined: EF_RUNTIME + RERANK in one resolve call ---
-    rparams.push_back((VecSimRawParam){.name = "RERANK",
-                                       .nameLen = strlen("RERANK"),
-                                       .value = "TRUE",
-                                       .valLen = strlen("TRUE")});
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSim_OK);
@@ -1384,10 +1376,8 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
         VecSimParamResolverErr_BadValue);
 
     // --- error paths: AlreadySet (RERANK) ---
-    rparams[0] = (VecSimRawParam){.name = "RERANK",
-                                  .nameLen = strlen("RERANK"),
-                                  .value = "TRUE",
-                                  .valLen = strlen("TRUE")};
+    rparams[0] = (VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")};
     rparams.push_back((VecSimRawParam){.name = "RERANK",
                                        .nameLen = strlen("RERANK"),
                                        .value = "FALSE",
@@ -1407,7 +1397,6 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
 
     VecSimIndex_Free(index);
 }
-
 
 TYPED_TEST(HNSWTest, hnsw_get_distance) {
     size_t n = 4;
