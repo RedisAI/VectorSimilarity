@@ -1494,6 +1494,19 @@ TEST(QuantPreprocessorFP16Test, QuantizeReconstructRoundTripL2) {
         EXPECT_NEAR(reconstructed, widened[i], delta);
     }
 
+    // In-place path: seed a buffer large enough to hold both the FP16 input and the SQ8
+    // storage layout, copy the FP16 input in, and quantize in place. The resulting SQ8 blob
+    // must match the one produced by preprocessForStorage.
+    constexpr size_t input_size = dim * sizeof(float16);
+    constexpr size_t storage_size = dim * sizeof(uint8_t) + 4 * sizeof(float);
+    constexpr size_t buf_size = (input_size > storage_size) ? input_size : storage_size;
+    alignas(float) uint8_t in_place_buf[buf_size]{};
+    std::memcpy(in_place_buf, input, input_size);
+    preprocessor->preprocessStorageInPlace(in_place_buf, buf_size);
+    EXPECT_NO_FATAL_FAILURE(
+        CompareVectors<uint8_t>(in_place_buf, static_cast<const uint8_t *>(storage_blob),
+                                storage_size));
+
     allocator->free_allocation(storage_blob);
     delete preprocessor;
 }
