@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -225,37 +226,28 @@ private:
  *   ||x - y||² = sum_sq_x + sum_sq_y - 2 * IP(x, y)
  *   where sum_sq_x, sum_sq_y are precomputed sums of squared original values.
  */
-// Trait describing input types accepted by QuantPreprocessor. Specialized below to opt-in
-// vecsim_types::float16; rejects unrelated types (e.g. integers, double, bfloat16) by default.
+// Input types accepted by QuantPreprocessor. Opt-in via std::same_as so unrelated types
+// (e.g. integers, double, bfloat16) are rejected at the template head with a named constraint.
 template <typename T>
-struct is_quant_input : std::false_type {};
-template <>
-struct is_quant_input<float> : std::true_type {};
-template <>
-struct is_quant_input<vecsim_types::float16> : std::true_type {};
-template <typename T>
-inline constexpr bool is_quant_input_v = is_quant_input<T>::value;
+concept QuantInput = std::same_as<T, float> || std::same_as<T, vecsim_types::float16>;
 
 // Convert a single input element to FP32 for accumulation/comparison. Identity for float,
-// FP16 -> FP32 widening for vecsim_types::float16. Templated on the input type.
-template <typename T>
+// FP16 -> FP32 widening for vecsim_types::float16.
+template <QuantInput T>
 static inline float to_fp32(T x) {
     if constexpr (std::is_same_v<T, vecsim_types::float16>) {
         return vecsim_types::FP16_to_FP32(x);
     } else {
-        static_assert(std::is_same_v<T, float>, "to_fp32: unsupported input type");
         return x;
     }
 }
 
-template <typename DataType, VecSimMetric Metric>
+template <QuantInput DataType, VecSimMetric Metric>
 class QuantPreprocessor : public PreprocessorInterface {
     using OUTPUT_TYPE = uint8_t;
     using MetadataType = float; // SQ8 metadata is always FP32 (see class doc).
     using sq8 = vecsim_types::sq8;
 
-    static_assert(is_quant_input_v<DataType>,
-                  "QuantPreprocessor only supports float and vecsim_types::float16");
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
                   "QuantPreprocessor only supports L2, IP and Cosine metrics");
