@@ -509,8 +509,10 @@ private:
             MetadataType max_val = min_val;
             for (size_t i = 1; i < dim; ++i) {
                 const MetadataType v = to_fp32<DataType>(input[i]);
-                if (v < min_val) min_val = v;
-                if (v > max_val) max_val = v;
+                if (v < min_val)
+                    min_val = v;
+                if (v > max_val)
+                    max_val = v;
             }
             return {min_val, max_val};
         } else {

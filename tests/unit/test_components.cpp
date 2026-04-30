@@ -1307,8 +1307,8 @@ protected:
     static constexpr size_t original_blob_size = dim * sizeof(float16);
 
     std::shared_ptr<VecSimAllocator> allocator;
-    float16 original_blob[dim];     // FP16 input
-    float widened_blob[dim];        // FP32 view of the same input (round-trip through FP16)
+    float16 original_blob[dim]; // FP16 input
+    float widened_blob[dim];    // FP32 view of the same input (round-trip through FP16)
 
     void SetUp() override {
         allocator = VecSimAllocator::newVecsimAllocator();
@@ -1382,16 +1382,18 @@ protected:
                 static_cast<const uint8_t *>(storage_blob), baseline_storage, dim));
 
             // Storage FP32 metadata must match the baseline values.
-            ASSERT_FLOAT_EQ(load_meta(storage_blob, storage_meta_offset + sq8::MIN_VAL * sizeof(float)),
-                            baseline_min);
-            ASSERT_FLOAT_EQ(load_meta(storage_blob, storage_meta_offset + sq8::DELTA * sizeof(float)),
-                            baseline_delta);
+            ASSERT_FLOAT_EQ(
+                load_meta(storage_blob, storage_meta_offset + sq8::MIN_VAL * sizeof(float)),
+                baseline_min);
+            ASSERT_FLOAT_EQ(
+                load_meta(storage_blob, storage_meta_offset + sq8::DELTA * sizeof(float)),
+                baseline_delta);
             ASSERT_FLOAT_EQ(load_meta(storage_blob, storage_meta_offset + sq8::SUM * sizeof(float)),
                             baseline_sum);
             if constexpr (Metric == VecSimMetric_L2) {
-                ASSERT_FLOAT_EQ(load_meta(storage_blob,
-                                          storage_meta_offset + sq8::SUM_SQUARES * sizeof(float)),
-                                baseline_sum_sq);
+                ASSERT_FLOAT_EQ(
+                    load_meta(storage_blob, storage_meta_offset + sq8::SUM_SQUARES * sizeof(float)),
+                    baseline_sum_sq);
             }
 
             // Query body must be a bit-equal copy of the FP16 input.
@@ -1399,14 +1401,13 @@ protected:
                 static_cast<const float16 *>(query_blob), original_blob, dim));
 
             // Query FP32 metadata: y_sum (and y_sum_squares for L2) match the FP32 baseline.
-            ASSERT_FLOAT_EQ(load_meta(query_blob,
-                                      query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
-                            baseline_sum);
+            ASSERT_FLOAT_EQ(
+                load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
+                baseline_sum);
             if constexpr (Metric == VecSimMetric_L2) {
-                ASSERT_FLOAT_EQ(
-                    load_meta(query_blob,
-                              query_meta_offset + sq8::SUM_SQUARES_QUERY * sizeof(float)),
-                    baseline_sum_sq);
+                ASSERT_FLOAT_EQ(load_meta(query_blob, query_meta_offset +
+                                                          sq8::SUM_SQUARES_QUERY * sizeof(float)),
+                                baseline_sum_sq);
             }
 
             allocator->free_allocation(storage_blob);
@@ -1466,7 +1467,7 @@ TEST(QuantPreprocessorFP16Test, QuantizeReconstructRoundTripL2) {
     auto allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t dim = 17; // odd, exercises the tail loop and unaligned metadata writes
     const float src[dim] = {-3.5f, -2.0f, -1.25f, -0.5f, -0.125f, 0.0f, 0.125f, 0.5f, 1.0f,
-                             1.5f,  2.0f,  2.5f,   3.0f,  3.25f,   3.4f, 3.45f,  3.5f};
+                            1.5f,  2.0f,  2.5f,   3.0f,  3.25f,   3.4f, 3.45f,  3.5f};
     float16 input[dim];
     float widened[dim];
     for (size_t i = 0; i < dim; ++i) {
@@ -1474,8 +1475,7 @@ TEST(QuantPreprocessorFP16Test, QuantizeReconstructRoundTripL2) {
         widened[i] = vecsim_types::FP16_to_FP32(input[i]);
     }
 
-    auto preprocessor =
-        new (allocator) QuantPreprocessor<float16, VecSimMetric_L2>(allocator, dim);
+    auto preprocessor = new (allocator) QuantPreprocessor<float16, VecSimMetric_L2>(allocator, dim);
 
     void *storage_blob = nullptr;
     size_t storage_blob_size = 0;
@@ -1503,9 +1503,8 @@ TEST(QuantPreprocessorFP16Test, QuantizeReconstructRoundTripL2) {
     alignas(float) uint8_t in_place_buf[buf_size]{};
     std::memcpy(in_place_buf, input, input_size);
     preprocessor->preprocessStorageInPlace(in_place_buf, buf_size);
-    EXPECT_NO_FATAL_FAILURE(
-        CompareVectors<uint8_t>(in_place_buf, static_cast<const uint8_t *>(storage_blob),
-                                storage_size));
+    EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(
+        in_place_buf, static_cast<const uint8_t *>(storage_blob), storage_size));
 
     allocator->free_allocation(storage_blob);
     delete preprocessor;
