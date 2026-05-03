@@ -66,10 +66,12 @@ public:
         if (storage_blob != query_blob) {
             // If one of them is null, allocate memory for it and copy the original_blob to it.
             if (storage_blob == nullptr) {
-                storage_blob = allocateBlob(processed_bytes_count, storage_alignment);
+                storage_blob =
+                    this->allocator->allocate_aligned(processed_bytes_count, storage_alignment);
                 memcpy(storage_blob, original_blob, storage_blob_size);
             } else if (query_blob == nullptr) {
-                query_blob = allocateBlob(processed_bytes_count, query_alignment);
+                query_blob =
+                    this->allocator->allocate_aligned(processed_bytes_count, query_alignment);
                 memcpy(query_blob, original_blob, query_blob_size);
             }
 
@@ -81,7 +83,8 @@ public:
                 // Single buffer must satisfy both the storage and the query alignment hint.
                 const unsigned char shared_alignment =
                     spaces::combineAlignments(storage_alignment, query_alignment);
-                query_blob = allocateBlob(processed_bytes_count, shared_alignment);
+                query_blob =
+                    this->allocator->allocate_aligned(processed_bytes_count, shared_alignment);
                 memcpy(query_blob, original_blob, storage_blob_size);
                 storage_blob = query_blob;
             }
@@ -101,7 +104,7 @@ public:
         assert(blob == nullptr || input_blob_size == processed_bytes_count);
 
         if (blob == nullptr) {
-            blob = allocateBlob(processed_bytes_count, storage_alignment);
+            blob = this->allocator->allocate_aligned(processed_bytes_count, storage_alignment);
             memcpy(blob, original_blob, input_blob_size);
         }
         normalize_func(blob, this->dim);
@@ -127,12 +130,6 @@ public:
     }
 
 private:
-    // Allocate a blob, honoring alignment when non-zero.
-    void *allocateBlob(size_t size, unsigned char alignment) const {
-        return alignment ? this->allocator->allocate_aligned(size, alignment)
-                         : this->allocator->allocate(size);
-    }
-
     spaces::normalizeVector_f<DataType> normalize_func;
     const size_t dim;
     const size_t processed_bytes_count;
