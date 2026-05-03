@@ -2405,6 +2405,33 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceCosine) {
         optimization.avx512f = 0;
     }
 #endif
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.sse4_1 = 0;
+    }
+#endif
 
     unsigned char alignment = 0;
     auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
@@ -2477,6 +2504,33 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceL2) {
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
         optimization.avx512f = 0;
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.sse4_1 = 0;
     }
 #endif
 

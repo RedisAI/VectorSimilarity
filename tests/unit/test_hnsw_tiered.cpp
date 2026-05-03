@@ -4246,33 +4246,30 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
+                    unsigned char storage_alignment,
+                    unsigned char query_alignment) const override {
         // This assert makes sure the current use of the preprocessor is valid,
         // i.e., both blobs are of the same size.
         // In order to use different sizes, the preprocessor should be modified.
         assert(storage_blob_size == query_blob_size);
-        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
-    }
-
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
 
         // One blob was already allocated by a previous preprocessor(s) that process both blobs the
         // same. The blobs are pointing to the same memory, we need to allocate another memory slot
         // to split them.
         if ((storage_blob == query_blob) && (query_blob != nullptr)) {
-            storage_blob = this->allocator->allocate(input_blob_size);
-            memcpy(storage_blob, query_blob, input_blob_size);
+            storage_blob = this->allocator->allocate(storage_blob_size);
+            memcpy(storage_blob, query_blob, storage_blob_size);
         }
 
         // Either both are nullptr or they are pointing to different memory slots. Both cases are
         // handled by the designated functions.
-        this->preprocessForStorage(original_blob, storage_blob, input_blob_size);
-        this->preprocessQuery(original_blob, query_blob, input_blob_size, alignment);
+        this->preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                   storage_alignment);
+        this->preprocessQuery(original_blob, query_blob, query_blob_size, query_alignment);
     }
 
-    void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t &input_blob_size) const override {
+    void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
         // If the blob was not allocated yet, allocate it.
         if (blob == nullptr) {
             blob = this->allocator->allocate(input_blob_size);

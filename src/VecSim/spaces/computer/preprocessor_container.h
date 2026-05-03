@@ -19,9 +19,17 @@ struct ProcessedBlobs;
 
 class PreprocessorsContainerAbstract : public VecsimBaseObject {
 public:
+    // Legacy ctor: same value applies to both query and storage alignment (homogeneous case).
     PreprocessorsContainerAbstract(std::shared_ptr<VecSimAllocator> allocator,
                                    unsigned char alignment)
-        : VecsimBaseObject(allocator), alignment(alignment) {}
+        : PreprocessorsContainerAbstract(allocator, alignment, alignment) {}
+
+    PreprocessorsContainerAbstract(std::shared_ptr<VecSimAllocator> allocator,
+                                   unsigned char query_alignment,
+                                   unsigned char storage_alignment)
+        : VecsimBaseObject(allocator), query_alignment(query_alignment),
+          storage_alignment(storage_alignment) {}
+
     // It is assumed that the resulted query blob is aligned.
     virtual ProcessedBlobs preprocess(const void *original_blob, size_t input_blob_size) const;
 
@@ -35,10 +43,14 @@ public:
 
     virtual void preprocessStorageInPlace(void *blob, size_t input_blob_size) const;
 
-    unsigned char getAlignment() const { return alignment; }
+    unsigned char getQueryAlignment() const { return query_alignment; }
+    unsigned char getStorageAlignment() const { return storage_alignment; }
+    // TODO(MOD-13837): remove after callers migrate to getStorageAlignment / getQueryAlignment.
+    unsigned char getAlignment() const { return storage_alignment; }
 
 protected:
-    const unsigned char alignment;
+    const unsigned char query_alignment;
+    const unsigned char storage_alignment;
 
     // Allocate and copy the blob only if the original blob is not aligned.
     MemoryUtils::unique_blob maybeCopyToAlignedMem(const void *original_blob,
@@ -61,8 +73,13 @@ protected:
     std::array<PreprocessorInterface *, n_preprocessors> preprocessors;
 
 public:
+    // Legacy ctor: same value applies to both query and storage alignment (homogeneous case).
     MultiPreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment)
-        : PreprocessorsContainerAbstract(allocator, alignment) {
+        : MultiPreprocessorsContainer(allocator, alignment, alignment) {}
+
+    MultiPreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
+                                unsigned char query_alignment, unsigned char storage_alignment)
+        : PreprocessorsContainerAbstract(allocator, query_alignment, storage_alignment) {
         assert(n_preprocessors);
         std::fill_n(preprocessors.begin(), n_preprocessors, nullptr);
     }
@@ -178,7 +195,7 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocess(const void *o
         if (!pp)
             break;
         pp->preprocess(original_blob, storage_blob, query_blob, storage_blob_size, query_blob_size,
-                       this->alignment);
+                       this->storage_alignment, this->query_alignment);
     }
     // At least one blob was allocated.
 
@@ -214,7 +231,8 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessForStorage(
     for (auto pp : preprocessors) {
         if (!pp)
             break;
-        pp->preprocessForStorage(original_blob, storage_blob, input_blob_size);
+        pp->preprocessForStorage(original_blob, storage_blob, input_blob_size,
+                                 this->storage_alignment);
     }
 
     return storage_blob ? std::move(this->wrapAllocated(storage_blob))
@@ -230,7 +248,7 @@ MemoryUtils::unique_blob MultiPreprocessorsContainer<DataType, n_preprocessors>:
         if (!pp)
             break;
         // modifies the memory in place
-        pp->preprocessQuery(original_blob, query_blob, input_blob_size, this->alignment);
+        pp->preprocessQuery(original_blob, query_blob, input_blob_size, this->query_alignment);
     }
     return query_blob
                ? std::move(this->wrapAllocated(query_blob))

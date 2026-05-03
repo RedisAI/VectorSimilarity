@@ -14,24 +14,21 @@
 struct PreprocessorsContainerParams {
     VecSimMetric metric;
     size_t dim;
-    unsigned char alignment;
+    unsigned char query_alignment;
+    unsigned char storage_alignment;
     size_t processed_bytes_count;
 };
 
 /**
  * @brief Creates parameters for a preprocessors container based on the given metric, dimension,
- *        normalization flag, and alignment.
+ *        normalization flag, and alignments.
  *
  * @tparam DataType The data type of the vector elements (e.g., float, int).
  * @param metric The similarity metric to be used (e.g., Cosine, Inner Product).
  * @param dim The dimensionality of the vectors.
  * @param is_normalized A flag indicating whether the vectors are already normalized.
- * @param alignment The alignment requirement for the data.
- * @return A PreprocessorsContainerParams object containing the processed parameters:
- *         - metric: The adjusted metric based on the input and normalization flag.
- *         - dim: The dimensionality of the vectors.
- *         - alignment: The alignment requirement for the data.
- *         - processed_bytes_count: The size of the processed data blob in bytes.
+ * @param query_alignment The alignment requirement for query blobs.
+ * @param storage_alignment The alignment requirement for storage blobs.
  *
  * @details
  * If the metric is Cosine and the data type is integral, the processed bytes count may include
@@ -42,7 +39,8 @@ struct PreprocessorsContainerParams {
 template <typename DataType>
 PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim,
                                                                 bool is_normalized,
-                                                                unsigned char alignment) {
+                                                                unsigned char query_alignment,
+                                                                unsigned char storage_alignment) {
     // By default the processed blob size is the same as the original blob size.
     size_t processed_bytes_count = dim * sizeof(DataType);
 
@@ -61,8 +59,19 @@ PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric met
     }
     return {.metric = pp_metric,
             .dim = dim,
-            .alignment = alignment,
+            .query_alignment = query_alignment,
+            .storage_alignment = storage_alignment,
             .processed_bytes_count = processed_bytes_count};
+}
+
+// Single-alignment overload: applies the same alignment to both query and storage (homogeneous
+// case). Most existing callers use this form.
+template <typename DataType>
+PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim,
+                                                                bool is_normalized,
+                                                                unsigned char alignment) {
+    return CreatePreprocessorsContainerParams<DataType>(metric, dim, is_normalized, alignment,
+                                                        alignment);
 }
 
 template <typename DataType>
@@ -71,8 +80,8 @@ CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
                              PreprocessorsContainerParams params) {
 
     if (params.metric == VecSimMetric_Cosine) {
-        auto multiPPContainer =
-            new (allocator) MultiPreprocessorsContainer<DataType, 1>(allocator, params.alignment);
+        auto multiPPContainer = new (allocator) MultiPreprocessorsContainer<DataType, 1>(
+            allocator, params.query_alignment, params.storage_alignment);
         auto cosine_preprocessor = new (allocator)
             CosinePreprocessor<DataType>(allocator, params.dim, params.processed_bytes_count);
         int next_valid_pp_index = multiPPContainer->addPreprocessor(cosine_preprocessor);
@@ -81,17 +90,29 @@ CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
         return multiPPContainer;
     }
 
-    return new (allocator) PreprocessorsContainerAbstract(allocator, params.alignment);
+    return new (allocator) PreprocessorsContainerAbstract(allocator, params.query_alignment,
+                                                          params.storage_alignment);
 }
 
 template <typename DataType>
 PreprocessorsContainerAbstract *
 CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric,
-                             size_t dim, bool is_normalized, unsigned char alignment) {
+                             size_t dim, bool is_normalized, unsigned char query_alignment,
+                             unsigned char storage_alignment) {
 
-    PreprocessorsContainerParams ppParams =
-        CreatePreprocessorsContainerParams<DataType>(metric, dim, is_normalized, alignment);
+    PreprocessorsContainerParams ppParams = CreatePreprocessorsContainerParams<DataType>(
+        metric, dim, is_normalized, query_alignment, storage_alignment);
     return CreatePreprocessorsContainer<DataType>(allocator, ppParams);
+}
+
+// Single-alignment overload: applies the same alignment to both query and storage (homogeneous
+// case). Most existing callers use this form.
+template <typename DataType>
+PreprocessorsContainerAbstract *
+CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator, VecSimMetric metric,
+                             size_t dim, bool is_normalized, unsigned char alignment) {
+    return CreatePreprocessorsContainer<DataType>(allocator, metric, dim, is_normalized, alignment,
+                                                  alignment);
 }
 
 template <typename DataType>
