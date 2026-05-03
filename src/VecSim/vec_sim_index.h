@@ -206,7 +206,6 @@ public:
     inline size_t getStoredDataSize() const { return storedDataSize; }
     inline size_t getInputBlobSize() const { return inputBlobSize; }
     inline size_t getBlockSize() const { return blockSize; }
-    inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
     inline auto getQueryAlignment() const { return this->preprocessors->getQueryAlignment(); }
     inline auto getStorageAlignment() const { return this->preprocessors->getStorageAlignment(); }
 

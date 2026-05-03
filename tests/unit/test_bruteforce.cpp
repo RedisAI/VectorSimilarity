@@ -529,7 +529,7 @@ TYPED_TEST(BruteForceTest, AlignmentSanity) {
     auto *bf = this->CastToBF(index);
     // Assuming we have some optimizations (at least SSE), the alignment should be non-zero
     // (Register byte size)
-    ASSERT_NE(bf->getAlignment(), 0);
+    ASSERT_NE(bf->getStorageAlignment(), 0);
     VecSimIndex_Free(index);
 }
 #endif

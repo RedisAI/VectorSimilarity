@@ -45,8 +45,6 @@ public:
 
     unsigned char getQueryAlignment() const { return query_alignment; }
     unsigned char getStorageAlignment() const { return storage_alignment; }
-    // TODO(MOD-13837): remove after callers migrate to getStorageAlignment / getQueryAlignment.
-    unsigned char getAlignment() const { return storage_alignment; }
 
 protected:
     const unsigned char query_alignment;

@@ -4329,7 +4329,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
     // a preprocessor container that is able to hold a preprocessor array.
     constexpr size_t n_preprocessors = 1;
     auto multiPPContainer = new (allocator)
-        MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getAlignment());
+        MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getStorageAlignment());
     auto pp_double_value = new (allocator) PreprocessorDoubleValue<TEST_DATA_T>(allocator, dim);
     ASSERT_EQ(multiPPContainer->addPreprocessor(pp_double_value), 0);
 
