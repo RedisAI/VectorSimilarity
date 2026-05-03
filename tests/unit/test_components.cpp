@@ -1073,6 +1073,59 @@ TEST(PreprocessorsTest, QuantizationTest) {
     }
 }
 
+// Verifies that the QuantPreprocessor honors distinct query_alignment and storage_alignment hints
+// independently. This guards the MOD-13837 contract: storage and query buffers can have different
+// SIMD alignment requirements (e.g. SQ8 storage vs FP32 query).
+TEST(PreprocessorsTest, QuantizationAsymmetricAlignment) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t n_preprocessors = 1;
+    constexpr unsigned char query_alignment = 32;
+    constexpr unsigned char storage_alignment = 16;
+    constexpr size_t dim = 6;
+    constexpr size_t original_blob_size = dim * sizeof(float);
+    float original_blob[dim] = {1, 2, 3, 4, 5, 6};
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+    auto multiPPContainer = MultiPreprocessorsContainer<float, n_preprocessors>(
+        allocator, query_alignment, storage_alignment);
+    multiPPContainer.addPreprocessor(quant_preprocessor);
+
+    // preprocess() exercises the joint storage+query allocation path.
+    {
+        ProcessedBlobs processed_blobs =
+            multiPPContainer.preprocess(original_blob, original_blob_size);
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(query_blob, nullptr);
+        ASSERT_NE(storage_blob, query_blob);
+
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(storage_blob) % storage_alignment, 0u)
+            << "storage blob not aligned to " << static_cast<int>(storage_alignment);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(query_blob) % query_alignment, 0u)
+            << "query blob not aligned to " << static_cast<int>(query_alignment);
+    }
+
+    // preprocessForStorage() is the storage-only path; must honor storage_alignment.
+    {
+        auto storage_blob =
+            multiPPContainer.preprocessForStorage(original_blob, original_blob_size);
+        ASSERT_NE(storage_blob.get(), nullptr);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(storage_blob.get()) % storage_alignment, 0u)
+            << "storage blob not aligned to " << static_cast<int>(storage_alignment);
+    }
+
+    // preprocessQuery() is the query-only path; must honor query_alignment.
+    {
+        auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
+        ASSERT_NE(query_blob.get(), nullptr);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(query_blob.get()) % query_alignment, 0u)
+            << "query blob not aligned to " << static_cast<int>(query_alignment);
+    }
+}
+
 // Test edge case where all entries are equal
 TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();

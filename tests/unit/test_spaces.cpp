@@ -3915,3 +3915,87 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values L2 should match baseline";
 }
+
+// MOD-13837: assert the exact alignment-hint values published by the SQ8 distance dispatchers.
+// The hint refers to the SQ8 (first / storage) operand per the GetDistFunc contract documented
+// in spaces/spaces.h. These tests guard against silent regressions of the per-kernel hints used
+// by the preprocessor pipeline to align the storage blob.
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST_F(SpacesTest, SQ8_FP32_DispatcherAlignmentHints) {
+    // dim divisible by 16 (and therefore 8 and 4) so every x86 path sets a non-zero hint.
+    constexpr size_t dim = 64;
+    auto features = getCpuOptimizationFeatures();
+
+    auto check = [&](const char *kind,
+                     spaces::dist_func_t<float> (*get)(size_t, unsigned char *, const void *)) {
+        auto opt = features;
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (opt.avx512f && opt.avx512bw && opt.avx512vnni) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 16u) << kind << ": AVX512 SQ8_FP32 hint should be 16";
+            opt.avx512f = 0;
+        }
+#endif
+#ifdef OPT_AVX2_FMA
+        if (opt.avx2 && opt.fma3) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 8u) << kind << ": AVX2_FMA SQ8_FP32 hint should be 8";
+            opt.fma3 = 0;
+        }
+#endif
+#ifdef OPT_AVX2
+        if (opt.avx2) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 8u) << kind << ": AVX2 SQ8_FP32 hint should be 8";
+            opt.avx2 = 0;
+        }
+#endif
+#ifdef OPT_SSE4
+        if (opt.sse4_1) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 4u) << kind << ": SSE4 SQ8_FP32 hint should be 4";
+            opt.sse4_1 = 0;
+        }
+#endif
+        // No-optimization path must leave the hint at 0.
+        unsigned char alignment = 0;
+        (void)get(dim, &alignment, &opt);
+        ASSERT_EQ(alignment, 0u) << kind << ": no-optimization hint should be 0";
+    };
+
+    check("IP", &spaces::IP_SQ8_FP32_GetDistFunc);
+    check("L2", &spaces::L2_SQ8_FP32_GetDistFunc);
+    check("Cosine", &spaces::Cosine_SQ8_FP32_GetDistFunc);
+}
+
+TEST_F(SpacesTest, SQ8_SQ8_DispatcherAlignmentHints) {
+    // dim divisible by 32 so the AVX512 SQ8_SQ8 path sets the hint (otherwise it stays at 0).
+    constexpr size_t dim = 64;
+    auto features = getCpuOptimizationFeatures();
+
+    auto check = [&](const char *kind,
+                     spaces::dist_func_t<float> (*get)(size_t, unsigned char *, const void *)) {
+        auto opt = features;
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (opt.avx512f && opt.avx512bw && opt.avx512vnni) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 32u) << kind << ": AVX512 SQ8_SQ8 hint should be 32";
+            opt.avx512f = 0;
+        }
+#endif
+        // No-optimization path must leave the hint at 0.
+        unsigned char alignment = 0;
+        (void)get(dim, &alignment, &opt);
+        ASSERT_EQ(alignment, 0u) << kind << ": no-optimization hint should be 0";
+    };
+
+    check("IP", &spaces::IP_SQ8_SQ8_GetDistFunc);
+    check("L2", &spaces::L2_SQ8_SQ8_GetDistFunc);
+    check("Cosine", &spaces::Cosine_SQ8_SQ8_GetDistFunc);
+}
+#endif // CPU_FEATURES_ARCH_X86_64

@@ -414,10 +414,9 @@ public:
                               unsigned char storage_alignment) const override {
         assert(!blob && "storage_blob must be nullptr");
 
-        // Storage alignment hint is plumbed but not yet honored here; aligned storage allocation
-        // lands in a dedicated commit (see MOD-13837 plan).
-        (void)storage_alignment;
-        blob = this->allocator->allocate(storage_bytes_count);
+        blob = storage_alignment
+                   ? this->allocator->allocate_aligned(storage_bytes_count, storage_alignment)
+                   : this->allocator->allocate(storage_bytes_count);
         // Cast to appropriate types
         const DataType *input = static_cast<const DataType *>(original_blob);
         OUTPUT_TYPE *quantized = static_cast<OUTPUT_TYPE *>(blob);
