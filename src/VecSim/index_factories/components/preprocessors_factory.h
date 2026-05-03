@@ -37,10 +37,9 @@ struct PreprocessorsContainerParams {
  * redundant normalization during preprocessing.
  */
 template <typename DataType>
-PreprocessorsContainerParams CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim,
-                                                                bool is_normalized,
-                                                                unsigned char query_alignment,
-                                                                unsigned char storage_alignment) {
+PreprocessorsContainerParams
+CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim, bool is_normalized,
+                                   unsigned char query_alignment, unsigned char storage_alignment) {
     // By default the processed blob size is the same as the original blob size.
     size_t processed_bytes_count = dim * sizeof(DataType);
 
@@ -90,8 +89,8 @@ CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
         return multiPPContainer;
     }
 
-    return new (allocator) PreprocessorsContainerAbstract(allocator, params.query_alignment,
-                                                          params.storage_alignment);
+    return new (allocator)
+        PreprocessorsContainerAbstract(allocator, params.query_alignment, params.storage_alignment);
 }
 
 template <typename DataType>

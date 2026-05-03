@@ -72,8 +72,7 @@ public:
     }
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         assert(storage_blob_size == query_blob_size);
         this->preprocessForStorage(original_blob, storage_blob, storage_blob_size,
                                    storage_alignment);
@@ -118,8 +117,7 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         assert(storage_blob_size == query_blob_size);
         this->preprocessQuery(original_blob, query_blob, query_blob_size, query_alignment);
     }
@@ -155,8 +153,7 @@ public:
           value_to_add_query(value_to_add_query) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         assert(storage_blob_size == query_blob_size);
 
         // One blob was already allocated by a previous preprocessor(s) that process both blobs the
@@ -217,8 +214,7 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         // if the blobs are equal, allocate a single shared buffer aligned to satisfy both hints.
         if (storage_blob == query_blob) {
             assert(storage_blob_size == query_blob_size);

@@ -136,9 +136,8 @@ public:
         // DataBlocksContainer holds the persistent storage vectors, so it must honor the storage
         // alignment hint (not the query alignment). Today this only aligns the block-base address;
         // per-element stride padding is a follow-up (see MOD-13837).
-        this->vectors = new (this->allocator)
-            DataBlocksContainer(this->blockSize, this->storedDataSize, this->allocator,
-                                this->getStorageAlignment());
+        this->vectors = new (this->allocator) DataBlocksContainer(
+            this->blockSize, this->storedDataSize, this->allocator, this->getStorageAlignment());
     }
 
     /**

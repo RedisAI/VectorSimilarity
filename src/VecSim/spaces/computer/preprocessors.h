@@ -36,8 +36,7 @@ public:
                                       size_t &input_blob_size,
                                       unsigned char storage_alignment) const = 0;
     virtual void preprocessQuery(const void *original_blob, void *&query_blob,
-                                 size_t &input_blob_size,
-                                 unsigned char query_alignment) const = 0;
+                                 size_t &input_blob_size, unsigned char query_alignment) const = 0;
     virtual void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const = 0;
 };
 
@@ -53,8 +52,7 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         // CosinePreprocessor produces equally-sized storage and query blobs.
         assert(storage_blob_size == query_blob_size);
         // see assert docs below
@@ -384,8 +382,7 @@ public:
      */
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         // CASE 1: STORAGE BLOB NEEDS ALLOCATION - the only implemented case
         assert(!storage_blob && "CASE 1: storage_blob must be nullptr");
         assert(!query_blob && "CASE 1: query_blob must be nullptr");

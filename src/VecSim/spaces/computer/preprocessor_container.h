@@ -25,8 +25,7 @@ public:
         : PreprocessorsContainerAbstract(allocator, alignment, alignment) {}
 
     PreprocessorsContainerAbstract(std::shared_ptr<VecSimAllocator> allocator,
-                                   unsigned char query_alignment,
-                                   unsigned char storage_alignment)
+                                   unsigned char query_alignment, unsigned char storage_alignment)
         : VecsimBaseObject(allocator), query_alignment(query_alignment),
           storage_alignment(storage_alignment) {}
 

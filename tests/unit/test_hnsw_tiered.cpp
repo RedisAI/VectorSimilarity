@@ -4246,8 +4246,7 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char storage_alignment,
-                    unsigned char query_alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         // This assert makes sure the current use of the preprocessor is valid,
         // i.e., both blobs are of the same size.
         // In order to use different sizes, the preprocessor should be modified.
