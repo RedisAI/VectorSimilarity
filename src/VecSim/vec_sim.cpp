@@ -166,7 +166,7 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
 // Zero-initialize qparams and explicitly set fields whose "absent" state is not
 // representable by all-zeros (e.g. tristate enums where 0 maps to a valid value).
 static void _InitQueryParams(VecSimQueryParams *qparams, VecSimAlgo index_type, bool is_disk) {
-    bzero(qparams, sizeof(VecSimQueryParams));
+    memset(qparams, 0, sizeof(VecSimQueryParams));
     if (index_type == VecSimAlgo_HNSWLIB && is_disk) {
         qparams->hnswDiskRuntimeParams.shouldRerank = VecSimBool_UNSET;
     }
